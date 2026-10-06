@@ -160,7 +160,6 @@ interface StoryArgs {
   loading: boolean
   error: boolean
   onOpenCollection: (id: number) => void
-  onMoveCollection: (collection: unknown) => void
   onError: (message: string) => void
 }
 
@@ -175,7 +174,6 @@ function ManageCollectionsPageExample(args: StoryArgs) {
           groups={[]}
           currentUser={user}
           onOpenCollection={args.onOpenCollection}
-          onMoveCollection={args.onMoveCollection}
           onError={args.onError}
           loadCollections={async () => {
             if (args.error) throw new Error('boom')
@@ -198,7 +196,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Manage → Collections: the all-collections table for non-students (#1554), mirroring Manage → Images — stored filter facets, sortable columns, client-side pagination, browse-location category breadcrumbs, and row actions gated on API permissions (Edit / Owners / Move). Delete lives inside the edit dialog.',
+          'Manage → Collections: the all-collections table for non-students (#1554), mirroring Manage → Images — stored filter facets, sortable columns, client-side pagination, browse-location category breadcrumbs, and row actions gated on API permissions (Edit / Owners). Delete lives inside the edit dialog; filing moved into the edit dialog’s category picker (#1566).',
       },
     },
   },
@@ -207,7 +205,7 @@ const meta = {
       control: 'inline-radio',
       options: ['admin', 'instructor', 'staff'],
       description:
-        'Signed-in role — staff see every row the API returns but only permission-backed actions (no Move).',
+        'Signed-in role — staff see every row the API returns but only permission-backed actions.',
     },
   },
   args: {
@@ -216,7 +214,7 @@ const meta = {
     loading: false,
     error: false,
     onOpenCollection: fn(),
-    onMoveCollection: fn(),
+
     onError: fn(),
   },
 } satisfies Meta<typeof ManageCollectionsPageExample>
@@ -248,7 +246,8 @@ export const StaffView: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const table = await canvas.findByTestId('manage-collections-table')
-    // Staff keep the permission-backed actions but never get Move (#1554).
+    // No row carries a Move action — filing lives in the edit dialog's
+    // category picker now (#1566).
     await expect(within(table).queryByRole('button', { name: /^Move / })).not.toBeInTheDocument()
   },
 }

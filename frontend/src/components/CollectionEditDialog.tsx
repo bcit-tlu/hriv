@@ -13,6 +13,8 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { collectionConflictCurrent, userMessage } from '../api'
 import { AuthContext } from '../authContextValue'
 import {
@@ -23,7 +25,18 @@ import {
   canUseRestrictedVisibility,
 } from '../collectionUtils'
 import { getAttachableProgramIds } from '../programAttach'
-import type { Collection, CollectionType, CollectionVisibility, Group, Program } from '../types'
+import { getVisibilityColors } from '../theme'
+import { isCategoryHiddenInTree } from '../treeUtils'
+import { useColorMode } from '../useColorMode'
+import CategoryPickerSelect from './CategoryPickerSelect'
+import type {
+  Category,
+  Collection,
+  CollectionType,
+  CollectionVisibility,
+  Group,
+  Program,
+} from '../types'
 
 const EMPTY_PROGRAMS: Program[] = []
 const EMPTY_GROUPS: Group[] = []
@@ -36,6 +49,18 @@ export interface CollectionFormValues {
   /** Only populated when `visibility === 'restricted'` (the API 422s otherwise). */
   programIds: number[]
   groupIds: number[]
+  /**
+   * Category filing for edits (#1566): not a PATCH field — the caller turns a
+   * change into `POST …/move`. Always carries the collection's current
+   * category so an unchanged save is a no-op; `null` = Browse root.
+   */
+  categoryId: number | null
+  /**
+   * Curatorial hide (#1566): toggled by the Hide link in the title — the same
+   * form-field pattern EditImageModal/EditCategoryDialog use, so it persists
+   * on Save rather than immediately.
+   */
+  hidden: boolean
 }
 
 export interface CollectionEditDialogProps {
@@ -69,6 +94,25 @@ export interface CollectionEditDialogProps {
    * surface in the dialog's error alert.
    */
   onDelete?: () => Promise<void>
+  /**
+   * Browse category tree (#1566): renders the CategoryPickerSelect on edits
+   * when the caller can file collections, and resolves the "Hidden by
+   * Category" state of the title's Hide link.
+   */
+  categories?: Category[]
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
 }
 
 const TYPE_HELP: Record<CollectionType, string> = {
@@ -85,21 +129,32 @@ export default function CollectionEditDialog({
   groups = EMPTY_GROUPS,
   onSave,
   onDelete,
+  categories = [],
+  onAddCategory,
+  onEditCategory,
+  onToggleVisibility,
 }: CollectionEditDialogProps) {
   const isEdit = collection != null
   const auth = useContext(AuthContext)
   const currentUser = auth?.currentUser ?? null
   const canRestrict = canUseRestrictedVisibility(currentUser?.role)
+  // Filing into a category is curatorial (admin/instructor), matching the
+  // move endpoint's authority — owners of other roles get no picker (#1566).
+  const canFile = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
   // Field-level authz (#1531): editing metadata is owner/editor-level, but
   // changing visibility scope requires `can_change_scope`. On create the
   // creator always sets the initial scope.
   const canChangeScope = !isEdit || (collection?.permissions.canChangeScope ?? false)
   const attachableProgramIds = getAttachableProgramIds(currentUser)
 
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [type, setType] = useState<CollectionType>('sequence')
   const [visibility, setVisibility] = useState<CollectionVisibility>('private')
+  const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [hidden, setHidden] = useState(false)
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
   const [version, setVersion] = useState<number | null>(null)
@@ -116,6 +171,8 @@ export default function CollectionEditDialog({
     setDescription(source?.description ?? '')
     setType(source?.type ?? defaultType)
     setVisibility(source?.visibility ?? 'private')
+    setCategoryId(source?.categoryId ?? null)
+    setHidden(source?.hidden ?? false)
     setSelectedProgramIds(new Set(source?.programIds ?? []))
     setSelectedGroupIds(new Set(source?.groupIds ?? []))
     setVersion(source?.version ?? null)
@@ -179,6 +236,10 @@ export default function CollectionEditDialog({
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
   const canSubmit = name.trim().length > 0 && !scopeMissing && !saving && !deleting
+  // A collection filed inside a hidden category is hidden by ancestry, so its
+  // own hide control is disabled — the EditImageModal convention (#1566).
+  const categoryHidden = isEdit && isCategoryHiddenInTree(categories, categoryId)
+  const showHideControl = isEdit && collection?.permissions.canHide
 
   const handleSubmit = async () => {
     const trimmed = name.trim()
@@ -190,6 +251,8 @@ export default function CollectionEditDialog({
       visibility,
       programIds: restricted ? Array.from(selectedProgramIds) : [],
       groupIds: restricted ? Array.from(selectedGroupIds) : [],
+      categoryId,
+      hidden,
     }
     setSaving(true)
     setError(null)
@@ -234,11 +297,57 @@ export default function CollectionEditDialog({
     <Dialog
       open={open}
       onClose={saving || deleting ? undefined : onClose}
-      maxWidth="xs"
+      // Roomier than xs so the category picker can show long nested labels
+      // (#1566) — same width class as EditImageModal.
+      maxWidth="sm"
       fullWidth
       TransitionProps={{ onEntered: handleEntered }}
     >
-      <DialogTitle>{isEdit ? 'Edit Collection' : 'New Collection'}</DialogTitle>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {isEdit ? 'Edit Collection' : 'New Collection'}
+        {/* Curatorial hide/show as a form field (#1566) — the EditImageModal /
+            EditCategoryDialog title-link convention: it toggles local state
+            and persists on Save. "Hidden by Category" mirrors the image
+            modal's disabled state when the filing category is hidden. */}
+        {showHideControl &&
+          (categoryHidden ? (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<VisibilityOff />}
+              disabled
+              aria-label="Visibility: Hidden by category"
+              sx={{
+                '&.Mui-disabled': { color: visColors.inactive },
+                filter: 'grayscale(100%)',
+              }}
+            >
+              Hidden by Category
+            </Button>
+          ) : hidden ? (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<VisibilityOff />}
+              onClick={() => setHidden(false)}
+              aria-label="Visibility: Show collection"
+              sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+            >
+              Show Collection
+            </Button>
+          ) : (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<Visibility />}
+              onClick={() => setHidden(true)}
+              aria-label="Visibility: Hide collection"
+              color="primary"
+            >
+              Hide Collection
+            </Button>
+          ))}
+      </DialogTitle>
       <DialogContent>
         <TextField
           inputRef={inputRef}
@@ -256,6 +365,24 @@ export default function CollectionEditDialog({
             }
           }}
         />
+        {/* Category filing sits where EditImageModal puts it — right after
+            the name — and only renders for roles the move endpoint allows
+            (#1566). The picker's inline add/rename/hide affordances match
+            the shared move dialog's. */}
+        {isEdit && canFile && (
+          <Box sx={{ mt: 1 }}>
+            <CategoryPickerSelect
+              categories={categories}
+              value={categoryId}
+              onChange={setCategoryId}
+              onAddCategory={onAddCategory}
+              onEditCategory={onEditCategory}
+              onToggleVisibility={onToggleVisibility}
+              programs={programs}
+              groups={groups}
+            />
+          </Box>
+        )}
         <TextField
           margin="dense"
           label="Description"

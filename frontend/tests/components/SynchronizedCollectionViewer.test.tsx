@@ -702,7 +702,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
   })
 
-  it('hides Save view from non-editors but keeps Reset view', () => {
+  it('hides Save view from non-editors but keeps Restore view', () => {
     const collection = syncCollection({
       permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
     })

@@ -38,6 +38,16 @@ vi.mock('../../src/components/SynchronizedCollectionViewer', () => ({
   },
 }))
 
+// The Manage dialog is stubbed the same way — its own test file covers the
+// grid/DnD behaviour; here we only need the page wiring (#1566).
+const manageDialogProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/CollectionManageDialog', () => ({
+  default: (props: Record<string, unknown>) => {
+    manageDialogProps.current = props
+    return props.open ? <div data-testid="collection-manage" /> : null
+  },
+}))
+
 const ADMIN: User = {
   id: 1,
   name: 'Admin',
@@ -94,12 +104,13 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     selectedCollectionItemId: null,
     onSelectCollectionItem: vi.fn(),
     onReorderImages: vi.fn().mockResolvedValue(undefined),
+    onRemoveCollectionImages: vi.fn().mockResolvedValue(undefined),
     onCollectionImageRenewed: vi.fn(),
     onViewerError: vi.fn(),
     onSaveViewport: vi.fn().mockResolvedValue(undefined),
     loadCollection: vi.fn().mockResolvedValue(makeCollection()),
     onCreate: vi.fn().mockResolvedValue(undefined),
-    onUpdate: vi.fn().mockResolvedValue(undefined),
+    onUpdate: vi.fn().mockResolvedValue(makeCollection()),
     onDelete: vi.fn().mockResolvedValue(undefined),
     onSaveOwners: vi.fn().mockResolvedValue(undefined),
     onTransfer: vi.fn().mockResolvedValue(undefined),
@@ -125,6 +136,7 @@ describe('CollectionsPage', () => {
     vi.clearAllMocks()
     sequenceViewerProps.current = null
     synchronizedViewerProps.current = null
+    manageDialogProps.current = null
   })
 
   describe('list states', () => {
@@ -546,8 +558,10 @@ describe('CollectionsPage', () => {
       expect(onSelectCollectionItem).toHaveBeenCalledWith(21)
       ;(props.onOpenImage as (img: unknown) => void)(images[0])
       expect(onOpenImage).toHaveBeenCalledWith(images[0])
-      void (props.onReorder as (ids: number[]) => Promise<unknown>)([22, 21])
-      expect(onReorderImages).toHaveBeenCalledWith(9, [22, 21])
+      // Reorder moved off the viewer into the Manage dialog (#1566).
+      expect(props.onReorder).toBeUndefined()
+      // Hidden collections pass the filmstrip desaturation flag through.
+      expect(props.hidden).toBe(false)
       ;(props.onImageRenewed as (img: unknown) => void)({ id: 21 })
       expect(onCollectionImageRenewed).toHaveBeenCalledWith(9, { id: 21 })
       ;(props.onError as (m: string) => void)('boom')
@@ -761,25 +775,10 @@ describe('CollectionsPage', () => {
       expect(within(crumb).queryByRole('button', { name: 'Hematology' })).not.toBeInTheDocument()
     })
 
-    it('offers Move on the detail header for admins regardless of ownership', async () => {
-      const user = userEvent.setup()
-      const onMoveCollection = vi.fn()
-      const detail = makeCollection({
-        id: 9,
-        name: 'Filed one',
-        // Someone else's collection: filing is curatorial, not owner-scoped.
-        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
-      })
-      renderPage({ selectedCollectionId: 9, detail, onMoveCollection })
-      await user.click(screen.getByRole('button', { name: 'Move' }))
-      expect(onMoveCollection).toHaveBeenCalledWith(detail)
-    })
-
-    it('hides the detail Move button for non-curatorial roles', () => {
+    it('has no Move button on the detail header — filing moved into Edit (#1566)', () => {
       renderPage({
-        currentUser: STUDENT,
         selectedCollectionId: 9,
-        detail: makeCollection({ id: 9 }),
+        detail: makeCollection({ id: 9, name: 'Filed one' }),
         onMoveCollection: vi.fn(),
       })
       expect(screen.queryByRole('button', { name: 'Move' })).not.toBeInTheDocument()
@@ -821,30 +820,51 @@ describe('CollectionsPage', () => {
   })
 
   describe('detail header actions (#1559)', () => {
-    it('renders Reorder between Move and Edit for sequence collections and toggles the viewer', async () => {
+    it('renders Manage before Edit for both collection types and opens the member dialog (#1566)', async () => {
       const user = userEvent.setup()
-      renderPage({
-        selectedCollectionId: 9,
-        detail: makeCollection({ id: 9, type: 'sequence' }),
-        onMoveCollection: vi.fn(),
-      })
+      const detail = makeCollection({ id: 9, type: 'sequence' })
+      renderPage({ selectedCollectionId: 9, detail })
       const buttons = screen.getAllByRole('button').map((b) => b.textContent)
-      const order = ['Move', 'Reorder', 'Edit'].map((label) => buttons.indexOf(label))
+      const order = ['Manage', 'Edit'].map((label) => buttons.indexOf(label))
       expect(order.every((i) => i >= 0)).toBe(true)
       expect(order).toEqual([...order].sort((a, b) => a - b))
 
-      await user.click(screen.getByTestId('sequence-reorder-toggle'))
-      expect(screen.getByTestId('sequence-reorder-toggle')).toHaveTextContent('Done')
-      expect(sequenceViewerProps.current?.reordering).toBe(true)
+      await user.click(screen.getByRole('button', { name: 'Manage' }))
+      expect(screen.getByTestId('collection-manage')).toBeInTheDocument()
+
+      // Synchronized collections get the same surface.
+      renderPage({
+        selectedCollectionId: 10,
+        detail: makeCollection({ id: 10, type: 'synchronized' }),
+      })
+      expect(screen.getAllByRole('button', { name: 'Manage' }).length).toBeGreaterThan(0)
     })
 
-    it('omits Reorder for synchronized collections and non-editors', () => {
+    it('wires the Manage dialog through the shared mutation handlers (#1566)', async () => {
+      const user = userEvent.setup()
+      const onReorderImages = vi.fn().mockResolvedValue(undefined)
+      const onRemoveCollectionImages = vi.fn().mockResolvedValue(undefined)
+      const onRequestCollectionImageSearch = vi.fn()
+      const detail = makeCollection({ id: 9, type: 'sequence' })
       renderPage({
         selectedCollectionId: 9,
-        detail: makeCollection({ id: 9, type: 'synchronized' }),
+        detail,
+        onReorderImages,
+        onRemoveCollectionImages,
+        onRequestCollectionImageSearch,
       })
-      expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Manage' }))
+      const props = manageDialogProps.current!
+      expect(props.collection).toBe(detail)
+      void (props.onReorder as (ids: number[]) => Promise<unknown>)([22, 21])
+      expect(onReorderImages).toHaveBeenCalledWith(9, [22, 21])
+      void (props.onRemoveImages as (ids: number[]) => Promise<unknown>)([22])
+      expect(onRemoveCollectionImages).toHaveBeenCalledWith(9, [22])
+      ;(props.onAddImages as () => void)()
+      expect(onRequestCollectionImageSearch).toHaveBeenCalledWith(detail)
+    })
 
+    it('omits Manage for non-editors', () => {
       renderPage({
         selectedCollectionId: 9,
         detail: makeCollection({
@@ -853,19 +873,18 @@ describe('CollectionsPage', () => {
           permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       })
-      expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
     })
 
     it('keeps the actions on the breadcrumb row and the pills above the description (#1564)', () => {
       renderPage({
         selectedCollectionId: 9,
         detail: makeCollection({ id: 9, visibility: 'public', description: 'Two views' }),
-        onMoveCollection: vi.fn(),
       })
       const crumb = screen.getByTestId('collection-breadcrumb')
-      const move = screen.getByRole('button', { name: 'Move' })
+      const manage = screen.getByRole('button', { name: 'Manage' })
       // Breadcrumb precedes the action buttons in the shared top row…
-      expect(crumb.compareDocumentPosition(move) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(crumb.compareDocumentPosition(manage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       const typeChip = screen.getByText('Synchronized')
       const visChip = screen.getByTestId('collection-visibility-chip')
       const description = screen.getByText('Two views')
@@ -877,20 +896,32 @@ describe('CollectionsPage', () => {
       expect(
         visChip.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
-      expect(move.compareDocumentPosition(typeChip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(
+        manage.compareDocumentPosition(typeChip) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     })
 
-    it('shows the Hidden chip and Show link on a hidden collection', () => {
+    it('shows the Hidden chip, Show link, and desaturated actions on a hidden collection (#1566)', () => {
       renderPage({
         selectedCollectionId: 9,
         detail: makeCollection({
           id: 9,
+          type: 'sequence',
           hidden: true,
           permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
         }),
       })
       expect(screen.getByTestId('collection-hidden-chip')).toHaveTextContent('Hidden')
       expect(screen.getByRole('button', { name: 'Show collection' })).toBeInTheDocument()
+      // The action buttons greyscale like the hidden image view's controls.
+      expect(screen.getByRole('button', { name: 'Manage' })).toHaveStyle({
+        filter: 'grayscale(100%)',
+      })
+      expect(screen.getByRole('button', { name: 'Edit' })).toHaveStyle({
+        filter: 'grayscale(100%)',
+      })
+      // …and the flag reaches the viewer so the filmstrip desaturates too.
+      expect(sequenceViewerProps.current?.hidden).toBe(true)
     })
 
     it('gates the hide/show link on canHide', () => {
@@ -933,6 +964,38 @@ describe('CollectionsPage', () => {
       await waitFor(() =>
         expect(onViewerError).toHaveBeenCalledWith('Failed to update the collection.'),
       )
+    })
+
+    it('turns a category change in the edit dialog into a move (#1566)', async () => {
+      const user = userEvent.setup()
+      const onUpdate = vi
+        .fn()
+        .mockResolvedValue(makeCollection({ id: 9, name: 'Lab 2', categoryId: 10 }))
+      const onMoveCollectionToCategory = vi.fn().mockResolvedValue(undefined)
+      const detail = makeCollection({
+        id: 9,
+        name: 'Lab 2',
+        categoryId: 10,
+        permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+      })
+      renderPage({
+        selectedCollectionId: 9,
+        detail,
+        categories: [
+          makeCategory({ id: 10, label: 'Histology' }),
+          makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
+        ],
+        onUpdate,
+        onMoveCollectionToCategory,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(await screen.findByRole('combobox', { name: 'Category' }))
+      await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onMoveCollectionToCategory).toHaveBeenCalled())
+      const [movedCollection, targetId] = onMoveCollectionToCategory.mock.calls[0]
+      expect(movedCollection.id).toBe(9)
+      expect(targetId).toBe(20)
     })
   })
 })

@@ -18,7 +18,6 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { visuallyHidden } from '@mui/utils'
 import AddIcon from '@mui/icons-material/Add'
-import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
@@ -129,11 +128,28 @@ export interface ManageCollectionsPageProps {
    */
   onNavigateCategory?: (categoryPath: Category[]) => void
   /**
-   * Open the shared MoveCollectionDialog (admin/instructor filing, #1529);
-   * the page refetches once `categories` refreshes, so no completion signal
-   * is needed. Omit to hide the affordance.
+   * Category filing saved straight from the Edit dialog's picker (#1566) —
+   * routes through the shared move path (POST …/move + snackbar + undo).
+   * Superseded the row-level Move affordance.
    */
-  onMoveCollection?: (collection: CollectionSummary) => void
+  onMoveCollectionToCategory?: (
+    collection: CollectionSummary,
+    categoryId: number | null,
+  ) => Promise<unknown>
+  /** Edit dialog category picker's inline affordances (#1566). */
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleCategoryVisibility?: (categoryId: number) => Promise<void>
   /** Open the collection detail view (`?collection={id}`) — read-only rows. */
   onOpenCollection: (id: number) => void
   /** Route mutation failures to the page-level snackbar. */
@@ -159,17 +175,19 @@ export default function ManageCollectionsPage({
   categories,
   programs,
   groups,
-  currentUser,
+  // `currentUser` stays in props — the edit dialog reads filing rights from
+  // AuthContext directly; this page no longer gates anything by role (#1566).
   onNavigateCategory,
-  onMoveCollection,
+  onMoveCollectionToCategory,
+  onAddCategory,
+  onEditCategory,
+  onToggleCategoryVisibility,
   onOpenCollection,
   onError,
   loadCollections = fetchCollections,
 }: ManageCollectionsPageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
-  const showMove = canFileCollections && onMoveCollection != null
 
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -414,7 +432,15 @@ export default function ManageCollectionsPage({
     baseline: Collection | null,
   ) => {
     if (editing && version != null) {
-      await updateCollection(editing.id, toCollectionPatch(values, baseline, version))
+      const updated = await updateCollection(
+        editing.id,
+        toCollectionPatch(values, baseline, version),
+      )
+      // Category filing is a move, not a PATCH (#1566) — apply it after the
+      // metadata save so the move posts the just-refreshed version.
+      if (values.categoryId !== (baseline?.categoryId ?? null)) {
+        await onMoveCollectionToCategory?.(apiCollectionToCollection(updated), values.categoryId)
+      }
     } else {
       await createCollection({
         name: values.name,
@@ -874,17 +900,6 @@ export default function ManageCollectionsPage({
                         </IconButton>
                       </Tooltip>
                     )}
-                    {showMove && (
-                      <Tooltip title="Move to category">
-                        <IconButton
-                          size="small"
-                          aria-label={`Move ${c.name} to a category`}
-                          onClick={() => onMoveCollection?.(c)}
-                        >
-                          <DriveFileMoveIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
                   </TableCell>
                 </TableRow>
               )
@@ -930,6 +945,10 @@ export default function ManageCollectionsPage({
         groups={groups}
         onSave={handleSave}
         onDelete={editing?.permissions.canDelete ? deleteFromDialog : undefined}
+        categories={categories}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
       />
 
       <CollectionOwnersDialog

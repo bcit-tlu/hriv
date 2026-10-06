@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
@@ -13,10 +13,8 @@ import Select from '@mui/material/Select'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
-import DoneIcon from '@mui/icons-material/Done'
-import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
-import ReorderIcon from '@mui/icons-material/Reorder'
+import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
@@ -44,6 +42,7 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import CollectionManageDialog from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
@@ -72,7 +71,10 @@ export interface CollectionsPageProps {
   /** Sequence viewer state (`?item=` position) and mutations (#1416). */
   selectedCollectionItemId: number | null
   onSelectCollectionItem: (imageId: number) => void
+  /** Whole-replace member order — drives the Manage dialog's reorder (#1566). */
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
+  /** Remove members via whole-replace — the Manage dialog's trash (#1566). */
+  onRemoveCollectionImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
@@ -85,7 +87,7 @@ export interface CollectionsPageProps {
     values: CollectionFormValues,
     version: number,
     baseline: Collection | null,
-  ) => Promise<unknown>
+  ) => Promise<Collection>
   onDelete: (id: number) => Promise<void>
   /** Replace the user-owner set (`PUT …/owners`, #1531) — `canTransfer`-gated. */
   onSaveOwners: (id: number, userIds: number[]) => Promise<unknown>
@@ -97,8 +99,35 @@ export interface CollectionsPageProps {
    * the dialog + snackbar.
    */
   onMoveCollection?: (collection: CollectionSummary) => void
+  /**
+   * Category filing saved straight from the Edit dialog's picker (#1566) —
+   * routes through the shared move path (POST …/move + snackbar + undo).
+   */
+  onMoveCollectionToCategory?: (
+    collection: CollectionSummary,
+    categoryId: number | null,
+  ) => Promise<unknown>
+  /**
+   * Manage dialog "+" affordance (#1566): opens the global search modal so
+   * picked images land in this collection through the standard add flow.
+   */
+  onRequestCollectionImageSearch?: (collection: Collection) => void
   /** Browse category tree — resolves the detail breadcrumb's location (#1559). */
   categories: Category[]
+  /** Edit dialog category picker's inline affordances (#1566). */
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleCategoryVisibility?: (categoryId: number) => Promise<void>
   /**
    * Navigate to a Browse category path (`[]` = root). The detail header's
    * breadcrumb uses this: `Home : …ancestors : collection name` (#1559).
@@ -134,9 +163,7 @@ function CollectionDetailHeader({
   onNavigateCategory,
   onEdit,
   onTransfer,
-  onMove,
-  reordering,
-  onToggleReorder,
+  onManage,
   togglingHidden,
   onToggleHidden,
 }: {
@@ -147,10 +174,8 @@ function CollectionDetailHeader({
   onNavigateCategory: (categoryPath: Category[]) => void
   onEdit?: () => void
   onTransfer?: () => void
-  onMove?: () => void
-  /** Sequence collections only: controlled reorder mode lifted from the viewer. */
-  reordering?: boolean
-  onToggleReorder?: () => void
+  /** Opens the member Manage dialog (#1566) — replaces the Reorder toggle. */
+  onManage?: () => void
   togglingHidden?: boolean
   onToggleHidden?: () => void
 }) {
@@ -161,6 +186,10 @@ function CollectionDetailHeader({
   const ownerText = programOwner
     ? `Managed by program ${programOwner.name}`
     : describeCollectionOwners(collection.owners)
+  // Hidden collections desaturate their controls like the hidden-image view's
+  // `inactiveViewerActionSx` (#1566) — chips, Manage/Edit/Owners, and the
+  // Hide link; the viewer imagery stays in color (same as the image page).
+  const hiddenSx = collection.hidden ? { filter: 'grayscale(100%)' } : undefined
   return (
     <>
       {/* Top container mirrors the image view header (#1564): breadcrumb +
@@ -240,6 +269,7 @@ function CollectionDetailHeader({
                   color="primary"
                   data-testid="detail-program-chip"
                   label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                  sx={hiddenSx}
                 />
               ))}
               {collection.groupIds.map((gid) => (
@@ -248,7 +278,7 @@ function CollectionDetailHeader({
                   size="small"
                   data-testid="detail-group-chip"
                   label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
-                  sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText }}
+                  sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText, ...hiddenSx }}
                 />
               ))}
             </>
@@ -274,30 +304,29 @@ function CollectionDetailHeader({
               {collection.hidden ? 'Show collection' : 'Hide collection'}
             </Button>
           )}
-          {onMove && (
+          {/* Manage opens the member dialog (reorder/add/remove, #1566) — it
+              replaces the old sequence-only Reorder toggle and applies to
+              both collection types. */}
+          {onManage && collection.permissions.canEdit && (
             <Button
               variant="outlined"
               size="small"
-              startIcon={<DriveFileMoveIcon />}
-              onClick={onMove}
+              startIcon={<ViewModuleIcon />}
+              onClick={onManage}
+              data-testid="collection-manage-open"
+              sx={hiddenSx}
             >
-              Move
-            </Button>
-          )}
-          {onToggleReorder && collection.permissions.canEdit && (
-            <Button
-              variant={reordering ? 'contained' : 'outlined'}
-              size="small"
-              startIcon={reordering ? <DoneIcon /> : <ReorderIcon />}
-              onClick={onToggleReorder}
-              aria-pressed={reordering}
-              data-testid="sequence-reorder-toggle"
-            >
-              {reordering ? 'Done' : 'Reorder'}
+              Manage
             </Button>
           )}
           {collection.permissions.canEdit && onEdit && (
-            <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={onEdit}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<EditIcon />}
+              onClick={onEdit}
+              sx={hiddenSx}
+            >
               Edit
             </Button>
           )}
@@ -307,6 +336,7 @@ function CollectionDetailHeader({
               size="small"
               startIcon={<SwapHorizIcon />}
               onClick={onTransfer}
+              sx={hiddenSx}
             >
               Owners
             </Button>
@@ -330,8 +360,11 @@ function CollectionDetailHeader({
           variant="outlined"
           color="primary"
           label={COLLECTION_TYPE_LABELS[collection.type]}
+          sx={hiddenSx}
         />
-        <CollectionVisibilityChip visibility={collection.visibility} />
+        <Box sx={hiddenSx}>
+          <CollectionVisibilityChip visibility={collection.visibility} />
+        </Box>
         {collection.hidden && (
           <Chip
             size="small"
@@ -386,6 +419,7 @@ export default function CollectionsPage({
   selectedCollectionItemId,
   onSelectCollectionItem,
   onReorderImages,
+  onRemoveCollectionImages,
   onCollectionImageRenewed,
   onViewerError,
   onSaveViewport,
@@ -396,7 +430,12 @@ export default function CollectionsPage({
   onSaveOwners,
   onTransfer,
   onMoveCollection,
+  onMoveCollectionToCategory,
+  onRequestCollectionImageSearch,
   categories,
+  onAddCategory,
+  onEditCategory,
+  onToggleCategoryVisibility,
   onNavigateCategory,
   onToggleHidden,
   collectionPageType,
@@ -406,14 +445,9 @@ export default function CollectionsPage({
   const [editLoadError, setEditLoadError] = useState<string | null>(null)
   const [transferTarget, setTransferTarget] = useState<CollectionSummary | null>(null)
   const [togglingHidden, setTogglingHidden] = useState(false)
-  // Reorder mode for the sequence viewer — lifted so its toggle lives in
-  // the detail header between Move and Edit (#1559). Resets whenever the
-  // open collection changes or the detail closes.
-  const [reordering, setReordering] = useState(false)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset reorder mode when a different collection opens
-    setReordering(false)
-  }, [selectedCollectionId])
+  // Member-management dialog (#1566) — reorder/add/remove live here now that
+  // the sequence viewer's inline reorder mode is gone.
+  const [manageOpen, setManageOpen] = useState(false)
   const editRequestRef = useRef(0)
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
@@ -476,7 +510,12 @@ export default function CollectionsPage({
     baseline: Collection | null,
   ) => {
     if (editing && version != null) {
-      await onUpdate(editing.id, values, version, baseline)
+      const updated = await onUpdate(editing.id, values, version, baseline)
+      // Category filing is a move, not a PATCH (#1566) — apply it after the
+      // metadata save so the move posts the just-refreshed version.
+      if (values.categoryId !== (baseline?.categoryId ?? null)) {
+        await onMoveCollectionToCategory?.(updated, values.categoryId)
+      }
     } else {
       await onCreate(values)
     }
@@ -530,11 +569,7 @@ export default function CollectionsPage({
             onNavigateCategory={onNavigateCategory}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
-            onMove={
-              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
-            }
-            reordering={reordering}
-            onToggleReorder={() => setReordering((v) => !v)}
+            onManage={() => setManageOpen(true)}
             togglingHidden={togglingHidden}
             onToggleHidden={handleToggleHidden}
           />
@@ -543,11 +578,9 @@ export default function CollectionsPage({
             itemId={selectedCollectionItemId}
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
-            onReorder={(imageIds) => onReorderImages(detail.id, imageIds)}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
-            reordering={reordering}
-            onReorderingChange={setReordering}
+            hidden={detail.hidden}
           />
         </Box>
       )
@@ -562,9 +595,7 @@ export default function CollectionsPage({
             onNavigateCategory={onNavigateCategory}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
-            onMove={
-              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
-            }
+            onManage={() => setManageOpen(true)}
             togglingHidden={togglingHidden}
             onToggleHidden={handleToggleHidden}
           />
@@ -707,6 +738,32 @@ export default function CollectionsPage({
         groups={groups}
         onSave={handleSave}
         onDelete={editing?.permissions.canDelete ? deleteFromDialog : undefined}
+        categories={categories}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
+      />
+
+      {/* The Manage dialog stays mounted while open so the grid keeps its
+          DnD context; membership edits flow back through the data hook and
+          re-render the detail behind it (#1566). */}
+      <CollectionManageDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        collection={detail}
+        onReorder={(imageIds) =>
+          detail ? onReorderImages(detail.id, imageIds) : Promise.resolve()
+        }
+        onRemoveImages={(imageIds) =>
+          detail ? onRemoveCollectionImages(detail.id, imageIds) : Promise.resolve()
+        }
+        onAddImages={
+          detail && onRequestCollectionImageSearch
+            ? () => onRequestCollectionImageSearch(detail)
+            : undefined
+        }
+        onImageRenewed={(image) => detail && onCollectionImageRenewed(detail.id, image)}
+        onError={onViewerError}
       />
 
       <CollectionOwnersDialog

@@ -106,17 +106,14 @@ const EMPTY = makeCollection([], true)
 interface StoryArgs {
   collection: Collection
   itemId: number | null
-  reordering: boolean
   onSelectItem: (id: number) => void
   onOpenImage: (image: ImageItem) => void
-  onReorder: (imageIds: number[]) => Promise<void>
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
 }
 
 function SequenceViewerExample(args: StoryArgs) {
   const [itemId, setItemId] = useState<number | null>(args.itemId)
-  const [reordering, setReordering] = useState(args.reordering)
   const user = makeUser()
   return (
     <AuthContext.Provider value={makeAuth(user)}>
@@ -128,11 +125,8 @@ function SequenceViewerExample(args: StoryArgs) {
           args.onSelectItem(id)
         }}
         onOpenImage={args.onOpenImage}
-        onReorder={args.onReorder}
         onImageRenewed={args.onImageRenewed}
         onError={args.onError}
-        reordering={reordering}
-        onReorderingChange={setReordering}
       />
     </AuthContext.Provider>
   )
@@ -149,17 +143,15 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image link, autofocused arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
+          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image link, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566).',
       },
     },
   },
   args: {
     collection: MANY_IMAGES,
     itemId: null,
-    reordering: false,
     onSelectItem: fn(),
     onOpenImage: fn(),
-    onReorder: fn(async () => undefined),
     onImageRenewed: fn(),
     onError: fn(),
   },
@@ -193,27 +185,11 @@ export const SingleImage: Story = {
   },
 }
 
-export const ReorderMode: Story = {
-  name: 'Reorder Mode',
-  args: { collection: MANY_IMAGES, reordering: true },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    // The Reorder/Done toggle lives in the collection detail header (#1559);
-    // the viewer receives `reordering` as a controlled prop.
-    await expect(
-      canvas.getByText('Drag the thumbnails to reorder the sequence, then choose Done.'),
-    ).toBeInTheDocument()
-  },
-}
-
 export const ReadOnlyMember: Story = {
   name: 'Read-Only Member',
   args: { collection: READ_ONLY },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(
-      canvas.queryByText('Drag the thumbnails to reorder the sequence, then choose Done.'),
-    ).not.toBeInTheDocument()
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 2')
   },
 }

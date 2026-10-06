@@ -35,7 +35,7 @@ with annotations and measurement markings visible on each.
 - The **pin** at the top-right of each pane keeps it linked to the others —
   panes start pinned. Click it to unpin a pane and adjust it on its own;
   click again to re-pin, which keeps the new relative positions.
-- **Reset view** returns every pane to the saved view (or its starting
+- **Restore view** returns every pane to the saved view (or its starting
   position if none was saved).
 - On a phone held upright the panes are replaced by a hint to rotate to
   landscape — your view is still there when you rotate back.
@@ -63,9 +63,11 @@ visible but can't be changed here.
   (`n of N` — part of the page link, so copying the URL shares the exact
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.
-- If you can edit the collection, a **Reorder** button in the top-right
-  header (between **Move** and **Edit**) turns the thumbnail strip into a
-  drag-and-drop list; drag images into place and choose **Done**.
+- If you can edit the collection, a **Manage** button in the top-right
+  header opens a dialog of thumbnails — a miniature Browse view. Drag
+  thumbnails to reorder, drop one on the trash drop target (or click its
+  corner remove icon) to take it out of the collection, and click **+** to
+  add images through search. This works for synchronized collections too.
 
 The breadcrumb at the top of the page shows where the collection lives in
 Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each
@@ -136,8 +138,8 @@ page shows its filed location and links back into Browse.
   viewer.
 - Admins and instructors can **file** a collection into a category (or back
   to the top level) with the card's **Move** action (the folder icon in the
-  cover's top-right corner, or the **Move** button on the collection page),
-  or by dragging the tile
+  cover's top-right corner), the **Category** picker in the collection's
+  edit dialog, or by dragging the tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not
   ownership-bound — any admin/instructor can file any collection.
 - A category tile's detail line counts the collections inside its subtree
@@ -148,7 +150,8 @@ page shows its filed location and links back into Browse.
 ## Hide or show a collection (instructors and admins)
 
 Curators can hide a collection with the **Hide collection** link at the top
-right of the collection page — like hiding an image or a category. A hidden
+right of the collection page or the **Hide Collection** link in the edit
+dialog's title row — like hiding an image or a category. A hidden
 collection:
 
 - disappears from students' lists, Browse tiles, and search results —
@@ -186,10 +189,12 @@ collection can have several user co-owners plus, or instead of, a program
 owner.
 
 - **Edit** lets you change the name, description, visibility, and — for
-  restricted collections — the programs and groups. Student co-owners can
-  change the name, description and images, but the visibility and program /
-  group scope stay locked (they can only change those on a collection they
-  own alone).
+  restricted collections — the programs and groups. Admins and instructors
+  also get a **Category** picker that refiles the collection in Browse.
+  Student co-owners can
+  change the name, description and images, but the visibility, category and
+  program / group scope stay locked (they can only change those on a
+  collection they own alone).
 - **Delete Collection** lives inside the edit dialog, at the bottom — click
   once to arm, then again to confirm. Deleting a collection never deletes
   the images in it. Co-owned and program-owned collections can't be deleted
@@ -241,8 +246,9 @@ The **Manage → Collections** table lists every collection you can see —
 both types together — in sortable columns with filter facets for name,
 type, visibility, owner, and category. The **Category** column links into
 Browse at that location. Rows offer the same actions the cards do where you
-have permission: **Edit**, **Owners**, and (admins/instructors) **Move** —
-while delete stays inside the edit dialog. Clicking a row you can edit opens
+have permission: **Edit** and **Owners** — filing lives in the edit
+dialog's Category picker, and delete stays inside the edit dialog. Clicking
+a row you can edit opens
 the editor; clicking a read-only row opens the collection itself.
 
 ## Share a link

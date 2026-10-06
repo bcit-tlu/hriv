@@ -71,7 +71,6 @@ import {
 } from './collectionUtils'
 import { useCollectionsData } from './useCollectionsData'
 import {
-  addImagesToCollection,
   createCollectionWithImages,
   useEditableCollections,
   useVisibleCollections,
@@ -109,7 +108,7 @@ import {
   useProcessingJobs,
 } from './useProcessingJobs'
 import type { ProcessingJob } from './useProcessingJobs'
-import type { Category, Group, ImageItem } from './types'
+import type { Category, Collection, Group, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
@@ -1263,6 +1262,7 @@ export default function App() {
     setMovingCollection,
     handleRequestMoveCollection,
     handleMoveCollection,
+    moveCollectionTo,
     handleDropCollectionOnCategory,
     handleDropImageOnCollection,
     handleSetCardImage,
@@ -1770,9 +1770,12 @@ export default function App() {
   // renders them (#1529) — the manage-categories dialog shares that list so
   // its submitted orders carry collection members (issue #1528).
 
-  const handleSearchAddToCollection = useCallback((imageIds: number[]) => {
-    setAddToCollectionImageIds(imageIds)
-    setAddToCollectionOpen(true)
+  // The collection Manage dialog's "+" (#1566): records the target so search
+  // picks go straight into that collection instead of the picker dialog.
+  const manageSearchTarget = useRef<Collection | null>(null)
+  const requestCollectionImageSearch = useCallback((collection: Collection) => {
+    manageSearchTarget.current = collection
+    setSearchOpen(true)
   }, [])
 
   const reportAddedToCollection = useCallback(
@@ -1795,10 +1798,16 @@ export default function App() {
   )
 
   const handleAddToCollection = useCallback(
-    async (collection: { id: number; name: string }): Promise<boolean> => {
-      if (addToCollectionImageIds.length === 0) return true
+    async (
+      collection: { id: number; name: string },
+      imageIdsOverride?: number[],
+    ): Promise<boolean> => {
+      const imageIds = imageIdsOverride ?? addToCollectionImageIds
+      if (imageIds.length === 0) return true
       try {
-        const result = await addImagesToCollection(collection.id, addToCollectionImageIds)
+        // collectionsData.addImages merges the result into the open detail,
+        // so a Manage dialog left open behind the search modal updates live.
+        const result = await collectionsData.addImages(collection.id, imageIds)
         if (result.status === 'added') {
           reportAddedToCollection(result.collection, result.addedCount)
           return true
@@ -1816,7 +1825,22 @@ export default function App() {
         return false
       }
     },
-    [addToCollectionImageIds, reportAddedToCollection],
+    [addToCollectionImageIds, collectionsData, reportAddedToCollection],
+  )
+
+  const handleSearchAddToCollection = useCallback(
+    (imageIds: number[]) => {
+      const target = manageSearchTarget.current
+      manageSearchTarget.current = null
+      if (target) {
+        // Skip the picker — the manage dialog already identified the target.
+        void handleAddToCollection(target, imageIds)
+        return
+      }
+      setAddToCollectionImageIds(imageIds)
+      setAddToCollectionOpen(true)
+    },
+    [handleAddToCollection],
   )
 
   const handleCreateCollectionWithImage = useCallback(
@@ -1953,6 +1977,7 @@ export default function App() {
               selectedCollectionItemId={selectedCollectionItemId}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
+              onRemoveCollectionImages={collectionsData.removeImages}
               onCollectionImageRenewed={collectionsData.renewCollectionImage}
               onViewerError={setErrorSnack}
               onSaveViewport={collectionsData.saveViewport}
@@ -1963,7 +1988,12 @@ export default function App() {
               onSaveOwners={collectionsData.saveOwners}
               onTransfer={collectionsData.transfer}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
+              onRequestCollectionImageSearch={requestCollectionImageSearch}
               categories={categories}
+              onAddCategory={addCategoryInline}
+              onEditCategory={editCategoryInline}
+              onToggleCategoryVisibility={toggleCategoryVisibility}
               onNavigateCategory={handleNavigateBrowseFromCollection}
               onToggleHidden={(collection) =>
                 collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
@@ -1995,7 +2025,10 @@ export default function App() {
                   )
                 })
               }}
-              onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
+              onAddCategory={addCategoryInline}
+              onEditCategory={editCategoryInline}
+              onToggleCategoryVisibility={toggleCategoryVisibility}
               onOpenCollection={(id) => handleOpenCollection(id)}
               onError={setErrorSnack}
             />
@@ -3105,6 +3138,9 @@ export default function App() {
           setSearchOpen(false)
           setSearchInitialQuery(undefined)
           setSearchInitialTypeFilter(undefined)
+          // Closing without picking clears the manage-dialog add target
+          // (#1566), so a later generic search can't misroute its selection.
+          manageSearchTarget.current = null
         }}
         initialQuery={searchInitialQuery}
         initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}

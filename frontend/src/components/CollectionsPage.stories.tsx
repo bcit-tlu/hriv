@@ -249,12 +249,13 @@ function CollectionsPageExample(args: StoryArgs) {
           selectedCollectionItemId={null}
           onSelectCollectionItem={() => undefined}
           onReorderImages={async () => undefined}
+          onRemoveCollectionImages={async () => undefined}
           onCollectionImageRenewed={() => undefined}
           onViewerError={() => undefined}
           onSaveViewport={async () => undefined}
           loadCollection={async () => detail}
           onCreate={async () => undefined}
-          onUpdate={async () => undefined}
+          onUpdate={async () => detail}
           onDelete={async () => undefined}
           onSaveOwners={async () => undefined}
           onTransfer={async () => undefined}

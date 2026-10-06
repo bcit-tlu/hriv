@@ -68,7 +68,8 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
         label={label}
         size="small"
         variant="outlined"
-        icon={<PublicIcon />}
+        // Icon sized to the restricted-category lock convention (#1566).
+        icon={<PublicIcon sx={{ fontSize: 14 }} />}
       />
     )
   }
@@ -77,7 +78,7 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
       data-testid="collection-visibility-chip"
       label={label}
       size="small"
-      icon={<LockIcon />}
+      icon={<LockIcon sx={{ fontSize: 14 }} />}
       sx={{
         bgcolor: visColors.inactiveChipBg,
         color: '#fff',

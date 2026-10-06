@@ -6,8 +6,8 @@ import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionEditDialog from '../../src/components/CollectionEditDialog'
 import type { CollectionEditDialogProps } from '../../src/components/CollectionEditDialog'
 import { ApiError } from '../../src/api'
-import type { Group, Program, Role } from '../../src/types'
-import { makeApiCollection, makeCollection } from '../helpers/fixtures'
+import type { Category, Group, Program, Role } from '../../src/types'
+import { makeApiCollection, makeCategory, makeCollection } from '../helpers/fixtures'
 
 function makeAuth(role: Role, overrides: { id?: number; program_ids?: number[] } = {}) {
   return {
@@ -82,6 +82,10 @@ function renderDialog(
         programs={props.programs ?? PROGRAMS}
         groups={props.groups ?? GROUPS}
         onDelete={props.onDelete}
+        categories={props.categories}
+        onAddCategory={props.onAddCategory}
+        onEditCategory={props.onEditCategory}
+        onToggleVisibility={props.onToggleVisibility}
       />
     </AuthContext.Provider>,
   )
@@ -124,6 +128,8 @@ describe('CollectionEditDialog', () => {
           visibility: 'public',
           programIds: [],
           groupIds: [],
+          categoryId: null,
+          hidden: false,
         },
         null,
         null,
@@ -179,6 +185,89 @@ describe('CollectionEditDialog', () => {
       expect(chipA).toHaveClass('MuiChip-outlined')
       const cohort2 = screen.getByText('Cohort 2').closest('[data-testid="group-chip"]')!
       expect(cohort2).toHaveClass('MuiChip-filled')
+    })
+
+    it('offers the category picker to curatorial roles and saves the filing (#1566)', async () => {
+      const user = userEvent.setup()
+      const categories: Category[] = [
+        makeCategory({ id: 10, label: 'Histology' }),
+        makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
+      ]
+      const { onSave } = renderDialog({
+        collection: makeCollection({ name: 'Lab 2', categoryId: 10 }),
+        categories,
+      })
+      const picker = screen.getByRole('combobox', { name: 'Category' })
+      expect(picker).toHaveTextContent('Histology')
+
+      // Pick the child category — saved as `categoryId`; the caller turns
+      // the change into a move call.
+      await user.click(picker)
+      await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      expect(onSave.mock.calls[0][0]).toMatchObject({ categoryId: 20 })
+    })
+
+    it('omits the category picker in create mode and for non-curatorial roles', () => {
+      renderDialog({ categories: [makeCategory({ id: 10, label: 'Histology' })] })
+      expect(screen.queryByRole('combobox', { name: 'Category' })).not.toBeInTheDocument()
+
+      renderDialog(
+        {
+          collection: makeCollection({ name: 'Mine' }),
+          categories: [makeCategory({ id: 10, label: 'Histology' })],
+        },
+        makeAuth('staff'),
+      )
+      expect(screen.queryByRole('combobox', { name: 'Category' })).not.toBeInTheDocument()
+    })
+
+    it('toggles local hidden state via the title link — committed on Save (#1566)', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      renderDialog({
+        onSave,
+        collection: makeCollection({
+          name: 'Mine',
+          permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: true },
+        }),
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility: Hide collection' }))
+      expect(
+        screen.getByRole('button', { name: 'Visibility: Show collection' }),
+      ).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      expect(onSave.mock.calls[0][0]).toMatchObject({ hidden: true })
+    })
+
+    it('disables the hide link when the filing category is hidden (#1566)', () => {
+      renderDialog({
+        collection: makeCollection({
+          name: 'Mine',
+          categoryId: 10,
+          permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: true },
+        }),
+        categories: [makeCategory({ id: 10, label: 'Hidden cat', status: 'hidden' })],
+      })
+      const btn = screen.getByRole('button', { name: /hidden by category/i })
+      expect(btn).toBeDisabled()
+    })
+
+    it('shows no hide link in create mode or without canHide', () => {
+      renderDialog()
+      expect(
+        screen.queryByRole('button', { name: /visibility: hide collection/i }),
+      ).not.toBeInTheDocument()
+      renderDialog({
+        collection: makeCollection({
+          permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: false },
+        }),
+      })
+      expect(
+        screen.queryByRole('button', { name: /visibility: hide collection/i }),
+      ).not.toBeInTheDocument()
     })
   })
 

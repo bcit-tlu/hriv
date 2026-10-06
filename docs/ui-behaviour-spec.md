@@ -250,8 +250,9 @@ returned by the API (UX only — the backend re-checks).
   browse.
 - **Given** a staff user on the manage table, **Then** every API-returned row
   shows and row actions follow `permissions` — Edit only where `canEdit`,
-  and never Move/Owners/Delete; **Given** an admin or instructor, **Then**
-  Move and (where `canTransfer`) Owners are also offered.
+  and never Owners/Delete; **Given** an admin or instructor, **Then**
+  (where `canTransfer`) Owners is also offered. No row carries a Move action
+  — category filing lives in the edit dialog's category picker (#1566).
 - **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then**
   the staged state shows the current user owners as chips plus the owning
   program. The **User owners** autocomplete offers scope tabs — _Students_
@@ -287,9 +288,11 @@ returned by the API (UX only — the backend re-checks).
   Browse to that spot. **Then**
   the actions order: **Hide
   collection** / **Show collection** (`canHide` — admins and instructors
-  only; PATCHes `hidden` with the OCC version), **Move** (admin/instructor),
-  **Reorder** (sequence + `canEdit` — the viewer's strip goes into drag mode
-  while pressed), **Edit** (`canEdit`), and **Owners** (`canTransfer`).
+  only; PATCHes `hidden` with the OCC version), **Manage** (`canEdit` —
+  opens `CollectionManageDialog` for reorder/add/remove, #1566),
+  **Edit** (`canEdit`), and **Owners** (`canTransfer`). The header no longer
+  carries **Move** — filing happens in the edit dialog's category picker
+  (#1566).
 - **Given** a curatorially hidden collection, **Then** non-students see it
   everywhere with the desaturated card treatment and a `VisibilityOff`
   marker (card name, Manage → Collections Name cell, `Hidden` chip on the
@@ -309,10 +312,11 @@ returned by the API (UX only — the backend re-checks).
 - **Given** the flag is off, **Then** no collection fetch is issued for the
   Browse root, no collection tile renders anywhere in the grid, and a scope
   containing only collections is not treated as pending work.
-- **Given** an admin or instructor, **Then** collection tiles and collection
-  detail headers offer **Move** (`MoveCollectionDialog` or drag onto a
-  category tile's move zone) regardless of `permissions.can_edit`; **Given**
-  a student or staff member, **Then** no collection move UI renders.
+- **Given** an admin or instructor, **Then** collection tiles offer **Move**
+  (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
+  edit dialog's category picker refiles the collection — both regardless of
+  `permissions.can_edit`; **Given** a student or staff member, **Then** no
+  collection move UI renders.
 - **Given** a collection move (dialog or drop), **Then** an unchanged
   destination no-ops; otherwise the category tree and root collection list
   refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
@@ -373,7 +377,7 @@ always read-only (`canEditContent={false}`).
   changes, the position readout and `?item=` URL update, and the viewer
   remounts (keyed by image id — no viewport bleed).
 - **Given** focus is in an input / textarea / select / textbox, **Then**
-  arrow keys do not navigate; the same applies while reorder mode is on.
+  arrow keys do not navigate.
 - **Given** **Open image** is clicked, **Then** the normal `?image={id}`
   view opens where annotations can be edited.
 - **Given** the current image's tiles fail mid-session, **Then** the error
@@ -382,10 +386,12 @@ always read-only (`canEditContent={false}`).
   `Alert` replaces the viewer.
 - **Given** the collection has no visible images, **Then** an info `Alert`
   says there is nothing to show.
-- **Given** `permissions.can_edit`, **Then** a **Reorder** toggle appears;
-  in reorder mode the strip becomes draggable and a drop PUTs the whole
-  member id list with the collection `version`, reordering optimistically
-  and rolling back on error. Non-editors never see the toggle.
+- **Given** `permissions.can_edit`, **Then** a **Manage** button opens a
+  large dialog of filmstrip-size thumbnails; dragging reorders (PUTs the
+  whole member id list with the collection `version`, optimistically, with
+  rollback on error), a trash drop target and per-tile remove control delete
+  members, and a **+** button opens the add-images search flow. Non-editors
+  never see the button.
 
 ### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
 
@@ -412,7 +418,7 @@ measurement metadata.
   and clicking it PUTs every rendered pane's current viewport as
   `viewport_state` with the collection `version`; a failure surfaces
   `userMessage` on the snackbar. Non-editors never see **Save view**.
-- **Given** the **Reset view** button (everyone), **When** clicked, **Then**
+- **Given** the **Restore view** button (everyone), **When** clicked, **Then**
   each pane re-applies its saved position — or its home when nothing is
   saved — and the link baselines re-arm.
 - **Given** each pane's **pin** button at the top-right of its viewport
@@ -681,7 +687,8 @@ committed on Save) in the edit modals.
 - `CategoryPickerSelect` renders the category tree as an indented,
   collapsible list and shows each category's total descendant sub-category and
   image count in the same `<N sub-categories · M images> / Empty` format used on
-  category tiles. It is used by the Add Images and Edit Image details dialogs,
+  category tiles. It is used by the Add Images, Edit Image details, and Edit
+  Collection dialogs,
   which have the same medium desktop width as the Manage Categories dialog so
   the longer count suffixes still fit. Restricted categories render a lock icon —
   per accessibility convention (see [`REVIEW.md`](../REVIEW.md)), the lock is a

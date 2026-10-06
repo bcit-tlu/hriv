@@ -46,7 +46,7 @@ absolute position. Entries that don't match the shape are ignored.
 - **Save view** (editors only) writes every pane's current viewport through
   `PUT /api/collections/{id}/viewport` (whole-replace, optimistic-concurrency `version`), so the
   saved layout restores exactly on reload and through `?collection={id}` share links.
-- **Reset view** (everyone) re-applies the saved positions — or each viewer's home when nothing
+- **Restore view** (everyone) re-applies the saved positions — or each viewer's home when nothing
   is saved — then re-arms the baselines.
 - Non-editors receive the saved view on load and may pan/zoom freely without persisting anything.
 

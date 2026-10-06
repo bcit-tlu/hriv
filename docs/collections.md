@@ -545,6 +545,15 @@ the visibility radio and the program/group pickers render read-only while
 name and description stay editable; the backend field-level split enforces
 the same boundary regardless.
 
+On edits the dialog is the wider variant (same width as the Edit Image and
+Manage Categories dialogs) so two additions fit (#1566): a **Category**
+picker (`CategoryPickerSelect`, admins/instructors only — filing stays
+curatorial) that turns a changed filing into a move call after the PATCH,
+and a **Hide Collection** / **Show Collection** link in the title row
+(`canHide`), which toggles local hidden state that the PATCH commits —
+"Hidden by Category" disables it when the filing category is hidden, the
+same contract as Edit Image.
+
 **Delete.** Lives inside `CollectionEditDialog` only (#1554 — the
 `EditImageModal` convention; there is no card or detail-header delete):
 a **Delete Collection** button at the bottom of the dialog content arms on
@@ -574,10 +583,12 @@ program/group chips sit right after the breadcrumb, where the image view
 renders them. The actions are **Hide collection** / **Show collection**
 (`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
-image viewer's Hide/Show Image control occupies), **Move**, **Reorder**
-(sequence collections with `canEdit` only — the
-toggle that used to live in the viewer toolbar), **Edit**, and **Owners**
-(`canTransfer`). Below the top row, the **type chip** (Synchronized /
+image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
+opens `CollectionManageDialog`, the mini-Browse member manager: drag to
+reorder, drag-to-trash or the corner control to remove, **+** to add via
+the search flow; #1566), **Edit**, and **Owners**
+(`canTransfer`). Filing moved into the edit dialog's **Category** picker —
+the header carries no **Move** button (#1566). Below the top row, the **type chip** (Synchronized /
 Sequence) and the **visibility chip** (Public/Private/Restricted — plus a
 `Hidden` chip on hidden collections) sit to the left of the owner line and
 description, which keep their place below (#1564). No Delete (#1554).
@@ -629,10 +640,11 @@ count, Category, Modified, Actions.
 rows — fetching the full record first, since summaries omit the restricted
 scope — and calls `onOpenCollection` (the collection detail view) for
 read-only rows. Action icons: **Edit** (`canEdit`), **Owners**
-(`canTransfer`, `CollectionOwnersDialog`), **Move** (admin/instructor only
-via `canFileCollections` plus the `onMoveCollection` handler → shared
-`MoveCollectionDialog`). Staff therefore get Edit only where the API
-grants it and never see Move/Owners/Delete affordances they cannot use;
+(`canTransfer`, `CollectionOwnersDialog`). Rows carry no **Move** action —
+category filing moved into the edit dialog's **Category** picker (#1566),
+with the Browse card's Move overlay and tile drag as the other curatorial
+paths. Staff therefore get Edit only where the API
+grants it and never see Owners/Delete affordances they cannot use;
 Delete stays inside the edit dialog, same convention as `EditImageModal`.
 Owners/transfer saves fetch a fresh record for `version` before PUT/POST,
 and the page refetches after every mutation or whenever the `categories`
@@ -660,7 +672,9 @@ participate in the mixed category/image/collection tile-order contract
 (#1528). Dropping a collection onto a category tile's move zone files it into
 that category (the same API as `POST /api/collections/{id}/move`) — like
 images and categories. Filing is curatorial: any admin/instructor sees the
-**Move** affordance on Browse tiles, list cards and the detail header,
+**Move** affordance on Browse tiles and list cards, plus the **Category**
+picker inside the edit dialog (#1566) — the detail header's separate Move
+button and the manage-table row action are gone —
 independent of `permissions.canEdit`; students and staff get no move UI. The
 move dialog (`MoveCollectionDialog`) offers every category plus "Top level",
 preselects the current category, and no-ops on an unchanged destination. A
@@ -781,11 +795,8 @@ render read-only via `canvasAnnotationsFromMetadata` /
 
 **Caption.** A caption row under the viewport — the same pattern the
 synchronized panes use (#1564) — holds the member name (left) and, at the
-right, the `n of N` live region plus the **Open image** action. The
-**Reorder** toggle moved to
-the detail header between **Move** and **Edit** (#1559) —
-`CollectionsPage` owns the `reordering` state and passes it down as a
-controlled prop.
+right, the `n of N` live region plus the **Open image** action. Member
+management moved into the detail header's **Manage** dialog (#1566).
 
 **Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
 overlay the viewport's left and right edges (#1561); like the OSD toolbar's
@@ -797,8 +808,7 @@ thumbnails (`Go to {name}`) and ←/→ arrow keys change the current item
 too. Arrows are handled on keydown-capture at the sequence container so
 OpenSeadragon's own keyboard panning never sees them; editable targets
 (inputs, textareas, selects, `[role="textbox"]`, contenteditable) are
-skipped, and while reorder mode is on the keys belong to dnd-kit's
-`KeyboardSensor` instead. The container itself is focusable
+skipped. The container itself is focusable
 (`tabIndex={-1}`) and autofocuses when a collection opens (#1564), so the
 arrow keys work immediately — switching images never steals focus back,
 but opening a different collection focuses it again.
@@ -820,18 +830,23 @@ the current image's tiles fail mid-session the viewer reports the error via
 the nearest still-available image (preferring the next one). When every
 image has failed, an error alert replaces the viewer.
 
-**Reorder.** The header's Reorder toggle (controlled `reordering` prop,
-#1559) swaps the strip for `useSortable`
-thumbnails (`type: 'sequence-strip-item'`; pointer: 250 ms touch delay /
-8 px mouse distance; a separate `DragDropProvider` — the locked
-`SortableTileGrid` collision contract is untouched). On drag-end the new
-order is computed with `move()`; a no-change drop or a cancel sends
-nothing. `useCollectionsData.reorderImages` applies the order to `detail`
+**Manage dialog.** The header's **Manage** button (replaces the #1559
+Reorder toggle, #1566) opens `CollectionManageDialog` — a mini-Browse grid
+of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
+the locked `SortableTileGrid` collision contract is untouched). On drag-end
+the new order is computed with `move()`; a no-change drop or a cancel sends
+nothing, and a drop on the trash drop target removes the member instead.
+The header's **+ Add images** button hands off to `onAddImages` (App opens
+the search modal in add mode); each tile also carries a corner remove
+control. `useCollectionsData.reorderImages` applies the order to `detail`
 immediately, then sends the whole id list as
 `PUT /api/collections/{id}/images` (`image_ids` + `version`); on error it
-restores the prior order and surfaces the message via `onError`. Doing the
-optimistic reorder in the hook keeps `App`'s `detail` the single source of
-truth — the strip and any subsequent edits see the same member order.
+restores the prior order and surfaces the message via `onError`.
+`useCollectionsData.removeImages` runs the same optimistic/rollback dance —
+the remaining ids go through the same `PUT …/images` whole-replace. Doing
+the optimistic update
+in the hook keeps `App`'s `detail` the single source of truth — the dialog,
+the filmstrip, and any subsequent edits see the same member order.
 
 ### Synchronized collection viewer (#1417)
 
@@ -880,7 +895,7 @@ not snap the pane back to where it left).
 `version`), so the layout restores exactly after a reload or via a
 `?collection={id}` share link. `saveViewport` is serialized with
 `reorderImages` through the same mutation queue so the two writes can never
-consume each other's version. **Reset view** (everyone) re-applies the saved
+consume each other's version. **Restore view** (everyone) re-applies the saved
 positions — or each viewer's home when nothing is saved — then re-arms the
 baselines. Saved entries that do not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
@@ -1032,9 +1047,10 @@ the shared group-chip palette.
   (locked `collectionPageType`, header filters, edit-dialog delete flow),
   `CollectionCard.test.tsx` (cover-overlay type chip / Move / Owners,
   non-propagating actions, no delete affordance),
-  `CollectionEditDialog.test.tsx` (delete arm/confirm/failure),
+  `CollectionEditDialog.test.tsx` (delete arm/confirm/failure, category
+  picker save + hide link, #1566),
   `ManageCollectionsPage.test.tsx` (unfiltered fetch, facets/sort, row
-  actions on `permissions`, staff Move hidden, breadcrumb navigation,
+  actions on `permissions`, no row Move, breadcrumb navigation,
   categories-change refetch), `App.test.tsx` (`collectionPageType` state,
   `?type=` emit/parse, detail→type sync, `manage-collections` gate).
 - Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
@@ -1053,10 +1069,11 @@ the shared group-chip palette.
   type MenuItem selected), `CollectionsPage.test.tsx` (`Home`/category
   breadcrumb navigation, name + `(N images)` count as the breadcrumb's
   trailing item, actions share the breadcrumb row, type/visibility pills
-  above the description, Reorder between Move/Edit for editable sequence
-  detail, Hidden chip + Hide/Show link on
+  above the description, Manage button wiring for editable detail, Hidden
+  chip + Hide/Show link on
   `canHide`, `onToggleHidden` call + error surface),
-  `SequenceCollectionViewer.test.tsx` (controlled `reordering` prop),
+  `CollectionManageDialog.test.tsx` (member grid, drag reorder, trash
+  drop target, add/remove callbacks),
   `CollectionCard.test.tsx` (type chip in the left overlay independent of
   right-side actions, hidden indicator), `useCollectionsData.test.ts`
   (`setHidden` PATCH + 409 merge), `App.test.tsx` (`onNavigateCategory` /
@@ -1069,20 +1086,24 @@ the shared group-chip palette.
   and freshness), `SortableTileGrid.test.tsx` (`col-` tiles, drag dispatch to
   reorder vs `onDropCollectionOnCategory`), `useCategoryActions.test.ts`
   (collection move/undo, no-op destination, root-scope lookup),
-  `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (role-gated
-  Move, browse-context close, all-restricted notice),
+  `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (edit-dialog
+  category change → move wiring, browse-context close, all-restricted
+  notice),
   `useCollectionsData.test.ts` (`move` row/detail sync),
   `CategoryTile.test.tsx` (recursive collection counts), viewer tests
   (all-restricted empty state); backend `test_router_collections.py`
   (`member_count` on `CollectionOut`, absent from summaries).
 - `frontend/tests/components/SequenceCollectionViewer.test.tsx`,
-  `useCollectionsData.test.ts` (#1416) — position readout, `?item=` restore
+  `CollectionManageDialog.test.tsx`,
+  `useCollectionsData.test.ts` (#1416, #1566) — position readout, `?item=` restore
   and non-member fallback, button / thumbnail / arrow-key navigation,
-  editable-target and reorder-mode key guards, read-only `ImageViewer` props
+  editable-target key guard, read-only `ImageViewer` props
   (annotations / overlays / measurement from `metadataExtra`), tile-renewal
-  forwarding, mid-session failure skip + all-failed state, controlled
-  reorder prop (toggle lives in the detail header, #1559), `move()` reorder → `PUT` with version, optimistic order in
-  `detail`, rollback on error, `renewCollectionImage` member swap.
+  forwarding, mid-session failure skip + all-failed state, hidden-prop
+  filmstrip desaturation; the Manage dialog covers `move()` reorder →
+  `PUT` with version, optimistic order in
+  `detail`, rollback on error, drag-to-trash removal, `renewCollectionImage`
+  member swap.
 - `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
   `useCollectionsData.test.ts` (#1417, #1561, #1564) — two-pane render with
   read-only props, `viewport-change` mirroring with the saved offset in both

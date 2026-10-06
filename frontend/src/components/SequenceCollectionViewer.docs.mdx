@@ -16,8 +16,8 @@ import * as SequenceCollectionViewerStories from './SequenceCollectionViewer.sto
 <Subtitle>
   The read-only viewer for sequence collections: a thumbnail filmstrip above the image, one image at
   a time with edge-overlay Previous/Next buttons (revealed on pointer activity), a caption row with
-  the member name, position readout, and Open image action, focused arrow-key support, and an
-  editor-only reorder mode.
+  the member name, position readout, and Open image action, and focused arrow-key support. Member
+  management (reorder, add, remove) lives in the collection page's Manage dialog.
 </Subtitle>
 
 ## When to use
@@ -54,7 +54,7 @@ browser history.
   (`Go to {name}` buttons) and ←/→ arrow keys also change the current item. Arrow keys are
   handled on keydown-capture at the sequence container so OpenSeadragon's own keyboard
   panning never sees them; editable targets (inputs, textareas, selects, textboxes) are
-  ignored, and the keys are given back to dnd-kit's keyboard sensor while reordering.
+  ignored.
 - **Autofocus.** The viewer region (`tabIndex={-1}`) focuses itself when a collection opens
   (#1564), so ←/→ step the sequence immediately without a click first; the guard is per
   collection id, so switching images never steals focus back.
@@ -65,11 +65,9 @@ browser history.
   tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
   nearest still-available image. When every image has failed, an error alert replaces the
   viewer.
-- **Reorder.** The Reorder toggle lives in the detail header between **Move** and **Edit**
-  (#1559); the viewer takes `reordering` as a controlled prop and reports exits via
-  `onReorderingChange`. While active the strip swaps for `useSortable` thumbnails. On drop the
-  hook PUTs the full id list with the collection version (optimistic update, rollback on
-  error).
+- **Member management.** Reordering, adding, and removing members moved out of this viewer
+  into `CollectionManageDialog` — a mini-Browse grid on the collection page (#1566). The
+  strip here is strictly navigation; a `hidden` prop desaturates it for hidden collections.
 - **Token renewal.** `onTileSourceRenewed` forwards the viewer's refreshed `ApiImage` to
   `onImageRenewed`, and `RenewingThumbnail` does the same for strip thumbnails, so short-lived
   tile/thumb tokens keep working.
@@ -79,10 +77,6 @@ browser history.
 ### Single image
 
 <Canvas of={SequenceCollectionViewerStories.SingleImage} />
-
-### Reorder mode
-
-<Canvas of={SequenceCollectionViewerStories.ReorderMode} />
 
 ### Read-only member
 

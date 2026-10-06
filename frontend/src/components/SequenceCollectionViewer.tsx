@@ -17,13 +17,8 @@ import { alpha, type Theme } from '@mui/material/styles'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
-import { useSortable } from '@dnd-kit/react/sortable'
-import { move } from '@dnd-kit/helpers'
-import { PointerActivationConstraints } from '@dnd-kit/dom'
-import type { DragEndEvent } from '@dnd-kit/react'
 
-import { userMessage, type ApiImage } from '../api'
+import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
@@ -41,22 +36,16 @@ export interface SequenceCollectionViewerProps {
   onSelectItem: (imageId: number) => void
   /** "Open image" → the regular `?image={id}` view where annotations can be edited. */
   onOpenImage: (image: ImageItem) => void
-  /** Persist a new member order; the hook applies it optimistically and rolls back on reject. */
-  onReorder: (imageIds: number[]) => Promise<unknown>
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
   /**
-   * Reorder mode — controlled by the parent (#1559): the Reorder/Done
-   * toggle lives in the detail header between Move and Edit. The viewer
-   * still drops out of reorder when the collection changes.
+   * Hidden collections desaturate the filmstrip (#1566) — the thumbnails are
+   * the collection's "tiles", matching how hidden categories grey theirs.
+   * The viewport imagery keeps its color, like the hidden image view.
    */
-  reordering: boolean
-  onReorderingChange: (reordering: boolean) => void
+  hidden?: boolean
 }
-
-const stripItemId = (imageId: number) => `seq-${imageId}`
-const stripImageId = (id: string) => Number(id.slice(4))
 
 // How long edge nav stays after the last pointer event — mirrors OSD's
 // autoHideControls fade delay so the buttons behave like the viewer toolbar.
@@ -105,66 +94,14 @@ function isEditableTarget(target: EventTarget | null): boolean {
   )
 }
 
-interface SortableStripThumbProps {
-  id: string
-  index: number
-  image: ImageItem
-  isCurrent: boolean
-  isFailed: boolean
-  onImageRenewed: (image: ApiImage) => void
-}
-
-/** Reorder-mode strip item: a drag handle, not a navigation button. */
-function SortableStripThumb({
-  id,
-  index,
-  image,
-  isCurrent,
-  isFailed,
-  onImageRenewed,
-}: SortableStripThumbProps) {
-  const { ref, isDragSource } = useSortable({
-    id,
-    index,
-    type: 'sequence-strip-item',
-  })
-  return (
-    <Box
-      ref={ref}
-      // Focusable so the dnd-kit KeyboardSensor can pick it up for reorder.
-      tabIndex={0}
-      role="button"
-      aria-label={`Drag to reorder ${image.name}`}
-      sx={{
-        ...stripThumbRing(isCurrent),
-        flex: '0 0 auto',
-        opacity: isDragSource ? 0.4 : isFailed ? 0.35 : 1,
-        cursor: isDragSource ? 'grabbing' : 'grab',
-        borderRadius: 1,
-        lineHeight: 0,
-      }}
-    >
-      <RenewingThumbnail
-        image={image}
-        alt={image.name}
-        onImageRenewed={onImageRenewed}
-        draggable={false}
-        sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
-      />
-    </Box>
-  )
-}
-
 export default function SequenceCollectionViewer({
   collection,
   itemId,
   onSelectItem,
   onOpenImage,
-  onReorder,
   onImageRenewed,
   onError,
-  reordering,
-  onReorderingChange,
+  hidden = false,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
   // Images whose tiles failed mid-session (deleted / access lost / expired
@@ -220,16 +157,15 @@ export default function SequenceCollectionViewer({
   )
   const regionRef = useRef<HTMLDivElement | null>(null)
   const focusedForCollection = useRef<number | null>(null)
-  // Failed ids and reorder mode belong to this collection only — a different
-  // collection opened without an unmount must not inherit them.
+  // Failed ids belong to this collection only — a different collection opened
+  // without an unmount must not inherit them.
   const collectionId = collection.id
   const previousCollectionId = useRef(collectionId)
   useEffect(() => {
     if (previousCollectionId.current === collectionId) return
     previousCollectionId.current = collectionId
     setFailedIds(new Set())
-    onReorderingChange(false)
-  }, [collectionId, onReorderingChange])
+  }, [collectionId])
 
   const available = useMemo(
     () => images.filter((img) => !failedIds.has(img.id)),
@@ -299,50 +235,12 @@ export default function SequenceCollectionViewer({
     [current, failedIds, images, onError, onSelectItem],
   )
 
-  const sensors = useMemo(
-    () => [
-      PointerSensor.configure({
-        activationConstraints: (event: PointerEvent) => {
-          if (event.pointerType === 'touch') {
-            return [new PointerActivationConstraints.Delay({ value: 250, tolerance: 5 })]
-          }
-          return [new PointerActivationConstraints.Distance({ value: 8 })]
-        },
-        preventActivation: (event: PointerEvent) => {
-          const target = event.target
-          if (!(target instanceof Element)) return false
-          return Boolean(target.closest('.MuiIconButton-root'))
-        },
-      }),
-      KeyboardSensor,
-    ],
-    [],
-  )
-
-  const stripIds = useMemo(() => images.map((img) => stripItemId(img.id)), [images])
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { operation } = event
-      if (operation.canceled) return
-      const reordered = move(stripIds, event)
-      if (reordered.length !== stripIds.length) return
-      const imageIds = reordered.map(stripImageId)
-      if (imageIds.every((id, i) => id === images[i]?.id)) return
-      onReorder(imageIds).catch((err: unknown) => {
-        onError(userMessage(err, 'Failed to reorder collection images.'))
-      })
-    },
-    [images, onError, onReorder, stripIds],
-  )
-
   // Arrow keys step the sequence. The capture-phase listener runs before the
   // event reaches OpenSeadragon's own keyboard panning, so ←/→ always mean
-  // previous/next here and never pan the canvas (docs/collections.md). In
-  // reorder mode the keys belong to the dnd-kit KeyboardSensor instead.
+  // previous/next here and never pan the canvas (docs/collections.md).
   const handleKeyDownCapture = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (reordering || isEditableTarget(event.target)) return
+      if (isEditableTarget(event.target)) return
       if (event.key === 'ArrowLeft') {
         event.preventDefault()
         event.stopPropagation()
@@ -353,7 +251,7 @@ export default function SequenceCollectionViewer({
         goTo(currentIndex + 1)
       }
     },
-    [currentIndex, goTo, reordering],
+    [currentIndex, goTo],
   )
 
   if (images.length === 0) {
@@ -392,13 +290,9 @@ export default function SequenceCollectionViewer({
       aria-label={`${collection.name} — sequence viewer`}
       sx={{ '&:focus': { outline: 'none' } }}
     >
-      {reordering && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
-          Drag the thumbnails to reorder the sequence, then choose Done.
-        </Typography>
-      )}
-      {/* The filmstrip sits above the viewer (#1564); in reorder mode it is
-          the drag source, so it keeps the same slot. */}
+      {/* The filmstrip sits above the viewer (#1564). Member management —
+          reorder/add/remove — lives in the Manage dialog (#1566), so the
+          strip is pure navigation. */}
       <Box
         data-testid="sequence-thumbnail-strip"
         sx={{
@@ -407,58 +301,43 @@ export default function SequenceCollectionViewer({
           mt: 2,
           pb: 1,
           overflowX: 'auto',
+          filter: hidden ? 'grayscale(100%)' : 'none',
         }}
       >
-        {reordering ? (
-          <DragDropProvider sensors={sensors} onDragEnd={handleDragEnd}>
-            {images.map((img, index) => (
-              <SortableStripThumb
-                key={img.id}
-                id={stripItemId(img.id)}
-                index={index}
+        {images.map((img) => {
+          const isCurrent = img.id === current.id
+          const isFailed = failedIds.has(img.id)
+          return (
+            <Box
+              key={img.id}
+              component="button"
+              type="button"
+              onClick={() => onSelectItem(img.id)}
+              disabled={isFailed}
+              aria-label={`Go to ${img.name}`}
+              aria-current={isCurrent ? 'true' : undefined}
+              sx={{
+                ...stripThumbRing(isCurrent),
+                flex: '0 0 auto',
+                p: 0,
+                border: 'none',
+                bgcolor: 'transparent',
+                opacity: isFailed ? 0.35 : 1,
+                cursor: isFailed ? 'default' : 'pointer',
+                borderRadius: 1,
+                lineHeight: 0,
+              }}
+            >
+              <RenewingThumbnail
                 image={img}
-                isCurrent={img.id === current.id}
-                isFailed={failedIds.has(img.id)}
+                alt={img.name}
                 onImageRenewed={onImageRenewed}
+                draggable={false}
+                sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
               />
-            ))}
-          </DragDropProvider>
-        ) : (
-          images.map((img) => {
-            const isCurrent = img.id === current.id
-            const isFailed = failedIds.has(img.id)
-            return (
-              <Box
-                key={img.id}
-                component="button"
-                type="button"
-                onClick={() => onSelectItem(img.id)}
-                disabled={isFailed}
-                aria-label={`Go to ${img.name}`}
-                aria-current={isCurrent ? 'true' : undefined}
-                sx={{
-                  ...stripThumbRing(isCurrent),
-                  flex: '0 0 auto',
-                  p: 0,
-                  border: 'none',
-                  bgcolor: 'transparent',
-                  opacity: isFailed ? 0.35 : 1,
-                  cursor: isFailed ? 'default' : 'pointer',
-                  borderRadius: 1,
-                  lineHeight: 0,
-                }}
-              >
-                <RenewingThumbnail
-                  image={img}
-                  alt={img.name}
-                  onImageRenewed={onImageRenewed}
-                  draggable={false}
-                  sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
-                />
-              </Box>
-            )
-          })
-        )}
+            </Box>
+          )
+        })}
       </Box>
 
       <Paper

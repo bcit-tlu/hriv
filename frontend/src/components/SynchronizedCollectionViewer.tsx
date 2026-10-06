@@ -488,7 +488,7 @@ export default function SynchronizedCollectionViewer({
           onClick={handleReset}
           data-testid="synchronized-reset"
         >
-          Reset view
+          Restore view
         </Button>
         {canEdit && (
           <Button

@@ -112,6 +112,9 @@ export function toCollectionPatch(
   const patch: Parameters<typeof updateCollection>[1] = { version }
   if (values.name !== baseline.name) patch.name = values.name
   if (values.description !== baseline.description) patch.description = values.description
+  // Curatorial hide rides the same PATCH (#1566) — the dialog's title link
+  // only changes `hidden` for callers the `canHide` gate allows.
+  if (values.hidden !== baseline.hidden) patch.hidden = values.hidden
   const visibilityChanged = values.visibility !== baseline.visibility
   if (visibilityChanged) patch.visibility = values.visibility
   if (

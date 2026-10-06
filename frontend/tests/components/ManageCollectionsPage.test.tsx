@@ -284,36 +284,28 @@ describe('ManageCollectionsPage', () => {
         },
       }),
     ])
-    const onMoveCollection = vi.fn()
-    renderPage({ onMoveCollection })
+    renderPage()
     const row = await screen.findByTestId('manage-collection-row-1')
     expect(within(row).getByRole('button', { name: 'Edit Full' })).toBeInTheDocument()
     expect(within(row).getByRole('button', { name: 'Manage owners of Full' })).toBeInTheDocument()
-    expect(within(row).getByRole('button', { name: 'Move Full to a category' })).toBeInTheDocument()
 
     const readonly = screen.getByTestId('manage-collection-row-2')
     expect(within(readonly).queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument()
     expect(
       within(readonly).queryByRole('button', { name: /^Manage owners/ }),
     ).not.toBeInTheDocument()
-    // Move is role-gated (admin/instructor filing), not permission-gated (#1529).
-    expect(
-      within(readonly).getByRole('button', { name: 'Move Read only to a category' }),
-    ).toBeInTheDocument()
   })
 
-  it('hides the move action for staff even with the handler supplied', async () => {
+  // Filing moved into the Edit dialog's category picker (#1566) — the row
+  // has no Move affordance for anyone.
+  it('has no row Move action for any role (#1566)', async () => {
     vi.mocked(fetchCollections).mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
-    renderPage({ currentUser: STAFF, onMoveCollection: vi.fn() })
-    const row = await screen.findByTestId('manage-collection-row-1')
-    expect(within(row).queryByRole('button', { name: /^Move/ })).not.toBeInTheDocument()
-  })
-
-  it('hides the move action for students', async () => {
-    vi.mocked(fetchCollections).mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
-    renderPage({ currentUser: STUDENT, onMoveCollection: vi.fn() })
-    const row = await screen.findByTestId('manage-collection-row-1')
-    expect(within(row).queryByRole('button', { name: /^Move/ })).not.toBeInTheDocument()
+    for (const user of [undefined, STAFF, STUDENT]) {
+      const { unmount } = renderPage(user ? { currentUser: user } : {})
+      const row = await screen.findByTestId('manage-collection-row-1')
+      expect(within(row).queryByRole('button', { name: /^Move/ })).not.toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('opens the owners dialog from the row action', async () => {

@@ -847,6 +847,12 @@ export function useCategoryActions({
     setMovingCollection,
     handleRequestMoveCollection,
     handleMoveCollection,
+    /**
+     * Direct filing without the move dialog (#1566) — the Edit Collection
+     * dialog's category picker saves through the same move path (snackbar +
+     * undo + tile-order invalidation).
+     */
+    moveCollectionTo: doMoveCollection,
     handleDropCollectionOnCategory,
     handleDropImageOnCollection,
     handleSetCardImage,

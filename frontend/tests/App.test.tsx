@@ -637,6 +637,11 @@ vi.mock('../src/useCollectionsData', () => ({
     saveOwners: collectionsDataMocks.saveOwners,
     move: collectionsDataMocks.move,
     setHidden: collectionsDataMocks.setHidden,
+    // App routes adds/removes through the data hook now (#1566) — delegate
+    // to the same spy so the assertions below still observe the payload.
+    addImages: (id: number, imageIds: number[]) =>
+      addToCollectionMocks.addImagesToCollection(id, imageIds),
+    removeImages: vi.fn(),
     renewCollectionImage: vi.fn(),
   }),
 }))
