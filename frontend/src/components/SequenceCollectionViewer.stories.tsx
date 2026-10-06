@@ -149,7 +149,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: lightbox-style Previous/Next edge buttons that appear on pointer activity, position readout, Open image link, thumbnail strip navigation, arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
+          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image link, autofocused arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
       },
     },
   },

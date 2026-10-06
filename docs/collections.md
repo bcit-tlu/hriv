@@ -562,25 +562,25 @@ user-owner set and the program owner — see "Ownership management UI" below.
 re-checks authority on every call.
 
 **Detail view.** Selecting a card sets `?collection={id}` and renders the
-collection header. In place of the old "All collections" back link, the
-header leads with a `MuiBreadcrumbs` matching the collection's filed
-location (#1559): the category ancestor chain resolved from
-`detail.categoryId` (each link navigates Browse to that category, or the
-root for **Home**), with the collection name trailing as the current item —
-the same convention as the image viewer breadcrumb, which renders
-**Home / ‹image name›** at the root (a collection has exactly one category
-location). Trailing the title row are
-the visibility chip (Public/Private/Restricted — left of the action buttons,
-mirroring the restricted program/group chips on category/image headers),
-then **Hide collection** / **Show collection** (`canHide` — curatorial;
-PATCHes `hidden` via `useCollectionsData.setHidden`
+collection header, which mirrors the image view's top container (#1564) —
+there is no `<h1>`; the collection name is the breadcrumb's trailing item.
+The top row holds a `MuiBreadcrumbs` matching the collection's filed
+location on the left and the action buttons on the right: the category
+ancestor chain resolved from `detail.categoryId` (each link navigates
+Browse to that category, or the root for **Home**), with the collection
+name trailing as the current item followed by a muted `(N images)` count —
+the same convention as the category breadcrumb (#1559). Restricted
+program/group chips sit right after the breadcrumb, where the image view
+renders them. The actions are **Hide collection** / **Show collection**
+(`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
 image viewer's Hide/Show Image control occupies), **Move**, **Reorder**
 (sequence collections with `canEdit` only — the
 toggle that used to live in the viewer toolbar), **Edit**, and **Owners**
-(`canTransfer`). A hidden collection additionally shows
-a `Hidden` chip beside the title. Description, owner and type chip stay in
-the header body — no Delete (#1554).
+(`canTransfer`). Below the top row, the **type chip** (Synchronized /
+Sequence) and the **visibility chip** (Public/Private/Restricted — plus a
+`Hidden` chip on hidden collections) sit to the left of the owner line and
+description, which keep their place below (#1564). No Delete (#1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
 404 (missing or not visible) renders the not-found alert with a
@@ -779,8 +779,10 @@ render read-only via `canvasAnnotationsFromMetadata` /
 (`components/imageViewerUtils.ts`). **Open image** navigates to the normal
 `?image={id}` view where annotations can be edited.
 
-**Toolbar.** A small row above the viewer (outside the OSD control bar):
-an `n of N` live region and **Open image**. The **Reorder** toggle moved to
+**Caption.** A caption row under the viewport — the same pattern the
+synchronized panes use (#1564) — holds the member name (left) and, at the
+right, the `n of N` live region plus the **Open image** action. The
+**Reorder** toggle moved to
 the detail header between **Move** and **Edit** (#1559) —
 `CollectionsPage` owns the `reordering` state and passes it down as a
 controlled prop.
@@ -796,9 +798,13 @@ too. Arrows are handled on keydown-capture at the sequence container so
 OpenSeadragon's own keyboard panning never sees them; editable targets
 (inputs, textareas, selects, `[role="textbox"]`, contenteditable) are
 skipped, and while reorder mode is on the keys belong to dnd-kit's
-`KeyboardSensor` instead.
+`KeyboardSensor` instead. The container itself is focusable
+(`tabIndex={-1}`) and autofocuses when a collection opens (#1564), so the
+arrow keys work immediately — switching images never steals focus back,
+but opening a different collection focuses it again.
 
-**Thumbnail strip.** `RenewingThumbnail` buttons under the viewer; the
+**Thumbnail strip.** `RenewingThumbnail` buttons _above_ the viewer
+(#1564); the
 current item is marked `aria-current` and framed by a 3 px primary ring —
 an `outline` pulled inside the thumbnail box with a negative
 `outline-offset` (an outward outline was clipped asymmetrically by the
@@ -855,14 +861,17 @@ changes before a pane's `open` event completes are ignored. Any pane can
 lead; the leader's displacement is applied to all followers.
 
 **Baselines.** The panes keep an armed _baseline_ — every opened pane's
-viewport snapshotted when the pane joins, when the link is re-enabled, or
+viewport snapshotted when the pane joins, when a pane re-pins, or
 on reset (#1561). A leader's move applies its displacement from its own
 baseline — a multiplicative zoom ratio and additive centre/rotation deltas —
-onto each follower's baseline, so saved positions around different
+onto each pinned follower's baseline, so saved positions around different
 highlights stay aligned while navigation mirrors. For two panes this is
-the pairwise offset the viewer originally captured. Toggling the **Link
-views** switch off lets each pane move independently; switching it back on
-re-captures the current alignment (it does not snap).
+the pairwise offset the viewer originally captured. **Pins** (#1564) —
+a per-pane button at the top-right of each viewport — replace the old
+global **Link views** switch: panes start pinned (linked), unpinning
+detaches one pane's navigation entirely (it neither leads nor follows),
+and re-pinning re-captures the baselines at the current positions (it does
+not snap the pane back to where it left).
 
 **Persisted view.** **Save view** (editors only,
 `permissions.can_edit`) writes every pane's current viewport as
@@ -1039,11 +1048,13 @@ the shared group-chip palette.
   `?collection={id}&item={image_id}` parse/emit precedence, `?type=` on
   collections-page URLs (default `sequence`), history entries,
   deep-link restore on load and back/forward, `?item=` alone ignored.
-- Header + hidden-state rework (#1559): `AppShell.test.tsx` (Collections
+- Header + hidden-state rework (#1559, #1564): `AppShell.test.tsx` (Collections
   tab opens the menu without `onTabChange`; menu items navigate; active
   type MenuItem selected), `CollectionsPage.test.tsx` (`Home`/category
-  breadcrumb navigation, Reorder between Move/Edit for editable sequence
-  detail, visibility chip left of actions, Hidden chip + Hide/Show link on
+  breadcrumb navigation, name + `(N images)` count as the breadcrumb's
+  trailing item, actions share the breadcrumb row, type/visibility pills
+  above the description, Reorder between Move/Edit for editable sequence
+  detail, Hidden chip + Hide/Show link on
   `canHide`, `onToggleHidden` call + error surface),
   `SequenceCollectionViewer.test.tsx` (controlled `reordering` prop),
   `CollectionCard.test.tsx` (type chip in the left overlay independent of
@@ -1073,11 +1084,13 @@ the shared group-chip palette.
   reorder prop (toggle lives in the detail header, #1559), `move()` reorder → `PUT` with version, optimistic order in
   `detail`, rollback on error, `renewCollectionImage` member swap.
 - `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
-  `useCollectionsData.test.ts` (#1417, #1561) — two-pane render with
+  `useCollectionsData.test.ts` (#1417, #1561, #1564) — two-pane render with
   read-only props, `viewport-change` mirroring with the saved offset in both
   directions, no write-back/oscillation, leader→followers mirroring and
-  per-pane offsets for three/four panes, Link views toggle + re-arm, Save
-  view payload for all panes, Reset to saved/home, portrait hint, `< 2`
+  per-pane offsets for three/four panes, per-pane pin toggles (default
+  pinned, unpinned leader/follower detachment, re-pin re-arms at current
+  positions), Save view payload for all panes, Reset to saved/home, portrait
+  hint, `< 2`
   fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
   slide-up, editor-only Save;
   `saveViewport` whole-replace `PUT` with `version`, queue sharing with

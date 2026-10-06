@@ -32,9 +32,9 @@ with annotations and measurement markings visible on each.
   relative positions — handy when the views highlight different spots.
 - Each pane's caption shows the image name and an **Open image** link to
   the normal image view.
-- **Link views** (the switch above the viewers) unlinks the panes so you
-  can adjust one on its own; switching it back on keeps the new
-  relative positions.
+- The **pin** at the top-right of each pane keeps it linked to the others —
+  panes start pinned. Click it to unpin a pane and adjust it on its own;
+  click again to re-pin, which keeps the new relative positions.
 - **Reset view** returns every pane to the saved view (or its starting
   position if none was saved).
 - On a phone held upright the panes are replaced by a hint to rotate to
@@ -56,12 +56,13 @@ visible but can't be changed here.
 
 - Step through with the **‹** and **›** buttons that appear on the viewer's
   left and right edges when you point at it (they fade away when idle, like
-  the image toolbar), click a thumbnail in the strip below the viewer, or
-  press the ← and → arrow keys.
-- The position (`n of N`) is part of the page link, so copying the URL
-  shares the exact image you're looking at.
-- **Open image** jumps to the normal image view, where you can edit
-  annotations with the usual permissions.
+  the image toolbar), click a thumbnail in the strip above the viewer, or
+  press the ← and → arrow keys — the viewer already has focus, so the keys
+  work as soon as the collection opens.
+- The caption under the viewer shows the image name, the position
+  (`n of N` — part of the page link, so copying the URL shares the exact
+  image you're looking at), and **Open image**, which jumps to the normal
+  image view where you can edit annotations with the usual permissions.
 - If you can edit the collection, a **Reorder** button in the top-right
   header (between **Move** and **Edit**) turns the thumbnail strip into a
   drag-and-drop list; drag images into place and choose **Done**.
