@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import AppShell from '../../src/components/AppShell'
 import type { AppShellProps } from '../../src/components/AppShell'
 import { createRef } from 'react'
@@ -172,12 +173,26 @@ describe('AppShell', () => {
         { canEditContent: false, canManageUsers: false, canViewPeople: false },
       ]
       for (const caps of roles) {
-        const onTabChange = vi.fn()
-        const { unmount } = render(<AppShell {...makeProps({ ...caps, onTabChange })} />)
-        fireEvent.click(screen.getByRole('tab', { name: 'Collections' }))
-        expect(onTabChange).toHaveBeenCalledWith('collections')
+        const { unmount } = render(<AppShell {...makeProps({ ...caps })} />)
+        expect(screen.getByRole('tab', { name: 'Collections' })).toBeInTheDocument()
         unmount()
       }
+    })
+
+    it('opens the Collections menu without navigating; menu items navigate (#1559)', async () => {
+      const user = userEvent.setup()
+      const onTabChange = vi.fn()
+      const onCollectionsTypeChange = vi.fn()
+      render(<AppShell {...makeProps({ onTabChange, onCollectionsTypeChange })} />)
+
+      await user.click(screen.getByRole('tab', { name: 'Collections' }))
+      expect(onTabChange).not.toHaveBeenCalled()
+      expect(screen.getByRole('menuitem', { name: 'Sequence' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Synchronized' })).toBeInTheDocument()
+
+      await user.click(screen.getByRole('menuitem', { name: 'Synchronized' }))
+      expect(onCollectionsTypeChange).toHaveBeenCalledWith('synchronized')
+      expect(onTabChange).not.toHaveBeenCalled()
     })
 
     it('hides the Collections tab when the deployment flag is off', () => {
@@ -186,12 +201,18 @@ describe('AppShell', () => {
       expect(screen.queryByRole('tab', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
-    it('marks the Collections tab selected on the collections page', () => {
-      render(<AppShell {...makeProps({ page: 'collections' })} />)
+    it('marks the matching Collections menu item selected on the collections page', async () => {
+      const user = userEvent.setup()
+      render(<AppShell {...makeProps({ page: 'collections', collectionType: 'synchronized' })} />)
+      // The tab is selected like any active page tab even though it only
+      // opens the menu.
       expect(screen.getByRole('tab', { name: 'Collections' })).toHaveAttribute(
         'aria-selected',
         'true',
       )
+      await user.click(screen.getByRole('tab', { name: 'Collections' }))
+      expect(screen.getByRole('menuitem', { name: 'Synchronized' })).toHaveClass('Mui-selected')
+      expect(screen.getByRole('menuitem', { name: 'Sequence' })).not.toHaveClass('Mui-selected')
     })
 
     it('renders Images and Manage tabs when canEditContent', () => {

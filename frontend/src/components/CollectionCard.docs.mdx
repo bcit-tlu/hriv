@@ -15,7 +15,7 @@ import * as CollectionCardStories from './CollectionCard.stories'
 
 <Subtitle>
   Collections-page card: cover thumbnail, name, image count, owners and visibility chip — with the
-  type chip, Move and Owners actions in a top-right cover overlay and Edit in the metadata area.
+  type chip pinned top-left, Move/Owners actions top-right, and Edit in the metadata area.
 </Subtitle>
 
 ## When to use
@@ -35,11 +35,16 @@ grid to represent one `CollectionSummary`. Clicking the card body opens the coll
 
 - The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
   expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
-- The type chip sits in the cover overlay beside the action icons — the same `top: 4, right: 4`
-  white-on-`rgba(0,0,0,0.25)` scrim convention as `CategoryTile` (#1554). The visibility chip lives
+- The type chip pins to a top-LEFT cover overlay (`top: 4, left: 4`) while Move/Owners stay in a
+  separate top-RIGHT overlay (#1559) — the chip's position never shifts with the available
+  actions. Both use the white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554).
+  The visibility chip lives
   in the metadata area and reuses the
   category restriction palette — `Restricted` borrows the group-chip colours, `Public` is neutral
   outlined, `Private` uses the muted visibility grey.
+- A curatorially hidden card (`collection.hidden`) desaturates the whole tile and adds an eye-off
+  marker beside the name — the same treatment hidden categories/images get (#1559). Only
+  non-students and the collection's owners ever see it.
 - Action icons are a UX gate only: Owners renders when `permissions.canTransfer` is true **and**
   `onTransfer` is supplied, Edit when `permissions.canEdit` **and** `onEdit`, and Move whenever
   `onMove` is supplied (filing is curatorial — the caller role-gates to admin/instructor). The
@@ -60,6 +65,10 @@ grid to represent one `CollectionSummary`. Clicking the card body opens the coll
 ### Read only
 
 <Canvas of={CollectionCardStories.ReadOnly} />
+
+### Hidden
+
+<Canvas of={CollectionCardStories.Hidden} />
 
 ### No cover
 

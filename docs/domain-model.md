@@ -45,13 +45,16 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   deleted.
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
-### Collection _(added in `0030_collections`; multi-owner in `0032`)_
+### Collection _(added in `0030_collections`; multi-owner in `0032`; `hidden` in `0033`)_
 
 - **Purpose:** user- or program-owned grouping of existing images for
   `sequence` or `synchronized` viewing; never duplicates image/category rows.
 - **Key fields:** `name`; `description` (nullable); `type` (`synchronized` /
   `sequence`, CHECK `ck_collections_type`); `visibility` (`private` / `public` /
   `restricted`, CHECK `ck_collections_visibility`, default `private`);
+  `hidden` (boolean, default `false` — curatorial hide/show, #1559; hides
+  the collection from students except its owners, unlike `Image.active`
+  which hides from all students);
   `user_id` (FK to User, **SET NULL** — #1531; creator-audit only, not an
   ownership edge); `owner_program_id` (FK to Program,
   **SET NULL**); `category_id` (FK to Category, **SET NULL** — #1527, files

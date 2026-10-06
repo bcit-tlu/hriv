@@ -363,7 +363,7 @@ describe('DroppableCollectionZone (#1530)', () => {
         makeCollectionSummary({
           id: 6,
           name: 'Read only',
-          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       ],
     })
@@ -402,7 +402,7 @@ describe('DroppableCollectionZone (#1530)', () => {
       currentCollections: [
         makeCollectionSummary({
           id: 5,
-          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       ],
       canEditContent: false,

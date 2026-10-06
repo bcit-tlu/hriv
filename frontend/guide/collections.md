@@ -62,9 +62,14 @@ visible but can't be changed here.
   shares the exact image you're looking at.
 - **Open image** jumps to the normal image view, where you can edit
   annotations with the usual permissions.
-- If you can edit the collection, a **Reorder** button turns the thumbnail
-  strip into a drag-and-drop list; drag images into place and choose
-  **Done**.
+- If you can edit the collection, a **Reorder** button in the top-right
+  header (between **Move** and **Edit**) turns the thumbnail strip into a
+  drag-and-drop list; drag images into place and choose **Done**.
+
+The breadcrumb at the top of the page shows where the collection lives in
+Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each
+link jumps to that spot in Browse. A collection filed at the top level just
+shows **Home**.
 
 ## Create a collection
 
@@ -122,7 +127,8 @@ message at the bottom removes the image again.
 Collection tiles appear on the **Browse** page alongside category and image
 tiles — at the top level or nested inside categories, so a "Lab 2"
 collection can sit inside _Histology → Epithelium_ like any other tile. Open
-a tile to view the collection; Back returns to the same place in Browse.
+a tile to view the collection; the breadcrumb at the top of the collection
+page shows its filed location and links back into Browse.
 
 - Tiles keep a fixed width and can be dragged to reorder them among the
   images and categories in the same folder; the order is shared for every
@@ -137,6 +143,23 @@ a tile to view the collection; Back returns to the same place in Browse.
   (`N collections`).
 - When `COLLECTIONS_ENABLED` is off, collection tiles disappear from Browse
   entirely — existing placements are kept and return with the flag.
+
+## Hide or show a collection (instructors and admins)
+
+Curators can hide a collection with the **Hide collection** link at the top
+right of the collection page — like hiding an image or a category. A hidden
+collection:
+
+- disappears from students' lists, Browse tiles, and search results —
+  **except for its owners**, who keep full access to their own work;
+- stays visible to admins, instructors and staff, shown desaturated with an
+  eye-off marker on cards and in the Manage → Collections table, plus a
+  **Hidden** chip on the collection page;
+- keeps its place in the category structure and tile order — nothing moves.
+
+Click **Show collection** in the same spot to make it visible again. Hiding
+is curatorial, not ownership-bound: any admin or instructor can hide any
+collection, and owners can't hide or unhide their own collections.
 
 ## Find a collection
 
