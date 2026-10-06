@@ -7,6 +7,7 @@ import Chip from '@mui/material/Chip'
 import CssBaseline from '@mui/material/CssBaseline'
 import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
+import ScopedCssBaseline from '@mui/material/ScopedCssBaseline'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { ThemeProvider } from '@mui/material/styles'
@@ -279,28 +280,35 @@ function ThemePage({ mode }: { mode: HrivThemeMode }) {
 }
 
 function SurfacePanel({ mode }: { mode: HrivThemeMode }) {
+  // Scoped theming: ScopedCssBaseline themes only this panel's background/text,
+  // so rendering a light and a dark panel together never lets one panel's
+  // global CssBaseline override the preview surface outside the panels.
   return (
-    <ModeProvider mode={mode}>
-      <Box sx={{ bgcolor: 'background.default', p: 3, borderRadius: 1 }}>
-        <Stack spacing={2}>
-          <Typography color="text.secondary" variant="overline">
-            {mode === 'dark' ? 'Dark' : 'Light'} · background.default
-          </Typography>
-          <Paper sx={{ p: 2 }}>
-            <Stack alignItems="flex-start" spacing={1}>
-              <Typography variant="subtitle2">Paper surface (background.paper)</Typography>
-              <Typography color="text.primary" variant="body2">
-                Primary text (text.primary)
-              </Typography>
-              <Typography color="text.secondary" variant="body2">
-                Secondary text (text.secondary)
-              </Typography>
-              <Button variant="contained">Primary button</Button>
-            </Stack>
-          </Paper>
-        </Stack>
-      </Box>
-    </ModeProvider>
+    <ColorModeContext.Provider
+      value={{ mode, preference: mode, setPreference: () => {}, toggleMode: () => {} }}
+    >
+      <ThemeProvider theme={buildTheme(mode)}>
+        <ScopedCssBaseline sx={{ p: 3, borderRadius: 1 }}>
+          <Stack spacing={2}>
+            <Typography color="text.secondary" variant="overline">
+              {mode === 'dark' ? 'Dark' : 'Light'} · background.default
+            </Typography>
+            <Paper sx={{ p: 2 }}>
+              <Stack alignItems="flex-start" spacing={1}>
+                <Typography variant="subtitle2">Paper surface (background.paper)</Typography>
+                <Typography color="text.primary" variant="body2">
+                  Primary text (text.primary)
+                </Typography>
+                <Typography color="text.secondary" variant="body2">
+                  Secondary text (text.secondary)
+                </Typography>
+                <Button variant="contained">Primary button</Button>
+              </Stack>
+            </Paper>
+          </Stack>
+        </ScopedCssBaseline>
+      </ThemeProvider>
+    </ColorModeContext.Provider>
   )
 }
 

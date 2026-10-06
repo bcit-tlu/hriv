@@ -17,10 +17,12 @@ Use `Foundations/Theme` as the first stop when choosing or reviewing UI colours.
 ## How theming works
 
 HRIV builds its MUI theme with `buildTheme(mode)` (`frontend/src/theme.ts`), where `mode` is
-`'light'` or `'dark'`. Each mode produces one semantic palette — `background`, `text`, `primary`,
-and HRIV's custom tokens — that feeds MUI's theme slots, so components stay consistent across light
-and dark without per-component overrides. At runtime the active mode comes from `ColorModeContext`;
-in Storybook, switch it with the theme toolbar.
+`'light'` or `'dark'`. `buildTheme` forwards the **standard** palette fields — `primary`,
+`secondary`, `background`, `text` — into MUI's theme, so every MUI component stays consistent across
+light and dark without per-component overrides. HRIV's **custom** tokens (`surfaceVariant`,
+group-chip, and visibility colours) live outside the MUI theme and are read through dedicated
+helpers (`getSurfaceVariant`, `getGroupChipColors`, `getVisibilityColors`). At runtime the active
+mode comes from `ColorModeContext`; in Storybook, switch it with the theme toolbar.
 
 ## Theme stories
 
