@@ -129,20 +129,18 @@ export default function CollectionCard({
   // inherited opacity.
   const ownProgramIds = collection.visibility === 'restricted' ? collection.programIds : []
   const ownGroupIds = collection.visibility === 'restricted' ? collection.groupIds : []
-  const programChips = ownProgramIds
-    .map((pid) => programs.find((p) => p.id === pid))
-    .filter((p): p is Program => p != null)
+  // The groups list only loads for admin/instructor — fall back to an id
+  // label (the detail header's convention) so students still see a chip.
+  const programLabel = (id: number) => programs.find((p) => p.id === id)?.name ?? `Program ${id}`
+  const groupLabel = (id: number) => groups.find((g) => g.id === id)?.name ?? `Group ${id}`
+  const programChips = ownProgramIds.map((id) => ({ id, label: programLabel(id) }))
   const inheritedProgramChips = inheritedProgramIds
     .filter((pid) => !ownProgramIds.includes(pid))
-    .map((pid) => programs.find((p) => p.id === pid))
-    .filter((p): p is Program => p != null)
-  const groupChips = ownGroupIds
-    .map((gid) => groups.find((g) => g.id === gid))
-    .filter((g): g is Group => g != null)
+    .map((id) => ({ id, label: programLabel(id) }))
+  const groupChips = ownGroupIds.map((id) => ({ id, label: groupLabel(id) }))
   const inheritedGroupChips = inheritedGroupIds
     .filter((gid) => !ownGroupIds.includes(gid))
-    .map((gid) => groups.find((g) => g.id === gid))
-    .filter((g): g is Group => g != null)
+    .map((id) => ({ id, label: groupLabel(id) }))
 
   return (
     <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
@@ -229,7 +227,7 @@ export default function CollectionCard({
                 <Chip
                   key={p.id}
                   data-testid="program-chip"
-                  label={p.name}
+                  label={p.label}
                   size="small"
                   color="primary"
                 />
@@ -242,7 +240,7 @@ export default function CollectionCard({
                 <Chip
                   key={p.id}
                   data-testid="program-chip"
-                  label={p.name}
+                  label={p.label}
                   size="small"
                   color="primary"
                   sx={getInheritedRestrictionSx(true)}
@@ -256,7 +254,7 @@ export default function CollectionCard({
                 <Chip
                   key={g.id}
                   data-testid="group-chip"
-                  label={g.name}
+                  label={g.label}
                   size="small"
                   color="secondary"
                 />
@@ -269,7 +267,7 @@ export default function CollectionCard({
                 <Chip
                   key={g.id}
                   data-testid="group-chip"
-                  label={g.name}
+                  label={g.label}
                   size="small"
                   color="secondary"
                   sx={getInheritedRestrictionSx(true)}

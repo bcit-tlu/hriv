@@ -258,6 +258,13 @@ export default function CollectionManageDialog({
   const [draft, setDraft] = useState<ImageItem[]>(collection?.images ?? [])
   const draftRef = useRef<ImageItem[]>(draft)
   const seededFor = useRef<number | null>(null)
+  // The member list as it stood when the draft was seeded — the Done diff
+  // baseline. Kept separate from the live `collection.images` prop so an
+  // external change landing mid-edit can't silently become part of the
+  // commit (or make an untouched draft look dirty). (#1567)
+  const [baselineIds, setBaselineIds] = useState<number[]>(() =>
+    (collection?.images ?? []).map((img) => img.id),
+  )
   const updateDraft = useCallback((next: ImageItem[]) => {
     draftRef.current = next
     setDraft(next)
@@ -270,6 +277,7 @@ export default function CollectionManageDialog({
     if (collection != null && seededFor.current !== collection.id) {
       seededFor.current = collection.id
       // eslint-disable-next-line react-hooks/set-state-in-effect -- per-session draft seed
+      setBaselineIds(collection.images.map((img) => img.id))
       updateDraft(collection.images)
     }
   }, [open, collection, updateDraft])
@@ -279,11 +287,18 @@ export default function CollectionManageDialog({
   const [activeImage, setActiveImage] = useState<ImageItem | null>(null)
   const [saving, setSaving] = useState(false)
 
-  /** The staged list differs from the loaded member list (order or set). */
-  const dirty = useMemo(() => {
-    const original = collection?.images ?? []
-    return draft.length !== original.length || draft.some((img, i) => img.id !== original[i]?.id)
-  }, [draft, collection])
+  /** The staged list differs from the seed-time member list (order or set). */
+  const dirty = useMemo(
+    () => draft.length !== baselineIds.length || draft.some((img, i) => img.id !== baselineIds[i]),
+    [draft, baselineIds],
+  )
+
+  // Hidden-member count comes from the loaded record, not the draft — staged
+  // removes of visible members don't change how many are restricted away.
+  const hiddenRestrictedCount = Math.max(
+    0,
+    (collection?.memberCount ?? 0) - (collection?.images.length ?? 0),
+  )
 
   // Same sensor policy as SortableTileGrid (#1533): 8px pointer distance so
   // clicks still reach the corner control, 250ms touch delay, and no
@@ -323,7 +338,9 @@ export default function CollectionManageDialog({
         collection != null &&
         !fitsCollectionCapacity(
           collection,
-          prev.length,
+          // Hidden restricted members still occupy capacity server-side —
+          // reserve their slots so an accepted pick can't 422 on Done.
+          prev.length + hiddenRestrictedCount,
           fresh.map((img) => img.id),
         )
       ) {
@@ -332,7 +349,7 @@ export default function CollectionManageDialog({
       updateDraft([...prev, ...fresh])
       return { status: 'added', addedCount: fresh.length }
     },
-    [collection, updateDraft],
+    [collection, hiddenRestrictedCount, updateDraft],
   )
 
   const remove = useCallback(
@@ -383,7 +400,20 @@ export default function CollectionManageDialog({
     }
     setSaving(true)
     try {
-      await onSaveMembers(draftRef.current.map((img) => img.id))
+      // Membership can change under an open dialog (e.g. a queued Browse add
+      // lands mid-edit): merge those external changes instead of letting the
+      // stale draft clobber them — drop baseline members removed elsewhere,
+      // keep members added elsewhere (appended, matching the add semantics).
+      const baselineSet = new Set(baselineIds)
+      const liveIds = new Set(collection.images.map((img) => img.id))
+      const externalAdds = collection.images.filter((img) => !baselineSet.has(img.id))
+      const externalRemoves = new Set(baselineIds.filter((id) => !liveIds.has(id)))
+      const draftIds = new Set(draftRef.current.map((img) => img.id))
+      const merged = [
+        ...draftRef.current.filter((img) => !externalRemoves.has(img.id)),
+        ...externalAdds.filter((img) => !draftIds.has(img.id)),
+      ]
+      await onSaveMembers(merged.map((img) => img.id))
       onClose()
     } catch (err) {
       // Keep the dialog open with the draft intact so nothing is lost.
@@ -391,7 +421,7 @@ export default function CollectionManageDialog({
     } finally {
       setSaving(false)
     }
-  }, [collection, dirty, onSaveMembers, onClose, onError])
+  }, [collection, dirty, baselineIds, onSaveMembers, onClose, onError])
 
   /** Esc/backdrop discard the draft — guarded when edits are staged. */
   const handleRequestClose = useCallback(() => {
@@ -399,10 +429,6 @@ export default function CollectionManageDialog({
     if (dirty && !window.confirm('Discard unsaved changes to this collection?')) return
     onClose()
   }, [dirty, saving, onClose])
-
-  // Hidden-member count comes from the loaded record, not the draft — staged
-  // removes of visible members don't change how many are restricted away.
-  const hiddenRestrictedCount = (collection?.memberCount ?? 0) - (collection?.images.length ?? 0)
 
   return (
     <Dialog

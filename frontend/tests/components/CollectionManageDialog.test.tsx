@@ -160,6 +160,64 @@ describe('CollectionManageDialog', () => {
     })
   })
 
+  it('counts hidden restricted members toward the synchronized cap (#1567)', () => {
+    // Student co-owner sees 3 of 4 members (one restricted away): staging a
+    // fourth visible pick must still report 'full' — the server keeps the
+    // hidden member and would 422 on commit.
+    const sync = manageCollection({
+      type: 'synchronized',
+      memberCount: 4,
+      images: [1, 2, 3].map((id) => makeImage({ id, name: `Img ${id}` })),
+    })
+    const { props } = renderDialog({ collection: sync })
+    fireEvent.click(screen.getByRole('button', { name: 'Add images to collection' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      expect(stageAdd([makeImage({ id: 300 })]).status).toBe('full')
+    })
+  })
+
+  it('Done merges membership changes that landed while the dialog was open (#1567)', async () => {
+    const onSaveMembers = vi.fn().mockResolvedValue(undefined)
+    const collection = manageCollection()
+    const { props, rerender } = renderDialog({ onSaveMembers, collection })
+    // Stage a removal — the draft diverges from the baseline.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))
+    // A queued Browse add lands mid-edit: the live record gains image 103.
+    rerender(
+      <CollectionManageDialog
+        {...props}
+        collection={manageCollection({
+          images: [...collection.images, makeImage({ id: 103, name: 'Slice 4', sortOrder: 3 })],
+        })}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    await vi.waitFor(() => expect(onSaveMembers).toHaveBeenCalled())
+    // The commit keeps the staged removal AND the externally added member —
+    // a stale-draft whole-replace would have silently deleted image 103.
+    expect(onSaveMembers).toHaveBeenCalledWith([100, 102, 103])
+  })
+
+  it('a membership change landing mid-open does not dirty an untouched draft (#1567)', async () => {
+    const collection = manageCollection()
+    const { props, rerender } = renderDialog({ collection })
+    rerender(
+      <CollectionManageDialog
+        {...props}
+        collection={manageCollection({
+          images: [...collection.images, makeImage({ id: 103, name: 'Slice 4', sortOrder: 3 })],
+        })}
+      />,
+    )
+    // No staged edits → Done still closes clean without a whole-replace PUT.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
   it('corner-control removal stages locally — tile leaves, nothing persists', () => {
     const { props } = renderDialog()
     fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))

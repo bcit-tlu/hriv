@@ -206,6 +206,26 @@ describe('CollectionCard', () => {
     )
     expect(screen.queryByTestId('program-chip')).not.toBeInTheDocument()
   })
+
+  it('falls back to id labels when lookups are unavailable (#1567)', () => {
+    // Students/staff never load the groups list — the chips must still render
+    // (the detail header's `Group {id}` fallback convention) rather than
+    // silently dropping the restriction.
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          visibility: 'restricted',
+          programIds: [7],
+          groupIds: [9],
+        })}
+        onOpen={vi.fn()}
+        programs={[]}
+        groups={[]}
+      />,
+    )
+    expect(screen.getByTestId('program-chip')).toHaveTextContent('Program 7')
+    expect(screen.getByTestId('group-chip')).toHaveTextContent('Group 9')
+  })
 })
 
 describe('CollectionVisibilityChip', () => {

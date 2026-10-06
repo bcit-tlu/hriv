@@ -42,8 +42,10 @@ are added to or removed from a collection outside the global search/Browse add g
   reorder, remove, trash-drop, search-add — mutates only the draft, so the page behind the dialog
   never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls
   `onSaveMembers(imageIds)` once on a difference — a single `PUT …/images` whole-replace through
-  `useCollectionsData.reorderImages`. A failed commit keeps the dialog open with the draft intact;
-  closing a dirty draft (Esc/backdrop/✕) asks to discard first.
+  `useCollectionsData.reorderImages`. Membership changes that land while the dialog is open are
+  merged into the commit (externally removed members drop out, external adds append) so a stale
+  draft can't clobber them. A failed commit keeps the dialog open with the draft intact; closing a
+  dirty draft (Esc/backdrop/✕) asks to discard first.
 - **Reorder.** Tiles are `useSortable` inside their own `DragDropProvider` — the locked
   `SortableTileGrid` move-vs-reorder collision contract is untouched. On drag-end `move()` derives
   the draft order; a no-change drop or a cancelled drag changes nothing. Drags render through a
