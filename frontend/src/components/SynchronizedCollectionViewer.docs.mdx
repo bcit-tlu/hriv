@@ -5,15 +5,15 @@ import * as SynchronizedCollectionViewerStories from './SynchronizedCollectionVi
 
 # SynchronizedCollectionViewer
 
-Two read-only OpenSeadragon viewers side by side for `synchronized` collections, mounted by
-`CollectionsPage` under the shared detail header (#1417).
+Two to four read-only OpenSeadragon panes for `synchronized` collections, mounted by
+`CollectionsPage` under the shared detail header (#1417, #1561).
 
 ## Layout
 
-- The **first two visible members** render as left/right panes, each a read-only `ImageViewer`
-  (`canEditContent={false}`, stored annotations/locked overlays/measurement from `metadataExtra`
-  pass through without edit callbacks). More stored members produce a "Showing 2 of _N_" note —
-  three/four-image layouts are future work.
+- **Up to four visible members** render as panes — a left/right row for two, a 2×2 grid for
+  three or four — each a read-only `ImageViewer` (`canEditContent={false}`, stored
+  annotations/locked overlays/measurement from `metadataExtra` pass through without edit
+  callbacks). A member count above the pane cap produces a "Showing _N_ of _M_" note.
 - Each pane has a caption with the member name (plus an _inactive_ marker) and an **Open image**
   action that navigates to the regular `?image={id}` view where annotations can be edited.
 - Fewer than two visible members shows a fallback alert with the ordered member list and
@@ -22,28 +22,28 @@ Two read-only OpenSeadragon viewers side by side for `synchronized` collections,
 
 ## Linked navigation
 
-- Pan, zoom and rotation on either viewer mirror onto the other immediately (no spring lag) via
-  raw `viewport-change` events exposed by `ImageViewer`'s `onViewerReady` prop. A re-entrancy
+- Pan, zoom and rotation on any viewer mirror onto every other pane immediately (no spring lag)
+  via raw `viewport-change` events exposed by `ImageViewer`'s `onViewerReady` prop. A re-entrancy
   guard prevents feedback loops, and programmatic writes (reset, follower updates) never lead
   the sync.
-- The pair keeps a **relative offset** — the difference between the two viewports captured once
-  both have opened — so images aligned around different highlights stay aligned. Re-ordering the
-  offset is a multiplicative zoom ratio, an additive center delta and an additive rotation delta.
+- The panes keep an armed **baseline** — each opened pane's viewport snapshot — so images
+  aligned around different highlights stay aligned: a leader's displacement from its baseline
+  (multiplicative zoom ratio, additive centre and rotation deltas) is applied to every
+  follower's baseline. For two panes this is the pairwise offset the viewer originally kept.
 - **Link views** (the switch) toggles mirroring for everyone. Re-linking re-captures the current
-  relative alignment instead of snapping one side to the other, which is how a new alignment is
+  relative alignment instead of snapping panes together, which is how a new alignment is
   composed.
 
 ## Persisted view
 
 `collection.viewport_state` maps `"<image_id>"` to `{ zoom, x, y, rotation }` — each pane's
-absolute position (the offset between them is implicit). Entries that don't match the shape are
-ignored.
+absolute position. Entries that don't match the shape are ignored.
 
-- **Save view** (editors only) writes both panes' current viewports through
+- **Save view** (editors only) writes every pane's current viewport through
   `PUT /api/collections/{id}/viewport` (whole-replace, optimistic-concurrency `version`), so the
-  saved pair restores exactly on reload and through `?collection={id}` share links.
+  saved layout restores exactly on reload and through `?collection={id}` share links.
 - **Reset view** (everyone) re-applies the saved positions — or each viewer's home when nothing
-  is saved — then re-arms the offset.
+  is saved — then re-arms the baselines.
 - Non-editors receive the saved view on load and may pan/zoom freely without persisting anything.
 
 ## Orientation
@@ -55,7 +55,7 @@ re-opening the images.
 ## Stories
 
 - **Basic** — two panes, linked, editor toolbar.
-- **Larger Set** — the "Showing 2 of _N_" note.
+- **Larger Set** — four members in the 2×2 grid.
 - **Portrait Hint** — the orientation overlay (matchMedia is stubbed).
 - **Read-Only Member** — no Save control without `can_edit`.
 - **Too Few Images** — the fallback state with the member list.

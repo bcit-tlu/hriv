@@ -14,8 +14,8 @@ been switched on there — ask your administrator.)
 
 ## Two kinds of collection
 
-- **Synchronized** – two images shown side by side; pan and zoom move both
-  of them together.
+- **Synchronized** – up to four images shown together; pan and zoom move
+  all of them together.
 - **Sequence** – any number of images in a fixed order, stepped through one
   at a time.
 
@@ -24,29 +24,27 @@ create a new collection instead.
 
 ## Viewing a synchronized collection
 
-Open a synchronized collection and you get two read-only viewers side by
-side — the first two images in the collection — with annotations and
-measurement markings visible on each.
+Open a synchronized collection and you get read-only viewers for every
+image in it — two side by side for a pair, a 2×2 grid for three or four —
+with annotations and measurement markings visible on each.
 
-- Pan, zoom or rotate either pane and the other follows, keeping its
-  relative position — handy when two views highlight different spots.
+- Pan, zoom or rotate any pane and the others follow, keeping their
+  relative positions — handy when the views highlight different spots.
 - Each pane's caption shows the image name and an **Open image** link to
   the normal image view.
-- If the collection holds more than two images, only the first two render —
-  a note tells you how many more are stored.
 - **Link views** (the switch above the viewers) unlinks the panes so you
-  can adjust one side on its own; switching it back on keeps the new
-  relative position.
-- **Reset view** returns both panes to the saved view (or their starting
-  positions if none was saved).
+  can adjust one on its own; switching it back on keeps the new
+  relative positions.
+- **Reset view** returns every pane to the saved view (or its starting
+  position if none was saved).
 - On a phone held upright the panes are replaced by a hint to rotate to
   landscape — your view is still there when you rotate back.
 
 ::: tip Saving the view
-If you can edit the collection, a **Save view** button stores both panes'
-current positions for everyone — next time the collection opens, it lands
+If you can edit the collection, a **Save view** button stores every pane's
+current position for everyone — next time the collection opens, it lands
 exactly there. Anyone can pan and zoom freely; only saving changes what
-others see. Use the saved positions to line the two images up around
+others see. Use the saved positions to line the images up around
 different highlights.
 :::
 
@@ -56,8 +54,10 @@ Open a sequence collection and you get a read-only viewer that shows one
 image at a time — annotations and measurement markings on each image are
 visible but can't be changed here.
 
-- Step through with **Previous** / **Next**, click a thumbnail in the strip
-  below the viewer, or press the ← and → arrow keys.
+- Step through with the **‹** and **›** buttons that appear on the viewer's
+  left and right edges when you point at it (they fade away when idle, like
+  the image toolbar), click a thumbnail in the strip below the viewer, or
+  press the ← and → arrow keys.
 - The position (`n of N`) is part of the page link, so copying the URL
   shares the exact image you're looking at.
 - **Open image** jumps to the normal image view, where you can edit
