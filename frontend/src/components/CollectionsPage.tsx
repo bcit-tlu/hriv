@@ -6,16 +6,17 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import FormControl from '@mui/material/FormControl'
+import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
@@ -341,29 +342,19 @@ function CollectionDetailHeader({
               Edit
             </Button>
           )}
-          {collection.permissions.canTransfer && onTransfer && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<SwapHorizIcon />}
-              onClick={onTransfer}
-              sx={hiddenSx}
-            >
-              Owners
-            </Button>
-          )}
         </Box>
       </Box>
 
-      {/* Second row (#1564): type + visibility (+ hidden) pills to the left
-          of the owner line and description, which keep their place. */}
+      {/* Second row (#1564): type + visibility pills to the left of the
+          owner line. Hidden state shows through the greyscale alone — no
+          chip (#1567). */}
       <Box
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'flex-start',
           gap: 1,
-          mb: 2,
+          mb: 1,
         }}
       >
         <Chip
@@ -376,36 +367,43 @@ function CollectionDetailHeader({
         <Box sx={hiddenSx}>
           <CollectionVisibilityChip visibility={collection.visibility} />
         </Box>
-        {collection.hidden && (
-          <Chip
-            size="small"
-            icon={<VisibilityOffIcon />}
-            label="Hidden"
-            data-testid="collection-hidden-chip"
-            sx={{ bgcolor: visColors.inactiveChipBg, color: '#fff' }}
-          />
-        )}
-        <Box sx={{ flex: '1 1 240px', minWidth: 0 }}>
+        <Box sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center' }}>
           <Typography variant="body2" color="text.secondary">
             {ownerText}
           </Typography>
-          {collection.memberCount > 0 && collection.images.length === 0 && (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mt: 0.5, fontStyle: 'italic' }}
-              data-testid="collection-all-restricted"
-            >
-              All images in this collection are currently restricted.
-            </Typography>
-          )}
-          {collection.description && (
-            <Typography variant="body1" sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>
-              {collection.description}
-            </Typography>
+          {/* Owners management lives on the owner line — a pencil beside
+              the name opens the same dialog the old Owners button did. */}
+          {collection.permissions.canTransfer && onTransfer && (
+            <Tooltip title="Manage owners">
+              <IconButton
+                size="small"
+                onClick={onTransfer}
+                aria-label="Manage owners"
+                data-testid="collection-owners-edit"
+                sx={{ ml: 0.25, p: 0.25, ...hiddenSx }}
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           )}
         </Box>
       </Box>
+      {collection.memberCount > 0 && collection.images.length === 0 && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mb: 1, fontStyle: 'italic' }}
+          data-testid="collection-all-restricted"
+        >
+          All images in this collection are currently restricted.
+        </Typography>
+      )}
+      {/* Description sits under the type chip, left-aligned (#1567). */}
+      {collection.description && (
+        <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+          {collection.description}
+        </Typography>
+      )}
     </>
   )
 }

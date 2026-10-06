@@ -392,8 +392,8 @@ export const DetailFiled: Story = {
 
 export const DetailHidden: Story = {
   name: 'Detail (hidden)',
-  // Curator view of a hidden collection (#1559): Hidden chip beside the
-  // visibility chip and the action reads "Show collection".
+  // Curator view of a hidden collection (#1559): the controls desaturate
+  // (no Hidden chip, #1567) and the action reads "Show collection".
   args: {
     collectionPageType: 'sequence',
     selectedCollectionId: 5,

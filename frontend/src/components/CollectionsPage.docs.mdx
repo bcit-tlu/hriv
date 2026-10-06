@@ -58,10 +58,12 @@ with deterministic fixtures.
 - **Detail.** The header leads with a `CategoryBreadcrumb` of the collection's filed location
   (category ancestors, or just **Home** at the root) instead of a back link (#1559); each link
   navigates Browse to that spot via `onNavigateCategory`. The top-right row orders: visibility
-  chip (plus a `Hidden` chip when `hidden`), **Manage** (`canEdit` — opens
-  `CollectionManageDialog` for reorder/add/remove, #1566), **Edit**, **Owners**
-  (`canTransfer`), and **Hide collection** / **Show collection** (`canHide`, wired to
-  `onToggleHidden`). Filing a collection into a category moved into the edit dialog's category
+  chip, **Manage** (`canEdit` — opens
+  `CollectionManageDialog` for reorder/add/remove, #1566), **Edit**, and
+  **Hide collection** / **Show collection** (`canHide`, wired to
+  `onToggleHidden`). Owners management is a pencil beside the owner name
+  (`canTransfer`), and hidden collections show through greyscale alone — no
+  `Hidden` chip (#1567). Filing a collection into a category moved into the edit dialog's category
   picker — the header no longer carries a separate **Move** button (#1566). `sequence` collections mount
   `SequenceCollectionViewer` and `synchronized` collections mount
   `SynchronizedCollectionViewer` (see their own docs pages). A 404 (`detailError`) renders the

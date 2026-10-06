@@ -563,7 +563,8 @@ dialog's error area with the API message. Deleting the open collection
 returns to the list.
 
 **Owners (`CollectionOwnersDialog`, #1531).** An **Owners** action on cards
-and the detail header (gated on `permissions.canTransfer`) manages the
+and a pencil beside the detail header's owner name (both gated on
+`permissions.canTransfer`) manages the
 user-owner set and the program owner — see "Ownership management UI" below.
 
 **Permissions are UX gates only.** Edit/delete controls render when
@@ -586,12 +587,13 @@ with the OCC version and 409 merge; the same text-button + eye-icon spot the
 image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
 opens `CollectionManageDialog`, the mini-Browse member manager: drag to
 reorder, drag-to-trash or the corner control to remove, **+** to add via
-the search flow; #1566), **Edit**, and **Owners**
-(`canTransfer`). Filing moved into the edit dialog's **Category** picker —
+the search flow; #1566), **Edit**, and an owners pencil beside the owner
+name (`canTransfer`). Filing moved into the edit dialog's **Category** picker —
 the header carries no **Move** button (#1566). Below the top row, the **type chip** (Synchronized /
-Sequence) and the **visibility chip** (Public/Private/Restricted — plus a
-`Hidden` chip on hidden collections) sit to the left of the owner line and
-description, which keep their place below (#1564). No Delete (#1554).
+Sequence) and the **visibility chip** (Public/Private/Restricted) sit to the
+left of the owner line; the description renders below the pills,
+left-aligned (#1567). Hidden state shows through greyscale alone — no
+`Hidden` chip. No Delete (#1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
 404 (missing or not visible) renders the not-found alert with a

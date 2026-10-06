@@ -389,24 +389,6 @@ export default function CollectionEditDialog({
             }
           }}
         />
-        {/* Category filing sits where EditImageModal puts it — right after
-            the name — and only renders for roles the move endpoint allows
-            (#1566). The picker's inline add/rename/hide affordances match
-            the shared move dialog's. */}
-        {isEdit && canFile && (
-          <Box sx={{ mt: 1 }}>
-            <CategoryPickerSelect
-              categories={categories}
-              value={categoryId}
-              onChange={setCategoryId}
-              onAddCategory={onAddCategory}
-              onEditCategory={onEditCategory}
-              onToggleVisibility={onToggleVisibility}
-              programs={programs}
-              groups={groups}
-            />
-          </Box>
-        )}
         <TextField
           margin="dense"
           label="Description"
@@ -461,6 +443,24 @@ export default function CollectionEditDialog({
             </RadioGroup>
           )}
         </Box>
+
+        {/* Category filing renders below Type (#1567) and only for roles the
+            move endpoint allows (#1566). The picker's inline add/rename/hide
+            affordances match the shared move dialog's. */}
+        {isEdit && canFile && (
+          <Box sx={{ mt: 2 }}>
+            <CategoryPickerSelect
+              categories={categories}
+              value={categoryId}
+              onChange={setCategoryId}
+              onAddCategory={onAddCategory}
+              onEditCategory={onEditCategory}
+              onToggleVisibility={onToggleVisibility}
+              programs={programs}
+              groups={groups}
+            />
+          </Box>
+        )}
 
         <Box sx={{ mt: 2 }}>
           <Typography variant="subtitle2" component="p" gutterBottom>

@@ -238,9 +238,9 @@ returned by the API (UX only — the backend re-checks).
   returns **404**, **Then** the not-found `Alert` with a back-to-list action
   is shown instead.
 - **Given** a collection whose `permissions.can_transfer` is true, **Then** an
-  **Owners** action appears in its card overlay, the detail header, and its
-  manage-table row; **Given**
-  it is false, **Then** neither affordance renders.
+  **Owners** action appears in its card overlay, a pencil beside the detail
+  header's owner name, and its manage-table row; **Given**
+  it is false, **Then** none of the affordances render.
 - **Given** a non-student opens **Manage → Collections**
   (`?page=manage-collections`), **Then** a table of every API-visible
   collection renders (thumbnail, ID, name, type, visibility, owners, image
@@ -272,12 +272,14 @@ returned by the API (UX only — the backend re-checks).
   `PUT /api/collections/{id}/owners` is sent and the card leaves the
   filtered list.
 - **Given** the collection detail, **Then** below the top container the
-  pills row shows the type chip (Synchronized / Sequence), the visibility
-  chip, a `Hidden` chip when `hidden`, and — when `restricted` — a chip per
+  pills row shows the type chip (Synchronized / Sequence) and the visibility
+  chip, and — when `restricted` — a chip per
   attached program and group sits right after the breadcrumb; the owner
   line (`describeCollectionOwners` — user names, `_X_ (program)` for a
-  program owner, `No owner` when orphaned) and description sit beside/below
-  the pills.
+  program owner, `No owner` when orphaned, with the owners pencil beside it
+  when `canTransfer`) sits beside the pills and the description renders
+  below the pills, left-aligned. Hidden state shows through greyscale
+  alone — no `Hidden` chip (#1567).
 - **Given** a collection detail is open (#1559, #1564), **Then** the header
   mirrors the image view's top container — no `<h1>` title; the
   `MuiBreadcrumbs` of its filed location (Home icon + category ancestors +
@@ -290,13 +292,13 @@ returned by the API (UX only — the backend re-checks).
   collection** / **Show collection** (`canHide` — admins and instructors
   only; PATCHes `hidden` with the OCC version), **Manage** (`canEdit` —
   opens `CollectionManageDialog` for reorder/add/remove, #1566),
-  **Edit** (`canEdit`), and **Owners** (`canTransfer`). The header no longer
+  **Edit** (`canEdit`), and an owners pencil beside the owner name
+  (`canTransfer`). The header no longer
   carries **Move** — filing happens in the edit dialog's category picker
   (#1566).
 - **Given** a curatorially hidden collection, **Then** non-students see it
   everywhere with the desaturated card treatment and a `VisibilityOff`
-  marker (card name, Manage → Collections Name cell, `Hidden` chip on the
-  detail); students see it only if they own it — for everyone else it is
+  marker (card name, Manage → Collections Name cell); students see it only if they own it — for everyone else it is
   absent from lists/Browse/search and `GET` answers **404**.
 
 #### Collections in the Browse tile grid (#1529)

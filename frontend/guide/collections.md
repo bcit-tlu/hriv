@@ -157,8 +157,8 @@ collection:
 - disappears from students' lists, Browse tiles, and search results —
   **except for its owners**, who keep full access to their own work;
 - stays visible to admins, instructors and staff, shown desaturated with an
-  eye-off marker on cards and in the Manage → Collections table, plus a
-  **Hidden** chip on the collection page;
+  eye-off marker on cards and in the Manage → Collections table (the page
+  itself greys its controls — no separate marker);
 - keeps its place in the category structure and tile order — nothing moves.
 
 Click **Show collection** in the same spot to make it visible again. Hiding
@@ -208,8 +208,9 @@ picks up their changes so you can re-apply yours.
 
 ## Manage owners
 
-If a collection shows an **Owners** action (in the card's cover overlay, at
-the top of the collection page, or on its Manage → Collections table row),
+If a collection shows an owners affordance (the **Owners** action in the
+card's cover overlay, the pencil beside the owner name on the collection
+page, or the icon on its Manage → Collections table row),
 you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:

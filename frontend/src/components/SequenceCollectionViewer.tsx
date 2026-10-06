@@ -382,7 +382,7 @@ export default function SequenceCollectionViewer({
             style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, left: 8 }}
           >
-            <ChevronLeftIcon fontSize="large" />
+            <ChevronLeftIcon sx={{ fontSize: 52.5 }} />
           </IconButton>
           <IconButton
             onClick={() => goTo(currentIndex + 1)}
@@ -391,7 +391,7 @@ export default function SequenceCollectionViewer({
             style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, right: 8 }}
           >
-            <ChevronRightIcon fontSize="large" />
+            <ChevronRightIcon sx={{ fontSize: 52.5 }} />
           </IconButton>
         </Box>
       </Paper>

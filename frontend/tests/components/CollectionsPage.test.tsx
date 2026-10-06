@@ -659,7 +659,7 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('detail-group-chip')).toHaveTextContent('Cohort A')
     })
 
-    it('gates the detail Owners button on canTransfer', async () => {
+    it('gates the detail owners pencil on canTransfer (#1567)', async () => {
       const user = userEvent.setup()
       const onTransfer = vi.fn().mockResolvedValue(undefined)
       const { unmount } = renderPage({
@@ -670,7 +670,7 @@ describe('CollectionsPage', () => {
         }),
         onTransfer,
       })
-      expect(screen.queryByRole('button', { name: 'Owners' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Manage owners' })).not.toBeInTheDocument()
       unmount()
 
       renderPage({
@@ -681,7 +681,8 @@ describe('CollectionsPage', () => {
         }),
         onTransfer,
       })
-      await user.click(screen.getByRole('button', { name: 'Owners' }))
+      // The pencil sits beside the owner name and opens the same Owners dialog.
+      await user.click(screen.getByRole('button', { name: 'Manage owners' }))
       const dialog = await screen.findByRole('dialog')
       expect(within(dialog).getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
       // Nothing changed → confirm stays disabled; the affordance itself is what is gated here.
@@ -906,7 +907,7 @@ describe('CollectionsPage', () => {
       ).toBeTruthy()
     })
 
-    it('shows the Hidden chip, Show link, and desaturated actions on a hidden collection (#1566)', () => {
+    it('desaturates a hidden collection without a Hidden chip (#1566/#1567)', () => {
       renderPage({
         selectedCollectionId: 9,
         detail: makeCollection({
@@ -916,7 +917,8 @@ describe('CollectionsPage', () => {
           permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
         }),
       })
-      expect(screen.getByTestId('collection-hidden-chip')).toHaveTextContent('Hidden')
+      // Hidden state reads through the greyscale alone — no chip (#1567).
+      expect(screen.queryByTestId('collection-hidden-chip')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Show collection' })).toBeInTheDocument()
       // The action buttons greyscale like the hidden image view's controls.
       expect(screen.getByRole('button', { name: 'Manage' })).toHaveStyle({
