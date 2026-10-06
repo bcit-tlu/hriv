@@ -799,10 +799,11 @@ skipped, and while reorder mode is on the keys belong to dnd-kit's
 `KeyboardSensor` instead.
 
 **Thumbnail strip.** `RenewingThumbnail` buttons under the viewer; the
-current item is marked `aria-current` and framed by a 3 px primary ring
-drawn _inside_ the thumbnail (`::after` border — an `outline` would be
-clipped asymmetrically by the strip's `overflow-x` scroll port, which is
-what cropped the highlight before #1561). `onTileSourceRenewed` and the
+current item is marked `aria-current` and framed by a 3 px primary ring —
+an `outline` pulled inside the thumbnail box with a negative
+`outline-offset` (an outward outline was clipped asymmetrically by the
+strip's `overflow-x` scroll port, which cropped the highlight before
+#1561). `onTileSourceRenewed` and the
 thumbnails' renewal callback flow through `onImageRenewed` →
 `useCollectionsData.renewCollectionImage`, which swaps the refreshed
 `ApiImage` into `detail` so short-lived tile/thumb tokens keep working.

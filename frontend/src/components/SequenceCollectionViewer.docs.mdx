@@ -51,9 +51,9 @@ browser history.
   handled on keydown-capture at the sequence container so OpenSeadragon's own keyboard
   panning never sees them; editable targets (inputs, textareas, selects, textboxes) are
   ignored, and the keys are given back to dnd-kit's keyboard sensor while reordering.
-- **Strip highlight.** The current thumbnail's ring is a `::after` border drawn _inside_
-  the thumbnail box — an `outline` outside the box was clipped asymmetrically by the
-  strip's `overflow-x` scroll port, cropping the highlight (#1561).
+- **Strip highlight.** The current thumbnail's ring is an `outline` pulled _inside_ the
+  thumbnail box with a negative `outline-offset` — an outward outline was clipped
+  asymmetrically by the strip's `overflow-x` scroll port, cropping the highlight (#1561).
 - **Fallback states.** An empty collection shows "no visible images"; if the current image's
   tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
   nearest still-available image. When every image has failed, an error alert replaces the

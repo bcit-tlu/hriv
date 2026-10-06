@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import { alpha, type Theme } from '@mui/material/styles'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
@@ -54,23 +63,17 @@ const stripImageId = (id: string) => Number(id.slice(4))
 const NAV_HIDE_DELAY_MS = 2000
 
 /**
- * Selection ring drawn *inside* the thumbnail box. An `outline` sits outside
- * the border box and gets clipped asymmetrically by the strip's
- * `overflow-x: auto` scroll port (top/left/right edges have no padding), which
- * cropped the active-image highlight (#1561).
+ * Selection ring drawn *inside* the thumbnail box via a negative
+ * `outline-offset`. An outward `outline` sits outside the border box and gets
+ * clipped asymmetrically by the strip's `overflow-x: auto` scroll port
+ * (top/left/right edges have no padding), which cropped the active-image
+ * highlight (#1561).
  */
 const stripThumbRing = (isCurrent: boolean) =>
   ({
-    position: 'relative',
-    '&::after': {
-      content: '""',
-      position: 'absolute',
-      inset: 0,
-      borderRadius: 1,
-      border: isCurrent ? '3px solid' : '1px solid',
-      borderColor: isCurrent ? 'primary.main' : 'divider',
-      pointerEvents: 'none',
-    },
+    outline: isCurrent ? '3px solid' : '1px solid',
+    outlineColor: isCurrent ? 'primary.main' : 'divider',
+    outlineOffset: isCurrent ? -3 : -1,
   }) as const
 
 const navEdgeButton = {
@@ -79,9 +82,12 @@ const navEdgeButton = {
   transform: 'translateY(-50%)',
   zIndex: 30,
   color: 'common.white',
-  bgcolor: 'rgba(0, 0, 0, 0.55)',
-  '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.75)' },
-  '&.Mui-disabled': { color: 'rgba(255, 255, 255, 0.4)', bgcolor: 'rgba(0, 0, 0, 0.35)' },
+  bgcolor: (theme: Theme) => alpha(theme.palette.common.black, 0.55),
+  '&:hover': { bgcolor: (theme: Theme) => alpha(theme.palette.common.black, 0.75) },
+  '&.Mui-disabled': {
+    color: (theme: Theme) => alpha(theme.palette.common.white, 0.4),
+    bgcolor: (theme: Theme) => alpha(theme.palette.common.black, 0.35),
+  },
 } as const
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -162,19 +168,36 @@ export default function SequenceCollectionViewer({
   // pointer-events only) so keyboard focus can reveal them.
   const [navVisible, setNavVisible] = useState(false)
   const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const scheduleNavHide = useCallback(() => {
+  const cancelNavHide = useCallback(() => {
     if (navHideTimer.current) clearTimeout(navHideTimer.current)
-    navHideTimer.current = setTimeout(() => setNavVisible(false), NAV_HIDE_DELAY_MS)
+    navHideTimer.current = null
   }, [])
+  const scheduleNavHide = useCallback(() => {
+    cancelNavHide()
+    navHideTimer.current = setTimeout(() => setNavVisible(false), NAV_HIDE_DELAY_MS)
+  }, [cancelNavHide])
   const showNav = useCallback(() => {
     setNavVisible(true)
     scheduleNavHide()
   }, [scheduleNavHide])
   const hideNav = useCallback(() => {
-    if (navHideTimer.current) clearTimeout(navHideTimer.current)
-    navHideTimer.current = null
+    cancelNavHide()
     setNavVisible(false)
-  }, [])
+  }, [cancelNavHide])
+  // Keyboard focus holds the nav open without a hide clock; focus moving
+  // between the two edge buttons must not start one either.
+  const holdNavForFocus = useCallback(() => {
+    cancelNavHide()
+    setNavVisible(true)
+  }, [cancelNavHide])
+  const releaseNavForBlur = useCallback(
+    (event: FocusEvent<HTMLElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        scheduleNavHide()
+      }
+    },
+    [scheduleNavHide],
+  )
   useEffect(
     () => () => {
       if (navHideTimer.current) clearTimeout(navHideTimer.current)
@@ -386,20 +409,19 @@ export default function SequenceCollectionViewer({
         <Box
           data-testid="sequence-nav-overlay"
           style={{ opacity: navVisible ? 1 : 0 }}
+          onFocusCapture={holdNavForFocus}
+          onBlurCapture={releaseNavForBlur}
           sx={{
             position: 'absolute',
             inset: 0,
             pointerEvents: 'none',
             transition: 'opacity 0.25s ease',
-            '&:focus-within': { opacity: 1 },
           }}
         >
           <IconButton
             onClick={() => goTo(currentIndex - 1)}
             disabled={currentIndex <= 0}
             aria-label="Previous image"
-            onFocus={showNav}
-            onBlur={scheduleNavHide}
             style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, left: 8 }}
           >
@@ -409,8 +431,6 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex + 1)}
             disabled={currentIndex >= available.length - 1}
             aria-label="Next image"
-            onFocus={showNav}
-            onBlur={scheduleNavHide}
             style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, right: 8 }}
           >

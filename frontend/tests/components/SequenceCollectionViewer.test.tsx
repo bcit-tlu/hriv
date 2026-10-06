@@ -166,6 +166,36 @@ describe('SequenceCollectionViewer', () => {
     expect(next).toHaveStyle({ pointerEvents: 'auto' })
   })
 
+  it('keeps the edge nav visible while a button holds focus, fading only after blur (#1561)', () => {
+    vi.useFakeTimers()
+    try {
+      renderViewer()
+      const overlay = screen.getByTestId('sequence-nav-overlay')
+      const next = screen.getByRole('button', { name: 'Next image' })
+      const prev = screen.getByRole('button', { name: 'Previous image' })
+
+      fireEvent.focus(next)
+      // Well past the idle delay — the focused button must stay visible and
+      // interactive for keyboard users.
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      expect(next).toHaveStyle({ pointerEvents: 'auto' })
+
+      // Focus moving to the other edge button keeps the nav open…
+      fireEvent.blur(next, { relatedTarget: prev })
+      fireEvent.focus(prev)
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+
+      // …and only after focus leaves the overlay does the idle fade begin.
+      fireEvent.blur(prev, { relatedTarget: null })
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('navigates with ArrowLeft/ArrowRight from inside the viewer region', () => {
     const { props } = renderViewer({ itemId: 101 })
     const region = screen.getByTestId('sequence-collection-viewer')
