@@ -26,10 +26,12 @@ import {
   describeCollectionOwner,
   describeCollectionOwners,
 } from '../collectionUtils'
-import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import type { CollectionPageType } from './AppShell'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
 import {
   toCollectionPatch,
   type CollectionListFilters,
@@ -47,7 +49,7 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
-import CollectionManageDialog from './CollectionManageDialog'
+import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
@@ -76,10 +78,11 @@ export interface CollectionsPageProps {
   /** Sequence viewer state (`?item=` position) and mutations (#1416). */
   selectedCollectionItemId: number | null
   onSelectCollectionItem: (imageId: number) => void
-  /** Whole-replace member order — drives the Manage dialog's reorder (#1566). */
+  /**
+   * Whole-replace member order — the Manage dialog's Done commits its staged
+   * draft (reorder + removals + additions) through this one PUT (#1567).
+   */
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
-  /** Remove members via whole-replace — the Manage dialog's trash (#1566). */
-  onRemoveCollectionImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
@@ -116,7 +119,12 @@ export interface CollectionsPageProps {
    * Manage dialog "+" affordance (#1566): opens the global search modal so
    * picked images land in this collection through the standard add flow.
    */
-  onRequestCollectionImageSearch?: (collection: Collection) => void
+  /**
+   * Opens global search targeted at the collection; `stageAdd` is the Manage
+   * dialog's draft-staging channel — picks join the draft, and Done persists
+   * them in one whole-replace PUT (#1567).
+   */
+  onRequestCollectionImageSearch?: (collection: Collection, stageAdd: StageAddImages) => void
   /** Browse category tree — resolves the detail breadcrumb's location (#1559). */
   categories: Category[]
   /** Edit dialog category picker's inline affordances (#1566). */
@@ -189,7 +197,6 @@ function CollectionDetailHeader({
   onToggleHidden?: () => void
 }) {
   const { mode } = useColorMode()
-  const groupColors = getGroupChipColors(mode)
   const visColors = getVisibilityColors(mode)
   const programOwner = collection.owners.find((o) => o.kind === 'program')
   const ownerText = programOwner
@@ -199,6 +206,25 @@ function CollectionDetailHeader({
   // `inactiveViewerActionSx` (#1566) — chips, Manage/Edit/Owners, and the
   // Hide link; the viewer imagery stays in color (same as the image page).
   const hiddenSx = collection.hidden ? { filter: 'grayscale(100%)' } : undefined
+  // Restriction chips follow the image view / category tile convention
+  // (#1567): the collection's own scope renders solid and the filed
+  // category's effective scope renders at the inherited opacity.
+  const ownProgramIds = collection.visibility === 'restricted' ? collection.programIds : []
+  const ownGroupIds = collection.visibility === 'restricted' ? collection.groupIds : []
+  const ownProgramSet = new Set(ownProgramIds)
+  const ownGroupSet = new Set(ownGroupIds)
+  const programChips = [
+    ...ownProgramIds.map((id) => ({ id, inherited: false })),
+    ...narrowProgramIds(categoryPath)
+      .filter((id) => !ownProgramSet.has(id))
+      .map((id) => ({ id, inherited: true })),
+  ]
+  const groupChips = [
+    ...ownGroupIds.map((id) => ({ id, inherited: false })),
+    ...narrowGroupIds(categoryPath)
+      .filter((id) => !ownGroupSet.has(id))
+      .map((id) => ({ id, inherited: true })),
+  ]
   return (
     <>
       {/* Top container mirrors the image view header (#1564): breadcrumb +
@@ -267,31 +293,29 @@ function CollectionDetailHeader({
             </Box>
           </Breadcrumbs>
           {/* Restriction chips sit right after the breadcrumb — the same
-              slot the image view renders them in. */}
-          {collection.visibility === 'restricted' && (
-            <>
-              {collection.programIds.map((pid) => (
-                <Chip
-                  key={`p${pid}`}
-                  size="small"
-                  variant="outlined"
-                  color="primary"
-                  data-testid="detail-program-chip"
-                  label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
-                  sx={hiddenSx}
-                />
-              ))}
-              {collection.groupIds.map((gid) => (
-                <Chip
-                  key={`g${gid}`}
-                  size="small"
-                  data-testid="detail-group-chip"
-                  label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
-                  sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText, ...hiddenSx }}
-                />
-              ))}
-            </>
-          )}
+              slot the image view renders them in: the collection's own
+              scope solid, the filed category's scope at inherited opacity
+              (#1567). */}
+          {programChips.map((item) => (
+            <Chip
+              key={`p${item.id}`}
+              size="small"
+              color="primary"
+              data-testid="detail-program-chip"
+              label={programs.find((p) => p.id === item.id)?.name ?? `Program ${item.id}`}
+              sx={getInheritedRestrictionSx(item.inherited, hiddenSx)}
+            />
+          ))}
+          {groupChips.map((item) => (
+            <Chip
+              key={`g${item.id}`}
+              size="small"
+              color="secondary"
+              data-testid="detail-group-chip"
+              label={groups.find((g) => g.id === item.id)?.name ?? `Group ${item.id}`}
+              sx={getInheritedRestrictionSx(item.inherited, hiddenSx)}
+            />
+          ))}
         </Box>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
           {/* Hide/show leads the actions — the same spot the image viewer's
@@ -428,7 +452,6 @@ export default function CollectionsPage({
   selectedCollectionItemId,
   onSelectCollectionItem,
   onReorderImages,
-  onRemoveCollectionImages,
   onCollectionImageRenewed,
   onViewerError,
   onSaveViewport,
@@ -736,17 +759,25 @@ export default function CollectionsPage({
           </Box>
         ) : (
           <Box data-testid="collections-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-            {collections.map((c) => (
-              <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
-                <CollectionCard
-                  collection={c}
-                  onOpen={(col) => onOpenCollection(col.id)}
-                  onEdit={(col) => void openEdit(col)}
-                  onTransfer={setTransferTarget}
-                  onMove={canFileCollections ? onMoveCollection : undefined}
-                />
-              </Box>
-            ))}
+            {collections.map((c) => {
+              const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+              const catPath = seg ? [...seg.ancestors, seg.category] : []
+              return (
+                <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
+                  <CollectionCard
+                    collection={c}
+                    onOpen={(col) => onOpenCollection(col.id)}
+                    onEdit={(col) => void openEdit(col)}
+                    onTransfer={setTransferTarget}
+                    onMove={canFileCollections ? onMoveCollection : undefined}
+                    programs={programs}
+                    inheritedProgramIds={narrowProgramIds(catPath)}
+                    groups={groups}
+                    inheritedGroupIds={narrowGroupIds(catPath)}
+                  />
+                </Box>
+              )
+            })}
           </Box>
         )}
       </>
@@ -777,22 +808,19 @@ export default function CollectionsPage({
         onToggleVisibility={onToggleCategoryVisibility}
       />
 
-      {/* The Manage dialog stays mounted while open so the grid keeps its
-          DnD context; membership edits flow back through the data hook and
-          re-render the detail behind it (#1566). */}
+      {/* The Manage dialog stages membership edits locally (#1567); Done
+          commits them through one whole-replace PUT — only then does the
+          detail behind it change. */}
       <CollectionManageDialog
         open={manageOpen}
         onClose={() => setManageOpen(false)}
         collection={detail}
-        onReorder={(imageIds) =>
+        onSaveMembers={(imageIds) =>
           detail ? onReorderImages(detail.id, imageIds) : Promise.resolve()
-        }
-        onRemoveImages={(imageIds) =>
-          detail ? onRemoveCollectionImages(detail.id, imageIds) : Promise.resolve()
         }
         onAddImages={
           detail && onRequestCollectionImageSearch
-            ? () => onRequestCollectionImageSearch(detail)
+            ? (stageAdd) => onRequestCollectionImageSearch(detail, stageAdd)
             : undefined
         }
         onImageRenewed={(image) => detail && onCollectionImageRenewed(detail.id, image)}

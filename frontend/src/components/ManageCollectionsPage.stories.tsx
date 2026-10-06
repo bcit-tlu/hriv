@@ -54,6 +54,8 @@ function makeApiSummary(overrides: Partial<ApiCollectionSummary> = {}): ApiColle
     version: 1,
     category_id: 2,
     sort_order: 0,
+    program_ids: [],
+    group_ids: [],
     created_at: FIXED_AT,
     updated_at: FIXED_AT,
     permissions: {

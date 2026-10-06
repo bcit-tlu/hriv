@@ -792,7 +792,7 @@ vi.mock('../src/components/SearchModal', () => ({
     onClose: () => void
     onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
     onSelectCollection?: (collectionId: number) => void
-    onAddImagesToCollection?: (imageIds: number[]) => void
+    onAddImagesToCollection?: (images: { id: number }[]) => void
   }) => (
     <>
       {open && <div>search users: {users.length}</div>}
@@ -806,7 +806,7 @@ vi.mock('../src/components/SearchModal', () => ({
       <button type="button" onClick={() => onSelectCollection?.(5)}>
         Select collection 5
       </button>
-      <button type="button" onClick={() => onAddImagesToCollection?.([10, 11])}>
+      <button type="button" onClick={() => onAddImagesToCollection?.([{ id: 10 }, { id: 11 }])}>
         Add selected images to collection
       </button>
     </>
@@ -2450,14 +2450,11 @@ describe('App search collections integration (#1418)', () => {
     expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
   })
 
-  it('routes Manage-dialog search adds to the managed collection when Search closes first (#1567)', async () => {
+  it('routes Manage-dialog search adds to the dialog draft when Search closes first (#1567)', async () => {
     // SearchModal fires onClose() before onAddImagesToCollection — the manage
     // target must survive that ordering (it resets on open, not on close).
-    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
-      status: 'added',
-      collection: { id: 7, name: 'Managed set' },
-      addedCount: 2,
-    })
+    // Picks stage into the dialog's draft via `stageAdd`; nothing persists
+    // until the dialog's Done commits (#1567).
     render(<App />)
     await waitFor(() =>
       expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
@@ -2466,19 +2463,28 @@ describe('App search collections integration (#1418)', () => {
     // still hold a previous test's stale callbacks otherwise.
     fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
     await screen.findByTestId('collections-page')
-    const requestSearch = collectionsPageProps.current?.onRequestCollectionImageSearch as (c: {
-      id: number
-      name: string
-    }) => void
-    await act(async () => requestSearch({ id: 7, name: 'Managed set' }))
+    const requestSearch = collectionsPageProps.current?.onRequestCollectionImageSearch as (
+      c: { id: number; name: string },
+      stageAdd: (images: { id: number }[]) => { status: string; addedCount: number },
+    ) => void
+    const stageAdd = vi.fn().mockReturnValue({ status: 'added', addedCount: 2 })
+    await act(async () => requestSearch({ id: 7, name: 'Managed set' }, stageAdd))
     // The real SearchModal order: close fires first, then the add callback.
     fireEvent.click(screen.getByRole('button', { name: 'Close search' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
 
     await waitFor(() =>
-      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(7, [10, 11]),
+      expect(stageAdd).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 10 }),
+        expect.objectContaining({ id: 11 }),
+      ]),
     )
+    // Nothing hits the API — the dialog commits on Done.
+    expect(addToCollectionMocks.addImagesToCollection).not.toHaveBeenCalled()
     // The generic picker is skipped — the manage dialog already named the target.
     expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument()
+    expect(
+      await screen.findByText('Staged 2 images for "Managed set" — press Done to apply.'),
+    ).toBeInTheDocument()
   })
 })

@@ -58,6 +58,8 @@ export function makeApiCollectionSummary(
     version: 1,
     category_id: null,
     sort_order: 0,
+    program_ids: [],
+    group_ids: [],
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-02T00:00:00Z',
     permissions: {
@@ -76,8 +78,6 @@ export function makeApiCollection(overrides: Partial<ApiCollection> = {}): ApiCo
   return {
     ...makeApiCollectionSummary(),
     images,
-    program_ids: [],
-    group_ids: [],
     viewport_state: {},
     // Nominal count matches the visible member list by default; pass an
     // explicit member_count > image_count to exercise the "all members are
@@ -103,6 +103,8 @@ export function makeCollectionSummary(
     version: 1,
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
     permissions: {
@@ -121,8 +123,6 @@ export function makeCollection(overrides: Partial<Collection> = {}): Collection 
   return {
     ...makeCollectionSummary(),
     images,
-    programIds: [],
-    groupIds: [],
     viewportState: {},
     // Nominal count matches the visible member list by default; pass an
     // explicit memberCount > imageCount to exercise the "all members are

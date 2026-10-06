@@ -587,7 +587,8 @@ with the OCC version and 409 merge; the same text-button + eye-icon spot the
 image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
 opens `CollectionManageDialog`, the mini-Browse member manager: drag to
 reorder, drag-to-trash or the corner control to remove, **+** to add via
-the search flow; #1566), **Edit**, and an owners pencil beside the owner
+the search flow — all staged locally until **Done** commits the staged
+list once; #1566/#1567), **Edit**, and an owners pencil beside the owner
 name (`canTransfer`). Filing moved into the edit dialog's **Category** picker —
 the header carries no **Move** button (#1566). Below the top row, the **type chip** (Synchronized /
 Sequence) and the **visibility chip** (Public/Private/Restricted) sit to the
@@ -835,20 +836,26 @@ image has failed, an error alert replaces the viewer.
 **Manage dialog.** The header's **Manage** button (replaces the #1559
 Reorder toggle, #1566) opens `CollectionManageDialog` — a mini-Browse grid
 of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
-the locked `SortableTileGrid` collision contract is untouched). On drag-end
-the new order is computed with `move()`; a no-change drop or a cancel sends
-nothing, and a drop on the trash drop target removes the member instead.
-The header's **+ Add images** button hands off to `onAddImages` (App opens
-the search modal in add mode); each tile also carries a corner remove
-control. `useCollectionsData.reorderImages` applies the order to `detail`
-immediately, then sends the whole id list as
-`PUT /api/collections/{id}/images` (`image_ids` + `version`); on error it
-restores the prior order and surfaces the message via `onError`.
-`useCollectionsData.removeImages` runs the same optimistic/rollback dance —
-the remaining ids go through the same `PUT …/images` whole-replace. Doing
-the optimistic update
-in the hook keeps `App`'s `detail` the single source of truth — the dialog,
-the filmstrip, and any subsequent edits see the same member order.
+the locked `SortableTileGrid` collision contract is untouched). The dialog
+is a local draft editor (#1567): opening seeds the draft from the detail's
+member list, and every operation — `move()` reorder on drag-end, the corner
+remove control, a drop on the trash overlay, and picks returned by the
+add-images search flow (`onAddImages` → App opens `SearchModal`, whose
+selected `ImageItem`s land back in the draft via a staged-add channel) —
+mutates only the draft, so the detail page and filmstrip behind the dialog
+never move mid-edit. Dragging renders a `DragOverlay` replica while the
+source tile dims in place, and the trash `useDroppable` is a permanently
+registered fixed overlay at the bottom-right of the scroll area (hidden +
+`disabled` while idle). **Done** diffs the draft against the seeded order
+and fires `onSaveMembers(imageIds)` once when it differs — a single
+`PUT /api/collections/{id}/images` whole-replace (`image_ids` + `version`)
+in `useCollectionsData.reorderImages`, which keeps `App`'s `detail` the
+single source of truth and surfaces errors via `onError`; a failed commit
+keeps the dialog open with the draft intact. Closing a dirty draft
+(Esc/backdrop/close) asks to discard first; a clean close needs no
+confirmation. Staged additions dedupe by image id and enforce the
+four-image synchronized cap, reporting already/full outcomes through
+`onError`.
 
 ### Synchronized collection viewer (#1417)
 

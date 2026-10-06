@@ -300,6 +300,19 @@ async def test_list_summary_fields_and_permissions_for_owner() -> None:
     assert summary.permissions.can_delete is True
     assert summary.permissions.can_transfer is False
     assert summary.version == 3
+    # Non-restricted collections carry an empty scope on summaries (#1567).
+    assert summary.program_ids == []
+    assert summary.group_ids == []
+
+
+async def test_list_summary_carries_restriction_scope() -> None:
+    """Summaries expose program/group ids so Browse tiles can render the
+    collection's own restriction chips like category tiles do (#1567)."""
+    col = _collection(1, "restricted", user_id=10, programs=[1, 2], groups=[5])
+    out = await list_collections(_user("admin", id=1), db=_mock_db([col]))
+    summary = out[0]
+    assert summary.program_ids == [1, 2]
+    assert summary.group_ids == [5]
 
 
 async def test_list_co_owned_permissions_for_student_co_owner() -> None:

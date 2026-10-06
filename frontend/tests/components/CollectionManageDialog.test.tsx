@@ -2,19 +2,26 @@
  * Tests for CollectionManageDialog (#1566) — the member-management surface
  * behind the collection page's Manage button.
  *
+ * Since #1567 the dialog stages every membership edit locally: reorder,
+ * remove, and search additions mutate a draft list only; Done commits the
+ * staged ids through `onSaveMembers` exactly once. These tests assert the
+ * staged contract — nothing persists mid-edit, and Done carries the full
+ * final list (order + removals + additions).
+ *
  * `DragDropProvider` is wrapped (not mocked) to capture `onDragStart` /
  * `onDragEnd`, so the real @dnd-kit `move()` semantics run against synthetic
- * operations that carry the projected-index fields the helper commits on —
- * the same harness SequenceCollectionViewer's old reorder tests used.
+ * operations that carry the projected-index fields the helper commits on.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import type { Collection } from '../../src/types'
 import { makeCollection, makeImage } from '../helpers/fixtures'
 import CollectionManageDialog, {
   type CollectionManageDialogProps,
+  type StageAddImages,
 } from '../../src/components/CollectionManageDialog'
 
 // ── DragDropProvider wrapper — captures the handlers for direct calls ────
@@ -59,8 +66,7 @@ function renderDialog(overrides: Partial<CollectionManageDialogProps> = {}) {
     open: true,
     onClose: vi.fn(),
     collection: manageCollection(),
-    onReorder: vi.fn().mockResolvedValue(undefined),
-    onRemoveImages: vi.fn().mockResolvedValue(undefined),
+    onSaveMembers: vi.fn().mockResolvedValue(undefined),
     onAddImages: vi.fn(),
     onImageRenewed: vi.fn(),
     onError: vi.fn(),
@@ -76,9 +82,16 @@ const sortableDrag = (sourceId: string, index: number, initialIndex: number) => 
   group: 'manage',
 })
 
+/** Tile order as rendered — the draft's visible state. */
+const draftOrder = () =>
+  screen
+    .getAllByTestId(/^manage-tile-\d+$/)
+    .map((el) => Number(el.getAttribute('data-testid')!.replace('manage-tile-', '')))
+
 beforeEach(() => {
   capturedOnDragEnd = undefined
   capturedOnDragStart = undefined
+  vi.restoreAllMocks()
 })
 
 describe('CollectionManageDialog', () => {
@@ -96,10 +109,12 @@ describe('CollectionManageDialog', () => {
     expect(thumb).toHaveAttribute('alt', '')
   })
 
-  it('invokes onAddImages from the + affordance', () => {
+  it('hands its staging channel to onAddImages from the + affordance', () => {
     const { props } = renderDialog()
     fireEvent.click(screen.getByRole('button', { name: 'Add images to collection' }))
     expect(props.onAddImages).toHaveBeenCalled()
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    expect(typeof stageAdd).toBe('function')
   })
 
   it('omits the + affordance when no onAddImages is wired', () => {
@@ -109,21 +124,48 @@ describe('CollectionManageDialog', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('removes a member via its corner control', async () => {
+  it('staged search picks appear in the draft without persisting', () => {
     const { props } = renderDialog()
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add images to collection' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    let result: ReturnType<StageAddImages>
+    act(() => {
+      result = stageAdd([makeImage({ id: 200, name: 'Picked' })])
     })
-    expect(props.onRemoveImages).toHaveBeenCalledWith([101])
+    expect(result!.status).toBe('added')
+    expect(screen.getByTestId('manage-tile-200')).toBeInTheDocument()
+    // Nothing persists until Done.
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 
-  it('reports a removal failure through onError', async () => {
-    const onRemoveImages = vi.fn().mockRejectedValue(new Error('stale version'))
-    const { props } = renderDialog({ onRemoveImages })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 1 from collection' }))
+  it('reports already/full outcomes for staged picks', () => {
+    const { props, unmount } = renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Add images to collection' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      // Every pick already a member → 'already'.
+      expect(stageAdd([makeImage({ id: 100 })]).status).toBe('already')
     })
-    expect(props.onError).toHaveBeenCalledWith('Unable to remove the image from the collection.')
+    unmount()
+    // A synchronized collection at capacity reports 'full' (max 4).
+    const sync = manageCollection({
+      type: 'synchronized',
+      images: [1, 2, 3, 4].map((id) => makeImage({ id, name: `Img ${id}` })),
+    })
+    const full = renderDialog({ collection: sync })
+    fireEvent.click(screen.getByRole('button', { name: 'Add images to collection' }))
+    const stageFull = full.props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      expect(stageFull([makeImage({ id: 300 })]).status).toBe('full')
+    })
+  })
+
+  it('corner-control removal stages locally — tile leaves, nothing persists', () => {
+    const { props } = renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))
+    expect(screen.queryByTestId('manage-tile-101')).not.toBeInTheDocument()
+    expect(draftOrder()).toEqual([100, 102])
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 
   it('keeps the trash zone inert until a member tile is picked up', () => {
@@ -138,9 +180,8 @@ describe('CollectionManageDialog', () => {
     expect(trash).toHaveAttribute('aria-hidden', 'false')
   })
 
-  it('persists a drag reorder through onReorder', () => {
+  it('stages a drag reorder without persisting', () => {
     const { props } = renderDialog()
-    // Drag the first tile onto the third: move() commits source.index.
     act(() => {
       capturedOnDragEnd!({
         operation: {
@@ -150,12 +191,13 @@ describe('CollectionManageDialog', () => {
         },
       })
     })
-    expect(props.onReorder).toHaveBeenCalledWith([101, 102, 100])
+    expect(draftOrder()).toEqual([101, 102, 100])
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 
-  it('dropping a tile on the trash removes it instead of reordering', async () => {
+  it('dropping a tile on the trash stages the removal, not a reorder', () => {
     const { props } = renderDialog()
-    await act(async () => {
+    act(() => {
       capturedOnDragEnd!({
         operation: {
           source: sortableDrag('cmi-101', 1, 1),
@@ -164,35 +206,94 @@ describe('CollectionManageDialog', () => {
         },
       })
     })
-    expect(props.onRemoveImages).toHaveBeenCalledWith([101])
-    expect(props.onReorder).not.toHaveBeenCalled()
+    expect(draftOrder()).toEqual([100, 102])
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 
-  it('reports a reorder failure through onError', async () => {
-    const onReorder = vi.fn().mockRejectedValue(new Error('stale version'))
-    const { props } = renderDialog({ onReorder })
+  it('Done commits the full staged list once — reorder + removal + additions', async () => {
+    const { props } = renderDialog()
+    // Stage: reorder (100 → end) + remove 102 + add 200.
+    fireEvent.click(screen.getByRole('button', { name: 'Add images to collection' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      stageAdd([makeImage({ id: 200, name: 'Picked' })])
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 3 from collection' }))
     act(() => {
       capturedOnDragEnd!({
         operation: {
           source: sortableDrag('cmi-100', 2, 0),
-          target: sortableDrag('cmi-102', 2, 2),
+          target: sortableDrag('cmi-200', 2, 2),
           canceled: false,
         },
       })
     })
+    expect(draftOrder()).toEqual([101, 200, 100])
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(props.onSaveMembers).toHaveBeenCalledTimes(1)
+    expect(props.onSaveMembers).toHaveBeenCalledWith([101, 200, 100])
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
+  it('Done with a clean draft closes without saving', async () => {
+    const { props } = renderDialog()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
+  it('a failed Done keeps the dialog open with the draft intact', async () => {
+    const onSaveMembers = vi.fn().mockRejectedValue(new Error('stale version'))
+    const { props } = renderDialog({ onSaveMembers })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
     await vi.waitFor(() =>
-      expect(props.onError).toHaveBeenCalledWith('Failed to reorder collection images.'),
+      expect(props.onError).toHaveBeenCalledWith('Failed to save the collection members.'),
     )
+    expect(props.onClose).not.toHaveBeenCalled()
+    // Draft still holds the staged removal — a retry commits the same list.
+    expect(screen.queryByTestId('manage-tile-101')).not.toBeInTheDocument()
+    onSaveMembers.mockResolvedValue(undefined)
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onSaveMembers).toHaveBeenLastCalledWith([100, 102])
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
+  it('Esc/backdrop discard a dirty draft only after confirmation', async () => {
+    const { props } = renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const user = userEvent.setup()
+    await user.keyboard('{Escape}')
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(props.onClose).not.toHaveBeenCalled()
+    // Confirm → discard: the parent closes, nothing was persisted.
+    confirmSpy.mockReturnValue(true)
+    await user.keyboard('{Escape}')
+    expect(props.onClose).toHaveBeenCalled()
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
+  })
+
+  it('Esc closes a clean draft with no confirmation', async () => {
+    const { props } = renderDialog()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    await user.keyboard('{Escape}')
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(props.onClose).toHaveBeenCalled()
   })
 
   it('ignores a canceled drag and a drop that changes nothing', () => {
-    const { props } = renderDialog()
+    renderDialog()
     act(() => {
       capturedOnDragEnd!({
         operation: { source: sortableDrag('cmi-100', 0, 0), target: null, canceled: true },
       })
     })
-    // Dropping the tile back onto itself leaves the order unchanged.
     act(() => {
       capturedOnDragEnd!({
         operation: {
@@ -202,8 +303,26 @@ describe('CollectionManageDialog', () => {
         },
       })
     })
-    expect(props.onReorder).not.toHaveBeenCalled()
-    expect(props.onRemoveImages).not.toHaveBeenCalled()
+    expect(draftOrder()).toEqual([100, 101, 102])
+  })
+
+  it('reseeds the draft on the next open after a discard', () => {
+    const props: CollectionManageDialogProps = {
+      open: true,
+      onClose: vi.fn(),
+      collection: manageCollection(),
+      onSaveMembers: vi.fn().mockResolvedValue(undefined),
+      onAddImages: vi.fn(),
+      onImageRenewed: vi.fn(),
+      onError: vi.fn(),
+    }
+    const { rerender } = render(<CollectionManageDialog {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))
+    expect(draftOrder()).toEqual([100, 102])
+    // Close (discard) and reopen — the draft reseeds from the collection.
+    rerender(<CollectionManageDialog {...props} open={false} />)
+    rerender(<CollectionManageDialog {...props} open={true} />)
+    expect(draftOrder()).toEqual([100, 101, 102])
   })
 
   it('shows the empty state and restricted-member note', () => {

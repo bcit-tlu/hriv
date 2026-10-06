@@ -66,6 +66,8 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     coverThumb: '/hriv-splash2.jpg',
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
@@ -249,7 +251,6 @@ function CollectionsPageExample(args: StoryArgs) {
           selectedCollectionItemId={null}
           onSelectCollectionItem={() => undefined}
           onReorderImages={async () => undefined}
-          onRemoveCollectionImages={async () => undefined}
           onCollectionImageRenewed={() => undefined}
           onViewerError={() => undefined}
           onSaveViewport={async () => undefined}

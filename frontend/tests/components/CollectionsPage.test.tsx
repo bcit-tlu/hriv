@@ -104,7 +104,6 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     selectedCollectionItemId: null,
     onSelectCollectionItem: vi.fn(),
     onReorderImages: vi.fn().mockResolvedValue(undefined),
-    onRemoveCollectionImages: vi.fn().mockResolvedValue(undefined),
     onCollectionImageRenewed: vi.fn(),
     onViewerError: vi.fn(),
     onSaveViewport: vi.fn().mockResolvedValue(undefined),
@@ -657,6 +656,49 @@ describe('CollectionsPage', () => {
       const chips = screen.getAllByTestId('detail-program-chip')
       expect(chips.map((c) => c.textContent)).toEqual(['Radiography', 'Program 99'])
       expect(screen.getByTestId('detail-group-chip')).toHaveTextContent('Cohort A')
+      // Chips sit on the breadcrumb row to the left of the action buttons —
+      // the View Images header convention (#1567).
+      const manage = screen.getByRole('button', { name: 'Manage' })
+      expect(
+        chips[0].compareDocumentPosition(manage) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it("renders the filed category's restriction scope as dimmed inherited chips (#1567)", () => {
+      renderPage({
+        selectedCollectionId: 9,
+        categories: [makeCategory({ id: 5, label: 'Histology', programIds: [2], groupIds: [6] })],
+        programs: [
+          { id: 1, name: 'Radiography' },
+          { id: 2, name: 'Dental' },
+        ],
+        groups: [
+          {
+            id: 6,
+            name: 'Cohort B',
+            description: null,
+            createdByUserId: null,
+            memberIds: [],
+            instructorIds: [],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        detail: makeCollection({
+          id: 9,
+          visibility: 'restricted',
+          programIds: [1],
+          groupIds: [],
+          categoryId: 5,
+        }),
+      })
+      const programs = screen.getAllByTestId('detail-program-chip')
+      expect(programs.map((c) => c.textContent)).toEqual(['Radiography', 'Dental'])
+      expect(programs[1]).toHaveStyle({ opacity: 0.6 })
+      expect(programs[0]).not.toHaveStyle({ opacity: 0.6 })
+      const groups = screen.getAllByTestId('detail-group-chip')
+      expect(groups.map((c) => c.textContent)).toEqual(['Cohort B'])
+      expect(groups[0]).toHaveStyle({ opacity: 0.6 })
     })
 
     it('gates the detail owners pencil on canTransfer (#1567)', async () => {
@@ -846,28 +888,27 @@ describe('CollectionsPage', () => {
       expect(screen.getAllByRole('button', { name: 'Manage' }).length).toBeGreaterThan(0)
     })
 
-    it('wires the Manage dialog through the shared mutation handlers (#1566)', async () => {
+    it('wires the Manage dialog through the shared mutation handlers (#1566/#1567)', async () => {
       const user = userEvent.setup()
       const onReorderImages = vi.fn().mockResolvedValue(undefined)
-      const onRemoveCollectionImages = vi.fn().mockResolvedValue(undefined)
       const onRequestCollectionImageSearch = vi.fn()
       const detail = makeCollection({ id: 9, type: 'sequence' })
       renderPage({
         selectedCollectionId: 9,
         detail,
         onReorderImages,
-        onRemoveCollectionImages,
         onRequestCollectionImageSearch,
       })
       await user.click(screen.getByRole('button', { name: 'Manage' }))
       const props = manageDialogProps.current!
       expect(props.collection).toBe(detail)
-      void (props.onReorder as (ids: number[]) => Promise<unknown>)([22, 21])
+      // Done commits the staged draft through the whole-replace handler.
+      void (props.onSaveMembers as (ids: number[]) => Promise<unknown>)([22, 21])
       expect(onReorderImages).toHaveBeenCalledWith(9, [22, 21])
-      void (props.onRemoveImages as (ids: number[]) => Promise<unknown>)([22])
-      expect(onRemoveCollectionImages).toHaveBeenCalledWith(9, [22])
-      ;(props.onAddImages as () => void)()
-      expect(onRequestCollectionImageSearch).toHaveBeenCalledWith(detail)
+      // The + affordance hands search the dialog's staging channel.
+      const stageAdd = vi.fn()
+      ;(props.onAddImages as (stage: unknown) => void)(stageAdd)
+      expect(onRequestCollectionImageSearch).toHaveBeenCalledWith(detail, stageAdd)
     })
 
     it('omits Manage for non-editors', () => {

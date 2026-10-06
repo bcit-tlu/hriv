@@ -511,7 +511,12 @@ interface SearchModalProps {
   onSelectCollection?: (collectionId: number) => void
   /** Opens the Add-to-Collection dialog with the multi-selected image ids.
    *  When absent the multi-select affordance is hidden entirely. */
-  onAddImagesToCollection?: (imageIds: number[]) => void
+  /**
+   * Emits the picked images in selection (epoch/result) order. When the
+   * collection Manage dialog opened the search, App stages these into its
+   * draft; otherwise they flow into the add-to-collection picker (#1567).
+   */
+  onAddImagesToCollection?: (images: ImageItem[]) => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
@@ -549,8 +554,11 @@ export default function SearchModal({
   // accumulated across several queries still emits in "order encountered".
   // (#1418)
   const [selectMode, setSelectMode] = useState(false)
+  // The image rides along in each entry so picks survive a query change —
+  // the collection-add callback emits `ImageItem`s (#1567), which a stale
+  // result list could no longer supply by id alone.
   const [selectedImages, setSelectedImages] = useState<
-    Map<number, { epoch: number; index: number }>
+    Map<number, { epoch: number; index: number; image: ImageItem }>
   >(new Map())
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
@@ -768,11 +776,11 @@ export default function SearchModal({
   }
   const resultEpoch = resultEpochRef.current
 
-  const orderedSelectedIds = useMemo(
+  const orderedSelectedImages = useMemo(
     () =>
       [...selectedImages.entries()]
         .sort((a, b) => a[1].epoch - b[1].epoch || a[1].index - b[1].index)
-        .map(([id]) => id),
+        .map(([, entry]) => entry.image),
     [selectedImages],
   )
 
@@ -782,14 +790,14 @@ export default function SearchModal({
   }, [])
 
   const toggleImageSelected = useCallback(
-    (imageId: number, resultIndex: number) => {
+    (image: ImageItem, resultIndex: number) => {
       const epoch = resultEpoch
       setSelectedImages((prev) => {
         const next = new Map(prev)
-        if (next.has(imageId)) {
-          next.delete(imageId)
+        if (next.has(image.id)) {
+          next.delete(image.id)
         } else {
-          next.set(imageId, { epoch, index: resultIndex })
+          next.set(image.id, { epoch, index: resultIndex, image })
         }
         return next
       })
@@ -798,9 +806,9 @@ export default function SearchModal({
   )
 
   const handleAddSelected = () => {
-    if (orderedSelectedIds.length === 0) return
+    if (orderedSelectedImages.length === 0) return
     onClose()
-    onAddImagesToCollection?.(orderedSelectedIds)
+    onAddImagesToCollection?.(orderedSelectedImages)
   }
 
   const handleSelect = (result: GroupedResult) => {
@@ -1163,7 +1171,7 @@ export default function SearchModal({
                         <Checkbox
                           data-testid="search-select-checkbox"
                           checked={selectedImages.has(image.id)}
-                          onChange={() => toggleImageSelected(image.id, resultIndex)}
+                          onChange={() => toggleImageSelected(image, resultIndex)}
                           slotProps={{
                             input: { 'aria-label': `Select ${image.name}` },
                           }}
@@ -1200,11 +1208,12 @@ export default function SearchModal({
             }}
           >
             <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-              {orderedSelectedIds.length} image{orderedSelectedIds.length === 1 ? '' : 's'} selected
+              {orderedSelectedImages.length} image{orderedSelectedImages.length === 1 ? '' : 's'}{' '}
+              selected
             </Typography>
             <Button
               size="small"
-              disabled={orderedSelectedIds.length === 0}
+              disabled={orderedSelectedImages.length === 0}
               onClick={() => setSelectedImages(new Map())}
             >
               Clear
@@ -1213,7 +1222,7 @@ export default function SearchModal({
               variant="contained"
               size="small"
               data-testid="search-add-to-collection"
-              disabled={orderedSelectedIds.length === 0}
+              disabled={orderedSelectedImages.length === 0}
               onClick={handleAddSelected}
             >
               Add to collection

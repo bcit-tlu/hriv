@@ -111,6 +111,15 @@ describe('CollectionEditDialog', () => {
       expect(screen.getByRole('radio', { name: /Sequence/ })).not.toBeChecked()
     })
 
+    it('renders the Type section first — above the name field (#1567)', () => {
+      renderDialog()
+      const typeLabel = screen.getByText('Type')
+      const nameField = screen.getByLabelText('Collection name')
+      expect(
+        typeLabel.compareDocumentPosition(nameField) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
     it('submits trimmed values with an empty scope when not restricted', async () => {
       const user = userEvent.setup()
       const { onSave, onClose } = renderDialog()

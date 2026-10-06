@@ -16,7 +16,8 @@ import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { fetchCollection } from '../api'
-import type { CollectionSummary, CollectionVisibility } from '../types'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
+import type { CollectionSummary, CollectionVisibility, Group, Program } from '../types'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
@@ -39,6 +40,13 @@ export interface CollectionCardProps {
    * curatorial, not ownership-bound), so it renders whenever provided.
    */
   onMove?: (collection: CollectionSummary) => void
+  /** Restriction chip lookup (#1567) — same contract as CategoryTile. */
+  programs: Program[]
+  /** Effective program restriction inherited from the filed category. */
+  inheritedProgramIds?: number[]
+  groups?: Group[]
+  /** Effective group restriction inherited from the filed category. */
+  inheritedGroupIds?: number[]
 }
 
 /**
@@ -61,6 +69,9 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
       />
     )
   }
+  // Chip icons sit at the 14px lock convention used beside category titles
+  // — `.MuiChip-icon` (18px for small chips) otherwise overrides the icon's
+  // own sx font-size, so the size must live on the chip (#1567).
   if (visibility === 'public') {
     return (
       <Chip
@@ -68,8 +79,8 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
         label={label}
         size="small"
         variant="outlined"
-        // Icon sized to the restricted-category lock convention (#1566).
-        icon={<PublicIcon sx={{ fontSize: 14 }} />}
+        icon={<PublicIcon />}
+        sx={{ '& .MuiChip-icon': { fontSize: 14 } }}
       />
     )
   }
@@ -78,11 +89,11 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
       data-testid="collection-visibility-chip"
       label={label}
       size="small"
-      icon={<LockIcon sx={{ fontSize: 14 }} />}
+      icon={<LockIcon />}
       sx={{
         bgcolor: visColors.inactiveChipBg,
         color: '#fff',
-        '& .MuiChip-icon': { color: '#fff' },
+        '& .MuiChip-icon': { color: '#fff', fontSize: 14 },
       }}
     />
   )
@@ -99,6 +110,10 @@ export default function CollectionCard({
   onEdit,
   onTransfer,
   onMove,
+  programs,
+  inheritedProgramIds = [],
+  groups = [],
+  inheritedGroupIds = [],
 }: CollectionCardProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -108,6 +123,26 @@ export default function CollectionCard({
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
   const showMove = Boolean(onMove)
+
+  // Restriction chips mirror the category tile (#1567): the collection's own
+  // scope renders solid; the filed category's effective scope renders at the
+  // inherited opacity.
+  const ownProgramIds = collection.visibility === 'restricted' ? collection.programIds : []
+  const ownGroupIds = collection.visibility === 'restricted' ? collection.groupIds : []
+  const programChips = ownProgramIds
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+  const inheritedProgramChips = inheritedProgramIds
+    .filter((pid) => !ownProgramIds.includes(pid))
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+  const groupChips = ownGroupIds
+    .map((gid) => groups.find((g) => g.id === gid))
+    .filter((g): g is Group => g != null)
+  const inheritedGroupChips = inheritedGroupIds
+    .filter((gid) => !ownGroupIds.includes(gid))
+    .map((gid) => groups.find((g) => g.id === gid))
+    .filter((g): g is Group => g != null)
 
   return (
     <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
@@ -186,6 +221,62 @@ export default function CollectionCard({
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             <CollectionVisibilityChip visibility={collection.visibility} />
           </Box>
+          {/* Own/inherited scope render as separate rows, matching
+              CategoryTile (#1567). */}
+          {programChips.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {programChips.map((p) => (
+                <Chip
+                  key={p.id}
+                  data-testid="program-chip"
+                  label={p.name}
+                  size="small"
+                  color="primary"
+                />
+              ))}
+            </Box>
+          )}
+          {inheritedProgramChips.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {inheritedProgramChips.map((p) => (
+                <Chip
+                  key={p.id}
+                  data-testid="program-chip"
+                  label={p.name}
+                  size="small"
+                  color="primary"
+                  sx={getInheritedRestrictionSx(true)}
+                />
+              ))}
+            </Box>
+          )}
+          {groupChips.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {groupChips.map((g) => (
+                <Chip
+                  key={g.id}
+                  data-testid="group-chip"
+                  label={g.name}
+                  size="small"
+                  color="secondary"
+                />
+              ))}
+            </Box>
+          )}
+          {inheritedGroupChips.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {inheritedGroupChips.map((g) => (
+                <Chip
+                  key={g.id}
+                  data-testid="group-chip"
+                  label={g.name}
+                  size="small"
+                  color="secondary"
+                  sx={getInheritedRestrictionSx(true)}
+                />
+              ))}
+            </Box>
+          )}
         </CardContent>
       </CardActionArea>
       {/* Cover-overlay controls (#1554/#1559): the type pill pins to the

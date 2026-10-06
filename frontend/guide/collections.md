@@ -65,9 +65,12 @@ visible but can't be changed here.
   image view where you can edit annotations with the usual permissions.
 - If you can edit the collection, a **Manage** button in the top-right
   header opens a dialog of thumbnails — a miniature Browse view. Drag
-  thumbnails to reorder, drop one on the trash drop target (or click its
-  corner remove icon) to take it out of the collection, and click **+** to
-  add images through search. This works for synchronized collections too.
+  thumbnails to reorder, drop one on the trash drop target in the
+  bottom-right corner (or click its corner remove icon) to take it out of
+  the collection, and click **+** to add images through search. Changes
+  apply inside the dialog only — **Done** saves them all at once, and
+  closing without Done asks before discarding. This works for synchronized
+  collections too.
 
 The breadcrumb at the top of the page shows where the collection lives in
 Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each

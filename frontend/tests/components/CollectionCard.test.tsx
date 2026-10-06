@@ -163,6 +163,49 @@ describe('CollectionCard', () => {
     render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
     expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
   })
+
+  it('renders own restriction chips solid and inherited scope dimmed (#1567)', () => {
+    const programs = [
+      { id: 1, name: 'Radiography' },
+      { id: 2, name: 'Dental' },
+    ]
+    const groups = [
+      { id: 5, name: 'Cohort A' },
+      { id: 6, name: 'Cohort B' },
+    ]
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          visibility: 'restricted',
+          programIds: [1],
+          groupIds: [5],
+        })}
+        onOpen={vi.fn()}
+        programs={programs}
+        groups={groups}
+        inheritedProgramIds={[2]}
+        inheritedGroupIds={[6]}
+      />,
+    )
+    const chips = screen.getAllByTestId('program-chip')
+    expect(chips.map((c) => c.textContent)).toEqual(['Radiography', 'Dental'])
+    // Inherited scope renders at the shared 0.6 opacity (#1567).
+    expect(chips[1]).toHaveStyle({ opacity: 0.6 })
+    const groupChips = screen.getAllByTestId('group-chip')
+    expect(groupChips.map((c) => c.textContent)).toEqual(['Cohort A', 'Cohort B'])
+    expect(groupChips[1]).toHaveStyle({ opacity: 0.6 })
+  })
+
+  it('renders no restriction chips for non-restricted or unrestricted-scope collections', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({ visibility: 'public', programIds: [1] })}
+        onOpen={vi.fn()}
+        programs={[{ id: 1, name: 'Radiography' }]}
+      />,
+    )
+    expect(screen.queryByTestId('program-chip')).not.toBeInTheDocument()
+  })
 })
 
 describe('CollectionVisibilityChip', () => {
@@ -174,4 +217,16 @@ describe('CollectionVisibilityChip', () => {
     render(<CollectionVisibilityChip visibility={visibility} />)
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent(label)
   })
+
+  it.each(['private', 'public'] as const)(
+    'sizes the %s icon at the 14px convention (#1567)',
+    (v) => {
+      render(<CollectionVisibilityChip visibility={v} />)
+      // `.MuiChip-icon` owns the icon size — the chip-level sx sets it to the
+      // 14px lock convention used beside category titles.
+      const icon = screen.getByTestId('collection-visibility-chip').querySelector('.MuiChip-icon')
+      expect(icon).not.toBeNull()
+      expect(getComputedStyle(icon as Element).fontSize).toBe('14px')
+    },
+  )
 })

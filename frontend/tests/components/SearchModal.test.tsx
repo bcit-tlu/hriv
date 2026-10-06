@@ -1205,7 +1205,11 @@ describe('SearchModal', () => {
 
     await user.click(screen.getByTestId('search-add-to-collection'))
     expect(onClose).toHaveBeenCalled()
-    expect(onAddImagesToCollection).toHaveBeenCalledWith([10, 11])
+    // Picks carry the ImageItems — the Manage dialog stages them (#1567).
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 10 }),
+      expect.objectContaining({ id: 11 }),
+    ])
   })
 
   it('keeps non-image rows navigable and unselectable in select mode', async () => {
@@ -1306,7 +1310,10 @@ describe('SearchModal', () => {
     // Kidney was encountered first, so the payload is [11, 10] — not the
     // current result order and never the click order.
     await user.click(screen.getByTestId('search-add-to-collection'))
-    expect(onAddImagesToCollection).toHaveBeenCalledWith([11, 10])
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 11 }),
+      expect.objectContaining({ id: 10 }),
+    ])
   })
 
   it('keeps the Cancel control reachable in no-result and empty-query states', async () => {

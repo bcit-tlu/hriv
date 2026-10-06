@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -11,13 +11,20 @@ import AddIcon from '@mui/icons-material/Add'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { alpha, type Theme } from '@mui/material/styles'
-import { DragDropProvider, KeyboardSensor, PointerSensor, useDroppable } from '@dnd-kit/react'
+import {
+  DragDropProvider,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useDroppable,
+} from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import { userMessage, type ApiImage } from '../api'
+import { fitsCollectionCapacity } from '../useAddToCollection'
 import type { Collection, ImageItem } from '../types'
 import RenewingThumbnail from './RenewingThumbnail'
 
@@ -28,21 +35,36 @@ import RenewingThumbnail from './RenewingThumbnail'
  * appears while dragging. "+" opens the global search modal so picked
  * images join through the standard add flow.
  *
- * Reorder and remove both whole-replace `PUT …/images` via the parent's
- * `useCollectionsData` handlers, so optimistic-concurrency `version`
- * handling stays uniform.
+ * All membership edits are **staged** (#1567): reorders, removals and search
+ * additions mutate a local draft only — the detail page and filmstrip behind
+ * the dialog do not change until **Done** commits the staged list through
+ * `onSaveMembers` (a single whole-replace `PUT …/images` in the data hook,
+ * so optimistic-concurrency `version` handling stays uniform). Closing
+ * without Done discards the draft.
  */
+
+/** Outcome of staging search picks into the draft (#1567). */
+export type ManageStageResult =
+  { status: 'added'; addedCount: number } | { status: 'already' } | { status: 'full' }
+
+/** Stage search picks into the dialog's draft member list. */
+export type StageAddImages = (images: ImageItem[]) => ManageStageResult
+
 export interface CollectionManageDialogProps {
   open: boolean
   onClose: () => void
   /** Detail record — `null` renders an empty dialog (kept mounted for DnD). */
   collection: Collection | null
-  /** Persist a new member order (optimistic + rollback in the data hook). */
-  onReorder: (imageIds: number[]) => Promise<unknown>
-  /** Remove members — the trash drop and the per-tile control share this. */
-  onRemoveImages: (imageIds: number[]) => Promise<unknown>
-  /** "+" opens the global search modal targeted at this collection. */
-  onAddImages?: () => void
+  /**
+   * Commit the staged member list — fired once by Done. Receives the full
+   * ordered id list (reorder + removals + additions in one shot).
+   */
+  onSaveMembers: (imageIds: number[]) => Promise<unknown>
+  /**
+   * "+" opens the global search modal; the dialog hands over its staging
+   * channel so picks land in the draft instead of persisting immediately.
+   */
+  onAddImages?: (stageAdd: StageAddImages) => void
   /** Refresh a member's tokenized URLs after the thumb's renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
@@ -53,10 +75,57 @@ const itemIdFor = (imageId: number) => `${ITEM_PREFIX}${imageId}`
 const imageIdFor = (id: string) => Number(id.slice(ITEM_PREFIX.length))
 const TRASH_ID = 'collection-manage-trash'
 
+/** Shared chrome for the corner remove badge — the sortable tile renders it
+    as a real IconButton, the drag overlay as a decorative copy. */
+const removeBadgeSx = {
+  position: 'absolute',
+  top: -8,
+  right: 0,
+  bgcolor: 'background.paper',
+  boxShadow: 1,
+  width: 22,
+  height: 22,
+  '& svg': { fontSize: 14 },
+} as const
+
+/** Thumb + caption shared by the sortable tile and the drag overlay replica. */
+function MemberTileFace({
+  image,
+  onImageRenewed,
+}: {
+  image: ImageItem
+  onImageRenewed: (image: ApiImage) => void
+}) {
+  return (
+    <>
+      <Box sx={{ width: 72, mx: 'auto' }}>
+        <RenewingThumbnail
+          image={image}
+          // Presentational — the caption below and the tile's aria-label
+          // already carry the name (image-redundant-alt).
+          alt=""
+          onImageRenewed={onImageRenewed}
+          draggable={false}
+          sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1, display: 'block' }}
+        />
+      </Box>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        align="center"
+        noWrap
+        sx={{ display: 'block', mt: 0.5 }}
+      >
+        {image.name}
+      </Typography>
+    </>
+  )
+}
+
 interface SortableMemberTileProps {
   image: ImageItem
   index: number
-  removing: boolean
+  disabled: boolean
   onRemove: (image: ImageItem) => void
   onImageRenewed: (image: ApiImage) => void
 }
@@ -67,7 +136,7 @@ interface SortableMemberTileProps {
 function SortableMemberTile({
   image,
   index,
-  removing,
+  disabled,
   onRemove,
   onImageRenewed,
 }: SortableMemberTileProps) {
@@ -75,6 +144,7 @@ function SortableMemberTile({
     id: itemIdFor(image.id),
     index,
     type: 'collection-manage-item',
+    disabled,
   })
   return (
     // The remove control is a positioned *sibling* of the sortable tile, not
@@ -89,47 +159,21 @@ function SortableMemberTile({
         aria-label={`Drag to reorder ${image.name}`}
         data-testid={`manage-tile-${image.id}`}
         sx={{
-          opacity: isDragSource ? 0.4 : removing ? 0.5 : 1,
-          cursor: isDragSource ? 'grabbing' : 'grab',
+          opacity: isDragSource ? 0.4 : disabled ? 0.6 : 1,
+          cursor: disabled ? 'default' : isDragSource ? 'grabbing' : 'grab',
           '&:focus-visible': { outline: '2px solid', outlineColor: 'info.main' },
         }}
       >
-        <Box sx={{ width: 72, mx: 'auto' }}>
-          <RenewingThumbnail
-            image={image}
-            // Presentational — the caption below and the tile's aria-label
-            // already carry the name (image-redundant-alt).
-            alt=""
-            onImageRenewed={onImageRenewed}
-            draggable={false}
-            sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1, display: 'block' }}
-          />
-        </Box>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          align="center"
-          noWrap
-          sx={{ display: 'block', mt: 0.5 }}
-        >
-          {image.name}
-        </Typography>
+        <MemberTileFace image={image} onImageRenewed={onImageRenewed} />
       </Box>
       <IconButton
         size="small"
         aria-label={`Remove ${image.name} from collection`}
-        disabled={removing}
+        disabled={disabled}
         onClick={() => onRemove(image)}
         sx={{
-          position: 'absolute',
-          top: -8,
-          right: 0,
-          bgcolor: 'background.paper',
-          boxShadow: 1,
-          width: 22,
-          height: 22,
+          ...removeBadgeSx,
           '&:hover': { bgcolor: 'error.light', color: 'error.contrastText' },
-          '& svg': { fontSize: 14 },
         }}
       >
         <CloseIcon />
@@ -139,10 +183,13 @@ function SortableMemberTile({
 }
 
 /**
- * Trash drop-zone (#1566): revealed mid-drag, sticky at the bottom of the
- * scroll area so it stays reachable on long lists. Lives inside the tiles'
- * `DragDropProvider` — `useDroppable` only registers within that context, so
- * hoisting this above the provider silently dead-ends the drop (#1567).
+ * Trash drop-zone (#1566): revealed mid-drag as a fixed overlay pinned to
+ * the bottom-right of the scroll area (#1567) — a zero-height sticky wrapper
+ * keeps it glued to the scrollport's lower edge without consuming a grid
+ * row. Lives inside the tiles' `DragDropProvider` — `useDroppable` only
+ * registers within that context, so hoisting this above the provider
+ * silently dead-ends the drop (#1567). `pointerEvents: 'none'` is safe:
+ * dnd-kit v2 collision uses measured rects, not DOM hit-testing.
  */
 function TrashDropZone({ dragging }: { dragging: boolean }) {
   // Mounted permanently so it is a registered droppable throughout the drag,
@@ -154,34 +201,43 @@ function TrashDropZone({ dragging }: { dragging: boolean }) {
   })
   return (
     <Box
-      ref={ref}
-      aria-hidden={!dragging}
-      data-testid="collection-manage-trash"
       sx={{
         position: 'sticky',
         bottom: 8,
         zIndex: 5,
+        height: 0,
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 0.5,
-        mt: 3,
-        mx: 'auto',
-        width: 200,
-        py: 1.5,
-        border: '2px dashed',
-        borderRadius: 2,
-        borderColor: overTrash ? 'error.main' : 'divider',
-        bgcolor: (theme: Theme) =>
-          overTrash ? alpha(theme.palette.error.main, 0.12) : theme.palette.background.paper,
-        color: overTrash ? 'error.main' : 'text.secondary',
-        opacity: dragging ? 1 : 0,
-        transition: 'opacity 0.2s, border-color 0.15s',
-        pointerEvents: 'none',
+        justifyContent: 'flex-end',
       }}
     >
-      <DeleteOutlineIcon fontSize="large" />
-      <Typography variant="caption">Drop here to remove</Typography>
+      <Box
+        ref={ref}
+        aria-hidden={!dragging}
+        data-testid="collection-manage-trash"
+        sx={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 0.5,
+          width: 180,
+          py: 1.5,
+          border: '2px dashed',
+          borderRadius: 2,
+          borderColor: overTrash ? 'error.main' : 'divider',
+          bgcolor: (theme: Theme) =>
+            overTrash ? alpha(theme.palette.error.main, 0.12) : theme.palette.background.paper,
+          color: overTrash ? 'error.main' : 'text.secondary',
+          opacity: dragging ? 1 : 0,
+          transition: 'opacity 0.2s, border-color 0.15s',
+          pointerEvents: 'none',
+        }}
+      >
+        <DeleteOutlineIcon fontSize="large" />
+        <Typography variant="caption">Drop here to remove</Typography>
+      </Box>
     </Box>
   )
 }
@@ -190,16 +246,44 @@ export default function CollectionManageDialog({
   open,
   onClose,
   collection,
-  onReorder,
-  onRemoveImages,
+  onSaveMembers,
   onAddImages,
   onImageRenewed,
   onError,
 }: CollectionManageDialogProps) {
-  const images = useMemo(() => collection?.images ?? [], [collection])
-  const itemIds = useMemo(() => images.map((img) => itemIdFor(img.id)), [images])
+  // Draft member list — seeded from the collection per open session and
+  // committed once by Done (#1567). `draftRef` is the synchronous mirror so
+  // the stage-add channel (invoked by App while the modal is open) always
+  // reads the latest draft without waiting for a render.
+  const [draft, setDraft] = useState<ImageItem[]>(collection?.images ?? [])
+  const draftRef = useRef<ImageItem[]>(draft)
+  const seededFor = useRef<number | null>(null)
+  const updateDraft = useCallback((next: ImageItem[]) => {
+    draftRef.current = next
+    setDraft(next)
+  }, [])
+  useEffect(() => {
+    if (!open) {
+      seededFor.current = null
+      return
+    }
+    if (collection != null && seededFor.current !== collection.id) {
+      seededFor.current = collection.id
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- per-session draft seed
+      updateDraft(collection.images)
+    }
+  }, [open, collection, updateDraft])
+
+  const itemIds = useMemo(() => draft.map((img) => itemIdFor(img.id)), [draft])
   const [dragging, setDragging] = useState(false)
-  const [removingIds, setRemovingIds] = useState<ReadonlySet<number>>(new Set())
+  const [activeImage, setActiveImage] = useState<ImageItem | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  /** The staged list differs from the loaded member list (order or set). */
+  const dirty = useMemo(() => {
+    const original = collection?.images ?? []
+    return draft.length !== original.length || draft.some((img, i) => img.id !== original[i]?.id)
+  }, [draft, collection])
 
   // Same sensor policy as SortableTileGrid (#1533): 8px pointer distance so
   // clicks still reach the corner control, 250ms touch delay, and no
@@ -224,64 +308,118 @@ export default function CollectionManageDialog({
     [],
   )
 
+  /**
+   * Search picks arrive here (App routes them when this dialog opened the
+   * modal). Dedupes against the draft and enforces the synchronized cap —
+   * the same checks `addImagesToCollection` applies at persist time (#1567).
+   */
+  const stageAdd = useCallback<StageAddImages>(
+    (images) => {
+      const prev = draftRef.current
+      const seen = new Set(prev.map((img) => img.id))
+      const fresh = images.filter((img) => !seen.has(img.id))
+      if (fresh.length === 0) return { status: 'already' }
+      if (
+        collection != null &&
+        !fitsCollectionCapacity(
+          collection,
+          prev.length,
+          fresh.map((img) => img.id),
+        )
+      ) {
+        return { status: 'full' }
+      }
+      updateDraft([...prev, ...fresh])
+      return { status: 'added', addedCount: fresh.length }
+    },
+    [collection, updateDraft],
+  )
+
   const remove = useCallback(
     (imageId: number) => {
-      setRemovingIds((prev) => new Set(prev).add(imageId))
-      void onRemoveImages([imageId])
-        .catch((err: unknown) => {
-          onError(userMessage(err, 'Unable to remove the image from the collection.'))
-        })
-        .finally(() =>
-          setRemovingIds((prev) => {
-            const next = new Set(prev)
-            next.delete(imageId)
-            return next
-          }),
-        )
+      updateDraft(draftRef.current.filter((img) => img.id !== imageId))
     },
-    [onRemoveImages, onError],
+    [updateDraft],
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     // Only member tiles arm the trash — the droppable's `accept` double-checks.
-    if (String(event.operation.source?.id).startsWith(ITEM_PREFIX)) setDragging(true)
+    const sourceId = String(event.operation.source?.id)
+    if (!sourceId.startsWith(ITEM_PREFIX)) return
+    setDragging(true)
+    setActiveImage(draftRef.current.find((img) => itemIdFor(img.id) === sourceId) ?? null)
   }, [])
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setDragging(false)
+      setActiveImage(null)
       const { operation } = event
       if (operation.canceled) return
       const sourceId = operation.source?.id
       if (sourceId == null) return
-      // The trash zone removes the member — same whole-replace path as the
-      // per-tile control (#1566).
+      // The trash zone removes the member — staged like the corner control.
       if (operation.target?.id === TRASH_ID) {
         remove(imageIdFor(String(sourceId)))
         return
       }
       const reordered = move(itemIds, event)
       if (reordered.length !== itemIds.length) return
-      const imageIds = reordered.map(imageIdFor)
-      if (imageIds.every((id, i) => id === images[i]?.id)) return
-      void onReorder(imageIds).catch((err: unknown) =>
-        onError(userMessage(err, 'Failed to reorder collection images.')),
-      )
+      const byId = new Map(draftRef.current.map((img) => [img.id, img] as const))
+      const next = reordered
+        .map((id) => byId.get(imageIdFor(id)))
+        .filter((img): img is ImageItem => img != null)
+      if (next.every((img, i) => img.id === draftRef.current[i]?.id)) return
+      updateDraft(next)
     },
-    [itemIds, images, onReorder, onError, remove],
+    [itemIds, remove, updateDraft],
   )
 
-  const hiddenRestrictedCount = (collection?.memberCount ?? 0) - images.length
+  /** Done commits the staged list once; a clean dialog just closes (#1567). */
+  const handleDone = useCallback(async () => {
+    if (collection == null || !dirty) {
+      onClose()
+      return
+    }
+    setSaving(true)
+    try {
+      await onSaveMembers(draftRef.current.map((img) => img.id))
+      onClose()
+    } catch (err) {
+      // Keep the dialog open with the draft intact so nothing is lost.
+      onError(userMessage(err, 'Failed to save the collection members.'))
+    } finally {
+      setSaving(false)
+    }
+  }, [collection, dirty, onSaveMembers, onClose, onError])
+
+  /** Esc/backdrop discard the draft — guarded when edits are staged. */
+  const handleRequestClose = useCallback(() => {
+    if (saving) return
+    if (dirty && !window.confirm('Discard unsaved changes to this collection?')) return
+    onClose()
+  }, [dirty, saving, onClose])
+
+  // Hidden-member count comes from the loaded record, not the draft — staged
+  // removes of visible members don't change how many are restricted away.
+  const hiddenRestrictedCount = (collection?.memberCount ?? 0) - (collection?.images.length ?? 0)
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth data-testid="collection-manage">
+    <Dialog
+      open={open}
+      onClose={handleRequestClose}
+      maxWidth="lg"
+      fullWidth
+      data-testid="collection-manage"
+    >
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Manage images{collection ? ` — ${collection.name}` : ''}
         {onAddImages && (
           <IconButton
             aria-label="Add images to collection"
-            onClick={onAddImages}
+            onClick={() => onAddImages(stageAdd)}
             color="primary"
+            disabled={saving}
             data-testid="collection-manage-add"
           >
             <AddIcon />
@@ -290,8 +428,8 @@ export default function CollectionManageDialog({
       </DialogTitle>
       <DialogContent sx={{ position: 'relative', minHeight: 220 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Drag thumbnails to reorder. Drag onto the bin, or use a tile's corner control, to remove
-          an image from the collection.
+          Drag thumbnails to reorder. Drag onto the bin, or use a tile&apos;s corner control, to
+          remove an image from the collection. Changes apply when you choose Done.
         </Typography>
         {hiddenRestrictedCount > 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
@@ -300,29 +438,69 @@ export default function CollectionManageDialog({
           </Typography>
         )}
         <DragDropProvider sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          {images.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
-              No images in this collection yet — use the add button to pick some.
-            </Typography>
-          ) : (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {images.map((img, index) => (
-                <SortableMemberTile
-                  key={img.id}
-                  image={img}
-                  index={index}
-                  removing={removingIds.has(img.id)}
-                  onRemove={(image) => remove(image.id)}
-                  onImageRenewed={onImageRenewed}
-                />
-              ))}
-            </Box>
-          )}
-          <TrashDropZone dragging={dragging} />
+          <>
+            {draft.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
+                No images in this collection yet — use the add button to pick some.
+              </Typography>
+            ) : (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                {draft.map((img, index) => (
+                  <SortableMemberTile
+                    key={img.id}
+                    image={img}
+                    index={index}
+                    disabled={saving}
+                    onRemove={(image) => remove(image.id)}
+                    onImageRenewed={onImageRenewed}
+                  />
+                ))}
+              </Box>
+            )}
+            <TrashDropZone dragging={dragging} />
+            {/* Overlay replica keeps the tile (and its corner badge) together
+                under the pointer while the source stays dimmed in place —
+                the same DragOverlay pattern as the Browse grid (#1567). */}
+            <DragOverlay dropAnimation={null}>
+              {activeImage ? (
+                <Box
+                  aria-hidden
+                  sx={{
+                    width: 96,
+                    opacity: 0.9,
+                    pointerEvents: 'none',
+                    cursor: 'grabbing',
+                    position: 'relative',
+                  }}
+                >
+                  <MemberTileFace image={activeImage} onImageRenewed={onImageRenewed} />
+                  <Box
+                    component="span"
+                    sx={{
+                      ...removeBadgeSx,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%',
+                    }}
+                  >
+                    <CloseIcon />
+                  </Box>
+                </Box>
+              ) : null}
+            </DragOverlay>
+          </>
         </DragDropProvider>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Done</Button>
+        {dirty && (
+          <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', pl: 2 }}>
+            Unsaved changes — apply with Done.
+          </Typography>
+        )}
+        <Button onClick={() => void handleDone()} disabled={saving} data-testid="manage-done">
+          Done
+        </Button>
       </DialogActions>
     </Dialog>
   )

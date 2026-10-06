@@ -372,36 +372,9 @@ export default function CollectionEditDialog({
             You can file or hide this collection; only its owner can edit the details.
           </Alert>
         )}
-        <TextField
-          inputRef={inputRef}
-          autoFocus
-          margin="dense"
-          label="Collection name"
-          fullWidth
-          variant="outlined"
-          value={name}
-          disabled={!canEditMeta}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              handleSubmit()
-            }
-          }}
-        />
-        <TextField
-          margin="dense"
-          label="Description"
-          fullWidth
-          multiline
-          minRows={2}
-          variant="outlined"
-          value={description}
-          disabled={!canEditMeta}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-
-        <Box sx={{ mt: 2 }}>
+        {/* Type leads — it's the most consequential option and immutable
+            after creation (#1567). */}
+        <Box sx={{ mt: 1 }}>
           <Typography variant="subtitle2" component="p" gutterBottom>
             Type
           </Typography>
@@ -443,6 +416,35 @@ export default function CollectionEditDialog({
             </RadioGroup>
           )}
         </Box>
+
+        <TextField
+          inputRef={inputRef}
+          autoFocus
+          margin="dense"
+          label="Collection name"
+          fullWidth
+          variant="outlined"
+          value={name}
+          disabled={!canEditMeta}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              handleSubmit()
+            }
+          }}
+        />
+        <TextField
+          margin="dense"
+          label="Description"
+          fullWidth
+          multiline
+          minRows={2}
+          variant="outlined"
+          value={description}
+          disabled={!canEditMeta}
+          onChange={(e) => setDescription(e.target.value)}
+        />
 
         {/* Category filing renders below Type (#1567) and only for roles the
             move endpoint allows (#1566). The picker's inline add/rename/hide

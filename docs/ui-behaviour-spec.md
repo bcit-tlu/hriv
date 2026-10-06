@@ -389,11 +389,12 @@ always read-only (`canEditContent={false}`).
 - **Given** the collection has no visible images, **Then** an info `Alert`
   says there is nothing to show.
 - **Given** `permissions.can_edit`, **Then** a **Manage** button opens a
-  large dialog of filmstrip-size thumbnails; dragging reorders (PUTs the
-  whole member id list with the collection `version`, optimistically, with
-  rollback on error), a trash drop target and per-tile remove control delete
-  members, and a **+** button opens the add-images search flow. Non-editors
-  never see the button.
+  large dialog of filmstrip-size thumbnails; dragging reorders, the
+  bottom-right trash overlay and per-tile remove control delete members, and
+  a **+** button opens the add-images search flow — all staged in a local
+  draft that leaves the page behind untouched until **Done** PUTs the whole
+  member id list with the collection `version` (closing a dirty draft asks
+  to discard first). Non-editors never see the button.
 
 ### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
 

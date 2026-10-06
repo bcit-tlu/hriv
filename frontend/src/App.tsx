@@ -69,6 +69,7 @@ import {
   parseCollectionIdParam,
   parseCollectionItemParam,
 } from './collectionUtils'
+import type { StageAddImages } from './components/CollectionManageDialog'
 import { useCollectionsData } from './useCollectionsData'
 import {
   createCollectionWithImages,
@@ -1775,15 +1776,23 @@ export default function App() {
   // The target is set/cleared when Search *opens* — never on close — because
   // SearchModal calls onClose() before onAddImagesToCollection, so a close-
   // time clear would drop the target before the add callback reads it (#1567).
-  const manageSearchTarget = useRef<Collection | null>(null)
+  // `stageAdd` is the dialog's staging channel — Manage commits membership
+  // once on Done, so picks land in its draft rather than persisting here.
+  const manageSearchTarget = useRef<{
+    collection: Collection
+    stageAdd: StageAddImages
+  } | null>(null)
   const openSearch = useCallback(() => {
     manageSearchTarget.current = null
     setSearchOpen(true)
   }, [])
-  const requestCollectionImageSearch = useCallback((collection: Collection) => {
-    manageSearchTarget.current = collection
-    setSearchOpen(true)
-  }, [])
+  const requestCollectionImageSearch = useCallback(
+    (collection: Collection, stageAdd: StageAddImages) => {
+      manageSearchTarget.current = { collection, stageAdd }
+      setSearchOpen(true)
+    },
+    [],
+  )
 
   const reportAddedToCollection = useCallback(
     (collection: { id: number; name: string }, addedCount: number) => {
@@ -1835,20 +1844,36 @@ export default function App() {
     [addToCollectionImageIds, collectionsData, reportAddedToCollection],
   )
 
-  const handleSearchAddToCollection = useCallback(
-    (imageIds: number[]) => {
-      const target = manageSearchTarget.current
-      manageSearchTarget.current = null
-      if (target) {
-        // Skip the picker — the manage dialog already identified the target.
-        void handleAddToCollection(target, imageIds)
-        return
+  const handleSearchAddToCollection = useCallback((images: ImageItem[]) => {
+    const target = manageSearchTarget.current
+    manageSearchTarget.current = null
+    if (target) {
+      // Skip the picker — the manage dialog already identified the target.
+      // Picks stage into its draft; Done persists them in the same
+      // whole-replace PUT as any staged reorder/removal (#1567).
+      const result = target.stageAdd(images)
+      if (result.status === 'added') {
+        setInfoSnack(
+          result.addedCount === 1
+            ? `Staged 1 image for "${target.collection.name}" — press Done to apply.`
+            : `Staged ${result.addedCount} images for "${target.collection.name}" — press Done to apply.`,
+        )
+      } else if (result.status === 'already') {
+        setInfoSnack(
+          images.length === 1
+            ? `This image is already in "${target.collection.name}".`
+            : `Those images are already in "${target.collection.name}".`,
+        )
+      } else {
+        setErrorSnack(
+          `Adding this selection to "${target.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+        )
       }
-      setAddToCollectionImageIds(imageIds)
-      setAddToCollectionOpen(true)
-    },
-    [handleAddToCollection],
-  )
+      return
+    }
+    setAddToCollectionImageIds(images.map((img) => img.id))
+    setAddToCollectionOpen(true)
+  }, [])
 
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
@@ -1984,7 +2009,6 @@ export default function App() {
               selectedCollectionItemId={selectedCollectionItemId}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
-              onRemoveCollectionImages={collectionsData.removeImages}
               onCollectionImageRenewed={collectionsData.renewCollectionImage}
               onViewerError={setErrorSnack}
               onSaveViewport={collectionsData.saveViewport}

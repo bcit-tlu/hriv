@@ -15,8 +15,9 @@ import * as CollectionManageDialogStories from './CollectionManageDialog.stories
 
 <Subtitle>
   The member-management surface for a collection — a miniature Browse: every member as a
-  filmstrip-size tile that reorders by drag-and-drop, a trash drop-zone that appears mid-drag, and a
-  "+" action that hands off to the global search/add flow.
+  filmstrip-size tile that reorders by drag-and-drop, a trash overlay pinned to the bottom-right
+  corner, and a "+" action that hands off to the global search/add flow. All edits stage in a local
+  draft and commit once via Done.
 </Subtitle>
 
 ## When to use
@@ -37,20 +38,28 @@ are added to or removed from a collection outside the global search/Browse add g
   thumbnail size the sequence filmstrip uses. A corner ✕ removes the member without dragging;
   pointer activation needs 8px of movement so clicks still reach it (same sensor policy as
   `SortableTileGrid`: 8px pointer distance, 250ms touch delay, no activation on IconButtons).
+- **Draft staging.** Opening seeds a local draft from the detail's members; every operation —
+  reorder, remove, trash-drop, search-add — mutates only the draft, so the page behind the dialog
+  never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls
+  `onSaveMembers(imageIds)` once on a difference — a single `PUT …/images` whole-replace through
+  `useCollectionsData.reorderImages`. A failed commit keeps the dialog open with the draft intact;
+  closing a dirty draft (Esc/backdrop/✕) asks to discard first.
 - **Reorder.** Tiles are `useSortable` inside their own `DragDropProvider` — the locked
   `SortableTileGrid` move-vs-reorder collision contract is untouched. On drag-end `move()` derives
-  the order; a no-change drop or a cancelled drag sends nothing. The parent's
-  `useCollectionsData.reorderImages` applies the order optimistically and PUTs the whole id list
-  with the collection `version`, rolling back on error.
+  the draft order; a no-change drop or a cancelled drag changes nothing. Drags render through a
+  `DragOverlay` replica while the source tile dims in place, keeping the ✕ attached to the dragged
+  tile.
 - **Trash drop-zone.** A `useDroppable` mounted permanently (so its rect is registered through the
-  drag) that stays invisible/disabled until a member drag starts. Dropping a tile on it calls
-  `onRemoveImages` — the same whole-replace path as the corner control.
+  drag) as a fixed overlay at the bottom-right of the scroll area — invisible/disabled until a
+  member drag starts — rather than a row that spawns mid-drag. Dropping a tile on it removes the
+  member from the draft, same as the corner control.
 - **Add.** The title row's **+** button calls `onAddImages`; `App` opens the search modal in
-  add-to-collection mode so picked images join through the standard dedupe/capacity flow.
+  add-to-collection mode and routes the selected `ImageItem`s back into the draft (dedupe by id,
+  four-image cap on synchronized collections — already/full outcomes report through `onError`).
 - **Restricted members.** When `memberCount` exceeds the rendered list, the dialog notes how many
   members are hidden by restriction — they can't be managed from here.
-- **Errors.** Mutation failures surface through `onError`; in-flight removals dim their tile until
-  the request settles.
+- **Errors.** Mutation failures surface through `onError`; a failed Done commit keeps the dialog
+  open with the draft intact so nothing is lost.
 
 ## Stories
 

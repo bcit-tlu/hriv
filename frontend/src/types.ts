@@ -125,6 +125,10 @@ export interface CollectionSummary {
   categoryId: number | null
   /** Tile-order position inside its category/root scope. */
   sortOrder: number
+  /** Restriction scope (empty unless `visibility === 'restricted'`); carried
+   *  on summaries so tiles can render program/group chips (#1567). */
+  programIds: number[]
+  groupIds: number[]
   createdAt: string
   updatedAt: string
   permissions: CollectionPermissions
@@ -133,8 +137,6 @@ export interface CollectionSummary {
 export interface Collection extends CollectionSummary {
   /** Ordered member images (only those visible to the caller). */
   images: ImageItem[]
-  programIds: number[]
-  groupIds: number[]
   viewportState: Record<string, unknown>
   /** Nominal member count for unfiltered viewers; for students the backend
    * clamps it to `imageCount + 1` when members are hidden, so it signals
