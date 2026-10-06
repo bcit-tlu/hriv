@@ -628,6 +628,25 @@ describe('useCollectionsData', () => {
       expect(result.current.detail?.version).toBe(6)
     })
 
+    it('loadCollection does not regress the open detail to an older version (#1567)', async () => {
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Current', version: 6 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 9 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(6))
+
+      // A refetch started before another write landed resolves last with
+      // stale data — the detail must keep the newer record.
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Stale', version: 5 }),
+      )
+      await act(async () => {
+        await result.current.loadCollection(9)
+      })
+      expect(result.current.detail?.version).toBe(6)
+      expect(result.current.detail?.name).toBe('Current')
+    })
+
     it('loadCollection leaves a different open detail alone', async () => {
       fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 7, name: 'Open' }))
       const { result } = renderData({ selectedCollectionId: 7 })

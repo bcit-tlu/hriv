@@ -545,8 +545,9 @@ export default function CollectionsPage({
         if (moved instanceof Error) throw moved
         // Filing bypasses `update`, which is what normally refreshes the open
         // detail — refetch so the breadcrumb and the next filing's version
-        // don't work from the pre-move record (#1567).
-        await loadCollection(editing.id)
+        // don't work from the pre-move record (#1567). Best-effort: the save
+        // already succeeded, so a refresh failure must not read as one.
+        void loadCollection(editing.id).catch(() => {})
       }
     } else {
       await onCreate(values)

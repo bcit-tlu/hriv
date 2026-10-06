@@ -285,8 +285,9 @@ export function useCollectionsData({
     const mapped = apiCollectionToCollection(await fetchCollection(id))
     // Keep the open detail in sync when the refetch is for the record on
     // screen — e.g. a category filing mutates the record without going
-    // through `update` (#1567).
-    setDetail((prev) => (prev?.id === id ? mapped : prev))
+    // through `update` (#1567). The version guard keeps a slow refetch from
+    // regressing a newer write that landed in the meantime.
+    setDetail((prev) => (prev && prev.id === id && mapped.version >= prev.version ? mapped : prev))
     return mapped
   }, [])
 
