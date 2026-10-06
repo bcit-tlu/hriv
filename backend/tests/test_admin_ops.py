@@ -1169,6 +1169,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             description=None,
             type="synchronized",
             visibility="restricted",
+            hidden=True,
             user_id=1,
             owner_program_id=None,
             category_id=2,
@@ -1258,6 +1259,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             "description": None,
             "type": "synchronized",
             "visibility": "restricted",
+            "hidden": True,
             "user_id": 1,
             "owner_program_id": None,
             "category_id": 2,
@@ -1464,6 +1466,7 @@ def _full_dump() -> dict:
                 "name": "Seq",
                 "type": "sequence",
                 "visibility": "public",
+                "hidden": True,
                 "user_id": 1,
                 "owner_ids": [1, 2],
                 "category_id": 2,
@@ -1564,6 +1567,8 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert set(imported_collections) == {7, 8, 9}
     seq = imported_collections[7]
     assert seq.type == "sequence" and seq.visibility == "public"
+    # Curatorial hide round-trips (#1559) — export carries `hidden`.
+    assert seq.hidden is True
     assert seq.user_id == 1 and seq.version == 3
     assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
@@ -1575,8 +1580,10 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert orphan.category_id is None and orphan.sort_order == 0
     assert orphan.image_links == [] and list(orphan.owners) == []
     legacy = imported_collections[9]
-    # Legacy dump: user_id doubles as the sole owner row.
+    # Legacy dump: user_id doubles as the sole owner row, and pre-#1559
+    # dumps carry no `hidden` — the import default is False.
     assert legacy.user_id == 2 and [o.id for o in legacy.owners] == [2]
+    assert legacy.hidden is False
     executed_sql = [
         str(c.args[0]) for c in mock_session.execute.call_args_list
     ]

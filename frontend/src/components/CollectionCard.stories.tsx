@@ -13,6 +13,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: 'Frontal and lateral views side by side.',
     type: 'synchronized',
     visibility: 'private',
+    hidden: false,
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
@@ -21,7 +22,13 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
+    permissions: {
+      canEdit: true,
+      canDelete: true,
+      canChangeScope: true,
+      canTransfer: false,
+      canHide: false,
+    },
     ...overrides,
   }
 }
@@ -80,6 +87,7 @@ export const Sequence: Story = {
       name: 'Fracture healing timeline',
       type: 'sequence',
       visibility: 'public',
+      hidden: false,
       imageCount: 6,
       owners: [{ kind: 'program', programId: 3, name: 'Radiography' }],
     }),
@@ -95,6 +103,7 @@ export const Restricted: Story = {
       id: 3,
       name: 'Cohort 2 review set',
       visibility: 'restricted',
+      hidden: false,
       imageCount: 1,
     }),
   },
@@ -109,7 +118,13 @@ export const Curatorial: Story = {
     collection: makeSummary({
       id: 7,
       name: 'Filed into Browse',
-      permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: true },
+      permissions: {
+        canEdit: true,
+        canDelete: true,
+        canChangeScope: true,
+        canTransfer: true,
+        canHide: false,
+      },
     }),
     onTransfer: fn(),
     onMove: fn(),
@@ -140,7 +155,14 @@ export const ReadOnly: Story = {
       id: 4,
       name: 'Shared by an instructor',
       visibility: 'public',
-      permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
+      hidden: false,
+      permissions: {
+        canEdit: false,
+        canDelete: false,
+        canChangeScope: false,
+        canTransfer: false,
+        canHide: false,
+      },
     }),
   },
   play: async ({ canvasElement }) => {
@@ -159,6 +181,21 @@ export const NoCover: Story = {
       imageCount: 0,
       coverThumb: null,
       owners: [],
+    }),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Hidden: Story = {
+  // Curatorially hidden card (#1559): desaturated tile plus the eye-off
+  // marker by the name — the same treatment hidden categories/images get.
+  args: {
+    collection: makeSummary({
+      id: 8,
+      name: 'Draft review set',
+      hidden: true,
     }),
   },
   parameters: {

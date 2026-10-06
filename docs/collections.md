@@ -5,9 +5,9 @@ reusable viewing resource without duplicating image or category records. Two
 types exist:
 
 - **`sequence`** — an ordered set of images stepped through one at a time.
-- **`synchronized`** — up to four stored images (the initial UI renders the
-  first two) whose viewports are linked; the relative viewport positions can be
-  saved with the collection.
+- **`synchronized`** — up to four stored images whose viewports are linked
+  (rendered side by side for two, in a 2×2 grid for three or four); the
+  relative viewport positions can be saved with the collection.
 
 Epic: [#1409](https://github.com/bcit-tlu/hriv/issues/1409). This page is
 extended as each child issue lands; sections marked _planned_ are not yet
@@ -130,11 +130,11 @@ import that creator as the sole owner). See
 [admin-import-export.md](admin-import-export.md).
 
 `viewport_state` is written as a whole-column replacement (never a partial
-JSONB merge). The synchronized viewer (#1417) stores it as
+JSONB merge). The synchronized viewer (#1417, #1561) stores it as
 `{ "<image_id>": { "zoom": number, "x": number, "y": number,
 "rotation": number } }` — each member pane's absolute viewport position; the
-relative offset between panes is implicit in the pair. Keys the stored JSONB
-does not recognise are ignored by the frontend validator.
+relative offsets between panes are implicit across the saved entries. Keys
+the stored JSONB does not recognise are ignored by the frontend validator.
 
 ## Authorization
 
@@ -161,6 +161,18 @@ the category gate both pass (a hidden/restricted category hides everything
 inside it, mirroring images). This applies identically to `GET
 /api/collections`, `GET /api/collections/{id}` and the category tree embed.
 
+**Hidden collections (#1559).** `collections.hidden` (default `false`,
+migration `0033_collection_hidden`) is the curatorial hide flag, analogous
+to `Image.active` / `Category.status='hidden'` but with one deliberate
+difference: because collections can be student-owned, a hidden collection
+drops out of every student's list/tree/detail **except its owners** —
+hiding never locks an owner out of their own work. Non-students (admin,
+instructor, staff) see hidden collections everywhere. The rule lives in the
+central `_ViewerContext.can_view` gate, so list, detail, Browse-tree embed
+and write-endpoint 404/403 checks all agree; a hidden collection is **404**
+(not 403) for a non-owner student on any endpoint, so its existence never
+leaks.
+
 ### Images inside a collection
 
 Students receive only images they could open via `GET /api/images/{id}` —
@@ -185,6 +197,13 @@ instructors).
 | `can_change_collection_scope` | yes   | yes                          | yes                        | no                       | no        |
 | `can_delete_collection`       | yes   | yes                          | yes                        | no                       | no        |
 | `can_transfer_collection`     | yes   | yes                          | no                         | no                       | no        |
+| `can_hide_collection` (#1559) | yes   | yes¹                         | no                         | no                       | no        |
+
+¹ `can_hide_collection` is curatorial-global for admins/instructors — like
+filing (move), it is not ownership-bound, so an instructor may hide/show any
+collection. Students and staff can never hide or unhide, including their own
+collections — a student owner of a hidden collection keeps view access but
+gets **403** on a `hidden` PATCH.
 
 Scope changes (visibility + restricted `program_ids`/`group_ids`) and
 deletion deliberately require the stricter predicate: a co-owner may edit
@@ -202,7 +221,12 @@ group; instructors only groups they manage). Students and staff cannot use
 PATCH is **field-level authorized**: `name`/`description` only require
 `can_edit_collection`, while `visibility`/`program_ids`/`group_ids` require
 `can_change_collection_scope` — a co-owner may rename a shared collection but
-gets **403** if the body touches scope.
+gets **403** if the body touches scope. A PATCH that **only** sets `hidden`
+is the third carve-out (#1559): it requires `can_hide_collection` (any
+admin/instructor) rather than `can_edit_collection`, so a curator can hide a
+collection they cannot edit. Bundling `hidden` with any content/scope field
+falls back to the normal edit/scope gates — the carve-out is exact and never
+weakens the stronger checks.
 
 ## API surface
 
@@ -217,7 +241,7 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 | GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized` (only collections filed at the Browse root, `category_id IS NULL`). Ordered by `updated_at` desc.                                                                                                                                                                                                          |
 | GET    | `/api/collections/{id}`          | student                                                              | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                                                                                                                                                                   |
 | POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`.                                                                                                                                                                                                                                                          |
-| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids` + required `version`. `type` is immutable (**422** if changed). Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                       |
+| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids`, `hidden` + required `version`. `type` is immutable (**422** if changed). A `hidden`-only body instead requires `can_hide_collection` (any admin/instructor — curatorial, not ownership-bound); mixing `hidden` with other fields keeps the normal gates. Returns fresh `CollectionOut`.                                                                                             |
 | DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                          | **204**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                            | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                              |
 | PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)                            | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                                                                       |
@@ -226,12 +250,15 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 | POST   | `/api/collections/{id}/transfer` | instructor (must pass `can_transfer_collection`)                     | Reassign **program** ownership (#1531). Body `CollectionTransfer`: `program_id` (required, `null` = back to the user owners) + `version`. Setting a program clears the `collection_owners` rows — a program owner is sole. **404** if not visible, **403** if not transferable or the program is outside the instructor's memberships, **422** unknown program / clearing a program owner with no user owners to fall back on, **409** stale version. Returns fresh `CollectionOut`. |
 
 `CollectionSummaryOut`: `id`, `name`, `description`, `type`, `visibility`,
-`owners` (`[{user_id, program_id, name}]` — user entries carry `user_id`,
+`hidden` (#1559 — serialized to every caller; students only ever receive it
+as `true` on collections they own), `owners` (`[{user_id, program_id,
+name}]` — user entries carry `user_id`,
 the program entry carries `program_id`, the unused id is `null`; `[]` when
 orphaned), `image_count` (visible-to-caller), `cover_thumb`
 (first visible image thumb), `version`, `category_id`, `sort_order`,
 `created_at`, `updated_at`,
-`permissions {can_edit, can_delete, can_change_scope, can_transfer}`.
+`permissions {can_edit, can_delete, can_change_scope, can_transfer,
+can_hide}`.
 (`collections.user_id` is creator-audit only and is not serialized.)
 
 `CollectionOut` adds `member_count` (#1529). For non-students it is the
@@ -430,9 +457,13 @@ Everything in this section is conditional on the deployment flag
 
 **Navigation.** The **Collections** tab is shown to every authenticated role
 (students included) in both the desktop app bar and the compact/mobile
-drawer, and opens a sub-menu (the same `Tab` → `Menu` pattern as **Manage**)
-with **Sequence** and **Synchronized** entries (#1554). Each item opens the
-same `CollectionsPage` locked to one type via `?page=collections&type=`;
+drawer. In the app bar it is a menu trigger only (#1559) — clicking it opens
+the sub-menu without navigating, the same `Tab` → `Menu` pattern as
+**Manage**, with **Sequence** and **Synchronized** entries; the tab carries
+`value="collections"` so Tabs' onChange ignores it (it is not a real page
+tab) while the tab still highlights on collections pages. Each menu item
+opens the same `CollectionsPage` locked to one type via
+`?page=collections&type=`;
 a missing or invalid `type` defaults to `sequence`. A `collectionPageType`
 state in `App` keeps the list filter, the URL param and the detail view in
 sync — opening a collection whose type differs from the current page type
@@ -452,10 +483,14 @@ token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
 only once), name, image count, the co-owner names joined by `describeCollectionOwners`
 (`No owner` when orphaned), and a visibility chip that
-reuses the category restriction palette. The type chip, **Move** and
-**Owners** actions sit in a top-right cover overlay — the same
-`top: 4, right: 4` white-on-`rgba(0,0,0,0.25)` scrim convention as
-`CategoryTile` (#1554); **Edit** stays in the metadata area and Delete is
+reuses the category restriction palette. The type chip pins to a top-LEFT
+cover overlay (`top: 4, left: 4`, #1559) while **Move** and **Owners** stay
+top-right — two independent `absolute` overlays using the
+white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554), so
+the chip's position never shifts with the available actions. A curatorially
+hidden card renders the same desaturated treatment as a hidden
+category/image tile plus a `VisibilityOff` affordance by the name (#1559).
+**Edit** stays in the metadata area and Delete is
 gone from the card entirely (edit dialog only). Filters — type is the page,
 not a facet (#1554): a **My collections** chip (`mine=true`;
 clears and disables the owner facet) and — for admin, instructor and staff
@@ -527,8 +562,25 @@ user-owner set and the program owner — see "Ownership management UI" below.
 re-checks authority on every call.
 
 **Detail view.** Selecting a card sets `?collection={id}` and renders the
-collection header (type/visibility chips, description, owner; actions:
-**Move**, **Edit**, **Owners** — no Delete, #1554).
+collection header, which mirrors the image view's top container (#1564) —
+there is no `<h1>`; the collection name is the breadcrumb's trailing item.
+The top row holds a `MuiBreadcrumbs` matching the collection's filed
+location on the left and the action buttons on the right: the category
+ancestor chain resolved from `detail.categoryId` (each link navigates
+Browse to that category, or the root for **Home**), with the collection
+name trailing as the current item followed by a muted `(N images)` count —
+the same convention as the category breadcrumb (#1559). Restricted
+program/group chips sit right after the breadcrumb, where the image view
+renders them. The actions are **Hide collection** / **Show collection**
+(`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
+with the OCC version and 409 merge; the same text-button + eye-icon spot the
+image viewer's Hide/Show Image control occupies), **Move**, **Reorder**
+(sequence collections with `canEdit` only — the
+toggle that used to live in the viewer toolbar), **Edit**, and **Owners**
+(`canTransfer`). Below the top row, the **type chip** (Synchronized /
+Sequence) and the **visibility chip** (Public/Private/Restricted — plus a
+`Hidden` chip on hidden collections) sit to the left of the owner line and
+description, which keep their place below (#1564). No Delete (#1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
 404 (missing or not visible) renders the not-found alert with a
@@ -568,7 +620,8 @@ columns (`TableSortLabel`), client-side `TablePagination` with the shared
 rows-per-page preference, and a Category column rendering
 `CategoryBreadcrumb` (extracted from `ManagePage`; segments link into
 Browse, hidden-subtree rows get the eye icon). Columns: thumbnail
-(`RenewingThumbnail`), ID, Name, Type, Visibility
+(`RenewingThumbnail`), ID, Name (with a `VisibilityOff` marker on
+curatorially hidden rows, #1559), Type, Visibility
 (`CollectionVisibilityChip`), Owners (`describeCollectionOwners`), image
 count, Category, Modified, Actions.
 
@@ -616,9 +669,11 @@ invalidates both scopes' tile-order revisions, and offers an undo snackbar
 that re-posts the previous category with the version from the move response.
 
 **Browse context.** Opening a collection tile keeps the originating Browse
-scope: the URL becomes `?collection={id}&cat={ancestor path}`, the detail
-back button reads **Back to Browse**, and closing returns to that scope
-instead of the Collections list. Back/forward restores both the collection
+scope: the URL becomes `?collection={id}&cat={ancestor path}` and closing
+the detail (the error-state action) returns to that scope instead of the
+Collections list. The detail breadcrumb navigates to the collection's
+_filed_ category location regardless of where it was opened from (#1559).
+Back/forward restores both the collection
 and the scope — `useNavigationHistory` carries a `collectionFromBrowse` flag
 in history state for root-scope entries (where no `?cat=` is needed). Links
 without `?cat=` behave exactly as before (`?collection={id}` opens the
@@ -724,19 +779,37 @@ render read-only via `canvasAnnotationsFromMetadata` /
 (`components/imageViewerUtils.ts`). **Open image** navigates to the normal
 `?image={id}` view where annotations can be edited.
 
-**Toolbar.** A MUI `ButtonGroup` above the viewer (outside the OSD control
-bar): **Previous** / **Next**, an `n of N` live region, **Open image**, and —
-editors only (`permissions.can_edit`) — a **Reorder** toggle.
+**Caption.** A caption row under the viewport — the same pattern the
+synchronized panes use (#1564) — holds the member name (left) and, at the
+right, the `n of N` live region plus the **Open image** action. The
+**Reorder** toggle moved to
+the detail header between **Move** and **Edit** (#1559) —
+`CollectionsPage` owns the `reordering` state and passes it down as a
+controlled prop.
 
-**Navigation.** Buttons, strip thumbnails (`Go to {name}`) and ←/→ arrow
-keys all change the current item. Arrows are handled on keydown-capture at
-the sequence container so OpenSeadragon's own keyboard panning never sees
-them; editable targets (inputs, textareas, selects, `[role="textbox"]`,
-contenteditable) are skipped, and while reorder mode is on the keys belong
-to dnd-kit's `KeyboardSensor` instead.
+**Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
+overlay the viewport's left and right edges (#1561); like the OSD toolbar's
+`autoHideControls`, they fade in on pointer activity over the viewer frame
+and fade back out after ~2 s idle or on pointer leave (keyboard focus also
+reveals them). The buttons stay mounted — only opacity and pointer-events
+toggle — so screen readers and tab focus still reach them. Strip
+thumbnails (`Go to {name}`) and ←/→ arrow keys change the current item
+too. Arrows are handled on keydown-capture at the sequence container so
+OpenSeadragon's own keyboard panning never sees them; editable targets
+(inputs, textareas, selects, `[role="textbox"]`, contenteditable) are
+skipped, and while reorder mode is on the keys belong to dnd-kit's
+`KeyboardSensor` instead. The container itself is focusable
+(`tabIndex={-1}`) and autofocuses when a collection opens (#1564), so the
+arrow keys work immediately — switching images never steals focus back,
+but opening a different collection focuses it again.
 
-**Thumbnail strip.** `RenewingThumbnail` buttons under the viewer; the
-current item is outlined (`aria-current`). `onTileSourceRenewed` and the
+**Thumbnail strip.** `RenewingThumbnail` buttons _above_ the viewer
+(#1564); the
+current item is marked `aria-current` and framed by a 3 px primary ring —
+an `outline` pulled inside the thumbnail box with a negative
+`outline-offset` (an outward outline was clipped asymmetrically by the
+strip's `overflow-x` scroll port, which cropped the highlight before
+#1561). `onTileSourceRenewed` and the
 thumbnails' renewal callback flow through `onImageRenewed` →
 `useCollectionsData.renewCollectionImage`, which swaps the refreshed
 `ApiImage` into `detail` so short-lived tile/thumb tokens keep working.
@@ -747,7 +820,8 @@ the current image's tiles fail mid-session the viewer reports the error via
 the nearest still-available image (preferring the next one). When every
 image has failed, an error alert replaces the viewer.
 
-**Reorder.** The Reorder toggle swaps the strip for `useSortable`
+**Reorder.** The header's Reorder toggle (controlled `reordering` prop,
+#1559) swaps the strip for `useSortable`
 thumbnails (`type: 'sequence-strip-item'`; pointer: 250 ms touch delay /
 8 px mouse distance; a separate `DragDropProvider` — the locked
 `SortableTileGrid` collision contract is untouched). On drag-end the new
@@ -765,42 +839,50 @@ truth — the strip and any subsequent edits see the same member order.
 `CollectionsPage` for `type === 'synchronized'` below the shared detail
 header.
 
-**Panes.** The first two visible members render side by side, each a
-read-only `ImageViewer` with the same prop set as the sequence viewer
-(`canEditContent={false}`; stored annotations, locked overlays and
-measurement metadata pass through from `metadataExtra`). A caption under
-each pane shows the member name (plus an _inactive_ marker) and an
-**Open image** action → `?image={id}`. More than two stored members produce
-a "Showing 2 of _N_" note — three/four-pane layouts are future work. Fewer
-than two visible (or surviving) members shows a fallback alert with the
-ordered member list and per-row **Open image** links; members whose tiles
-fail mid-session are skipped, so the pair slides forward.
+**Panes.** Up to `SYNCHRONIZED_COLLECTION_MAX_IMAGES` (4) visible members
+render as panes — a side-by-side row for two, a 2×2 grid for three or four
+(#1561) — each a read-only `ImageViewer` with the same prop set as the
+sequence viewer (`canEditContent={false}`; stored annotations, locked
+overlays and measurement metadata pass through from `metadataExtra`). A
+caption under each pane shows the member name (plus an _inactive_ marker)
+and an **Open image** action → `?image={id}`. A member count above the pane
+cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
+surviving) members shows a fallback alert with the ordered member list and
+per-row **Open image** links; members whose tiles fail mid-session are
+skipped, so the panes slide forward.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw
-`viewport-change` handlers and mirrors zoom, center and rotation onto the
-other pane with `immediately=true` so the follower tracks during the
+`viewport-change` handlers and mirrors zoom, center and rotation onto every
+other pane with `immediately=true` so the followers track during the
 leader's spring animation. A `syncingRef` guard makes every programmatic
 write a follower write — mirrored events never lead the sync, and viewer
-changes before both `open` events complete are ignored.
+changes before a pane's `open` event completes are ignored. Any pane can
+lead; the leader's displacement is applied to all followers.
 
-**Offset.** The pair keeps a _relative offset_ — B's viewport relative to
-A's, captured once both panes have opened — as a multiplicative zoom ratio,
-an additive centre delta and an additive rotation delta. Saved positions
-around different highlights therefore stay aligned while navigation mirrors.
-Toggling the **Link views** switch off lets either side move independently;
-switching it back on re-captures the current alignment (it does not snap).
+**Baselines.** The panes keep an armed _baseline_ — every opened pane's
+viewport snapshotted when the pane joins, when a pane re-pins, or
+on reset (#1561). A leader's move applies its displacement from its own
+baseline — a multiplicative zoom ratio and additive centre/rotation deltas —
+onto each pinned follower's baseline, so saved positions around different
+highlights stay aligned while navigation mirrors. For two panes this is
+the pairwise offset the viewer originally captured. **Pins** (#1564) —
+a per-pane button at the top-right of each viewport — replace the old
+global **Link views** switch: panes start pinned (linked), unpinning
+detaches one pane's navigation entirely (it neither leads nor follows),
+and re-pinning re-captures the baselines at the current positions (it does
+not snap the pane back to where it left).
 
 **Persisted view.** **Save view** (editors only,
-`permissions.can_edit`) writes both panes' current viewports as
+`permissions.can_edit`) writes every pane's current viewport as
 `{ "<image_id>": {zoom, x, y, rotation} }` through
 `useCollectionsData.saveViewport` → `PUT …/viewport` (whole-replace +
-`version`), so the pair restores exactly after a reload or via a
+`version`), so the layout restores exactly after a reload or via a
 `?collection={id}` share link. `saveViewport` is serialized with
 `reorderImages` through the same mutation queue so the two writes can never
 consume each other's version. **Reset view** (everyone) re-applies the saved
 positions — or each viewer's home when nothing is saved — then re-arms the
-offset. Saved entries that do not match the shape are ignored by
+baselines. Saved entries that do not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
 
 **Orientation.** `(orientation: portrait)` covers the pane area with a
@@ -966,13 +1048,29 @@ the shared group-chip palette.
   `?collection={id}&item={image_id}` parse/emit precedence, `?type=` on
   collections-page URLs (default `sequence`), history entries,
   deep-link restore on load and back/forward, `?item=` alone ignored.
+- Header + hidden-state rework (#1559, #1564): `AppShell.test.tsx` (Collections
+  tab opens the menu without `onTabChange`; menu items navigate; active
+  type MenuItem selected), `CollectionsPage.test.tsx` (`Home`/category
+  breadcrumb navigation, name + `(N images)` count as the breadcrumb's
+  trailing item, actions share the breadcrumb row, type/visibility pills
+  above the description, Reorder between Move/Edit for editable sequence
+  detail, Hidden chip + Hide/Show link on
+  `canHide`, `onToggleHidden` call + error surface),
+  `SequenceCollectionViewer.test.tsx` (controlled `reordering` prop),
+  `CollectionCard.test.tsx` (type chip in the left overlay independent of
+  right-side actions, hidden indicator), `useCollectionsData.test.ts`
+  (`setHidden` PATCH + 409 merge), `App.test.tsx` (`onNavigateCategory` /
+  `onToggleHidden` wiring); backend `test_router_collections.py` (hidden
+  list/detail visibility per role and owner, hidden-only PATCH authority,
+  mixed-body 403, `can_hide` serialization), `test_router_collections_db.py`
+  (hidden column round-trip, migration `0033`).
 - Browse tile integration (#1529): `useBrowseData.test.ts` (nested-scope
   collections from the tree, root `?uncategorized` fetch, flag-off no-fetch
   and freshness), `SortableTileGrid.test.tsx` (`col-` tiles, drag dispatch to
   reorder vs `onDropCollectionOnCategory`), `useCategoryActions.test.ts`
   (collection move/undo, no-op destination, root-scope lookup),
   `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (role-gated
-  Move, `Back to Browse` label, all-restricted notice),
+  Move, browse-context close, all-restricted notice),
   `useCollectionsData.test.ts` (`move` row/detail sync),
   `CategoryTile.test.tsx` (recursive collection counts), viewer tests
   (all-restricted empty state); backend `test_router_collections.py`
@@ -982,15 +1080,19 @@ the shared group-chip palette.
   and non-member fallback, button / thumbnail / arrow-key navigation,
   editable-target and reorder-mode key guards, read-only `ImageViewer` props
   (annotations / overlays / measurement from `metadataExtra`), tile-renewal
-  forwarding, mid-session failure skip + all-failed state, editor-only
-  reorder toggle, `move()` reorder → `PUT` with version, optimistic order in
+  forwarding, mid-session failure skip + all-failed state, controlled
+  reorder prop (toggle lives in the detail header, #1559), `move()` reorder → `PUT` with version, optimistic order in
   `detail`, rollback on error, `renewCollectionImage` member swap.
 - `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
-  `useCollectionsData.test.ts` (#1417) — two-pane render with read-only
-  props, `viewport-change` mirroring with the saved offset in both
-  directions, no write-back/oscillation, Link views toggle + re-arm, Save
-  view payload, Reset to saved/home, portrait hint, `< 2` fallback +
-  "Showing 2 of _N_", member failure slide-up, editor-only Save;
+  `useCollectionsData.test.ts` (#1417, #1561, #1564) — two-pane render with
+  read-only props, `viewport-change` mirroring with the saved offset in both
+  directions, no write-back/oscillation, leader→followers mirroring and
+  per-pane offsets for three/four panes, per-pane pin toggles (default
+  pinned, unpinned leader/follower detachment, re-pin re-arms at current
+  positions), Save view payload for all panes, Reset to saved/home, portrait
+  hint, `< 2`
+  fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
+  slide-up, editor-only Save;
   `saveViewport` whole-replace `PUT` with `version`, queue sharing with
   `reorderImages`, cross-collection detail guard;
   `ImageViewer.test.tsx` — `onViewerReady` mount/unmount contract.

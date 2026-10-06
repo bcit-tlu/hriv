@@ -43,6 +43,7 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     description: api.description,
     type: api.type,
     visibility: api.visibility,
+    hidden: api.hidden,
     owners: api.owners
       .map(apiCollectionOwnerToOwner)
       .filter((o): o is CollectionOwner => o != null),
@@ -58,6 +59,7 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
       canDelete: api.permissions.can_delete,
       canChangeScope: api.permissions.can_change_scope,
       canTransfer: api.permissions.can_transfer,
+      canHide: api.permissions.can_hide,
     },
   }
 }

@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import ButtonGroup from '@mui/material/ButtonGroup'
+import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import { alpha, type Theme } from '@mui/material/styles'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import ReorderIcon from '@mui/icons-material/Reorder'
-import DoneIcon from '@mui/icons-material/Done'
 import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
@@ -39,10 +46,57 @@ export interface SequenceCollectionViewerProps {
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  /**
+   * Reorder mode — controlled by the parent (#1559): the Reorder/Done
+   * toggle lives in the detail header between Move and Edit. The viewer
+   * still drops out of reorder when the collection changes.
+   */
+  reordering: boolean
+  onReorderingChange: (reordering: boolean) => void
 }
 
 const stripItemId = (imageId: number) => `seq-${imageId}`
 const stripImageId = (id: string) => Number(id.slice(4))
+
+// How long edge nav stays after the last pointer event — mirrors OSD's
+// autoHideControls fade delay so the buttons behave like the viewer toolbar.
+const NAV_HIDE_DELAY_MS = 2000
+
+/**
+ * Selection ring drawn *inside* the thumbnail box via a negative
+ * `outline-offset`. An outward `outline` sits outside the border box and gets
+ * clipped asymmetrically by the strip's `overflow-x: auto` scroll port
+ * (top/left/right edges have no padding), which cropped the active-image
+ * highlight (#1561).
+ */
+const stripThumbRing = (isCurrent: boolean) =>
+  ({
+    outline: isCurrent ? '3px solid' : '1px solid',
+    outlineColor: isCurrent ? 'primary.main' : 'divider',
+    outlineOffset: isCurrent ? -3 : -1,
+    // Keyboard focus needs its own cue — the selection outline overrides the
+    // UA focus ring, so focus-visible swaps to a distinct info ring (the
+    // selection cue returns on blur).
+    '&:focus-visible': {
+      outline: '3px solid',
+      outlineColor: 'info.main',
+      outlineOffset: -3,
+    },
+  }) as const
+
+const navEdgeButton = {
+  position: 'absolute',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  zIndex: 30,
+  color: 'common.white',
+  bgcolor: (theme: Theme) => alpha(theme.palette.common.black, 0.55),
+  '&:hover': { bgcolor: (theme: Theme) => alpha(theme.palette.common.black, 0.75) },
+  '&.Mui-disabled': {
+    color: (theme: Theme) => alpha(theme.palette.common.white, 0.4),
+    bgcolor: (theme: Theme) => alpha(theme.palette.common.black, 0.35),
+  },
+} as const
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -82,13 +136,11 @@ function SortableStripThumb({
       role="button"
       aria-label={`Drag to reorder ${image.name}`}
       sx={{
+        ...stripThumbRing(isCurrent),
         flex: '0 0 auto',
         opacity: isDragSource ? 0.4 : isFailed ? 0.35 : 1,
         cursor: isDragSource ? 'grabbing' : 'grab',
         borderRadius: 1,
-        outline: isCurrent ? '3px solid' : '1px solid',
-        outlineColor: isCurrent ? 'primary.main' : 'divider',
-        outlineOffset: 1,
         lineHeight: 0,
       }}
     >
@@ -111,13 +163,63 @@ export default function SequenceCollectionViewer({
   onReorder,
   onImageRenewed,
   onError,
+  reordering,
+  onReorderingChange,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
-  const canEdit = collection.permissions.canEdit
-  const [reordering, setReordering] = useState(false)
   // Images whose tiles failed mid-session (deleted / access lost / expired
   // renewal) are skipped by navigation and dimmed in the strip.
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(() => new Set())
+  // Lightbox-style edge nav (#1561): Previous/Next overlay the viewport's
+  // left/right edges and fade in on pointer activity like the OSD toolbar,
+  // fading back out after a short idle. The buttons stay mounted (opacity +
+  // pointer-events only) so keyboard focus can reveal them.
+  const [navVisible, setNavVisible] = useState(false)
+  const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Focus inside the nav holds it open regardless of pointer idle/leave.
+  const navFocusedRef = useRef(false)
+  const cancelNavHide = useCallback(() => {
+    if (navHideTimer.current) clearTimeout(navHideTimer.current)
+    navHideTimer.current = null
+  }, [])
+  const scheduleNavHide = useCallback(() => {
+    cancelNavHide()
+    navHideTimer.current = setTimeout(() => setNavVisible(false), NAV_HIDE_DELAY_MS)
+  }, [cancelNavHide])
+  const showNav = useCallback(() => {
+    setNavVisible(true)
+    // Pointer idle only fades the nav when no button holds keyboard focus.
+    if (!navFocusedRef.current) scheduleNavHide()
+  }, [scheduleNavHide])
+  const hideNav = useCallback(() => {
+    if (navFocusedRef.current) return
+    cancelNavHide()
+    setNavVisible(false)
+  }, [cancelNavHide])
+  // Keyboard focus holds the nav open without a hide clock; focus moving
+  // between the two edge buttons must not start one either.
+  const holdNavForFocus = useCallback(() => {
+    navFocusedRef.current = true
+    cancelNavHide()
+    setNavVisible(true)
+  }, [cancelNavHide])
+  const releaseNavForBlur = useCallback(
+    (event: FocusEvent<HTMLElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        navFocusedRef.current = false
+        scheduleNavHide()
+      }
+    },
+    [scheduleNavHide],
+  )
+  useEffect(
+    () => () => {
+      if (navHideTimer.current) clearTimeout(navHideTimer.current)
+    },
+    [],
+  )
+  const regionRef = useRef<HTMLDivElement | null>(null)
+  const focusedForCollection = useRef<number | null>(null)
   // Failed ids and reorder mode belong to this collection only — a different
   // collection opened without an unmount must not inherit them.
   const collectionId = collection.id
@@ -126,8 +228,8 @@ export default function SequenceCollectionViewer({
     if (previousCollectionId.current === collectionId) return
     previousCollectionId.current = collectionId
     setFailedIds(new Set())
-    setReordering(false)
-  }, [collectionId])
+    onReorderingChange(false)
+  }, [collectionId, onReorderingChange])
 
   const available = useMemo(
     () => images.filter((img) => !failedIds.has(img.id)),
@@ -140,6 +242,18 @@ export default function SequenceCollectionViewer({
     return idx >= 0 ? idx : 0
   }, [available, itemId])
   const current = available[currentIndex] ?? null
+
+  // Autofocus the region when a collection opens (#1564) so ←/→ step the
+  // sequence immediately — no click needed first. Ref-guarded so switching
+  // images does not steal focus, and a different collection re-focuses.
+  useEffect(() => {
+    if (current == null || focusedForCollection.current === collectionId) return
+    focusedForCollection.current = collectionId
+    // preventScroll: focusing must not scroll the collection header off the
+    // top of the page before the user has seen it.
+    regionRef.current?.focus({ preventScroll: true })
+  }, [collectionId, current])
+
   // Stable across unrelated collection updates (e.g. tile-token renewal swaps
   // the member record): fresh identities would re-run ImageViewer's mount
   // effect (it depends on `initialOverlays`) and destroy the OSD viewer.
@@ -266,91 +380,25 @@ export default function SequenceCollectionViewer({
   const position = `${images.indexOf(current) + 1} of ${images.length}`
 
   return (
-    <Box data-testid="sequence-collection-viewer" onKeyDownCapture={handleKeyDownCapture}>
-      <Box
-        sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 1,
-          mt: 2,
-          mb: 1,
-        }}
-      >
-        <ButtonGroup size="small" variant="outlined" aria-label="Sequence navigation">
-          <Button
-            onClick={() => goTo(currentIndex - 1)}
-            disabled={currentIndex <= 0}
-            startIcon={<ChevronLeftIcon />}
-            aria-label="Previous image"
-          >
-            Previous
-          </Button>
-          <Button
-            onClick={() => goTo(currentIndex + 1)}
-            disabled={currentIndex >= available.length - 1}
-            endIcon={<ChevronRightIcon />}
-            aria-label="Next image"
-          >
-            Next
-          </Button>
-        </ButtonGroup>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          aria-live="polite"
-          data-testid="sequence-position"
-        >
-          {position}
-        </Typography>
-        <Button
-          size="small"
-          variant="text"
-          endIcon={<OpenInNewIcon />}
-          onClick={() => onOpenImage(current)}
-        >
-          Open image
-        </Button>
-        {canEdit && (
-          <Button
-            size="small"
-            variant={reordering ? 'contained' : 'outlined'}
-            startIcon={reordering ? <DoneIcon /> : <ReorderIcon />}
-            onClick={() => setReordering((v) => !v)}
-            aria-pressed={reordering}
-            data-testid="sequence-reorder-toggle"
-          >
-            {reordering ? 'Done' : 'Reorder'}
-          </Button>
-        )}
-      </Box>
-
-      <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-        <ImageViewer
-          key={current.id}
-          tileSources={current.tileSources}
-          imageId={current.id}
-          categoryId={current.categoryId ?? undefined}
-          height="60vh"
-          initialOverlays={lockedOverlays}
-          overlaysLocked={lockedOverlays != null}
-          canvasAnnotations={canvasAnnotations}
-          canEditContent={false}
-          measurement={measurement}
-          onTileSourceRenewed={onImageRenewed}
-          onError={handleViewerError}
-        />
-      </Paper>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-        {current.name}
-        {!current.active ? ' (inactive)' : ''}
-      </Typography>
-
+    <Box
+      data-testid="sequence-collection-viewer"
+      onKeyDownCapture={handleKeyDownCapture}
+      // Focusing the region (incl. the open-time autofocus) briefly reveals
+      // the edge chevrons — the cue that ←/→ control the viewer (#1564).
+      onFocus={showNav}
+      ref={regionRef}
+      tabIndex={-1}
+      role="region"
+      aria-label={`${collection.name} — sequence viewer`}
+      sx={{ '&:focus': { outline: 'none' } }}
+    >
       {reordering && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
           Drag the thumbnails to reorder the sequence, then choose Done.
         </Typography>
       )}
+      {/* The filmstrip sits above the viewer (#1564); in reorder mode it is
+          the drag source, so it keeps the same slot. */}
       <Box
         data-testid="sequence-thumbnail-strip"
         sx={{
@@ -389,6 +437,7 @@ export default function SequenceCollectionViewer({
                 aria-label={`Go to ${img.name}`}
                 aria-current={isCurrent ? 'true' : undefined}
                 sx={{
+                  ...stripThumbRing(isCurrent),
                   flex: '0 0 auto',
                   p: 0,
                   border: 'none',
@@ -396,9 +445,6 @@ export default function SequenceCollectionViewer({
                   opacity: isFailed ? 0.35 : 1,
                   cursor: isFailed ? 'default' : 'pointer',
                   borderRadius: 1,
-                  outline: isCurrent ? '3px solid' : '1px solid',
-                  outlineColor: isCurrent ? 'primary.main' : 'divider',
-                  outlineOffset: 1,
                   lineHeight: 0,
                 }}
               >
@@ -413,6 +459,88 @@ export default function SequenceCollectionViewer({
             )
           })
         )}
+      </Box>
+
+      <Paper
+        elevation={3}
+        data-testid="sequence-viewer-frame"
+        sx={{ borderRadius: 2, overflow: 'hidden', position: 'relative' }}
+        onPointerEnter={showNav}
+        onPointerMove={showNav}
+        onPointerDown={showNav}
+        onPointerLeave={hideNav}
+      >
+        <ImageViewer
+          key={current.id}
+          tileSources={current.tileSources}
+          imageId={current.id}
+          categoryId={current.categoryId ?? undefined}
+          height="60vh"
+          initialOverlays={lockedOverlays}
+          overlaysLocked={lockedOverlays != null}
+          canvasAnnotations={canvasAnnotations}
+          canEditContent={false}
+          measurement={measurement}
+          onTileSourceRenewed={onImageRenewed}
+          onError={handleViewerError}
+        />
+        <Box
+          data-testid="sequence-nav-overlay"
+          style={{ opacity: navVisible ? 1 : 0 }}
+          onFocusCapture={holdNavForFocus}
+          onBlurCapture={releaseNavForBlur}
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            transition: 'opacity 0.25s ease',
+          }}
+        >
+          <IconButton
+            onClick={() => goTo(currentIndex - 1)}
+            disabled={currentIndex <= 0}
+            aria-label="Previous image"
+            style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
+            sx={{ ...navEdgeButton, left: 8 }}
+          >
+            <ChevronLeftIcon fontSize="large" />
+          </IconButton>
+          <IconButton
+            onClick={() => goTo(currentIndex + 1)}
+            disabled={currentIndex >= available.length - 1}
+            aria-label="Next image"
+            style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
+            sx={{ ...navEdgeButton, right: 8 }}
+          >
+            <ChevronRightIcon fontSize="large" />
+          </IconButton>
+        </Box>
+      </Paper>
+      {/* Caption row mirrors the synchronized pane captions (#1564): the
+          member name left, the position readout + Open image right. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+        <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
+          {current.name}
+          {!current.active ? ' (inactive)' : ''}
+        </Typography>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          aria-live="polite"
+          data-testid="sequence-position"
+          sx={{ flexShrink: 0 }}
+        >
+          {position}
+        </Typography>
+        <Button
+          size="small"
+          variant="text"
+          endIcon={<OpenInNewIcon />}
+          onClick={() => onOpenImage(current)}
+          sx={{ flexShrink: 0 }}
+        >
+          Open image
+        </Button>
       </Box>
     </Box>
   )

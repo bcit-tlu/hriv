@@ -8,7 +8,7 @@ import type { CollectionsPageProps } from '../../src/components/CollectionsPage'
 import { ApiError } from '../../src/api'
 import { DEFAULT_COLLECTION_FILTERS } from '../../src/useCollectionsData'
 import type { User } from '../../src/types'
-import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
+import { makeCategory, makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
@@ -103,6 +103,9 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onDelete: vi.fn().mockResolvedValue(undefined),
     onSaveOwners: vi.fn().mockResolvedValue(undefined),
     onTransfer: vi.fn().mockResolvedValue(undefined),
+    categories: [],
+    onNavigateCategory: vi.fn(),
+    onToggleHidden: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -452,7 +455,7 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('collection-detail-error')).toHaveTextContent(
         'This collection could not be found.',
       )
-      fireEvent.click(screen.getByRole('button', { name: 'All collections' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }))
       expect(onCloseCollection).toHaveBeenCalled()
     })
 
@@ -481,7 +484,11 @@ describe('CollectionsPage', () => {
       })
 
       expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      // No <h1> — the collection name is the breadcrumb's trailing item,
+      // followed by the image count like the image/category header (#1564).
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      expect(within(crumb).getByText('Skull comparison')).toBeInTheDocument()
+      expect(within(crumb).getByText('(2 images)')).toBeInTheDocument()
       expect(screen.getByText('Two views')).toBeInTheDocument()
       expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
 
@@ -524,7 +531,9 @@ describe('CollectionsPage', () => {
       })
 
       expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      expect(within(crumb).getByText('Skull comparison')).toBeInTheDocument()
+      expect(within(crumb).getByText('(2 images)')).toBeInTheDocument()
       expect(screen.getByText('Two views')).toBeInTheDocument()
       expect(screen.getByTestId('sequence-collection-viewer')).toBeInTheDocument()
       // The member list / coming-soon alert only remain for synchronized.
@@ -551,11 +560,15 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
     })
 
-    it('navigates back to the list', () => {
-      const onCloseCollection = vi.fn()
-      renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9 }), onCloseCollection })
-      fireEvent.click(screen.getByRole('button', { name: 'All collections' }))
-      expect(onCloseCollection).toHaveBeenCalled()
+    it('navigates to the Browse root from the breadcrumb Home link (#1559)', () => {
+      const onNavigateCategory = vi.fn()
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9 }),
+        onNavigateCategory,
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      expect(onNavigateCategory).toHaveBeenCalledWith([])
     })
 
     it('gates the detail Edit button on API permissions', () => {
@@ -563,7 +576,7 @@ describe('CollectionsPage', () => {
         selectedCollectionId: 9,
         detail: makeCollection({
           id: 9,
-          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       })
       expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
@@ -617,6 +630,7 @@ describe('CollectionsPage', () => {
         detail: makeCollection({
           id: 9,
           visibility: 'restricted',
+          hidden: false,
           programIds: [1, 99],
           groupIds: [4],
         }),
@@ -633,7 +647,7 @@ describe('CollectionsPage', () => {
         selectedCollectionId: 9,
         detail: makeCollection({
           id: 9,
-          permissions: { canEdit: true, canDelete: true, canTransfer: false },
+          permissions: { canEdit: true, canDelete: true, canTransfer: false, canHide: false },
         }),
         onTransfer,
       })
@@ -644,7 +658,7 @@ describe('CollectionsPage', () => {
         selectedCollectionId: 9,
         detail: makeCollection({
           id: 9,
-          permissions: { canEdit: true, canDelete: true, canTransfer: true },
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: false },
         }),
         onTransfer,
       })
@@ -662,12 +676,12 @@ describe('CollectionsPage', () => {
           makeCollectionSummary({
             id: 3,
             name: 'Ownable',
-            permissions: { canEdit: true, canDelete: true, canTransfer: true },
+            permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: false },
           }),
           makeCollectionSummary({
             id: 4,
             name: 'Shared',
-            permissions: { canEdit: true, canDelete: true, canTransfer: false },
+            permissions: { canEdit: true, canDelete: true, canTransfer: false, canHide: false },
           }),
         ],
       })
@@ -693,7 +707,7 @@ describe('CollectionsPage', () => {
             id: 5,
             name: 'Orphaned set',
             owners: [],
-            permissions: { canEdit: false, canDelete: true, canTransfer: true },
+            permissions: { canEdit: false, canDelete: true, canTransfer: true, canHide: false },
           }),
         ],
         onTransfer,
@@ -710,16 +724,41 @@ describe('CollectionsPage', () => {
   })
 
   describe('browse integration (#1529)', () => {
-    it('uses the provided label for the detail back button', () => {
-      const onCloseCollection = vi.fn()
+    it('renders the filed category path in the detail breadcrumb (#1559)', () => {
+      const onNavigateCategory = vi.fn()
+      const hematology = makeCategory({ id: 10, label: 'Hematology' })
+      const mlsc = makeCategory({ id: 20, label: 'MLSC-3200' })
+      const lab3 = makeCategory({ id: 30, label: 'Lab 3' })
+      mlsc.children = [lab3]
+      hematology.children = [mlsc]
       renderPage({
         selectedCollectionId: 9,
-        detail: makeCollection({ id: 9 }),
-        onCloseCollection,
-        detailBackLabel: 'Back to Browse',
+        detail: makeCollection({ id: 9, categoryId: 30 }),
+        categories: [hematology],
+        onNavigateCategory,
       })
-      fireEvent.click(screen.getByRole('button', { name: 'Back to Browse' }))
-      expect(onCloseCollection).toHaveBeenCalled()
+
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      expect(within(crumb).getByRole('button', { name: 'Home' })).toBeInTheDocument()
+      for (const label of ['Hematology', 'MLSC-3200', 'Lab 3']) {
+        expect(within(crumb).getByRole('button', { name: label })).toBeInTheDocument()
+      }
+      // The collection itself is terminal text, not a link.
+      expect(within(crumb).getByText('Skull comparison')).toBeInTheDocument()
+
+      fireEvent.click(within(crumb).getByRole('button', { name: 'MLSC-3200' }))
+      expect(onNavigateCategory).toHaveBeenCalledWith([hematology, mlsc])
+    })
+
+    it('renders just Home for a root-filed collection', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, categoryId: null }),
+        categories: [makeCategory({ id: 10, label: 'Hematology' })],
+      })
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      expect(within(crumb).getByRole('button', { name: 'Home' })).toBeInTheDocument()
+      expect(within(crumb).queryByRole('button', { name: 'Hematology' })).not.toBeInTheDocument()
     })
 
     it('offers Move on the detail header for admins regardless of ownership', async () => {
@@ -729,7 +768,7 @@ describe('CollectionsPage', () => {
         id: 9,
         name: 'Filed one',
         // Someone else's collection: filing is curatorial, not owner-scoped.
-        permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
       })
       renderPage({ selectedCollectionId: 9, detail, onMoveCollection })
       await user.click(screen.getByRole('button', { name: 'Move' }))
@@ -778,6 +817,122 @@ describe('CollectionsPage', () => {
         detail: makeCollection({ id: 9, images: [], memberCount: 0 }),
       })
       expect(screen.queryByTestId('collection-all-restricted')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('detail header actions (#1559)', () => {
+    it('renders Reorder between Move and Edit for sequence collections and toggles the viewer', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, type: 'sequence' }),
+        onMoveCollection: vi.fn(),
+      })
+      const buttons = screen.getAllByRole('button').map((b) => b.textContent)
+      const order = ['Move', 'Reorder', 'Edit'].map((label) => buttons.indexOf(label))
+      expect(order.every((i) => i >= 0)).toBe(true)
+      expect(order).toEqual([...order].sort((a, b) => a - b))
+
+      await user.click(screen.getByTestId('sequence-reorder-toggle'))
+      expect(screen.getByTestId('sequence-reorder-toggle')).toHaveTextContent('Done')
+      expect(sequenceViewerProps.current?.reordering).toBe(true)
+    })
+
+    it('omits Reorder for synchronized collections and non-editors', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, type: 'synchronized' }),
+      })
+      expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
+
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          type: 'sequence',
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+        }),
+      })
+      expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
+    })
+
+    it('keeps the actions on the breadcrumb row and the pills above the description (#1564)', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, visibility: 'public', description: 'Two views' }),
+        onMoveCollection: vi.fn(),
+      })
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      const move = screen.getByRole('button', { name: 'Move' })
+      // Breadcrumb precedes the action buttons in the shared top row…
+      expect(crumb.compareDocumentPosition(move) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const typeChip = screen.getByText('Synchronized')
+      const visChip = screen.getByTestId('collection-visibility-chip')
+      const description = screen.getByText('Two views')
+      // …and the pills row sits between them: type, then visibility, then
+      // the description below.
+      expect(
+        typeChip.compareDocumentPosition(visChip) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(
+        visChip.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(move.compareDocumentPosition(typeChip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('shows the Hidden chip and Show link on a hidden collection', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          hidden: true,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+        }),
+      })
+      expect(screen.getByTestId('collection-hidden-chip')).toHaveTextContent('Hidden')
+      expect(screen.getByRole('button', { name: 'Show collection' })).toBeInTheDocument()
+    })
+
+    it('gates the hide/show link on canHide', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: false },
+        }),
+      })
+      expect(screen.queryByRole('button', { name: 'Hide collection' })).not.toBeInTheDocument()
+    })
+
+    it('calls onToggleHidden with the open collection', async () => {
+      const user = userEvent.setup()
+      const onToggleHidden = vi.fn().mockResolvedValue(undefined)
+      const detail = makeCollection({
+        id: 9,
+        permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+      })
+      renderPage({ selectedCollectionId: 9, detail, onToggleHidden })
+      await user.click(screen.getByRole('button', { name: 'Hide collection' }))
+      await waitFor(() => expect(onToggleHidden).toHaveBeenCalledWith(detail))
+    })
+
+    it('surfaces a hide/show failure through onViewerError', async () => {
+      const user = userEvent.setup()
+      const onToggleHidden = vi.fn().mockRejectedValue(new Error('conflict'))
+      const onViewerError = vi.fn()
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+        }),
+        onToggleHidden,
+        onViewerError,
+      })
+      await user.click(screen.getByRole('button', { name: 'Hide collection' }))
+      await waitFor(() =>
+        expect(onViewerError).toHaveBeenCalledWith('Failed to update the collection.'),
+      )
     })
   })
 })

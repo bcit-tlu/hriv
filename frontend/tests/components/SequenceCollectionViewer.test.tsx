@@ -73,6 +73,8 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
     onReorder: vi.fn().mockResolvedValue(undefined),
     onImageRenewed: vi.fn(),
     onError: vi.fn(),
+    reordering: false,
+    onReorderingChange: vi.fn(),
     ...overrides,
   }
   return { ...render(<SequenceCollectionViewer {...props} />), props }
@@ -117,6 +119,93 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByRole('button', { name: 'Previous image' })).toBeEnabled()
   })
 
+  it('keeps the edge nav hidden until pointer activity, then fades it out (#1561)', () => {
+    vi.useFakeTimers()
+    try {
+      renderViewer()
+      const frame = screen.getByTestId('sequence-viewer-frame')
+      const overlay = screen.getByTestId('sequence-nav-overlay')
+      const next = screen.getByRole('button', { name: 'Next image' })
+      // Autofocus reveals the nav on mount (#1564) — the cue fades on the
+      // same idle clock.
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+      expect(next).toHaveStyle({ pointerEvents: 'none' })
+
+      fireEvent.pointerEnter(frame)
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      expect(next).toHaveStyle({ pointerEvents: 'auto' })
+
+      // Pointer activity keeps the nav alive…
+      act(() => vi.advanceTimersByTime(1500))
+      fireEvent.pointerMove(frame)
+      act(() => vi.advanceTimersByTime(1500))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      // …then it fades back out once the pointer has been idle.
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+      expect(next).toHaveStyle({ pointerEvents: 'none' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hides the edge nav immediately when the pointer leaves the frame', () => {
+    renderViewer()
+    const frame = screen.getByTestId('sequence-viewer-frame')
+    const overlay = screen.getByTestId('sequence-nav-overlay')
+    fireEvent.pointerEnter(frame)
+    expect(overlay).toHaveStyle({ opacity: '1' })
+    fireEvent.pointerLeave(frame)
+    expect(overlay).toHaveStyle({ opacity: '0' })
+  })
+
+  it('reveals the edge nav when a button receives keyboard focus', () => {
+    renderViewer()
+    const overlay = screen.getByTestId('sequence-nav-overlay')
+    const next = screen.getByRole('button', { name: 'Next image' })
+    fireEvent.focus(next)
+    expect(overlay).toHaveStyle({ opacity: '1' })
+    expect(next).toHaveStyle({ pointerEvents: 'auto' })
+  })
+
+  it('keeps the edge nav visible while a button holds focus, fading only after blur (#1561)', () => {
+    vi.useFakeTimers()
+    try {
+      renderViewer()
+      const overlay = screen.getByTestId('sequence-nav-overlay')
+      const next = screen.getByRole('button', { name: 'Next image' })
+      const prev = screen.getByRole('button', { name: 'Previous image' })
+
+      fireEvent.focus(next)
+      // Well past the idle delay — the focused button must stay visible and
+      // interactive for keyboard users.
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      expect(next).toHaveStyle({ pointerEvents: 'auto' })
+
+      // Focus moving to the other edge button keeps the nav open…
+      fireEvent.blur(next, { relatedTarget: prev })
+      fireEvent.focus(prev)
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+
+      // Pointer activity or leaving the frame can't hide nav while focused…
+      fireEvent.pointerMove(screen.getByTestId('sequence-viewer-frame'))
+      fireEvent.pointerLeave(screen.getByTestId('sequence-viewer-frame'))
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+
+      // …and only after focus leaves the overlay does the idle fade begin.
+      fireEvent.blur(prev, { relatedTarget: null })
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('navigates with ArrowLeft/ArrowRight from inside the viewer region', () => {
     const { props } = renderViewer({ itemId: 101 })
     const region = screen.getByTestId('sequence-collection-viewer')
@@ -124,6 +213,77 @@ describe('SequenceCollectionViewer', () => {
     expect(props.onSelectItem).toHaveBeenCalledWith(102)
     fireEvent.keyDown(region, { key: 'ArrowLeft' })
     expect(props.onSelectItem).toHaveBeenCalledWith(100)
+  })
+
+  it('autofocuses the region so arrows step the sequence immediately (#1564)', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      const { props } = renderViewer({ itemId: 101 })
+      const region = screen.getByTestId('sequence-collection-viewer')
+      // Focus lands on the region on mount — pressing → advances without the
+      // user clicking into the viewer first.
+      expect(region).toHaveFocus()
+      // preventScroll keeps the collection header in view; the focus reveal
+      // of the edge nav is the cue that ←/→ control the viewer.
+      expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
+      expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '1' })
+      fireEvent.keyDown(document.activeElement ?? region, { key: 'ArrowRight' })
+      expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    } finally {
+      focusSpy.mockRestore()
+    }
+  })
+
+  it('does not steal focus when switching images, but refocuses per collection', () => {
+    const first = seqCollection()
+    const second = seqCollection({ id: first.id + 1 })
+    const { rerender, props } = renderViewer()
+    const region = screen.getByTestId('sequence-collection-viewer')
+    expect(region).toHaveFocus()
+    // An item change (same collection) must not re-steal focus…
+    ;(document.activeElement as HTMLElement).blur()
+    rerender(
+      <SequenceCollectionViewer
+        {...{
+          collection: first,
+          itemId: 101,
+          onSelectItem: props.onSelectItem,
+          onOpenImage: props.onOpenImage,
+          onReorder: props.onReorder,
+          onImageRenewed: props.onImageRenewed,
+          onError: props.onError,
+          reordering: false,
+          onReorderingChange: props.onReorderingChange,
+        }}
+      />,
+    )
+    expect(region).not.toHaveFocus()
+    // …but opening a different collection focuses the region again.
+    rerender(
+      <SequenceCollectionViewer
+        {...{
+          collection: second,
+          itemId: null,
+          onSelectItem: props.onSelectItem,
+          onOpenImage: props.onOpenImage,
+          onReorder: props.onReorder,
+          onImageRenewed: props.onImageRenewed,
+          onError: props.onError,
+          reordering: false,
+          onReorderingChange: props.onReorderingChange,
+        }}
+      />,
+    )
+    expect(region).toHaveFocus()
+  })
+
+  it('renders the filmstrip above the viewer (#1564)', () => {
+    renderViewer()
+    const strip = screen.getByTestId('sequence-thumbnail-strip')
+    const frame = screen.getByTestId('sequence-viewer-frame')
+    // compareDocumentPosition: FOLLOWING means the frame comes after the
+    // strip in DOM order — i.e. the strip sits above the image.
+    expect(strip.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('does not treat arrow keys inside editable fields as navigation', () => {
@@ -227,30 +387,23 @@ describe('SequenceCollectionViewer', () => {
   })
 
   it('resets failures and reorder mode when a different collection opens', () => {
-    const { props, rerender } = renderViewer()
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props, rerender } = renderViewer({ reordering: true })
     act(() => {
       ;(lastViewerProps!.onError as (m: string) => void)('gone')
     })
     const next = seqCollection({ id: 77, images: [makeImage({ id: 100, name: 'Slice 1' })] })
-    rerender(<SequenceCollectionViewer {...props} collection={next} itemId={100} />)
-    // Reorder mode exited and the shared image id is no longer failed.
-    expect(screen.queryByTestId('sequence-reorder-toggle')).toBeInTheDocument()
+    rerender(
+      <SequenceCollectionViewer {...props} collection={next} itemId={100} reordering={false} />,
+    )
+    // The controlled reorder mode is exited by the collection-change effect
+    // and the shared image id is no longer failed.
+    expect(props.onReorderingChange).toHaveBeenCalledWith(false)
     expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeEnabled()
   })
 
-  it('hides the reorder toggle from non-editors', () => {
-    const collection = seqCollection({
-      permissions: { canEdit: false, canDelete: false, canTransfer: false },
-    })
-    renderViewer({ collection })
-    expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
-  })
-
-  it('offers reorder mode to editors and persists a drag reorder', async () => {
+  it('offers reorder mode via the controlled prop and persists a drag reorder', async () => {
     const collection = seqCollection()
-    const { props } = renderViewer({ collection })
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props } = renderViewer({ collection, reordering: true })
     expect(capturedOnDragEnd).toBeDefined()
     // Drag the first item onto the third: move() commits source.index.
     capturedOnDragEnd!({
@@ -266,8 +419,7 @@ describe('SequenceCollectionViewer', () => {
   it('reports a reorder failure through onError', async () => {
     const err = new Error('stale version')
     const onReorder = vi.fn().mockRejectedValue(err)
-    const { props } = renderViewer({ onReorder })
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props } = renderViewer({ onReorder, reordering: true })
     capturedOnDragEnd!({
       operation: {
         source: { id: 'seq-100', index: 2, initialIndex: 0, group: 'strip' },
@@ -281,8 +433,7 @@ describe('SequenceCollectionViewer', () => {
   })
 
   it('ignores a canceled drag and a drop that changes nothing', () => {
-    const { props } = renderViewer()
-    fireEvent.click(screen.getByTestId('sequence-reorder-toggle'))
+    const { props } = renderViewer({ reordering: true })
     capturedOnDragEnd!({
       operation: {
         source: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },

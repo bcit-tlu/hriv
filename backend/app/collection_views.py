@@ -21,9 +21,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authz import (
+    is_collection_owner,
     can_change_collection_scope,
     can_delete_collection,
     can_edit_collection,
+    can_hide_collection,
     can_transfer_collection,
     can_view_collection,
 )
@@ -70,7 +72,16 @@ class _ViewerContext:
     def can_view(self, collection: Collection) -> bool:
         """Both gates AND: the collection's own visibility gate plus the
         ancestor gate of the category it is filed in (a hidden/restricted
-        category hides everything inside it, including collections)."""
+        category hides everything inside it, including collections).
+        A curatorially hidden collection (#1559) drops out of student view
+        unless the student is a user-owner — owners keep access.
+        """
+        if (
+            collection.hidden
+            and self.excluded_category_ids is not None
+            and not is_collection_owner(self.user, collection)
+        ):
+            return False
         if (
             self.excluded_category_ids is not None
             and collection.category_id is not None
@@ -126,6 +137,7 @@ def _permissions_for(user: User, collection: Collection) -> CollectionPermission
         can_change_scope=can_change_collection_scope(user, collection),
         can_delete=can_delete_collection(user, collection),
         can_transfer=can_transfer_collection(user, collection),
+        can_hide=can_hide_collection(user, collection),
     )
 
 
@@ -138,6 +150,7 @@ def _summary_fields(
         "description": collection.description,
         "type": collection.type,
         "visibility": collection.visibility,
+        "hidden": collection.hidden,
         "owners": _owners_out(collection),
         "image_count": len(images),
         "cover_thumb": images[0].thumb if images else None,

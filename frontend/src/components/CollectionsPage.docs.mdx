@@ -55,7 +55,13 @@ with deterministic fixtures.
 - **Delete.** Lives inside `CollectionEditDialog` only (#1554, the `EditImageModal` pattern):
   first click arms, second click confirms; a failure keeps the dialog open with the API message.
   Deleting the currently open collection returns to the list.
-- **Detail.** Header with type/visibility chips; `sequence` collections mount
+- **Detail.** The header leads with a `CategoryBreadcrumb` of the collection's filed location
+  (category ancestors, or just **Home** at the root) instead of a back link (#1559); each link
+  navigates Browse to that spot via `onNavigateCategory`. The top-right row orders: visibility
+  chip (plus a `Hidden` chip when `hidden`), **Move**, **Reorder** (sequence + `canEdit` — the
+  page owns the `reordering` state and passes it to the viewer), **Edit**, **Owners**
+  (`canTransfer`), and **Hide collection** / **Show collection** (`canHide`, wired to
+  `onToggleHidden`). `sequence` collections mount
   `SequenceCollectionViewer` and `synchronized` collections mount
   `SynchronizedCollectionViewer` (see their own docs pages). A 404 (`detailError`) renders the
   not-found alert with a way back to the list.
