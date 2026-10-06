@@ -1039,6 +1039,9 @@ describe('CollectionsPage', () => {
       const user = userEvent.setup()
       const onUpdate = vi.fn()
       const onMoveCollectionToCategory = vi.fn().mockResolvedValue(true)
+      const loadCollection = vi
+        .fn()
+        .mockResolvedValue(makeCollection({ id: 9, categoryId: 20, version: 5 }))
       const detail = makeCollection({
         id: 9,
         categoryId: 10,
@@ -1053,6 +1056,7 @@ describe('CollectionsPage', () => {
           makeCategory({ id: 10, label: 'Histology' }),
           makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
         ],
+        loadCollection,
         onUpdate,
         onMoveCollectionToCategory,
       })
@@ -1071,6 +1075,59 @@ describe('CollectionsPage', () => {
       const [movedCollection, targetId] = onMoveCollectionToCategory.mock.calls[0]
       expect(movedCollection.id).toBe(9)
       expect(targetId).toBe(20)
+      // Filing skipped `update`, so the open detail is refetched directly —
+      // otherwise the breadcrumb and next filing's version go stale.
+      await waitFor(() => expect(loadCollection).toHaveBeenCalledWith(9))
+    })
+
+    it('retries a failed category move without replaying the PATCH (#1567)', async () => {
+      const user = userEvent.setup()
+      // PATCH bumps the version server-side; the first move then fails. On
+      // retry the editor must not resend the PATCH at the old version — its
+      // baseline advances to the saved record, so only the move replays.
+      const patched = makeCollection({ id: 9, name: 'Renamed', categoryId: 10, version: 5 })
+      const onUpdate = vi.fn().mockResolvedValue(patched)
+      const onMoveCollectionToCategory = vi
+        .fn()
+        .mockResolvedValueOnce(new ApiError(503, 'move service down'))
+        .mockResolvedValueOnce(true)
+      const loadCollection = vi
+        .fn()
+        .mockResolvedValue(makeCollection({ id: 9, name: 'Renamed', categoryId: 20, version: 6 }))
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, name: 'Old name', categoryId: 10, version: 4 }),
+        categories: [
+          makeCategory({ id: 10, label: 'Histology' }),
+          makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
+        ],
+        loadCollection,
+        onUpdate,
+        onMoveCollectionToCategory,
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      const nameField = await screen.findByDisplayValue('Old name')
+      await user.clear(nameField)
+      await user.type(nameField, 'Renamed')
+      await user.click(await screen.findByRole('combobox', { name: 'Category' }))
+      await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      // Move failed → editor stays open (the snackbar carried the precise
+      // message; the dialog's generic alert proves it didn't close).
+      expect(await screen.findByText('Failed to update collection.')).toBeInTheDocument()
+      expect(onUpdate).toHaveBeenCalledTimes(1)
+
+      // Retry: baseline advanced to the PATCH result, so no second PATCH —
+      // the move replays against the bumped version and the dialog closes.
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onMoveCollectionToCategory).toHaveBeenCalledTimes(2))
+      expect(onUpdate).toHaveBeenCalledTimes(1)
+      expect(onMoveCollectionToCategory.mock.calls[1][0]).toEqual(
+        expect.objectContaining({ version: 5 }),
+      )
+      await waitFor(() => expect(screen.queryByText('Edit Collection')).not.toBeInTheDocument())
     })
 
     it('still PATCHes a hidden-only diff for a filing-only curator (#1567)', async () => {

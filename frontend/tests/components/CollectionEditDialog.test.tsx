@@ -570,4 +570,45 @@ describe('CollectionEditDialog', () => {
     )
     expect(screen.getByDisplayValue('Second')).toBeInTheDocument()
   })
+
+  it('advances baseline on a mid-open version bump without reseeding fields (#1567)', async () => {
+    // After a partial save (metadata PATCH ok, chained move failed) the page
+    // feeds the saved record back as `collection` — the dialog must adopt the
+    // new version/baseline but keep the user's in-progress field values.
+    const user = userEvent.setup()
+    const saved = makeCollection({ id: 9, name: 'Saved name', version: 5 })
+    const { rerender } = renderDialog({
+      collection: makeCollection({ id: 9, name: 'Original', version: 4 }),
+    })
+    const nameField = screen.getByLabelText('Collection name')
+    await user.clear(nameField)
+    await user.type(nameField, 'Typed name')
+
+    rerender(
+      <AuthContext.Provider value={makeAuth('admin')}>
+        <CollectionEditDialog open onClose={vi.fn()} onSave={vi.fn()} collection={saved} />
+      </AuthContext.Provider>,
+    )
+
+    // The typed value survives — only baseline/version advance.
+    expect(screen.getByDisplayValue('Typed name')).toBeInTheDocument()
+  })
+
+  it('does not regress baseline when the prop delivers an older record', () => {
+    const { rerender } = renderDialog({
+      collection: makeCollection({ id: 9, name: 'Newer', version: 5 }),
+    })
+    rerender(
+      <AuthContext.Provider value={makeAuth('admin')}>
+        <CollectionEditDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          collection={makeCollection({ id: 9, name: 'Older', version: 3 })}
+        />
+      </AuthContext.Provider>,
+    )
+    // An older record arriving while open is stale data — ignore it.
+    expect(screen.getByDisplayValue('Newer')).toBeInTheDocument()
+  })
 })

@@ -530,6 +530,11 @@ export default function CollectionsPage({
       )
         ? await onUpdate(editing.id, values, version, baseline)
         : editing
+      // Advance the record the dialog is seeded from (#1567): if the chained
+      // move below fails, the editor stays open with baseline/version already
+      // at the saved state — a retry diffs clean instead of replaying a
+      // stale-version PATCH.
+      setEditing(updated)
       // Category filing is a move, not a PATCH (#1566) — apply it after the
       // metadata save so the move posts the just-refreshed version. A failed
       // move must not read as a successful save: the move op already showed
@@ -537,9 +542,11 @@ export default function CollectionsPage({
       // with the real message (and its 409 conflict-reload path) (#1567).
       if (values.categoryId !== (baseline?.categoryId ?? null)) {
         const moved = await onMoveCollectionToCategory?.(updated, values.categoryId)
-        if (moved !== undefined && moved !== true) {
-          throw moved instanceof Error ? moved : new Error('Failed to move collection.')
-        }
+        if (moved instanceof Error) throw moved
+        // Filing bypasses `update`, which is what normally refreshes the open
+        // detail — refetch so the breadcrumb and the next filing's version
+        // don't work from the pre-move record (#1567).
+        await loadCollection(editing.id)
       }
     } else {
       await onCreate(values)

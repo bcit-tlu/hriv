@@ -281,10 +281,14 @@ export function useCollectionsData({
     }
   }, [enabled, currentUser, selectedCollectionId])
 
-  const loadCollection = useCallback(
-    async (id: number): Promise<Collection> => apiCollectionToCollection(await fetchCollection(id)),
-    [],
-  )
+  const loadCollection = useCallback(async (id: number): Promise<Collection> => {
+    const mapped = apiCollectionToCollection(await fetchCollection(id))
+    // Keep the open detail in sync when the refetch is for the record on
+    // screen — e.g. a category filing mutates the record without going
+    // through `update` (#1567).
+    setDetail((prev) => (prev?.id === id ? mapped : prev))
+    return mapped
+  }, [])
 
   const create = useCallback(async (values: CollectionFormValues): Promise<Collection> => {
     const created = apiCollectionToCollection(

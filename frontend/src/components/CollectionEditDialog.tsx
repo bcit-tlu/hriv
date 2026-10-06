@@ -197,6 +197,18 @@ export default function CollectionEditDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures defaultType at open time
   }, [open, collection])
 
+  // A save that partially succeeded (metadata PATCH ok, chained category move
+  // failed) returns a newer record while the dialog stays open (#1567):
+  // advance baseline/version to the saved state so a retry diffs against it
+  // instead of replaying a stale-version PATCH. Field values are deliberately
+  // NOT reseeded — the user's in-progress edits (like the category pick) stay.
+  useEffect(() => {
+    if (!open || !collection || !baseline) return
+    if (collection.id !== baseline.id || collection.version <= baseline.version) return
+    setVersion(collection.version)
+    setBaseline(collection)
+  }, [open, collection, baseline])
+
   const handleEntered = useCallback(() => {
     inputRef.current?.focus()
   }, [])
