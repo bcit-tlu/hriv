@@ -29,6 +29,7 @@ import { getVisibilityColors } from '../theme'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import { CollectionTypeChip } from './CollectionCard'
 import type {
   Category,
   Collection,
@@ -375,19 +376,14 @@ export default function CollectionEditDialog({
         {/* Type leads — it's the most consequential option and immutable
             after creation (#1567). `mb: 2` balances the gap above it so the
             section sits evenly between the title and the name field. */}
-        <Box sx={{ mt: 1, mb: 2 }}>
+        <Box sx={{ mt: 1, mb: 3 }}>
           <Typography variant="subtitle2" component="p" gutterBottom>
             Type
           </Typography>
           {isEdit ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                data-testid="collection-type-chip"
-                label={COLLECTION_TYPE_LABELS[type]}
-                size="small"
-                color="primary"
-                variant="outlined"
-              />
+              {/* Shared type pill — red outline/text on white + icon (#1567). */}
+              <CollectionTypeChip type={type} />
               <Typography variant="caption" color="text.secondary">
                 The type cannot be changed after creation.
               </Typography>

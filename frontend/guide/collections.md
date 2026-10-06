@@ -67,7 +67,10 @@ visible but can't be changed here.
   header opens a dialog of thumbnails — a miniature Browse view. Drag
   thumbnails to reorder, drop one on the trash drop target in the
   bottom-right corner (or click its corner remove icon) to take it out of
-  the collection, and click **+** to add images through search. Changes
+  the collection, and click **Add Images** to pick through search — the
+  search opens with **Select** already on, and you can tick individual
+  images or a whole category (its images, and its sub-categories' images,
+  are added in their order in the category). Changes
   apply inside the dialog only — **Done** saves them all at once, and
   closing without Done asks before discarding. This works for synchronized
   collections too.
@@ -113,9 +116,10 @@ In the top-bar **Search**, click **Select** next to the result count, tick
 each image you want, then click **Add to collection** in the footer. The
 same dialog opens with all of them selected. You can keep selecting across
 searches — images you picked under an earlier query still count, and they
-are added in the order they appeared in your results. Only image results
-can be selected; categories, collections, and other kinds still open when
-you click them.
+are added in the order they appeared in your results. Ticking a **category**
+selects every image inside it — including its sub-categories — in the order
+they're registered; unticking removes them all again. Collections and
+other result kinds still open when you click them and are never selected.
 
 ### Add an image from Browse (drag onto the tile)
 
@@ -257,7 +261,9 @@ have that permission — hidden rows render greyscale, just like the Manage
 Images table. Clicking a row's thumbnail opens the collection itself.
 
 Use **Choose columns** to show or hide columns — the choice is remembered
-between sessions, as on the Manage Images table. Rows offer actions
+between sessions, as on the Manage Images table. Like that table, only a
+compact set shows by default (cover, name, type, category, groups,
+visibility, modified); opt the rest in as you need them. Rows offer actions
 through a single **actions** (⋮) menu where you have permission: **View**,
 **Edit**, and **Manage owners** — filing lives in the edit dialog's
 Category picker, and delete stays inside the edit dialog. Clicking a row

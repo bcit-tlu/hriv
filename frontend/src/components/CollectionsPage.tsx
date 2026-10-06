@@ -17,8 +17,6 @@ import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
-import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
-import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
@@ -49,7 +47,7 @@ import type {
   Program,
   User,
 } from '../types'
-import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
+import CollectionCard, { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
 import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
@@ -200,8 +198,6 @@ function CollectionDetailHeader({
 }) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  // Same glyph the tile's cover-overlay type pill uses (#1567).
-  const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const programOwner = collection.owners.find((o) => o.kind === 'program')
   const ownerText = programOwner
     ? `Managed by program ${programOwner.name}`
@@ -392,15 +388,9 @@ function CollectionDetailHeader({
           mb: 1,
         }}
       >
-        {/* Type icon matches the tile's cover-overlay type pill (#1567). */}
-        <Chip
-          size="small"
-          variant="outlined"
-          color="primary"
-          icon={<TypeIcon />}
-          label={COLLECTION_TYPE_LABELS[collection.type]}
-          sx={hiddenSx}
-        />
+        {/* The shared type pill — red outline/text on white with the type
+            icon, matching the tile and table (#1567). */}
+        <CollectionTypeChip type={collection.type} sx={hiddenSx} />
         <Box sx={hiddenSx}>
           <CollectionVisibilityChip visibility={collection.visibility} />
         </Box>

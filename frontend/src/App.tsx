@@ -1782,13 +1782,17 @@ export default function App() {
     collection: Collection
     stageAdd: StageAddImages
   } | null>(null)
+  // Manage-dialog adds open the modal with Select already on (#1567).
+  const [searchInitialSelectMode, setSearchInitialSelectMode] = useState(false)
   const openSearch = useCallback(() => {
     manageSearchTarget.current = null
+    setSearchInitialSelectMode(false)
     setSearchOpen(true)
   }, [])
   const requestCollectionImageSearch = useCallback(
     (collection: Collection, stageAdd: StageAddImages) => {
       manageSearchTarget.current = { collection, stageAdd }
+      setSearchInitialSelectMode(true)
       setSearchOpen(true)
     },
     [],
@@ -3169,12 +3173,14 @@ export default function App() {
           setSearchOpen(false)
           setSearchInitialQuery(undefined)
           setSearchInitialTypeFilter(undefined)
+          setSearchInitialSelectMode(false)
           // The manage-dialog add target intentionally survives close —
           // SearchModal fires onClose() before onAddImagesToCollection (#1567),
           // and every generic opener resets it via openSearch().
         }}
         initialQuery={searchInitialQuery}
         initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}
+        initialSelectMode={searchInitialSelectMode}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
         programs={programs}

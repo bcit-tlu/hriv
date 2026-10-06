@@ -7,7 +7,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
-import AddIcon from '@mui/icons-material/Add'
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { alpha, type Theme } from '@mui/material/styles'
@@ -445,15 +445,17 @@ export default function CollectionManageDialog({
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Manage images{collection ? ` — ${collection.name}` : ''}
         {onAddImages && (
-          <IconButton
-            aria-label="Add images to collection"
+          /* Labeled button with the Browse toolbar's Add-Images icon (#1567). */
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<AddPhotoAlternateIcon />}
             onClick={() => onAddImages(stageAdd)}
-            color="primary"
             disabled={saving}
             data-testid="collection-manage-add"
           >
-            <AddIcon />
-          </IconButton>
+            Add Images
+          </Button>
         )}
       </DialogTitle>
       <DialogContent sx={{ position: 'relative', minHeight: 220 }}>

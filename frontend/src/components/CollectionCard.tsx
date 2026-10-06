@@ -17,12 +17,15 @@ import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { fetchCollection } from '../api'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
-import type { CollectionSummary, CollectionVisibility, Group, Program } from '../types'
-import {
-  COLLECTION_TYPE_LABELS,
-  COLLECTION_VISIBILITY_LABELS,
-  describeCollectionOwners,
-} from '../collectionUtils'
+import type {
+  CollectionSummary,
+  CollectionType,
+  CollectionVisibility,
+  Group,
+  Program,
+} from '../types'
+import type { SxProps, Theme } from '@mui/material/styles'
+import { COLLECTION_TYPE_LABELS, COLLECTION_VISIBILITY_LABELS } from '../collectionUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import RenewingThumbnail from './RenewingThumbnail'
@@ -99,6 +102,32 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
   )
 }
 
+/**
+ * The single collection-type pill look (#1567): red (primary) outline and
+ * text on a filled-white surface with the type's icon. Tiles, the detail
+ * header, the edit dialog, and the manage table all render this.
+ */
+export function CollectionTypeChip({ type, sx }: { type: CollectionType; sx?: SxProps<Theme> }) {
+  const TypeIcon = type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
+  return (
+    <Chip
+      data-testid="collection-type-chip"
+      label={COLLECTION_TYPE_LABELS[type]}
+      size="small"
+      variant="outlined"
+      color="primary"
+      icon={<TypeIcon />}
+      sx={[
+        // `background.paper` keeps the white fill over cover imagery while
+        // staying legible in dark mode; the 14px icon matches the lock
+        // convention (`.MuiChip-icon` defaults to 18px).
+        { bgcolor: 'background.paper', '& .MuiChip-icon': { fontSize: 14 } },
+        ...(Array.isArray(sx) ? sx : [sx]),
+      ]}
+    />
+  )
+}
+
 /** Cover thumbs are keyed by collection id, so an expired token is renewed via the collection record. */
 function renewCoverThumb(id: number): Promise<{ id: number; thumb: string | null }> {
   return fetchCollection(id).then((c) => ({ id: c.id, thumb: c.cover_thumb }))
@@ -118,7 +147,6 @@ export default function CollectionCard({
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const cover = collection.coverThumb
-  const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
@@ -195,7 +223,6 @@ export default function CollectionCard({
                   WebkitBoxOrient: 'vertical',
                   overflow: 'hidden',
                   wordBreak: 'break-word',
-                  pr: showEdit ? 8 : 0,
                 }}
               >
                 {collection.name}
@@ -212,9 +239,29 @@ export default function CollectionCard({
                 </span>
               </Tooltip>
             )}
+            {/* Edit pencil sits directly right of the title — the
+                CategoryTile/ImageTile convention (#1567). */}
+            {showEdit && (
+              <IconButton
+                component="span"
+                size="small"
+                aria-label={`Edit ${collection.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onEdit?.(collection)
+                }}
+                sx={{ flexShrink: 0, ml: 0.25 }}
+              >
+                <EditIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            )}
           </Box>
+          {/* Owner names were removed from tile metadata (#1567): a
+              program-owned collection shows its program as a chip under the
+              type pill; user-owned tiles carry no owner reference. */}
           <Typography variant="body2" color="text.secondary">
-            {imageCountText} · {describeCollectionOwners(collection.owners)}
+            {imageCountText}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             <CollectionVisibilityChip visibility={collection.visibility} />
@@ -277,9 +324,9 @@ export default function CollectionCard({
           )}
         </CardContent>
       </CardActionArea>
-      {/* Cover-overlay controls (#1554/#1559): the type pill pins to the
-          top-left; curatorial actions stay top-right — both use the
-          CategoryTile scrim convention. */}
+      {/* Cover-overlay controls (#1554/#1559/#1567): the type pill pins to
+          the top-left — with a program-owner chip stacked under it — while
+          curatorial actions stay top-right (CategoryTile scrim convention). */}
       <Box
         data-testid="collection-type-overlay"
         sx={{
@@ -287,21 +334,26 @@ export default function CollectionCard({
           top: 4,
           left: 4,
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
           gap: 0.5,
         }}
       >
-        <Chip
-          data-testid="collection-type-chip"
-          label={COLLECTION_TYPE_LABELS[collection.type]}
-          size="small"
-          icon={<TypeIcon />}
-          sx={{
-            bgcolor: 'rgba(0,0,0,0.25)',
-            color: 'white',
-            '& .MuiChip-icon': { color: 'white' },
-          }}
-        />
+        <CollectionTypeChip type={collection.type} />
+        {/* A program-owned collection carries its program as a standard
+            program chip under the type pill (#1567); user-owned tiles show
+            nothing here. */}
+        {(() => {
+          const programOwner = collection.owners.find((o) => o.kind === 'program')
+          return programOwner?.kind === 'program' ? (
+            <Chip
+              data-testid="collection-owner-program-chip"
+              label={programOwner.name}
+              size="small"
+              color="primary"
+            />
+          ) : null
+        })()}
       </Box>
       <Box
         data-testid="collection-actions-overlay"
@@ -355,16 +407,6 @@ export default function CollectionCard({
           </Tooltip>
         )}
       </Box>
-      {showEdit && (
-        <IconButton
-          size="small"
-          aria-label={`Edit ${collection.name}`}
-          onClick={() => onEdit?.(collection)}
-          sx={{ position: 'absolute', top: 168, right: 8 }}
-        >
-          <EditIcon fontSize="small" />
-        </IconButton>
-      )}
     </Card>
   )
 }

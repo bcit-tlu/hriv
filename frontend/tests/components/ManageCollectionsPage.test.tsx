@@ -98,6 +98,29 @@ function renderPage(overrides: Partial<ManageCollectionsPageProps> = {}) {
   return { ...utils, props }
 }
 
+/** Seeds the per-user column map to show every column — the tests never
+ *  write `hriv_user`, so the scope resolves to `anonymous` (#1567). */
+function showAllColumns() {
+  localStorage.setItem(
+    'hrivpref:table-columns:manage-collections:user:anonymous',
+    JSON.stringify({
+      cover: true,
+      id: true,
+      name: true,
+      type: true,
+      scope: true,
+      owners: true,
+      images: true,
+      programs: true,
+      groups: true,
+      category: true,
+      visibility: true,
+      created_at: true,
+      updated_at: true,
+    }),
+  )
+}
+
 describe('ManageCollectionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -134,6 +157,9 @@ describe('ManageCollectionsPage', () => {
         category_id: null,
       }),
     ])
+    // Owners, scope, image count, and Programs are opt-in columns — the
+    // default set mirrors the Manage Images table's lean six (#1567).
+    showAllColumns()
     renderPage()
     const row = await screen.findByTestId('manage-collection-row-1')
     expect(within(row).getByText('Skull comparison')).toBeInTheDocument()
@@ -495,6 +521,7 @@ describe('ManageCollectionsPage', () => {
         created_at: '2026-01-05T12:00:00Z',
       }),
     ])
+    showAllColumns()
     renderPage({
       programs: [
         {
@@ -534,6 +561,7 @@ describe('ManageCollectionsPage', () => {
         category_id: 11,
       }),
     ])
+    showAllColumns()
     renderPage({
       categories: [makeCategory({ id: 11, label: 'Histology', programIds: [3] })],
       programs: [
@@ -562,17 +590,19 @@ describe('ManageCollectionsPage', () => {
     await screen.findByTestId('manage-collection-row-1')
     await user.click(screen.getByRole('button', { name: 'Choose columns' }))
     const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('checkbox', { name: 'Owners' }))
+    // 'Type' is a default-visible column; opt-in columns (Owners, Programs,
+    // …) exercise the opposite direction.
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Type' }))
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
     const table = screen.getByTestId('manage-collections-table')
-    expect(within(table).queryByText('Owners')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Type')).not.toBeInTheDocument()
 
     // A second mount reads the persisted preference — same mechanism as
     // ManagePage's `manage-images` table key.
     first.unmount()
     renderPage()
     await screen.findByTestId('manage-collection-row-1')
-    expect(within(screen.getByTestId('manage-collections-table')).queryByText('Owners')).toBeNull()
+    expect(within(screen.getByTestId('manage-collections-table')).queryByText('Type')).toBeNull()
   })
 
   it('deletes through the edit dialog and refetches', async () => {

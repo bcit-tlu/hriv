@@ -481,17 +481,23 @@ shows the
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
-only once), name, image count, the co-owner names joined by `describeCollectionOwners`
-(`No owner` when orphaned), and a visibility chip that
-reuses the category restriction palette. The type chip pins to a top-LEFT
+only once), name, image count, and a visibility chip that
+reuses the category restriction palette. Tiles never render owner names
+(#1567): a program-owned collection shows its program as a standard program
+chip stacked beneath the type pill, and user-owned tiles carry no owner
+reference. The type chip pins to a top-LEFT
 cover overlay (`top: 4, left: 4`, #1559) while **Move** and **Owners** stay
 top-right — two independent `absolute` overlays using the
 white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554), so
 the chip's position never shifts with the available actions. A curatorially
 hidden card renders the same desaturated treatment as a hidden
 category/image tile plus a `VisibilityOff` affordance by the name (#1559).
-**Edit** stays in the metadata area and Delete is
-gone from the card entirely (edit dialog only). Filters — type is the page,
+**Edit** is a pencil inline at the title row's right — the
+CategoryTile/ImageTile convention (#1567) — and Delete is
+gone from the card entirely (edit dialog only). Every collection-type pill
+(tile overlay, detail header, edit dialog, manage table) renders the shared
+`CollectionTypeChip`: red (primary) outline and text on a white fill with
+the type's icon (#1567). Filters — type is the page,
 not a facet (#1554): a **My collections** chip (`mine=true`;
 clears and disables the owner facet) and — for admin, instructor and staff
 only — an **Owner** select built from the owners in the loaded list, both
@@ -586,12 +592,15 @@ renders them. The actions are **Hide collection** / **Show collection**
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
 image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
 opens `CollectionManageDialog`, the mini-Browse member manager: drag to
-reorder, drag-to-trash or the corner control to remove, **+** to add via
-the search flow — all staged locally until **Done** commits the staged
-list once; #1566/#1567), **Edit**, and an owners pencil beside the owner
+reorder, drag-to-trash or the corner control to remove, **Add Images** to
+add via the search flow — all staged locally until **Done** commits the
+staged list once; #1566/#1567), **Edit**, and an owners pencil beside the
+owner
 name (`canTransfer`). Filing moved into the edit dialog's **Category** picker —
-the header carries no **Move** button (#1566). Below the top row, the **type chip** (Synchronized /
-Sequence) and the **visibility chip** (Public/Private/Restricted) sit to the
+the header carries no **Move** button (#1566). Below the top row, the **type
+pill** — the shared `CollectionTypeChip` with the type's icon
+(Synchronized / Sequence, #1567) — and the **visibility chip**
+(Public/Private/Restricted) sit to the
 left of the owner line; the description renders below the pills,
 left-aligned (#1567). Hidden state shows through greyscale alone — no
 `Hidden` chip. No Delete (#1554).
@@ -635,12 +644,16 @@ rows-per-page preference, and a Category column rendering
 `CategoryBreadcrumb` (extracted from `ManagePage`; segments link into
 Browse, hidden-subtree rows get the eye icon). Columns (#1567): Cover
 (`RenewingThumbnail`), ID, Name (with a `VisibilityOff` marker on
-curatorially hidden rows, #1559), Type, Scope
+curatorially hidden rows, #1559), Type (the shared `CollectionTypeChip`
+pill), Scope
 (`CollectionVisibilityChip` — the Private/Public/Restricted pill), Owners
 (`describeCollectionOwners`), image count, Programs and Groups (own scope
 solid plus the filed category's scope at inherited opacity), Category,
 **Visibility** (a per-row show/hide `Switch` gated on `permissions.canHide`,
 same as Manage Images' Visibility column), Created, Modified, Actions.
+The default-visible set mirrors ManagePage's lean six — Cover, Name, Type,
+Category, Groups, Visibility, Modified — so the table sizes to content and
+wraps instead of overflowing into horizontal scroll; the rest are opt-in.
 Column visibility is user-persisted through **Choose columns**
 (`ColumnVisibilityDialog` + `useTableColumnPreferences` under the
 `manage-collections` columns key, same mechanism as `manage-images`).
@@ -948,23 +961,30 @@ searchOpen)` — a lazy list fetch each time the modal opens, shared with
 `permissions.canEdit`). When the feature flag is off the list stays empty
 and no Collections chip appears.
 
-**Multi-select (image results only).** A **Select** toggle next to the
-result count appears when image results exist (or select mode is already
-on) and `onAddImagesToCollection` is provided. Image rows become labelled
-checkboxes (`Select {image name}`) inside a `<label>` row — clicking
-anywhere toggles — while every other kind keeps its `CardActionArea`
-navigation and is never selectable (this avoids nested-interactive
-controls, see #1345). Selections survive query and filter changes: each
-check records the result generation and position where the image
-appeared, so the footer count covers picks hidden by the current query
-and the payload emits them in "order encountered" — result order within
-one query, chronological batches across queries. A sticky footer shows
-"N images selected" with **Clear** and **Add to collection**, which opens
-`AddToCollectionDialog` with `imageIds`, reusing the #1415 dialog,
-capacity checks, and snackbar feedback. Closing the modal, cancelling
-select mode, or handing off resets the selection. When the collections
-feature flag is off, the modal hides collection results, the Collections
-chip, and the collections wording in the placeholder.
+**Multi-select (image and category results).** A **Select** toggle next to
+the result count appears when image or category results exist (or select
+mode is already on) and `onAddImagesToCollection` is provided; the Manage
+dialog's **Add Images** flow opens the modal with select mode already on
+(`initialSelectMode`). Image rows become labelled checkboxes
+(`Select {image name}`) inside a `<label>` row — clicking anywhere toggles —
+and category results check the same way: a checked category stages every
+image in its subtree (sub-categories included) in registration order — the
+category's own images by `sortOrder`, then each child's subtree in tree
+order, honoring the `excludeHidden` rule — and shows indeterminate when
+only part of the subtree is selected. Every other kind keeps its
+`CardActionArea` navigation and is never selectable (this avoids
+nested-interactive controls, see #1345). Selections survive query and
+filter changes: each check records the result generation and position
+where the image appeared, so the footer count covers picks hidden by the
+current query and the payload emits them in "order encountered" — result
+order within one query, chronological batches across queries. A sticky
+footer shows "N images selected" with **Clear** and **Add to collection**,
+which opens `AddToCollectionDialog` with `imageIds` (or feeds the Manage
+dialog's draft when that flow launched the modal), reusing the #1415
+dialog, capacity checks, and snackbar feedback. Closing the modal,
+cancelling select mode, or handing off resets the selection. When the
+collections feature flag is off, the modal hides collection results, the
+Collections chip, and the collections wording in the placeholder.
 
 **Image ids.** `App` keeps `addToCollectionImageIds` as state: the viewer
 button sets `[selectedImage.id]`, the search footer sets the checked ids;

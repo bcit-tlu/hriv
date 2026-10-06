@@ -774,8 +774,10 @@ describe('CollectionsPage', () => {
         ],
         onTransfer,
       })
-      expect(screen.getByText(/No owner/)).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Manage owners of Orphaned set' }))
+      // Tiles no longer render owner text (#1567) — an orphaned collection
+      // is identified by the owners affordance and the dialog's copy.
+      const transferBtn = screen.getByRole('button', { name: 'Manage owners of Orphaned set' })
+      await user.click(transferBtn)
       const dialog = await screen.findByRole('dialog')
       expect(within(dialog).getByText(/This collection is orphaned/)).toBeInTheDocument()
       await user.click(within(dialog).getByLabelText('Owning program'))

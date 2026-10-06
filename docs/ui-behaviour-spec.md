@@ -246,7 +246,10 @@ returned by the API (UX only — the backend re-checks).
   collection renders (cover, ID, name, type, scope pill, owners, image
   count, programs, groups, category breadcrumb, visibility switch,
   created, modified, actions) with stored filter facets, sortable columns,
-  per-user persisted column visibility via **Choose columns**, and
+  per-user persisted column visibility via **Choose columns** — the default
+  set mirrors Manage Images' lean subset (cover, name, type, category,
+  groups, visibility, modified) so the table sizes to content and wraps
+  rather than scrolling — and
   pagination (#1554, #1567); **Given** a student deep-links the
   page, **Then** the table renders nothing (role gate) and telemetry reports
   browse.
@@ -279,7 +282,9 @@ returned by the API (UX only — the backend re-checks).
   `PUT /api/collections/{id}/owners` is sent and the card leaves the
   filtered list.
 - **Given** the collection detail, **Then** below the top container the
-  pills row shows the type chip (Synchronized / Sequence) and the visibility
+  pills row shows the icon-bearing type pill (Synchronized / Sequence — the
+  shared `CollectionTypeChip` used on tiles and in the manage table) and
+  the visibility
   chip, and — when `restricted` — a chip per
   attached program and group sits right after the breadcrumb; the owner
   line (`describeCollectionOwners` — user names, `_X_ (program)` for a
@@ -515,11 +520,17 @@ re-checks).
   student never sees a restricted-failing collection. A collection row shows
   its type, image count, and owners, and selecting it navigates to
   `?collection={id}`.
-- Multi-select is image-only: a **Select** toggle appears next to the result
-  count when image results exist (or select mode is already active). In
-  select mode, image rows gain checkboxes labelled `Select {image title}`
-  and the row click toggles the check instead of navigating; every other
-  kind stays navigable and is never selectable. Selections persist across
+- Multi-select covers images and categories (#1567): a **Select** toggle
+  appears next to the result count when image or category results exist (or
+  select mode is already active), and the Manage dialog's **Add Images**
+  flow opens the modal with select mode already on. In select mode, image
+  rows gain checkboxes labelled `Select {image title}` and category rows
+  `Select {category name}`; checking a category selects every image in its
+  subtree (sub-categories included, hidden subtrees excluded) in
+  registration order, and the box shows indeterminate when the subtree is
+  only partially selected. Row clicks toggle the check instead of
+  navigating; every other kind stays navigable and is never selectable.
+  Selections persist across
   query and filter changes — the footer count includes picks hidden by the
   current query and **Add to collection** opens `AddToCollectionDialog`
   with the ids in "order encountered" (result order within a query,

@@ -1316,6 +1316,157 @@ describe('SearchModal', () => {
     ])
   })
 
+  it('opens in select mode when initialSelectMode seeds it (#1567)', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} initialSelectMode={true} open={true} />)
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'section')
+    // No Select-toggle click needed — checkboxes are already live.
+    expect(screen.getAllByTestId('search-select-checkbox')).toHaveLength(2)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
+    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+  })
+
+  it('lets a category checkbox stage its whole subtree in registration order (#1567)', async () => {
+    const user = userEvent.setup()
+    const onAddImagesToCollection = vi.fn()
+    const img = (id: number, name: string, categoryId: number, sortOrder: number) => ({
+      id,
+      name,
+      thumb: `/thumb/${id}.jpg`,
+      tileSources: `/tiles/${id}.dzi`,
+      categoryId,
+      copyright: null,
+      note: null,
+      active: true,
+      sortOrder,
+      version: 1,
+      metadataExtra: null,
+    })
+    const subtreeChild = {
+      id: 22,
+      label: 'Sub A',
+      parentId: 21,
+      children: [],
+      // Deliberately out of sortOrder — registration order applies.
+      images: [img(32, 'Anatomy Slice', 22, 1), img(33, 'Sub Img', 22, 0)],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 1,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const subtreeHidden = {
+      ...subtreeChild,
+      id: 23,
+      label: 'Hidden Sub',
+      sortOrder: 0,
+      status: 'hidden' as const,
+      images: [img(34, 'Hidden Img', 23, 0)],
+    }
+    const subtreeParent = {
+      id: 21,
+      label: 'Anatomy',
+      parentId: null,
+      children: [subtreeHidden, subtreeChild],
+      images: [img(30, 'Anatomy Atlas', 21, 0)],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[subtreeParent]}
+        excludeHidden={true}
+        initialSelectMode={true}
+        onAddImagesToCollection={onAddImagesToCollection}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+
+    // The category row carries its own checkbox; matching image rows do too.
+    const catBox = screen.getByRole('checkbox', { name: 'Select Anatomy' })
+    expect(screen.getByRole('checkbox', { name: 'Select Anatomy Atlas' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Select Anatomy Slice' })).toBeInTheDocument()
+
+    // Partially selecting a subtree member renders the category indeterminate.
+    await user.click(screen.getByRole('checkbox', { name: 'Select Anatomy Slice' }))
+    expect(catBox).toHaveAttribute('data-indeterminate', 'true')
+
+    // Checking the category completes the subtree: own image first, then the
+    // child's images sorted by sortOrder — the hidden child is skipped.
+    await user.click(catBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('3 images selected')
+    await user.click(screen.getByTestId('search-add-to-collection'))
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 30 }),
+      expect.objectContaining({ id: 33 }),
+      expect.objectContaining({ id: 32 }),
+    ])
+  })
+
+  it('unchecking a category removes every subtree image at once (#1567)', async () => {
+    const user = userEvent.setup()
+    const img = (id: number, name: string, categoryId: number, sortOrder: number) => ({
+      id,
+      name,
+      thumb: `/thumb/${id}.jpg`,
+      tileSources: `/tiles/${id}.dzi`,
+      categoryId,
+      copyright: null,
+      note: null,
+      active: true,
+      sortOrder,
+      version: 1,
+      metadataExtra: null,
+    })
+    const parent = {
+      id: 21,
+      label: 'Anatomy',
+      parentId: null,
+      children: [],
+      images: [img(30, 'Anatomy Atlas', 21, 0), img(31, 'Anatomy Slice', 21, 1)],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[parent]}
+        initialSelectMode={true}
+        onAddImagesToCollection={vi.fn()}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+    const catBox = screen.getByRole('checkbox', { name: 'Select Anatomy' })
+    await user.click(catBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+    await user.click(catBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
+  })
+
   it('keeps the Cancel control reachable in no-result and empty-query states', async () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)

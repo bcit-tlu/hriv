@@ -82,7 +82,7 @@ import CollectionEditDialog from './CollectionEditDialog'
 import type { CollectionFormValues } from './CollectionEditDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
-import { CollectionVisibilityChip } from './CollectionCard'
+import { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
@@ -144,10 +144,19 @@ const MANAGE_COLLECTION_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageCo
     { key: 'updated_at', label: 'Modified' },
   ]
 
-/** Everything on by default — parity with the columns the table already
- *  showed plus the newly added Programs/Groups/Created/Visibility (#1567). */
-const DEFAULT_VISIBLE_COLLECTION_COLUMNS: readonly ManageCollectionColumn[] =
-  MANAGE_COLLECTION_COLUMNS
+/** Lean default set mirroring ManagePage's six (thumbnail, name, category,
+ *  group, visibility, modified) so the table sizes to content and wraps
+ *  rather than overflowing into horizontal scroll; everything else is
+ *  opt-in via Choose columns (#1567). */
+const DEFAULT_VISIBLE_COLLECTION_COLUMNS: readonly ManageCollectionColumn[] = [
+  'cover',
+  'name',
+  'type',
+  'category',
+  'groups',
+  'visibility',
+  'updated_at',
+]
 
 interface ManageCollectionsStoredFilters {
   text?: Record<string, string>
@@ -864,7 +873,11 @@ export default function ManageCollectionsPage({
       <TableContainer component={Paper} variant="outlined">
         <Table size="small" data-testid="manage-collections-table">
           <TableHead
-            sx={{ '& th': { bgcolor: (theme) => filterSurfaceBg(theme), fontWeight: 600 } }}
+            sx={{
+              // Same selector + sizing contract as ManagePage's table head.
+              '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) },
+              '& th': { fontWeight: 600 },
+            }}
           >
             <TableRow>
               {isColumnVisible('cover') && (
@@ -1052,7 +1065,14 @@ export default function ManageCollectionsPage({
                     </TableCell>
                   )}
                   {isColumnVisible('type') && (
-                    <TableCell {...dimAttr}>{COLLECTION_TYPE_LABELS[c.type]}</TableCell>
+                    <TableCell {...dimAttr}>
+                      {/* Shared type pill — same red-outlined icon chip as
+                          the tile overlay and detail header (#1567). */}
+                      <CollectionTypeChip
+                        type={c.type}
+                        sx={c.hidden ? { filter: 'grayscale(100%)' } : undefined}
+                      />
+                    </TableCell>
                   )}
                   {isColumnVisible('scope') && (
                     <TableCell {...dimAttr}>
@@ -1163,7 +1183,6 @@ export default function ManageCollectionsPage({
                     align="right"
                     data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
-                    sx={{ whiteSpace: 'nowrap' }}
                   >
                     <IconButton
                       size="small"
@@ -1198,19 +1217,21 @@ export default function ManageCollectionsPage({
             )}
           </TableBody>
         </Table>
+        {/* Pagination inside the TableContainer — ManagePage's structure,
+            so the container width contract is identical (#1567). */}
+        <TablePagination
+          component="div"
+          count={sortedCollections.length}
+          page={Math.min(currentPage, maxPage)}
+          onPageChange={(_e, p) => setCurrentPage(p)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10))
+            setCurrentPage(0)
+          }}
+          rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+        />
       </TableContainer>
-      <TablePagination
-        component="div"
-        count={sortedCollections.length}
-        page={Math.min(currentPage, maxPage)}
-        onPageChange={(_e, p) => setCurrentPage(p)}
-        rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={(e) => {
-          setRowsPerPage(parseInt(e.target.value, 10))
-          setCurrentPage(0)
-        }}
-        rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
-      />
 
       {/* Row action menu — one kebab per row, ManagePage-style (#1567).
           Items are gated on the target row's permissions, so the menu keeps

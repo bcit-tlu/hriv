@@ -381,6 +381,21 @@ function collectImageResults(
   }
 }
 
+/**
+ * Every image under a category subtree in registration order (#1567): the
+ * category's own images by `sortOrder`, then each child subtree in tree
+ * order. Mirrors `collectImageResults`' `excludeHidden` rule — hidden
+ * subtrees are skipped entirely.
+ */
+function collectSubtreeImages(cat: Category, excludeHidden: boolean): ImageItem[] {
+  const own = [...cat.images].sort((a, b) => a.sortOrder - b.sortOrder)
+  const nested = [...cat.children]
+    .filter((child) => !(excludeHidden && child.status === 'hidden'))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .flatMap((child) => collectSubtreeImages(child, excludeHidden))
+  return [...own, ...nested]
+}
+
 function addImageMatches(
   img: ImageItem,
   terms: string[],
@@ -521,6 +536,10 @@ interface SearchModalProps {
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
   initialTypeFilter?: TypeFilter
+  /** Open with multi-select already engaged — the Manage dialog's Add
+   *  Images flow stages picks (including whole categories) straight into
+   *  its draft (#1567). No-op when `onAddImagesToCollection` is absent. */
+  initialSelectMode?: boolean
 }
 
 export default function SearchModal({
@@ -544,6 +563,7 @@ export default function SearchModal({
   onAddImagesToCollection,
   initialQuery,
   initialTypeFilter,
+  initialSelectMode = false,
 }: SearchModalProps) {
   const [query, setQuery] = useState('')
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
@@ -553,7 +573,11 @@ export default function SearchModal({
   // result generation and position where the image appeared so a selection
   // accumulated across several queries still emits in "order encountered".
   // (#1418)
-  const [selectMode, setSelectMode] = useState(false)
+  // `initialSelectMode` covers mounting already-open; the open-transition
+  // seeding below covers a persistently mounted modal being opened (#1567).
+  const [selectMode, setSelectMode] = useState(
+    () => initialSelectMode && onAddImagesToCollection != null,
+  )
   // The image rides along in each entry so picks survive a query change —
   // the collection-add callback emits `ImageItem`s (#1567), which a stale
   // result list could no longer supply by id alone.
@@ -567,9 +591,10 @@ export default function SearchModal({
   const [prevSearchOpen, setPrevSearchOpen] = useState(open)
   const [wasSeeded, setWasSeeded] = useState(false)
   if (open && !prevSearchOpen) {
-    if (initialQuery != null || initialTypeFilter != null) {
+    if (initialQuery != null || initialTypeFilter != null || initialSelectMode) {
       if (initialQuery != null) setQuery(initialQuery)
       if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+      if (initialSelectMode && onAddImagesToCollection != null) setSelectMode(true)
       setFieldFilters(new Set())
       setWasSeeded(true)
     }
@@ -760,7 +785,10 @@ export default function SearchModal({
   const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
 
   const hasImageResults = useMemo(
-    () => displayResults.some((r) => r.payload.kind === 'image'),
+    () =>
+      // Categories are selectable in select mode too — they emit their
+      // subtree's images (#1567).
+      displayResults.some((r) => r.payload.kind === 'image' || r.payload.kind === 'category'),
     [displayResults],
   )
 
@@ -798,6 +826,29 @@ export default function SearchModal({
           next.delete(image.id)
         } else {
           next.set(image.id, { epoch, index: resultIndex, image })
+        }
+        return next
+      })
+    },
+    [resultEpoch],
+  )
+
+  // Category results are bulk-toggles (#1567): checking selects every image
+  // in the subtree (registration order — the shared (epoch, index) stamp +
+  // stable sort keeps DFS insertion order in the emitted list); unchecking
+  // removes them all. Partially selected subtrees show indeterminate.
+  const toggleCategorySelected = useCallback(
+    (images: ImageItem[], resultIndex: number) => {
+      const epoch = resultEpoch
+      setSelectedImages((prev) => {
+        const next = new Map(prev)
+        const allSelected = images.length > 0 && images.every((i) => next.has(i.id))
+        if (allSelected) {
+          for (const i of images) next.delete(i.id)
+        } else {
+          for (const image of images) {
+            if (!next.has(image.id)) next.set(image.id, { epoch, index: resultIndex, image })
+          }
         }
         return next
       })
@@ -994,10 +1045,22 @@ export default function SearchModal({
                 const chipNames = getResultProgramNames(result, programMap)
                 const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
                 const image = result.payload.kind === 'image' ? result.payload.image : null
-                // Only image results are selectable; in select mode the row
-                // becomes a <label> around a real checkbox so clicking
+                // Categories are selectable too (#1567): checking one adds
+                // every image in its subtree (sub-categories included) in
+                // registration order.
+                const resultCategory =
+                  result.payload.kind === 'category'
+                    ? result.payload.categoryPath[result.payload.categoryPath.length - 1]
+                    : null
+                const subtreeImages = resultCategory
+                  ? collectSubtreeImages(resultCategory, excludeHidden)
+                  : null
+                const subtreeSelected =
+                  subtreeImages?.filter((i) => selectedImages.has(i.id)).length ?? 0
+                // Only image/category results are selectable; in select mode
+                // the row becomes a <label> around a real checkbox so clicking
                 // anywhere toggles and keyboard users reach the control.
-                const selectable = selectMode && image != null
+                const selectable = selectMode && (image != null || subtreeImages != null)
                 const rowInner = (
                   <>
                     {image?.thumb ? (
@@ -1170,10 +1233,28 @@ export default function SearchModal({
                       >
                         <Checkbox
                           data-testid="search-select-checkbox"
-                          checked={selectedImages.has(image.id)}
-                          onChange={() => toggleImageSelected(image, resultIndex)}
+                          checked={
+                            image != null
+                              ? selectedImages.has(image.id)
+                              : subtreeImages != null &&
+                                subtreeImages.length > 0 &&
+                                subtreeSelected === subtreeImages.length
+                          }
+                          indeterminate={
+                            subtreeImages != null &&
+                            subtreeSelected > 0 &&
+                            subtreeSelected < subtreeImages.length
+                          }
+                          disabled={subtreeImages != null && subtreeImages.length === 0}
+                          onChange={() =>
+                            image != null
+                              ? toggleImageSelected(image, resultIndex)
+                              : subtreeImages && toggleCategorySelected(subtreeImages, resultIndex)
+                          }
                           slotProps={{
-                            input: { 'aria-label': `Select ${image.name}` },
+                            input: {
+                              'aria-label': `Select ${image?.name ?? result.label}`,
+                            },
                           }}
                           sx={{ p: 0.5, mt: -0.5 }}
                         />

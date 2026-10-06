@@ -9,7 +9,7 @@ vi.mock('../../src/api', async (importOriginal) => {
 })
 
 describe('CollectionCard', () => {
-  it('renders name, image count, owner, type chip and visibility chip', () => {
+  it('renders name, image count, type chip and visibility chip', () => {
     render(
       <CollectionCard
         collection={makeCollectionSummary({ imageCount: 1, type: 'sequence' })}
@@ -17,13 +17,43 @@ describe('CollectionCard', () => {
       />,
     )
     expect(screen.getByText('Skull comparison')).toBeInTheDocument()
-    expect(screen.getByText('1 image · Ada Lovelace')).toBeInTheDocument()
+    expect(screen.getByText('1 image')).toBeInTheDocument()
+    // Owner names no longer render in tile metadata (#1567) — a
+    // program-owned collection shows a program chip under the type pill;
+    // user-owned tiles carry no owner reference.
+    expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
     expect(screen.getByTestId('collection-type-chip')).toHaveTextContent('Sequence')
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
     expect(screen.getByRole('img', { name: 'Skull comparison' })).toHaveAttribute(
       'src',
       '/thumbs/skull.jpg?token=abc',
     )
+  })
+
+  it('renders a program-owner chip under the type pill but never user names (#1567)', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          owners: [
+            {
+              kind: 'user',
+              id: 2,
+              name: 'Ada Lovelace',
+              username: 'ada',
+              role: 'instructor',
+            },
+            { kind: 'program', id: 3, name: 'Dentistry' },
+          ],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    const overlay = screen.getByTestId('collection-type-overlay')
+    expect(within(overlay).getByTestId('collection-type-chip')).toBeInTheDocument()
+    expect(within(overlay).getByTestId('collection-owner-program-chip')).toHaveTextContent(
+      'Dentistry',
+    )
+    expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
   })
 
   it('pluralises the image count and falls back to a placeholder cover', () => {
@@ -33,7 +63,7 @@ describe('CollectionCard', () => {
         onOpen={vi.fn()}
       />,
     )
-    expect(screen.getByText('3 images · No owner')).toBeInTheDocument()
+    expect(screen.getByText('3 images')).toBeInTheDocument()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
@@ -50,9 +80,13 @@ describe('CollectionCard', () => {
     const collection = makeCollectionSummary({
       permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: false },
     })
-    render(<CollectionCard collection={collection} onOpen={vi.fn()} onEdit={onEdit} />)
+    const onOpen = vi.fn()
+    render(<CollectionCard collection={collection} onOpen={onOpen} onEdit={onEdit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Edit Skull comparison' }))
     expect(onEdit).toHaveBeenCalledWith(collection)
+    // The pencil sits inside the card's click target — it must not also
+    // navigate to the collection (#1567).
+    expect(onOpen).not.toHaveBeenCalled()
   })
 
   it('hides the edit action when the permission is not granted', () => {

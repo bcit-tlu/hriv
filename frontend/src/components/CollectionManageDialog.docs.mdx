@@ -58,9 +58,14 @@ are added to or removed from a collection outside the global search/Browse add g
   drag) as a fixed overlay at the bottom-right of the scroll area — invisible/disabled until a
   member drag starts — rather than a row that spawns mid-drag. Dropping a tile on it removes the
   member from the draft, same as the corner control.
-- **Add.** The title row's **+** button calls `onAddImages`; `App` opens the search modal in
-  add-to-collection mode and routes the selected `ImageItem`s back into the draft (dedupe by id,
-  four-image cap on synchronized collections — already/full outcomes report through `onError`).
+- **Add.** The title row's **Add Images** button (Browse's
+  `AddPhotoAlternateIcon` convention) calls `onAddImages`; `App` opens the
+  search modal in add-to-collection mode with multi-select already engaged
+  (`initialSelectMode`). Search results check individually — and whole
+  categories check too, staging every image in their subtree in
+  registration order — then the selected `ImageItem`s route back into the
+  draft (dedupe by id, four-image cap on synchronized collections —
+  already/full outcomes report through `onError`).
 - **Restricted members.** When `memberCount` exceeds the rendered list, the dialog notes how many
   members are hidden by restriction — they can't be managed from here.
 - **Errors.** Mutation failures surface through `onError`; a failed Done commit keeps the dialog
