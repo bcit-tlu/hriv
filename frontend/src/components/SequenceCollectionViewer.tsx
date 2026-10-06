@@ -249,7 +249,9 @@ export default function SequenceCollectionViewer({
   useEffect(() => {
     if (current == null || focusedForCollection.current === collectionId) return
     focusedForCollection.current = collectionId
-    regionRef.current?.focus()
+    // preventScroll: focusing must not scroll the collection header off the
+    // top of the page before the user has seen it.
+    regionRef.current?.focus({ preventScroll: true })
   }, [collectionId, current])
 
   // Stable across unrelated collection updates (e.g. tile-token renewal swaps
@@ -381,6 +383,9 @@ export default function SequenceCollectionViewer({
     <Box
       data-testid="sequence-collection-viewer"
       onKeyDownCapture={handleKeyDownCapture}
+      // Focusing the region (incl. the open-time autofocus) briefly reveals
+      // the edge chevrons — the cue that ←/→ control the viewer (#1564).
+      onFocus={showNav}
       ref={regionRef}
       tabIndex={-1}
       role="region"

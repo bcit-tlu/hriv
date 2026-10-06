@@ -126,6 +126,10 @@ describe('SequenceCollectionViewer', () => {
       const frame = screen.getByTestId('sequence-viewer-frame')
       const overlay = screen.getByTestId('sequence-nav-overlay')
       const next = screen.getByRole('button', { name: 'Next image' })
+      // Autofocus reveals the nav on mount (#1564) — the cue fades on the
+      // same idle clock.
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      act(() => vi.advanceTimersByTime(2000))
       expect(overlay).toHaveStyle({ opacity: '0' })
       expect(next).toHaveStyle({ pointerEvents: 'none' })
 
@@ -212,13 +216,22 @@ describe('SequenceCollectionViewer', () => {
   })
 
   it('autofocuses the region so arrows step the sequence immediately (#1564)', () => {
-    const { props } = renderViewer({ itemId: 101 })
-    const region = screen.getByTestId('sequence-collection-viewer')
-    // Focus lands on the region on mount — pressing → advances without the
-    // user clicking into the viewer first.
-    expect(region).toHaveFocus()
-    fireEvent.keyDown(document.activeElement ?? region, { key: 'ArrowRight' })
-    expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      const { props } = renderViewer({ itemId: 101 })
+      const region = screen.getByTestId('sequence-collection-viewer')
+      // Focus lands on the region on mount — pressing → advances without the
+      // user clicking into the viewer first.
+      expect(region).toHaveFocus()
+      // preventScroll keeps the collection header in view; the focus reveal
+      // of the edge nav is the cue that ←/→ control the viewer.
+      expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
+      expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '1' })
+      fireEvent.keyDown(document.activeElement ?? region, { key: 'ArrowRight' })
+      expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    } finally {
+      focusSpy.mockRestore()
+    }
   })
 
   it('does not steal focus when switching images, but refocuses per collection', () => {
