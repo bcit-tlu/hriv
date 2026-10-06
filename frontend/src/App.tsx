@@ -1772,7 +1772,14 @@ export default function App() {
 
   // The collection Manage dialog's "+" (#1566): records the target so search
   // picks go straight into that collection instead of the picker dialog.
+  // The target is set/cleared when Search *opens* — never on close — because
+  // SearchModal calls onClose() before onAddImagesToCollection, so a close-
+  // time clear would drop the target before the add callback reads it (#1567).
   const manageSearchTarget = useRef<Collection | null>(null)
+  const openSearch = useCallback(() => {
+    manageSearchTarget.current = null
+    setSearchOpen(true)
+  }, [])
   const requestCollectionImageSearch = useCallback((collection: Collection) => {
     manageSearchTarget.current = collection
     setSearchOpen(true)
@@ -1917,7 +1924,7 @@ export default function App() {
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
       onOpenAnnouncement={openAnnModal}
-      onSearchOpen={() => setSearchOpen(true)}
+      onSearchOpen={openSearch}
       mode={mode}
       frontendVersion={frontendVersion}
       backendVersion={backendVersion}
@@ -2103,7 +2110,7 @@ export default function App() {
               onSearchProgram={(programName) => {
                 setSearchInitialQuery(programName)
                 setSearchInitialTypeFilter('program')
-                setSearchOpen(true)
+                openSearch()
               }}
               initialProgramFilter={manageProgramFilter}
               onInitialProgramFilterConsumed={clearManageProgramFilter}
@@ -3138,9 +3145,9 @@ export default function App() {
           setSearchOpen(false)
           setSearchInitialQuery(undefined)
           setSearchInitialTypeFilter(undefined)
-          // Closing without picking clears the manage-dialog add target
-          // (#1566), so a later generic search can't misroute its selection.
-          manageSearchTarget.current = null
+          // The manage-dialog add target intentionally survives close —
+          // SearchModal fires onClose() before onAddImagesToCollection (#1567),
+          // and every generic opener resets it via openSearch().
         }}
         initialQuery={searchInitialQuery}
         initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}

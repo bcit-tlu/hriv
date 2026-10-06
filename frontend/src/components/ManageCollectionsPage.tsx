@@ -175,8 +175,7 @@ export default function ManageCollectionsPage({
   categories,
   programs,
   groups,
-  // `currentUser` stays in props — the edit dialog reads filing rights from
-  // AuthContext directly; this page no longer gates anything by role (#1566).
+  currentUser,
   onNavigateCategory,
   onMoveCollectionToCategory,
   onAddCategory,
@@ -188,6 +187,10 @@ export default function ManageCollectionsPage({
 }: ManageCollectionsPageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  // Filing is curatorial (admin/instructor) — wider than per-collection
+  // canEdit: an instructor may refile a colleague's collection, and the edit
+  // dialog's category picker is the filing path now (#1566/#1567).
+  const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
 
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -431,29 +434,44 @@ export default function ManageCollectionsPage({
     version: number | null,
     baseline: Collection | null,
   ) => {
-    if (editing && version != null) {
-      const updated = await updateCollection(
-        editing.id,
-        toCollectionPatch(values, baseline, version),
-      )
-      // Category filing is a move, not a PATCH (#1566) — apply it after the
-      // metadata save so the move posts the just-refreshed version.
-      if (values.categoryId !== (baseline?.categoryId ?? null)) {
-        await onMoveCollectionToCategory?.(apiCollectionToCollection(updated), values.categoryId)
+    try {
+      if (editing && version != null) {
+        // PATCH only real field diffs (#1567 review): a version-only body is
+        // a content write the backend 403s for filing-only curators (and a
+        // no-op bump for everyone else). A hidden-only diff still PATCHes —
+        // hide is curatorial, not owner-scoped.
+        const patch = toCollectionPatch(values, baseline, version)
+        const updated = Object.keys(patch).some((k) => k !== 'version')
+          ? apiCollectionToCollection(await updateCollection(editing.id, patch))
+          : editing
+        // Category filing is a move, not a PATCH (#1566) — apply it after the
+        // metadata save so the move posts the just-refreshed version. A failed
+        // move must not read as a successful save: the move op already showed
+        // its error snackbar, so rethrow the API error — the dialog stays open
+        // with the real message (and its 409 conflict-reload path) (#1567).
+        if (values.categoryId !== (baseline?.categoryId ?? null)) {
+          const moved = await onMoveCollectionToCategory?.(updated, values.categoryId)
+          if (moved !== undefined && moved !== true) {
+            throw moved instanceof Error ? moved : new Error('Failed to move collection.')
+          }
+        }
+      } else {
+        await createCollection({
+          name: values.name,
+          description: values.description,
+          type: values.type,
+          visibility: values.visibility,
+          image_ids: [],
+          ...(values.visibility === 'restricted'
+            ? { program_ids: values.programIds, group_ids: values.groupIds }
+            : {}),
+        })
       }
-    } else {
-      await createCollection({
-        name: values.name,
-        description: values.description,
-        type: values.type,
-        visibility: values.visibility,
-        image_ids: [],
-        ...(values.visibility === 'restricted'
-          ? { program_ids: values.programIds, group_ids: values.groupIds }
-          : {}),
-      })
+    } finally {
+      // Refresh even when the save/move chain throws — a partial success
+      // (metadata saved, move failed) still changed the row.
+      void load()
     }
-    void load()
   }
 
   // Delete lives inside the edit dialog only (#1554) — EditImageModal's
@@ -479,9 +497,10 @@ export default function ManageCollectionsPage({
   }
 
   const handleRowClick = (c: CollectionSummary) => {
-    // Mirror ManagePage: row click opens the editor; read-only rows (staff,
-    // co-owner-less instructors) open the collection view instead.
-    if (c.permissions.canEdit) void openEdit(c)
+    // Mirror ManagePage: row click opens the editor — for owners, and for
+    // curators who can file but not edit (the dialog's category picker is
+    // the filing affordance, #1567). Other read-only rows open the view.
+    if (c.permissions.canEdit || canFileCollections) void openEdit(c)
     else onOpenCollection(c.id)
   }
 
@@ -878,7 +897,7 @@ export default function ManageCollectionsPage({
                     onClick={(e) => e.stopPropagation()}
                     sx={{ whiteSpace: 'nowrap' }}
                   >
-                    {rowCanEdit && (
+                    {(rowCanEdit || canFileCollections) && (
                       <Tooltip title="Edit collection">
                         <IconButton
                           size="small"

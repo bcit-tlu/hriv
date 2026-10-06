@@ -138,6 +138,54 @@ function SortableMemberTile({
   )
 }
 
+/**
+ * Trash drop-zone (#1566): revealed mid-drag, sticky at the bottom of the
+ * scroll area so it stays reachable on long lists. Lives inside the tiles'
+ * `DragDropProvider` — `useDroppable` only registers within that context, so
+ * hoisting this above the provider silently dead-ends the drop (#1567).
+ */
+function TrashDropZone({ dragging }: { dragging: boolean }) {
+  // Mounted permanently so it is a registered droppable throughout the drag,
+  // but only enabled/visible mid-drag.
+  const { ref, isDropTarget: overTrash } = useDroppable({
+    id: TRASH_ID,
+    disabled: !dragging,
+    accept: (source) => String(source.id).startsWith(ITEM_PREFIX),
+  })
+  return (
+    <Box
+      ref={ref}
+      aria-hidden={!dragging}
+      data-testid="collection-manage-trash"
+      sx={{
+        position: 'sticky',
+        bottom: 8,
+        zIndex: 5,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 0.5,
+        mt: 3,
+        mx: 'auto',
+        width: 200,
+        py: 1.5,
+        border: '2px dashed',
+        borderRadius: 2,
+        borderColor: overTrash ? 'error.main' : 'divider',
+        bgcolor: (theme: Theme) =>
+          overTrash ? alpha(theme.palette.error.main, 0.12) : theme.palette.background.paper,
+        color: overTrash ? 'error.main' : 'text.secondary',
+        opacity: dragging ? 1 : 0,
+        transition: 'opacity 0.2s, border-color 0.15s',
+        pointerEvents: 'none',
+      }}
+    >
+      <DeleteOutlineIcon fontSize="large" />
+      <Typography variant="caption">Drop here to remove</Typography>
+    </Box>
+  )
+}
+
 export default function CollectionManageDialog({
   open,
   onClose,
@@ -223,14 +271,6 @@ export default function CollectionManageDialog({
     [itemIds, images, onReorder, onError, remove],
   )
 
-  // The trash drop-zone is mounted permanently so it is a registered
-  // droppable throughout the drag, but only enables/appears mid-drag.
-  const { ref: trashRef, isDropTarget: overTrash } = useDroppable({
-    id: TRASH_ID,
-    disabled: !dragging,
-    accept: (source) => String(source.id).startsWith(ITEM_PREFIX),
-  })
-
   const hiddenRestrictedCount = (collection?.memberCount ?? 0) - images.length
 
   return (
@@ -259,16 +299,12 @@ export default function CollectionManageDialog({
             not shown.
           </Typography>
         )}
-        {images.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
-            No images in this collection yet — use the add button to pick some.
-          </Typography>
-        ) : (
-          <DragDropProvider
-            sensors={sensors}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
+        <DragDropProvider sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          {images.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
+              No images in this collection yet — use the add button to pick some.
+            </Typography>
+          ) : (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
               {images.map((img, index) => (
                 <SortableMemberTile
@@ -281,40 +317,9 @@ export default function CollectionManageDialog({
                 />
               ))}
             </Box>
-          </DragDropProvider>
-        )}
-        {/* Trash drop-zone (#1566): revealed mid-drag, sticky at the bottom
-            of the scroll area so it stays reachable on long lists. */}
-        <Box
-          ref={trashRef}
-          aria-hidden={!dragging}
-          data-testid="collection-manage-trash"
-          sx={{
-            position: 'sticky',
-            bottom: 8,
-            zIndex: 5,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 0.5,
-            mt: 3,
-            mx: 'auto',
-            width: 200,
-            py: 1.5,
-            border: '2px dashed',
-            borderRadius: 2,
-            borderColor: overTrash ? 'error.main' : 'divider',
-            bgcolor: (theme: Theme) =>
-              overTrash ? alpha(theme.palette.error.main, 0.12) : theme.palette.background.paper,
-            color: overTrash ? 'error.main' : 'text.secondary',
-            opacity: dragging ? 1 : 0,
-            transition: 'opacity 0.2s, border-color 0.15s',
-            pointerEvents: 'none',
-          }}
-        >
-          <DeleteOutlineIcon fontSize="large" />
-          <Typography variant="caption">Drop here to remove</Typography>
-        </Box>
+          )}
+          <TrashDropZone dragging={dragging} />
+        </DragDropProvider>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Done</Button>

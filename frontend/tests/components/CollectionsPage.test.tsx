@@ -303,7 +303,9 @@ describe('CollectionsPage', () => {
       await user.click(screen.getByRole('button', { name: 'Edit Summary' }))
       expect(loadCollection).toHaveBeenCalledWith(1)
       expect(await screen.findByText('Edit Collection')).toBeInTheDocument()
-      expect(screen.getByDisplayValue('Full record')).toBeInTheDocument()
+      const nameField = screen.getByDisplayValue('Full record')
+      await user.clear(nameField)
+      await user.type(nameField, 'Renamed record')
       await user.click(screen.getByRole('button', { name: 'Save' }))
       await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(1))
       expect(onUpdate.mock.calls[0][0]).toBe(1)
@@ -586,7 +588,10 @@ describe('CollectionsPage', () => {
     })
 
     it('gates the detail Edit button on API permissions', () => {
+      // Staff can't file, so a read-only collection gives them no Edit (#1567:
+      // admins/instructors do see it — the picker is their filing path).
       renderPage({
+        currentUser: STAFF,
         selectedCollectionId: 9,
         detail: makeCollection({
           id: 9,
@@ -996,6 +1001,102 @@ describe('CollectionsPage', () => {
       const [movedCollection, targetId] = onMoveCollectionToCategory.mock.calls[0]
       expect(movedCollection.id).toBe(9)
       expect(targetId).toBe(20)
+    })
+
+    it('keeps the editor open when the category move fails (#1567)', async () => {
+      const user = userEvent.setup()
+      // The move op resolves with the caught API error on failure; the page
+      // rethrows it so the dialog keeps the real message.
+      const onMoveCollectionToCategory = vi
+        .fn()
+        .mockResolvedValue(new ApiError(403, 'Move denied by server'))
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          categoryId: 10,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+        }),
+        categories: [
+          makeCategory({ id: 10, label: 'Histology' }),
+          makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
+        ],
+        onMoveCollectionToCategory,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(await screen.findByRole('combobox', { name: 'Category' }))
+      await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      // The dialog stays open with the server's message — a closed dialog
+      // would read as a successful save even though the move op's snackbar
+      // said otherwise.
+      expect(await screen.findByText('Move denied by server')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    })
+
+    it('lets a filing-only curator refile a collection they cannot edit (#1567)', async () => {
+      const user = userEvent.setup()
+      const onUpdate = vi.fn()
+      const onMoveCollectionToCategory = vi.fn().mockResolvedValue(true)
+      const detail = makeCollection({
+        id: 9,
+        categoryId: 10,
+        // canEdit is owner-scoped; an instructor may still file it.
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: true },
+      })
+      renderPage({
+        currentUser: INSTRUCTOR,
+        selectedCollectionId: 9,
+        detail,
+        categories: [
+          makeCategory({ id: 10, label: 'Histology' }),
+          makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
+        ],
+        onUpdate,
+        onMoveCollectionToCategory,
+      })
+
+      // Edit is offered for filing even though metadata editing is not.
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      expect(await screen.findByText('File Collection')).toBeInTheDocument()
+      expect(screen.getByLabelText('Collection name')).toBeDisabled()
+      await user.click(await screen.findByRole('combobox', { name: 'Category' }))
+      await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(onMoveCollectionToCategory).toHaveBeenCalled())
+      // No PATCH — a version-only body is a content write the backend 403s.
+      expect(onUpdate).not.toHaveBeenCalled()
+      const [movedCollection, targetId] = onMoveCollectionToCategory.mock.calls[0]
+      expect(movedCollection.id).toBe(9)
+      expect(targetId).toBe(20)
+    })
+
+    it('still PATCHes a hidden-only diff for a filing-only curator (#1567)', async () => {
+      const user = userEvent.setup()
+      const onUpdate = vi.fn().mockResolvedValue(makeCollection({ id: 9, hidden: true }))
+      const onMoveCollectionToCategory = vi.fn()
+      renderPage({
+        currentUser: INSTRUCTOR,
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          categoryId: 10,
+          hidden: false,
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: true },
+        }),
+        categories: [makeCategory({ id: 10, label: 'Histology' })],
+        onUpdate,
+        onMoveCollectionToCategory,
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(await screen.findByRole('button', { name: 'Visibility: Hide collection' }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      // {hidden, version} rides the backend's curatorial hidden-only path.
+      await waitFor(() => expect(onUpdate).toHaveBeenCalled())
+      expect(onMoveCollectionToCategory).not.toHaveBeenCalled()
     })
   })
 })

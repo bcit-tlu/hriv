@@ -269,6 +269,37 @@ describe('CollectionEditDialog', () => {
         screen.queryByRole('button', { name: /visibility: hide collection/i }),
       ).not.toBeInTheDocument()
     })
+
+    it('opens in filing mode for curators who cannot edit metadata (#1567)', () => {
+      // canEdit is owner-scoped but filing is curatorial: an instructor on a
+      // colleague's collection gets the picker + hide link, not the fields.
+      renderDialog(
+        {
+          collection: makeCollection({
+            name: 'Colleague set',
+            categoryId: 10,
+            permissions: {
+              canEdit: false,
+              canDelete: false,
+              canTransfer: false,
+              canHide: true,
+            },
+          }),
+          categories: [makeCategory({ id: 10, label: 'Histology' })],
+        },
+        makeAuth('instructor'),
+      )
+      expect(screen.getByText('File Collection')).toBeInTheDocument()
+      expect(screen.getByTestId('filing-only-note')).toBeInTheDocument()
+      expect(screen.getByLabelText('Collection name')).toBeDisabled()
+      expect(screen.getByLabelText('Description')).toBeDisabled()
+      expect(screen.getByRole('combobox', { name: 'Category' })).toBeEnabled()
+      // Hide is curatorial too — the link survives filing mode.
+      expect(
+        screen.getByRole('button', { name: 'Visibility: Hide collection' }),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    })
   })
 
   describe('role gating', () => {

@@ -2449,4 +2449,36 @@ describe('App search collections integration (#1418)', () => {
     ).toBeInTheDocument()
     expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
   })
+
+  it('routes Manage-dialog search adds to the managed collection when Search closes first (#1567)', async () => {
+    // SearchModal fires onClose() before onAddImagesToCollection — the manage
+    // target must survive that ordering (it resets on open, not on close).
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'added',
+      collection: { id: 7, name: 'Managed set' },
+      addedCount: 2,
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    // Mount the collections page in THIS App instance — the props capture can
+    // still hold a previous test's stale callbacks otherwise.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await screen.findByTestId('collections-page')
+    const requestSearch = collectionsPageProps.current?.onRequestCollectionImageSearch as (c: {
+      id: number
+      name: string
+    }) => void
+    await act(async () => requestSearch({ id: 7, name: 'Managed set' }))
+    // The real SearchModal order: close fires first, then the add callback.
+    fireEvent.click(screen.getByRole('button', { name: 'Close search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(7, [10, 11]),
+    )
+    // The generic picker is skipped — the manage dialog already named the target.
+    expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument()
+  })
 })

@@ -39,6 +39,12 @@ const ADMIN: User = {
 
 const STAFF: User = { ...ADMIN, id: 4, name: 'Staff', role: 'staff' } as unknown as User
 const STUDENT: User = { ...ADMIN, id: 5, name: 'Student', role: 'student' } as unknown as User
+const INSTRUCTOR: User = {
+  ...ADMIN,
+  id: 6,
+  name: 'Instructor',
+  role: 'instructor',
+} as unknown as User
 
 function makeAuth(user: User): AuthContextValue {
   return {
@@ -253,10 +259,38 @@ describe('ManageCollectionsPage', () => {
         },
       }),
     ])
-    renderPage({ onOpenCollection })
+    // Staff can't file, so a read-only row is truly read-only for them.
+    renderPage({ onOpenCollection, currentUser: STAFF })
     await user.click(await screen.findByText('Theirs'))
     expect(onOpenCollection).toHaveBeenCalledWith(1)
     expect(fetchCollection).not.toHaveBeenCalled()
+  })
+
+  it('opens the filing-mode edit dialog for curators on rows they cannot edit (#1567)', async () => {
+    const user = userEvent.setup()
+    const onOpenCollection = vi.fn()
+    const readOnly = {
+      can_edit: false,
+      can_delete: false,
+      can_change_scope: false,
+      can_transfer: false,
+      can_hide: false,
+    }
+    vi.mocked(fetchCollections).mockResolvedValue([
+      makeApiCollectionSummary({ id: 1, name: 'Theirs', permissions: readOnly }),
+    ])
+    vi.mocked(fetchCollection).mockResolvedValue(
+      makeApiCollection({ id: 1, name: 'Theirs', category_id: 10, permissions: readOnly }),
+    )
+    // Instructors can't edit this row but hold filing authority — the
+    // category picker inside the edit dialog is their filing path.
+    renderPage({ onOpenCollection, currentUser: INSTRUCTOR })
+    await user.click(await screen.findByText('Theirs'))
+
+    await waitFor(() => expect(fetchCollection).toHaveBeenCalledWith(1))
+    expect(onOpenCollection).not.toHaveBeenCalled()
+    expect(await screen.findByText('File Collection')).toBeInTheDocument()
+    expect(screen.getByLabelText('Collection name')).toBeDisabled()
   })
 
   it('gates row actions on permissions and handlers', async () => {
@@ -290,10 +324,32 @@ describe('ManageCollectionsPage', () => {
     expect(within(row).getByRole('button', { name: 'Manage owners of Full' })).toBeInTheDocument()
 
     const readonly = screen.getByTestId('manage-collection-row-2')
-    expect(within(readonly).queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument()
+    // Read-only rows still show Edit for the admin — the dialog opens in
+    // filing-only mode (category picker active, metadata disabled) #1567.
+    expect(within(readonly).getByRole('button', { name: 'Edit Read only' })).toBeInTheDocument()
     expect(
       within(readonly).queryByRole('button', { name: /^Manage owners/ }),
     ).not.toBeInTheDocument()
+  })
+
+  it('shows no row actions on read-only collections for non-filing roles (#1567)', async () => {
+    vi.mocked(fetchCollections).mockResolvedValue([
+      makeApiCollectionSummary({
+        id: 2,
+        name: 'Read only',
+        permissions: {
+          can_edit: false,
+          can_delete: false,
+          can_change_scope: false,
+          can_transfer: false,
+          can_hide: false,
+        },
+      }),
+    ])
+    renderPage({ currentUser: STAFF })
+    const row = await screen.findByTestId('manage-collection-row-2')
+    expect(within(row).queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: /^Manage owners/ })).not.toBeInTheDocument()
   })
 
   // Filing moved into the Edit dialog's category picker (#1566) — the row

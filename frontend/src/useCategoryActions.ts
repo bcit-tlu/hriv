@@ -638,7 +638,12 @@ export function useCategoryActions({
         const conflict = collectionConflictCurrent(err)
         if (conflict) setMovingCollection(apiCollectionToCollection(conflict))
         setErrorSnack(userMessage(err, 'Failed to move collection.'))
+        // Edit-dialog filing chains on this (#1567): return the error so the
+        // caller can rethrow it — the editor stays open with the real
+        // message instead of closing on a partial save.
+        return err
       }
+      return true
     },
     [
       categories,

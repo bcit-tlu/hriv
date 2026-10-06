@@ -29,7 +29,11 @@ import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import type { CollectionPageType } from './AppShell'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
-import type { CollectionListFilters, CollectionOwnerFilter } from '../useCollectionsData'
+import {
+  toCollectionPatch,
+  type CollectionListFilters,
+  type CollectionOwnerFilter,
+} from '../useCollectionsData'
 import type {
   Category,
   Collection,
@@ -166,12 +170,16 @@ function CollectionDetailHeader({
   onManage,
   togglingHidden,
   onToggleHidden,
+  canFile,
 }: {
   collection: Collection
   programs: Program[]
   groups: Group[]
   categoryPath: Category[]
   onNavigateCategory: (categoryPath: Category[]) => void
+  /** Admin/instructor filing right (#1567) — opens the edit dialog for the
+   *  category picker even on collections they can't edit. */
+  canFile?: boolean
   onEdit?: () => void
   onTransfer?: () => void
   /** Opens the member Manage dialog (#1566) — replaces the Reorder toggle. */
@@ -319,7 +327,10 @@ function CollectionDetailHeader({
               Manage
             </Button>
           )}
-          {collection.permissions.canEdit && onEdit && (
+          {/* Edit opens for owners (canEdit) and for curatorial filers
+              (canFile) — the dialog disables metadata fields it can't write
+              and keeps the category picker live (#1567). */}
+          {(collection.permissions.canEdit || canFile) && onEdit && (
             <Button
               variant="outlined"
               size="small"
@@ -510,11 +521,25 @@ export default function CollectionsPage({
     baseline: Collection | null,
   ) => {
     if (editing && version != null) {
-      const updated = await onUpdate(editing.id, values, version, baseline)
+      // PATCH only real field diffs (#1567 review): a version-only body is a
+      // content write the backend 403s for filing-only curators (and a no-op
+      // bump for everyone else). A hidden-only diff still PATCHes — hide is
+      // curatorial, not owner-scoped.
+      const updated = Object.keys(toCollectionPatch(values, baseline, version)).some(
+        (k) => k !== 'version',
+      )
+        ? await onUpdate(editing.id, values, version, baseline)
+        : editing
       // Category filing is a move, not a PATCH (#1566) — apply it after the
-      // metadata save so the move posts the just-refreshed version.
+      // metadata save so the move posts the just-refreshed version. A failed
+      // move must not read as a successful save: the move op already showed
+      // its error snackbar, so rethrow the API error — the dialog stays open
+      // with the real message (and its 409 conflict-reload path) (#1567).
       if (values.categoryId !== (baseline?.categoryId ?? null)) {
-        await onMoveCollectionToCategory?.(updated, values.categoryId)
+        const moved = await onMoveCollectionToCategory?.(updated, values.categoryId)
+        if (moved !== undefined && moved !== true) {
+          throw moved instanceof Error ? moved : new Error('Failed to move collection.')
+        }
       }
     } else {
       await onCreate(values)
@@ -567,6 +592,7 @@ export default function CollectionsPage({
             groups={groups}
             categoryPath={detailCategoryPath}
             onNavigateCategory={onNavigateCategory}
+            canFile={canFileCollections}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
             onManage={() => setManageOpen(true)}
@@ -593,6 +619,7 @@ export default function CollectionsPage({
             groups={groups}
             categoryPath={detailCategoryPath}
             onNavigateCategory={onNavigateCategory}
+            canFile={canFileCollections}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
             onManage={() => setManageOpen(true)}

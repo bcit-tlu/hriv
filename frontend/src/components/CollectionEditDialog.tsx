@@ -141,6 +141,10 @@ export default function CollectionEditDialog({
   // Filing into a category is curatorial (admin/instructor), matching the
   // move endpoint's authority — owners of other roles get no picker (#1566).
   const canFile = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
+  // Metadata writes are owner-scoped (#1567): a curator opening the dialog
+  // only to refile/hide gets the picker and the hide link, not the fields a
+  // PATCH would 403 on.
+  const canEditMeta = !isEdit || (collection?.permissions.canEdit ?? false)
   // Field-level authz (#1531): editing metadata is owner/editor-level, but
   // changing visibility scope requires `can_change_scope`. On create the
   // creator always sets the initial scope.
@@ -221,11 +225,13 @@ export default function CollectionEditDialog({
   const currentProgramIds = baseline?.programIds ?? []
   const currentGroupIds = baseline?.groupIds ?? []
   const isProgramDisabled = (programId: number) =>
+    !canEditMeta ||
     !canChangeScope ||
     (attachableProgramIds != null &&
       !attachableProgramIds.includes(programId) &&
       !currentProgramIds.includes(programId))
   const isGroupDisabled = (group: Group) =>
+    !canEditMeta ||
     !canChangeScope ||
     (currentUser?.role === 'instructor' &&
       !group.instructorIds.includes(currentUser.id) &&
@@ -304,7 +310,7 @@ export default function CollectionEditDialog({
       TransitionProps={{ onEntered: handleEntered }}
     >
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {isEdit ? 'Edit Collection' : 'New Collection'}
+        {isEdit ? (canEditMeta ? 'Edit Collection' : 'File Collection') : 'New Collection'}
         {/* Curatorial hide/show as a form field (#1566) — the EditImageModal /
             EditCategoryDialog title-link convention: it toggles local state
             and persists on Save. "Hidden by Category" mirrors the image
@@ -349,6 +355,11 @@ export default function CollectionEditDialog({
           ))}
       </DialogTitle>
       <DialogContent>
+        {!canEditMeta && (
+          <Alert severity="info" sx={{ mb: 1 }} data-testid="filing-only-note">
+            You can file or hide this collection; only its owner can edit the details.
+          </Alert>
+        )}
         <TextField
           inputRef={inputRef}
           autoFocus
@@ -357,6 +368,7 @@ export default function CollectionEditDialog({
           fullWidth
           variant="outlined"
           value={name}
+          disabled={!canEditMeta}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -391,6 +403,7 @@ export default function CollectionEditDialog({
           minRows={2}
           variant="outlined"
           value={description}
+          disabled={!canEditMeta}
           onChange={(e) => setDescription(e.target.value)}
         />
 
@@ -450,20 +463,20 @@ export default function CollectionEditDialog({
               value="private"
               control={<Radio size="small" />}
               label={`${COLLECTION_VISIBILITY_LABELS.private} — only you`}
-              disabled={!canChangeScope}
+              disabled={!canEditMeta || !canChangeScope}
             />
             <FormControlLabel
               value="public"
               control={<Radio size="small" />}
               label={`${COLLECTION_VISIBILITY_LABELS.public} — everyone who can sign in`}
-              disabled={!canChangeScope}
+              disabled={!canEditMeta || !canChangeScope}
             />
             {canRestrict && (
               <FormControlLabel
                 value="restricted"
                 control={<Radio size="small" />}
                 label={`${COLLECTION_VISIBILITY_LABELS.restricted} — specific programs and/or groups`}
-                disabled={!canChangeScope}
+                disabled={!canEditMeta || !canChangeScope}
               />
             )}
           </RadioGroup>
