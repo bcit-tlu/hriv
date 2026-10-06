@@ -373,9 +373,10 @@ export const Detail: Story = {
 
 export const DetailFiled: Story = {
   name: 'Detail (filed in a category)',
-  // Sequence detail filed in Hematology → MLSC-3200 → Lab 3 (#1559): the
-  // header leads with the category breadcrumb, and the action row shows
-  // visibility chip → Move → Reorder → Edit → Owners → Hide collection.
+  // Sequence detail filed in Hematology → MLSC-3200 → Lab 3 (#1559, #1564):
+  // the top row carries the category breadcrumb (with the collection name +
+  // image count as its trailing item) on the left and the action buttons on
+  // the right; the type/visibility pills sit above the description.
   args: {
     collectionPageType: 'sequence',
     categories: browseTree,

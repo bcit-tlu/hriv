@@ -484,7 +484,11 @@ describe('CollectionsPage', () => {
       })
 
       expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      // No <h1> — the collection name is the breadcrumb's trailing item,
+      // followed by the image count like the image/category header (#1564).
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      expect(within(crumb).getByText('Skull comparison')).toBeInTheDocument()
+      expect(within(crumb).getByText('(2 images)')).toBeInTheDocument()
       expect(screen.getByText('Two views')).toBeInTheDocument()
       expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
 
@@ -527,7 +531,9 @@ describe('CollectionsPage', () => {
       })
 
       expect(screen.getByTestId('collection-detail')).toBeInTheDocument()
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Skull comparison')
+      const crumb = screen.getByTestId('collection-breadcrumb')
+      expect(within(crumb).getByText('Skull comparison')).toBeInTheDocument()
+      expect(within(crumb).getByText('(2 images)')).toBeInTheDocument()
       expect(screen.getByText('Two views')).toBeInTheDocument()
       expect(screen.getByTestId('sequence-collection-viewer')).toBeInTheDocument()
       // The member list / coming-soon alert only remain for synchronized.
@@ -850,15 +856,28 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
     })
 
-    it('renders the visibility chip to the left of the action buttons', () => {
+    it('keeps the actions on the breadcrumb row and the pills above the description (#1564)', () => {
       renderPage({
         selectedCollectionId: 9,
-        detail: makeCollection({ id: 9, visibility: 'public' }),
+        detail: makeCollection({ id: 9, visibility: 'public', description: 'Two views' }),
         onMoveCollection: vi.fn(),
       })
-      const chip = screen.getByTestId('collection-visibility-chip')
+      const crumb = screen.getByTestId('collection-breadcrumb')
       const move = screen.getByRole('button', { name: 'Move' })
-      expect(chip.compareDocumentPosition(move) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      // Breadcrumb precedes the action buttons in the shared top row…
+      expect(crumb.compareDocumentPosition(move) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const typeChip = screen.getByText('Synchronized')
+      const visChip = screen.getByTestId('collection-visibility-chip')
+      const description = screen.getByText('Two views')
+      // …and the pills row sits between them: type, then visibility, then
+      // the description below.
+      expect(
+        typeChip.compareDocumentPosition(visChip) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(
+        visChip.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(move.compareDocumentPosition(typeChip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
     it('shows the Hidden chip and Show link on a hidden collection', () => {

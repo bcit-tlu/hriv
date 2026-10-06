@@ -170,7 +170,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Two to four read-only OpenSeadragon panes with linked pan/zoom/rotation (side-by-side for a pair, 2×2 grid for three or four). A persisted per-image viewport restores the layout around different highlights; editors can save the current alignment, anyone can reset or unlink the views, and a portrait overlay asks users to rotate instead of unmounting the viewers.',
+          'Two to four read-only OpenSeadragon panes with linked pan/zoom/rotation (side-by-side for a pair, 2×2 grid for three or four). A persisted per-image viewport restores the layout around different highlights; editors can save the current alignment, anyone can reset the views or unpin a pane to navigate it independently, and a portrait overlay asks users to rotate instead of unmounting the viewers.',
       },
     },
   },
@@ -190,7 +190,13 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByLabelText('Link views')).toBeChecked()
+    // Panes start pinned (#1564): both show "Unpin …" affordances.
+    await expect(canvas.getAllByRole('button', { name: /^Unpin / })).toHaveLength(2)
+    // Unpinning one swaps its affordance to "Pin …" without touching the
+    // other pane.
+    await userEvent.click(canvas.getByRole('button', { name: 'Unpin Skull — frontal' }))
+    await expect(canvas.getByRole('button', { name: 'Pin Skull — frontal' })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Unpin Skull — lateral' })).toBeInTheDocument()
     await expect(canvas.getByTestId('synchronized-save')).toBeEnabled()
     await userEvent.click(canvas.getAllByRole('button', { name: /^Open / })[0])
     await expect(args.onOpenImage).toHaveBeenCalledWith(PAIR.images[0])

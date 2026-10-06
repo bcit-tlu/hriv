@@ -118,10 +118,13 @@ function ownerFilterKey(owner: CollectionOwnerFilter): string {
 }
 
 /**
- * Shared header for the collection detail views (#1559): a Browse-style
- * category-location breadcrumb (`Home` at the root) instead of a back
- * link; the visibility and restriction chips sit left of the action
- * buttons, mirroring the restricted category/image header convention.
+ * Shared header for the collection detail views, mirroring the Image View
+ * page (#1559, #1564): one top row with the Browse-style category-location
+ * breadcrumb — `Home : …ancestors : collection name (N images)` — plus the
+ * restricted program/group chips on the left and the action buttons on the
+ * right. Below it, the type/visibility/hidden pills sit left of the owner
+ * line and description. There is no `<h1>` — the collection name is the
+ * breadcrumb's trailing item, like the image name on the image view.
  */
 function CollectionDetailHeader({
   collection,
@@ -160,100 +163,73 @@ function CollectionDetailHeader({
     : describeCollectionOwners(collection.owners)
   return (
     <>
-      {/* Category-location breadcrumb (#1559): Home → ancestors → the
-          collection itself — the image/category header convention, but the
-          full filed path (no depth elision) since a collection's canonical
-          location is the point. Segments navigate to the Browse scope. */}
-      <Breadcrumbs
-        aria-label="collection breadcrumb"
-        data-testid="collection-breadcrumb"
-        sx={{ mb: 1 }}
-      >
-        <Link
-          component="button"
-          variant="body2"
-          underline="hover"
-          color="inherit"
-          onClick={() => onNavigateCategory([])}
-          sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer' }}
-        >
-          <HomeIcon fontSize="small" />
-          Home
-        </Link>
-        {categoryPath.map((cat, i) => (
-          <Link
-            key={cat.id}
-            component="button"
-            variant="body2"
-            underline="hover"
-            color="inherit"
-            onClick={() => onNavigateCategory(categoryPath.slice(0, i + 1))}
-            sx={{ cursor: 'pointer' }}
-          >
-            {cat.label}
-          </Link>
-        ))}
-        <Typography variant="body2" color="text.primary">
-          {collection.name}
-        </Typography>
-      </Breadcrumbs>
+      {/* Top container mirrors the image view header (#1564): breadcrumb +
+          image count + restriction chips on the left, actions on the right.
+          Segments navigate to the Browse scope; the trailing item carries
+          the collection name plus a muted image count like the category
+          page's `(N images)`. */}
       <Box
         sx={{
           display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          mb: 1,
           gap: 1,
         }}
       >
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="h5" component="h1" sx={{ wordBreak: 'break-word' }}>
-              {collection.name}
-            </Typography>
-            {collection.hidden && (
-              <Chip
-                size="small"
-                icon={<VisibilityOffIcon />}
-                label="Hidden"
-                data-testid="collection-hidden-chip"
-                sx={{ bgcolor: visColors.inactiveChipBg, color: '#fff' }}
-              />
-            )}
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            {ownerText} · {collection.images.length}{' '}
-            {collection.images.length === 1 ? 'image' : 'images'}
-          </Typography>
-          {collection.memberCount > 0 && collection.images.length === 0 && (
-            <Typography
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 1,
+            flex: '1 1 240px',
+            minWidth: 0,
+            maxWidth: '100%',
+          }}
+        >
+          <Breadcrumbs aria-label="collection breadcrumb" data-testid="collection-breadcrumb">
+            <Link
+              component="button"
               variant="body2"
-              color="text.secondary"
-              sx={{ mt: 0.5, fontStyle: 'italic' }}
-              data-testid="collection-all-restricted"
+              underline="hover"
+              color="inherit"
+              onClick={() => onNavigateCategory([])}
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer' }}
             >
-              All images in this collection are currently restricted.
-            </Typography>
-          )}
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            <Chip
-              size="small"
-              variant="outlined"
-              color="primary"
-              label={COLLECTION_TYPE_LABELS[collection.type]}
-            />
-          </Box>
-          {collection.description && (
-            <Typography variant="body1" sx={{ mt: 2, whiteSpace: 'pre-wrap' }}>
-              {collection.description}
-            </Typography>
-          )}
-        </Box>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
-          {/* Visibility + restriction chips lead the action row (#1559),
-              mirroring where program chips render on restricted
-              categories/images. */}
-          <CollectionVisibilityChip visibility={collection.visibility} />
+              <HomeIcon fontSize="small" />
+              Home
+            </Link>
+            {categoryPath.map((cat, i) => (
+              <Link
+                key={cat.id}
+                component="button"
+                variant="body2"
+                underline="hover"
+                color="inherit"
+                onClick={() => onNavigateCategory(categoryPath.slice(0, i + 1))}
+                sx={{ cursor: 'pointer' }}
+              >
+                {cat.label}
+              </Link>
+            ))}
+            <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+              <Typography variant="body2" color="text.primary">
+                {collection.name}
+              </Typography>
+              <Typography
+                component="span"
+                variant="body2"
+                color="text.secondary"
+                sx={{ ml: 0.5, fontSize: '0.9em' }}
+              >
+                ({collection.images.length} {collection.images.length === 1 ? 'image' : 'images'})
+              </Typography>
+            </Box>
+          </Breadcrumbs>
+          {/* Restriction chips sit right after the breadcrumb — the same
+              slot the image view renders them in. */}
           {collection.visibility === 'restricted' && (
             <>
               {collection.programIds.map((pid) => (
@@ -277,6 +253,8 @@ function CollectionDetailHeader({
               ))}
             </>
           )}
+        </Box>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
           {/* Hide/show leads the actions — the same spot the image viewer's
               "Hide/Show Image" text-button occupies (#1559). */}
           {collection.permissions.canHide && onToggleHidden && (
@@ -332,6 +310,55 @@ function CollectionDetailHeader({
             >
               Owners
             </Button>
+          )}
+        </Box>
+      </Box>
+
+      {/* Second row (#1564): type + visibility (+ hidden) pills to the left
+          of the owner line and description, which keep their place. */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+          gap: 1,
+          mb: 2,
+        }}
+      >
+        <Chip
+          size="small"
+          variant="outlined"
+          color="primary"
+          label={COLLECTION_TYPE_LABELS[collection.type]}
+        />
+        <CollectionVisibilityChip visibility={collection.visibility} />
+        {collection.hidden && (
+          <Chip
+            size="small"
+            icon={<VisibilityOffIcon />}
+            label="Hidden"
+            data-testid="collection-hidden-chip"
+            sx={{ bgcolor: visColors.inactiveChipBg, color: '#fff' }}
+          />
+        )}
+        <Box sx={{ flex: '1 1 240px', minWidth: 0 }}>
+          <Typography variant="body2" color="text.secondary">
+            {ownerText}
+          </Typography>
+          {collection.memberCount > 0 && collection.images.length === 0 && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5, fontStyle: 'italic' }}
+              data-testid="collection-all-restricted"
+            >
+              All images in this collection are currently restricted.
+            </Typography>
+          )}
+          {collection.description && (
+            <Typography variant="body1" sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>
+              {collection.description}
+            </Typography>
           )}
         </Box>
       </Box>

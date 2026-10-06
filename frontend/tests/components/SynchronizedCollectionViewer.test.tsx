@@ -521,7 +521,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(mockState.fakes.get(101)!.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
   })
 
-  it('the Link views toggle pauses mirroring and re-arms on re-enable', () => {
+  it('pins every pane by default; unpinning detaches it from the mirror (#1564)', () => {
     openPair()
     renderViewer()
     const fakeA = mockState.fakes.get(100)!
@@ -530,20 +530,86 @@ describe('SynchronizedCollectionViewer', () => {
       fakeA.open()
       fakeB.open()
     })
-    fireEvent.click(screen.getByTestId('synchronized-sync-toggle'))
+    const pinA = screen.getByTestId('pin-toggle-100')
+    const pinB = screen.getByTestId('pin-toggle-101')
+    // Default: both panes pinned (linked).
+    expect(pinA).toHaveAttribute('aria-pressed', 'true')
+    expect(pinB).toHaveAttribute('aria-pressed', 'true')
+    expect(pinA).toHaveAccessibleName('Unpin Slice 1')
+    // Unpin B — a leader move on A no longer reaches it.
+    fireEvent.click(pinB)
+    expect(pinB).toHaveAttribute('aria-pressed', 'false')
+    expect(pinB).toHaveAccessibleName('Pin Slice 2')
     fakeB.viewport!.panTo.mockClear()
     act(() => {
       fakeA.viewport!.panTo({ x: 0.9, y: 0.9 })
     })
     expect(fakeB.viewport!.panTo).not.toHaveBeenCalled()
-    // Re-linking captures the new relative alignment instead of snapping B:
-    // A sits at (0.9, 0.9) and B at (0.5, 0.5), so B keeps the −0.4 offset.
-    fireEvent.click(screen.getByTestId('synchronized-sync-toggle'))
-    fakeB.viewport!.panTo.mockClear()
+    // And the unpinned pane is fully independent — its own movement does
+    // not drive the pinned pane.
+    fakeA.viewport!.panTo.mockClear()
     act(() => {
-      fakeA.viewport!.panTo({ x: 0.8, y: 0.9 })
+      fakeB.viewport!.panTo({ x: 0.1, y: 0.1 })
     })
-    expect(fakeB.viewport!.panTo).toHaveBeenCalledWith({ x: 0.4, y: 0.5 }, true)
+    expect(fakeA.viewport!.panTo).not.toHaveBeenCalled()
+  })
+
+  it('re-pinning rejoins the mirror from the pane\u2019s current position (#1564)', () => {
+    openPair()
+    renderViewer()
+    const fakeA = mockState.fakes.get(100)!
+    const fakeB = mockState.fakes.get(101)!
+    act(() => {
+      fakeA.open()
+      fakeB.open()
+    })
+    const pinB = screen.getByTestId('pin-toggle-101')
+    fireEvent.click(pinB)
+    // B wanders independently while unpinned.
+    act(() => {
+      fakeB.viewport!.panTo({ x: 0.2, y: 0.3 })
+    })
+    // Re-pinning re-arms the epoch — B does not snap back to where it left.
+    fakeB.viewport!.panTo.mockClear()
+    fireEvent.click(pinB)
+    expect(pinB).toHaveAttribute('aria-pressed', 'true')
+    expect(fakeB.viewport!.panTo).not.toHaveBeenCalled()
+    // A's next move displaces B from its re-armed (0.2, 0.3) baseline:
+    // A now sits at (0.5, 0.5) → moving to (0.4, 0.6) is a (−0.1, +0.1)
+    // shift, so B lands near (0.1, 0.4).
+    act(() => {
+      fakeA.viewport!.panTo({ x: 0.4, y: 0.6 })
+    })
+    expect(fakeB.viewport!.panTo).toHaveBeenCalledWith(
+      { x: expect.closeTo(0.1, 10), y: expect.closeTo(0.4, 10) },
+      true,
+    )
+  })
+
+  it('an unpinned leader does not move the panes that are still pinned (#1564)', () => {
+    const fakes = openMany({
+      100: { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+      101: { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+      102: { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+    })
+    renderViewer({ collection: syncCollection({ images: images(3) }) })
+    openAll(fakes)
+    fireEvent.click(screen.getByTestId('pin-toggle-101'))
+    // B is unpinned: moving it must not ripple to A or C.
+    for (const id of [100, 102]) mockState.fakes.get(id)!.viewport!.panTo.mockClear()
+    act(() => {
+      mockState.fakes.get(101)!.viewport!.panTo({ x: 0.7, y: 0.7 })
+    })
+    expect(mockState.fakes.get(100)!.viewport!.panTo).not.toHaveBeenCalled()
+    expect(mockState.fakes.get(102)!.viewport!.panTo).not.toHaveBeenCalled()
+    // But a pinned leader still drives the remaining pinned pane.
+    mockState.fakes.get(101)!.viewport!.panTo.mockClear()
+    act(() => {
+      mockState.fakes.get(100)!.viewport!.panTo({ x: 0.6, y: 0.6 })
+    })
+    expect(mockState.fakes.get(102)!.viewport!.panTo).toHaveBeenCalledWith({ x: 0.6, y: 0.6 }, true)
+    // …while B stays put.
+    expect(mockState.fakes.get(101)!.viewport!.panTo).not.toHaveBeenCalled()
   })
 
   it('shows the portrait hint without unmounting the viewers', () => {
