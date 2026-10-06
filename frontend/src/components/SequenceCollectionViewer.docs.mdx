@@ -51,9 +51,11 @@ browser history.
   tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
   nearest still-available image. When every image has failed, an error alert replaces the
   viewer.
-- **Reorder.** Editors (`permissions.canEdit`) get a Reorder toggle that swaps the strip for
-  `useSortable` thumbnails. On drop the hook PUTs the full id list with the collection
-  version (optimistic update, rollback on error); non-editors never see the toggle.
+- **Reorder.** The Reorder toggle lives in the detail header between **Move** and **Edit**
+  (#1559); the viewer takes `reordering` as a controlled prop and reports exits via
+  `onReorderingChange`. While active the strip swaps for `useSortable` thumbnails. On drop the
+  hook PUTs the full id list with the collection version (optimistic update, rollback on
+  error).
 - **Token renewal.** `onTileSourceRenewed` forwards the viewer's refreshed `ApiImage` to
   `onImageRenewed`, and `RenewingThumbnail` does the same for strip thumbnails, so short-lived
   tile/thumb tokens keep working.

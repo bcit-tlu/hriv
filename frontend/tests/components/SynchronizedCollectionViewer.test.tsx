@@ -472,7 +472,7 @@ describe('SynchronizedCollectionViewer', () => {
 
   it('hides Save view from non-editors but keeps Reset view', () => {
     const collection = syncCollection({
-      permissions: { canEdit: false, canDelete: false, canTransfer: false },
+      permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
     })
     renderViewer({ collection })
     expect(screen.queryByTestId('synchronized-save')).not.toBeInTheDocument()

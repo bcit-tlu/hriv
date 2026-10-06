@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import CollectionCard, { CollectionVisibilityChip } from '../../src/components/CollectionCard'
 import { makeCollectionSummary } from '../helpers/fixtures'
 
@@ -48,7 +48,7 @@ describe('CollectionCard', () => {
   it('shows edit only when the API grants the permission', () => {
     const onEdit = vi.fn()
     const collection = makeCollectionSummary({
-      permissions: { canEdit: true, canDelete: false, canTransfer: false },
+      permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: false },
     })
     render(<CollectionCard collection={collection} onOpen={vi.fn()} onEdit={onEdit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Edit Skull comparison' }))
@@ -59,7 +59,7 @@ describe('CollectionCard', () => {
     render(
       <CollectionCard
         collection={makeCollectionSummary({
-          permissions: { canEdit: false, canDelete: false, canTransfer: false },
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         })}
         onOpen={vi.fn()}
         onEdit={vi.fn()}
@@ -79,7 +79,7 @@ describe('CollectionCard', () => {
     const onTransfer = vi.fn()
     const collection = makeCollectionSummary({
       name: 'Mine',
-      permissions: { canEdit: false, canDelete: false, canTransfer: true },
+      permissions: { canEdit: false, canDelete: false, canTransfer: true, canHide: false },
     })
     const { unmount } = render(
       <CollectionCard collection={collection} onOpen={vi.fn()} onTransfer={onTransfer} />,
@@ -92,7 +92,7 @@ describe('CollectionCard', () => {
       <CollectionCard
         collection={makeCollectionSummary({
           name: 'Shared',
-          permissions: { canEdit: true, canDelete: true, canTransfer: false },
+          permissions: { canEdit: true, canDelete: true, canTransfer: false, canHide: false },
         })}
         onOpen={vi.fn()}
         onTransfer={onTransfer}
@@ -109,7 +109,7 @@ describe('CollectionCard', () => {
       name: 'Shared',
       // Move must appear even when the viewer cannot edit the collection:
       // filing is curatorial (any admin/instructor), unlike edit/delete.
-      permissions: { canEdit: false, canDelete: false, canTransfer: false },
+      permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
     })
     render(<CollectionCard collection={collection} onOpen={vi.fn()} onMove={onMove} />)
     fireEvent.click(screen.getByRole('button', { name: 'Move Shared to a category' }))
@@ -130,6 +130,38 @@ describe('CollectionCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Move Skull comparison to a category' }))
     expect(onMove).toHaveBeenCalled()
     expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('pins the type chip to the left overlay, independent of the right-side actions (#1559)', () => {
+    const collection = makeCollectionSummary({
+      permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+    })
+    render(
+      <CollectionCard
+        collection={collection}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onTransfer={vi.fn()}
+      />,
+    )
+    const left = screen.getByTestId('collection-type-overlay')
+    const right = screen.getByTestId('collection-actions-overlay')
+    expect(within(left).getByTestId('collection-type-chip')).toBeInTheDocument()
+    expect(within(right).getByRole('button', { name: /Move .* to a category/ })).toBeInTheDocument()
+    // The chip does not share a container with the action icons, so its
+    // position never shifts with the available actions.
+    expect(within(right).queryByTestId('collection-type-chip')).not.toBeInTheDocument()
+    expect(within(left).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('shows a hidden indicator and desaturated treatment on hidden collections (#1559)', () => {
+    render(<CollectionCard collection={makeCollectionSummary({ hidden: true })} onOpen={vi.fn()} />)
+    expect(screen.getByRole('img', { name: 'Visibility: Hidden' })).toBeInTheDocument()
+  })
+
+  it('omits the hidden indicator on visible collections', () => {
+    render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
+    expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
   })
 })
 

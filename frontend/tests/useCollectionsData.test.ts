@@ -1360,6 +1360,46 @@ describe('useCollectionsData', () => {
         { kind: 'user', userId: 7, name: 'Ada Lovelace' },
       ])
     })
+
+    it('setHidden PATCHes the flag with the detail version and updates row + detail (#1559)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, hidden: true }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.setHidden(1, true)
+      })
+      expect(updateCollectionMock).toHaveBeenCalledWith(1, { hidden: true, version: 3 })
+      expect(result.current.detail?.hidden).toBe(true)
+      expect(result.current.collections[0].hidden).toBe(true)
+    })
+
+    it('setHidden merges the 409 conflict record so a retry sends the fresh version (#1559)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      updateCollectionMock
+        .mockRejectedValueOnce(new ApiError(409, 'Stale', makeApiCollection({ id: 1, version: 4 })))
+        .mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5, hidden: true }))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementation(() => new Promise(() => {}))
+
+      await act(async () => {
+        await expect(result.current.setHidden(1, true)).rejects.toBeInstanceOf(ApiError)
+      })
+      expect(result.current.detail?.version).toBe(4)
+
+      await act(async () => {
+        await result.current.setHidden(1, true)
+      })
+      expect(updateCollectionMock).toHaveBeenLastCalledWith(1, { hidden: true, version: 4 })
+      expect(result.current.detail?.hidden).toBe(true)
+    })
   })
 
   describe('move (#1529)', () => {

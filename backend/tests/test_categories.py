@@ -46,6 +46,7 @@ def _make_collection(
     groups: list | None = None,
     sort_order: int = 0,
     type: str = "sequence",
+    hidden: bool = False,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -54,6 +55,7 @@ def _make_collection(
         description=None,
         type=type,
         visibility=visibility,
+        hidden=hidden,
         user_id=user_id,
         owner_program_id=owner_program_id,
         owner=SimpleNamespace(id=user_id, name=f"u{user_id}") if user_id else None,

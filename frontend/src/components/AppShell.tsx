@@ -360,13 +360,7 @@ export default function AppShell(props: AppShellProps) {
               // via the Manage dropdown.
               value={page === 'guide' || page === 'manage-collections' ? false : page}
               onChange={(_, v: Page) => {
-                if (
-                  v === 'browse' ||
-                  v === 'collections' ||
-                  v === 'manage' ||
-                  v === 'people' ||
-                  v === 'admin'
-                ) {
+                if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
                   onTabChange(v)
                 }
               }}
@@ -390,6 +384,9 @@ export default function AppShell(props: AppShellProps) {
               {collectionsEnabled && (
                 <Tab
                   label="Collections"
+                  // Menu trigger only, like Manage — Tabs onChange ignores
+                  // 'collections' (not a real page tab); navigation happens
+                  // when a Sequence/Synchronized menu item is chosen (#1559).
                   value="collections"
                   onClick={(e) => setCollectionsMenuAnchor(e.currentTarget)}
                 />

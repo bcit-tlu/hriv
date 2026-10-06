@@ -571,6 +571,13 @@ class Collection(Base):
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Curatorial hide (#1559): a hidden collection drops out of student
+    # view unless the student owns it — owners keep access (unlike images,
+    # collections can be student-owned). Toggle authority is curator-only
+    # (admin/instructor), mirroring image/category hide.
+    hidden: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     viewport_state: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,

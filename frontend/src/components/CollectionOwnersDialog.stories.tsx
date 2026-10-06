@@ -53,6 +53,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: 'Frontal and lateral views side by side.',
     type: 'synchronized',
     visibility: 'private',
+    hidden: false,
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: null,
@@ -61,7 +62,13 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     version: 3,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: true },
+    permissions: {
+      canEdit: true,
+      canDelete: true,
+      canChangeScope: true,
+      canTransfer: true,
+      canHide: false,
+    },
     ...overrides,
   }
 }

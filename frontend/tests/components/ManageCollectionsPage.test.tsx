@@ -109,6 +109,7 @@ describe('ManageCollectionsPage', () => {
         name: 'Skull comparison',
         type: 'synchronized',
         visibility: 'public',
+        hidden: false,
         image_count: 2,
         category_id: 10,
       }),
@@ -117,6 +118,7 @@ describe('ManageCollectionsPage', () => {
         name: 'Epithelium tour',
         type: 'sequence',
         visibility: 'restricted',
+        hidden: false,
         image_count: 9,
         category_id: null,
       }),
@@ -247,6 +249,7 @@ describe('ManageCollectionsPage', () => {
           can_delete: false,
           can_change_scope: false,
           can_transfer: false,
+          can_hide: false,
         },
       }),
     ])
@@ -266,6 +269,7 @@ describe('ManageCollectionsPage', () => {
           can_delete: true,
           can_change_scope: true,
           can_transfer: true,
+          can_hide: false,
         },
       }),
       makeApiCollectionSummary({
@@ -276,6 +280,7 @@ describe('ManageCollectionsPage', () => {
           can_delete: false,
           can_change_scope: false,
           can_transfer: false,
+          can_hide: false,
         },
       }),
     ])
@@ -322,6 +327,7 @@ describe('ManageCollectionsPage', () => {
           can_delete: true,
           can_change_scope: true,
           can_transfer: true,
+          can_hide: false,
         },
       }),
     ])

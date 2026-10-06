@@ -1693,6 +1693,26 @@ export default function App() {
     pushNavState('collections', [], null, { type: collectionPageType })
   }, [collectionFromBrowse, path, pushNavState, collectionPageType])
 
+  // Detail-header breadcrumb (#1559): jump from the open collection to its
+  // filed Browse scope (or the root for `Home`). Clears the detail like
+  // `handleCloseCollection`, then navigates Browse to the target path.
+  const handleNavigateBrowseFromCollection = useCallback(
+    (categoryPath: Category[]) => {
+      runCanvasNavigation(() => {
+        setSelectedCollectionId(null)
+        setSelectedCollectionItemId(null)
+        setCollectionFromBrowse(false)
+        setPath(categoryPath)
+        setPage('browse')
+        pushNavState(
+          'browse',
+          categoryPath.map((c) => c.id),
+        )
+      })
+    },
+    [pushNavState, runCanvasNavigation],
+  )
+
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
   // shareable and in history, so back steps through viewed items (#1416).
   const handleSelectCollectionItem = useCallback(
@@ -1943,7 +1963,19 @@ export default function App() {
               onSaveOwners={collectionsData.saveOwners}
               onTransfer={collectionsData.transfer}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
-              detailBackLabel={collectionFromBrowse ? 'Back to Browse' : undefined}
+              categories={categories}
+              onNavigateCategory={handleNavigateBrowseFromCollection}
+              onToggleHidden={(collection) =>
+                collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
+                  // The collection's Browse tile lives in useBrowseData's
+                  // tree/uncategorized state, not in the collections-page
+                  // list — refresh both so the hidden marker (or the tile
+                  // dropping out for students) isn't stale.
+                  refreshCategories()
+                  void loadUncategorizedCollections()
+                  return updated
+                })
+              }
             />
           ) : page === 'manage-collections' &&
             (!collectionsEnabled || !canManageCollections) ? null : page ===

@@ -14,6 +14,7 @@ import PublicIcon from '@mui/icons-material/Public'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { fetchCollection } from '../api'
 import type { CollectionSummary, CollectionVisibility } from '../types'
 import {
@@ -98,6 +99,8 @@ export default function CollectionCard({
   onTransfer,
   onMove,
 }: CollectionCardProps) {
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const cover = collection.coverThumb
   const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
@@ -110,7 +113,14 @@ export default function CollectionCard({
       <CardActionArea
         data-testid="collection-card-action-area"
         onClick={() => onOpen(collection)}
-        sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}
+        sx={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          // Curatorially hidden tiles desaturate like hidden categories (#1559).
+          filter: collection.hidden ? 'grayscale(100%)' : 'none',
+        }}
       >
         {cover ? (
           <RenewingThumbnail
@@ -140,22 +150,35 @@ export default function CollectionCard({
           </Box>
         )}
         <CardContent sx={{ flexGrow: 1, width: '100%' }}>
-          <Tooltip title={collection.name}>
-            <Typography
-              variant="h6"
-              sx={{
-                color: 'primary.main',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                wordBreak: 'break-word',
-                pr: showEdit ? 8 : 0,
-              }}
-            >
-              {collection.name}
-            </Typography>
-          </Tooltip>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+            <Tooltip title={collection.name}>
+              <Typography
+                variant="h6"
+                sx={{
+                  color: collection.hidden ? visColors.inactive : 'primary.main',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-word',
+                  pr: showEdit ? 8 : 0,
+                }}
+              >
+                {collection.name}
+              </Typography>
+            </Tooltip>
+            {collection.hidden && (
+              <Tooltip title="Visibility: Hidden">
+                <span
+                  role="img"
+                  aria-label="Visibility: Hidden"
+                  style={{ display: 'inline-flex', flexShrink: 0 }}
+                >
+                  <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                </span>
+              </Tooltip>
+            )}
+          </Box>
           <Typography variant="body2" color="text.secondary">
             {imageCountText} · {describeCollectionOwners(collection.owners)}
           </Typography>
@@ -164,13 +187,15 @@ export default function CollectionCard({
           </Box>
         </CardContent>
       </CardActionArea>
-      {/* Cover-overlay controls (#1554): type pill + curatorial actions,
-          same top-right scrim convention as CategoryTile. */}
+      {/* Cover-overlay controls (#1554/#1559): the type pill pins to the
+          top-left; curatorial actions stay top-right — both use the
+          CategoryTile scrim convention. */}
       <Box
+        data-testid="collection-type-overlay"
         sx={{
           position: 'absolute',
           top: 4,
-          right: 4,
+          left: 4,
           display: 'flex',
           alignItems: 'center',
           gap: 0.5,
@@ -187,6 +212,18 @@ export default function CollectionCard({
             '& .MuiChip-icon': { color: 'white' },
           }}
         />
+      </Box>
+      <Box
+        data-testid="collection-actions-overlay"
+        sx={{
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+        }}
+      >
         {showMove && (
           <Tooltip title="Move to category">
             <IconButton

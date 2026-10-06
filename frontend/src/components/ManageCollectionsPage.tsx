@@ -21,6 +21,7 @@ import AddIcon from '@mui/icons-material/Add'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import {
   createCollection,
   deleteCollection,
@@ -811,7 +812,25 @@ export default function ManageCollectionsPage({
                     ) : null}
                   </TableCell>
                   <TableCell>{c.id}</TableCell>
-                  <TableCell>{c.name}</TableCell>
+                  <TableCell>
+                    <Box
+                      component="span"
+                      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      {c.name}
+                      {c.hidden && (
+                        <Tooltip title="Visibility: Hidden">
+                          <span
+                            role="img"
+                            aria-label="Visibility: Hidden"
+                            style={{ display: 'inline-flex', flexShrink: 0 }}
+                          >
+                            <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />
+                          </span>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </TableCell>
                   <TableCell>{COLLECTION_TYPE_LABELS[c.type]}</TableCell>
                   <TableCell>
                     <CollectionVisibilityChip visibility={c.visibility} />
