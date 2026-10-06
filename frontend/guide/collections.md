@@ -14,8 +14,8 @@ been switched on there — ask your administrator.)
 
 ## Two kinds of collection
 
-- **Synchronized** – two images shown side by side; pan and zoom move both
-  of them together.
+- **Synchronized** – up to four images shown together; pan and zoom move
+  all of them together.
 - **Sequence** – any number of images in a fixed order, stepped through one
   at a time.
 
@@ -24,29 +24,27 @@ create a new collection instead.
 
 ## Viewing a synchronized collection
 
-Open a synchronized collection and you get two read-only viewers side by
-side — the first two images in the collection — with annotations and
-measurement markings visible on each.
+Open a synchronized collection and you get read-only viewers for every
+image in it — two side by side for a pair, a 2×2 grid for three or four —
+with annotations and measurement markings visible on each.
 
-- Pan, zoom or rotate either pane and the other follows, keeping its
-  relative position — handy when two views highlight different spots.
+- Pan, zoom or rotate any pane and the others follow, keeping their
+  relative positions — handy when the views highlight different spots.
 - Each pane's caption shows the image name and an **Open image** link to
   the normal image view.
-- If the collection holds more than two images, only the first two render —
-  a note tells you how many more are stored.
 - **Link views** (the switch above the viewers) unlinks the panes so you
-  can adjust one side on its own; switching it back on keeps the new
-  relative position.
-- **Reset view** returns both panes to the saved view (or their starting
-  positions if none was saved).
+  can adjust one on its own; switching it back on keeps the new
+  relative positions.
+- **Reset view** returns every pane to the saved view (or its starting
+  position if none was saved).
 - On a phone held upright the panes are replaced by a hint to rotate to
   landscape — your view is still there when you rotate back.
 
 ::: tip Saving the view
-If you can edit the collection, a **Save view** button stores both panes'
-current positions for everyone — next time the collection opens, it lands
+If you can edit the collection, a **Save view** button stores every pane's
+current position for everyone — next time the collection opens, it lands
 exactly there. Anyone can pan and zoom freely; only saving changes what
-others see. Use the saved positions to line the two images up around
+others see. Use the saved positions to line the images up around
 different highlights.
 :::
 
@@ -56,15 +54,22 @@ Open a sequence collection and you get a read-only viewer that shows one
 image at a time — annotations and measurement markings on each image are
 visible but can't be changed here.
 
-- Step through with **Previous** / **Next**, click a thumbnail in the strip
-  below the viewer, or press the ← and → arrow keys.
+- Step through with the **‹** and **›** buttons that appear on the viewer's
+  left and right edges when you point at it (they fade away when idle, like
+  the image toolbar), click a thumbnail in the strip below the viewer, or
+  press the ← and → arrow keys.
 - The position (`n of N`) is part of the page link, so copying the URL
   shares the exact image you're looking at.
 - **Open image** jumps to the normal image view, where you can edit
   annotations with the usual permissions.
-- If you can edit the collection, a **Reorder** button turns the thumbnail
-  strip into a drag-and-drop list; drag images into place and choose
-  **Done**.
+- If you can edit the collection, a **Reorder** button in the top-right
+  header (between **Move** and **Edit**) turns the thumbnail strip into a
+  drag-and-drop list; drag images into place and choose **Done**.
+
+The breadcrumb at the top of the page shows where the collection lives in
+Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each
+link jumps to that spot in Browse. A collection filed at the top level just
+shows **Home**.
 
 ## Create a collection
 
@@ -122,7 +127,8 @@ message at the bottom removes the image again.
 Collection tiles appear on the **Browse** page alongside category and image
 tiles — at the top level or nested inside categories, so a "Lab 2"
 collection can sit inside _Histology → Epithelium_ like any other tile. Open
-a tile to view the collection; Back returns to the same place in Browse.
+a tile to view the collection; the breadcrumb at the top of the collection
+page shows its filed location and links back into Browse.
 
 - Tiles keep a fixed width and can be dragged to reorder them among the
   images and categories in the same folder; the order is shared for every
@@ -137,6 +143,23 @@ a tile to view the collection; Back returns to the same place in Browse.
   (`N collections`).
 - When `COLLECTIONS_ENABLED` is off, collection tiles disappear from Browse
   entirely — existing placements are kept and return with the flag.
+
+## Hide or show a collection (instructors and admins)
+
+Curators can hide a collection with the **Hide collection** link at the top
+right of the collection page — like hiding an image or a category. A hidden
+collection:
+
+- disappears from students' lists, Browse tiles, and search results —
+  **except for its owners**, who keep full access to their own work;
+- stays visible to admins, instructors and staff, shown desaturated with an
+  eye-off marker on cards and in the Manage → Collections table, plus a
+  **Hidden** chip on the collection page;
+- keeps its place in the category structure and tile order — nothing moves.
+
+Click **Show collection** in the same spot to make it visible again. Hiding
+is curatorial, not ownership-bound: any admin or instructor can hide any
+collection, and owners can't hide or unhide their own collections.
 
 ## Find a collection
 

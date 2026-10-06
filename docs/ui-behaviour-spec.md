@@ -38,10 +38,14 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
-- **Given** the Collections tab, **When** clicked, **Then** a sub-menu (same
-  `Tab` → `Menu` pattern as Manage) offers **Sequence** and **Synchronized**
-  (#1554); each opens `?page=collections&type=` and a missing/invalid `type`
-  defaults to Sequence. The compact drawer shows both items flattened in.
+- **Given** the Collections tab, **When** clicked, **Then** it opens a
+  sub-menu (same `Tab` → `Menu` pattern as Manage) offering **Sequence** and
+  **Synchronized** _without_ navigating — the tab's `value` is filtered out
+  of Tabs' onChange so it is a menu trigger only (#1559); each menu item
+  opens `?page=collections&type=` and a missing/invalid `type`
+  defaults to Sequence. On a collections page the tab stays highlighted and
+  the matching menu item renders `selected`. The compact drawer shows both
+  items flattened in.
 - **Given** a staff user, **Then** the Manage dropdown renders with only the
   **Collections** item (Categories/Groups/Announcement stay
   edit-content-only); **Given** a student, **Then** no Manage surface at all.
@@ -270,6 +274,23 @@ returned by the API (UX only — the backend re-checks).
   comma-joined list (`describeCollectionOwners` — user names, `_X_ (program)`
   for a program owner, `No owner` when orphaned), the visibility chip, and —
   when `restricted` — a chip per attached program and group.
+- **Given** a collection detail is open (#1559), **Then** the header leads
+  with a `MuiBreadcrumbs` of its filed location (Home icon + category
+  ancestors + the collection name as the current item — matching the image
+  viewer, which renders **Home / ‹image name›** at the root — and there is
+  no "All collections" back link); each breadcrumb link navigates Browse to
+  that spot. **Then**
+  the top-right row orders: visibility chip (Public/Private/Restricted) —
+  with a `Hidden` chip beside the title when `hidden` — then **Hide
+  collection** / **Show collection** (`canHide` — admins and instructors
+  only; PATCHes `hidden` with the OCC version), **Move** (admin/instructor),
+  **Reorder** (sequence + `canEdit` — the viewer's strip goes into drag mode
+  while pressed), **Edit** (`canEdit`), and **Owners** (`canTransfer`).
+- **Given** a curatorially hidden collection, **Then** non-students see it
+  everywhere with the desaturated card treatment and a `VisibilityOff`
+  marker (card name, Manage → Collections Name cell, `Hidden` chip on the
+  detail); students see it only if they own it — for everyone else it is
+  absent from lists/Browse/search and `GET` answers **404**.
 
 #### Collections in the Browse tile grid (#1529)
 
@@ -293,8 +314,9 @@ returned by the API (UX only — the backend re-checks).
   refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
   re-posts the previous category with the version from the move response.
 - **Given** a collection opened from a Browse tile, **Then** the URL carries
-  `?collection={id}&cat={path}`, the detail back button reads **Back to
-  Browse**, and closing it returns to the originating scope; **Given** a
+  `?collection={id}&cat={path}`, and the error-state close action returns to
+  the originating scope; the detail breadcrumb always shows the collection's
+  _filed_ location (#1559). **Given** a
   `?collection={id}` link without `?cat=`, **Then** the detail opens in the
   Collections list context as before.
 - **Given** a category containing collections, **Then** its tile detail line
@@ -325,12 +347,16 @@ full contract. Mounted by the collection detail for `sequence` collections;
 always read-only (`canEditContent={false}`).
 
 - **Given** a sequence collection is open with no `?item=`, **Then** the
-  first member renders with an `1 of N` position readout, **Previous**
-  disabled, and the member's canvas annotations / locked overlays /
-  measurement shown read-only.
+  first member renders with an `1 of N` position readout, the edge-overlay
+  **Previous** button disabled, and the member's canvas annotations /
+  locked overlays / measurement shown read-only.
 - **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
+- **Given** the pointer enters or moves over the viewer frame, **Then** the
+  lightbox-style **Previous** / **Next** chevrons fade in on the left/right
+  edges; **Then** after ~2 s idle or on pointer leave they fade out again
+  (keyboard focus also reveals them).
 - **Given** the user clicks **Next** / **Previous**, a strip thumbnail, or
   presses ← / → while the sequence has focus, **Then** the current image
   changes, the position readout and `?item=` URL update, and the viewer
@@ -359,35 +385,35 @@ collections; both panes are read-only `ImageViewer`s
 measurement metadata.
 
 - **Given** a synchronized collection with two or more visible members,
-  **Then** the first two render side by side (each pane captioned with the
-  member name and an **Open image** → `?image={id}` action) and, when more
-  than two are stored, a "Showing 2 of _N_" note appears — three/four-pane
-  layouts are future work.
-- **Given** the user pans, zooms or rotates either pane, **Then** the other
-  pane follows with `immediately=true`, shifted by the pair's relative
-  offset, and the follower never leads the sync (no oscillation).
+  **Then** up to four render as panes — side by side for two, a 2×2 grid for
+  three or four (each pane captioned with the member name and an
+  **Open image** → `?image={id}` action) — and, when more than four are
+  stored, a "Showing _N_ of _M_" note appears.
+- **Given** the user pans, zooms or rotates any pane, **Then** every other
+  pane follows with `immediately=true`, shifted by that pane's offset from
+  the armed baseline, and followers never lead the sync (no oscillation).
 - **Given** the collection's `viewport_state` matches
   `{ "<image_id>": {zoom, x, y, rotation} }`, **Then** each pane opens at
-  its saved position so the pair returns to where it was saved — the
+  its saved position so every pane returns to where it was saved — the
   relative offset between saved entries is the alignment around different
   highlights; entries that don't match the shape are ignored.
 - **Given** `permissions.can_edit`, **Then** a **Save view** button appears
-  and clicking it PUTs both panes' current viewports as `viewport_state`
-  with the collection `version`; a failure surfaces `userMessage` on the
-  snackbar. Non-editors never see **Save view**.
+  and clicking it PUTs every rendered pane's current viewport as
+  `viewport_state` with the collection `version`; a failure surfaces
+  `userMessage` on the snackbar. Non-editors never see **Save view**.
 - **Given** the **Reset view** button (everyone), **When** clicked, **Then**
   each pane re-applies its saved position — or its home when nothing is
-  saved — and the link offset re-arms.
+  saved — and the link baselines re-arm.
 - **Given** the **Link views** switch, **When** toggled off, **Then** each
-  pane moves independently; **When** toggled back on, **Then** the pair
-  re-captures the current alignment instead of snapping.
+  pane moves independently; **When** toggled back on, **Then** the panes
+  re-capture the current alignment instead of snapping.
 - **Given** `(orientation: portrait)`, **Then** a full-area hint
   ("rotate your device") covers the pane area while the viewers stay mounted
   underneath, and rotating back restores the exact view.
 - **Given** fewer than two visible members (or fewer than two whose tiles
   survive), **Then** a fallback alert shows the ordered member list with
   per-row **Open image** links; members whose tiles fail mid-session are
-  skipped so the pair slides forward.
+  skipped so the surviving panes slide forward.
 
 ### "Add to Collection" from the image view (`AddToCollectionDialog.test.tsx`, `useAddToCollection.test.tsx`, `App.test.tsx`)
 

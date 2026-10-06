@@ -37,6 +37,7 @@ All seed users share the password `password`.
 | Delete own collections‖                  | Yes   | Yes        | Yes\* | Yes\*   |
 | Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
 | Manage collection owners‖                | Yes   | Yes\*      | No    | No      |
+| Hide/show collections‖                   | Yes   | Yes        | No    | No      |
 | Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
 | Create/update categories                 | Yes   | Yes        | No    | No      |
 | Delete categories                        | Yes   | Yes        | No    | No      |
@@ -63,7 +64,9 @@ authority. See [docs/groups.md](docs/groups.md).
 † Students are subject to the program/group dual-gate visibility filter.
 
 ¶ Students see collections they co-own, public collections, and restricted
-collections that pass both the program and group gates; images they cannot
+collections that pass both the program and group gates — except
+curatorially hidden ones, which drop out of student view unless the student
+co-owns them; images they cannot
 open are omitted from collection responses. Admins, instructors and staff see
 every collection. Edit/delete/owner-management authority (admin, co-owner, or
 instructor in the owning program) is described in

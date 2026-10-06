@@ -14,8 +14,9 @@ import * as SequenceCollectionViewerStories from './SequenceCollectionViewer.sto
 <Title />
 
 <Subtitle>
-  The read-only viewer for sequence collections: one image at a time with Previous/Next, a position
-  readout, thumbnail-strip navigation, arrow-key support, and an editor-only reorder mode.
+  The read-only viewer for sequence collections: one image at a time with edge-overlay Previous/Next
+  buttons (revealed on pointer activity), a position readout, thumbnail-strip navigation, arrow-key
+  support, and an editor-only reorder mode.
 </Subtitle>
 
 ## When to use
@@ -42,18 +43,26 @@ browser history.
   where annotations can be edited with the usual permissions.
 - **Per-image reset.** The viewer is keyed by image id, so switching items remounts it — no
   viewport state bleeds between images.
-- **Navigation.** Previous/Next buttons, strip thumbnails (`Go to {name}` buttons), and
-  ←/→ arrow keys all change the current item. Arrow keys are handled on keydown-capture at
-  the sequence container so OpenSeadragon's own keyboard panning never sees them; editable
-  targets (inputs, textareas, selects, textboxes) are ignored, and the keys are given back
-  to dnd-kit's keyboard sensor while reordering.
+- **Navigation.** Lightbox-style Previous/Next chevrons overlay the viewport's left/right
+  edges (#1561), fading in on pointer activity over the frame and back out after ~2 s idle
+  or on leave — like the OSD toolbar's `autoHideControls`; keyboard focus reveals them too
+  (the buttons stay mounted, only opacity and pointer-events toggle). Strip thumbnails
+  (`Go to {name}` buttons) and ←/→ arrow keys also change the current item. Arrow keys are
+  handled on keydown-capture at the sequence container so OpenSeadragon's own keyboard
+  panning never sees them; editable targets (inputs, textareas, selects, textboxes) are
+  ignored, and the keys are given back to dnd-kit's keyboard sensor while reordering.
+- **Strip highlight.** The current thumbnail's ring is an `outline` pulled _inside_ the
+  thumbnail box with a negative `outline-offset` — an outward outline was clipped
+  asymmetrically by the strip's `overflow-x` scroll port, cropping the highlight (#1561).
 - **Fallback states.** An empty collection shows "no visible images"; if the current image's
   tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
   nearest still-available image. When every image has failed, an error alert replaces the
   viewer.
-- **Reorder.** Editors (`permissions.canEdit`) get a Reorder toggle that swaps the strip for
-  `useSortable` thumbnails. On drop the hook PUTs the full id list with the collection
-  version (optimistic update, rollback on error); non-editors never see the toggle.
+- **Reorder.** The Reorder toggle lives in the detail header between **Move** and **Edit**
+  (#1559); the viewer takes `reordering` as a controlled prop and reports exits via
+  `onReorderingChange`. While active the strip swaps for `useSortable` thumbnails. On drop the
+  hook PUTs the full id list with the collection version (optimistic update, rollback on
+  error).
 - **Token renewal.** `onTileSourceRenewed` forwards the viewer's refreshed `ApiImage` to
   `onImageRenewed`, and `RenewingThumbnail` does the same for strip thumbnails, so short-lived
   tile/thumb tokens keep working.

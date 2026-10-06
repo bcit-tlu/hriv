@@ -647,6 +647,65 @@ export function useCollectionsData({
   )
 
   /**
+   * Curatorial hide/show (#1559): PATCHes `hidden` through the same OCC
+   * `version` gate as other writes — queued with reorder/viewport saves and
+   * merged-on-409 like `move`/`transfer` so a toggle posted while a viewer
+   * write is in flight doesn't lose to it. `canHide`-gated (admin /
+   * instructor); owners cannot unhide their own collections server-side.
+   */
+  const setHidden = useCallback((id: number, hidden: boolean): Promise<Collection> => {
+    const run = async (prior: Collection | null): Promise<Collection> => {
+      let baseline = baselineFor(id, prior)
+      if (!baseline || baseline.id !== id) {
+        baseline = apiCollectionToCollection(await fetchCollection(id))
+      }
+      try {
+        const updated = apiCollectionToCollection(
+          await updateCollection(id, { hidden, version: baseline.version }),
+        )
+        setDetail((prev) => (prev?.id === id ? updated : prev))
+        setCollections((prev) => {
+          const rest = prev.filter((c) => c.id !== id)
+          return matchesCollectionFilters(
+            updated,
+            latest.current.filters,
+            latest.current.currentUser,
+          )
+            ? [updated, ...rest]
+            : rest
+        })
+        void latest.current.load()
+        return updated
+      } catch (err) {
+        // A 409 carries the authoritative record — merge it so a retry
+        // posts the fresh version instead of failing again.
+        const conflict = collectionConflictCurrent(err)
+        if (conflict) {
+          const current = apiCollectionToCollection(conflict)
+          setDetail((prev) => (prev?.id === id ? current : prev))
+          setCollections((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              current,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [current, ...rest]
+              : rest
+          })
+        }
+        throw err
+      }
+    }
+    const queued = mutationQueue.current.then(run, () => run(null))
+    mutationQueue.current = queued.then(
+      (updated) => updated,
+      () => null,
+    )
+    return queued
+  }, [])
+
+  /**
    * Merge an authoritative collection record into the open detail and the
    * Collections-page list row (`matchesCollectionFilters` decides list
    * membership, as in `move`). No list reload: the response record is
@@ -744,6 +803,7 @@ export function useCollectionsData({
     move,
     transfer,
     saveOwners,
+    setHidden,
     addImages,
     removeImages,
     renewCollectionImage,

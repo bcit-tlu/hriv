@@ -41,6 +41,7 @@ const collection: CollectionSummary = {
   description: 'Sequence slides for the second lab.',
   type: 'sequence',
   visibility: 'public',
+  hidden: false,
   owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
   imageCount: 9,
   coverThumb: null,
@@ -49,7 +50,13 @@ const collection: CollectionSummary = {
   version: 3,
   createdAt: FIXED_AT,
   updatedAt: FIXED_AT,
-  permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
+  permissions: {
+    canEdit: true,
+    canDelete: true,
+    canChangeScope: true,
+    canTransfer: false,
+    canHide: false,
+  },
 }
 
 const meta = {

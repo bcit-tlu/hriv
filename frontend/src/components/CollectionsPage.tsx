@@ -1,6 +1,7 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -11,22 +12,28 @@ import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CollectionsIcon from '@mui/icons-material/Collections'
+import DoneIcon from '@mui/icons-material/Done'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
+import ReorderIcon from '@mui/icons-material/Reorder'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import HomeIcon from '@mui/icons-material/Home'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import { userMessage, type ApiImage } from '../api'
 import {
   COLLECTION_TYPE_LABELS,
   describeCollectionOwner,
   describeCollectionOwners,
 } from '../collectionUtils'
-import { getGroupChipColors } from '../theme'
+import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import type { CollectionPageType } from './AppShell'
+import { buildCategoryPaths } from './CategoryBreadcrumb'
 import type { CollectionListFilters, CollectionOwnerFilter } from '../useCollectionsData'
 import type {
+  Category,
   Collection,
   CollectionOwner,
   CollectionSummary,
@@ -90,11 +97,19 @@ export interface CollectionsPageProps {
    * the dialog + snackbar.
    */
   onMoveCollection?: (collection: CollectionSummary) => void
+  /** Browse category tree — resolves the detail breadcrumb's location (#1559). */
+  categories: Category[]
   /**
-   * Label for the detail view's back button (#1529): `?cat=` context means
-   * "Back to Browse", otherwise "All collections".
+   * Navigate to a Browse category path (`[]` = root). The detail header's
+   * breadcrumb uses this: `Home : …ancestors : collection name` (#1559).
    */
-  detailBackLabel?: string
+  onNavigateCategory: (categoryPath: Category[]) => void
+  /**
+   * Curatorial hide/show (#1559): PATCHes `hidden` on the open collection.
+   * Rejects with an ApiError; the page surfaces the message via
+   * `onViewerError` and re-disables the link while in flight.
+   */
+  onToggleHidden: (collection: Collection) => Promise<unknown>
 }
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
@@ -102,37 +117,86 @@ function ownerFilterKey(owner: CollectionOwnerFilter): string {
   return owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
 }
 
-/** Shared header for the collection detail views (placeholder + viewers). */
+/**
+ * Shared header for the collection detail views (#1559): a Browse-style
+ * category-location breadcrumb (`Home` at the root) instead of a back
+ * link; the visibility and restriction chips sit left of the action
+ * buttons, mirroring the restricted category/image header convention.
+ */
 function CollectionDetailHeader({
   collection,
   programs,
   groups,
-  onBack,
-  backLabel = 'All collections',
+  categoryPath,
+  onNavigateCategory,
   onEdit,
   onTransfer,
   onMove,
+  reordering,
+  onToggleReorder,
+  togglingHidden,
+  onToggleHidden,
 }: {
   collection: Collection
   programs: Program[]
   groups: Group[]
-  onBack: () => void
-  backLabel?: string
+  categoryPath: Category[]
+  onNavigateCategory: (categoryPath: Category[]) => void
   onEdit?: () => void
   onTransfer?: () => void
   onMove?: () => void
+  /** Sequence collections only: controlled reorder mode lifted from the viewer. */
+  reordering?: boolean
+  onToggleReorder?: () => void
+  togglingHidden?: boolean
+  onToggleHidden?: () => void
 }) {
   const { mode } = useColorMode()
   const groupColors = getGroupChipColors(mode)
+  const visColors = getVisibilityColors(mode)
   const programOwner = collection.owners.find((o) => o.kind === 'program')
   const ownerText = programOwner
     ? `Managed by program ${programOwner.name}`
     : describeCollectionOwners(collection.owners)
   return (
     <>
-      <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ mb: 1 }}>
-        {backLabel}
-      </Button>
+      {/* Category-location breadcrumb (#1559): Home → ancestors → the
+          collection itself — the image/category header convention, but the
+          full filed path (no depth elision) since a collection's canonical
+          location is the point. Segments navigate to the Browse scope. */}
+      <Breadcrumbs
+        aria-label="collection breadcrumb"
+        data-testid="collection-breadcrumb"
+        sx={{ mb: 1 }}
+      >
+        <Link
+          component="button"
+          variant="body2"
+          underline="hover"
+          color="inherit"
+          onClick={() => onNavigateCategory([])}
+          sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer' }}
+        >
+          <HomeIcon fontSize="small" />
+          Home
+        </Link>
+        {categoryPath.map((cat, i) => (
+          <Link
+            key={cat.id}
+            component="button"
+            variant="body2"
+            underline="hover"
+            color="inherit"
+            onClick={() => onNavigateCategory(categoryPath.slice(0, i + 1))}
+            sx={{ cursor: 'pointer' }}
+          >
+            {cat.label}
+          </Link>
+        ))}
+        <Typography variant="body2" color="text.primary">
+          {collection.name}
+        </Typography>
+      </Breadcrumbs>
       <Box
         sx={{
           display: 'flex',
@@ -143,9 +207,20 @@ function CollectionDetailHeader({
         }}
       >
         <Box>
-          <Typography variant="h5" component="h1" sx={{ wordBreak: 'break-word' }}>
-            {collection.name}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h5" component="h1" sx={{ wordBreak: 'break-word' }}>
+              {collection.name}
+            </Typography>
+            {collection.hidden && (
+              <Chip
+                size="small"
+                icon={<VisibilityOffIcon />}
+                label="Hidden"
+                data-testid="collection-hidden-chip"
+                sx={{ bgcolor: visColors.inactiveChipBg, color: '#fff' }}
+              />
+            )}
+          </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             {ownerText} · {collection.images.length}{' '}
             {collection.images.length === 1 ? 'image' : 'images'}
@@ -167,30 +242,6 @@ function CollectionDetailHeader({
               color="primary"
               label={COLLECTION_TYPE_LABELS[collection.type]}
             />
-            <CollectionVisibilityChip visibility={collection.visibility} />
-            {collection.visibility === 'restricted' && (
-              <>
-                {collection.programIds.map((pid) => (
-                  <Chip
-                    key={`p${pid}`}
-                    size="small"
-                    variant="outlined"
-                    color="primary"
-                    data-testid="detail-program-chip"
-                    label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
-                  />
-                ))}
-                {collection.groupIds.map((gid) => (
-                  <Chip
-                    key={`g${gid}`}
-                    size="small"
-                    data-testid="detail-group-chip"
-                    label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
-                    sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText }}
-                  />
-                ))}
-              </>
-            )}
           </Box>
           {collection.description && (
             <Typography variant="body1" sx={{ mt: 2, whiteSpace: 'pre-wrap' }}>
@@ -198,7 +249,53 @@ function CollectionDetailHeader({
             </Typography>
           )}
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
+          {/* Visibility + restriction chips lead the action row (#1559),
+              mirroring where program chips render on restricted
+              categories/images. */}
+          <CollectionVisibilityChip visibility={collection.visibility} />
+          {collection.visibility === 'restricted' && (
+            <>
+              {collection.programIds.map((pid) => (
+                <Chip
+                  key={`p${pid}`}
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  data-testid="detail-program-chip"
+                  label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                />
+              ))}
+              {collection.groupIds.map((gid) => (
+                <Chip
+                  key={`g${gid}`}
+                  size="small"
+                  data-testid="detail-group-chip"
+                  label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                  sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText }}
+                />
+              ))}
+            </>
+          )}
+          {/* Hide/show leads the actions — the same spot the image viewer's
+              "Hide/Show Image" text-button occupies (#1559). */}
+          {collection.permissions.canHide && onToggleHidden && (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={collection.hidden ? <VisibilityOffIcon /> : <VisibilityIcon />}
+              disabled={togglingHidden}
+              onClick={onToggleHidden}
+              data-testid="collection-hide-toggle"
+              sx={
+                collection.hidden
+                  ? { color: visColors.inactive, filter: 'grayscale(100%)' }
+                  : undefined
+              }
+            >
+              {collection.hidden ? 'Show collection' : 'Hide collection'}
+            </Button>
+          )}
           {onMove && (
             <Button
               variant="outlined"
@@ -207,6 +304,18 @@ function CollectionDetailHeader({
               onClick={onMove}
             >
               Move
+            </Button>
+          )}
+          {onToggleReorder && collection.permissions.canEdit && (
+            <Button
+              variant={reordering ? 'contained' : 'outlined'}
+              size="small"
+              startIcon={reordering ? <DoneIcon /> : <ReorderIcon />}
+              onClick={onToggleReorder}
+              aria-pressed={reordering}
+              data-testid="sequence-reorder-toggle"
+            >
+              {reordering ? 'Done' : 'Reorder'}
             </Button>
           )}
           {collection.permissions.canEdit && onEdit && (
@@ -260,14 +369,40 @@ export default function CollectionsPage({
   onSaveOwners,
   onTransfer,
   onMoveCollection,
-  detailBackLabel,
+  categories,
+  onNavigateCategory,
+  onToggleHidden,
   collectionPageType,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
   const [editLoadError, setEditLoadError] = useState<string | null>(null)
   const [transferTarget, setTransferTarget] = useState<CollectionSummary | null>(null)
+  const [togglingHidden, setTogglingHidden] = useState(false)
+  // Reorder mode for the sequence viewer — lifted so its toggle lives in
+  // the detail header between Move and Edit (#1559). Resets whenever the
+  // open collection changes or the detail closes.
+  const [reordering, setReordering] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset reorder mode when a different collection opens
+    setReordering(false)
+  }, [selectedCollectionId])
   const editRequestRef = useRef(0)
+
+  const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
+  const detailCategoryPath = useMemo(() => {
+    if (detail?.categoryId == null) return []
+    const seg = categoryPaths.get(detail.categoryId)
+    return seg ? [...seg.ancestors, seg.category] : []
+  }, [categoryPaths, detail])
+
+  const handleToggleHidden = () => {
+    if (!detail || togglingHidden) return
+    setTogglingHidden(true)
+    void onToggleHidden(detail)
+      .catch((err: unknown) => onViewerError(userMessage(err, 'Failed to update the collection.')))
+      .finally(() => setTogglingHidden(false))
+  }
 
   const isAdmin = currentUser?.role === 'admin'
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
@@ -349,7 +484,7 @@ export default function CollectionsPage({
             severity="error"
             action={
               <Button color="inherit" size="small" onClick={onCloseCollection}>
-                All collections
+                Back
               </Button>
             }
           >
@@ -364,13 +499,17 @@ export default function CollectionsPage({
             collection={detail}
             programs={programs}
             groups={groups}
-            onBack={onCloseCollection}
-            backLabel={detailBackLabel}
+            categoryPath={detailCategoryPath}
+            onNavigateCategory={onNavigateCategory}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
             onMove={
               canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
             }
+            reordering={reordering}
+            onToggleReorder={() => setReordering((v) => !v)}
+            togglingHidden={togglingHidden}
+            onToggleHidden={handleToggleHidden}
           />
           <SequenceCollectionViewer
             collection={detail}
@@ -380,6 +519,8 @@ export default function CollectionsPage({
             onReorder={(imageIds) => onReorderImages(detail.id, imageIds)}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
+            reordering={reordering}
+            onReorderingChange={setReordering}
           />
         </Box>
       )
@@ -390,13 +531,15 @@ export default function CollectionsPage({
             collection={detail}
             programs={programs}
             groups={groups}
-            onBack={onCloseCollection}
-            backLabel={detailBackLabel}
+            categoryPath={detailCategoryPath}
+            onNavigateCategory={onNavigateCategory}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
             onMove={
               canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
             }
+            togglingHidden={togglingHidden}
+            onToggleHidden={handleToggleHidden}
           />
           <SynchronizedCollectionViewer
             collection={detail}

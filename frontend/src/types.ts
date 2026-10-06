@@ -103,6 +103,8 @@ export interface CollectionPermissions {
   /** Whether the caller may change visibility/program/group scope (#1531). */
   canChangeScope: boolean
   canTransfer: boolean
+  /** Curatorial hide/unhide — admins and instructors only (#1559). */
+  canHide: boolean
 }
 
 export interface CollectionSummary {
@@ -111,6 +113,9 @@ export interface CollectionSummary {
   description: string | null
   type: CollectionType
   visibility: CollectionVisibility
+  /** Curatorial hide (#1559): hidden collections are invisible to students
+   * who don't own them; owners keep access. */
+  hidden: boolean
   /** User co-owners plus the optional program owner; empty means orphaned (#1531). */
   owners: CollectionOwner[]
   imageCount: number

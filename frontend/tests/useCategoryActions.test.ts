@@ -1328,7 +1328,7 @@ describe('useCategoryActions', () => {
       const col = makeCollectionSummary({
         id: 7,
         categoryId: 1,
-        permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
       })
       const cat = makeCategory({ id: 1, collections: [col] })
       const addImagesToCollectionApi = vi.fn()

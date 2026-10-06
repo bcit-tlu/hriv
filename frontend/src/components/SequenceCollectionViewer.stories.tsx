@@ -61,6 +61,7 @@ function makeCollection(images: ImageItem[], canEdit: boolean): Collection {
     description: null,
     type: 'sequence',
     visibility: 'private',
+    hidden: false,
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: images.length,
     coverThumb: '/hriv-splash2.jpg',
@@ -69,7 +70,13 @@ function makeCollection(images: ImageItem[], canEdit: boolean): Collection {
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit, canDelete: canEdit, canChangeScope: canEdit, canTransfer: false },
+    permissions: {
+      canEdit,
+      canDelete: canEdit,
+      canChangeScope: canEdit,
+      canTransfer: false,
+      canHide: false,
+    },
     images,
     programIds: [],
     groupIds: [],
@@ -99,6 +106,7 @@ const EMPTY = makeCollection([], true)
 interface StoryArgs {
   collection: Collection
   itemId: number | null
+  reordering: boolean
   onSelectItem: (id: number) => void
   onOpenImage: (image: ImageItem) => void
   onReorder: (imageIds: number[]) => Promise<void>
@@ -108,6 +116,7 @@ interface StoryArgs {
 
 function SequenceViewerExample(args: StoryArgs) {
   const [itemId, setItemId] = useState<number | null>(args.itemId)
+  const [reordering, setReordering] = useState(args.reordering)
   const user = makeUser()
   return (
     <AuthContext.Provider value={makeAuth(user)}>
@@ -122,6 +131,8 @@ function SequenceViewerExample(args: StoryArgs) {
         onReorder={args.onReorder}
         onImageRenewed={args.onImageRenewed}
         onError={args.onError}
+        reordering={reordering}
+        onReorderingChange={setReordering}
       />
     </AuthContext.Provider>
   )
@@ -138,13 +149,14 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: Previous/Next toolbar, position readout, Open image link, thumbnail strip navigation, arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
+          'Read-only one-image-at-a-time viewer for sequence collections: lightbox-style Previous/Next edge buttons that appear on pointer activity, position readout, Open image link, thumbnail strip navigation, arrow-key support, and an editor-only reorder mode backed by the collection images endpoint.',
       },
     },
   },
   args: {
     collection: MANY_IMAGES,
     itemId: null,
+    reordering: false,
     onSelectItem: fn(),
     onOpenImage: fn(),
     onReorder: fn(async () => undefined),
@@ -161,6 +173,9 @@ export const Basic: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 6')
+    // The edge-overlay nav only becomes interactive on pointer activity
+    // (#1561) — hover the frame the way a real user would before clicking.
+    await userEvent.hover(canvas.getByTestId('sequence-viewer-frame'))
     await userEvent.click(canvas.getByRole('button', { name: 'Next image' }))
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('2 of 6')
     await expect(args.onSelectItem).toHaveBeenCalledWith(102)
@@ -180,12 +195,11 @@ export const SingleImage: Story = {
 
 export const ReorderMode: Story = {
   name: 'Reorder Mode',
-  args: { collection: MANY_IMAGES },
+  args: { collection: MANY_IMAGES, reordering: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const toggle = canvas.getByTestId('sequence-reorder-toggle')
-    await userEvent.click(toggle)
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // The Reorder/Done toggle lives in the collection detail header (#1559);
+    // the viewer receives `reordering` as a controlled prop.
     await expect(
       canvas.getByText('Drag the thumbnails to reorder the sequence, then choose Done.'),
     ).toBeInTheDocument()
@@ -197,7 +211,9 @@ export const ReadOnlyMember: Story = {
   args: { collection: READ_ONLY },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.queryByTestId('sequence-reorder-toggle')).not.toBeInTheDocument()
+    await expect(
+      canvas.queryByText('Drag the thumbnails to reorder the sequence, then choose Done.'),
+    ).not.toBeInTheDocument()
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 2')
   },
 }

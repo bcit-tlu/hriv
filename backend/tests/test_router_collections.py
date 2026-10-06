@@ -92,6 +92,7 @@ def _collection(
     type: str = "sequence",
     category_id: int | None = None,
     sort_order: int = 0,
+    hidden: bool = False,
 ) -> SimpleNamespace:
     # ``user_id`` is the creator audit column; ownership is the ``owners``
     # list (``collection_owners`` rows), defaulting to the creator like the
@@ -118,6 +119,7 @@ def _collection(
         owner_program=owner_program,
         category_id=category_id,
         sort_order=sort_order,
+        hidden=hidden,
         viewport_state={"1": {"zoom": 1.0}},
         version=3,
         created_at=NOW,
@@ -195,6 +197,8 @@ def _write_db(
         if isinstance(obj, Collection):
             if obj.id is None:
                 obj.id = 1
+            if obj.hidden is None:
+                obj.hidden = False
             if obj.created_at is None:
                 obj.created_at = NOW
             if obj.updated_at is None:
@@ -941,6 +945,121 @@ async def test_update_scope_on_non_restricted_is_422() -> None:
         )
     assert exc.value.status_code == 422
     assert col.version == 3
+
+
+# ── curatorial hide (#1559) ────────────────────────────────
+
+
+async def test_list_hidden_collection_visible_to_owning_student_only() -> None:
+    """A hidden collection drops out of every student's list unless the
+    student is a user-owner — owners keep access."""
+    cols = [
+        _collection(1, "public", user_id=10, hidden=True),
+        _collection(2, "public", user_id=2, hidden=True),
+        _collection(3, "public", user_id=10),
+    ]
+    out = await list_collections(_user("student", id=2), db=_mock_db(cols))
+    assert [c.id for c in out] == [2, 3]
+
+
+async def test_list_non_students_see_hidden_collections() -> None:
+    col = _collection(1, "public", user_id=10, hidden=True)
+    for role in ("admin", "instructor", "staff"):
+        out = await list_collections(_user(role, id=99), db=_mock_db([col]))
+        assert [c.id for c in out] == [1]
+
+
+async def test_get_hidden_collection_is_404_for_nonowner_student() -> None:
+    col = _collection(1, "public", user_id=10, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await get_collection(1, _user("student", id=2), db=_mock_db(get=col))
+    assert exc.value.status_code == 404
+
+
+async def test_get_hidden_collection_visible_to_owning_student() -> None:
+    col = _collection(1, "private", user_id=2, hidden=True)
+    out = await get_collection(1, _user("student", id=2), db=_mock_db(get=col))
+    assert out.hidden is True
+
+
+@pytest.mark.parametrize("role", ["admin", "instructor"])
+async def test_update_hidden_curators_may_hide_any_collection(role: str) -> None:
+    """Hide is curatorial and global — a non-owning instructor may hide a
+    collection via a hidden-only PATCH; the owner-edit gate does not apply."""
+    col = _collection(1, "private", user_id=10)
+    out = await update_collection(
+        1, _patch(hidden=True), _user(role, id=7), db=_write_db(get=col)
+    )
+    assert col.hidden is True
+    assert out.hidden is True
+
+
+async def test_update_hidden_noop_repeat_still_allowed_for_curator() -> None:
+    """A hidden-only PATCH whose value matches the current flag is still a
+    curator action — the gate keys on the field being supplied, not on the
+    value changing (Devin Review on #1560)."""
+    col = _collection(1, "private", user_id=10, hidden=True)
+    out = await update_collection(
+        1, _patch(hidden=True), _user("instructor", id=7), db=_write_db(get=col)
+    )
+    assert out.hidden is True
+
+
+@pytest.mark.parametrize("role", ["student", "staff"])
+async def test_update_hidden_noncurator_owner_is_403(role: str) -> None:
+    """Owners may not hide — the toggle belongs to admins and instructors.
+    Supplying `hidden` at all requires curatorial rights, even a no-op."""
+    col = _collection(1, "private", user_id=2)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True), _user(role, id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_noop_value_from_owner_is_403() -> None:
+    """An owner supplying `hidden` — even the current value — is still a
+    hide/show request and requires curatorial rights."""
+    col = _collection(1, "private", user_id=2, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_owner_cannot_unhide() -> None:
+    col = _collection(1, "private", user_id=2, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=False), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_mixed_body_still_requires_edit_rights() -> None:
+    """Bundling ``hidden`` with content edits still requires can_edit — the
+    hidden-only carve-out for curators is exact."""
+    col = _collection(1, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True, name="x"), _user("instructor", id=7), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "role,expected",
+    [("admin", True), ("instructor", True), ("student", False), ("staff", False)],
+)
+async def test_permissions_can_hide_serializes_by_role(
+    role: str, expected: bool
+) -> None:
+    col = _collection(1, "private", user_id=2)
+    out = await update_collection(
+        1, _patch(name="x"), _user(role, id=2 if role != "admin" else 1), db=_write_db(get=col)
+    )
+    assert out.permissions.can_hide is expected
 
 
 # ── images ────────────────────────────────────────────────
