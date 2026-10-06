@@ -373,8 +373,9 @@ export default function CollectionEditDialog({
           </Alert>
         )}
         {/* Type leads — it's the most consequential option and immutable
-            after creation (#1567). */}
-        <Box sx={{ mt: 1 }}>
+            after creation (#1567). `mb: 2` balances the gap above it so the
+            section sits evenly between the title and the name field. */}
+        <Box sx={{ mt: 1, mb: 2 }}>
           <Typography variant="subtitle2" component="p" gutterBottom>
             Type
           </Typography>

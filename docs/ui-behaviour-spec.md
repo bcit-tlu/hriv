@@ -243,13 +243,20 @@ returned by the API (UX only — the backend re-checks).
   it is false, **Then** none of the affordances render.
 - **Given** a non-student opens **Manage → Collections**
   (`?page=manage-collections`), **Then** a table of every API-visible
-  collection renders (thumbnail, ID, name, type, visibility, owners, image
-  count, category breadcrumb, modified, actions) with stored filter facets,
-  sortable columns and pagination (#1554); **Given** a student deep-links the
+  collection renders (cover, ID, name, type, scope pill, owners, image
+  count, programs, groups, category breadcrumb, visibility switch,
+  created, modified, actions) with stored filter facets, sortable columns,
+  per-user persisted column visibility via **Choose columns**, and
+  pagination (#1554, #1567); **Given** a student deep-links the
   page, **Then** the table renders nothing (role gate) and telemetry reports
   browse.
+- **Given** a curatorially hidden collection row, **Then** its cells render
+  dimmed/greyscale like an inactive image row on Manage Images (#1567); the
+  **Visibility** switch (shown where `canHide`) PATCHes `hidden` and the
+  cover thumbnail always opens the collection view.
 - **Given** a staff user on the manage table, **Then** every API-returned row
-  shows and row actions follow `permissions` — Edit only where `canEdit`,
+  shows and the row's **actions** (⋮) menu follows `permissions` — View
+  always, Edit only where `canEdit` or curatorial filing applies,
   and never Owners/Delete; **Given** an admin or instructor, **Then**
   (where `canTransfer`) Owners is also offered. No row carries a Move action
   — category filing lives in the edit dialog's category picker (#1566).

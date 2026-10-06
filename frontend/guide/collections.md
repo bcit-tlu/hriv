@@ -213,7 +213,7 @@ picks up their changes so you can re-apply yours.
 
 If a collection shows an owners affordance (the **Owners** action in the
 card's cover overlay, the pencil beside the owner name on the collection
-page, or the icon on its Manage → Collections table row),
+page, or **Manage owners** in its Manage → Collections row menu),
 you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:
@@ -249,11 +249,20 @@ with **Owners**.
 The **Manage → Collections** table lists every collection you can see —
 both types together — in sortable columns with filter facets for name,
 type, visibility, owner, and category. The **Category** column links into
-Browse at that location. Rows offer the same actions the cards do where you
-have permission: **Edit** and **Owners** — filing lives in the edit
-dialog's Category picker, and delete stays inside the edit dialog. Clicking
-a row you can edit opens
-the editor; clicking a read-only row opens the collection itself.
+Browse at that location; the **Programs** and **Groups** columns show each
+collection's restriction scope (including scope inherited from its filed
+category, shown dimmed), and **Created**/**Modified** show dates. The
+**Visibility** switch hides or shows a collection to students where you
+have that permission — hidden rows render greyscale, just like the Manage
+Images table. Clicking a row's thumbnail opens the collection itself.
+
+Use **Choose columns** to show or hide columns — the choice is remembered
+between sessions, as on the Manage Images table. Rows offer actions
+through a single **actions** (⋮) menu where you have permission: **View**,
+**Edit**, and **Manage owners** — filing lives in the edit dialog's
+Category picker, and delete stays inside the edit dialog. Clicking a row
+you can edit opens the editor; clicking a read-only row opens the
+collection itself.
 
 ## Share a link
 

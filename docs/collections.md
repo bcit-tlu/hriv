@@ -633,17 +633,29 @@ persisted under the `manage-collections` table-preferences key), sortable
 columns (`TableSortLabel`), client-side `TablePagination` with the shared
 rows-per-page preference, and a Category column rendering
 `CategoryBreadcrumb` (extracted from `ManagePage`; segments link into
-Browse, hidden-subtree rows get the eye icon). Columns: thumbnail
+Browse, hidden-subtree rows get the eye icon). Columns (#1567): Cover
 (`RenewingThumbnail`), ID, Name (with a `VisibilityOff` marker on
-curatorially hidden rows, #1559), Type, Visibility
-(`CollectionVisibilityChip`), Owners (`describeCollectionOwners`), image
-count, Category, Modified, Actions.
+curatorially hidden rows, #1559), Type, Scope
+(`CollectionVisibilityChip` — the Private/Public/Restricted pill), Owners
+(`describeCollectionOwners`), image count, Programs and Groups (own scope
+solid plus the filed category's scope at inherited opacity), Category,
+**Visibility** (a per-row show/hide `Switch` gated on `permissions.canHide`,
+same as Manage Images' Visibility column), Created, Modified, Actions.
+Column visibility is user-persisted through **Choose columns**
+(`ColumnVisibilityDialog` + `useTableColumnPreferences` under the
+`manage-collections` columns key, same mechanism as `manage-images`).
+Rows hidden via the switch render greyscale/dimmed — `data-dimmed` cells,
+grayscale thumbnail, inactive-color chips — matching `ManagePage`'s
+inactive-image convention.
 
 **Actions.** Row click opens the edit dialog for `permissions.canEdit`
 rows — fetching the full record first, since summaries omit the restricted
 scope — and calls `onOpenCollection` (the collection detail view) for
-read-only rows. Action icons: **Edit** (`canEdit`), **Owners**
-(`canTransfer`, `CollectionOwnersDialog`). Rows carry no **Move** action —
+read-only rows; the cover thumbnail always navigates to the collection
+view (#1567, matching Manage Images). A single kebab **actions** button
+opens a contextual menu (#1567): **View** (always), **Edit**
+(`canEdit` or curatorial filing), **Manage owners** (`canTransfer`,
+`CollectionOwnersDialog`). Rows carry no **Move** action —
 category filing moved into the edit dialog's **Category** picker (#1566),
 with the Browse card's Move overlay and tile drag as the other curatorial
 paths. Staff therefore get Edit only where the API

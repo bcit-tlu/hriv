@@ -17,6 +17,8 @@ import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
+import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
@@ -198,6 +200,8 @@ function CollectionDetailHeader({
 }) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  // Same glyph the tile's cover-overlay type pill uses (#1567).
+  const TypeIcon = collection.type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
   const programOwner = collection.owners.find((o) => o.kind === 'program')
   const ownerText = programOwner
     ? `Managed by program ${programOwner.name}`
@@ -253,7 +257,14 @@ function CollectionDetailHeader({
             maxWidth: '100%',
           }}
         >
-          <Breadcrumbs aria-label="collection breadcrumb" data-testid="collection-breadcrumb">
+          {/* `flex: 1` lets the breadcrumb consume the slack so the
+              restriction chips land flush-left of the action buttons —
+              the exact mechanism the image/category headers use (#1567). */}
+          <Breadcrumbs
+            aria-label="collection breadcrumb"
+            data-testid="collection-breadcrumb"
+            sx={{ flex: '1 1 auto', minWidth: 0 }}
+          >
             <Link
               component="button"
               variant="body2"
@@ -370,21 +381,23 @@ function CollectionDetailHeader({
       </Box>
 
       {/* Second row (#1564): type + visibility pills to the left of the
-          owner line. Hidden state shows through the greyscale alone — no
-          chip (#1567). */}
+          owner line, all vertically centered (#1567). Hidden state shows
+          through the greyscale alone — no chip (#1567). */}
       <Box
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           gap: 1,
           mb: 1,
         }}
       >
+        {/* Type icon matches the tile's cover-overlay type pill (#1567). */}
         <Chip
           size="small"
           variant="outlined"
           color="primary"
+          icon={<TypeIcon />}
           label={COLLECTION_TYPE_LABELS[collection.type]}
           sx={hiddenSx}
         />
