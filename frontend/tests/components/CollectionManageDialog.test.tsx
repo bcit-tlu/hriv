@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import type { Collection } from '../../src/types'
@@ -107,6 +107,24 @@ describe('CollectionManageDialog', () => {
     const thumb = tile.querySelector('img')
     expect(thumb).toHaveStyle({ width: '72px', height: '72px' })
     expect(thumb).toHaveAttribute('alt', '')
+  })
+
+  it('keeps the remove badge inside the sortable node but outside the activator (#1567)', () => {
+    // The drag transform applies to the sortable element — the badge must be
+    // its descendant so it rides along, and outside the activator (which the
+    // lib marks role=button) so nested-interactive stays clean and the badge
+    // can never initiate a drag.
+    renderDialog()
+    const tile = screen.getByTestId('manage-tile-100')
+    const removeBtn = within(tile).getByRole('button', {
+      name: 'Remove Slice 1 from collection',
+    })
+    expect(tile).toContainElement(removeBtn)
+    // The lib applies role=button to the activator asynchronously — the
+    // synchronous marker is our aria-label on the handle element.
+    const activator = tile.querySelector('[aria-label="Drag to reorder Slice 1"]')
+    expect(activator).not.toBeNull()
+    expect(activator).not.toContainElement(removeBtn)
   })
 
   it('hands its staging channel to onAddImages from the + affordance', () => {

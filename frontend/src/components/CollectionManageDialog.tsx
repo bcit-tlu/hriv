@@ -131,8 +131,11 @@ interface SortableMemberTileProps {
 }
 
 /** One member tile — a 72×72 thumb over a one-line caption, like a
-    miniature Browse tile. The corner button removes without dragging;
-    `preventActivation` on IconButton keeps it from starting a drag. */
+    miniature Browse tile. The sortable `ref` rides the outer wrapper so the
+    drag transform moves the corner remove badge with the tile; `handleRef`
+    scopes the activator (role/tabindex/listeners) to the tile face only, so
+    the badge inside the transformed wrapper stays outside the activator —
+    no nested-interactive axe violation and no accidental drag pickup. */
 function SortableMemberTile({
   image,
   index,
@@ -140,26 +143,27 @@ function SortableMemberTile({
   onRemove,
   onImageRenewed,
 }: SortableMemberTileProps) {
-  const { ref, isDragSource } = useSortable({
+  const { ref, handleRef, isDragSource } = useSortable({
     id: itemIdFor(image.id),
     index,
     type: 'collection-manage-item',
     disabled,
   })
   return (
-    // The remove control is a positioned *sibling* of the sortable tile, not
-    // a descendant — a focusable button inside a role=button trips axe's
-    // nested-interactive rule (#1566).
-    <Box sx={{ position: 'relative', width: 96 }}>
+    <Box
+      ref={ref}
+      data-testid={`manage-tile-${image.id}`}
+      sx={{
+        position: 'relative',
+        width: 96,
+        // The whole source dims mid-drag — face and corner badge together.
+        opacity: isDragSource ? 0.4 : disabled ? 0.6 : 1,
+      }}
+    >
       <Box
-        ref={ref}
-        // Focusable so the dnd-kit KeyboardSensor can pick the tile up.
-        tabIndex={0}
-        role="button"
+        ref={handleRef}
         aria-label={`Drag to reorder ${image.name}`}
-        data-testid={`manage-tile-${image.id}`}
         sx={{
-          opacity: isDragSource ? 0.4 : disabled ? 0.6 : 1,
           cursor: disabled ? 'default' : isDragSource ? 'grabbing' : 'grab',
           '&:focus-visible': { outline: '2px solid', outlineColor: 'info.main' },
         }}

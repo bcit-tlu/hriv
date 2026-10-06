@@ -35,9 +35,12 @@ are added to or removed from a collection outside the global search/Browse add g
 ## Implementation guidance
 
 - **Tiles.** Each member renders a 72×72 `RenewingThumbnail` with a one-line caption — the same
-  thumbnail size the sequence filmstrip uses. A corner ✕ removes the member without dragging;
-  pointer activation needs 8px of movement so clicks still reach it (same sensor policy as
-  `SortableTileGrid`: 8px pointer distance, 250ms touch delay, no activation on IconButtons).
+  thumbnail size the sequence filmstrip uses. A corner ✕ removes the member without dragging. The
+  sortable `ref` rides the outer wrapper so the drag transform carries the badge with the tile,
+  while `handleRef` scopes the activator (role/tabindex/listeners) to the tile face — the badge
+  sits inside the transformed wrapper but outside the activator, so it can't start a drag and
+  there's no nested-interactive axe violation. Pointer activation needs 8px of movement (same
+  sensor policy as `SortableTileGrid`: 8px pointer distance, 250ms touch delay).
 - **Draft staging.** Opening seeds a local draft from the detail's members; every operation —
   reorder, remove, trash-drop, search-add — mutates only the draft, so the page behind the dialog
   never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls
