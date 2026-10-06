@@ -3,15 +3,18 @@ import OpenSeadragon from 'openseadragon'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import FormControlLabel from '@mui/material/FormControlLabel'
+import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemAvatar from '@mui/material/ListItemAvatar'
 import ListItemText from '@mui/material/ListItemText'
 import Paper from '@mui/material/Paper'
-import Switch from '@mui/material/Switch'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { alpha } from '@mui/material/styles'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import PushPinIcon from '@mui/icons-material/PushPin'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import ScreenRotationIcon from '@mui/icons-material/ScreenRotation'
@@ -104,7 +107,10 @@ export default function SynchronizedCollectionViewer({
   const canEdit = collection.permissions.canEdit
   const isPortrait = usePortrait()
   const [failedIds, setFailedIds] = useState<ReadonlySet<number>>(() => new Set())
-  const [syncEnabled, setSyncEnabled] = useState(true)
+  // Per-pane pinning (#1564): every pane starts pinned — views linked.
+  // Unpinning detaches that pane so it pans/zooms/rotates independently
+  // until re-pinned; pinning is per member, not a global on/off switch.
+  const [unpinnedIds, setUnpinnedIds] = useState<ReadonlySet<number>>(() => new Set())
   const [saving, setSaving] = useState(false)
 
   // OSD handles arrive through onViewerReady. They are registered by image
@@ -114,12 +120,12 @@ export default function SynchronizedCollectionViewer({
   const viewersByImage = useRef(new Map<number, OpenSeadragon.Viewer>())
   const openedRef = useRef(new Set<number>())
   // Arm snapshot: every opened pane's viewport at the epoch anchor (all
-  // panes opened / link re-enabled / reset). A leader's displacement from
-  // its baseline is applied additively to each follower's baseline — the
-  // N-pane generalization of the original pairwise offset (#1561).
+  // panes opened / a pane re-pinned / reset). A leader's displacement from
+  // its baseline is applied additively to each pinned follower's baseline —
+  // the N-pane generalization of the original pairwise offset (#1561).
   const baselineRef = useRef(new Map<number, ViewportState>())
   const syncingRef = useRef(false)
-  const syncEnabledRef = useRef(true)
+  const unpinnedRef = useRef<ReadonlySet<number>>(unpinnedIds)
   // Bumped on every registration change to re-run the attach effect.
   const [readyTick, setReadyTick] = useState(0)
 
@@ -132,16 +138,16 @@ export default function SynchronizedCollectionViewer({
     if (previousCollectionId.current === collectionId) return
     previousCollectionId.current = collectionId
     setFailedIds(new Set())
-    setSyncEnabled(true)
-    syncEnabledRef.current = true
+    setUnpinnedIds(new Set())
+    unpinnedRef.current = new Set()
     baselineRef.current.clear()
     viewersByImage.current.clear()
     openedRef.current.clear()
   }, [collectionId])
 
   useEffect(() => {
-    syncEnabledRef.current = syncEnabled
-  }, [syncEnabled])
+    unpinnedRef.current = unpinnedIds
+  }, [unpinnedIds])
 
   const available = useMemo(
     () => images.filter((img) => !failedIds.has(img.id)),
@@ -271,14 +277,16 @@ export default function SynchronizedCollectionViewer({
       // viewport restore has already settled when baselines are captured.
       const markOpened = () => {
         openedRef.current.add(image.id)
-        if (syncEnabledRef.current && openedRef.current.size >= 2) {
+        if (openedRef.current.size >= 2) {
           // Re-arm whenever a pane joins: the newcomers' saved positions and
           // the already-linked panes' current positions become the epoch.
           armBaselines()
         }
       }
       const onViewportChange = () => {
-        if (!syncEnabledRef.current || syncingRef.current) return
+        // An unpinned leader moves on its own; pinned leaders still drive
+        // the remaining pinned panes (#1564).
+        if (unpinnedRef.current.has(image.id) || syncingRef.current) return
         if (!openedRef.current.has(image.id)) return
         const leader = readViewport(viewer)
         const leaderBase = baselineRef.current.get(image.id)
@@ -297,6 +305,8 @@ export default function SynchronizedCollectionViewer({
         try {
           for (const other of panes) {
             if (other.id === image.id || !openedRef.current.has(other.id)) continue
+            // Unpinned panes do not follow a leader's movement.
+            if (unpinnedRef.current.has(other.id)) continue
             const followerBase = baselineRef.current.get(other.id)
             const follower = viewersByImage.current.get(other.id)
             if (!followerBase || !follower) continue
@@ -324,12 +334,23 @@ export default function SynchronizedCollectionViewer({
     }
   }, [panes, readyTick, armBaselines])
 
-  const handleSyncToggle = useCallback(
-    (on: boolean) => {
-      setSyncEnabled(on)
-      syncEnabledRef.current = on
-      // Re-arming preserves whatever relative alignment was set while unlinked.
-      if (on) armBaselines()
+  /**
+   * Toggle one pane's pin (#1564). Re-pinning re-arms the epoch so the pane
+   * rejoins the linked group from wherever it is now — no snap back to the
+   * position it held when it was unpinned.
+   */
+  const handlePinToggle = useCallback(
+    (imageId: number) => {
+      const rePinned = unpinnedRef.current.has(imageId)
+      const next = new Set(unpinnedRef.current)
+      if (rePinned) {
+        next.delete(imageId)
+      } else {
+        next.add(imageId)
+      }
+      unpinnedRef.current = next
+      setUnpinnedIds(next)
+      if (rePinned) armBaselines()
     },
     [armBaselines],
   )
@@ -451,17 +472,9 @@ export default function SynchronizedCollectionViewer({
           mb: 1,
         }}
       >
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={syncEnabled}
-              onChange={(_e, on) => handleSyncToggle(on)}
-              data-testid="synchronized-sync-toggle"
-            />
-          }
-          label="Link views"
-        />
+        {/* Panes start pinned (linked); the per-pane pin in each viewport's
+            top-right corner replaces the old global "Link views" switch
+            (#1564). */}
         {images.length > panes.length && (
           <Typography variant="body2" color="text.secondary">
             Showing {panes.length} of {images.length}
@@ -499,47 +512,89 @@ export default function SynchronizedCollectionViewer({
               : { display: 'flex', gap: 2 }
           }
         >
-          {paneProps.map(({ image, pane }) => (
-            <Box key={image.id} sx={gridPanes ? { minWidth: 0 } : { flex: 1, minWidth: 0 }}>
-              <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                <ImageViewer
-                  tileSources={image.tileSources}
-                  imageId={image.id}
-                  categoryId={image.categoryId ?? undefined}
-                  height={gridPanes ? '34vh' : '55vh'}
-                  initialViewport={pane.initialViewport}
-                  initialOverlays={pane.initialOverlays}
-                  overlaysLocked={pane.initialOverlays != null}
-                  canvasAnnotations={pane.canvasAnnotations}
-                  canEditContent={false}
-                  measurement={pane.measurement}
-                  onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
-                  onTileSourceRenewed={onImageRenewed}
-                  onError={(message) => handleViewerError(image, message)}
-                />
-              </Paper>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  noWrap
-                  sx={{ flex: 1, minWidth: 0 }}
+          {paneProps.map(({ image, pane }) => {
+            const pinned = !unpinnedIds.has(image.id)
+            return (
+              <Box key={image.id} sx={gridPanes ? { minWidth: 0 } : { flex: 1, minWidth: 0 }}>
+                <Paper
+                  elevation={3}
+                  sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden' }}
                 >
-                  {image.name}
-                  {!image.active ? ' (inactive)' : ''}
-                </Typography>
-                <Button
-                  size="small"
-                  variant="text"
-                  endIcon={<OpenInNewIcon />}
-                  onClick={() => onOpenImage(image)}
-                  aria-label={`Open ${image.name}`}
-                >
-                  Open image
-                </Button>
+                  <ImageViewer
+                    tileSources={image.tileSources}
+                    imageId={image.id}
+                    categoryId={image.categoryId ?? undefined}
+                    height={gridPanes ? '34vh' : '55vh'}
+                    initialViewport={pane.initialViewport}
+                    initialOverlays={pane.initialOverlays}
+                    overlaysLocked={pane.initialOverlays != null}
+                    canvasAnnotations={pane.canvasAnnotations}
+                    canEditContent={false}
+                    measurement={pane.measurement}
+                    onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
+                    onTileSourceRenewed={onImageRenewed}
+                    onError={(message) => handleViewerError(image, message)}
+                  />
+                  {/* Pin sits top-right of the viewport (the ImageViewer's
+                      own toolbar docks bottom-left, so no overlap). Pinned =
+                      linked; unpinning detaches this pane's pan/zoom/rotate
+                      (#1564). */}
+                  <Tooltip
+                    title={
+                      pinned
+                        ? 'Unpin view — pan, zoom and rotate independently'
+                        : 'Pin view — link pan, zoom and rotation with the other panes'
+                    }
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label={pinned ? `Unpin ${image.name}` : `Pin ${image.name}`}
+                      aria-pressed={pinned}
+                      onClick={() => handlePinToggle(image.id)}
+                      data-testid={`pin-toggle-${image.id}`}
+                      sx={(theme) => ({
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        zIndex: 30,
+                        color: 'common.white',
+                        bgcolor: alpha(theme.palette.common.black, pinned ? 0.55 : 0.3),
+                        '&:hover': {
+                          bgcolor: alpha(theme.palette.common.black, pinned ? 0.7 : 0.5),
+                        },
+                      })}
+                    >
+                      {pinned ? (
+                        <PushPinIcon fontSize="small" />
+                      ) : (
+                        <PushPinOutlinedIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                </Paper>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    noWrap
+                    sx={{ flex: 1, minWidth: 0 }}
+                  >
+                    {image.name}
+                    {!image.active ? ' (inactive)' : ''}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="text"
+                    endIcon={<OpenInNewIcon />}
+                    onClick={() => onOpenImage(image)}
+                    aria-label={`Open ${image.name}`}
+                  >
+                    Open image
+                  </Button>
+                </Box>
               </Box>
-            </Box>
-          ))}
+            )
+          })}
         </Box>
 
         {isPortrait && (

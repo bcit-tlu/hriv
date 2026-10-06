@@ -270,18 +270,22 @@ returned by the API (UX only — the backend re-checks).
   **When** they open a card's **Owners** action and assign an owner, **Then**
   `PUT /api/collections/{id}/owners` is sent and the card leaves the
   filtered list.
-- **Given** the collection detail, **Then** the header shows owners as a
-  comma-joined list (`describeCollectionOwners` — user names, `_X_ (program)`
-  for a program owner, `No owner` when orphaned), the visibility chip, and —
-  when `restricted` — a chip per attached program and group.
-- **Given** a collection detail is open (#1559), **Then** the header leads
-  with a `MuiBreadcrumbs` of its filed location (Home icon + category
-  ancestors + the collection name as the current item — matching the image
-  viewer, which renders **Home / ‹image name›** at the root — and there is
-  no "All collections" back link); each breadcrumb link navigates Browse to
-  that spot. **Then**
-  the top-right row orders: visibility chip (Public/Private/Restricted) —
-  with a `Hidden` chip beside the title when `hidden` — then **Hide
+- **Given** the collection detail, **Then** below the top container the
+  pills row shows the type chip (Synchronized / Sequence), the visibility
+  chip, a `Hidden` chip when `hidden`, and — when `restricted` — a chip per
+  attached program and group sits right after the breadcrumb; the owner
+  line (`describeCollectionOwners` — user names, `_X_ (program)` for a
+  program owner, `No owner` when orphaned) and description sit beside/below
+  the pills.
+- **Given** a collection detail is open (#1559, #1564), **Then** the header
+  mirrors the image view's top container — no `<h1>` title; the
+  `MuiBreadcrumbs` of its filed location (Home icon + category ancestors +
+  the collection name as the current item followed by a muted `(N images)`
+  count — matching the image viewer, which renders **Home / ‹image name›**
+  at the root — and there is no "All collections" back link) shares one row
+  with the action buttons on the right; each breadcrumb link navigates
+  Browse to that spot. **Then**
+  the actions order: **Hide
   collection** / **Show collection** (`canHide` — admins and instructors
   only; PATCHes `hidden` with the OCC version), **Move** (admin/instructor),
   **Reorder** (sequence + `canEdit` — the viewer's strip goes into drag mode
@@ -347,12 +351,19 @@ full contract. Mounted by the collection detail for `sequence` collections;
 always read-only (`canEditContent={false}`).
 
 - **Given** a sequence collection is open with no `?item=`, **Then** the
-  first member renders with an `1 of N` position readout, the edge-overlay
+  thumbnail filmstrip renders _above_ the viewer (#1564), the first member
+  renders with the caption row under the viewport (member name left;
+  `1 of N` position readout and **Open image** right — the synchronized
+  pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
   locked overlays / measurement shown read-only.
 - **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
+- **Given** a sequence collection opens, **Then** the viewer region
+  autofocuses (#1564) so ← / → step the sequence immediately; switching
+  images does not re-steal focus, but opening another collection focuses
+  it again.
 - **Given** the pointer enters or moves over the viewer frame, **Then** the
   lightbox-style **Previous** / **Next** chevrons fade in on the left/right
   edges; **Then** after ~2 s idle or on pointer leave they fade out again
@@ -404,9 +415,11 @@ measurement metadata.
 - **Given** the **Reset view** button (everyone), **When** clicked, **Then**
   each pane re-applies its saved position — or its home when nothing is
   saved — and the link baselines re-arm.
-- **Given** the **Link views** switch, **When** toggled off, **Then** each
-  pane moves independently; **When** toggled back on, **Then** the panes
-  re-capture the current alignment instead of snapping.
+- **Given** each pane's **pin** button at the top-right of its viewport
+  (#1564), **Then** panes start pinned (linked); **When** a pane is
+  unpinned, **Then** it pans/zooms/rotates independently — it neither leads
+  nor follows the linked panes; **When** re-pinned, **Then** the baselines
+  re-capture the current alignment so the pane rejoins without snapping.
 - **Given** `(orientation: portrait)`, **Then** a full-area hint
   ("rotate your device") covers the pane area while the viewers stay mounted
   underneath, and rotating back restores the exact view.
