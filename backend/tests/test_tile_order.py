@@ -262,12 +262,12 @@ async def test_put_stale_revision_returns_409_with_current_state(mocked_helpers)
     db.rollback.assert_awaited()
 
 
-async def test_put_invalid_submission_returns_422(mocked_helpers):
+async def test_put_invalid_submission_returns_400(mocked_helpers):
     db = AsyncMock()
     body = _request([("category", 1), ("category", 2)])  # image 10 missing
     with pytest.raises(HTTPException) as excinfo:
         await put_tile_order(body, _admin(), db)
-    assert excinfo.value.status_code == 422
+    assert excinfo.value.status_code == 400
     mocked_helpers.apply.assert_not_awaited()
     db.commit.assert_not_awaited()
 
@@ -479,7 +479,7 @@ async def test_root_scope_excludes_unfiled_collections_and_reorders_other_tiles(
             _admin(),
             db_session,
         )
-    assert excinfo.value.status_code == 422
+    assert excinfo.value.status_code == 400
     assert "Collections not in scope" in excinfo.value.detail
 
     category_scope = await get_tile_order(_admin(), parent_id, db_session)
@@ -516,7 +516,7 @@ async def test_collections_invisible_to_contract_when_disabled(
     )
     with pytest.raises(HTTPException) as excinfo:
         await put_tile_order(body, _admin(), db_session)
-    assert excinfo.value.status_code == 422
+    assert excinfo.value.status_code == 400
     assert "Collections not in scope" in excinfo.value.detail
 
 
@@ -539,7 +539,7 @@ async def test_put_rejects_duplicate_missing_and_foreign_ids(db_session):
         )
         with pytest.raises(HTTPException) as excinfo:
             await put_tile_order(body, _admin(), db_session)
-        assert excinfo.value.status_code == 422
+        assert excinfo.value.status_code == 400
 
 
 @requires_db

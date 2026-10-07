@@ -13,7 +13,6 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { privateFilingWarning } from '../collectionUtils'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { collectionConflictCurrent, userMessage } from '../api'
@@ -24,6 +23,7 @@ import {
   SYNCHRONIZED_MAX_IMAGES,
   apiCollectionToCollection,
   canUseRestrictedVisibility,
+  privateFilingWarning,
 } from '../collectionUtils'
 import { getAttachableProgramIds } from '../programAttach'
 import { getVisibilityColors } from '../theme'

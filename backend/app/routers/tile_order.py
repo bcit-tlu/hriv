@@ -136,7 +136,7 @@ async def put_tile_order(
                 image_ids,
             )
             if error is not None:
-                raise HTTPException(status_code=422, detail=error)
+                raise HTTPException(status_code=400, detail=error)
             if body.expected_revision != current_revision:
                 stale_browse_revision = await get_browse_revision(db)
                 stale = await _authoritative_response(

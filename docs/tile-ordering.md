@@ -44,7 +44,7 @@ Both endpoints require the `instructor` role (or `admin`).
 `GET /api/tile-order` for the root (omitted `parent_category_id`) returns
 categories and images only. A category scope also includes collections filed
 in that category. Submitting an unfiled collection in a root `PUT` is
-rejected with HTTP 422 and `Collections not in scope`.
+rejected with HTTP 400 and `Collections not in scope`.
 
 ### `GET /api/tile-order?parent_category_id=<id|omitted>`
 
@@ -100,7 +100,7 @@ Within **one database transaction** the endpoint:
    `SELECT … FOR UPDATE`), serializing concurrent writers per scope;
 2. loads the scope's member IDs with set-based queries (categories and
    images at root; collections are queried only for a category scope);
-3. rejects duplicated, foreign-scope, or missing IDs (HTTP 422) — the
+3. rejects duplicated, foreign-scope, or missing IDs (HTTP 400) — the
    submitted items must be exactly the scope's members. A 400 can also mean
    scope membership changed underneath the client (a tile was moved in or
    out). Moves through the category/image update endpoints — and
