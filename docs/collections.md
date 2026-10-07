@@ -482,20 +482,19 @@ cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
 only once), name, image count, and a visibility chip that
-reuses the category restriction palette. Tiles never render owner names
-(#1567): a program-owned collection shows its program as a standard program
-chip stacked beneath the type pill, and user-owned tiles carry no owner
-reference. The type chip pins to a top-LEFT
-cover overlay (`top: 4, left: 4`, #1559) while **Move** and **Owners** stay
-top-right — two independent `absolute` overlays using the
-white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554), so
-the chip's position never shifts with the available actions. A curatorially
+reuses the category restriction palette. Tiles render no owner reference at
+all (#1567) — neither program nor user names appear on the card — and the
+collection type shows as a bare icon left of the title, the same spot the
+category tile's folder glyph occupies (`titleAccess` names it for screen
+readers). **Move** and **Owners** stay in the
+top-right `absolute` overlay using the
+white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554). A curatorially
 hidden card renders the same desaturated treatment as a hidden
 category/image tile plus a `VisibilityOff` affordance by the name (#1559).
 **Edit** is a pencil inline at the title row's right — the
 CategoryTile/ImageTile convention (#1567) — and Delete is
-gone from the card entirely (edit dialog only). Every collection-type pill
-(tile overlay, detail header, edit dialog, manage table) renders the shared
+gone from the card entirely (edit dialog only). Everywhere the type renders
+as a pill (detail header, edit dialog, manage table) it is the shared
 `CollectionTypeChip`: red (primary) outline and text on a white fill with
 the type's icon (#1567). Filters — type is the page,
 not a facet (#1554): a **My collections** chip (`mine=true`;
@@ -592,11 +591,15 @@ renders them. The actions are **Hide collection** / **Show collection**
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
 image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
 opens `CollectionManageDialog`, the mini-Browse member manager: drag to
-reorder, drag-to-trash or the corner control to remove, **Add Images** to
+reorder, drag-to-trash or the corner control to remove, **Select** +
+**Remove** to multi-pick members for removal, **Add** to
 add via the search flow — all staged locally until **Done** commits the
-staged list once; #1566/#1567), **Edit**, and an owners pencil beside the
-owner
-name (`canTransfer`). Filing moved into the edit dialog's **Category** picker —
+staged list once; #1566/#1567). **Edit** is a pencil on the final
+breadcrumb item — the Edit Category breadcrumb-pencil pattern — gated on
+`canEdit` or filing rights (`canFile`), and the owners affordance is the
+transfer-horizontal (`SwapHoriz`) icon beside the
+"Managed by …" line (`canTransfer`). Filing moved into the edit dialog's
+**Category** picker —
 the header carries no **Move** button (#1566). Below the top row, the **type
 pill** — the shared `CollectionTypeChip` with the type's icon
 (Synchronized / Sequence, #1567) — and the **visibility chip**
@@ -864,14 +867,25 @@ of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
 the locked `SortableTileGrid` collision contract is untouched). The dialog
 is a local draft editor (#1567): opening seeds the draft from the detail's
 member list, and every operation — `move()` reorder on drag-end, the corner
-remove control, a drop on the trash overlay, and picks returned by the
+remove control, a drop on the trash overlay, a selection-mode bulk removal,
+and picks returned by the
 add-images search flow (`onAddImages` → App opens `SearchModal`, whose
 selected `ImageItem`s land back in the draft via a staged-add channel) —
 mutates only the draft, so the detail page and filmstrip behind the dialog
 never move mid-edit. Dragging renders a `DragOverlay` replica while the
 source tile dims in place, and the trash `useDroppable` is a permanently
 registered fixed overlay at the bottom-right of the scroll area (hidden +
-`disabled` while idle). **Done** diffs the draft against the seeded order
+`disabled` while idle). Tiles keep `tabIndex`/`role="button"` on the
+activator face explicitly (not left to the dnd-kit a11y plugin's deferred
+injection) so keyboard reorder — Space/Enter to pick up, arrows to move —
+always reaches the `KeyboardSensor` (#1567). The header's **Select** toggle
+(`aria-pressed`) switches the grid into selection mode: sortables are
+disabled so clicks no longer arm drags, each tile face becomes a labelled
+`role="checkbox"` (click or Space/Enter toggles) with a corner check
+indicator replacing the ✕ badge, and a **Remove (N)** button stages the
+whole set at once; toggling Select off clears the set and restores the
+drag/remove affordances, and a fresh open always starts out of selection
+mode. **Done** diffs the draft against the seeded order
 and fires `onSaveMembers(imageIds)` once when it differs — a single
 `PUT /api/collections/{id}/images` whole-replace (`image_ids` + `version`)
 in `useCollectionsData.reorderImages`, which keeps `App`'s `detail` the
@@ -964,7 +978,7 @@ and no Collections chip appears.
 **Multi-select (image and category results).** A **Select** toggle next to
 the result count appears when image or category results exist (or select
 mode is already on) and `onAddImagesToCollection` is provided; the Manage
-dialog's **Add Images** flow opens the modal with select mode already on
+dialog's **Add** flow opens the modal with select mode already on
 (`initialSelectMode`). Image rows become labelled checkboxes
 (`Select {image name}`) inside a `<label>` row — clicking anywhere toggles —
 and category results check the same way: a checked category stages every
@@ -1039,9 +1053,12 @@ open detail (e.g. card-level reassignment). A saved row that no longer
 matches the current filters — reassigned away under **My collections**, or
 adopted out of **No owner (orphaned)** — leaves the list.
 
-**Detail header.** Shows the owners via `describeCollectionOwners` —
-co-owner names joined with commas, "Managed by program _X_" for
-program-owned collections, _No owner_ for orphans — plus the visibility
+**Detail header.** The owner line reads "Managed by …" for both management
+styles (#1567) — "Managed by program _X_" for program-owned collections and
+"Managed by _A, B_" for user-owned ones (names joined via
+`describeCollectionOwners`) — with _No owner_ left bare for orphans. The
+`canTransfer` owners affordance beside it is the transfer-horizontal
+(`SwapHoriz`) icon, not a pencil. The line sits beside the visibility
 chip and — for `restricted` — a chip per attached program and group using
 the shared group-chip palette.
 
@@ -1086,7 +1103,7 @@ the shared group-chip palette.
   every role when `collectionsEnabled` is false.
 - Per-type pages + manage table (#1554): `CollectionsPage.test.tsx`
   (locked `collectionPageType`, header filters, edit-dialog delete flow),
-  `CollectionCard.test.tsx` (cover-overlay type chip / Move / Owners,
+  `CollectionCard.test.tsx` (title-row type icon, Move/Owners overlay,
   non-propagating actions, no delete affordance),
   `CollectionEditDialog.test.tsx` (delete arm/confirm/failure, category
   picker save + hide link, #1566),
@@ -1114,9 +1131,9 @@ the shared group-chip palette.
   chip + Hide/Show link on
   `canHide`, `onToggleHidden` call + error surface),
   `CollectionManageDialog.test.tsx` (member grid, drag reorder, trash
-  drop target, add/remove callbacks),
-  `CollectionCard.test.tsx` (type chip in the left overlay independent of
-  right-side actions, hidden indicator), `useCollectionsData.test.ts`
+  drop target, add/remove callbacks, selection-mode bulk removal),
+  `CollectionCard.test.tsx` (type icon left of the title, actions overlay,
+  hidden indicator), `useCollectionsData.test.ts`
   (`setHidden` PATCH + 409 merge), `App.test.tsx` (`onNavigateCategory` /
   `onToggleHidden` wiring); backend `test_router_collections.py` (hidden
   list/detail visibility per role and owner, hidden-only PATCH authority,
@@ -1183,7 +1200,7 @@ the shared group-chip palette.
   user-owner autocomplete + chip removal, program select narrowing for
   instructors, program-select disabling the user picker, orphan-guard and
   403/409/422 inline errors; `canTransfer` affordances on cards and the
-  detail header, plural "Managed by program _X_" / `No owner` descriptions,
+  detail header, plural "Managed by …" / `No owner` descriptions,
   restricted scope chips, admin orphan reassignment; the `saveOwners` /
   `transfer` hooks' version resolution (open detail vs fetched),
   mutation-queue serialization behind a reorder, filtered-list removal, and

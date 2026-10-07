@@ -127,9 +127,77 @@ describe('CollectionManageDialog', () => {
     expect(activator).not.toContainElement(removeBtn)
   })
 
+  it('keeps the activator synchronously focusable for keyboard reorder (#1567)', () => {
+    // Regression: the handle-split must not drop the explicit
+    // tabIndex/role — without them the tile face can never receive focus,
+    // so Space/Enter never reach the KeyboardSensor.
+    renderDialog()
+    const activator = screen.getByRole('button', { name: 'Drag to reorder Slice 1' })
+    expect(activator).toHaveAttribute('tabindex', '0')
+  })
+
+  it('selects multiple members and removes them in one staged commit (#1567)', () => {
+    const { props } = renderDialog()
+    fireEvent.click(screen.getByTestId('collection-manage-select-toggle'))
+    // Faces switch to checkbox semantics; the per-tile ✕ is replaced by a
+    // selection indicator.
+    const face = screen.getByRole('checkbox', { name: 'Select Slice 1' })
+    expect(face).toHaveAttribute('aria-checked', 'false')
+    expect(
+      screen.queryByRole('button', { name: 'Remove Slice 1 from collection' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(face)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Slice 3' }))
+    expect(screen.getByTestId('collection-manage-remove-selected')).toHaveTextContent('Remove (2)')
+
+    fireEvent.click(screen.getByTestId('collection-manage-remove-selected'))
+    expect(screen.queryByTestId('manage-tile-100')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('manage-tile-102')).not.toBeInTheDocument()
+    expect(screen.getByTestId('manage-tile-101')).toBeInTheDocument()
+    // Staged only — nothing persists until Done.
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
+  })
+
+  it('toggles selection from the keyboard while select mode is on (#1567)', () => {
+    renderDialog()
+    fireEvent.click(screen.getByTestId('collection-manage-select-toggle'))
+    const face = screen.getByRole('checkbox', { name: 'Select Slice 2' })
+    face.focus()
+    fireEvent.keyDown(face, { key: ' ' })
+    expect(face).toHaveAttribute('aria-checked', 'true')
+    fireEvent.keyDown(face, { key: 'Enter' })
+    expect(face).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('leaving select mode restores the drag affordances and clears the set (#1567)', () => {
+    renderDialog()
+    fireEvent.click(screen.getByTestId('collection-manage-select-toggle'))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Slice 1' }))
+    fireEvent.click(screen.getByTestId('collection-manage-select-toggle'))
+    // Drag semantics and the per-tile remove control are back.
+    expect(screen.getByRole('button', { name: 'Drag to reorder Slice 1' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Remove Slice 1 from collection' }),
+    ).toBeInTheDocument()
+    // Re-entering starts from a clean set — the bulk-remove button is
+    // disabled while nothing is picked.
+    fireEvent.click(screen.getByTestId('collection-manage-select-toggle'))
+    expect(screen.getByRole('checkbox', { name: 'Select Slice 1' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+    expect(screen.getByTestId('collection-manage-remove-selected')).toBeDisabled()
+  })
+
+  it('hides the Select toggle when the collection has no members (#1567)', () => {
+    renderDialog({ collection: manageCollection({ images: [], memberCount: 0 }) })
+    expect(screen.queryByTestId('collection-manage-select-toggle')).not.toBeInTheDocument()
+  })
+
   it('hands its staging channel to onAddImages from the + affordance', () => {
     const { props } = renderDialog()
-    fireEvent.click(screen.getByRole('button', { name: 'Add Images' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     expect(props.onAddImages).toHaveBeenCalled()
     const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
     expect(typeof stageAdd).toBe('function')
@@ -137,12 +205,12 @@ describe('CollectionManageDialog', () => {
 
   it('omits the + affordance when no onAddImages is wired', () => {
     renderDialog({ onAddImages: undefined })
-    expect(screen.queryByRole('button', { name: 'Add Images' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
   })
 
   it('staged search picks appear in the draft without persisting', () => {
     const { props } = renderDialog()
-    fireEvent.click(screen.getByRole('button', { name: 'Add Images' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
     let result: ReturnType<StageAddImages>
     act(() => {
@@ -156,7 +224,7 @@ describe('CollectionManageDialog', () => {
 
   it('reports already/full outcomes for staged picks', () => {
     const { props, unmount } = renderDialog()
-    fireEvent.click(screen.getByRole('button', { name: 'Add Images' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
     act(() => {
       // Every pick already a member → 'already'.
@@ -169,7 +237,7 @@ describe('CollectionManageDialog', () => {
       images: [1, 2, 3, 4].map((id) => makeImage({ id, name: `Img ${id}` })),
     })
     const full = renderDialog({ collection: sync })
-    fireEvent.click(screen.getByRole('button', { name: 'Add Images' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     const stageFull = full.props.onAddImages.mock.calls[0][0] as StageAddImages
     act(() => {
       expect(stageFull([makeImage({ id: 300 })]).status).toBe('full')
@@ -186,7 +254,7 @@ describe('CollectionManageDialog', () => {
       images: [1, 2, 3].map((id) => makeImage({ id, name: `Img ${id}` })),
     })
     const { props } = renderDialog({ collection: sync })
-    fireEvent.click(screen.getByRole('button', { name: 'Add Images' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
     act(() => {
       expect(stageAdd([makeImage({ id: 300 })]).status).toBe('full')
@@ -287,7 +355,7 @@ describe('CollectionManageDialog', () => {
   it('Done commits the full staged list once — reorder + removal + additions', async () => {
     const { props } = renderDialog()
     // Stage: reorder (100 → end) + remove 102 + add 200.
-    fireEvent.click(screen.getByRole('button', { name: 'Add Images' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
     act(() => {
       stageAdd([makeImage({ id: 200, name: 'Picked' })])

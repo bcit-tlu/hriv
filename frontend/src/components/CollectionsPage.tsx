@@ -16,6 +16,7 @@ import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
@@ -199,9 +200,13 @@ function CollectionDetailHeader({
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const programOwner = collection.owners.find((o) => o.kind === 'program')
+  // 'Managed by …' for program- and user-managed collections alike (#1567);
+  // an ownerless collection keeps the bare 'No owner' readout.
   const ownerText = programOwner
     ? `Managed by program ${programOwner.name}`
-    : describeCollectionOwners(collection.owners)
+    : collection.owners.length > 0
+      ? `Managed by ${describeCollectionOwners(collection.owners)}`
+      : 'No owner'
   // Hidden collections desaturate their controls like the hidden-image view's
   // `inactiveViewerActionSx` (#1566) — chips, Manage/Edit/Owners, and the
   // Hide link; the viewer imagery stays in color (same as the image page).
@@ -297,6 +302,19 @@ function CollectionDetailHeader({
               >
                 ({collection.images.length} {collection.images.length === 1 ? 'image' : 'images'})
               </Typography>
+              {/* Edit pencil on the final crumb — the Edit Category
+                  breadcrumb-pencil pattern (#1567). Opens for owners
+                  (canEdit) and curatorial filers (canFile). */}
+              {(collection.permissions.canEdit || canFile) && onEdit && (
+                <IconButton
+                  size="small"
+                  onClick={onEdit}
+                  aria-label="Edit collection"
+                  sx={{ ml: 0.25, ...hiddenSx }}
+                >
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
             </Box>
           </Breadcrumbs>
           {/* Restriction chips sit right after the breadcrumb — the same
@@ -359,20 +377,6 @@ function CollectionDetailHeader({
               Manage
             </Button>
           )}
-          {/* Edit opens for owners (canEdit) and for curatorial filers
-              (canFile) — the dialog disables metadata fields it can't write
-              and keeps the category picker live (#1567). */}
-          {(collection.permissions.canEdit || canFile) && onEdit && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<EditIcon />}
-              onClick={onEdit}
-              sx={hiddenSx}
-            >
-              Edit
-            </Button>
-          )}
         </Box>
       </Box>
 
@@ -398,8 +402,9 @@ function CollectionDetailHeader({
           <Typography variant="body2" color="text.secondary">
             {ownerText}
           </Typography>
-          {/* Owners management lives on the owner line — a pencil beside
-              the name opens the same dialog the old Owners button did. */}
+          {/* Owners management lives on the owner line — the
+              transfer-horizontal glyph beside the name opens the owners
+              dialog (#1567). */}
           {collection.permissions.canTransfer && onTransfer && (
             <Tooltip title="Manage owners">
               <IconButton
@@ -409,7 +414,7 @@ function CollectionDetailHeader({
                 data-testid="collection-owners-edit"
                 sx={{ ml: 0.25, p: 0.25, ...hiddenSx }}
               >
-                <EditIcon fontSize="small" />
+                <SwapHorizIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           )}

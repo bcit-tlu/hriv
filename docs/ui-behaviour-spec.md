@@ -190,10 +190,11 @@ returned by the API (UX only — the backend re-checks).
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
-- **Given** a `CollectionCard`, **Then** the type chip, **Move** and
+- **Given** a `CollectionCard`, **Then** the type icon sits left of the
+  title (the category folder-icon spot), **Move** and
   **Owners** actions sit in a top-right cover overlay (the CategoryTile
   scrim convention, #1554), **Edit** sits in the metadata area, and no
-  Delete affordance exists on the card.
+  Delete affordance or owner reference exists on the card (#1567).
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
@@ -287,10 +288,13 @@ returned by the API (UX only — the backend re-checks).
   the visibility
   chip, and — when `restricted` — a chip per
   attached program and group sits right after the breadcrumb; the owner
-  line (`describeCollectionOwners` — user names, `_X_ (program)` for a
-  program owner, `No owner` when orphaned, with the owners pencil beside it
+  line ("Managed by program _X_" or "Managed by _A, B_" —
+  `describeCollectionOwners`, `No owner` when orphaned, with the
+  transfer-horizontal owners icon beside it
   when `canTransfer`) sits beside the pills and the description renders
-  below the pills, left-aligned. Hidden state shows through greyscale
+  below the pills, left-aligned. **Edit** is a pencil on the final
+  breadcrumb item, like Edit Category — there is no right-side Edit button
+  (#1567). Hidden state shows through greyscale
   alone — no `Hidden` chip (#1567).
 - **Given** a collection detail is open (#1559, #1564), **Then** the header
   mirrors the image view's top container — no `<h1>` title; the

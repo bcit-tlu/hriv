@@ -16,8 +16,8 @@ import * as CollectionManageDialogStories from './CollectionManageDialog.stories
 <Subtitle>
   The member-management surface for a collection — a miniature Browse: every member as a
   filmstrip-size tile that reorders by drag-and-drop, a trash overlay pinned to the bottom-right
-  corner, and a "+" action that hands off to the global search/add flow. All edits stage in a local
-  draft and commit once via Done.
+  corner, a Select mode that multi-picks tiles for staged removal, and an Add action that hands off
+  to the global search/add flow. All edits stage in a local draft and commit once via Done.
 </Subtitle>
 
 ## When to use
@@ -39,8 +39,16 @@ are added to or removed from a collection outside the global search/Browse add g
   sortable `ref` rides the outer wrapper so the drag transform carries the badge with the tile,
   while `handleRef` scopes the activator (role/tabindex/listeners) to the tile face — the badge
   sits inside the transformed wrapper but outside the activator, so it can't start a drag and
-  there's no nested-interactive axe violation. Pointer activation needs 8px of movement (same
+  there's no nested-interactive axe violation. The face declares `tabIndex`/`role="button"`
+  explicitly rather than relying on the a11y plugin's deferred attribute injection, so keyboard
+  reorder (Space/Enter to pick up, arrows to move) always reaches the `KeyboardSensor` (#1567).
+  Pointer activation needs 8px of movement (same
   sensor policy as `SortableTileGrid`: 8px pointer distance, 250ms touch delay).
+- **Selection mode.** The header's **Select** toggle (`aria-pressed`) switches the grid into a
+  multi-pick removal mode (#1567): sortables are disabled so a click can never arm a drag, each
+  tile face becomes a labelled `role="checkbox"` (click, Space or Enter toggles) with a corner
+  check indicator replacing the ✕ badge, and a **Remove (N)** button stages the whole set in one
+  draft update. Leaving selection mode — or reopening the dialog — clears the set.
 - **Draft staging.** Opening seeds a local draft from the detail's members; every operation —
   reorder, remove, trash-drop, search-add — mutates only the draft, so the page behind the dialog
   never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls
@@ -58,7 +66,7 @@ are added to or removed from a collection outside the global search/Browse add g
   drag) as a fixed overlay at the bottom-right of the scroll area — invisible/disabled until a
   member drag starts — rather than a row that spawns mid-drag. Dropping a tile on it removes the
   member from the draft, same as the corner control.
-- **Add.** The title row's **Add Images** button (Browse's
+- **Add.** The title row's **Add** button (Browse's
   `AddPhotoAlternateIcon` convention) calls `onAddImages`; `App` opens the
   search modal in add-to-collection mode with multi-select already engaged
   (`initialSelectMode`). Search results check individually — and whole

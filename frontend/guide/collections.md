@@ -67,10 +67,12 @@ visible but can't be changed here.
   header opens a dialog of thumbnails — a miniature Browse view. Drag
   thumbnails to reorder, drop one on the trash drop target in the
   bottom-right corner (or click its corner remove icon) to take it out of
-  the collection, and click **Add Images** to pick through search — the
+  the collection, and click **Add** to pick through search — the
   search opens with **Select** already on, and you can tick individual
   images or a whole category (its images, and its sub-categories' images,
-  are added in their order in the category). Changes
+  are added in their order in the category). To remove several at once,
+  click **Select** in the dialog header: thumbnails become checkboxes —
+  tick the ones you want gone and click **Remove**. Changes
   apply inside the dialog only — **Done** saves them all at once, and
   closing without Done asks before discarding. This works for synchronized
   collections too.
@@ -181,8 +183,9 @@ Synchronized** in the app bar — then use the filters in the header row:
 - **Owner** – collections co-owned by a particular person, or owned by a
   program (not shown to students).
 
-Each card shows the cover image, how many images it holds, its owners, a
-type chip on the cover, and a visibility chip.
+Each card shows the cover image, how many images it holds, a type icon
+beside the name (carousel for a sequence, columns for a synchronized
+collection), and a visibility chip.
 
 Collections also appear in the top-bar **Search** — both name and
 description are searched, and the **Collections** chip narrows results to
@@ -191,7 +194,8 @@ just collections. Choosing a result opens it here.
 ## Edit or delete
 
 If you co-own a collection (or teach in the program that owns it), the card
-shows a **pencil** icon and the collection page shows an **Edit** button. A
+shows a **pencil** icon next to its name and the collection page shows a
+**pencil** at the end of its breadcrumb — either one opens the editor. A
 collection can have several user co-owners plus, or instead of, a program
 owner.
 
@@ -216,8 +220,9 @@ picks up their changes so you can re-apply yours.
 ## Manage owners
 
 If a collection shows an owners affordance (the **Owners** action in the
-card's cover overlay, the pencil beside the owner name on the collection
-page, or **Manage owners** in its Manage → Collections row menu),
+card's cover overlay, the transfer icon beside the "Managed by" line on the
+collection page, or **Manage owners** in its Manage → Collections row
+menu),
 you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:

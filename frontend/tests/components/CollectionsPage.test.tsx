@@ -442,7 +442,7 @@ describe('CollectionsPage', () => {
       const onDelete = vi.fn().mockResolvedValue(undefined)
       const detail = makeCollection({ id: 9, name: 'Open one' })
       renderPage({ selectedCollectionId: 9, detail, onCloseCollection, onDelete })
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       const dialog = await screen.findByRole('dialog')
       await user.click(within(dialog).getByRole('button', { name: 'Delete Collection' }))
       await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete Collection' }))
@@ -597,7 +597,7 @@ describe('CollectionsPage', () => {
           permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       })
-      expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Edit collection' })).not.toBeInTheDocument()
       // Delete lives only inside the edit dialog (#1554), never on the header.
       expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     })
@@ -610,7 +610,7 @@ describe('CollectionsPage', () => {
         detail: makeCollection({ id: 9, name: 'Open one' }),
         loadCollection,
       })
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       expect(await screen.findByText('Edit Collection')).toBeInTheDocument()
       expect(screen.getByDisplayValue('Open one')).toBeInTheDocument()
       expect(loadCollection).not.toHaveBeenCalled()
@@ -627,6 +627,30 @@ describe('CollectionsPage', () => {
         }),
       })
       expect(screen.getByText(/Managed by program Radiography/)).toBeInTheDocument()
+    })
+
+    it('shows Managed by for user-owned collections too, with the transfer icon (#1567)', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          owners: [
+            { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+            { kind: 'user', userId: 8, name: 'Grace Hopper' },
+          ],
+          permissions: {
+            canEdit: true,
+            canDelete: true,
+            canChangeScope: true,
+            canTransfer: true,
+            canHide: true,
+          },
+        }),
+      })
+      expect(screen.getByText('Managed by Ada Lovelace, Grace Hopper')).toBeInTheDocument()
+      // The owners affordance is the transfer-horizontal glyph, not a pencil.
+      const ownersBtn = screen.getByRole('button', { name: 'Manage owners' })
+      expect(within(ownersBtn).getByTestId('SwapHorizIcon')).toBeInTheDocument()
     })
 
     it('shows program and group restriction chips on a restricted detail', () => {
@@ -870,17 +894,21 @@ describe('CollectionsPage', () => {
   })
 
   describe('detail header actions (#1559)', () => {
-    it('renders Manage before Edit for both collection types and opens the member dialog (#1566)', async () => {
+    it('renders Manage in the actions and Edit as a breadcrumb pencil (#1567)', async () => {
       const user = userEvent.setup()
       const detail = makeCollection({ id: 9, type: 'sequence' })
       renderPage({ selectedCollectionId: 9, detail })
-      const buttons = screen.getAllByRole('button').map((b) => b.textContent)
-      const order = ['Manage', 'Edit'].map((label) => buttons.indexOf(label))
-      expect(order.every((i) => i >= 0)).toBe(true)
-      expect(order).toEqual([...order].sort((a, b) => a - b))
-
       await user.click(screen.getByRole('button', { name: 'Manage' }))
       expect(screen.getByTestId('collection-manage')).toBeInTheDocument()
+
+      // The right-side Edit button is gone (#1567) — the pencil sits inside
+      // the final breadcrumb item, like the Edit Category pattern, and opens
+      // the Edit Collection dialog.
+      expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+      const breadcrumb = screen.getByTestId('collection-breadcrumb')
+      const pencil = within(breadcrumb).getByRole('button', { name: 'Edit collection' })
+      await user.click(pencil)
+      expect(await screen.findByText('Edit Collection')).toBeInTheDocument()
 
       // Synchronized collections get the same surface.
       renderPage({
@@ -967,7 +995,7 @@ describe('CollectionsPage', () => {
       expect(screen.getByRole('button', { name: 'Manage' })).toHaveStyle({
         filter: 'grayscale(100%)',
       })
-      expect(screen.getByRole('button', { name: 'Edit' })).toHaveStyle({
+      expect(screen.getByRole('button', { name: 'Edit collection' })).toHaveStyle({
         filter: 'grayscale(100%)',
       })
       // …and the flag reaches the viewer so the filmstrip desaturates too.
@@ -1038,7 +1066,7 @@ describe('CollectionsPage', () => {
         onUpdate,
         onMoveCollectionToCategory,
       })
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       await user.click(await screen.findByRole('combobox', { name: 'Category' }))
       await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
       await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -1068,7 +1096,7 @@ describe('CollectionsPage', () => {
         ],
         onMoveCollectionToCategory,
       })
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       await user.click(await screen.findByRole('combobox', { name: 'Category' }))
       await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
       await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -1107,7 +1135,7 @@ describe('CollectionsPage', () => {
       })
 
       // Edit is offered for filing even though metadata editing is not.
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       expect(await screen.findByText('File Collection')).toBeInTheDocument()
       expect(screen.getByLabelText('Collection name')).toBeDisabled()
       await user.click(await screen.findByRole('combobox', { name: 'Category' }))
@@ -1151,7 +1179,7 @@ describe('CollectionsPage', () => {
         onMoveCollectionToCategory,
       })
 
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       const nameField = await screen.findByDisplayValue('Old name')
       await user.clear(nameField)
       await user.type(nameField, 'Renamed')
@@ -1192,7 +1220,7 @@ describe('CollectionsPage', () => {
         onUpdate,
         onMoveCollectionToCategory,
       })
-      await user.click(screen.getByRole('button', { name: 'Edit' }))
+      await user.click(screen.getByRole('button', { name: 'Edit collection' }))
       await user.click(await screen.findByRole('button', { name: 'Visibility: Hide collection' }))
       await user.click(screen.getByRole('button', { name: 'Save' }))
 

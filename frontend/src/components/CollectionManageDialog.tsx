@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -8,8 +9,11 @@ import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
+import SelectAllIcon from '@mui/icons-material/SelectAll'
 import { alpha, type Theme } from '@mui/material/styles'
 import {
   DragDropProvider,
@@ -31,8 +35,9 @@ import RenewingThumbnail from './RenewingThumbnail'
 /**
  * Member-management surface for a collection (#1566) — a miniature Browse:
  * the full member list as filmstrip-size tiles (72×72 thumbs) that reorder
- * by drag-and-drop, a per-tile remove control, and a trash drop-zone that
- * appears while dragging. "+" opens the global search modal so picked
+ * by drag-and-drop, a per-tile remove control, a trash drop-zone that
+ * appears while dragging, and a Select mode that multi-picks members for a
+ * staged bulk remove (#1567). "Add" opens the global search modal so picked
  * images join through the standard add flow.
  *
  * All membership edits are **staged** (#1567): reorders, removals and search
@@ -126,7 +131,11 @@ interface SortableMemberTileProps {
   image: ImageItem
   index: number
   disabled: boolean
+  /** Selection mode (#1567): tiles toggle a removal set instead of dragging. */
+  selecting: boolean
+  selected: boolean
   onRemove: (image: ImageItem) => void
+  onToggleSelect: (image: ImageItem) => void
   onImageRenewed: (image: ApiImage) => void
 }
 
@@ -140,48 +149,101 @@ function SortableMemberTile({
   image,
   index,
   disabled,
+  selecting,
+  selected,
   onRemove,
+  onToggleSelect,
   onImageRenewed,
 }: SortableMemberTileProps) {
+  // Selecting disables the sortable entirely (#1567): a click toggles the
+  // tile into the removal set instead of arming a drag — pointer AND
+  // keyboard (the sensor returns early on `source.disabled`).
   const { ref, handleRef, isDragSource } = useSortable({
     id: itemIdFor(image.id),
     index,
     type: 'collection-manage-item',
-    disabled,
+    disabled: disabled || selecting,
   })
+  const toggleSelect = useCallback(() => onToggleSelect(image), [image, onToggleSelect])
+  // role=checkbox needs an explicit Space/Enter handler — native checks get
+  // it free; this face is a div so keyboard parity lives here.
+  const handleSelectKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault()
+        toggleSelect()
+      }
+    },
+    [toggleSelect],
+  )
   return (
     <Box
       ref={ref}
       data-testid={`manage-tile-${image.id}`}
+      onClick={selecting ? toggleSelect : undefined}
       sx={{
         position: 'relative',
         width: 96,
         // The whole source dims mid-drag — face and corner badge together.
         opacity: isDragSource ? 0.4 : disabled ? 0.6 : 1,
+        borderRadius: 1,
+        outline: selecting && selected ? '2px solid' : 'none',
+        outlineColor: 'primary.main',
       }}
     >
       <Box
         ref={handleRef}
-        aria-label={`Drag to reorder ${image.name}`}
+        // Focusable so the dnd-kit KeyboardSensor can pick the tile up —
+        // declared explicitly rather than left to the a11y plugin's deferred
+        // attribute injection (#1567). In selection mode the same element is
+        // the toggle target, so its role/label swap to checkbox semantics.
+        tabIndex={0}
+        role={selecting ? 'checkbox' : 'button'}
+        aria-checked={selecting ? selected : undefined}
+        aria-label={selecting ? `Select ${image.name}` : `Drag to reorder ${image.name}`}
+        onKeyDown={selecting ? handleSelectKeyDown : undefined}
         sx={{
-          cursor: disabled ? 'default' : isDragSource ? 'grabbing' : 'grab',
+          cursor: selecting ? 'pointer' : disabled ? 'default' : isDragSource ? 'grabbing' : 'grab',
           '&:focus-visible': { outline: '2px solid', outlineColor: 'info.main' },
         }}
       >
         <MemberTileFace image={image} onImageRenewed={onImageRenewed} />
       </Box>
-      <IconButton
-        size="small"
-        aria-label={`Remove ${image.name} from collection`}
-        disabled={disabled}
-        onClick={() => onRemove(image)}
-        sx={{
-          ...removeBadgeSx,
-          '&:hover': { bgcolor: 'error.light', color: 'error.contrastText' },
-        }}
-      >
-        <CloseIcon />
-      </IconButton>
+      {selecting ? (
+        // Decorative check state — the face carries the checkbox role, so
+        // this glyph never needs to be focusable or clickable itself.
+        <Box
+          aria-hidden
+          data-testid={`select-indicator-${image.id}`}
+          sx={{
+            position: 'absolute',
+            top: -8,
+            left: -8,
+            zIndex: 1,
+            display: 'inline-flex',
+            lineHeight: 0,
+            color: selected ? 'primary.main' : 'action.active',
+            bgcolor: 'background.paper',
+            borderRadius: '50%',
+            pointerEvents: 'none',
+          }}
+        >
+          {selected ? <CheckCircleIcon /> : <RadioButtonUncheckedIcon />}
+        </Box>
+      ) : (
+        <IconButton
+          size="small"
+          aria-label={`Remove ${image.name} from collection`}
+          disabled={disabled}
+          onClick={() => onRemove(image)}
+          sx={{
+            ...removeBadgeSx,
+            '&:hover': { bgcolor: 'error.light', color: 'error.contrastText' },
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+      )}
     </Box>
   )
 }
@@ -273,9 +335,17 @@ export default function CollectionManageDialog({
     draftRef.current = next
     setDraft(next)
   }, [])
+  // Selection mode (#1567): a header toggle switches tiles from drag-order
+  // controls into a multi-pick removal set — mouse, touch and keyboard all
+  // share the same path (click/Space/Enter toggles, Remove stages once).
+  const [selecting, setSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(new Set())
   useEffect(() => {
     if (!open) {
       seededFor.current = null
+      // A fresh open always starts outside selection mode with an empty set.
+      setSelecting(false)
+      setSelectedIds(new Set())
       return
     }
     if (collection != null && seededFor.current !== collection.id) {
@@ -290,6 +360,30 @@ export default function CollectionManageDialog({
   const [dragging, setDragging] = useState(false)
   const [activeImage, setActiveImage] = useState<ImageItem | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const toggleSelectMode = useCallback(() => {
+    setSelecting((s) => !s)
+    // Entering or leaving always starts from a clean set.
+    setSelectedIds(new Set())
+  }, [])
+  const toggleSelectImage = useCallback((image: ImageItem) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(image.id)) next.delete(image.id)
+      else next.add(image.id)
+      return next
+    })
+  }, [])
+  // Count against the live draft so an id removed some other way can't
+  // inflate the button label or the removal set.
+  const selectedCount = useMemo(
+    () => draft.reduce((n, img) => (selectedIds.has(img.id) ? n + 1 : n), 0),
+    [draft, selectedIds],
+  )
+  const removeSelected = useCallback(() => {
+    updateDraft(draftRef.current.filter((img) => !selectedIds.has(img.id)))
+    setSelectedIds(new Set())
+  }, [selectedIds, updateDraft])
 
   /** The staged list differs from the seed-time member list (order or set). */
   const dirty = useMemo(
@@ -442,26 +536,69 @@ export default function CollectionManageDialog({
       fullWidth
       data-testid="collection-manage"
     >
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <DialogTitle
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 1,
+          flexWrap: 'wrap',
+        }}
+      >
         Manage images{collection ? ` — ${collection.name}` : ''}
-        {onAddImages && (
-          /* Labeled button with the Browse toolbar's Add-Images icon (#1567). */
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<AddPhotoAlternateIcon />}
-            onClick={() => onAddImages(stageAdd)}
-            disabled={saving}
-            data-testid="collection-manage-add"
-          >
-            Add Images
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Selection mode toggle (#1567): switches tiles into a multi-pick
+              removal set — drag-order is suspended while it's on. Stays
+              visible while selecting even if the draft empties, so the mode
+              is never stranded without its exit. */}
+          {(draft.length > 0 || selecting) && (
+            <Button
+              size="small"
+              variant={selecting ? 'contained' : 'outlined'}
+              startIcon={<SelectAllIcon />}
+              onClick={toggleSelectMode}
+              aria-pressed={selecting}
+              disabled={saving}
+              data-testid="collection-manage-select-toggle"
+            >
+              Select
+            </Button>
+          )}
+          {selecting && (
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              startIcon={<DeleteOutlineIcon />}
+              onClick={removeSelected}
+              disabled={selectedCount === 0 || saving}
+              data-testid="collection-manage-remove-selected"
+            >
+              Remove{selectedCount > 0 ? ` (${selectedCount})` : ''}
+            </Button>
+          )}
+          {onAddImages && (
+            /* Labeled button with the Browse toolbar's Add-Images icon (#1567). */
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddPhotoAlternateIcon />}
+              onClick={() => onAddImages(stageAdd)}
+              disabled={saving}
+              data-testid="collection-manage-add"
+            >
+              Add
+            </Button>
+          )}
+        </Box>
       </DialogTitle>
       <DialogContent sx={{ position: 'relative', minHeight: 220 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Drag thumbnails to reorder. Drag onto the bin, or use a tile&apos;s corner control, to
-          remove an image from the collection. Changes apply when you choose Done.
+          {selecting
+            ? 'Click thumbnails to select them, then Remove to stage the removal. ' +
+              'Choose Select again to go back to reordering.'
+            : 'Drag thumbnails to reorder. Drag onto the bin, or use a tile’s corner control, to ' +
+              'remove an image from the collection. Changes apply when you choose Done.'}
         </Typography>
         {hiddenRestrictedCount > 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
@@ -483,7 +620,10 @@ export default function CollectionManageDialog({
                     image={img}
                     index={index}
                     disabled={saving}
+                    selecting={selecting}
+                    selected={selectedIds.has(img.id)}
                     onRemove={(image) => remove(image.id)}
+                    onToggleSelect={toggleSelectImage}
                     onImageRenewed={onImageRenewed}
                   />
                 ))}

@@ -25,6 +25,7 @@ import type {
   Program,
 } from '../types'
 import type { SxProps, Theme } from '@mui/material/styles'
+import type { ComponentProps } from 'react'
 import { COLLECTION_TYPE_LABELS, COLLECTION_VISIBILITY_LABELS } from '../collectionUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -100,6 +101,16 @@ export function CollectionVisibilityChip({ visibility }: { visibility: Collectio
       }}
     />
   )
+}
+
+/** Bare type glyph (synchronized columns / sequence carousel) for spots that
+    show the icon without the pill — e.g. left of a tile title (#1567). */
+export function CollectionTypeIcon({
+  type,
+  ...props
+}: { type: CollectionType } & ComponentProps<typeof ViewCarouselIcon>) {
+  const TypeIcon = type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
+  return <TypeIcon titleAccess={COLLECTION_TYPE_LABELS[type]} {...props} />
 }
 
 /**
@@ -213,6 +224,16 @@ export default function CollectionCard({
         )}
         <CardContent sx={{ flexGrow: 1, width: '100%' }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+            {/* Type icon left of the title — the CategoryTile folder-icon
+                convention (#1567). `titleAccess` names it for screen readers. */}
+            <Tooltip title={COLLECTION_TYPE_LABELS[collection.type]}>
+              <CollectionTypeIcon
+                type={collection.type}
+                fontSize="small"
+                color="primary"
+                sx={{ flexShrink: 0 }}
+              />
+            </Tooltip>
             <Tooltip title={collection.name}>
               <Typography
                 variant="h6"
@@ -324,37 +345,9 @@ export default function CollectionCard({
           )}
         </CardContent>
       </CardActionArea>
-      {/* Cover-overlay controls (#1554/#1559/#1567): the type pill pins to
-          the top-left — with a program-owner chip stacked under it — while
-          curatorial actions stay top-right (CategoryTile scrim convention). */}
-      <Box
-        data-testid="collection-type-overlay"
-        sx={{
-          position: 'absolute',
-          top: 4,
-          left: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 0.5,
-        }}
-      >
-        <CollectionTypeChip type={collection.type} />
-        {/* A program-owned collection carries its program as a standard
-            program chip under the type pill (#1567); user-owned tiles show
-            nothing here. */}
-        {(() => {
-          const programOwner = collection.owners.find((o) => o.kind === 'program')
-          return programOwner?.kind === 'program' ? (
-            <Chip
-              data-testid="collection-owner-program-chip"
-              label={programOwner.name}
-              size="small"
-              color="primary"
-            />
-          ) : null
-        })()}
-      </Box>
+      {/* Cover-overlay controls (#1554/#1559): curatorial actions pin
+          top-right (CategoryTile scrim convention). The type/owner overlay
+          chips were removed in #1567 — the type icon sits by the title. */}
       <Box
         data-testid="collection-actions-overlay"
         sx={{

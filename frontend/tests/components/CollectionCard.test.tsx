@@ -9,7 +9,7 @@ vi.mock('../../src/api', async (importOriginal) => {
 })
 
 describe('CollectionCard', () => {
-  it('renders name, image count, type chip and visibility chip', () => {
+  it('renders name, image count, type icon and visibility chip', () => {
     render(
       <CollectionCard
         collection={makeCollectionSummary({ imageCount: 1, type: 'sequence' })}
@@ -18,11 +18,13 @@ describe('CollectionCard', () => {
     )
     expect(screen.getByText('Skull comparison')).toBeInTheDocument()
     expect(screen.getByText('1 image')).toBeInTheDocument()
-    // Owner names no longer render in tile metadata (#1567) — a
-    // program-owned collection shows a program chip under the type pill;
-    // user-owned tiles carry no owner reference.
+    // The type pill overlay is gone (#1567): the bare type icon sits left of
+    // the title like the category tile's folder glyph, exposed by the svg's
+    // <title> (titleAccess). Owner names never render in tile metadata.
+    const titleRow = screen.getByText('Skull comparison').parentElement as HTMLElement
+    expect(within(titleRow).getByTitle('Sequence')).toBeInTheDocument()
+    expect(screen.queryByTestId('collection-type-chip')).not.toBeInTheDocument()
     expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
-    expect(screen.getByTestId('collection-type-chip')).toHaveTextContent('Sequence')
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
     expect(screen.getByRole('img', { name: 'Skull comparison' })).toHaveAttribute(
       'src',
@@ -30,30 +32,24 @@ describe('CollectionCard', () => {
     )
   })
 
-  it('renders a program-owner chip under the type pill but never user names (#1567)', () => {
+  it('renders no owner reference — program or user — on the tile (#1567)', () => {
     render(
       <CollectionCard
         collection={makeCollectionSummary({
+          visibility: 'private',
+          programIds: [],
+          groupIds: [],
           owners: [
-            {
-              kind: 'user',
-              id: 2,
-              name: 'Ada Lovelace',
-              username: 'ada',
-              role: 'instructor',
-            },
-            { kind: 'program', id: 3, name: 'Dentistry' },
+            { kind: 'user', userId: 2, name: 'Ada Lovelace' },
+            { kind: 'program', programId: 3, name: 'Dentistry' },
           ],
         })}
         onOpen={vi.fn()}
       />,
     )
-    const overlay = screen.getByTestId('collection-type-overlay')
-    expect(within(overlay).getByTestId('collection-type-chip')).toBeInTheDocument()
-    expect(within(overlay).getByTestId('collection-owner-program-chip')).toHaveTextContent(
-      'Dentistry',
-    )
     expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Dentistry/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('collection-owner-program-chip')).not.toBeInTheDocument()
   })
 
   it('pluralises the image count and falls back to a placeholder cover', () => {
@@ -64,7 +60,8 @@ describe('CollectionCard', () => {
       />,
     )
     expect(screen.getByText('3 images')).toBeInTheDocument()
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    // No cover image — the only exposed graphic is the title-row type icon.
+    expect(screen.queryByRole('img', { name: 'Skull comparison' })).not.toBeInTheDocument()
   })
 
   it('opens the collection when the card body is clicked', () => {
@@ -166,7 +163,7 @@ describe('CollectionCard', () => {
     expect(onOpen).not.toHaveBeenCalled()
   })
 
-  it('pins the type chip to the left overlay, independent of the right-side actions (#1559)', () => {
+  it('keeps the type icon beside the title with curatorial actions pinned top-right (#1567)', () => {
     const collection = makeCollectionSummary({
       permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
     })
@@ -178,14 +175,15 @@ describe('CollectionCard', () => {
         onTransfer={vi.fn()}
       />,
     )
-    const left = screen.getByTestId('collection-type-overlay')
+    // The top-left type/owner overlay is gone — the title row carries the
+    // type glyph (before the name), actions stay in the top-right overlay.
+    expect(screen.queryByTestId('collection-type-overlay')).not.toBeInTheDocument()
     const right = screen.getByTestId('collection-actions-overlay')
-    expect(within(left).getByTestId('collection-type-chip')).toBeInTheDocument()
     expect(within(right).getByRole('button', { name: /Move .* to a category/ })).toBeInTheDocument()
-    // The chip does not share a container with the action icons, so its
-    // position never shifts with the available actions.
-    expect(within(right).queryByTestId('collection-type-chip')).not.toBeInTheDocument()
-    expect(within(left).queryByRole('button')).not.toBeInTheDocument()
+    const titleRow = screen.getByText('Skull comparison').parentElement as HTMLElement
+    const icon = within(titleRow).getByTitle('Synchronized')
+    const title = screen.getByText('Skull comparison')
+    expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('shows a hidden indicator and desaturated treatment on hidden collections (#1559)', () => {
