@@ -20,7 +20,14 @@ import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import SearchIcon from '@mui/icons-material/Search'
 import { AuthContext } from '../authContextValue'
-import { COLLECTION_TYPE_LABELS, SYNCHRONIZED_MAX_IMAGES } from '../collectionUtils'
+import {
+  COLLECTION_TYPE_LABELS,
+  collectionImageCap,
+  STUDENT_MAX_COLLECTIONS_PER_TYPE,
+  STUDENT_SEQUENCE_MAX_IMAGES,
+  studentTypesAtCap,
+  SYNCHRONIZED_MAX_IMAGES,
+} from '../collectionUtils'
 import type { CollectionSummary, Group, Program } from '../types'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
 
@@ -51,6 +58,8 @@ interface CollectionGroup {
 }
 
 export const CAP_REACHED_TOOLTIP = `Synchronized collections hold at most ${SYNCHRONIZED_MAX_IMAGES} images.`
+const STUDENT_SEQUENCE_CAP_REACHED_TOOLTIP = `Students can add at most ${STUDENT_SEQUENCE_MAX_IMAGES} images to a sequence collection.`
+const COLLECTIONS_AT_CAP_TOOLTIP = `You've reached the limit of ${STUDENT_MAX_COLLECTIONS_PER_TYPE} collections of each type.`
 
 export default function AddToCollectionDialog({
   open,
@@ -66,6 +75,8 @@ export default function AddToCollectionDialog({
 }: AddToCollectionDialogProps) {
   const auth = useContext(AuthContext)
   const currentUser = auth?.currentUser ?? null
+  const typesAtLimit = studentTypesAtCap(collections, currentUser)
+  const bothTypesAtLimit = typesAtLimit.size === 2
   const [query, setQuery] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -208,22 +219,19 @@ export default function AddToCollectionDialog({
                   }
                 >
                   {section.items.map((collection) => {
-                    // Only a genuinely-full synchronized collection is
-                    // disabled outright: `imageCount` cannot see which
-                    // selected ids are already members, so the capacity
-                    // check is left to `addImagesToCollection`, which
-                    // dedupes against the real member list and reports
-                    // 'full' only when the *new* images overflow.
-                    const full =
-                      collection.type === 'synchronized' &&
-                      collection.imageCount >= SYNCHRONIZED_MAX_IMAGES
+                    const cap = collectionImageCap(collection.type, currentUser?.role)
+                    const full = cap != null && collection.imageCount >= cap
                     const disabled = full || busy
+                    const fullTooltip =
+                      collection.type === 'synchronized'
+                        ? CAP_REACHED_TOOLTIP
+                        : STUDENT_SEQUENCE_CAP_REACHED_TOOLTIP
                     const countText = `${collection.imageCount} ${
                       collection.imageCount === 1 ? 'image' : 'images'
                     }`
                     return (
                       <ListItem key={collection.id} disablePadding>
-                        <Tooltip title={full ? CAP_REACHED_TOOLTIP : ''}>
+                        <Tooltip title={full ? fullTooltip : ''}>
                           <span style={{ display: 'block', width: '100%' }}>
                             <ListItemButton
                               disabled={disabled}
@@ -261,9 +269,17 @@ export default function AddToCollectionDialog({
           </Box>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'space-between' }}>
-          <Button startIcon={<AddIcon />} onClick={() => setCreateOpen(true)} disabled={busy}>
-            New collection…
-          </Button>
+          <Tooltip title={bothTypesAtLimit ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
+            <span>
+              <Button
+                startIcon={<AddIcon />}
+                onClick={() => setCreateOpen(true)}
+                disabled={busy || bothTypesAtLimit}
+              >
+                New collection…
+              </Button>
+            </span>
+          </Tooltip>
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
@@ -275,6 +291,7 @@ export default function AddToCollectionDialog({
         collection={null}
         programs={programs}
         groups={groups}
+        typesAtLimit={typesAtLimit}
         onSave={handleCreate}
       />
     </>

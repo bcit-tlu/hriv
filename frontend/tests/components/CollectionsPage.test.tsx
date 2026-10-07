@@ -145,6 +145,44 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
     })
 
+    it('disables New collection for a student at the current type limit', async () => {
+      const user = userEvent.setup()
+      const collections = Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({
+          id: i + 1,
+          type: 'sequence',
+          owners: [{ kind: 'user', userId: STUDENT.id, name: STUDENT.name }],
+        }),
+      )
+      renderPage({
+        currentUser: STUDENT,
+        collections,
+        collectionPageType: 'sequence',
+      })
+      const button = screen.getByRole('button', { name: 'New collection' })
+      expect(button).toBeDisabled()
+      await user.hover(button.parentElement as HTMLElement)
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(
+        "You've reached the limit of 10 sequence collections.",
+      )
+    })
+
+    it('keeps New collection enabled for an instructor at ten owned collections', () => {
+      const collections = Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({
+          id: i + 1,
+          type: 'sequence',
+          owners: [{ kind: 'user', userId: INSTRUCTOR.id, name: INSTRUCTOR.name }],
+        }),
+      )
+      renderPage({
+        currentUser: INSTRUCTOR,
+        collections,
+        collectionPageType: 'sequence',
+      })
+      expect(screen.getByRole('button', { name: 'New collection' })).toBeEnabled()
+    })
+
     it('shows the load error as a plain notification', () => {
       renderPage({ error: 'Failed to load collections.' })
       expect(screen.getByRole('alert')).toHaveTextContent('Failed to load collections.')

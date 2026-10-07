@@ -36,6 +36,9 @@ Use the `role` control to see how the visibility options and pickers change per 
 
 - **Type is immutable.** Create mode shows Synchronized / Sequence radios; edit mode shows a
   read-only type chip and explanatory helper text.
+- **Student collection count caps.** Create mode disables a type at 10 owned collections and
+  starts with the other type if the default is capped. The Create button is disabled when both
+  types are at their limit.
 - **Restricted is admin/instructor only.** Students and staff see Private / Public only
   (`canUseRestrictedVisibility`). The backend returns 403 if they send `restricted` anyway.
 - **Attach authority mirrors the category dialogs.** Instructors can only pick programs they belong
@@ -60,6 +63,10 @@ Use the `role` control to see how the visibility options and pickers change per 
 ### As student
 
 <Canvas of={CollectionEditDialogStories.AsStudent} />
+
+### Type at student limit
+
+<Canvas of={CollectionEditDialogStories.TypeAtLimit} />
 
 ### Validation error
 

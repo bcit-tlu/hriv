@@ -32,7 +32,7 @@ All seed users share the password `password`.
 | ---------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
 | View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections                       | Yes   | Yes        | Yes   | Yes     |
+| Create collections‖                      | Yes   | Yes        | Yes   | Yes     |
 | Edit co-owned collections‖               | Yes   | Yes        | Yes   | Yes     |
 | Delete own collections‖                  | Yes   | Yes        | Yes\* | Yes\*   |
 | Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
@@ -74,8 +74,11 @@ instructor in the owning program) is described in
 
 ‖ Collections support multiple user co-owners plus, or instead of, a program
 owner. Every role may create collections (the creator becomes the first user
-owner). Admins and instructors may edit/delete collections they co-own or
-whose owning program they belong to; students and staff share one rule —
+owner). Students may own at most 10 collections of each type and may add at
+most 10 images to a sequence collection; synchronized collections keep the
+four-image cap for every role. Admins and instructors may edit/delete
+collections they co-own or whose owning program they belong to; students and
+staff share one rule —
 they may edit collections they co-own, but may change scope or delete only
 when they are the sole user owner and no program owns the collection (`*`
 on the student delete cell; staff follow the same rule). Staff also see

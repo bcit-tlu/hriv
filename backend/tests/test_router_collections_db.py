@@ -40,6 +40,7 @@ from app.models import (
 )
 from app.routers.categories import delete_category
 from app.routers.collections import (
+    create_collection,
     delete_collection,
     list_collections,
     move_collection,
@@ -49,6 +50,7 @@ from app.routers.collections import (
 )
 from app.routers.tile_order import get_tile_order
 from app.schemas import (
+    CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
     CollectionUpdate,
@@ -99,6 +101,17 @@ async def _new_admin(session: AsyncSession, suffix: str) -> int:
     return user.id
 
 
+async def _new_user(session: AsyncSession, role: str, suffix: str) -> int:
+    user = User(
+        name=f"{TEST_PREFIX}{role}-{suffix}-{uuid4().hex[:8]}",
+        email=f"{TEST_PREFIX}{role}-{suffix}-{uuid4().hex[:8]}@example.test",
+        role=role,
+    )
+    session.add(user)
+    await session.commit()
+    return user.id
+
+
 async def _get_user(session: AsyncSession, user_id: int) -> User:
     """Load a user with selectin relationships populated."""
     user = await session.get(User, user_id)
@@ -123,6 +136,7 @@ async def _new_collection(
     image_ids: list[int],
     *,
     owner_id: int,
+    co_owner_ids: list[int] | None = None,
 ) -> int:
     collection = Collection(
         name=f"{TEST_PREFIX}coll-{uuid4().hex[:8]}",
@@ -138,9 +152,11 @@ async def _new_collection(
     # Direct junction insert: assigning ``collection.owners`` would lazy-load
     # the empty set first and hit MissingGreenlet under async.
     await session.execute(
-        collection_owners.insert().values(
-            collection_id=collection.id, user_id=owner_id
-        )
+        collection_owners.insert(),
+        [
+            {"collection_id": collection.id, "user_id": user_id}
+            for user_id in [owner_id, *(co_owner_ids or [])]
+        ],
     )
     for position, image_id in enumerate(image_ids):
         session.add(
@@ -150,6 +166,27 @@ async def _new_collection(
                 sort_order=position,
             )
         )
+    await session.commit()
+    return collection.id
+
+
+async def _new_program_owned_collection(
+    session: AsyncSession,
+    type_: str,
+    *,
+    creator_id: int,
+    program_id: int,
+) -> int:
+    collection = Collection(
+        name=f"{TEST_PREFIX}program-coll-{uuid4().hex[:8]}",
+        type=type_,
+        visibility="private",
+        user_id=creator_id,
+        owner_program_id=program_id,
+        viewport_state={},
+        version=1,
+    )
+    session.add(collection)
     await session.commit()
     return collection.id
 
@@ -184,6 +221,245 @@ async def _link_pairs(
 # ---------------------------------------------------------------------------
 # PUT /api/collections/{id}/images
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("collection_type", ("sequence", "synchronized"))
+async def test_student_collection_count_cap_and_other_type(
+    session_factory, collection_type: str
+) -> None:
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "count")
+        for index in range(9):
+            await _new_collection(session, collection_type, [], owner_id=student_id)
+        student = await _get_user(session, student_id)
+        tenth = await create_collection(
+            CollectionCreate(name=f"{TEST_PREFIX}tenth", type=collection_type),
+            student,
+            session,
+        )
+        assert tenth.type == collection_type
+
+        with pytest.raises(HTTPException) as exc:
+            await create_collection(
+                CollectionCreate(name=f"{TEST_PREFIX}eleventh", type=collection_type),
+                student,
+                session,
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail == (
+            f"Students may own at most 10 {collection_type} collections"
+        )
+
+        other_collection_type = (
+            "synchronized" if collection_type == "sequence" else "sequence"
+        )
+        other_collection = await create_collection(
+            CollectionCreate(
+                name=f"{TEST_PREFIX}{other_collection_type}", type=other_collection_type
+            ),
+            student,
+            session,
+        )
+        assert other_collection.type == other_collection_type
+
+
+async def test_student_collection_count_uses_user_owners_not_creator(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "ownership")
+        admin_id = await _new_admin(session, "co-owner")
+        for index in range(9):
+            await _new_collection(
+                session, "sequence", [], owner_id=student_id
+            )
+        await _new_collection(
+            session,
+            "sequence",
+            [],
+            owner_id=admin_id,
+            co_owner_ids=[student_id],
+        )
+        student = await _get_user(session, student_id)
+        with pytest.raises(HTTPException) as exc:
+            await create_collection(
+                CollectionCreate(name=f"{TEST_PREFIX}co-owned-cap", type="sequence"),
+                student,
+                session,
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail == "Students may own at most 10 sequence collections"
+
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "program-only")
+        program_id = await _new_program(session, "program-only")
+        for _ in range(10):
+            await _new_program_owned_collection(
+                session,
+                "sequence",
+                creator_id=student_id,
+                program_id=program_id,
+            )
+        student = await _get_user(session, student_id)
+        created = await create_collection(
+            CollectionCreate(name=f"{TEST_PREFIX}program-not-counted", type="sequence"),
+            student,
+            session,
+        )
+        assert created.type == "sequence"
+
+
+async def test_instructor_collection_count_is_not_capped(session_factory) -> None:
+    async with session_factory() as session:
+        instructor_id = await _new_user(session, "instructor", "count")
+        for _ in range(10):
+            await _new_collection(
+                session, "sequence", [], owner_id=instructor_id
+            )
+        instructor = await _get_user(session, instructor_id)
+        created = await create_collection(
+            CollectionCreate(name=f"{TEST_PREFIX}instructor-eleventh", type="sequence"),
+            instructor,
+            session,
+        )
+        assert created.type == "sequence"
+
+
+async def test_student_sequence_create_rejects_eleven_images(session_factory) -> None:
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "create-images")
+        student = await _get_user(session, student_id)
+        with pytest.raises(HTTPException) as exc:
+            await create_collection(
+                CollectionCreate(
+                    name=f"{TEST_PREFIX}long-sequence",
+                    type="sequence",
+                    image_ids=list(range(1, 12)),
+                ),
+                student,
+                session,
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail == (
+            "Students may add at most 10 images to a sequence collection"
+        )
+
+
+async def test_student_sequence_add_and_over_cap_edits(session_factory) -> None:
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "put-images")
+        instructor_id = await _new_user(session, "instructor", "put-images")
+        image_ids = [
+            await _new_image(session, f"cap-{index}") for index in range(1, 14)
+        ]
+        collection_id = await _new_collection(
+            session,
+            "sequence",
+            [],
+            owner_id=student_id,
+            co_owner_ids=[instructor_id],
+        )
+        instructor = await _get_user(session, instructor_id)
+        seeded = await replace_collection_images(
+            collection_id,
+            CollectionImagesUpdate(image_ids=image_ids[:12], version=1),
+            instructor,
+            session,
+        )
+        assert seeded.version == 2 and seeded.image_count == 12
+
+        student = await _get_user(session, student_id)
+        with pytest.raises(HTTPException) as exc:
+            await replace_collection_images(
+                collection_id,
+                CollectionImagesUpdate(
+                    image_ids=[*image_ids[2:12], image_ids[12]],
+                    version=2,
+                ),
+                student,
+                session,
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail == (
+            "Students may add at most 10 images to a sequence collection"
+        )
+
+        reordered = await replace_collection_images(
+            collection_id,
+            CollectionImagesUpdate(image_ids=list(reversed(image_ids[:10])), version=2),
+            student,
+            session,
+        )
+        assert reordered.version == 3 and reordered.image_count == 10
+        assert [image.id for image in reordered.images] == list(
+            reversed(image_ids[:10])
+        )
+
+
+async def test_student_sequence_retained_unseen_images_count_toward_cap(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "retained")
+        visible_ids = [
+            await _new_image(session, f"visible-{index}") for index in range(9)
+        ]
+        hidden_ids = [
+            await _new_image(session, f"hidden-{index}") for index in range(2)
+        ]
+        new_id = await _new_image(session, "new")
+        collection_id = await _new_collection(
+            session,
+            "sequence",
+            [*visible_ids, *hidden_ids],
+            owner_id=student_id,
+        )
+        await session.execute(
+            update(Image)
+            .where(Image.id.in_(hidden_ids))
+            .values(active=False)
+        )
+        await session.commit()
+        student = await _get_user(session, student_id)
+
+        with pytest.raises(HTTPException) as exc:
+            await replace_collection_images(
+                collection_id,
+                CollectionImagesUpdate(
+                    image_ids=[*visible_ids, new_id],
+                    version=1,
+                ),
+                student,
+                session,
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail == (
+            "Students may add at most 10 images to a sequence collection"
+        )
+
+
+async def test_student_synchronized_image_cap_remains_four(session_factory) -> None:
+    async with session_factory() as session:
+        student_id = await _new_user(session, "student", "sync-cap")
+        image_ids = [
+            await _new_image(session, f"sync-{index}") for index in range(5)
+        ]
+        collection_id = await _new_collection(
+            session,
+            "synchronized",
+            image_ids[:4],
+            owner_id=student_id,
+        )
+        student = await _get_user(session, student_id)
+        with pytest.raises(HTTPException) as exc:
+            await replace_collection_images(
+                collection_id,
+                CollectionImagesUpdate(image_ids=image_ids, version=1),
+                student,
+                session,
+            )
+        assert exc.value.status_code == 422
+        assert "at most 4" in exc.value.detail
 
 
 async def test_replace_images_persists_order_reuses_links(session_factory) -> None:

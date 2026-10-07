@@ -1198,7 +1198,7 @@ describe('useCategoryActions', () => {
         await result.current.handleDropImageOnCollection(42, 7)
       })
 
-      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42])
+      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42], undefined)
       expect(deps.loadCategories).toHaveBeenCalled()
       expect(deps.setMoveSnack).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1334,6 +1334,40 @@ describe('useCategoryActions', () => {
         expect.stringContaining('4-image limit for synchronized collections'),
       )
       expect(deps.setMoveSnack).not.toHaveBeenCalled()
+    })
+
+    it('passes the caller role and names the student sequence cap', async () => {
+      const col = makeCollectionSummary({
+        id: 7,
+        name: 'Sequence set',
+        type: 'sequence',
+        categoryId: 1,
+      })
+      const cat = makeCategory({ id: 1, collections: [col] })
+      const addImagesToCollectionApi = vi.fn().mockResolvedValue({
+        status: 'full',
+        collection: makeCollection({
+          id: 7,
+          name: 'Sequence set',
+          type: 'sequence',
+        }),
+      })
+      const deps = makeDeps({
+        categories: [cat],
+        currentUserRole: 'student',
+        addImagesToCollectionApi,
+        removeImagesFromCollectionApi: vi.fn(),
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropImageOnCollection(42, 7)
+      })
+
+      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42], 'student')
+      expect(deps.setErrorSnack).toHaveBeenCalledWith(
+        expect.stringContaining('10-image limit students have for sequence collections'),
+      )
     })
 
     it('no-ops for collections the user cannot edit', async () => {

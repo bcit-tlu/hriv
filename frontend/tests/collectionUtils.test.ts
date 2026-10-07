@@ -6,13 +6,21 @@ import {
   apiCollectionToCollection,
   apiImageToItem,
   canUseRestrictedVisibility,
+  collectionFullMessage,
+  collectionImageCap,
   describeCollectionOwner,
   describeCollectionOwners,
+  ownedCollectionCounts,
   parseCollectionIdParam,
   parseCollectionItemParam,
   privateFilingWarning,
+  studentTypesAtCap,
 } from '../src/collectionUtils'
-import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
+import {
+  makeApiCollection,
+  makeApiCollectionSummary,
+  makeCollectionSummary,
+} from './helpers/fixtures'
 
 const API_IMAGE: ApiImage = {
   id: 11,
@@ -32,6 +40,73 @@ const API_IMAGE: ApiImage = {
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-03T00:00:00Z',
 }
+
+describe('collection capacity helpers', () => {
+  it('returns role-aware image caps while keeping synchronized capped for everyone', () => {
+    expect(collectionImageCap('synchronized', null)).toBe(4)
+    expect(collectionImageCap('sequence', 'student')).toBe(10)
+    expect(collectionImageCap('sequence', 'instructor')).toBeNull()
+  })
+
+  it('formats capacity messages by collection type and add scope', () => {
+    expect(collectionFullMessage('Lab set', 'synchronized', 'selection')).toBe(
+      'Adding this selection to "Lab set" would exceed the 4-image limit for synchronized collections.',
+    )
+    expect(collectionFullMessage('Lab set', 'synchronized', 'image')).toBe(
+      'Adding this image to "Lab set" would exceed the 4-image limit for synchronized collections.',
+    )
+    expect(collectionFullMessage('Lab set', 'sequence', 'selection')).toBe(
+      'Adding this selection to "Lab set" would exceed the 10-image limit students have for sequence collections.',
+    )
+  })
+
+  it('counts only collection rows with the matching user owner', () => {
+    const rows = [
+      makeCollectionSummary({
+        id: 1,
+        type: 'sequence',
+        owners: [
+          { kind: 'user', userId: 7, name: 'Student' },
+          { kind: 'user', userId: 8, name: 'Co-owner' },
+        ],
+      }),
+      makeCollectionSummary({
+        id: 2,
+        type: 'sequence',
+        owners: [{ kind: 'program', programId: 3, name: 'Program' }],
+      }),
+      makeCollectionSummary({
+        id: 3,
+        type: 'synchronized',
+        owners: [{ kind: 'user', userId: 7, name: 'Student' }],
+      }),
+    ]
+    expect(ownedCollectionCounts(rows, 7)).toEqual({ sequence: 1, synchronized: 1 })
+  })
+
+  it('reports capped collection types only for students', () => {
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({
+          id: i + 1,
+          type: 'sequence',
+          owners: [{ kind: 'user', userId: 7, name: 'Student' }],
+        }),
+      ),
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({
+          id: i + 11,
+          type: 'synchronized',
+          owners: [{ kind: 'user', userId: 7, name: 'Student' }],
+        }),
+      ),
+    ]
+    expect(studentTypesAtCap(rows, { id: 7, role: 'student' })).toEqual(
+      new Set(['sequence', 'synchronized']),
+    )
+    expect(studentTypesAtCap(rows, { id: 7, role: 'instructor' })).toEqual(new Set())
+  })
+})
 
 describe('collectionUtils mapping', () => {
   it('warns about a single private collection filed on Browse', () => {

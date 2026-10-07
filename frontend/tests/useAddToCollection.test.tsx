@@ -60,8 +60,11 @@ describe('fitsCollectionCapacity', () => {
     expect(fitsCollectionCapacity({ type: 'synchronized' }, 2, [1, 2, 3])).toBe(false)
   })
 
-  it('never caps sequence collections', () => {
+  it('caps sequence collections only for students', () => {
     expect(fitsCollectionCapacity({ type: 'sequence' }, 400, [1, 2, 3])).toBe(true)
+    expect(fitsCollectionCapacity({ type: 'sequence' }, 9, [1], 'student')).toBe(true)
+    expect(fitsCollectionCapacity({ type: 'sequence' }, 10, [1], 'student')).toBe(false)
+    expect(fitsCollectionCapacity({ type: 'sequence' }, 400, [1, 2, 3], 'instructor')).toBe(true)
   })
 })
 
@@ -116,6 +119,44 @@ describe('addImagesToCollection', () => {
     const result = await addImagesToCollection(5, [9])
     expect(result.status).toBe('full')
     expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
+  })
+
+  it('refuses a student sequence addition above ten images without calling the API', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'sequence',
+        images: Array.from({ length: 10 }, (_, i) => apiImage(i + 1)),
+      }),
+    )
+    const result = await addImagesToCollection(5, [11], 'student')
+    expect(result.status).toBe('full')
+    expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
+  })
+
+  it('allows a non-student to add more than ten sequence images', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'sequence',
+        version: 3,
+        images: Array.from({ length: 10 }, (_, i) => apiImage(i + 1)),
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'sequence',
+        version: 4,
+        images: Array.from({ length: 11 }, (_, i) => apiImage(i + 1)),
+      }),
+    )
+    const result = await addImagesToCollection(5, [11], 'instructor')
+    expect(result.status).toBe('added')
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: Array.from({ length: 11 }, (_, i) => i + 1),
+      version: 3,
+    })
   })
 
   it('propagates API errors from the replace call', async () => {

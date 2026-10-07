@@ -7,6 +7,8 @@ from app.database import Base
 from app.models import (
     COLLECTION_TYPES,
     COLLECTION_VISIBILITIES,
+    STUDENT_MAX_COLLECTIONS_PER_TYPE,
+    STUDENT_SEQUENCE_MAX_IMAGES,
     SYNCHRONIZED_COLLECTION_MAX_IMAGES,
     Collection,
     CollectionImage,
@@ -32,6 +34,8 @@ def test_collection_constants() -> None:
     assert COLLECTION_TYPES == ("synchronized", "sequence")
     assert COLLECTION_VISIBILITIES == ("private", "public", "restricted")
     assert SYNCHRONIZED_COLLECTION_MAX_IMAGES == 4
+    assert STUDENT_SEQUENCE_MAX_IMAGES == 10
+    assert STUDENT_MAX_COLLECTIONS_PER_TYPE == 10
 
 
 def test_collection_table_shape() -> None:

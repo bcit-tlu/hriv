@@ -79,6 +79,7 @@ function renderDialog(
         onSave={onSave}
         collection={props.collection}
         defaultType={props.defaultType}
+        typesAtLimit={props.typesAtLimit}
         programs={props.programs ?? PROGRAMS}
         groups={props.groups ?? GROUPS}
         onDelete={props.onDelete}
@@ -109,6 +110,32 @@ describe('CollectionEditDialog', () => {
       renderDialog({ defaultType: 'synchronized' })
       expect(screen.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
       expect(screen.getByRole('radio', { name: /Sequence/ })).not.toBeChecked()
+    })
+
+    it('switches to the other type and disables a capped type', () => {
+      renderDialog(
+        { defaultType: 'sequence', typesAtLimit: new Set(['sequence']) },
+        makeAuth('student'),
+      )
+      expect(screen.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
+      expect(screen.getByRole('radio', { name: /Sequence/ })).toBeDisabled()
+      expect(
+        screen.getByText("You've reached the limit of 10 sequence collections."),
+      ).toBeInTheDocument()
+    })
+
+    it('disables create when both collection types are at their limit', async () => {
+      const user = userEvent.setup()
+      renderDialog(
+        {
+          typesAtLimit: new Set(['sequence', 'synchronized']),
+        },
+        makeAuth('student'),
+      )
+      await user.type(screen.getByLabelText('Collection name'), 'No capacity')
+      expect(screen.getByRole('radio', { name: /Sequence/ })).toBeDisabled()
+      expect(screen.getByRole('radio', { name: /Synchronized/ })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
     })
 
     it('renders the Type section first — above the name field (#1567)', () => {

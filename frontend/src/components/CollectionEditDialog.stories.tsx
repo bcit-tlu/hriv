@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
-import type { Category, Collection, Group, Program, Role, User } from '../types'
+import type { Category, Collection, CollectionType, Group, Program, Role, User } from '../types'
 import CollectionEditDialog from './CollectionEditDialog'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
@@ -115,6 +115,8 @@ const categories: Category[] = [
 interface StoryArgs {
   role: Role
   collection: Collection | null
+  defaultType?: CollectionType
+  typesAtLimit?: CollectionType[]
   categories?: Category[]
   onSave: (...args: unknown[]) => Promise<void>
   onClose: () => void
@@ -123,6 +125,8 @@ interface StoryArgs {
 function CollectionEditDialogExample({
   role,
   collection,
+  defaultType,
+  typesAtLimit,
   categories: categoryList = [],
   onSave,
   onClose,
@@ -134,6 +138,8 @@ function CollectionEditDialogExample({
         onClose={onClose}
         onSave={onSave}
         collection={collection}
+        defaultType={defaultType}
+        typesAtLimit={new Set(typesAtLimit)}
         categories={categoryList}
         programs={programs}
         groups={groups}
@@ -207,6 +213,18 @@ export const PrivateFilingWarning: Story = {
       await body.findByText(
         'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
       ),
+    ).toBeInTheDocument()
+  },
+}
+
+export const TypeAtLimit: Story = {
+  args: { role: 'student', defaultType: 'sequence', typesAtLimit: ['sequence'] },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(body.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
+    await expect(body.getByRole('radio', { name: /Sequence/ })).toBeDisabled()
+    await expect(
+      body.getByText("You've reached the limit of 10 sequence collections."),
     ).toBeInTheDocument()
   },
 }

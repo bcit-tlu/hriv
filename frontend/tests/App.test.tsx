@@ -637,8 +637,10 @@ vi.mock('../src/useCollectionsData', () => ({
     setHidden: collectionsDataMocks.setHidden,
     // App routes adds/removes through the data hook now (#1566) — delegate
     // to the same spy so the assertions below still observe the payload.
-    addImages: (id: number, imageIds: number[]) =>
-      addToCollectionMocks.addImagesToCollection(id, imageIds),
+    addImages: (id: number, imageIds: number[], role?: string) =>
+      role == null
+        ? addToCollectionMocks.addImagesToCollection(id, imageIds)
+        : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
     removeImages: vi.fn(),
     renewCollectionImage: vi.fn(),
   }),
@@ -2296,7 +2298,7 @@ describe('App "Add to Collection" from the image view (#1415)', () => {
   it('keeps the dialog open with an error when a synchronized collection is full', async () => {
     addToCollectionMocks.addImagesToCollection.mockResolvedValue({
       status: 'full',
-      collection: { id: 9, name: 'Skull set' },
+      collection: { id: 9, name: 'Skull set', type: 'synchronized' },
     })
     fireEvent.click(await openImageWithCollectionsEnabled())
     fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
@@ -2424,7 +2426,7 @@ describe('App search collections integration (#1418)', () => {
     // a 'full' result can arrive from a collection holding fewer than four.
     addToCollectionMocks.addImagesToCollection.mockResolvedValue({
       status: 'full',
-      collection: { id: 9, name: 'Skull set' },
+      collection: { id: 9, name: 'Skull set', type: 'synchronized' },
     })
     render(<App />)
     await waitFor(() =>

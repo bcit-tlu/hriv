@@ -8,27 +8,27 @@ import {
 } from './api'
 import type { CollectionFilters } from './api'
 import {
-  SYNCHRONIZED_MAX_IMAGES,
   apiCollectionSummaryToSummary,
   apiCollectionToCollection,
+  collectionImageCap,
 } from './collectionUtils'
 import type { CollectionFormValues } from './components/CollectionEditDialog'
-import type { Collection, CollectionSummary } from './types'
+import type { Collection, CollectionSummary, Role } from './types'
 
 export type AddToCollectionResult =
   | { status: 'added'; collection: Collection; addedCount: number }
   | { status: 'already'; collection: Collection }
   | { status: 'full'; collection: Collection }
 
-/** Whether `imageIds` still fit in a `synchronized` collection of `currentCount` images. */
+/** Whether `imageIds` still fit under the caller's collection capacity. */
 export function fitsCollectionCapacity(
   collection: Pick<CollectionSummary, 'type'>,
   currentCount: number,
   imageIds: readonly number[],
+  role?: Role | null,
 ): boolean {
-  return (
-    collection.type !== 'synchronized' || currentCount + imageIds.length <= SYNCHRONIZED_MAX_IMAGES
-  )
+  const cap = collectionImageCap(collection.type, role)
+  return cap == null || currentCount + imageIds.length <= cap
 }
 
 /**
@@ -40,12 +40,13 @@ export function fitsCollectionCapacity(
 export async function addImagesToCollection(
   collectionId: number,
   imageIds: readonly number[],
+  role?: Role | null,
 ): Promise<AddToCollectionResult> {
   const current = apiCollectionToCollection(await fetchCollection(collectionId))
   const existing = current.images.map((img) => img.id)
   const missing = Array.from(new Set(imageIds)).filter((id) => !existing.includes(id))
   if (missing.length === 0) return { status: 'already', collection: current }
-  if (!fitsCollectionCapacity(current, existing.length, missing)) {
+  if (!fitsCollectionCapacity(current, existing.length, missing, role)) {
     return { status: 'full', collection: current }
   }
   const updated = await replaceCollectionImages(collectionId, {

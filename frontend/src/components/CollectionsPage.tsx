@@ -26,6 +26,8 @@ import {
   COLLECTION_TYPE_LABELS,
   describeCollectionOwner,
   describeCollectionOwners,
+  ownedCollectionCounts,
+  STUDENT_MAX_COLLECTIONS_PER_TYPE,
 } from '../collectionUtils'
 import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -43,6 +45,7 @@ import type {
   Collection,
   CollectionOwner,
   CollectionSummary,
+  CollectionType,
   Group,
   ImageItem,
   Program,
@@ -513,6 +516,13 @@ export default function CollectionsPage({
   // Filing collections into categories is curatorial: any admin/instructor
   // may move any collection (unlike edit/delete, which are owner-scoped).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
+  const typesAtLimit = useMemo<ReadonlySet<CollectionType>>(() => {
+    if (currentUser?.role !== 'student') return new Set()
+    const counts = ownedCollectionCounts(collections, currentUser.id)
+    return counts[collectionPageType] >= STUDENT_MAX_COLLECTIONS_PER_TYPE
+      ? new Set([collectionPageType])
+      : new Set()
+  }, [collectionPageType, collections, currentUser])
 
   const openCreate = () => {
     // Supersede any Edit fetch still in flight so it cannot replace this form.
@@ -728,9 +738,24 @@ export default function CollectionsPage({
                 </Select>
               </FormControl>
             )}
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-              New collection
-            </Button>
+            <Tooltip
+              title={
+                typesAtLimit.has(collectionPageType)
+                  ? `You've reached the limit of ${STUDENT_MAX_COLLECTIONS_PER_TYPE} ${collectionPageType} collections.`
+                  : ''
+              }
+            >
+              <span>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={openCreate}
+                  disabled={typesAtLimit.has(collectionPageType)}
+                >
+                  New collection
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
         </Box>
 
@@ -809,6 +834,7 @@ export default function CollectionsPage({
         onClose={() => setEditorOpen(false)}
         collection={editing}
         defaultType={collectionPageType}
+        typesAtLimit={typesAtLimit}
         programs={programs}
         groups={groups}
         onSave={handleSave}

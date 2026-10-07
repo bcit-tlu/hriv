@@ -620,3 +620,30 @@ IDs even when the instructor does not belong to those programs or manage those
 groups. Those inherited IDs are treated as pre-existing restrictions. The
 request must still return **403** for any additional program or group ID that
 is not inherited and is outside the instructor's attach authority.
+
+## Test Case 13: Student Collection and Sequence Caps
+
+**Purpose:** Verify the student-only per-type collection count and sequence
+image limits (#1583). Use a fresh student account with visible images, plus an
+instructor account for the uncapped-role checks.
+
+1. As the student, create 10 sequence collections and 10 synchronized
+   collections. **Assert:** all 20 creates succeed. Attempt an 11th of each
+   type. **Assert:** both return **422** with
+   `Students may own at most 10 {type} collections`; creating a collection
+   of the other type remains allowed until that type also reaches 10.
+2. As the student, create a sequence with 11 visible image IDs.
+   **Assert:** the create returns **422** with
+   `Students may add at most 10 images to a sequence collection`. Repeat with
+   10 IDs and **Assert:** it succeeds. Synchronized collections still reject
+   a fifth image for every role.
+3. As a student owner of a 10-image sequence, use **Manage Images** to add an
+   eleventh image. **Assert:** the write is rejected with the same sequence
+   cap detail. Reorder the existing images or remove one and **Assert:** those
+   edits succeed. On an instructor-seeded 12-image sequence co-owned by the
+   student, remove or reorder without adding and **Assert:** it remains
+   editable; try adding a new image while still over 10 and **Assert:** it is
+   rejected.
+4. As the instructor, create and update a sequence with more than 10 images.
+   **Assert:** both operations succeed. Verify student limits do not apply
+   when a non-student edits a student-owned collection.

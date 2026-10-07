@@ -15,9 +15,9 @@ been switched on there — ask your administrator.)
 ## Two kinds of collection
 
 - **Synchronized** – up to four images shown together; pan and zoom move
-  all of them together.
-- **Sequence** – any number of images in a fixed order, stepped through one
-  at a time.
+  all of them together. The four-image limit applies to every role.
+- **Sequence** – images in a fixed order, stepped through one at a time.
+  Students can add up to 10 images; other roles have no sequence limit.
 
 You choose the type when you create a collection and can't change it later —
 create a new collection instead.
@@ -102,6 +102,13 @@ Browse tile.
      they manage; this option isn't offered to students or staff.
 4. Click **Create**.
 
+Students can own up to 10 collections of each type. Co-owned collections
+count toward the limit. When a student reaches the limit for one type, that
+type is disabled in the create form; reaching both limits disables creating
+another collection. The 10-collection count and 10-image sequence limits do
+not apply to admins, instructors, or staff, and existing collections are
+not removed when a limit is reached.
+
 ## Add an image to a collection
 
 While viewing an image, click **Add to Collection** (next to **Share View**)
@@ -112,6 +119,9 @@ Type in the filter box to narrow a long list.
   nothing changes and a note tells you so.
 - A synchronized collection that already holds four images is greyed out;
   hover it to see why.
+- For students, a sequence collection holding 10 images is also greyed out.
+  Existing over-cap sequences can still be reordered or have images removed,
+  but students cannot add images while the collection remains over its limit.
 - Use **New collection…** in the dialog to create a collection that starts
   with this image.
 - After adding, the message at the bottom offers **View collection** to jump

@@ -169,6 +169,7 @@ def _write_db(
     programs: list | None = None,
     groups: list | None = None,
     users: list | None = None,
+    collection_count: int = 0,
     cas_rowcount: int = 1,
 ) -> AsyncMock:
     """Mock session for the write API.
@@ -192,6 +193,9 @@ def _write_db(
         result = MagicMock()
         if isinstance(stmt, Update):
             result.rowcount = cas_rowcount
+            return result
+        if stmt.column_descriptions[0]["name"] == "count":
+            result.scalar_one.return_value = collection_count
             return result
         entity = stmt.column_descriptions[0]["entity"]
         result.scalars.return_value.all.return_value = rows_by_entity[entity]
@@ -604,6 +608,34 @@ async def test_create_private_collection_any_role_owner_is_caller(role: str) -> 
     assert out.version == 1 and out.type == "sequence"
     db.commit.assert_awaited_once()
     collections_router.bump_scopes.assert_not_awaited()
+
+
+@pytest.mark.parametrize("collection_type", ("sequence", "synchronized"))
+async def test_create_student_collection_count_cap_per_type(collection_type: str) -> None:
+    body = CollectionCreate(name="Tenth", type=collection_type)
+    db = _write_db(collection_count=9)
+    await create_collection(body, _user("student", id=42), db=db)
+    assert isinstance(db.add.call_args.args[0], Collection)
+    statements = [call.args[0] for call in db.execute.await_args_list]
+    assert statements[0]._for_update_arg is not None
+    assert statements[1].column_descriptions[0]["name"] == "count"
+
+    db = _write_db(collection_count=10)
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(body, _user("student", id=42), db=db)
+    assert exc.value.status_code == 422
+    assert exc.value.detail == f"Students may own at most 10 {collection_type} collections"
+    assert db.add.call_count == 0
+
+
+async def test_create_student_sequence_cap_is_422() -> None:
+    body = CollectionCreate(name="Long sequence", type="sequence", image_ids=list(range(1, 12)))
+    db = _write_db(collection_count=0)
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(body, _user("student", id=42), db=db)
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert db.add.call_count == 0
 
 
 async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
@@ -1145,11 +1177,82 @@ async def test_replace_images_synchronized_cap_is_422() -> None:
 
 async def test_replace_images_sequence_has_no_cap() -> None:
     col = _collection(1, "private", user_id=2, type="sequence")
-    images = [_image(i) for i in range(1, 7)]
+    images = [_image(i) for i in range(1, 12)]
     await replace_collection_images(
-        1, _images_body([1, 2, 3, 4, 5, 6]), _user("student", id=2), db=_write_db(get=col, images=images)
+        1,
+        _images_body(list(range(1, 12))),
+        _user("instructor", id=2),
+        db=_write_db(get=col, images=images),
     )
-    assert [o for _, o in _links(col)] == [0, 1, 2, 3, 4, 5]
+    assert [o for _, o in _links(col)] == list(range(11))
+
+
+async def test_replace_images_student_sequence_cap_rejects_new_images() -> None:
+    member_images = [_image(i) for i in range(1, 11)]
+    col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
+    db = _write_db(get=col, images=[*member_images, _image(11)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1, _images_body([*range(1, 11), 11]), _user("student", id=2), db=db
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert col.version == 3
+    assert not any(isinstance(call.args[0], Update) for call in db.execute.await_args_list)
+
+
+async def test_replace_images_over_cap_sequence_allows_removal_and_reorder() -> None:
+    member_images = [_image(i) for i in range(1, 13)]
+    col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
+    db = _write_db(get=col, images=member_images)
+    out = await replace_collection_images(
+        1,
+        _images_body([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]),
+        _user("student", id=2),
+        db=db,
+    )
+    assert [image_id for image_id, _ in _links(col)] == [12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
+    assert out.version == 4
+
+
+async def test_replace_images_over_cap_sequence_rejects_remove_two_add_one() -> None:
+    member_images = [_image(i) for i in range(1, 13)]
+    col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
+    db = _write_db(get=col, images=[*member_images, _image(13)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1,
+            _images_body([*range(3, 13), 13]),
+            _user("student", id=2),
+            db=db,
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert col.version == 3
+
+
+async def test_replace_images_student_sequence_retained_unseen_count_toward_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    hidden = [_image(20, category_id=20), _image(21, category_id=20)]
+    visible = [_image(i) for i in range(1, 10)]
+    new_image = _image(30)
+    col = _collection(1, "private", user_id=2, type="sequence", images=[*hidden, *visible])
+    db = _write_db(get=col, images=[*visible, new_image])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1,
+            _images_body([*range(1, 10), 30]),
+            _user("student", id=2),
+            db=db,
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert col.version == 3
 
 
 async def test_replace_images_student_invisible_is_422(
