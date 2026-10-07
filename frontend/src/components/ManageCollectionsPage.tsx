@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
@@ -30,6 +31,8 @@ import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import {
+  bulkDeleteCollections,
+  bulkUpdateCollections,
   createCollection,
   deleteCollection,
   fetchCollection,
@@ -50,6 +53,7 @@ import {
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getVisibilityColors } from '../theme'
+import { tileOrderingCoordinator } from '../tileOrdering'
 import { useColorMode } from '../useColorMode'
 import { toCollectionPatch } from '../useCollectionsData'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
@@ -78,6 +82,7 @@ import type {
 } from '../types'
 import CategoryBreadcrumb, { buildCategoryPaths } from './CategoryBreadcrumb'
 import CategoryFilterTreePanel from './CategoryFilterTreePanel'
+import BulkEditCollectionsDialog from './BulkEditCollectionsDialog'
 import CollectionEditDialog from './CollectionEditDialog'
 import type { CollectionFormValues } from './CollectionEditDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
@@ -229,6 +234,12 @@ export interface ManageCollectionsPageProps {
   onToggleCategoryVisibility?: (categoryId: number) => Promise<void>
   /** Open the collection detail view (`?collection={id}`) — read-only rows. */
   onOpenCollection: (id: number) => void
+  /**
+   * Notify the parent after a bulk write changed tile membership —
+   * refreshes the category tree/uncategorized list like ManagePage's
+   * `onCategoriesChanged` (#1578).
+   */
+  onCategoriesChanged?: () => void
   /** Route mutation failures to the page-level snackbar. */
   onError?: (message: string) => void
   /**
@@ -259,6 +270,7 @@ export default function ManageCollectionsPage({
   onEditCategory,
   onToggleCategoryVisibility,
   onOpenCollection,
+  onCategoriesChanged,
   onError,
   loadCollections = fetchCollections,
 }: ManageCollectionsPageProps) {
@@ -276,6 +288,11 @@ export default function ManageCollectionsPage({
 
   const [sortColumn, setSortColumn] = useState<SortableColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+
+  // Row selection for bulk edit (#1578) — ManagePage's idiom: a checkbox
+  // column, page-scoped select-all, and a "Bulk Edit (N selected)" button.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
 
   const storedFilters = useMemo(
     () => loadStoredTableFilters<ManageCollectionsStoredFilters>('manage-collections'),
@@ -475,6 +492,86 @@ export default function ManageCollectionsPage({
     currentPage * rowsPerPage + rowsPerPage,
   )
 
+  // Curators may bulk refile/hide any row; everyone else can only select
+  // rows they could delete singly (sole-owner students/staff). The column
+  // only renders when the current user could select anything at all.
+  const rowSelectable = useCallback(
+    (c: CollectionSummary) => canFileCollections || c.permissions.canDelete,
+    [canFileCollections],
+  )
+  const selectionEnabled = canFileCollections || collections.some((c) => c.permissions.canDelete)
+  const selectableInView = useMemo(
+    () => pageCollections.filter(rowSelectable),
+    [pageCollections, rowSelectable],
+  )
+  const selectedInView = useMemo(
+    () => selectableInView.filter((c) => selected.has(c.id)).length,
+    [selectableInView, selected],
+  )
+  const selectedRows = useMemo(
+    () => collections.filter((c) => selected.has(c.id)),
+    [collections, selected],
+  )
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const c of selectableInView) {
+        if (checked) next.add(c.id)
+        else next.delete(c.id)
+      }
+      return next
+    })
+  }
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  // Bulk handlers (#1578) — same shape as ManagePage's: the API applies the
+  // diff atomically; a category move also invalidates every affected
+  // tile-order scope so a cached revision can't falsely 409 a reorder.
+  const handleBulkSave = async (data: { category_id?: number | null; hidden?: boolean }) => {
+    try {
+      await bulkUpdateCollections({ collection_ids: [...selected], ...data })
+      if (data.category_id !== undefined) {
+        const affected = new Set<number | null>()
+        for (const c of collections) {
+          if (selected.has(c.id) && (c.categoryId ?? null) !== data.category_id) {
+            affected.add(c.categoryId ?? null)
+            affected.add(data.category_id)
+          }
+        }
+        for (const scope of affected) tileOrderingCoordinator.invalidateRevision(scope)
+      }
+      setBulkEditOpen(false)
+      setSelected(new Set())
+      await load()
+      onCategoriesChanged?.()
+    } catch (err) {
+      console.error('Failed to bulk update collections', err)
+      throw err
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    try {
+      await bulkDeleteCollections({ collection_ids: [...selected] })
+      setBulkEditOpen(false)
+      setSelected(new Set())
+      await load()
+      onCategoriesChanged?.()
+    } catch (err) {
+      console.error('Failed to bulk delete collections', err)
+      throw err
+    }
+  }
+
   const handleSort = (column: SortableColumn) => {
     if (sortColumn === column) {
       setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -655,19 +752,31 @@ export default function ManageCollectionsPage({
         <Typography variant="h5" component="h1">
           Collections
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            // Cancel any in-flight openEdit fetch so it can't replace the
-            // create form when it resolves.
-            editRequestRef.current++
-            setEditing(null)
-            setEditorOpen(true)
-          }}
-        >
-          New collection
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
+          {selected.size > 0 && (
+            <Button
+              variant="contained"
+              color="secondary"
+              size="small"
+              onClick={() => setBulkEditOpen(true)}
+            >
+              Bulk Edit ({selected.size} selected)
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              // Cancel any in-flight openEdit fetch so it can't replace the
+              // create form when it resolves.
+              editRequestRef.current++
+              setEditing(null)
+              setEditorOpen(true)
+            }}
+          >
+            New collection
+          </Button>
+        </Box>
       </Box>
 
       <FilterBar
@@ -880,6 +989,20 @@ export default function ManageCollectionsPage({
             }}
           >
             <TableRow>
+              {selectionEnabled && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedInView > 0 && selectedInView < selectableInView.length}
+                    checked={
+                      selectableInView.length > 0 && selectedInView === selectableInView.length
+                    }
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    slotProps={{
+                      input: { 'aria-label': 'Select all collections on this page' },
+                    }}
+                  />
+                </TableCell>
+              )}
               {isColumnVisible('cover') && (
                 <TableCell sx={{ width: 48, p: 0.5 }}>
                   <Box component="span" sx={visuallyHidden}>
@@ -1005,6 +1128,7 @@ export default function ManageCollectionsPage({
                 <TableRow
                   key={c.id}
                   hover
+                  selected={selected.has(c.id)}
                   data-testid={`manage-collection-row-${c.id}`}
                   sx={{
                     cursor: 'pointer',
@@ -1013,6 +1137,22 @@ export default function ManageCollectionsPage({
                   }}
                   onClick={() => handleRowClick(c)}
                 >
+                  {selectionEnabled && (
+                    <TableCell
+                      data-interactive="true"
+                      padding="checkbox"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selected.has(c.id)}
+                        disabled={!rowSelectable(c)}
+                        onChange={(e) => handleSelectOne(c.id, e.target.checked)}
+                        slotProps={{
+                          input: { 'aria-label': `Select ${c.name}` },
+                        }}
+                      />
+                    </TableCell>
+                  )}
                   {isColumnVisible('cover') && (
                     <TableCell
                       data-interactive="true"
@@ -1205,7 +1345,7 @@ export default function ManageCollectionsPage({
             {pageCollections.length === 0 && !loading && (
               <TableRow>
                 <TableCell
-                  colSpan={visibleColumnCount + 1}
+                  colSpan={visibleColumnCount + (selectionEnabled ? 2 : 1)}
                   align="center"
                   sx={{ py: 4, color: 'text.secondary' }}
                 >
@@ -1217,7 +1357,11 @@ export default function ManageCollectionsPage({
             )}
             {loading && (
               <TableRow>
-                <TableCell colSpan={visibleColumnCount + 1} align="center" sx={{ py: 4 }}>
+                <TableCell
+                  colSpan={visibleColumnCount + (selectionEnabled ? 2 : 1)}
+                  align="center"
+                  sx={{ py: 4 }}
+                >
                   <CircularProgress size={24} aria-label="Loading collections" />
                 </TableCell>
               </TableRow>
@@ -1290,6 +1434,24 @@ export default function ManageCollectionsPage({
         visibleColumns={visibleColumns}
         onClose={() => setColumnDialogOpen(false)}
         onToggleColumn={toggleColumn}
+      />
+
+      {/* Bulk edit (#1578) — curator fields when admin/instructor; delete
+          requires single-delete authority on every selected row. */}
+      <BulkEditCollectionsDialog
+        open={bulkEditOpen}
+        onClose={() => setBulkEditOpen(false)}
+        onSave={handleBulkSave}
+        onDelete={handleBulkDelete}
+        categories={categories}
+        selectedCount={selected.size}
+        canCurate={canFileCollections}
+        canDeleteAll={selectedRows.length > 0 && selectedRows.every((c) => c.permissions.canDelete)}
+        programs={programs}
+        groups={groups}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
       />
 
       <CollectionEditDialog

@@ -74,6 +74,8 @@ from ..models import (
     User,
 )
 from ..schemas import (
+    CollectionBulkDelete,
+    CollectionBulkUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
@@ -420,6 +422,121 @@ async def create_collection(
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)
+
+
+# ── Bulk operations (#1578) ───────────────────────────────────────────────
+# Registered before ``/{collection_id}`` so "bulk" is never parsed as an id.
+
+
+@router.patch("/bulk", response_model=list[CollectionSummaryOut])
+async def bulk_update_collections(
+    body: CollectionBulkUpdate,
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update curatorial fields for multiple collections (#1578).
+
+    Both fields are curatorial like ``POST …/{id}/move`` and a hidden-only
+    PATCH — ``category_id`` refiles every collection (``null`` = Browse
+    root) and ``hidden`` hides/shows for students — so one role gate
+    covers the call regardless of ownership. Scope fields
+    (``visibility``/``program_ids``/``group_ids``) are deliberately not
+    bulk-editable: scope authority is per-collection (sole owner vs
+    co-owner) and ``restricted`` needs per-collection attach lists.
+
+    Atomic: every id must resolve (404) and ``category_id`` must exist
+    (422) before any write. Lock order mirrors ``…/move`` — scope
+    revisions first (every moved collection's source scope plus the
+    destination), then the row writes, then the browse revision. Like
+    ``PATCH /images/bulk`` there is no per-row ``version`` token; rows
+    that actually change get ``version + 1`` so a no-op edit advances
+    nothing.
+    """
+    collections = (
+        await db.execute(
+            select(Collection).where(Collection.id.in_(body.collection_ids))
+        )
+    ).scalars().all()
+    if len(collections) != len(set(body.collection_ids)):
+        raise HTTPException(404, "One or more collections not found")
+    update_data = body.model_dump(exclude_unset=True, exclude={"collection_ids"})
+    if (
+        "category_id" in update_data
+        and update_data["category_id"] is not None
+        and await db.get(Category, update_data["category_id"]) is None
+    ):
+        raise HTTPException(
+            422, f"Invalid category ID: {update_data['category_id']}"
+        )
+    if "category_id" in update_data:
+        moved = [
+            c for c in collections if c.category_id != update_data["category_id"]
+        ]
+        if moved:
+            affected = {scope_key_for(c.category_id) for c in moved}
+            affected.add(scope_key_for(update_data["category_id"]))
+            await bump_scopes(db, affected)
+    changed = [
+        c
+        for c in collections
+        if any(getattr(c, key) != value for key, value in update_data.items())
+    ]
+    for c in changed:
+        for key, value in update_data.items():
+            setattr(c, key, value)
+        c.version += 1
+    if changed:
+        # Both fields are tile-visible: ``category_id`` is scope membership
+        # and ``hidden`` drops the tile for non-owner students.
+        await bump_browse_revision(db)
+    await db.commit()
+    ctx = await _ViewerContext.build(db, user)
+    by_id = {c.id: c for c in collections}
+    return [
+        collection_summary_out(ctx, by_id[cid])
+        for cid in dict.fromkeys(body.collection_ids)
+    ]
+
+
+@router.delete("/bulk", status_code=204)
+async def bulk_delete_collections(
+    body: CollectionBulkDelete,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-delete collections (#1578).
+
+    Unlike ``DELETE /images/bulk`` (curator-only) authority stays
+    per-collection so owners keep the single-delete contract at scale:
+    every id must resolve and be viewable (404 — private ids cannot be
+    probed) and pass ``can_delete_collection`` (403). The call is atomic —
+    one failure deletes nothing.
+    """
+    collections = (
+        await db.execute(
+            select(Collection).where(Collection.id.in_(body.collection_ids))
+        )
+    ).scalars().all()
+    if len(collections) != len(set(body.collection_ids)):
+        raise HTTPException(404, "One or more collections not found")
+    ctx = await _ViewerContext.build(db, user)
+    for c in collections:
+        if not ctx.can_view(c):
+            raise HTTPException(404, "Collection not found")
+    for c in collections:
+        if not can_delete_collection(user, c):
+            raise HTTPException(
+                403,
+                "You may not delete one or more of the selected collections",
+            )
+    # Lock order: scope revisions first, then the rows, then the browse
+    # revision — the single-delete order extended over the set.
+    await bump_scopes(db, {scope_key_for(c.category_id) for c in collections})
+    for c in collections:
+        await db.delete(c)
+    await bump_browse_revision(db)
+    await db.commit()
+    return Response(status_code=204)
 
 
 @router.patch("/{collection_id}", response_model=CollectionOut)

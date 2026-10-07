@@ -226,13 +226,9 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
-  play: async ({ args, canvasElement }) => {
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const table = await canvas.findByTestId('manage-collections-table')
-    // Read-only rows open the collection view on click; editable rows fetch
-    // the full record first (not deterministic in the sandbox).
-    await userEvent.click(within(table).getByText('Fracture healing timeline'))
-    await expect(args.onOpenCollection).toHaveBeenCalledWith(2)
     // Sort by Name — Fracture… now precedes Skull…
     await userEvent.click(within(table).getByRole('button', { name: 'Name' }))
     const order = within(table)
@@ -245,9 +241,13 @@ export const Basic: Story = {
 export const StaffView: Story = {
   name: 'Staff View',
   args: { role: 'staff' },
-  play: async ({ canvasElement }) => {
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     const table = await canvas.findByTestId('manage-collections-table')
+    // Read-only rows open the collection view on click (staff cannot file
+    // — the admin path opens the edit dialog instead, #1567).
+    await userEvent.click(within(table).getByText('Fracture healing timeline'))
+    await expect(args.onOpenCollection).toHaveBeenCalledWith(2)
     // No row carries a Move action — filing lives in the edit dialog's
     // category picker now (#1566).
     await expect(within(table).queryByRole('button', { name: /^Move / })).not.toBeInTheDocument()

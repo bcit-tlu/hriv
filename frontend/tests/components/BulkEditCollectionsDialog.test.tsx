@@ -1,0 +1,131 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import BulkEditCollectionsDialog from '../../src/components/BulkEditCollectionsDialog'
+import { makeCategory } from '../helpers/fixtures'
+
+const CATEGORIES = [
+  makeCategory({ id: 10, label: 'Anatomy' }),
+  makeCategory({ id: 11, label: 'Histology' }),
+]
+
+type Props = Parameters<typeof BulkEditCollectionsDialog>[0]
+
+function renderDialog(overrides: Partial<Props> = {}) {
+  const onClose = overrides.onClose ?? vi.fn()
+  const onSave = overrides.onSave ?? vi.fn()
+  const onDelete = overrides.onDelete ?? vi.fn()
+  const result = render(
+    <BulkEditCollectionsDialog
+      open={overrides.open ?? true}
+      onClose={onClose}
+      onSave={onSave}
+      onDelete={onDelete}
+      categories={overrides.categories ?? CATEGORIES}
+      selectedCount={overrides.selectedCount ?? 3}
+      canCurate={overrides.canCurate ?? true}
+      canDeleteAll={overrides.canDeleteAll ?? true}
+      programs={overrides.programs ?? []}
+      groups={overrides.groups ?? []}
+    />,
+  )
+  return { ...result, onClose, onSave, onDelete }
+}
+
+describe('BulkEditCollectionsDialog (#1578)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sends only the fields the user changed', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({}))
+  })
+
+  it('sends category_id when the picker changes', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('combobox'))
+    const listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Histology/ }))
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: 11 }))
+  })
+
+  it('can unfile to the Browse root with the root option', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('combobox'))
+    const listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /None \(root level\)/ }))
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: null }))
+  })
+
+  it('maps the visibility switch to hidden when toggled off', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('switch', { name: /visible to students/i }))
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ hidden: true }))
+  })
+
+  it('requires two clicks to delete and calls onDelete', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn().mockResolvedValue(undefined)
+    renderDialog({ onDelete })
+
+    await user.click(screen.getByRole('button', { name: /delete 3 selected collections/i }))
+    expect(onDelete).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /confirm delete 3 collections/i }))
+    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1))
+  })
+
+  it('disables delete when any selected row is not deletable', async () => {
+    renderDialog({ canDeleteAll: false })
+    expect(screen.getByRole('button', { name: /delete 3 selected collections/i })).toBeDisabled()
+  })
+
+  it('hides curator fields and Save for non-curators', () => {
+    renderDialog({ canCurate: false })
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: /visible to students/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /delete 3 selected collections/i })).toBeEnabled()
+  })
+
+  it('shows an error toast when bulk delete fails', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn().mockRejectedValue(new Error('Server error'))
+    renderDialog({ onDelete })
+
+    await user.click(screen.getByRole('button', { name: /delete 3 selected collections/i }))
+    await user.click(screen.getByRole('button', { name: /confirm delete/i }))
+    await waitFor(() => {
+      expect(
+        screen.getByText('Failed to delete collections. Please try again.'),
+      ).toBeInTheDocument()
+    })
+  })
+
+  it('shows an error toast when bulk save fails', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockRejectedValue(new Error('Server error'))
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => {
+      expect(screen.getByText('Failed to save changes. Please try again.')).toBeInTheDocument()
+    })
+  })
+})

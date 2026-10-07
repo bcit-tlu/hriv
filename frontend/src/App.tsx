@@ -2065,6 +2065,12 @@ export default function App() {
               onEditCategory={editCategoryInline}
               onToggleCategoryVisibility={toggleCategoryVisibility}
               onOpenCollection={(id) => handleOpenCollection(id)}
+              onCategoriesChanged={() => {
+                // A bulk refile/delete changes tile membership — refresh the
+                // tree and the root-scope list like the single-move path.
+                refreshCategories()
+                void loadUncategorizedCollections()
+              }}
               onError={setErrorSnack}
             />
           ) : page === 'people' && canViewPeople ? (
