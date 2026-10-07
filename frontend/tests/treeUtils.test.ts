@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   findImageInTree,
   findCategoryPath,
+  findLiveCategoryPath,
   isCategoryHiddenInTree,
   resolveCategoryPath,
   updateImageInTree,
@@ -72,6 +73,25 @@ describe('findCategoryPath', () => {
   it('returns null when category does not exist', () => {
     const cat = makeCategory({ id: 1, label: 'Root' })
     expect(findCategoryPath([cat], 999)).toBeNull()
+  })
+})
+
+describe('findLiveCategoryPath', () => {
+  it('returns empty for the root path', () => {
+    expect(findLiveCategoryPath([makeCategory({ id: 1, label: 'Root' })], [])).toEqual([])
+  })
+
+  it("resolves the leaf's current ancestry after a reparent", () => {
+    const leaf = makeCategory({ id: 3, label: 'Leaf' })
+    const newParent = makeCategory({ id: 2, label: 'New', children: [leaf] })
+    const oldParent = makeCategory({ id: 1, label: 'Old' })
+    const result = findLiveCategoryPath([oldParent, newParent], [{ id: 1 }, { id: 3 }])
+    expect(result).toEqual([newParent, leaf])
+  })
+
+  it('returns empty when the leaf is no longer in the tree', () => {
+    const root = makeCategory({ id: 1, label: 'Root' })
+    expect(findLiveCategoryPath([root], [{ id: 1 }, { id: 99 }])).toEqual([])
   })
 })
 

@@ -145,8 +145,10 @@ describe('SortableTileGrid', () => {
   })
 
   it('renders inherited program and group chips for categories restricted by an ancestor', () => {
+    const parent = makeCategory({ id: 10, label: 'Parent', programIds: [10], groupIds: [30] })
     renderGrid({
-      path: [makeCategory({ id: 10, label: 'Parent', programIds: [10], groupIds: [30] })],
+      allCategories: [parent],
+      path: [parent],
       currentCategories: [makeCategory({ id: 11, label: 'Child', parentId: 10 })],
       programs: defaultPrograms,
       groups: defaultGroups,
@@ -161,9 +163,41 @@ describe('SortableTileGrid', () => {
     })
   })
 
-  it('does not reduce child tile opacity when browsing inside a hidden category', () => {
+  it('narrows inherited chips over the live ancestry after the viewed category is reparented (#1587)', () => {
+    const child = makeCategory({ id: 11, label: 'Child', parentId: 12 })
+    const newParent = makeCategory({
+      id: 12,
+      label: 'New Parent',
+      programIds: [10],
+      groupIds: [30],
+      children: [child],
+    })
     renderGrid({
-      path: [makeCategory({ id: 10, label: 'Hidden Parent', status: 'hidden' })],
+      allCategories: [makeCategory({ id: 10, label: 'Old Parent' }), newParent],
+      // Navigation-time snapshots: Child was under the unrestricted Old Parent.
+      path: [
+        makeCategory({ id: 10, label: 'Old Parent' }),
+        makeCategory({ id: 11, label: 'Child', parentId: 10 }),
+      ],
+      currentCategories: [makeCategory({ id: 13, label: 'Grandchild', parentId: 11 })],
+      programs: defaultPrograms,
+      groups: defaultGroups,
+      canEditContent: false,
+    })
+
+    expect(screen.getByText('Pathology').closest('[data-testid="program-chip"]')).toHaveStyle({
+      opacity: '0.6',
+    })
+    expect(screen.getByText('Lab A2').closest('[data-testid="group-chip"]')).toHaveStyle({
+      opacity: '0.6',
+    })
+  })
+
+  it('does not reduce child tile opacity when browsing inside a hidden category', () => {
+    const hiddenParent = makeCategory({ id: 10, label: 'Hidden Parent', status: 'hidden' })
+    renderGrid({
+      allCategories: [hiddenParent],
+      path: [hiddenParent],
       currentCategories: [makeCategory({ id: 11, label: 'Child Category', parentId: 10 })],
       currentImages: [makeImage({ id: 12, name: 'Child Image', categoryId: 10 })],
       canEditContent: false,

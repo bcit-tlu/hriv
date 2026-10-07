@@ -824,26 +824,30 @@ vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
 
-vi.mock('../src/useBrowseData', () => ({
-  useBrowseData: () => ({
-    categories: mockCategories,
-    categoriesLoading: false,
-    setCategories: vi.fn(),
-    uncategorizedImages: [],
-    uncategorizedLoaded: true,
-    setUncategorizedImages: vi.fn(),
-    currentCollections: [],
-    programs: mockPrograms,
-    groups: mockGroups,
-    ...browseDataFns,
-    currentImages: currentImagesMock,
-    getPathRestriction: () => [1],
-    ancestorProgramIds: [1],
-    getPathGroupRestriction: () => [10],
-    ancestorGroupIds: [10],
-    currentCategories: mockCategories,
-  }),
-}))
+vi.mock('../src/useBrowseData', async () => {
+  const { narrowGroupIds, narrowProgramIds } =
+    await vi.importActual<typeof import('../src/categoryUtils')>('../src/categoryUtils')
+  return {
+    // Mock categories are the live tree, so `path` doubles as its live ancestry.
+    useBrowseData: ({ path }: { path: MockCategory[] }) => ({
+      categories: mockCategories,
+      categoriesLoading: false,
+      setCategories: vi.fn(),
+      uncategorizedImages: [],
+      uncategorizedLoaded: true,
+      setUncategorizedImages: vi.fn(),
+      currentCollections: [],
+      programs: mockPrograms,
+      groups: mockGroups,
+      ...browseDataFns,
+      currentImages: currentImagesMock,
+      liveCategoryPath: path,
+      ancestorProgramIds: path.length > 0 ? narrowProgramIds(path) : [1],
+      ancestorGroupIds: path.length > 0 ? narrowGroupIds(path) : [10],
+      currentCategories: mockCategories,
+    }),
+  }
+})
 
 const pushNavStateMock = vi.fn()
 let popStateHandler:

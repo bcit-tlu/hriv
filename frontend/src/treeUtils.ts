@@ -30,6 +30,20 @@ export function findCategoryPath(
 }
 
 /**
+ * Resolve the live ancestry of a navigation path's leaf. `path` entries are
+ * navigation-time snapshots; searching the whole tree for the leaf by id
+ * survives renames, restriction edits, and reparents of the leaf or its
+ * ancestors. Returns `[]` at root and when the leaf has left the tree.
+ */
+export function findLiveCategoryPath(
+  tree: Category[],
+  path: ReadonlyArray<{ id: number }>,
+): Category[] {
+  if (path.length === 0) return []
+  return findCategoryPath(tree, path[path.length - 1].id) ?? []
+}
+
+/**
  * Search the category tree for a filed collection by ID, returning the
  * collection summary and the category path it is filed under (#1529).
  * Unfiled collections are not in the Browse tree.

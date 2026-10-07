@@ -11,7 +11,7 @@ import { apiCollectionToCollection, SYNCHRONIZED_MAX_IMAGES } from './collection
 import type { AddToCollectionResult } from './useAddToCollection'
 import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
 import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
-import { computeMoveRestrictionChange } from './categoryUtils'
+import { computeMoveRestrictionChange, narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { emitEvent } from './observability'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findCollectionInTree, findImageInTree, findCategoryPath } from './treeUtils'
@@ -75,9 +75,9 @@ export interface UseCategoryActionsDeps {
   ) => Promise<Collection>
   currentCategories: Category[]
   ancestorProgramIds: number[]
-  getPathRestriction: (depth?: number) => number[]
   ancestorGroupIds: number[]
-  getPathGroupRestriction: (depth?: number) => number[]
+  /** Live ancestry of the breadcrumb leaf (`useBrowseData.liveCategoryPath`). */
+  liveCategoryPath: Category[]
   path: Category[]
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
   editNameCategory: Category | null
@@ -101,9 +101,8 @@ export function useCategoryActions({
   removeImagesFromCollectionApi,
   currentCategories,
   ancestorProgramIds,
-  getPathRestriction,
   ancestorGroupIds,
-  getPathGroupRestriction,
+  liveCategoryPath,
   path,
   setPath,
   editNameCategory,
@@ -137,23 +136,24 @@ export function useCategoryActions({
     if (!editNameCategory) return fallback
     const isBreadcrumbCategory = path.length > 0 && path[path.length - 1].id === editNameCategory.id
     if (isBreadcrumbCategory) {
-      let parentChildren = categories
-      for (let i = 0; i < path.length - 1; i++) {
-        const found = parentChildren.find((c) => c.id === path[i].id)
-        if (!found) break
-        parentChildren = found.children
-      }
-      const freshCat = parentChildren.find((c) => c.id === editNameCategory.id)
+      // Read from the leaf's live ancestry, not the `path` snapshots, so a
+      // reparent/rename since navigation yields the current parent's siblings
+      // and inherited restrictions.
+      const freshCat = liveCategoryPath[liveCategoryPath.length - 1]
+      if (freshCat?.id !== editNameCategory.id) return fallback
+      const liveAncestors = liveCategoryPath.slice(0, -1)
+      const parentChildren =
+        liveAncestors.length > 0 ? liveAncestors[liveAncestors.length - 1].children : categories
       const siblingNames = parentChildren
         .filter((c) => c.id !== editNameCategory.id)
         .map((c) => c.label)
       return {
         siblingNames,
-        inheritedProgramIds: getPathRestriction(path.length - 1),
-        inheritedGroupIds: getPathGroupRestriction(path.length - 1),
-        freshLabel: freshCat?.label ?? editNameCategory.label,
-        freshProgramIds: freshCat?.programIds ?? editNameCategory.programIds,
-        freshGroupIds: freshCat?.groupIds ?? editNameCategory.groupIds,
+        inheritedProgramIds: narrowProgramIds(liveAncestors),
+        inheritedGroupIds: narrowGroupIds(liveAncestors),
+        freshLabel: freshCat.label,
+        freshProgramIds: freshCat.programIds,
+        freshGroupIds: freshCat.groupIds,
       }
     }
     const freshChild = currentCategories.find((c) => c.id === editNameCategory.id)
@@ -173,9 +173,8 @@ export function useCategoryActions({
     categories,
     currentCategories,
     ancestorProgramIds,
-    getPathRestriction,
     ancestorGroupIds,
-    getPathGroupRestriction,
+    liveCategoryPath,
   ])
 
   const addCategoryInline = useCallback(
