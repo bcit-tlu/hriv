@@ -14,10 +14,10 @@ import * as CollectionManageDialogStories from './CollectionManageDialog.stories
 <Title />
 
 <Subtitle>
-  The member-management surface for a collection — a miniature Browse: every member as a
-  filmstrip-size tile that reorders by drag-and-drop, a trash overlay pinned to the bottom-right
-  corner, a Select mode that multi-picks tiles for staged removal, and an Add action that hands off
-  to the global search/add flow. All edits stage in a local draft and commit once via Done.
+  The member-management surface for a collection ("Manage Collection Images") — a miniature Browse:
+  every member as a filmstrip-size tile that reorders by drag-and-drop, a corner control that
+  removes it, a Select mode that multi-picks tiles for staged removal, and an Add action that hands
+  off to the global search picker. All edits stage in a local draft and commit once via Done.
 </Subtitle>
 
 ## When to use
@@ -50,7 +50,7 @@ are added to or removed from a collection outside the global search/Browse add g
   check indicator replacing the ✕ badge, and a **Remove (N)** button stages the whole set in one
   draft update. Leaving selection mode — or reopening the dialog — clears the set.
 - **Draft staging.** Opening seeds a local draft from the detail's members; every operation —
-  reorder, remove, trash-drop, search-add — mutates only the draft, so the page behind the dialog
+  reorder, remove, search-add — mutates only the draft, so the page behind the dialog
   never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls
   `onSaveMembers(imageIds)` once on a difference — a single `PUT …/images` whole-replace through
   `useCollectionsData.reorderImages`. Membership changes that land while the dialog is open are
@@ -62,10 +62,6 @@ are added to or removed from a collection outside the global search/Browse add g
   the draft order; a no-change drop or a cancelled drag changes nothing. Drags render through a
   `DragOverlay` replica while the source tile dims in place, keeping the ✕ attached to the dragged
   tile.
-- **Trash drop-zone.** A `useDroppable` mounted permanently (so its rect is registered through the
-  drag) as a fixed overlay at the bottom-right of the scroll area — invisible/disabled until a
-  member drag starts — rather than a row that spawns mid-drag. Dropping a tile on it removes the
-  member from the draft, same as the corner control.
 - **Add.** The title row's **Add** button (Browse's
   `AddPhotoAlternateIcon` convention) calls `onAddImages`; `App` opens the
   search modal in add-to-collection mode with multi-select already engaged

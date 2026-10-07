@@ -404,10 +404,11 @@ always read-only (`canEditContent={false}`).
   `Alert` replaces the viewer.
 - **Given** the collection has no visible images, **Then** an info `Alert`
   says there is nothing to show.
-- **Given** `permissions.can_edit`, **Then** a **Manage** button opens a
-  large dialog of filmstrip-size thumbnails; dragging reorders, the
-  bottom-right trash overlay and per-tile remove control delete members, and
-  a **+** button opens the add-images search flow — all staged in a local
+- **Given** `permissions.can_edit`, **Then** a **Manage** button opens the
+  "Manage Collection Images — {name}" dialog of filmstrip-size thumbnails;
+  dragging reorders, the per-tile remove control deletes members, a
+  **Select** toggle multi-picks members for a staged **Remove (N)**, and an
+  **Add** button opens the search picker — all staged in a local
   draft that leaves the page behind untouched until **Done** PUTs the whole
   member id list with the collection `version` (closing a dirty draft asks
   to discard first). Non-editors never see the button.
@@ -524,24 +525,32 @@ re-checks).
   student never sees a restricted-failing collection. A collection row shows
   its type, image count, and owners, and selecting it navigates to
   `?collection={id}`.
-- Multi-select covers images and categories (#1567): a **Select** toggle
-  appears next to the result count when image or category results exist (or
-  select mode is already active), and the Manage dialog's **Add Images**
-  flow opens the modal with select mode already on. In select mode, image
-  rows gain checkboxes labelled `Select {image title}` and category rows
-  `Select {category name}`; checking a category selects every image in its
-  subtree (sub-categories included, hidden subtrees excluded) in
-  registration order, and the box shows indeterminate when the subtree is
-  only partially selected. Row clicks toggle the check instead of
+- Multi-select covers images and categories, but only in picker mode
+  (#1567): the Manage dialog's **Add** flow opens the modal with
+  `initialSelectMode`, and the select layer (checkboxes, **Select all** /
+  **Unselect all** at the top-left of the results list, the sticky footer)
+  exists nowhere else — the normal search carries no Select affordance.
+  In picker mode, image rows gain checkboxes labelled `Select {image title}`
+  and category rows `Select {category name}`; checking a category selects
+  every image in its subtree (sub-categories included, hidden subtrees
+  excluded) in registration order, and the box shows indeterminate when the
+  subtree is only partially covered. Row clicks toggle the check instead of
   navigating; every other kind stays navigable and is never selectable.
-  Selections persist across
-  query and filter changes — the footer count includes picks hidden by the
-  current query and **Add to collection** opens `AddToCollectionDialog`
-  with the ids in "order encountered" (result order within a query,
-  chronological across queries). Closing the modal, toggling select mode
-  off, or handing off to the dialog resets the selection. When the
-  collections feature flag is off the modal hides collection results, the
-  Collections chip, and the collections wording in the placeholder.
+  Selections persist across query and filter changes — the footer count
+  includes picks hidden by the current query and enumerates unique image
+  objects (a checked category counts its whole subtree once). Provenance
+  keeps overlap honest (#1567): an image remembers whether it was picked
+  directly or pinned by a checked category, so unchecking a category only
+  releases members no direct pick or other category still claims, and
+  checking an already-covered nested category never shrinks the count. The
+  footer lays out "N images selected" then **Clear** (only while the
+  selection is non-empty), **Cancel** (closes the picker), and **Add to
+  collection**, which emits the ids in "order encountered" (result order
+  within a query, chronological across queries) into the Manage dialog's
+  staged draft. Closing the modal or handing off resets the
+  selection. When the collections feature flag is off the modal hides
+  collection results, the Collections chip, and the collections wording in
+  the placeholder.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into

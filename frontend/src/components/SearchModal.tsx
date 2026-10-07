@@ -524,21 +524,22 @@ interface SearchModalProps {
   onSelectGuide?: (slug: string, anchor?: string) => void
   /** Navigate to a collection result (`?collection={id}`). */
   onSelectCollection?: (collectionId: number) => void
-  /** Opens the Add-to-Collection dialog with the multi-selected image ids.
-   *  When absent the multi-select affordance is hidden entirely. */
   /**
-   * Emits the picked images in selection (epoch/result) order. When the
-   * collection Manage dialog opened the search, App stages these into its
-   * draft; otherwise they flow into the add-to-collection picker (#1567).
+   * Emits the picked images in selection (epoch/result) order when the
+   * footer's Add-to-collection action fires. The select layer only exists
+   * in picker mode — see `initialSelectMode` (#1567).
    */
   onAddImagesToCollection?: (images: ImageItem[]) => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
   initialTypeFilter?: TypeFilter
-  /** Open with multi-select already engaged — the Manage dialog's Add
-   *  Images flow stages picks (including whole categories) straight into
-   *  its draft (#1567). No-op when `onAddImagesToCollection` is absent. */
+  /** Launch as a collection-image picker (#1567): checkboxes and the
+   *  selection footer are on from open and there is no way to leave picker
+   *  mode except Cancel/close — the Manage Collection dialog's Add flow
+   *  stages picks (including whole categories) straight into its draft.
+   *  Requires `onAddImagesToCollection`; without it the modal behaves like
+   *  a normal search. */
   initialSelectMode?: boolean
 }
 
@@ -568,21 +569,24 @@ export default function SearchModal({
   const [query, setQuery] = useState('')
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
-  // Multi-select mode: image results get checkboxes feeding a sticky footer
-  // action; non-image kinds are never selectable. Each check records the
-  // result generation and position where the image appeared so a selection
-  // accumulated across several queries still emits in "order encountered".
-  // (#1418)
-  // `initialSelectMode` covers mounting already-open; the open-transition
-  // seeding below covers a persistently mounted modal being opened (#1567).
-  const [selectMode, setSelectMode] = useState(
-    () => initialSelectMode && onAddImagesToCollection != null,
-  )
+  // Multi-select (#1418/#1567): image and category results get checkboxes
+  // feeding a sticky footer action — but ONLY when the modal was launched
+  // as a collection-image picker (`initialSelectMode`, currently the
+  // Manage-collection dialog's Add flow). The normal search never shows
+  // the select layer.
+  const selectMode = initialSelectMode && onAddImagesToCollection != null
   // The image rides along in each entry so picks survive a query change —
   // the collection-add callback emits `ImageItem`s (#1567), which a stale
-  // result list could no longer supply by id alone.
+  // result list could no longer supply by id alone. `direct` marks an
+  // explicit per-image pick; `pins` holds the ids of category results that
+  // claim the image — unchecking a category only removes entries it is the
+  // sole claimant of, so a hand-picked member (or one shared with another
+  // checked category's subtree) survives the uncheck.
   const [selectedImages, setSelectedImages] = useState<
-    Map<number, { epoch: number; index: number; image: ImageItem }>
+    Map<
+      number,
+      { epoch: number; index: number; image: ImageItem; direct: boolean; pins: Set<number> }
+    >
   >(new Map())
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
@@ -594,7 +598,6 @@ export default function SearchModal({
     if (initialQuery != null || initialTypeFilter != null || initialSelectMode) {
       if (initialQuery != null) setQuery(initialQuery)
       if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
-      if (initialSelectMode && onAddImagesToCollection != null) setSelectMode(true)
       setFieldFilters(new Set())
       setWasSeeded(true)
     }
@@ -608,7 +611,6 @@ export default function SearchModal({
   // Closing (or handing off to the collection dialog) always clears the
   // multi-selection — the ids are captured by the callback before reset.
   if (!open && prevSearchOpen) {
-    if (selectMode) setSelectMode(false)
     if (selectedImages.size > 0) setSelectedImages(new Map())
   }
   if (open !== prevSearchOpen) setPrevSearchOpen(open)
@@ -784,14 +786,6 @@ export default function SearchModal({
 
   const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
 
-  const hasImageResults = useMemo(
-    () =>
-      // Categories are selectable in select mode too — they emit their
-      // subtree's images (#1567).
-      displayResults.some((r) => r.payload.kind === 'image' || r.payload.kind === 'category'),
-    [displayResults],
-  )
-
   // Each new result set bumps an epoch; a check stamps the image with the
   // epoch and its position in that set. Emitting sorts by (epoch, index),
   // which is result order within one query and "order encountered" across
@@ -812,20 +806,24 @@ export default function SearchModal({
     [selectedImages],
   )
 
-  const toggleSelectMode = useCallback(() => {
-    setSelectMode((prev) => !prev)
-    setSelectedImages(new Map())
-  }, [])
-
   const toggleImageSelected = useCallback(
     (image: ImageItem, resultIndex: number) => {
       const epoch = resultEpoch
       setSelectedImages((prev) => {
         const next = new Map(prev)
         if (next.has(image.id)) {
+          // An explicit uncheck removes the image outright — even when a
+          // checked category pins it — so the category row can honestly go
+          // indeterminate.
           next.delete(image.id)
         } else {
-          next.set(image.id, { epoch, index: resultIndex, image })
+          next.set(image.id, {
+            epoch,
+            index: resultIndex,
+            image,
+            direct: true,
+            pins: new Set(),
+          })
         }
         return next
       })
@@ -833,21 +831,41 @@ export default function SearchModal({
     [resultEpoch],
   )
 
-  // Category results are bulk-toggles (#1567): checking selects every image
-  // in the subtree (registration order — the shared (epoch, index) stamp +
-  // stable sort keeps DFS insertion order in the emitted list); unchecking
-  // removes them all. Partially selected subtrees show indeterminate.
+  // Category results are bulk-toggles (#1567): checking pins every image in
+  // the subtree (registration order — the shared (epoch, index) stamp +
+  // stable sort keeps DFS insertion order in the emitted list). Unchecking
+  // lifts this category's pin; a member only leaves the selection when no
+  // pin or direct pick still claims it — a hand-picked or
+  // other-category-covered member survives (#1567). Partially covered
+  // subtrees show indeterminate.
   const toggleCategorySelected = useCallback(
-    (images: ImageItem[], resultIndex: number) => {
+    (categoryId: number, images: ImageItem[], resultIndex: number) => {
       const epoch = resultEpoch
       setSelectedImages((prev) => {
         const next = new Map(prev)
-        const allSelected = images.length > 0 && images.every((i) => next.has(i.id))
-        if (allSelected) {
-          for (const i of images) next.delete(i.id)
+        const pinned =
+          images.length > 0 && images.every((i) => next.get(i.id)?.pins.has(categoryId))
+        if (pinned) {
+          for (const img of images) {
+            const entry = next.get(img.id)
+            if (!entry) continue
+            const pins = new Set(entry.pins)
+            pins.delete(categoryId)
+            if (!entry.direct && pins.size === 0) next.delete(img.id)
+            else next.set(img.id, { ...entry, pins })
+          }
         } else {
           for (const image of images) {
-            if (!next.has(image.id)) next.set(image.id, { epoch, index: resultIndex, image })
+            const entry = next.get(image.id)
+            if (entry) next.set(image.id, { ...entry, pins: new Set(entry.pins).add(categoryId) })
+            else
+              next.set(image.id, {
+                epoch,
+                index: resultIndex,
+                image,
+                direct: false,
+                pins: new Set([categoryId]),
+              })
           }
         }
         return next
@@ -855,6 +873,94 @@ export default function SearchModal({
     },
     [resultEpoch],
   )
+
+  // The selectable rows currently listed — image results plus non-empty
+  // category subtrees — feeding the Select-all control (#1567).
+  type SelectableRow =
+    | { kind: 'image'; image: ImageItem; resultIndex: number }
+    | { kind: 'category'; categoryId: number; images: ImageItem[]; resultIndex: number }
+  const selectableRows = useMemo<SelectableRow[]>(
+    () =>
+      displayResults.flatMap((result, resultIndex): SelectableRow[] => {
+        if (result.payload.kind === 'image')
+          return [{ kind: 'image', image: result.payload.image, resultIndex }]
+        if (result.payload.kind === 'category') {
+          const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
+          const images = collectSubtreeImages(cat, excludeHidden)
+          if (images.length > 0)
+            return [{ kind: 'category', categoryId: cat.id, images, resultIndex }]
+        }
+        return []
+      }),
+    [displayResults, excludeHidden],
+  )
+
+  const allSelectableCovered = useMemo(
+    () =>
+      selectableRows.length > 0 &&
+      selectableRows.every((row) =>
+        row.kind === 'image'
+          ? selectedImages.has(row.image.id)
+          : row.images.every((i) => selectedImages.has(i.id)),
+      ),
+    [selectableRows, selectedImages],
+  )
+
+  const toggleSelectAll = useCallback(() => {
+    const epoch = resultEpoch
+    setSelectedImages((prev) => {
+      const next = new Map(prev)
+      if (allSelectableCovered) {
+        // Unselect all: drop coverage for every listed row — image picks
+        // outright, category pins with the member only leaving when no
+        // other claim holds it.
+        for (const row of selectableRows) {
+          if (row.kind === 'image') {
+            next.delete(row.image.id)
+          } else {
+            for (const img of row.images) {
+              const entry = next.get(img.id)
+              if (!entry) continue
+              const pins = new Set(entry.pins)
+              pins.delete(row.categoryId)
+              if (!entry.direct && pins.size === 0) next.delete(img.id)
+              else next.set(img.id, { ...entry, pins })
+            }
+          }
+        }
+      } else {
+        for (const row of selectableRows) {
+          if (row.kind === 'image') {
+            const entry = next.get(row.image.id)
+            if (entry) next.set(row.image.id, { ...entry, direct: true })
+            else
+              next.set(row.image.id, {
+                epoch,
+                index: row.resultIndex,
+                image: row.image,
+                direct: true,
+                pins: new Set(),
+              })
+          } else {
+            for (const image of row.images) {
+              const entry = next.get(image.id)
+              if (entry)
+                next.set(image.id, { ...entry, pins: new Set(entry.pins).add(row.categoryId) })
+              else
+                next.set(image.id, {
+                  epoch,
+                  index: row.resultIndex,
+                  image,
+                  direct: false,
+                  pins: new Set([row.categoryId]),
+                })
+            }
+          }
+        }
+      }
+      return next
+    })
+  }, [allSelectableCovered, selectableRows, resultEpoch])
 
   const handleAddSelected = () => {
     if (orderedSelectedImages.length === 0) return
@@ -984,17 +1090,6 @@ export default function SearchModal({
         )}
 
         <Box sx={{ flexGrow: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
-          {/* While select mode is on, the Cancel control must stay reachable
-              even when the current query has no results to check. */}
-          {selectMode &&
-            onAddImagesToCollection != null &&
-            (query.trim().length === 0 || groupedResults.length === 0) && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
-                <Button size="small" data-testid="search-select-toggle" onClick={toggleSelectMode}>
-                  Cancel
-                </Button>
-              </Box>
-            )}
           {query.trim().length === 0 ? (
             <Box
               sx={{
@@ -1026,20 +1121,24 @@ export default function SearchModal({
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                {/* Picker mode (#1567): a bulk select/unselect for every
+                    selectable row currently listed — image results and
+                    category subtrees alike. */}
+                {selectMode && selectableRows.length > 0 && (
+                  <Button
+                    size="small"
+                    data-testid="search-select-all"
+                    onClick={toggleSelectAll}
+                    sx={{ mr: 1, flexShrink: 0 }}
+                  >
+                    {allSelectableCovered ? 'Unselect all' : 'Select all'}
+                  </Button>
+                )}
                 <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
                   {groupedResults.length > MAX_RESULTS
                     ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
                     : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
                 </Typography>
-                {(hasImageResults || selectMode) && onAddImagesToCollection != null && (
-                  <Button
-                    size="small"
-                    data-testid="search-select-toggle"
-                    onClick={toggleSelectMode}
-                  >
-                    {selectMode ? 'Cancel' : 'Select'}
-                  </Button>
-                )}
               </Box>
               {displayResults.map((result, resultIndex) => {
                 const chipNames = getResultProgramNames(result, programMap)
@@ -1249,7 +1348,13 @@ export default function SearchModal({
                           onChange={() =>
                             image != null
                               ? toggleImageSelected(image, resultIndex)
-                              : subtreeImages && toggleCategorySelected(subtreeImages, resultIndex)
+                              : subtreeImages &&
+                                resultCategory &&
+                                toggleCategorySelected(
+                                  resultCategory.id,
+                                  subtreeImages,
+                                  resultIndex,
+                                )
                           }
                           slotProps={{
                             input: {
@@ -1292,12 +1397,15 @@ export default function SearchModal({
               {orderedSelectedImages.length} image{orderedSelectedImages.length === 1 ? '' : 's'}{' '}
               selected
             </Typography>
-            <Button
-              size="small"
-              disabled={orderedSelectedImages.length === 0}
-              onClick={() => setSelectedImages(new Map())}
-            >
-              Clear
+            {/* Clear only earns its slot once something is actually
+                selected; Cancel leaves the picker entirely (#1567). */}
+            {orderedSelectedImages.length > 0 && (
+              <Button size="small" onClick={() => setSelectedImages(new Map())}>
+                Clear
+              </Button>
+            )}
+            <Button size="small" data-testid="search-select-cancel" onClick={onClose}>
+              Cancel
             </Button>
             <Button
               variant="contained"

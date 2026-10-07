@@ -64,15 +64,18 @@ visible but can't be changed here.
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.
 - If you can edit the collection, a **Manage** button in the top-right
-  header opens a dialog of thumbnails — a miniature Browse view. Drag
-  thumbnails to reorder, drop one on the trash drop target in the
-  bottom-right corner (or click its corner remove icon) to take it out of
-  the collection, and click **Add** to pick through search — the
-  search opens with **Select** already on, and you can tick individual
-  images or a whole category (its images, and its sub-categories' images,
-  are added in their order in the category). To remove several at once,
+  header opens the **Manage Collection Images** dialog — a miniature
+  Browse view of thumbnails. Drag
+  thumbnails to reorder, or click a thumbnail's corner remove icon to take
+  it out of the collection. To remove several at once,
   click **Select** in the dialog header: thumbnails become checkboxes —
-  tick the ones you want gone and click **Remove**. Changes
+  tick the ones you want gone and click **Remove**. Click **Add** to pick
+  through search — the search opens as a picker with checkboxes already on:
+  tick individual images or a whole category (its images, and its
+  sub-categories' images, are added in their order in the category), or use
+  **Select all** above the results. The footer shows how many images are
+  selected; **Cancel** returns to the dialog and **Add to collection**
+  stages the picks. Changes
   apply inside the dialog only — **Done** saves them all at once, and
   closing without Done asks before discarding. This works for synchronized
   collections too.
@@ -112,16 +115,19 @@ Type in the filter box to narrow a long list.
 The button is unavailable while you are editing annotations on the canvas —
 finish or cancel that first.
 
-### Add several images at once (from search)
+### Add several images at once (search picker)
 
-In the top-bar **Search**, click **Select** next to the result count, tick
-each image you want, then click **Add to collection** in the footer. The
-same dialog opens with all of them selected. You can keep selecting across
-searches — images you picked under an earlier query still count, and they
-are added in the order they appeared in your results. Ticking a **category**
-selects every image inside it — including its sub-categories — in the order
-they're registered; unticking removes them all again. Collections and
-other result kinds still open when you click them and are never selected.
+From the collection's **Manage** dialog, click **Add** — the search opens
+as a picker with checkboxes already on. Tick each image you want, or tick a
+**category** to select every image inside it — including its sub-categories —
+in the order they're registered; unticking removes them again, and images
+you ticked by hand stay picked. **Select all** above the results covers
+every listed row. The footer counts how many images are selected, **Clear**
+empties the set, **Cancel** returns you to the dialog, and **Add to
+collection** stages the picks. You can keep selecting across searches —
+images picked under an earlier query still count, and they are added in
+the order they appeared in your results. Collections and other result
+kinds still open when you click them and are never selected.
 
 ### Add an image from Browse (drag onto the tile)
 

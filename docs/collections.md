@@ -591,7 +591,7 @@ renders them. The actions are **Hide collection** / **Show collection**
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
 image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
 opens `CollectionManageDialog`, the mini-Browse member manager: drag to
-reorder, drag-to-trash or the corner control to remove, **Select** +
+reorder, the corner control to remove, **Select** +
 **Remove** to multi-pick members for removal, **Add** to
 add via the search flow — all staged locally until **Done** commits the
 staged list once; #1566/#1567). **Edit** is a pencil on the final
@@ -867,15 +867,13 @@ of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
 the locked `SortableTileGrid` collision contract is untouched). The dialog
 is a local draft editor (#1567): opening seeds the draft from the detail's
 member list, and every operation — `move()` reorder on drag-end, the corner
-remove control, a drop on the trash overlay, a selection-mode bulk removal,
+remove control, a selection-mode bulk removal,
 and picks returned by the
 add-images search flow (`onAddImages` → App opens `SearchModal`, whose
 selected `ImageItem`s land back in the draft via a staged-add channel) —
 mutates only the draft, so the detail page and filmstrip behind the dialog
 never move mid-edit. Dragging renders a `DragOverlay` replica while the
-source tile dims in place, and the trash `useDroppable` is a permanently
-registered fixed overlay at the bottom-right of the scroll area (hidden +
-`disabled` while idle). Tiles keep `tabIndex`/`role="button"` on the
+source tile dims in place. Tiles keep `tabIndex`/`role="button"` on the
 activator face explicitly (not left to the dnd-kit a11y plugin's deferred
 injection) so keyboard reorder — Space/Enter to pick up, arrows to move —
 always reaches the `KeyboardSensor` (#1567). The header's **Select** toggle
@@ -975,35 +973,44 @@ searchOpen)` — a lazy list fetch each time the modal opens, shared with
 `permissions.canEdit`). When the feature flag is off the list stays empty
 and no Collections chip appears.
 
-**Multi-select (image and category results).** A **Select** toggle next to
-the result count appears when image or category results exist (or select
-mode is already on) and `onAddImagesToCollection` is provided; the Manage
-dialog's **Add** flow opens the modal with select mode already on
-(`initialSelectMode`). Image rows become labelled checkboxes
+**Multi-select (image and category results) — picker mode only.** The
+select layer exists only when the modal opens as a collection-image picker
+(`initialSelectMode` — currently the Manage dialog's **Add** flow,
+`requestCollectionImageSearch`); the normal search never shows a Select
+toggle, checkboxes, or the footer. Image rows become labelled checkboxes
 (`Select {image name}`) inside a `<label>` row — clicking anywhere toggles —
 and category results check the same way: a checked category stages every
 image in its subtree (sub-categories included) in registration order — the
 category's own images by `sortOrder`, then each child's subtree in tree
 order, honoring the `excludeHidden` rule — and shows indeterminate when
-only part of the subtree is selected. Every other kind keeps its
+only part of the subtree is covered. Every other kind keeps its
 `CardActionArea` navigation and is never selectable (this avoids
-nested-interactive controls, see #1345). Selections survive query and
-filter changes: each check records the result generation and position
+nested-interactive controls, see #1345). A **Select all** /
+**Unselect all** control at the top-left of the results list bulk-toggles
+every selectable row currently displayed. Selections survive query and
+filter changes: each pick records the result generation and position
 where the image appeared, so the footer count covers picks hidden by the
 current query and the payload emits them in "order encountered" — result
-order within one query, chronological batches across queries. A sticky
-footer shows "N images selected" with **Clear** and **Add to collection**,
-which opens `AddToCollectionDialog` with `imageIds` (or feeds the Manage
-dialog's draft when that flow launched the modal), reusing the #1415
-dialog, capacity checks, and snackbar feedback. Closing the modal,
-cancelling select mode, or handing off resets the selection. When the
+order within one query, chronological batches across queries.
+Per-image provenance (`direct` vs the set of checking categories' `pins`)
+keeps the count honest under overlap: unchecking a category removes only
+members no other claim holds, so a hand-picked or other-subtree member
+survives, and checking an already-covered nested category never shrinks
+the count. The sticky footer shows "N images selected" with **Clear**
+(only while the selection is non-empty), **Cancel** (closes the picker),
+and **Add to collection**, which hands the ids to
+`handleSearchAddToCollection` — staging them into the Manage dialog's
+draft when that flow launched the modal. Closing the modal or handing off
+resets the selection. When the
 collections feature flag is off, the modal hides collection results, the
 Collections chip, and the collections wording in the placeholder.
 
-**Image ids.** `App` keeps `addToCollectionImageIds` as state: the viewer
-button sets `[selectedImage.id]`, the search footer sets the checked ids;
-the dialog renders whenever `collectionsEnabled && currentUser`, so
-search-driven adds work with no image open.
+**Image ids.** `App` keeps `addToCollectionImageIds` as state for the
+viewer's **Add to Collection** button (`[selectedImage.id]`); the search
+picker's footer feeds `handleSearchAddToCollection`, which stages into the
+Manage dialog's draft when that flow launched the modal (and otherwise
+opens `AddToCollectionDialog`). The dialog renders whenever
+`collectionsEnabled && currentUser`, so adds work with no image open.
 
 ### Ownership management UI (#1419)
 
@@ -1130,8 +1137,8 @@ the shared group-chip palette.
   above the description, Manage button wiring for editable detail, Hidden
   chip + Hide/Show link on
   `canHide`, `onToggleHidden` call + error surface),
-  `CollectionManageDialog.test.tsx` (member grid, drag reorder, trash
-  drop target, add/remove callbacks, selection-mode bulk removal),
+  `CollectionManageDialog.test.tsx` (member grid, drag reorder, no-target
+  drop no-op, add/remove callbacks, selection-mode bulk removal),
   `CollectionCard.test.tsx` (type icon left of the title, actions overlay,
   hidden indicator), `useCollectionsData.test.ts`
   (`setHidden` PATCH + 409 merge), `App.test.tsx` (`onNavigateCategory` /
@@ -1160,7 +1167,7 @@ the shared group-chip palette.
   forwarding, mid-session failure skip + all-failed state, hidden-prop
   filmstrip desaturation; the Manage dialog covers `move()` reorder →
   `PUT` with version, optimistic order in
-  `detail`, rollback on error, drag-to-trash removal, `renewCollectionImage`
+  `detail`, rollback on error, corner-control removal, `renewCollectionImage`
   member swap.
 - `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
   `useCollectionsData.test.ts` (#1417, #1561, #1564) — two-pane render with
@@ -1188,11 +1195,13 @@ the shared group-chip palette.
   desaturation, success / info / error snackbars and **View collection**
   navigation.
 - `frontend/tests/components/SearchModal.test.tsx`,
-  `useAddToCollection.test.tsx`, `App.test.tsx` (#1418) — collection results
+  `useAddToCollection.test.tsx`, `App.test.tsx` (#1418, #1567) — collection results
   on name/description, Collections chip field scoping, `?collection={id}`
-  navigation, collections visible under `suppressExtendedResults`, Select
-  toggle gating (image results + handler only), image-only checkboxes,
-  result-order payload, Clear/close reset, `useVisibleCollections` keeping
+  navigation, collections visible under `suppressExtendedResults`, picker-only
+  select layer (`initialSelectMode` + handler required — normal search never
+  shows it), image and category-subtree checkboxes, pin/direct provenance
+  under overlap, Select-all coverage, result-order payload, Clear/close reset,
+  footer Cancel/Add layout, `useVisibleCollections` keeping
   non-editable rows, dialog plumbing with the multi-selected ids.
 - `frontend/tests/components/CollectionOwnersDialog.test.tsx`,
   `CollectionsPage.test.tsx`, `CollectionCard.test.tsx`,

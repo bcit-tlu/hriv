@@ -310,16 +310,9 @@ describe('CollectionManageDialog', () => {
     expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 
-  it('keeps the trash zone inert until a member tile is picked up', () => {
+  it('renders no trash drop zone — removal uses the corner control or Select mode', () => {
     renderDialog()
-    const trash = screen.getByTestId('collection-manage-trash')
-    expect(trash).toHaveAttribute('aria-hidden', 'true')
-    act(() => {
-      capturedOnDragStart!({
-        operation: { source: sortableDrag('cmi-100', 0, 0), target: null, canceled: false },
-      })
-    })
-    expect(trash).toHaveAttribute('aria-hidden', 'false')
+    expect(screen.queryByTestId('collection-manage-trash')).not.toBeInTheDocument()
   })
 
   it('stages a drag reorder without persisting', () => {
@@ -337,18 +330,18 @@ describe('CollectionManageDialog', () => {
     expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 
-  it('dropping a tile on the trash stages the removal, not a reorder', () => {
+  it('a drop with no member target leaves the draft untouched', () => {
     const { props } = renderDialog()
     act(() => {
       capturedOnDragEnd!({
         operation: {
           source: sortableDrag('cmi-101', 1, 1),
-          target: { id: 'collection-manage-trash' },
+          target: null,
           canceled: false,
         },
       })
     })
-    expect(draftOrder()).toEqual([100, 102])
+    expect(draftOrder()).toEqual([100, 101, 102])
     expect(props.onSaveMembers).not.toHaveBeenCalled()
   })
 

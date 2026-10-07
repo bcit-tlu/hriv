@@ -12,14 +12,12 @@ and a `col-` source dropped there files the collection into that category
 
 > **Scope.** This contract is Browse-grid-specific. The collection member
 > manager (`CollectionManageDialog`, #1566) runs its own `DragDropProvider`
-> with plain `useSortable` member tiles plus a trash `useDroppable`
-> (`collection-manage-trash`, `cmi-` sources only) — none of the near/far-half
-> machinery applies there, though the same sensor policy and the human
-> feel-test gate below still do. The dialog renders drags through a
-> `DragOverlay` replica (the source tile dims in place) and the trash zone
-> is a permanently registered fixed overlay at the bottom-right of the
-> scroll area — `disabled` and hidden while idle — rather than a row that
-> spawns mid-drag (#1567).
+> with plain `useSortable` member tiles (`cmi-` sources only) — none of the
+> near/far-half machinery applies there, though the same sensor policy and
+> the human feel-test gate below still do. The dialog renders drags through
+> a `DragOverlay` replica (the source tile dims in place); removal lives on
+> the per-tile corner control and the Select-mode bulk action — there is no
+> drop-to-delete target (#1567).
 
 Read this before changing any collision detection, drop-zone, or activation
 code. The behaviour below thrashed across ~8 PRs because there was no written

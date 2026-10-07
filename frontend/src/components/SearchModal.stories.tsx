@@ -161,16 +161,20 @@ export const Basic: Story = {
   },
 }
 
-/** Image rows gain labelled checkboxes; the footer emits ids in result order. */
+/** Picker mode (`initialSelectMode`): rows gain labelled checkboxes and the
+    footer emits ids in result order. */
 export const MultiSelect: Story = {
+  args: { initialSelectMode: true },
   play: async ({ args, canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     await userEvent.type(await body.findByPlaceholderText(/Search categories, images/), 'section')
-    await userEvent.click(await body.findByTestId('search-select-toggle'))
     await userEvent.click(await body.findByRole('checkbox', { name: 'Select Kidney Cross' }))
     await userEvent.click(await body.findByRole('checkbox', { name: 'Select Liver Section' }))
     await expect(body.getByText('2 images selected')).toBeVisible()
     await userEvent.click(body.getByTestId('search-add-to-collection'))
-    await expect(args.onAddImagesToCollection).toHaveBeenCalledWith([10, 11])
+    await expect(args.onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 10 }),
+      expect.objectContaining({ id: 11 }),
+    ])
   },
 }

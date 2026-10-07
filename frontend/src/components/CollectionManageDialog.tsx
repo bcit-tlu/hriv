@@ -14,14 +14,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
 import SelectAllIcon from '@mui/icons-material/SelectAll'
-import { alpha, type Theme } from '@mui/material/styles'
-import {
-  DragDropProvider,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  useDroppable,
-} from '@dnd-kit/react'
+import { DragDropProvider, DragOverlay, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { move } from '@dnd-kit/helpers'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
@@ -35,10 +28,9 @@ import RenewingThumbnail from './RenewingThumbnail'
 /**
  * Member-management surface for a collection (#1566) — a miniature Browse:
  * the full member list as filmstrip-size tiles (72×72 thumbs) that reorder
- * by drag-and-drop, a per-tile remove control, a trash drop-zone that
- * appears while dragging, and a Select mode that multi-picks members for a
- * staged bulk remove (#1567). "Add" opens the global search modal so picked
- * images join through the standard add flow.
+ * by drag-and-drop, a per-tile remove control, and a Select mode that
+ * multi-picks members for a staged bulk remove (#1567). "Add" opens the
+ * global search modal so picked images join through the standard add flow.
  *
  * All membership edits are **staged** (#1567): reorders, removals and search
  * additions mutate a local draft only — the detail page and filmstrip behind
@@ -78,7 +70,6 @@ export interface CollectionManageDialogProps {
 const ITEM_PREFIX = 'cmi-'
 const itemIdFor = (imageId: number) => `${ITEM_PREFIX}${imageId}`
 const imageIdFor = (id: string) => Number(id.slice(ITEM_PREFIX.length))
-const TRASH_ID = 'collection-manage-trash'
 
 /** Shared chrome for the corner remove badge — the sortable tile renders it
     as a real IconButton, the drag overlay as a decorative copy. */
@@ -248,66 +239,6 @@ function SortableMemberTile({
   )
 }
 
-/**
- * Trash drop-zone (#1566): revealed mid-drag as a fixed overlay pinned to
- * the bottom-right of the scroll area (#1567) — a zero-height sticky wrapper
- * keeps it glued to the scrollport's lower edge without consuming a grid
- * row. Lives inside the tiles' `DragDropProvider` — `useDroppable` only
- * registers within that context, so hoisting this above the provider
- * silently dead-ends the drop (#1567). `pointerEvents: 'none'` is safe:
- * dnd-kit v2 collision uses measured rects, not DOM hit-testing.
- */
-function TrashDropZone({ dragging }: { dragging: boolean }) {
-  // Mounted permanently so it is a registered droppable throughout the drag,
-  // but only enabled/visible mid-drag.
-  const { ref, isDropTarget: overTrash } = useDroppable({
-    id: TRASH_ID,
-    disabled: !dragging,
-    accept: (source) => String(source.id).startsWith(ITEM_PREFIX),
-  })
-  return (
-    <Box
-      sx={{
-        position: 'sticky',
-        bottom: 8,
-        zIndex: 5,
-        height: 0,
-        display: 'flex',
-        justifyContent: 'flex-end',
-      }}
-    >
-      <Box
-        ref={ref}
-        aria-hidden={!dragging}
-        data-testid="collection-manage-trash"
-        sx={{
-          position: 'absolute',
-          bottom: 0,
-          right: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 0.5,
-          width: 180,
-          py: 1.5,
-          border: '2px dashed',
-          borderRadius: 2,
-          borderColor: overTrash ? 'error.main' : 'divider',
-          bgcolor: (theme: Theme) =>
-            overTrash ? alpha(theme.palette.error.main, 0.12) : theme.palette.background.paper,
-          color: overTrash ? 'error.main' : 'text.secondary',
-          opacity: dragging ? 1 : 0,
-          transition: 'opacity 0.2s, border-color 0.15s',
-          pointerEvents: 'none',
-        }}
-      >
-        <DeleteOutlineIcon fontSize="large" />
-        <Typography variant="caption">Drop here to remove</Typography>
-      </Box>
-    </Box>
-  )
-}
-
 export default function CollectionManageDialog({
   open,
   onClose,
@@ -357,7 +288,6 @@ export default function CollectionManageDialog({
   }, [open, collection, updateDraft])
 
   const itemIds = useMemo(() => draft.map((img) => itemIdFor(img.id)), [draft])
-  const [dragging, setDragging] = useState(false)
   const [activeImage, setActiveImage] = useState<ImageItem | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -458,26 +388,18 @@ export default function CollectionManageDialog({
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    // Only member tiles arm the trash — the droppable's `accept` double-checks.
     const sourceId = String(event.operation.source?.id)
     if (!sourceId.startsWith(ITEM_PREFIX)) return
-    setDragging(true)
     setActiveImage(draftRef.current.find((img) => itemIdFor(img.id) === sourceId) ?? null)
   }, [])
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      setDragging(false)
       setActiveImage(null)
       const { operation } = event
       if (operation.canceled) return
       const sourceId = operation.source?.id
       if (sourceId == null) return
-      // The trash zone removes the member — staged like the corner control.
-      if (operation.target?.id === TRASH_ID) {
-        remove(imageIdFor(String(sourceId)))
-        return
-      }
       const reordered = move(itemIds, event)
       if (reordered.length !== itemIds.length) return
       const byId = new Map(draftRef.current.map((img) => [img.id, img] as const))
@@ -545,7 +467,7 @@ export default function CollectionManageDialog({
           flexWrap: 'wrap',
         }}
       >
-        Manage images{collection ? ` — ${collection.name}` : ''}
+        Manage Collection Images{collection ? ` — ${collection.name}` : ''}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {/* Selection mode toggle (#1567): switches tiles into a multi-pick
               removal set — drag-order is suspended while it's on. Stays
@@ -597,8 +519,8 @@ export default function CollectionManageDialog({
           {selecting
             ? 'Click thumbnails to select them, then Remove to stage the removal. ' +
               'Choose Select again to go back to reordering.'
-            : 'Drag thumbnails to reorder. Drag onto the bin, or use a tile’s corner control, to ' +
-              'remove an image from the collection. Changes apply when you choose Done.'}
+            : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
+              'from the collection. Changes apply when you choose Done.'}
         </Typography>
         {hiddenRestrictedCount > 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
@@ -629,7 +551,6 @@ export default function CollectionManageDialog({
                 ))}
               </Box>
             )}
-            <TrashDropZone dragging={dragging} />
             {/* Overlay replica keeps the tile (and its corner badge) together
                 under the pointer while the source stays dimmed in place —
                 the same DragOverlay pattern as the Browse grid (#1567). */}
