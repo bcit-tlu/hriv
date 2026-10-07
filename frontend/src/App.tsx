@@ -62,6 +62,7 @@ import {
   resolveCategoryPath,
   updateImageInTree,
 } from './treeUtils'
+import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import UploadImageModal from './components/UploadImageModal'
 import {
   SYNCHRONIZED_MAX_IMAGES,
@@ -471,19 +472,19 @@ export default function App() {
         : undefined,
     [imageViewerHiddenByCategory],
   )
-  // `path` entries are navigation-time snapshots — resolve the leaf against
-  // the live tree so a background refresh updates restriction chips.
-  const livePathLeaf = useMemo(
-    () =>
-      path.length > 0 ? findCategoryPath(categories, path[path.length - 1].id)?.at(-1) : undefined,
+  // `path` entries are navigation-time snapshots — resolve the leaf's whole
+  // ancestry in the live tree so a background refresh updates restriction
+  // chips. findCategoryPath still resolves after the leaf is reparented,
+  // where walking the stored path ids would stop short and drop them.
+  const liveCategoryPath = useMemo(
+    () => (path.length > 0 ? (findCategoryPath(categories, path[path.length - 1].id) ?? []) : []),
     [categories, path],
   )
+  const livePathLeaf = liveCategoryPath.at(-1)
   const breadcrumbProgramItems = useMemo(() => {
     const leafProgramIds = livePathLeaf?.programIds ?? []
     const leafProgramIdSet = new Set(leafProgramIds)
-    // `ancestorProgramIds` already walks the live tree along the path ids —
-    // equivalent to narrowProgramIds on the resolved path, but never stale.
-    return ancestorProgramIds
+    return narrowProgramIds(liveCategoryPath)
       .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
@@ -491,11 +492,11 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorProgramIds, livePathLeaf, path.length, programs])
+  }, [liveCategoryPath, livePathLeaf, path.length, programs])
   const breadcrumbGroupItems = useMemo(() => {
     const leafGroupIds = livePathLeaf?.groupIds ?? []
     const leafGroupIdSet = new Set(leafGroupIds)
-    return ancestorGroupIds
+    return narrowGroupIds(liveCategoryPath)
       .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
@@ -503,7 +504,7 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorGroupIds, groups, livePathLeaf, path.length])
+  }, [groups, liveCategoryPath, livePathLeaf, path.length])
   const bumpChangelogVersion = useCallback(() => {
     setChangelogVersion((version) => version + 1)
   }, [])
