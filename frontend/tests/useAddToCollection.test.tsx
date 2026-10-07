@@ -134,6 +134,49 @@ describe('addImagesToCollection', () => {
     expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
   })
 
+  it('reserves a hidden member slot for a student sequence addition', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'sequence',
+        member_count: 10,
+        images: Array.from({ length: 9 }, (_, i) => apiImage(i + 1)),
+      }),
+    )
+
+    const result = await addImagesToCollection(5, [10], 'student')
+
+    expect(result.status).toBe('full')
+    expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
+  })
+
+  it('allows a student sequence addition when nine visible members fill nine slots', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'sequence',
+        member_count: 9,
+        images: Array.from({ length: 9 }, (_, i) => apiImage(i + 1)),
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'sequence',
+        member_count: 10,
+        images: Array.from({ length: 10 }, (_, i) => apiImage(i + 1)),
+      }),
+    )
+
+    const result = await addImagesToCollection(5, [10], 'student')
+
+    expect(result.status).toBe('added')
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      image_ids: Array.from({ length: 10 }, (_, i) => i + 1),
+      version: 1,
+    })
+  })
+
   it('allows a non-student to add more than ten sequence images', async () => {
     apiMocks.fetchCollection.mockResolvedValue(
       makeApiCollection({

@@ -36,6 +36,8 @@ export function fitsCollectionCapacity(
  * whole-replace `PUT /images` never drops images added by someone else and
  * the collection's `version` is current. Already-present ids are skipped;
  * when none remain the call is a no-op (`already`).
+ * Hidden members reserve slots; for students, `member_count ≤ visible + 1`,
+ * so the backend 422 remains authoritative.
  */
 export async function addImagesToCollection(
   collectionId: number,
@@ -46,7 +48,8 @@ export async function addImagesToCollection(
   const existing = current.images.map((img) => img.id)
   const missing = Array.from(new Set(imageIds)).filter((id) => !existing.includes(id))
   if (missing.length === 0) return { status: 'already', collection: current }
-  if (!fitsCollectionCapacity(current, existing.length, missing, role)) {
+  const hiddenCount = Math.max(0, current.memberCount - current.images.length)
+  if (!fitsCollectionCapacity(current, existing.length + hiddenCount, missing, role)) {
     return { status: 'full', collection: current }
   }
   const updated = await replaceCollectionImages(collectionId, {
