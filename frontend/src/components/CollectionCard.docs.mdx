@@ -49,7 +49,10 @@ grid to represent one `CollectionSummary`. Clicking the card body opens the coll
   outlined, `Private` uses the muted visibility grey.
 - A curatorially hidden card (`collection.hidden`) desaturates the whole tile and adds an eye-off
   marker beside the name — the same treatment hidden categories/images get (#1559). Only
-  non-students and the collection's owners ever see it.
+  non-students and the collection's owners ever see it. A card filed under a hidden category
+  (`categoryHidden` — `ImageTile`'s prop convention) desaturates the same way, with the marker
+  labelled _Hidden by category_; the Browse tile grid and the collections-page grid both derive it
+  from the filed category's ancestor path.
 - Action icons are a UX gate only: Owners renders when `permissions.canTransfer` is true **and**
   `onTransfer` is supplied, Edit when `permissions.canEdit` **and** `onEdit`, and Move whenever
   `onMove` is supplied (filing is curatorial — the caller role-gates to admin/instructor). The

@@ -184,6 +184,24 @@ describe('CollectionsPage', () => {
       fireEvent.click(within(cards[1]).getByTestId('collection-card-action-area'))
       expect(onOpenCollection).toHaveBeenCalledWith(2)
     })
+
+    it('desaturates a list card filed under a hidden category', () => {
+      renderPage({
+        collections: [makeCollectionSummary({ id: 1, categoryId: 11 })],
+        categories: [
+          makeCategory({
+            id: 10,
+            label: 'Italian',
+            status: 'hidden',
+            children: [makeCategory({ id: 11, label: 'Gothic', parentId: 10 })],
+          }),
+        ],
+      })
+      expect(screen.getByTestId('collection-card-action-area')).toHaveStyle({
+        filter: 'grayscale(100%)',
+      })
+      expect(screen.getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
+    })
   })
 
   describe('filters', () => {
@@ -1000,6 +1018,58 @@ describe('CollectionsPage', () => {
       })
       // …and the flag reaches the viewer so the filmstrip desaturates too.
       expect(sequenceViewerProps.current?.hidden).toBe(true)
+    })
+
+    it('locks the hide control and desaturates when the filed category is hidden', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          type: 'sequence',
+          categoryId: 11,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+        }),
+        categories: [
+          makeCategory({
+            id: 10,
+            label: 'Italian',
+            status: 'hidden',
+            children: [makeCategory({ id: 11, label: 'Gothic', parentId: 10 })],
+          }),
+        ],
+      })
+      // Category-hidden wins over the collection's own flag — the locked
+      // "Hidden by Category" state the image view and edit dialog share.
+      const toggle = screen.getByTestId('collection-hide-toggle')
+      expect(toggle).toBeDisabled()
+      expect(toggle).toHaveTextContent('Hidden by Category')
+      expect(screen.queryByRole('button', { name: 'Hide collection' })).not.toBeInTheDocument()
+      // Header controls desaturate like an own-hidden collection (#1567).
+      expect(screen.getByRole('button', { name: 'Manage Images' })).toHaveStyle({
+        filter: 'grayscale(100%)',
+      })
+      expect(screen.getByRole('button', { name: 'Edit collection' })).toHaveStyle({
+        filter: 'grayscale(100%)',
+      })
+      // …and the flag reaches the viewer so the filmstrip desaturates too.
+      expect(sequenceViewerProps.current?.hidden).toBe(true)
+    })
+
+    it('keeps the locked category state when the collection is also hidden directly', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          type: 'sequence',
+          hidden: true,
+          categoryId: 10,
+          permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+        }),
+        categories: [makeCategory({ id: 10, label: 'Italian', status: 'hidden' })],
+      })
+      const toggle = screen.getByTestId('collection-hide-toggle')
+      expect(toggle).toBeDisabled()
+      expect(toggle).toHaveTextContent('Hidden by Category')
     })
 
     it('gates the hide/show link on canHide', () => {

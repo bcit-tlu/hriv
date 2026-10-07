@@ -200,6 +200,28 @@ describe('CollectionCard', () => {
     expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
   })
 
+  it('desaturates and marks a category-hidden collection like an own-hidden one', () => {
+    render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} categoryHidden />)
+    // The marker names the inherited cause — same label as the manage
+    // table's greyscale eye-off and the edit dialog's locked control.
+    expect(screen.getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
+    expect(screen.getByTestId('collection-card-action-area')).toHaveStyle({
+      filter: 'grayscale(100%)',
+    })
+  })
+
+  it('keeps the inherited marker when the collection is also hidden directly', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({ hidden: true })}
+        onOpen={vi.fn()}
+        categoryHidden
+      />,
+    )
+    expect(screen.getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
+  })
+
   it('renders own restriction chips solid and inherited scope dimmed (#1567)', () => {
     const programs = [
       { id: 1, name: 'Radiography' },

@@ -61,9 +61,12 @@ with deterministic fixtures.
   chip, **Manage** (`canEdit` — opens
   `CollectionManageDialog` for reorder/add/remove, #1566), **Edit**, and
   **Hide collection** / **Show collection** (`canHide`, wired to
-  `onToggleHidden`). Owners management is a pencil beside the owner name
+  `onToggleHidden`) — or, when the filed category is hidden, a disabled
+  **Hidden by Category** state (the image view / edit dialog convention).
+  Owners management is a pencil beside the owner name
   (`canTransfer`), and hidden collections show through greyscale alone — no
-  `Hidden` chip (#1567). Filing a collection into a category moved into the edit dialog's category
+  `Hidden` chip (#1567); a hidden filing category desaturates the same
+  controls and the sequence filmstrip. Filing a collection into a category moved into the edit dialog's category
   picker — the header no longer carries a separate **Move** button (#1566). `sequence` collections mount
   `SequenceCollectionViewer` and `synchronized` collections mount
   `SynchronizedCollectionViewer` (see their own docs pages). A 404 (`detailError`) renders the

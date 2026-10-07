@@ -51,6 +51,11 @@ export interface CollectionCardProps {
   groups?: Group[]
   /** Effective group restriction inherited from the filed category. */
   inheritedGroupIds?: number[]
+  /** Filed category (or an ancestor) is hidden — the collection is
+   *  invisible to students regardless of its own `hidden` flag; the card
+   *  desaturates like an own-hidden tile and the marker reads "Hidden by
+   *  category" (ImageTile's `categoryHidden` convention). */
+  categoryHidden?: boolean
 }
 
 /**
@@ -176,6 +181,7 @@ export default function CollectionCard({
   inheritedProgramIds = [],
   groups = [],
   inheritedGroupIds = [],
+  categoryHidden = false,
 }: CollectionCardProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -213,8 +219,9 @@ export default function CollectionCard({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
-          // Curatorially hidden tiles desaturate like hidden categories (#1559).
-          filter: collection.hidden ? 'grayscale(100%)' : 'none',
+          // Curatorially hidden tiles desaturate like hidden categories
+          // (#1559) — and so do collections filed under a hidden category.
+          filter: collection.hidden || categoryHidden ? 'grayscale(100%)' : 'none',
         }}
       >
         {cover ? (
@@ -273,7 +280,7 @@ export default function CollectionCard({
               <Typography
                 variant="h6"
                 sx={{
-                  color: collection.hidden ? visColors.inactive : 'primary.main',
+                  color: collection.hidden || categoryHidden ? visColors.inactive : 'primary.main',
                   display: '-webkit-box',
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
@@ -284,12 +291,12 @@ export default function CollectionCard({
                 {collection.name}
               </Typography>
             </Tooltip>
-            {collection.hidden && (
-              <Tooltip title="Visibility: Hidden">
+            {(collection.hidden || categoryHidden) && (
+              <Tooltip title={categoryHidden ? 'Hidden by category' : 'Visibility: Hidden'}>
                 <Box
                   component="span"
                   role="img"
-                  aria-label="Visibility: Hidden"
+                  aria-label={categoryHidden ? 'Hidden by category' : 'Visibility: Hidden'}
                   sx={{
                     display: 'inline-flex',
                     alignItems: 'center',

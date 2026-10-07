@@ -266,6 +266,13 @@ returned by the API (UX only — the backend re-checks).
   switch is disabled — mirroring the image table's category-hidden rows —
   and in **Bulk Edit** the visibility switch disables when the whole
   selection is category-hidden or the chosen target category is hidden.
+- **Given** a collection filed under a hidden category, **Then** its card
+  (Browse tile grid and the collections-page grid alike) desaturates with a
+  **Hidden by category** eye-off marker — the same desaturation a
+  curatorially hidden card gets — and its detail header greys the action
+  controls while the hide/show control locks to the disabled **Hidden by
+  Category** state the image view and edit dialog share; the sequence
+  filmstrip desaturates too.
 - **Given** a staff user on the manage table, **Then** every API-returned row
   shows and the row's **actions** (⋮) menu follows `permissions` — View
   always, Edit only where `canEdit` or curatorial filing applies,

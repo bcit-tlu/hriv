@@ -726,6 +726,7 @@ export default function SortableTileGrid({
           inheritedProgramIds={inheritedProgramIds}
           groups={groups}
           inheritedGroupIds={inheritedGroupIds}
+          categoryHidden={pathHiddenState.hidden}
         />
       )
       if (!collection.permissions.canEdit) return tile
@@ -749,6 +750,7 @@ export default function SortableTileGrid({
       groups,
       inheritedProgramIds,
       inheritedGroupIds,
+      pathHiddenState,
     ],
   )
 

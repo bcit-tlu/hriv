@@ -190,13 +190,14 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    // Panes start pinned (#1564): both show "Unpin …" affordances.
-    await expect(canvas.getAllByRole('button', { name: /^Unpin / })).toHaveLength(2)
-    // Unpinning one swaps its affordance to "Pin …" without touching the
+    // Panes start linked (#1564; renamed pin→link in #1567): both show
+    // "Unlink …" affordances.
+    await expect(canvas.getAllByRole('button', { name: /^Unlink / })).toHaveLength(2)
+    // Unlinking one swaps its affordance to "Link …" without touching the
     // other pane.
-    await userEvent.click(canvas.getByRole('button', { name: 'Unpin Skull — frontal' }))
-    await expect(canvas.getByRole('button', { name: 'Pin Skull — frontal' })).toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'Unpin Skull — lateral' })).toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'Unlink Skull — frontal' }))
+    await expect(canvas.getByRole('button', { name: 'Link Skull — frontal' })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Unlink Skull — lateral' })).toBeInTheDocument()
     await expect(canvas.getByTestId('synchronized-save')).toBeEnabled()
     await userEvent.click(canvas.getAllByRole('button', { name: /^Open / })[0])
     await expect(args.onOpenImage).toHaveBeenCalledWith(PAIR.images[0])

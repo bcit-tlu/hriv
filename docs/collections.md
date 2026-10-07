@@ -516,7 +516,11 @@ readers). **Move** and **Owners** stay in the
 top-right `absolute` overlay using the
 white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554). A curatorially
 hidden card renders the same desaturated treatment as a hidden
-category/image tile plus a `VisibilityOff` affordance by the name (#1559).
+category/image tile plus a `VisibilityOff` affordance by the name (#1559);
+a card filed under a hidden category desaturates the same way — the
+marker is labelled _Hidden by category_ — because the hidden-subtree rule
+already removes it from student view (`categoryHidden` mirrors
+`ImageTile`'s prop; the Browse grid and the collections list both pass it).
 **Edit** is a pencil inline at the title row's right — the
 CategoryTile/ImageTile convention (#1567) — and Delete is
 gone from the card entirely (edit dialog only). Everywhere the type renders
@@ -615,7 +619,9 @@ program/group chips sit right after the breadcrumb, where the image view
 renders them. The actions are **Hide collection** / **Show collection**
 (`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
-image viewer's Hide/Show Image control occupies), **Manage Images**
+image viewer's Hide/Show Image control occupies) — replaced by a disabled
+**Hidden by Category** button when the filed category (or an ancestor) is
+hidden, the same locked state the image view and edit dialog render — **Manage Images**
 (`canEdit` — opens `CollectionManageDialog`, the mini-Browse member
 manager: drag to
 reorder, the corner remove control (tooltip "Remove image"),
@@ -636,7 +642,9 @@ chips carry the restriction; an unscoped restricted collection still
 gets the pill so it is never label-less; #1567) sit to the
 left of the owner line; the description renders below the pills,
 left-aligned (#1567). Hidden state shows through greyscale alone — no
-`Hidden` chip. No Delete (#1554).
+`Hidden` chip — and the same desaturation (chips, pills, action buttons,
+sequence filmstrip) applies when the collection sits under a hidden
+category. No Delete (#1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
 404 (missing or not visible) renders the not-found alert with a
