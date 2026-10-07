@@ -27,7 +27,7 @@ import type {
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { ComponentProps } from 'react'
 import { COLLECTION_TYPE_LABELS, COLLECTION_VISIBILITY_LABELS } from '../collectionUtils'
-import { getVisibilityColors } from '../theme'
+import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import RenewingThumbnail from './RenewingThumbnail'
 
@@ -58,14 +58,31 @@ export interface CollectionCardProps {
  * borrows the group-chip colours (the restricted dimension users already know),
  * `public` is neutral-outlined, `private` uses the muted visibility grey.
  */
-export function CollectionVisibilityChip({ visibility }: { visibility: CollectionVisibility }) {
+export function CollectionVisibilityChip({
+  visibility,
+  hasScopeChips = false,
+}: {
+  visibility: CollectionVisibility
+  /** Program/group chips render the restriction — when they exist (#1567). */
+  hasScopeChips?: boolean
+}) {
   const { mode } = useColorMode()
+  const groupColors = getGroupChipColors(mode)
   const visColors = getVisibilityColors(mode)
   const label = COLLECTION_VISIBILITY_LABELS[visibility]
   if (visibility === 'restricted') {
-    // The program/group chips already carry the restriction — a separate
-    // Restricted pill is redundant (#1567).
-    return null
+    // Scope chips carry the restriction when they render — the pill is
+    // redundant then, but an unscoped restricted collection still needs
+    // its label (#1567).
+    if (hasScopeChips) return null
+    return (
+      <Chip
+        data-testid="collection-visibility-chip"
+        label={label}
+        size="small"
+        sx={{ bgcolor: groupColors.solidBg, color: groupColors.solidText }}
+      />
+    )
   }
   // Chip icons sit at the 14px lock convention used beside category titles
   // — `.MuiChip-icon` (18px for small chips) otherwise overrides the icon's
@@ -104,7 +121,18 @@ export function CollectionTypeIcon({
   ...props
 }: { type: CollectionType } & ComponentProps<typeof ViewCarouselIcon>) {
   const TypeIcon = type === 'synchronized' ? ViewColumnIcon : ViewCarouselIcon
-  return <TypeIcon titleAccess={COLLECTION_TYPE_LABELS[type]} {...props} />
+  // Informational-icon convention: a non-interactive `role="img"` span
+  // carries the label — not `titleAccess` on the bare SVG (#1567).
+  return (
+    <Box
+      component="span"
+      role="img"
+      aria-label={COLLECTION_TYPE_LABELS[type]}
+      sx={{ display: 'inline-flex' }}
+    >
+      <TypeIcon {...props} />
+    </Box>
+  )
 }
 
 /**
@@ -299,7 +327,10 @@ export default function CollectionCard({
             {imageCountText}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            <CollectionVisibilityChip visibility={collection.visibility} />
+            <CollectionVisibilityChip
+              visibility={collection.visibility}
+              hasScopeChips={programChips.length > 0 || groupChips.length > 0}
+            />
           </Box>
           {/* Own/inherited scope render as separate rows, matching
               CategoryTile (#1567). */}

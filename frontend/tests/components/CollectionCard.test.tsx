@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import CollectionCard, { CollectionVisibilityChip } from '../../src/components/CollectionCard'
+import CollectionCard, {
+  CollectionTypeChip,
+  CollectionTypeIcon,
+  CollectionVisibilityChip,
+} from '../../src/components/CollectionCard'
 import { makeCollectionSummary } from '../helpers/fixtures'
 
 vi.mock('../../src/api', async (importOriginal) => {
@@ -19,10 +23,10 @@ describe('CollectionCard', () => {
     expect(screen.getByText('Skull comparison')).toBeInTheDocument()
     expect(screen.getByText('1 image')).toBeInTheDocument()
     // The type pill overlay is gone (#1567): the bare type icon sits left of
-    // the title like the category tile's folder glyph, exposed by the svg's
-    // <title> (titleAccess). Owner names never render in tile metadata.
+    // the title like the category tile's folder glyph, labelled via the
+    // role="img" convention. Owner names never render in tile metadata.
     const titleRow = screen.getByText('Skull comparison').parentElement as HTMLElement
-    expect(within(titleRow).getByTitle('Sequence')).toBeInTheDocument()
+    expect(within(titleRow).getByRole('img', { name: 'Sequence' })).toBeInTheDocument()
     expect(screen.queryByTestId('collection-type-chip')).not.toBeInTheDocument()
     expect(screen.queryByText(/Ada Lovelace/)).not.toBeInTheDocument()
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent('Private')
@@ -181,7 +185,7 @@ describe('CollectionCard', () => {
     const right = screen.getByTestId('collection-actions-overlay')
     expect(within(right).getByRole('button', { name: /Move .* to a category/ })).toBeInTheDocument()
     const titleRow = screen.getByText('Skull comparison').parentElement as HTMLElement
-    const icon = within(titleRow).getByTitle('Synchronized')
+    const icon = within(titleRow).getByRole('img', { name: 'Synchronized' })
     const title = screen.getByText('Skull comparison')
     expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
@@ -269,9 +273,16 @@ describe('CollectionVisibilityChip', () => {
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent(label)
   })
 
-  it('renders no pill for restricted — the program/group chips carry it (#1567)', () => {
-    const { container } = render(<CollectionVisibilityChip visibility="restricted" />)
+  it('renders no pill for restricted when scope chips carry it (#1567)', () => {
+    const { container } = render(<CollectionVisibilityChip visibility="restricted" hasScopeChips />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('still labels an unscoped restricted collection (#1567)', () => {
+    // A restricted collection with no program/group ids has no scope chips
+    // to carry the restriction — the pill must not leave it label-less.
+    render(<CollectionVisibilityChip visibility="restricted" />)
+    expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent('Restricted')
   })
 
   it.each(['private', 'public'] as const)(
@@ -285,4 +296,30 @@ describe('CollectionVisibilityChip', () => {
       expect(getComputedStyle(icon as Element).fontSize).toBe('14px')
     },
   )
+})
+
+describe('CollectionTypeChip / CollectionTypeIcon', () => {
+  it.each(['sequence', 'synchronized'] as const)('labels the %s chip and icon', (type) => {
+    const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
+    render(
+      <>
+        <CollectionTypeChip type={type} />
+        <CollectionTypeIcon type={type} />
+      </>,
+    )
+    const chip = screen.getByTestId('collection-type-chip')
+    expect(chip).toHaveTextContent(label)
+    // The shared pill is the red primary outline with its icon.
+    expect(chip).toHaveClass('MuiChip-outlined')
+    expect(chip.querySelector('.MuiChip-icon')).not.toBeNull()
+    // The standalone glyph uses the role="img" informational convention —
+    // the chip's own icon stays decorative (the label text names it).
+    expect(screen.getByRole('img', { name: label })).toBeInTheDocument()
+    expect(chip.querySelector('[role="img"]')).toBeNull()
+  })
+
+  it('merges an sx override onto the chip', () => {
+    render(<CollectionTypeChip type="sequence" sx={{ opacity: 0.5 }} />)
+    expect(screen.getByTestId('collection-type-chip')).toHaveStyle({ opacity: '0.5' })
+  })
 })

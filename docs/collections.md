@@ -605,8 +605,9 @@ transfer-horizontal (`SwapHoriz`) icon beside the
 the header carries no **Move** button (#1566). Below the top row, the **type
 pill** — the shared `CollectionTypeChip` with the type's icon
 (Synchronized / Sequence, #1567) — and the **visibility chip**
-(Public/Private only — a restricted collection relies on its
-program/group chips, so no Restricted pill renders; #1567) sit to the
+(Public/Private — restricted renders no pill when program/group scope
+chips carry the restriction; an unscoped restricted collection still
+gets the pill so it is never label-less; #1567) sit to the
 left of the owner line; the description renders below the pills,
 left-aligned (#1567). Hidden state shows through greyscale alone — no
 `Hidden` chip. No Delete (#1554).
@@ -653,7 +654,8 @@ Browse, hidden-subtree rows get the eye icon). Columns (#1567): Cover
 curatorially hidden rows, #1559), Type (the shared `CollectionTypeChip`
 pill), Scope
 (`CollectionVisibilityChip` — a Public/Private pill; restricted shows no
-pill — the program/group chips carry it, #1567), Owners
+pill when scope chips render, but an unscoped restricted collection keeps
+the Restricted label, #1567), Owners
 (`describeCollectionOwners`), image count, Programs and Groups (own scope
 solid plus the filed category's scope at inherited opacity), Category,
 **Visibility** (a per-row show/hide `Switch` gated on `permissions.canHide`,
@@ -846,8 +848,10 @@ too. Arrows are handled by a document-level keydown-capture listener
 header trigger or a chevron/thumbnail click can no longer strand ←/→.
 OpenSeadragon's own keyboard panning never sees them (capture still wins),
 editable targets (inputs, textareas, selects, `[role="textbox"]`,
-contenteditable) are skipped, and the listener yields whenever a dialog,
-menu, or listbox is open. The container itself is focusable
+contenteditable) are skipped, roving-focus widgets keep their keys while
+focused (tablists like the AppShell nav, trees, radio groups, sliders),
+and the listener yields whenever a dialog, menu, or listbox is open. The
+container itself is focusable
 (`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
 edge-nav cue reveals immediately — switching images never steals focus
 back, but opening a different collection focuses it again.

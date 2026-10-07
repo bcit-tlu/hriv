@@ -397,7 +397,8 @@ always read-only (`canEditContent={false}`).
   presses ← / → while the collection page is open, **Then** the current image
   changes, the position readout and `?item=` URL update, and the viewer
   remounts (keyed by image id — no viewport bleed).
-- **Given** focus is in an input / textarea / select / textbox, **or** a
+- **Given** focus is in an input / textarea / select / textbox, on a
+  roving-focus widget (tablist, tree, radio group, slider), **or** a
   dialog, menu or listbox is open, **Then**
   arrow keys do not navigate.
 - **Given** **Open image** is clicked, **Then** the normal `?image={id}`

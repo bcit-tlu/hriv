@@ -239,8 +239,13 @@ export default function SequenceCollectionViewer({
       if (isEditableTarget(event.target)) return
       const target = event.target
       if (
+        // Roving-focus widgets (tablists, trees, radio groups, sliders)
+        // own ←/→ while focused — e.g. the AppShell nav tabs (#1567).
         (target instanceof Element &&
-          target.closest('.MuiModal-root, [role="dialog"], [role="menu"], [role="listbox"]')) ||
+          target.closest(
+            '.MuiModal-root, [role="dialog"], [role="menu"], [role="listbox"], [role="tablist"], [role="tree"], [role="radiogroup"], [role="slider"], [role="spinbutton"]',
+          )) ||
+        // Any open overlay owns the page's keys wherever focus sits.
         document.querySelector('.MuiModal-root, [role="dialog"], [role="menu"], [role="listbox"]')
       ) {
         return

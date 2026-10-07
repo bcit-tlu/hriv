@@ -216,6 +216,24 @@ describe('SequenceCollectionViewer', () => {
     }
   })
 
+  it('yields arrow keys to a focused tab strip (#1567)', () => {
+    // MUI Tabs (the AppShell nav) move between tabs on ←/→ — the
+    // document-level binding must not eat a roving-focus widget's keys.
+    const { props } = renderViewer({ itemId: 101 })
+    const tablist = document.createElement('div')
+    tablist.setAttribute('role', 'tablist')
+    const tab = document.createElement('button')
+    tab.setAttribute('role', 'tab')
+    tablist.appendChild(tab)
+    document.body.appendChild(tablist)
+    try {
+      fireEvent.keyDown(tab, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+    } finally {
+      tablist.remove()
+    }
+  })
+
   it('autofocuses the region so arrows step the sequence immediately (#1564)', () => {
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
     try {

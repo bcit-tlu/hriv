@@ -396,7 +396,10 @@ function CollectionDetailHeader({
             icon, matching the tile and table (#1567). */}
         <CollectionTypeChip type={collection.type} sx={hiddenSx} />
         <Box sx={hiddenSx}>
-          <CollectionVisibilityChip visibility={collection.visibility} />
+          <CollectionVisibilityChip
+            visibility={collection.visibility}
+            hasScopeChips={programChips.length > 0 || groupChips.length > 0}
+          />
         </Box>
         <Box sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center' }}>
           <Typography variant="body2" color="text.secondary">

@@ -154,9 +154,13 @@ export default function SynchronizedCollectionViewer({
     [images, failedIds],
   )
   const panes = useMemo(() => available.slice(0, MAX_PANES), [available])
-  // Restore view stays inert until a viewport has been saved for at least
-  // one rendered pane (#1567) — before that there's nothing to restore.
-  const hasSavedView = panes.some((image) => collection.viewportState[String(image.id)] != null)
+  // Restore view stays inert until a *valid* viewport has been saved for at
+  // least one rendered pane (#1567) — `viewportStateFromSaved` rejects
+  // malformed entries, so a junk `viewport_state` can't enable a button
+  // that only goes home.
+  const hasSavedView = panes.some(
+    (image) => viewportStateFromSaved(collection.viewportState[String(image.id)]) != null,
+  )
 
   // `initialViewport` is mount-only input for ImageViewer — freeze the saved
   // entry the first time an image occupies a pane so a later save/refetch

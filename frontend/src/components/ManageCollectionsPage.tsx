@@ -1076,7 +1076,10 @@ export default function ManageCollectionsPage({
                   )}
                   {isColumnVisible('scope') && (
                     <TableCell {...dimAttr}>
-                      <CollectionVisibilityChip visibility={c.visibility} />
+                      <CollectionVisibilityChip
+                        visibility={c.visibility}
+                        hasScopeChips={c.programIds.length + c.groupIds.length > 0}
+                      />
                     </TableCell>
                   )}
                   {isColumnVisible('owners') && (
@@ -1156,7 +1159,11 @@ export default function ManageCollectionsPage({
                   {isColumnVisible('visibility') && (
                     <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
                       <Tooltip
-                        title={c.permissions.canHide ? '' : 'Only collection owners can hide'}
+                        title={
+                          c.permissions.canHide
+                            ? ''
+                            : 'Only admins and instructors can hide collections'
+                        }
                         disableHoverListener={c.permissions.canHide}
                       >
                         <span>
