@@ -118,8 +118,9 @@ finish or cancel that first.
 ### Add several images at once (search picker)
 
 From the collection's **Manage** dialog, click **Add** — the search opens
-as a picker with checkboxes already on and the **Categories** and
-**Images** filters pre-applied (untick a filter chip to widen the search).
+as a picker with checkboxes already on. Only the **Categories** and
+**Images** filter chips are shown — both on to start; untick a chip to
+narrow further, or untick both to search every kind.
 Tick each image you want, or tick a
 **category** to select every image inside it — including its sub-categories —
 in the order they're registered; unticking removes them again, and images

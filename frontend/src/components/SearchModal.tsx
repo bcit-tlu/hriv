@@ -1046,13 +1046,16 @@ export default function SearchModal({
             >
               Type:
             </Typography>
-            {TYPE_FILTERS.filter(
-              (f) =>
-                (f.key !== 'collection' || collectionsEnabled) &&
-                !(
-                  suppressExtendedResults &&
-                  (f.key === 'program' || f.key === 'user' || f.key === 'guide')
-                ),
+            {/* The picker offers only the two addable kinds — Categories and
+                Images, pre-applied — no other type or field chips (#1567). */}
+            {TYPE_FILTERS.filter((f) =>
+              selectMode
+                ? f.key === 'category' || f.key === 'image'
+                : (f.key !== 'collection' || collectionsEnabled) &&
+                  !(
+                    suppressExtendedResults &&
+                    (f.key === 'program' || f.key === 'user' || f.key === 'guide')
+                  ),
             ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
@@ -1067,29 +1070,33 @@ export default function SearchModal({
                 />
               </Tooltip>
             ))}
-            <Box sx={{ mx: 0.5, borderLeft: 1, borderColor: 'divider' }} />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ alignSelf: 'center', mr: 0.5 }}
-            >
-              Field:
-            </Typography>
-            {FIELD_FILTERS.filter((f) => !(suppressExtendedResults && f.key === 'Role')).map(
-              (f) => (
-                <Tooltip key={f.key} title={f.tooltip}>
-                  <Chip
-                    data-testid="field-filter-chip"
-                    icon={f.icon}
-                    label={f.label}
-                    size="small"
-                    sx={{ px: 0.5 }}
-                    variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
-                    color={fieldFilters.has(f.key) ? 'primary' : 'default'}
-                    onClick={() => toggleFieldFilter(f.key)}
-                  />
-                </Tooltip>
-              ),
+            {!selectMode && (
+              <>
+                <Box sx={{ mx: 0.5, borderLeft: 1, borderColor: 'divider' }} />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ alignSelf: 'center', mr: 0.5 }}
+                >
+                  Field:
+                </Typography>
+                {FIELD_FILTERS.filter((f) => !(suppressExtendedResults && f.key === 'Role')).map(
+                  (f) => (
+                    <Tooltip key={f.key} title={f.tooltip}>
+                      <Chip
+                        data-testid="field-filter-chip"
+                        icon={f.icon}
+                        label={f.label}
+                        size="small"
+                        sx={{ px: 0.5 }}
+                        variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
+                        color={fieldFilters.has(f.key) ? 'primary' : 'default'}
+                        onClick={() => toggleFieldFilter(f.key)}
+                      />
+                    </Tooltip>
+                  ),
+                )}
+              </>
             )}
           </Box>
         )}
@@ -1194,7 +1201,11 @@ export default function SearchModal({
                           }}
                         />
                       ) : result.kind !== 'program' ? (
-                        <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                        /* Kind icons top-align next to the title line while
+                           thumbnails and checkboxes stay row-centred (#1567). */
+                        <Box
+                          sx={{ display: 'flex', flexShrink: 0, alignSelf: 'flex-start', mt: 0.25 }}
+                        >
                           {iconForKind(result.kind)}
                         </Box>
                       ) : null}
@@ -1336,7 +1347,13 @@ export default function SearchModal({
                     </>
                   )
                   return (
-                    <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
+                    // Keep natural height — a shrunken card clips its content
+                    // instead of letting the list scroll (#1567).
+                    <Card
+                      key={`${result.kind}-${result.entityId}`}
+                      variant="outlined"
+                      sx={{ flexShrink: 0 }}
+                    >
                       {selectable ? (
                         <Box
                           component="label"

@@ -1234,12 +1234,14 @@ describe('SearchModal', () => {
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'liver')
-    // The picker pre-applies Categories+Images; collections join the list
-    // only if the user opts the kind back in via its chip.
+    // The picker offers only the Categories and Images chips; a collection
+    // joins the list only if the user clears both chips (empty filter set =
+    // all kinds, the same as normal search).
     expect(screen.queryByText('Cardiac series')).not.toBeInTheDocument()
-    await user.click(
-      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Collections')!,
-    )
+    const chipByLabel = (label: string) =>
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === label)!
+    await user.click(chipByLabel('Categories'))
+    await user.click(chipByLabel('Images'))
 
     // The collection result (matched on description) has no checkbox and
     // still navigates on click.
@@ -1359,9 +1361,12 @@ describe('SearchModal', () => {
     expect(screen.queryByRole('checkbox', { name: 'Select Kidney Cross' })).not.toBeInTheDocument()
     const chipByLabel = (label: string) =>
       screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === label)!
+    // Only the two addable kinds are offered — no other type chips and no
+    // field chips render in the picker.
+    expect(screen.getAllByTestId('type-filter-chip')).toHaveLength(2)
     expect(chipByLabel('Categories')).toHaveClass('MuiChip-filled')
     expect(chipByLabel('Images')).toHaveClass('MuiChip-filled')
-    expect(chipByLabel('Collections')).toHaveClass('MuiChip-outlined')
+    expect(screen.queryAllByTestId('field-filter-chip')).toHaveLength(0)
 
     // The chips stay toggleable — unticking Images drops its result.
     await user.click(chipByLabel('Images'))

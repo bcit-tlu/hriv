@@ -977,9 +977,11 @@ and no Collections chip appears.
 select layer exists only when the modal opens as a collection-image picker
 (`initialSelectMode` — currently the Manage dialog's **Add** flow,
 `requestCollectionImageSearch`); the normal search never shows a Select
-toggle, checkboxes, or the footer. The picker also pre-applies the
-**Categories** and **Images** type chips — only addable kinds list, and
-matches scope to name fields until the user retoggles the chips. Image
+toggle, checkboxes, or the footer. The picker also narrows the chip row to
+just the two addable kinds — **Categories** and **Images**, pre-applied —
+with no other type chips and no Field chips; unticking both widens the
+search to every kind again. Matches scope to name fields while a chip is
+on. Image
 rows become labelled checkboxes
 (`Select {image name}`) inside a `<label>` row — clicking anywhere toggles —
 and category results check the same way: a checked category stages every

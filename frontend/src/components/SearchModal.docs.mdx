@@ -45,8 +45,9 @@ already access-filtered).
 - **Multi-select is picker-only.** The select layer exists solely when `initialSelectMode` opens
   the modal as a collection-image picker (the Manage Collection dialog's **Add** flow) with
   `onAddImagesToCollection` provided — normal search shows no Select affordance. The picker
-  pre-applies the **Categories** and **Images** type chips (toggleable), so only addable kinds
-  list by default. Image rows
+  offers only the two addable kinds — **Categories** and **Images** chips, pre-applied and
+  toggleable; no other type chips or Field chips render (unticking both widens to all kinds).
+  Image rows
   become labelled checkboxes (`Select {image name}`) and category rows checkable too — a checked
   category claims every image in its subtree in registration order — while every other kind keeps
   its navigation behaviour.
