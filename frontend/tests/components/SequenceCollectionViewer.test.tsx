@@ -186,6 +186,36 @@ describe('SequenceCollectionViewer', () => {
     expect(props.onSelectItem).toHaveBeenCalledWith(100)
   })
 
+  it('navigates with arrows even when focus sits outside the region (#1567)', () => {
+    // After a dialog closes or a nav control is clicked, focus lands on a
+    // header button — the document-level binding must still step the
+    // sequence without the user clicking back into the viewer.
+    const { props } = renderViewer({ itemId: 101 })
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(100)
+  })
+
+  it('yields arrow keys while a dialog or menu is open (#1567)', () => {
+    const { props } = renderViewer({ itemId: 101 })
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inside = document.createElement('button')
+    dialog.appendChild(inside)
+    document.body.appendChild(dialog)
+    try {
+      // Events inside the dialog…
+      fireEvent.keyDown(inside, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+      // …and even on the page while the dialog is mounted.
+      fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+    } finally {
+      dialog.remove()
+    }
+  })
+
   it('autofocuses the region so arrows step the sequence immediately (#1564)', () => {
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
     try {

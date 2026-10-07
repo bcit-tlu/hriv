@@ -16,13 +16,14 @@ import * as CollectionManageDialogStories from './CollectionManageDialog.stories
 <Subtitle>
   The member-management surface for a collection ("Manage Collection Images") — a miniature Browse:
   every member as a filmstrip-size tile that reorders by drag-and-drop, a corner control that
-  removes it, a Select mode that multi-picks tiles for staged removal, and an Add action that hands
-  off to the global search picker. All edits stage in a local draft and commit once via Done.
+  removes it (tooltip "Remove image"), a Multi-select mode that multi-picks tiles for staged
+  removal, and a Choose images action that hands off to the global search picker. All edits stage in
+  a local draft and commit once via Done — or are discarded by Cancel.
 </Subtitle>
 
 ## When to use
 
-`CollectionsPage` mounts this from the detail header's **Manage** button (`canEdit` collections,
+`CollectionsPage` mounts this from the detail header's **Manage Images** button (`canEdit` collections,
 #1566). It replaces the sequence viewer's old inline reorder mode and is the only place members
 are added to or removed from a collection outside the global search/Browse add gestures.
 
@@ -58,13 +59,13 @@ are added to or removed from a collection outside the global search/Browse add g
   `useCollectionsData.reorderImages`. Membership changes that land while the dialog is open are
   merged into the commit (externally removed members drop out, external adds append) so a stale
   draft can't clobber them. A failed commit keeps the dialog open with the draft intact; closing a
-  dirty draft (Esc/backdrop/✕) asks to discard first.
+  dirty draft (Esc/backdrop/Cancel) asks to discard first.
 - **Reorder.** Tiles are `useSortable` inside their own `DragDropProvider` — the locked
   `SortableTileGrid` move-vs-reorder collision contract is untouched. On drag-end `move()` derives
   the draft order; a no-change drop or a cancelled drag changes nothing. Drags render through a
   `DragOverlay` replica while the source tile dims in place, keeping the ✕ attached to the dragged
   tile.
-- **Add.** The title row's **Add** button (Browse's
+- **Choose images.** The title row's **Choose images** button (Browse's
   `AddPhotoAlternateIcon` convention) calls `onAddImages`; `App` opens the
   search modal in add-to-collection mode with multi-select already engaged
   (`initialSelectMode`). Search results check individually — and whole

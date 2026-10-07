@@ -394,7 +394,8 @@ export default function CollectionEditDialog({
               value={type}
               onChange={(e) => setType(e.target.value as CollectionType)}
             >
-              {(Object.keys(COLLECTION_TYPE_LABELS) as CollectionType[]).map((t) => (
+              {/* Sequence first — the dominant teaching flow (#1567). */}
+              {(['sequence', 'synchronized'] as const).map((t) => (
                 <FormControlLabel
                   key={t}
                   value={t}

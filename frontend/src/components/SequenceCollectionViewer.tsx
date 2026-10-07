@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FocusEvent,
-  type KeyboardEvent,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -235,24 +227,31 @@ export default function SequenceCollectionViewer({
     [current, failedIds, images, onError, onSelectItem],
   )
 
-  // Arrow keys step the sequence. The capture-phase listener runs before the
-  // event reaches OpenSeadragon's own keyboard panning, so ←/→ always mean
-  // previous/next here and never pan the canvas (docs/collections.md).
-  const handleKeyDownCapture = useCallback(
-    (event: KeyboardEvent<HTMLElement>) => {
+  // Arrow keys step the sequence from anywhere on the page (#1567): a
+  // document-level capture listener means focus placement is irrelevant —
+  // a dialog returning focus to a header trigger, or a chevron/thumbnail
+  // click, can no longer strand ←/→. Editable targets and open dialogs or
+  // menus keep their own arrow semantics, and capture still outruns
+  // OpenSeadragon's keyboard panning (docs/collections.md).
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
       if (isEditableTarget(event.target)) return
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault()
-        event.stopPropagation()
-        goTo(currentIndex - 1)
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault()
-        event.stopPropagation()
-        goTo(currentIndex + 1)
+      const target = event.target
+      if (
+        (target instanceof Element &&
+          target.closest('.MuiModal-root, [role="dialog"], [role="menu"], [role="listbox"]')) ||
+        document.querySelector('.MuiModal-root, [role="dialog"], [role="menu"], [role="listbox"]')
+      ) {
+        return
       }
-    },
-    [currentIndex, goTo],
-  )
+      event.preventDefault()
+      event.stopPropagation()
+      goTo(currentIndex + (event.key === 'ArrowRight' ? 1 : -1))
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [currentIndex, goTo])
 
   if (images.length === 0) {
     return (
@@ -280,7 +279,6 @@ export default function SequenceCollectionViewer({
   return (
     <Box
       data-testid="sequence-collection-viewer"
-      onKeyDownCapture={handleKeyDownCapture}
       // Focusing the region (incl. the open-time autofocus) briefly reveals
       // the edge chevrons — the cue that ←/→ control the viewer (#1564).
       onFocus={showNav}

@@ -120,6 +120,15 @@ describe('CollectionEditDialog', () => {
       ).toBeTruthy()
     })
 
+    it('lists Sequence above Synchronized (#1567)', () => {
+      renderDialog()
+      const sequence = screen.getByRole('radio', { name: /Sequence/ })
+      const synchronized = screen.getByRole('radio', { name: /Synchronized/ })
+      expect(
+        sequence.compareDocumentPosition(synchronized) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
     it('submits trimmed values with an empty scope when not restricted', async () => {
       const user = userEvent.setup()
       const { onSave, onClose } = renderDialog()

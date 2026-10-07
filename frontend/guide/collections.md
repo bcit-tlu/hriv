@@ -32,11 +32,12 @@ with annotations and measurement markings visible on each.
   relative positions — handy when the views highlight different spots.
 - Each pane's caption shows the image name and an **Open image** link to
   the normal image view.
-- The **pin** at the top-right of each pane keeps it linked to the others —
-  panes start pinned. Click it to unpin a pane and adjust it on its own;
-  click again to re-pin, which keeps the new relative positions.
-- **Restore view** returns every pane to the saved view (or its starting
-  position if none was saved).
+- The **link** icon at the top-right of each pane keeps it synced with the
+  others — panes start linked. Click it to unlink a pane and adjust it on
+  its own (the icon switches to link-off); click again to re-link, which
+  keeps the new relative positions.
+- **Restore view** returns every pane to the saved view. It stays
+  unavailable until someone has saved a view for the collection.
 - On a phone held upright the panes are replaced by a hint to rotate to
   landscape — your view is still there when you rotate back.
 
@@ -57,14 +58,16 @@ visible but can't be changed here.
 - Step through with the **‹** and **›** buttons that appear on the viewer's
   left and right edges when you point at it (they fade away when idle, like
   the image toolbar), click a thumbnail in the strip above the viewer, or
-  press the ← and → arrow keys — the viewer already has focus, so the keys
-  work as soon as the collection opens.
+  press the ← and → arrow keys — they step the sequence from anywhere on
+  the page, so they keep working after a dialog closes or a button click
+  moves focus elsewhere.
 - The caption under the viewer shows the image name, the position
   (`n of N` — part of the page link, so copying the URL shares the exact
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.
-- If you can edit the collection, a **Manage** button in the top-right
-  header opens the **Manage Collection Images** dialog — a miniature
+- If you can edit the collection, a **Manage Images** button in the
+  top-right header opens the **Manage Collection Images** dialog — a
+  miniature
   Browse view of thumbnails. Drag
   thumbnails to reorder, or click a thumbnail's corner remove icon to take
   it out of the collection. To remove several at once,
@@ -118,7 +121,8 @@ finish or cancel that first.
 
 ### Add several images at once (search picker)
 
-From the collection's **Manage** dialog, click **Add** — the search opens
+From the collection's **Manage Images** dialog, click **Choose images** —
+the search opens
 as a picker with checkboxes already on. Only the **Categories** and
 **Images** filter chips are shown — both on to start; untick a chip to
 narrow further, or untick both to search every kind.

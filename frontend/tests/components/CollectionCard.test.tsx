@@ -264,10 +264,14 @@ describe('CollectionVisibilityChip', () => {
   it.each([
     ['private', 'Private'],
     ['public', 'Public'],
-    ['restricted', 'Restricted'],
   ] as const)('labels %s as %s', (visibility, label) => {
     render(<CollectionVisibilityChip visibility={visibility} />)
     expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent(label)
+  })
+
+  it('renders no pill for restricted — the program/group chips carry it (#1567)', () => {
+    const { container } = render(<CollectionVisibilityChip visibility="restricted" />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it.each(['private', 'public'] as const)(

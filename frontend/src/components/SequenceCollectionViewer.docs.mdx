@@ -52,11 +52,13 @@ browser history.
   or on leave — like the OSD toolbar's `autoHideControls`; keyboard focus reveals them too
   (the buttons stay mounted, only opacity and pointer-events toggle). Strip thumbnails
   (`Go to {name}` buttons) and ←/→ arrow keys also change the current item. Arrow keys are
-  handled on keydown-capture at the sequence container so OpenSeadragon's own keyboard
-  panning never sees them; editable targets (inputs, textareas, selects, textboxes) are
-  ignored.
+  handled by a document-level keydown-capture listener (#1567) — they step the sequence
+  regardless of where focus sits, so closing a dialog or clicking a control can't strand
+  them — while OpenSeadragon's own keyboard panning still never sees them. Editable targets
+  (inputs, textareas, selects, textboxes) are ignored, and open dialogs/menus/listboxes own
+  their arrows.
 - **Autofocus.** The viewer region (`tabIndex={-1}`) focuses itself when a collection opens
-  (#1564), so ←/→ step the sequence immediately without a click first; the guard is per
+  (#1564), which reveals the edge nav as the ←/→ cue; the guard is per
   collection id, so switching images never steals focus back.
 - **Strip highlight.** The current thumbnail's ring is an `outline` pulled _inside_ the
   thumbnail box with a negative `outline-offset` — an outward outline was clipped

@@ -374,7 +374,7 @@ function CollectionDetailHeader({
               data-testid="collection-manage-open"
               sx={hiddenSx}
             >
-              Manage
+              Manage Images
             </Button>
           )}
         </Box>

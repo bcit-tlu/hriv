@@ -383,7 +383,10 @@ always read-only (`canEditContent={false}`).
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
 - **Given** a sequence collection opens, **Then** the viewer region
-  autofocuses (#1564) so ← / → step the sequence immediately; switching
+  autofocuses (#1564) to reveal the edge nav, and ← / → step the sequence
+  from a document-level binding (#1567) — they keep working after a dialog
+  closes, after clicking a chevron or thumbnail, or when focus sits
+  anywhere else on the page. Switching
   images does not re-steal focus, but opening another collection focuses
   it again.
 - **Given** the pointer enters or moves over the viewer frame, **Then** the
@@ -391,10 +394,11 @@ always read-only (`canEditContent={false}`).
   edges; **Then** after ~2 s idle or on pointer leave they fade out again
   (keyboard focus also reveals them).
 - **Given** the user clicks **Next** / **Previous**, a strip thumbnail, or
-  presses ← / → while the sequence has focus, **Then** the current image
+  presses ← / → while the collection page is open, **Then** the current image
   changes, the position readout and `?item=` URL update, and the viewer
   remounts (keyed by image id — no viewport bleed).
-- **Given** focus is in an input / textarea / select / textbox, **Then**
+- **Given** focus is in an input / textarea / select / textbox, **or** a
+  dialog, menu or listbox is open, **Then**
   arrow keys do not navigate.
 - **Given** **Open image** is clicked, **Then** the normal `?image={id}`
   view opens where annotations can be edited.
@@ -404,15 +408,18 @@ always read-only (`canEditContent={false}`).
   `Alert` replaces the viewer.
 - **Given** the collection has no visible images, **Then** an info `Alert`
   says there is nothing to show.
-- **Given** `permissions.can_edit`, **Then** a **Manage** button opens the
-  "Manage Collection Images — {name}" dialog of filmstrip-size thumbnails;
-  dragging reorders, the per-tile remove control deletes members, a
+- **Given** `permissions.can_edit`, **Then** a **Manage Images** button
+  opens the "Manage Collection Images — {name}" dialog of filmstrip-size
+  thumbnails;
+  dragging reorders, the per-tile corner control removes members (tooltip
+  "Remove image"), a
   **Multi-select** toggle multi-picks members for a staged
   dialog-wide **Remove N Selected Images** button, and a
   **Choose images** button opens the search picker — all staged in a local
   draft that leaves the page behind untouched until **Done** PUTs the whole
-  member id list with the collection `version` (closing a dirty draft asks
-  to discard first). Non-editors never see the button.
+  member id list with the collection `version`; **Cancel** closes without
+  saving (a dirty draft asks to discard first). Non-editors never see the
+  button.
 
 ### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
 
@@ -439,13 +446,14 @@ measurement metadata.
   and clicking it PUTs every rendered pane's current viewport as
   `viewport_state` with the collection `version`; a failure surfaces
   `userMessage` on the snackbar. Non-editors never see **Save view**.
-- **Given** the **Restore view** button (everyone), **When** clicked, **Then**
-  each pane re-applies its saved position — or its home when nothing is
-  saved — and the link baselines re-arm.
-- **Given** each pane's **pin** button at the top-right of its viewport
-  (#1564), **Then** panes start pinned (linked); **When** a pane is
-  unpinned, **Then** it pans/zooms/rotates independently — it neither leads
-  nor follows the linked panes; **When** re-pinned, **Then** the baselines
+- **Given** the **Restore view** button (everyone), **Then** it stays
+  disabled until a view has been saved (#1567); **When** clicked, **Then**
+  each pane re-applies its saved position and the link baselines re-arm.
+- **Given** each pane's **link** button at the top-right of its viewport
+  (#1564 — a link icon when linked, link-off when unlinked), **Then**
+  panes start linked; **When** a pane is
+  unlinked, **Then** it pans/zooms/rotates independently — it neither leads
+  nor follows the linked panes; **When** re-linked, **Then** the baselines
   re-capture the current alignment so the pane rejoins without snapping.
 - **Given** `(orientation: portrait)`, **Then** a full-area hint
   ("rotate your device") covers the pane area while the viewers stay mounted

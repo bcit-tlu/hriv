@@ -9,6 +9,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Checkbox from '@mui/material/Checkbox'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
@@ -224,18 +225,20 @@ function SortableMemberTile({
           }}
         />
       ) : (
-        <IconButton
-          size="small"
-          aria-label={`Remove ${image.name} from collection`}
-          disabled={disabled}
-          onClick={() => onRemove(image)}
-          sx={{
-            ...removeBadgeSx,
-            '&:hover': { bgcolor: 'error.light', color: 'error.contrastText' },
-          }}
-        >
-          <CloseIcon />
-        </IconButton>
+        <Tooltip title="Remove image">
+          <IconButton
+            size="small"
+            aria-label={`Remove ${image.name} from collection`}
+            disabled={disabled}
+            onClick={() => onRemove(image)}
+            sx={{
+              ...removeBadgeSx,
+              '&:hover': { bgcolor: 'error.light', color: 'error.contrastText' },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Tooltip>
       )}
     </Box>
   )
@@ -521,7 +524,7 @@ export default function CollectionManageDialog({
           <>
             {draft.length === 0 ? (
               <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
-                No images in this collection yet — use the add button to pick some.
+                No images in this collection yet — use Choose images to pick some.
               </Typography>
             ) : (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
@@ -599,6 +602,9 @@ export default function CollectionManageDialog({
             Unsaved changes — apply with Done.
           </Typography>
         )}
+        <Button onClick={handleRequestClose} disabled={saving} data-testid="manage-cancel">
+          Cancel
+        </Button>
         <Button
           variant="contained"
           onClick={() => void handleDone()}

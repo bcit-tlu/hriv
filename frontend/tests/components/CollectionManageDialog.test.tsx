@@ -400,6 +400,29 @@ describe('CollectionManageDialog', () => {
     expect(props.onClose).toHaveBeenCalled()
   })
 
+  it('Cancel closes a clean draft without saving', async () => {
+    const { props } = renderDialog()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
+  it('Cancel confirms before discarding a dirty draft', async () => {
+    const { props } = renderDialog()
+    const user = userEvent.setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 1 from collection' }))
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(confirmSpy).toHaveBeenCalled()
+      expect(props.onSaveMembers).not.toHaveBeenCalled()
+      expect(props.onClose).toHaveBeenCalled()
+    } finally {
+      confirmSpy.mockRestore()
+    }
+  })
+
   it('Esc/backdrop discard a dirty draft only after confirmation', async () => {
     const { props } = renderDialog()
     fireEvent.click(screen.getByRole('button', { name: 'Remove Slice 2 from collection' }))

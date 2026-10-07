@@ -167,7 +167,9 @@ describe('ManageCollectionsPage', () => {
     expect(within(row).getByText('Ada Lovelace')).toBeInTheDocument()
     expect(within(row).getByText('Anatomy')).toBeInTheDocument()
     const root = screen.getByTestId('manage-collection-row-2')
-    expect(within(root).getByText('Restricted')).toBeInTheDocument()
+    // Restricted visibility renders no pill — program/group chips carry the
+    // restriction (#1567); this unscoped row's cells stay '—'.
+    expect(within(root).queryByText('Restricted')).not.toBeInTheDocument()
     expect(within(root).getByText('9')).toBeInTheDocument()
     // Unrestricted + unfiled row: Programs, Groups, and Category all '—'.
     expect(within(root).getAllByText('—').length).toBeGreaterThan(0)

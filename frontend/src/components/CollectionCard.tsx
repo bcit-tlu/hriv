@@ -27,7 +27,7 @@ import type {
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { ComponentProps } from 'react'
 import { COLLECTION_TYPE_LABELS, COLLECTION_VISIBILITY_LABELS } from '../collectionUtils'
-import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import RenewingThumbnail from './RenewingThumbnail'
 
@@ -60,18 +60,12 @@ export interface CollectionCardProps {
  */
 export function CollectionVisibilityChip({ visibility }: { visibility: CollectionVisibility }) {
   const { mode } = useColorMode()
-  const groupColors = getGroupChipColors(mode)
   const visColors = getVisibilityColors(mode)
   const label = COLLECTION_VISIBILITY_LABELS[visibility]
   if (visibility === 'restricted') {
-    return (
-      <Chip
-        data-testid="collection-visibility-chip"
-        label={label}
-        size="small"
-        sx={{ bgcolor: groupColors.solidBg, color: groupColors.solidText }}
-      />
-    )
+    // The program/group chips already carry the restriction — a separate
+    // Restricted pill is redundant (#1567).
+    return null
   }
   // Chip icons sit at the 14px lock convention used beside category titles
   // — `.MuiChip-icon` (18px for small chips) otherwise overrides the icon's

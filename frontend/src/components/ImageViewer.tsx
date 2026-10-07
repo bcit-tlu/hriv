@@ -119,6 +119,10 @@ export default function ImageViewer({
   const imageIdRef = useRef(imageId)
   const categoryIdRef = useRef(categoryId)
   const tileSourcesRef = useRef(tileSources)
+  // Which image the open tile sources belong to — lets the prop-change
+  // reopen below tell a same-image refresh (re-tokenized URLs, e.g. a
+  // save-response refetch) from a different image arriving mid-life (#1567).
+  const openSourcesImageIdRef = useRef(imageId)
   const renewalTimerRef = useRef<number | null>(null)
   const renewalInFlightRef = useRef(false)
   const renewedTileSourceKeysRef = useRef(new Set<string>())
@@ -1047,9 +1051,24 @@ export default function ImageViewer({
     const viewer = viewerRef.current
     if (!viewer || tileSourceKey(tileSourcesRef.current) === tileSourceKey(tileSources)) return
 
+    // A same-image refresh re-opens the pyramid — keep the live viewport
+    // and overlays across the reopen (same trick as the token-renewal
+    // path) so a save/refetch can't reset the user's position (#1567).
+    const sameImage = openSourcesImageIdRef.current === imageId
+    openSourcesImageIdRef.current = imageId
+    if (sameImage) {
+      pendingRenewalViewportRef.current = currentViewportState()
+      viewer.addOnceHandler('open', restorePendingRenewalViewport)
+    }
     tileSourcesRef.current = tileSources
-    viewer.open(tileSources as unknown as OpenSeadragon.TileSourceSpecifier)
-  }, [tileSourceKey, tileSources])
+    const previousPreserveOverlays = viewer.preserveOverlays
+    viewer.preserveOverlays = sameImage
+    try {
+      viewer.open(tileSources as unknown as OpenSeadragon.TileSourceSpecifier)
+    } finally {
+      viewer.preserveOverlays = previousPreserveOverlays
+    }
+  }, [tileSourceKey, tileSources, imageId, currentViewportState, restorePendingRenewalViewport])
 
   // Reactively update lock/clear button UI when overlaysLocked prop changes
   useEffect(() => {

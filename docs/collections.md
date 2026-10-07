@@ -589,12 +589,14 @@ program/group chips sit right after the breadcrumb, where the image view
 renders them. The actions are **Hide collection** / **Show collection**
 (`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
-image viewer's Hide/Show Image control occupies), **Manage** (`canEdit` —
-opens `CollectionManageDialog`, the mini-Browse member manager: drag to
-reorder, the corner control to remove, **Select** +
-**Remove** to multi-pick members for removal, **Add** to
+image viewer's Hide/Show Image control occupies), **Manage Images**
+(`canEdit` — opens `CollectionManageDialog`, the mini-Browse member
+manager: drag to
+reorder, the corner remove control (tooltip "Remove image"),
+**Multi-select** + the bottom **Remove N Selected Images** to bulk-remove,
+**Choose images** to
 add via the search flow — all staged locally until **Done** commits the
-staged list once; #1566/#1567). **Edit** is a pencil on the final
+staged list once or **Cancel** discards it; #1566/#1567). **Edit** is a pencil on the final
 breadcrumb item — the Edit Category breadcrumb-pencil pattern — gated on
 `canEdit` or filing rights (`canFile`), and the owners affordance is the
 transfer-horizontal (`SwapHoriz`) icon beside the
@@ -603,7 +605,8 @@ transfer-horizontal (`SwapHoriz`) icon beside the
 the header carries no **Move** button (#1566). Below the top row, the **type
 pill** — the shared `CollectionTypeChip` with the type's icon
 (Synchronized / Sequence, #1567) — and the **visibility chip**
-(Public/Private/Restricted) sit to the
+(Public/Private only — a restricted collection relies on its
+program/group chips, so no Restricted pill renders; #1567) sit to the
 left of the owner line; the description renders below the pills,
 left-aligned (#1567). Hidden state shows through greyscale alone — no
 `Hidden` chip. No Delete (#1554).
@@ -649,7 +652,8 @@ Browse, hidden-subtree rows get the eye icon). Columns (#1567): Cover
 (`RenewingThumbnail`), ID, Name (with a `VisibilityOff` marker on
 curatorially hidden rows, #1559), Type (the shared `CollectionTypeChip`
 pill), Scope
-(`CollectionVisibilityChip` — the Private/Public/Restricted pill), Owners
+(`CollectionVisibilityChip` — a Public/Private pill; restricted shows no
+pill — the program/group chips carry it, #1567), Owners
 (`describeCollectionOwners`), image count, Programs and Groups (own scope
 solid plus the filed category's scope at inherited opacity), Category,
 **Visibility** (a per-row show/hide `Switch` gated on `permissions.canHide`,
@@ -827,7 +831,8 @@ render read-only via `canvasAnnotationsFromMetadata` /
 **Caption.** A caption row under the viewport — the same pattern the
 synchronized panes use (#1564) — holds the member name (left) and, at the
 right, the `n of N` live region plus the **Open image** action. Member
-management moved into the detail header's **Manage** dialog (#1566).
+management moved into the detail header's **Manage Images** dialog
+(#1566/#1567).
 
 **Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
 overlay the viewport's left and right edges (#1561); like the OSD toolbar's
@@ -836,13 +841,16 @@ and fade back out after ~2 s idle or on pointer leave (keyboard focus also
 reveals them). The buttons stay mounted — only opacity and pointer-events
 toggle — so screen readers and tab focus still reach them. Strip
 thumbnails (`Go to {name}`) and ←/→ arrow keys change the current item
-too. Arrows are handled on keydown-capture at the sequence container so
-OpenSeadragon's own keyboard panning never sees them; editable targets
-(inputs, textareas, selects, `[role="textbox"]`, contenteditable) are
-skipped. The container itself is focusable
-(`tabIndex={-1}`) and autofocuses when a collection opens (#1564), so the
-arrow keys work immediately — switching images never steals focus back,
-but opening a different collection focuses it again.
+too. Arrows are handled by a document-level keydown-capture listener
+(#1567) — focus placement is irrelevant, so a dialog returning focus to a
+header trigger or a chevron/thumbnail click can no longer strand ←/→.
+OpenSeadragon's own keyboard panning never sees them (capture still wins),
+editable targets (inputs, textareas, selects, `[role="textbox"]`,
+contenteditable) are skipped, and the listener yields whenever a dialog,
+menu, or listbox is open. The container itself is focusable
+(`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
+edge-nav cue reveals immediately — switching images never steals focus
+back, but opening a different collection focuses it again.
 
 **Thumbnail strip.** `RenewingThumbnail` buttons _above_ the viewer
 (#1564); the
@@ -861,7 +869,7 @@ the current image's tiles fail mid-session the viewer reports the error via
 the nearest still-available image (preferring the next one). When every
 image has failed, an error alert replaces the viewer.
 
-**Manage dialog.** The header's **Manage** button (replaces the #1559
+**Manage dialog.** The header's **Manage Images** button (replaces the #1559
 Reorder toggle, #1566) opens `CollectionManageDialog` — a mini-Browse grid
 of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
 the locked `SortableTileGrid` collision contract is untouched). The dialog
@@ -929,11 +937,12 @@ on reset (#1561). A leader's move applies its displacement from its own
 baseline — a multiplicative zoom ratio and additive centre/rotation deltas —
 onto each pinned follower's baseline, so saved positions around different
 highlights stay aligned while navigation mirrors. For two panes this is
-the pairwise offset the viewer originally captured. **Pins** (#1564) —
-a per-pane button at the top-right of each viewport — replace the old
-global **Link views** switch: panes start pinned (linked), unpinning
+the pairwise offset the viewer originally captured. **Link toggles**
+(#1564, #1567) — a per-pane button at the top-right of each viewport
+rendering a link icon (linked) or link-off icon (unlinked) — replace the
+old global **Link views** switch: panes start linked, unlinking
 detaches one pane's navigation entirely (it neither leads nor follows),
-and re-pinning re-captures the baselines at the current positions (it does
+and re-linking re-captures the baselines at the current positions (it does
 not snap the pane back to where it left).
 
 **Persisted view.** **Save view** (editors only,
@@ -943,9 +952,13 @@ not snap the pane back to where it left).
 `version`), so the layout restores exactly after a reload or via a
 `?collection={id}` share link. `saveViewport` is serialized with
 `reorderImages` through the same mutation queue so the two writes can never
-consume each other's version. **Restore view** (everyone) re-applies the saved
-positions — or each viewer's home when nothing is saved — then re-arms the
-baselines. Saved entries that do not match the shape are ignored by
+consume each other's version. The save stays put — a tile-source refresh
+from the response re-opens the pyramid but preserves the live viewport
+(`ImageViewer` snapshots it before `open`, same as the token-renewal
+path). **Restore view** (everyone) re-applies the saved
+positions and re-arms the baselines; it is disabled until a viewport has
+been saved for at least one rendered pane (#1567). Saved entries that do
+not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
 
 **Orientation.** `(orientation: portrait)` covers the pane area with a
@@ -977,7 +990,7 @@ and no Collections chip appears.
 
 **Multi-select (image and category results) — picker mode only.** The
 select layer exists only when the modal opens as a collection-image picker
-(`initialSelectMode` — currently the Manage dialog's **Add** flow,
+(`initialSelectMode` — currently the Manage dialog's **Choose images** flow,
 `requestCollectionImageSearch`); the normal search never shows a Select
 toggle, checkboxes, or the footer. The picker also narrows the chip row to
 just the two addable kinds — **Categories** and **Images**, pre-applied —
@@ -1142,7 +1155,8 @@ the shared group-chip palette.
   type MenuItem selected), `CollectionsPage.test.tsx` (`Home`/category
   breadcrumb navigation, name + `(N images)` count as the breadcrumb's
   trailing item, actions share the breadcrumb row, type/visibility pills
-  above the description, Manage button wiring for editable detail, Hidden
+  above the description, Manage Images button wiring for editable detail,
+  Hidden
   chip + Hide/Show link on
   `canHide`, `onToggleHidden` call + error surface),
   `CollectionManageDialog.test.tsx` (member grid, drag reorder, no-target
@@ -1181,9 +1195,10 @@ the shared group-chip palette.
   `useCollectionsData.test.ts` (#1417, #1561, #1564) — two-pane render with
   read-only props, `viewport-change` mirroring with the saved offset in both
   directions, no write-back/oscillation, leader→followers mirroring and
-  per-pane offsets for three/four panes, per-pane pin toggles (default
-  pinned, unpinned leader/follower detachment, re-pin re-arms at current
-  positions), Save view payload for all panes, Reset to saved/home, portrait
+  per-pane offsets for three/four panes, per-pane link toggles (default
+  linked, unlinked leader/follower detachment, re-link re-arms at current
+  positions), Save view payload for all panes, Restore gated on a saved
+  view, portrait
   hint, `< 2`
   fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
   slide-up, editor-only Save;

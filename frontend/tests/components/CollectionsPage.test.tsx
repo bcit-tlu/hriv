@@ -682,7 +682,7 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('detail-group-chip')).toHaveTextContent('Cohort A')
       // Chips sit on the breadcrumb row to the left of the action buttons —
       // the View Images header convention (#1567).
-      const manage = screen.getByRole('button', { name: 'Manage' })
+      const manage = screen.getByRole('button', { name: 'Manage Images' })
       expect(
         chips[0].compareDocumentPosition(manage) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
@@ -898,7 +898,7 @@ describe('CollectionsPage', () => {
       const user = userEvent.setup()
       const detail = makeCollection({ id: 9, type: 'sequence' })
       renderPage({ selectedCollectionId: 9, detail })
-      await user.click(screen.getByRole('button', { name: 'Manage' }))
+      await user.click(screen.getByRole('button', { name: 'Manage Images' }))
       expect(screen.getByTestId('collection-manage')).toBeInTheDocument()
 
       // The right-side Edit button is gone (#1567) — the pencil sits inside
@@ -915,7 +915,7 @@ describe('CollectionsPage', () => {
         selectedCollectionId: 10,
         detail: makeCollection({ id: 10, type: 'synchronized' }),
       })
-      expect(screen.getAllByRole('button', { name: 'Manage' }).length).toBeGreaterThan(0)
+      expect(screen.getAllByRole('button', { name: 'Manage Images' }).length).toBeGreaterThan(0)
     })
 
     it('wires the Manage dialog through the shared mutation handlers (#1566/#1567)', async () => {
@@ -929,7 +929,7 @@ describe('CollectionsPage', () => {
         onReorderImages,
         onRequestCollectionImageSearch,
       })
-      await user.click(screen.getByRole('button', { name: 'Manage' }))
+      await user.click(screen.getByRole('button', { name: 'Manage Images' }))
       const props = manageDialogProps.current!
       expect(props.collection).toBe(detail)
       // Done commits the staged draft through the whole-replace handler.
@@ -950,7 +950,7 @@ describe('CollectionsPage', () => {
           permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       })
-      expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Manage Images' })).not.toBeInTheDocument()
     })
 
     it('keeps the actions on the breadcrumb row and the pills above the description (#1564)', () => {
@@ -959,7 +959,7 @@ describe('CollectionsPage', () => {
         detail: makeCollection({ id: 9, visibility: 'public', description: 'Two views' }),
       })
       const crumb = screen.getByTestId('collection-breadcrumb')
-      const manage = screen.getByRole('button', { name: 'Manage' })
+      const manage = screen.getByRole('button', { name: 'Manage Images' })
       // Breadcrumb precedes the action buttons in the shared top row…
       expect(crumb.compareDocumentPosition(manage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       const typeChip = screen.getByText('Synchronized')
@@ -992,7 +992,7 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('collection-hidden-chip')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Show collection' })).toBeInTheDocument()
       // The action buttons greyscale like the hidden image view's controls.
-      expect(screen.getByRole('button', { name: 'Manage' })).toHaveStyle({
+      expect(screen.getByRole('button', { name: 'Manage Images' })).toHaveStyle({
         filter: 'grayscale(100%)',
       })
       expect(screen.getByRole('button', { name: 'Edit collection' })).toHaveStyle({
