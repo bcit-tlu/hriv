@@ -121,9 +121,9 @@ export interface CollectionSummary {
   imageCount: number
   coverThumb: string | null
   version: number
-  /** Category the collection is filed into (null = Browse root). */
+  /** Category the collection is filed into (null = unfiled, not on Browse). */
   categoryId: number | null
-  /** Tile-order position inside its category/root scope. */
+  /** Tile-order position inside its filed category scope. */
   sortOrder: number
   /** Restriction scope (empty unless `visibility === 'restricted'`); carried
    *  on summaries so tiles can render program/group chips (#1567). */

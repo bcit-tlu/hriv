@@ -838,7 +838,7 @@ describe('CollectionsPage', () => {
       expect(onNavigateCategory).toHaveBeenCalledWith([hematology, mlsc])
     })
 
-    it('renders just Home for a root-filed collection', () => {
+    it('renders just Home for an unfiled collection', () => {
       renderPage({
         selectedCollectionId: 9,
         detail: makeCollection({ id: 9, categoryId: null }),

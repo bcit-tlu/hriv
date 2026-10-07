@@ -295,10 +295,8 @@ export interface SortableTileGridProps {
   currentImages: ImageItem[]
   uncategorizedImages: ImageItem[]
   /**
-   * Collections filed into the current scope (#1529): the path node's
-   * `collections` for nested scopes, or the uncategorized list at root —
-   * already scope-merged by the caller. Defaults to none so surfaces that
-   * predate collections keep working.
+   * Collections filed into the current category scope (#1529). Defaults to
+   * none so the root scope and surfaces that predate collections keep working.
    */
   currentCollections?: CollectionSummary[]
   path: Category[]

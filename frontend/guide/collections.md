@@ -86,8 +86,9 @@ visible but can't be changed here.
 
 The breadcrumb at the top of the page shows where the collection lives in
 Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each
-link jumps to that spot in Browse. A collection filed at the top level just
-shows **Home**.
+link jumps to that spot in Browse. An unfiled collection's breadcrumb has no
+category segment; it may show **Home**, but the collection itself is not a
+Browse tile.
 
 ## Create a collection
 
@@ -150,21 +151,27 @@ message at the bottom removes the image again.
 
 ## Collections in Browse
 
-Collection tiles appear on the **Browse** page alongside category and image
-tiles — at the top level or nested inside categories, so a "Lab 2"
-collection can sit inside _Histology → Epithelium_ like any other tile. Open
-a tile to view the collection; the breadcrumb at the top of the collection
-page shows its filed location and links back into Browse.
+Collections appear on **Browse** only after a curator files them into a
+category. An unfiled collection is not a Browse tile; it remains available in
+the Collections tab and collection-management views. Open a filed tile to
+view the collection; its breadcrumb shows the filed location and links back
+into Browse. To feature a collection near the top of Browse, file it into a
+root-level category such as **Featured**.
 
 - Tiles keep a fixed width and can be dragged to reorder them among the
   images and categories in the same folder; the order is shared for every
   viewer.
-- Admins and instructors can **file** a collection into a category (or back
-  to the top level) with the card's **Move** action (the folder icon in the
-  cover's top-right corner), the **Category** picker in the collection's
-  edit dialog, or by dragging the tile
+- Admins and instructors can **file** a collection into a category or choose
+  **Not on Browse** to unfile it, using the card's **Move** action (the
+  folder icon in the cover's top-right corner), the **Category** picker in
+  the collection's edit dialog, or by dragging a filed tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not
   ownership-bound — any admin/instructor can file any collection.
+- Filing a private collection shows a warning: only its owners and staff,
+  instructors, and admins can see its Browse tile — not other students.
+- **Add to Collection** remains available for adding images to unfiled
+  collections. The former root-tile drag-add path is no longer available to
+  students adding images to their own unfiled collections.
 - A category tile's detail line counts the collections inside its subtree
   (`N collections`).
 - When `COLLECTIONS_ENABLED` is off, collection tiles disappear from Browse

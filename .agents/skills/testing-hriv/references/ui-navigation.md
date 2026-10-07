@@ -15,14 +15,14 @@ read access through visibility, not the Images tab or other Manage items.)
 
 ### Browse (Home)
 
-- Category tiles + uncategorized image tiles + collection tiles
-  (`COLLECTIONS_ENABLED` on). All three member types share one reorderable
-  grid — see `references/drag-and-drop.md` for the move/reorder/add contract.
-- Collections can be nested under categories (`collections.category_id`);
-  the seeded **Italian Cathedrals** sequence lives at
-  _Architecture → Italian_. File/unfile via the card **Move** overlay action
-  (top-right cover scrim; `MoveCollectionDialog`, admin/instructor) or by dragging the tile onto a
-  category's near-half **Move here** zone.
+- Category tiles + uncategorized image tiles at root; filed collection tiles
+  inside categories (`COLLECTIONS_ENABLED` on). The root scope contains
+  categories and images only — unfiled collections are not Browse tiles.
+- The seeded **Italian Cathedrals** sequence lives at _Architecture →
+  Italian_. Admins/instructors can file it via the card **Move** action
+  (`MoveCollectionDialog`) or by dragging the filed tile onto a category's
+  near-half **Move here** zone; **Not on Browse** unfiles it. See
+  `references/drag-and-drop.md` for the move/reorder/add contract.
 - Click a tile to drill down; click an image tile to open the OpenSeadragon
   viewer; click a collection tile to open that collection's viewer
   (`?collection={id}`, Back restores the Browse scope).

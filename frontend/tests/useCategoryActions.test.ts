@@ -1007,11 +1007,9 @@ describe('useCategoryActions', () => {
       const moveCollectionApi = vi
         .fn()
         .mockResolvedValue(makeCollection({ id: 7, categoryId: 2, version: 4 }))
-      const loadUncategorizedCollections = vi.fn()
       const deps = makeDeps({
         categories: [catA, catB],
         moveCollectionApi,
-        loadUncategorizedCollections,
       })
       const { result } = renderHook(() => useCategoryActions(deps))
 
@@ -1021,7 +1019,6 @@ describe('useCategoryActions', () => {
 
       expect(moveCollectionApi).toHaveBeenCalledWith(7, 2, 3)
       expect(deps.loadCategories).toHaveBeenCalled()
-      expect(loadUncategorizedCollections).toHaveBeenCalled()
       expect(deps.setMoveSnack).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Epithelia'),
@@ -1029,24 +1026,17 @@ describe('useCategoryActions', () => {
       )
     })
 
-    it('finds root-scope collections in uncategorizedCollections', async () => {
-      const col = makeCollectionSummary({ id: 8, name: 'Root set', categoryId: null, version: 1 })
+    it('does not move an unfiled collection absent from the category tree', async () => {
       const catB = makeCategory({ id: 2, label: 'Target' })
-      const moveCollectionApi = vi
-        .fn()
-        .mockResolvedValue(makeCollection({ id: 8, categoryId: 2, version: 2 }))
-      const deps = makeDeps({
-        categories: [catB],
-        uncategorizedCollections: [col],
-        moveCollectionApi,
-      })
+      const moveCollectionApi = vi.fn()
+      const deps = makeDeps({ categories: [catB], moveCollectionApi })
       const { result } = renderHook(() => useCategoryActions(deps))
 
       await act(async () => {
         await result.current.handleDropCollectionOnCategory(8, 2)
       })
 
-      expect(moveCollectionApi).toHaveBeenCalledWith(8, 2, 1)
+      expect(moveCollectionApi).not.toHaveBeenCalled()
     })
 
     it('no-ops when the collection is already in the target category', async () => {
@@ -1086,6 +1076,7 @@ describe('useCategoryActions', () => {
       expect(moveCollectionApi).toHaveBeenCalledWith(7, null, 3)
       expect(result.current.moveCollectionOpen).toBe(false)
       const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0]
+      expect((snackCall as { message: string }).message).toBe('Removed “Set” from Browse')
       const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo
 
       await act(async () => {
@@ -1196,12 +1187,10 @@ describe('useCategoryActions', () => {
         .fn()
         .mockResolvedValue({ status: 'added', collection: addedCollection(), addedCount: 1 })
       const removeImagesFromCollectionApi = vi.fn()
-      const loadUncategorizedCollections = vi.fn()
       const deps = makeDeps({
         categories: [cat],
         addImagesToCollectionApi,
         removeImagesFromCollectionApi,
-        loadUncategorizedCollections,
       })
       const { result } = renderHook(() => useCategoryActions(deps))
 
@@ -1211,7 +1200,6 @@ describe('useCategoryActions', () => {
 
       expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42])
       expect(deps.loadCategories).toHaveBeenCalled()
-      expect(loadUncategorizedCollections).toHaveBeenCalled()
       expect(deps.setMoveSnack).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Epithelia'),
@@ -1219,13 +1207,11 @@ describe('useCategoryActions', () => {
       )
     })
 
-    it('finds root-scope collections in uncategorizedCollections', async () => {
-      const col = makeCollectionSummary({ id: 7, name: 'Root set', categoryId: null })
+    it('does not add images to an unfiled collection absent from the tree', async () => {
       const addImagesToCollectionApi = vi
         .fn()
         .mockResolvedValue({ status: 'added', collection: addedCollection(), addedCount: 1 })
       const deps = makeDeps({
-        uncategorizedCollections: [col],
         addImagesToCollectionApi,
         removeImagesFromCollectionApi: vi.fn(),
       })
@@ -1235,8 +1221,8 @@ describe('useCategoryActions', () => {
         await result.current.handleDropImageOnCollection(42, 7)
       })
 
-      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42])
-      expect(deps.setMoveSnack).toHaveBeenCalled()
+      expect(addImagesToCollectionApi).not.toHaveBeenCalled()
+      expect(deps.setMoveSnack).not.toHaveBeenCalled()
     })
 
     it('undo removes the added member and refreshes', async () => {

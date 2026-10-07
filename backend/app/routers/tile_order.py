@@ -1,9 +1,10 @@
 """Atomic, revisioned tile-order API (epic #975, issue #978).
 
-``PUT /api/tile-order`` persists one combined category+collection+image
-visual order for a single root/category scope in ONE database transaction,
-guarded by a compare-and-set scope revision. ``GET /api/tile-order``
-returns the current authoritative order and revision so clients can seed
+``PUT /api/tile-order`` persists one combined visual order for a single
+root/category scope in ONE database transaction, guarded by a compare-and-set
+scope revision. Root scopes contain categories and images; category scopes
+may also contain filed collections. ``GET /api/tile-order`` returns the
+current authoritative order and revision so clients can seed
 ``expected_revision``.
 
 Reordering never rewrites membership (``parent_id`` / ``category_id``) —
@@ -135,7 +136,7 @@ async def put_tile_order(
                 image_ids,
             )
             if error is not None:
-                raise HTTPException(status_code=400, detail=error)
+                raise HTTPException(status_code=422, detail=error)
             if body.expected_revision != current_revision:
                 stale_browse_revision = await get_browse_revision(db)
                 stale = await _authoritative_response(

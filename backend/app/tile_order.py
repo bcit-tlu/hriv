@@ -1,7 +1,9 @@
 """Atomic, revisioned tile ordering for root/category scopes (issue #978).
 
 One Browse/Manage scope (the root, or a single parent category) has one
-combined visual order of child categories and images. This module owns:
+combined visual order of its tile members. The root scope contains child
+categories and images; collections are tile-order members only when filed in
+a category. This module owns:
 
 - the canonical deterministic ordering rule shared by reads, writes, and
   normalization: ``(sort_order, item_type_priority, item_id)`` with
@@ -21,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -50,7 +53,8 @@ ROOT_SCOPE_KEY = 0
 INITIAL_SCOPE_REVISION = 1
 
 # Navigation (categories) before presentation (collections) before raw
-# material (images) — collections joined the contract in #1528 (epic #1525).
+# material (images) — filed collections joined the contract in #1528 (epic
+# #1525); unfiled collections are not Browse tiles.
 _TYPE_PRIORITY = {"category": 0, "collection": 1, "image": 2}
 
 
@@ -65,6 +69,11 @@ class TileRef:
 
 def scope_key_for(parent_category_id: int | None) -> int:
     return ROOT_SCOPE_KEY if parent_category_id is None else parent_category_id
+
+
+def collection_scope_keys(category_ids: Iterable[int | None]) -> set[int]:
+    """Scope keys a collection write touches — unfiled (None) is in no scope."""
+    return {category_id for category_id in category_ids if category_id is not None}
 
 
 def canonical_sort_key(ref: TileRef) -> tuple[int, int, int]:
@@ -131,12 +140,8 @@ def _collections_enabled() -> bool:
     return settings.collections_enabled
 
 
-def _collection_scope_where(parent_category_id: int | None):
-    return (
-        Collection.category_id.is_(None)
-        if parent_category_id is None
-        else Collection.category_id == parent_category_id
-    )
+def _collection_scope_where(parent_category_id: int):
+    return Collection.category_id == parent_category_id
 
 
 async def load_scope_members(
@@ -155,7 +160,7 @@ async def load_scope_members(
     )
     category_ids = set((await db.execute(sa.select(Category.id).where(cat_where))).scalars())
     collection_ids: set[int] = set()
-    if _collections_enabled():
+    if _collections_enabled() and parent_category_id is not None:
         collection_ids = set(
             (
                 await db.execute(
@@ -185,7 +190,7 @@ async def load_scope_tiles(db: AsyncSession, parent_category_id: int | None) -> 
         TileRef(type="category", id=row.id, sort_order=row.sort_order)
         for row in (await db.execute(sa.select(Category.id, Category.sort_order).where(cat_where)))
     ]
-    if _collections_enabled():
+    if _collections_enabled() and parent_category_id is not None:
         refs += [
             TileRef(type="collection", id=row.id, sort_order=row.sort_order)
             for row in (

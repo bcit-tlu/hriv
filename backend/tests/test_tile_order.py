@@ -34,6 +34,7 @@ from app.tile_order import (
     _resolve_database_url,
     canonical_order,
     canonical_sort_key,
+    collection_scope_keys,
     main,
     normalize_all_scopes,
     normalize_scope,
@@ -61,6 +62,10 @@ def _admin() -> SimpleNamespace:
 def test_scope_key_for_root_and_category():
     assert scope_key_for(None) == ROOT_SCOPE_KEY
     assert scope_key_for(42) == 42
+
+
+def test_collection_scope_keys_excludes_unfiled_collections():
+    assert collection_scope_keys([None, 2, 3, None]) == {2, 3}
 
 
 def test_canonical_sort_key_uses_sort_order_type_priority_then_id():
@@ -257,12 +262,12 @@ async def test_put_stale_revision_returns_409_with_current_state(mocked_helpers)
     db.rollback.assert_awaited()
 
 
-async def test_put_invalid_submission_returns_400(mocked_helpers):
+async def test_put_invalid_submission_returns_422(mocked_helpers):
     db = AsyncMock()
     body = _request([("category", 1), ("category", 2)])  # image 10 missing
     with pytest.raises(HTTPException) as excinfo:
         await put_tile_order(body, _admin(), db)
-    assert excinfo.value.status_code == 400
+    assert excinfo.value.status_code == 422
     mocked_helpers.apply.assert_not_awaited()
     db.commit.assert_not_awaited()
 
@@ -426,6 +431,64 @@ async def test_collection_is_a_scope_member_when_enabled(db_session, monkeypatch
 
 
 @requires_db
+async def test_root_scope_excludes_unfiled_collections_and_reorders_other_tiles(
+    db_session, monkeypatch
+):
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    parent_id, _, _ = await _mixed_scope(db_session)
+    unfiled = await _filed_collection(db_session, None, sort_order=10_000)
+    filed = await _filed_collection(db_session, parent_id, sort_order=10_001)
+    unfiled_id = unfiled.id
+    filed_id = filed.id
+
+    current = await get_tile_order(_admin(), None, db_session)
+    current_refs = [(item.type, item.id) for item in current.items]
+    assert ("collection", unfiled_id) not in current_refs
+    assert ("collection", filed_id) not in current_refs
+
+    response = await put_tile_order(
+        TileOrderRequest(
+            scope=TileOrderScope(parent_category_id=None),
+            expected_revision=current.revision,
+            operation_id=None,
+            items=[
+                TileOrderItemRef(type=tile_type, id=tile_id)
+                for tile_type, tile_id in current_refs
+            ],
+        ),
+        _admin(),
+        db_session,
+    )
+    assert [(item.type, item.id) for item in response.items] == current_refs
+    assert all(tile_type != "collection" for tile_type, _ in current_refs)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await put_tile_order(
+            TileOrderRequest(
+                scope=TileOrderScope(parent_category_id=None),
+                expected_revision=response.revision,
+                operation_id=None,
+                items=[
+                    TileOrderItemRef(type=tile_type, id=tile_id)
+                    for tile_type, tile_id in current_refs
+                ]
+                + [TileOrderItemRef(type="collection", id=unfiled_id)],
+            ),
+            _admin(),
+            db_session,
+        )
+    assert excinfo.value.status_code == 422
+    assert "Collections not in scope" in excinfo.value.detail
+
+    category_scope = await get_tile_order(_admin(), parent_id, db_session)
+    assert ("collection", filed_id) in [
+        (item.type, item.id) for item in category_scope.items
+    ]
+
+
+@requires_db
 async def test_collections_invisible_to_contract_when_disabled(
     db_session, monkeypatch
 ):
@@ -453,7 +516,7 @@ async def test_collections_invisible_to_contract_when_disabled(
     )
     with pytest.raises(HTTPException) as excinfo:
         await put_tile_order(body, _admin(), db_session)
-    assert excinfo.value.status_code == 400
+    assert excinfo.value.status_code == 422
     assert "Collections not in scope" in excinfo.value.detail
 
 
@@ -476,7 +539,7 @@ async def test_put_rejects_duplicate_missing_and_foreign_ids(db_session):
         )
         with pytest.raises(HTTPException) as excinfo:
             await put_tile_order(body, _admin(), db_session)
-        assert excinfo.value.status_code == 400
+        assert excinfo.value.status_code == 422
 
 
 @requires_db

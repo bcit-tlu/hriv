@@ -7,6 +7,12 @@ revisioned ordering contract so a reorder can never partially persist and
 stale writers get an explicit conflict; issue #1528 (epic #1525) made
 collections first-class scope members alongside categories and images.
 
+Under the A1 placement model (#1583), collections are members only of their
+filed category scope. The root scope contains categories and images only;
+unfiled collections (`category_id IS NULL`) are not Browse tiles or
+tile-order members. A collection intended for root-level featuring belongs
+in a root category such as **Featured**.
+
 ## Data model
 
 - `tile_order_revisions` (`backend/app/models.py::TileOrderRevision`,
@@ -17,7 +23,8 @@ collections first-class scope members alongside categories and images.
     Rows are created lazily on the first write (or by normalization).
 - `categories.sort_order` / `collections.sort_order` /
   `images.sort_order` keep holding positions; after a tile-order write
-  they are contiguous (`0..n-1`) across the combined scope.
+  they are contiguous (`0..n-1`) across the combined scope. In the root
+  scope, only categories and images participate.
 
 ## Canonical ordering rule
 
@@ -33,6 +40,11 @@ Labels and file names are never used as persistence tie-breakers.
 ## API
 
 Both endpoints require the `instructor` role (or `admin`).
+
+`GET /api/tile-order` for the root (omitted `parent_category_id`) returns
+categories and images only. A category scope also includes collections filed
+in that category. Submitting an unfiled collection in a root `PUT` is
+rejected with HTTP 422 and `Collections not in scope`.
 
 ### `GET /api/tile-order?parent_category_id=<id|omitted>`
 
@@ -86,9 +98,9 @@ Within **one database transaction** the endpoint:
 
 1. locks the scope's revision row (`INSERT … ON CONFLICT DO NOTHING` +
    `SELECT … FOR UPDATE`), serializing concurrent writers per scope;
-2. loads the scope's member IDs with three set-based queries (categories,
-   collections, images);
-3. rejects duplicated, foreign-scope, or missing IDs (HTTP 400) — the
+2. loads the scope's member IDs with set-based queries (categories and
+   images at root; collections are queried only for a category scope);
+3. rejects duplicated, foreign-scope, or missing IDs (HTTP 422) — the
    submitted items must be exactly the scope's members. A 400 can also mean
    scope membership changed underneath the client (a tile was moved in or
    out). Moves through the category/image update endpoints — and

@@ -13,6 +13,7 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { privateFilingWarning } from '../collectionUtils'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { collectionConflictCurrent, userMessage } from '../api'
@@ -53,7 +54,7 @@ export interface CollectionFormValues {
   /**
    * Category filing for edits (#1566): not a PATCH field — the caller turns a
    * change into `POST …/move`. Always carries the collection's current
-   * category so an unchanged save is a no-op; `null` = Browse root.
+   * category so an unchanged save is a no-op; `null` = unfiled, not on Browse.
    */
   categoryId: number | null
   /**
@@ -453,6 +454,7 @@ export default function CollectionEditDialog({
               categories={categories}
               value={categoryId}
               onChange={setCategoryId}
+              rootLabel="Not on Browse"
               onAddCategory={onAddCategory}
               onEditCategory={onEditCategory}
               onToggleVisibility={onToggleVisibility}
@@ -460,6 +462,11 @@ export default function CollectionEditDialog({
               groups={groups}
             />
           </Box>
+        )}
+        {isEdit && canFile && categoryId != null && visibility === 'private' && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {privateFilingWarning()}
+          </Alert>
         )}
 
         <Box sx={{ mt: 2 }}>

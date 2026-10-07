@@ -32,8 +32,7 @@ export function findCategoryPath(
 /**
  * Search the category tree for a filed collection by ID, returning the
  * collection summary and the category path it is filed under (#1529).
- * Root-scope collections are NOT in the tree — callers merge
- * `uncategorizedCollections` separately.
+ * Unfiled collections are not in the Browse tree.
  */
 export function findCollectionInTree(
   tree: Category[],

@@ -28,11 +28,12 @@ no owner rows AND no program owner are orphaned (admin-only until
 reassigned); ``collections.user_id`` is creator audit, not ownership.
 
 Browse placement (epic #1525 / #1527): ``category_id`` files a collection
-into the category tree (``None`` = Browse root). ``POST …/{id}/move`` is
-admin/instructor-only and independent of ownership — filing is curatorial
-like moving images/categories — bumps both affected tile-order scope
-revisions (revision-then-rows lock order) and the browse ETag revision, and
-carries the same ``version`` optimistic-concurrency token as PATCH.
+into the category tree (``None`` = unfiled, not on Browse). ``POST
+…/{id}/move`` is admin/instructor-only and independent of ownership — filing
+is curatorial like moving images/categories — bumps affected category
+tile-order scope revisions (revision-then-rows lock order) and the browse ETag
+revision, and carries the same ``version`` optimistic-concurrency token as
+PATCH.
 Serialization/visibility helpers live in ``app.collection_views`` so the
 category tree can embed collection summaries without importing this router.
 """
@@ -86,7 +87,7 @@ from ..schemas import (
     CollectionUpdate,
     CollectionViewportUpdate,
 )
-from ..tile_order import bump_scopes, scope_key_for
+from ..tile_order import bump_scopes, collection_scope_keys
 
 def require_collections_enabled() -> None:
     """Router-wide gate for the ``COLLECTIONS_ENABLED`` dark-launch flag.
@@ -123,7 +124,9 @@ async def list_collections(
     ``orphaned=true`` (collections with no user-owner rows and no program
     owner — e.g. after a program delete) is an admin-only filter; other
     roles receive 403. ``mine`` / ``owner_user_id`` match
-    ``collection_owners`` membership (#1531).
+    ``collection_owners`` membership (#1531). ``uncategorized=true`` selects
+    the unfiled queue: collections not shown on Browse because their
+    ``category_id`` is null.
     """
     if type is not None and type not in COLLECTION_TYPES:
         raise HTTPException(
@@ -415,10 +418,6 @@ async def create_collection(
     collection.groups = grps
     _replace_image_links(collection, images)
     db.add(collection)
-    # New collections start uncategorized: they join the root tile scope, so
-    # invalidate its revision (an in-flight PUT /api/tile-order must not
-    # silently miss the new member once collections join the contract).
-    await bump_scopes(db, {scope_key_for(None)})
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)
@@ -493,8 +492,10 @@ async def bulk_update_collections(
     co-owner) and ``restricted`` needs per-collection attach lists.
 
     Atomic: every id must resolve (404) and ``category_id`` must exist
-    (422) before any write, and a concurrent move/delete between the read
-    and the row lock is a 409 rather than a missed scope bump. Like
+    (422) before any write. ``category_id=null`` unfiles the selected
+    collections from Browse. Only filed source/destination scopes are
+    invalidated, and a concurrent move/delete between the read and the row
+    lock is a 409 rather than a missed scope bump. Like
     ``PATCH /images/bulk`` there is no per-row ``version`` token; the row
     lock plus ``populate_existing`` makes the loaded ``version`` the
     committed-latest, so a plain increment cannot collide with a racing
@@ -521,9 +522,11 @@ async def bulk_update_collections(
             cid for cid, src in snapshot.items() if src != new_category
         ]
         if moved:
-            affected = {scope_key_for(snapshot[cid]) for cid in moved}
-            affected.add(scope_key_for(new_category))
-            await bump_scopes(db, affected)
+            affected = collection_scope_keys(
+                {snapshot[cid] for cid in moved} | {new_category}
+            )
+            if affected:
+                await bump_scopes(db, affected)
 
     locked = await _lock_and_verify_unchanged(
         db, body.collection_ids, snapshot
@@ -591,7 +594,9 @@ async def bulk_delete_collections(
     # rows, then the browse revision. The locked re-read guards the
     # speculative source set against concurrent moves.
     snapshot = {c.id: c.category_id for c in collections}
-    await bump_scopes(db, {scope_key_for(src) for src in snapshot.values()})
+    affected = collection_scope_keys(snapshot.values())
+    if affected:
+        await bump_scopes(db, affected)
     locked = await _lock_and_verify_unchanged(
         db, body.collection_ids, snapshot
     )
@@ -720,7 +725,9 @@ async def delete_collection(
     # collection row, then the browse revision last — matching PATCH, which
     # locks the collection row via its CAS before browse_state. Taking
     # browse_state before the row would deadlock against a concurrent PATCH.
-    await bump_scopes(db, {scope_key_for(collection.category_id)})
+    affected = collection_scope_keys({collection.category_id})
+    if affected:
+        await bump_scopes(db, affected)
     await db.delete(collection)
     await bump_browse_revision(db)
     await db.commit()
@@ -781,8 +788,8 @@ async def move_collection(
     user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
-    """File the collection into a category; ``category_id=null`` moves it to
-    the Browse root (uncategorized), mirroring ``ImageUpdate.category_id``.
+    """File the collection into a category; ``category_id=null`` unfiles it
+    and removes its tile from Browse.
 
     Filing is curatorial — any admin/instructor may move any collection,
     independent of ownership (same authority as moving images/categories),
@@ -809,10 +816,11 @@ async def move_collection(
             )
     moved = collection.category_id != body.category_id
     if moved:
-        await bump_scopes(
-            db,
-            {scope_key_for(collection.category_id), scope_key_for(body.category_id)},
+        affected = collection_scope_keys(
+            {collection.category_id, body.category_id}
         )
+        if affected:
+            await bump_scopes(db, affected)
     ctx = await _ViewerContext.build(db, user)
     await _bump_version_or_409(db, ctx, collection, body.version)
     if moved:

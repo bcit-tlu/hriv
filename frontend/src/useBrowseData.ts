@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   fetchCategoryTree,
   fetchUncategorizedImages,
-  fetchCollections as apiFetchCollections,
   fetchPrograms as apiFetchPrograms,
   fetchGroups as apiFetchGroups,
 } from './api'
@@ -265,7 +264,7 @@ export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
   dragActive?: boolean
-  /** Feature flag — root-scope collections only load when on (#1529). */
+  /** Feature flag — filed category-scope collections only appear when on. */
   collectionsEnabled?: boolean
 }
 
@@ -278,7 +277,6 @@ export function useBrowseData({
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
-  const [uncategorizedCollections, setUncategorizedCollections] = useState<CollectionSummary[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const uncategorizedLoaded = useRef(false)
@@ -301,11 +299,9 @@ export function useBrowseData({
   // request for the same data.
   const categoriesReadGen = useRef(0)
   const uncategorizedReadGen = useRef(0)
-  const collectionsReadGen = useRef(0)
   const visibleCategoriesLoadGen = useRef(0)
   const categoriesAbortRef = useRef<AbortController | null>(null)
   const uncategorizedAbortRef = useRef<AbortController | null>(null)
-  const collectionsAbortRef = useRef<AbortController | null>(null)
   // Authoritative refreshes hold their own controllers: only a NEWER refresh
   // may abort an in-flight refresh. Ordinary foreground loads must not — a
   // refresh's resolved value is used for navigation, so an abort must always
@@ -319,7 +315,6 @@ export function useBrowseData({
   // resolve with the freshest data instead of rejecting.
   const categoriesRef = useRef<Category[]>([])
   const uncategorizedRef = useRef<ImageItem[]>([])
-  const uncategorizedCollectionsRef = useRef<CollectionSummary[]>([])
   // Newest in-flight authoritative refresh per data type: a superseded
   // refresh chains onto this so its caller receives the data the winning
   // refresh commits, not a possibly pre-mutation mirror.
@@ -350,10 +345,6 @@ export function useBrowseData({
   useEffect(() => {
     uncategorizedRef.current = uncategorizedImages
   }, [uncategorizedImages])
-  useEffect(() => {
-    uncategorizedCollectionsRef.current = uncategorizedCollections
-  }, [uncategorizedCollections])
-
   // Loaders resolve `true` only when fresh data was actually applied, so
   // callers can gate cache invalidation on authoritative data having landed.
   const loadCategories = useCallback(
@@ -484,49 +475,6 @@ export function useBrowseData({
       }
     },
     [],
-  )
-
-  // Root-scope collections (#1529): mirrors the uncategorized-images loader,
-  // minus the refresh-chaining — no caller resolves data from the resolved
-  // value, so a gen+abort-guarded read is sufficient. No-op while the
-  // collections flag is off so a flag-off deployment never calls the API.
-  const loadUncategorizedCollections = useCallback(
-    async (opts?: { signal?: AbortSignal }): Promise<boolean> => {
-      const { signal } = opts ?? {}
-      // Flag off: nothing to fetch; reporting "fresh" keeps the poll's
-      // releaseCleanScopes gate correct (collections aren't scope members).
-      if (!collectionsEnabled) {
-        return true
-      }
-      if (signal?.aborted) return false
-      const gen = ++collectionsReadGen.current
-      let effectiveSignal = signal
-      if (!signal) {
-        collectionsAbortRef.current?.abort()
-        const ac = new AbortController()
-        collectionsAbortRef.current = ac
-        effectiveSignal = ac.signal
-      }
-      try {
-        const rows = await apiFetchCollections({ uncategorized: true }, { signal: effectiveSignal })
-        if (effectiveSignal?.aborted || gen !== collectionsReadGen.current) return false
-        const next = rows.map((row) =>
-          stableApiCollectionSummaryToSummary(row, stableCachesRef.current),
-        )
-        if (!arraysReferentiallyEqual(next, uncategorizedCollectionsRef.current)) {
-          setUncategorizedCollections(next)
-          uncategorizedCollectionsRef.current = next
-        }
-        return true
-      } catch (err) {
-        if (effectiveSignal?.aborted || isAbortError(err) || gen !== collectionsReadGen.current) {
-          return false
-        }
-        console.error('Failed to load uncategorized collections', err)
-        return false
-      }
-    },
-    [collectionsEnabled],
   )
 
   const loadPrograms = useCallback(async () => {
@@ -727,16 +675,15 @@ export function useBrowseData({
       const marker = tileOrderingCoordinator.marker()
       const categoriesFresh = await loadCategories({ silent: true, signal })
       const imagesFresh = await loadUncategorizedImages({ signal })
-      const collectionsFresh = await loadUncategorizedCollections({ signal })
       // Only when fresh authoritative data actually landed may the
       // coordinator's cached display order be dropped for clean scopes —
       // a failed poll must not make a just-saved order fall back to the
       // stale pre-save tree.
-      if (!signal.aborted && categoriesFresh && imagesFresh && collectionsFresh) {
+      if (!signal.aborted && categoriesFresh && imagesFresh) {
         tileOrderingCoordinator.releaseCleanScopes(marker)
       }
     },
-    [loadCategories, loadUncategorizedImages, loadUncategorizedCollections],
+    [loadCategories, loadUncategorizedImages],
   )
   const invalidateBackground = useBackgroundRefresh(
     backgroundRefresh,
@@ -752,7 +699,6 @@ export function useBrowseData({
     if (!dragActive) return
     categoriesAbortRef.current?.abort()
     uncategorizedAbortRef.current?.abort()
-    collectionsAbortRef.current?.abort()
     categoriesRefreshAbortRef.current?.abort()
     uncategorizedRefreshAbortRef.current?.abort()
   }, [dragActive])
@@ -765,14 +711,10 @@ export function useBrowseData({
     cols: pathCollections,
   } = useMemo(() => resolvePathNode(categories, path), [categories, path])
 
-  // Root scope merges the separately-loaded uncategorized collections; a
-  // nested scope's collections ride the tree embed. Both are gated on the
-  // feature flag so a mid-session flag-off hides collection tiles even if
-  // stale data lingers in state (#1529 kill-switch).
+  // Collections are Browse tiles only when filed in a category.
   const currentCollections = useMemo(
-    () =>
-      !collectionsEnabled ? [] : path.length === 0 ? uncategorizedCollections : pathCollections,
-    [path.length, collectionsEnabled, uncategorizedCollections, pathCollections],
+    () => (collectionsEnabled && path.length > 0 ? pathCollections : []),
+    [path.length, collectionsEnabled, pathCollections],
   )
 
   // Walk the categories tree along the given path segments applying narrowing
@@ -831,16 +773,12 @@ export function useBrowseData({
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
-    // Consumers see an empty list while the flag is off even if a stale
-    // fetch result still sits in state (#1529 kill-switch).
-    uncategorizedCollections: collectionsEnabled ? uncategorizedCollections : [],
     currentCollections,
     programs,
     groups,
     setGroups,
     loadCategories,
     loadUncategorizedImages,
-    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     refreshCategories,

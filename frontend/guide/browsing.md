@@ -10,6 +10,9 @@ The **Home** tab is the image library — the same view your students get
 - **Category tiles** group images into folders. Click one to look inside —
   categories can contain more categories.
 - **Image tiles** show a thumbnail. Click to open the viewer.
+- **Collection tiles** appear inside a category only after a curator files
+  the collection there. Unfiled collections do not appear as Browse tiles;
+  use a root-level category such as **Featured** to highlight one near the top.
 - Use the **breadcrumbs** at the top to jump back up, or **Home** to return
   to the top level.
 - The **search icon** in the top bar searches across images by name, note,
