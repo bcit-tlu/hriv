@@ -351,6 +351,7 @@ const categoryActionsMock = {
     inheritedProgramIds: [],
     freshGroupIds: [],
     inheritedGroupIds: [],
+    freshChildren: [],
   },
   addCategoryInline: vi.fn(),
   deleteCategoryInline: vi.fn(),
@@ -836,25 +837,30 @@ vi.mock('../src/useColorMode', () => ({
 vi.mock('../src/useBrowseData', async () => {
   const { narrowGroupIds, narrowProgramIds } =
     await vi.importActual<typeof import('../src/categoryUtils')>('../src/categoryUtils')
+  const { findLiveCategoryPath } =
+    await vi.importActual<typeof import('../src/treeUtils')>('../src/treeUtils')
   return {
-    // Mock categories are the live tree, so `path` doubles as its live ancestry.
-    useBrowseData: ({ path }: { path: MockCategory[] }) => ({
-      categories: mockCategories,
-      categoriesLoading: false,
-      setCategories: vi.fn(),
-      uncategorizedImages: [],
-      uncategorizedLoaded: true,
-      setUncategorizedImages: vi.fn(),
-      currentCollections: [],
-      programs: mockPrograms,
-      groups: mockGroups,
-      ...browseDataFns,
-      currentImages: currentImagesMock,
-      liveCategoryPath: path,
-      ancestorProgramIds: path.length > 0 ? narrowProgramIds(path) : [1],
-      ancestorGroupIds: path.length > 0 ? narrowGroupIds(path) : [10],
-      currentCategories: mockCategories,
-    }),
+    // Mirror the hook: resolve the leaf's live ancestry in the mock tree.
+    useBrowseData: ({ path }: { path: MockCategory[] }) => {
+      const liveCategoryPath = findLiveCategoryPath(mockCategories, path)
+      return {
+        categories: mockCategories,
+        categoriesLoading: false,
+        setCategories: vi.fn(),
+        uncategorizedImages: [],
+        uncategorizedLoaded: true,
+        setUncategorizedImages: vi.fn(),
+        currentCollections: [],
+        programs: mockPrograms,
+        groups: mockGroups,
+        ...browseDataFns,
+        currentImages: currentImagesMock,
+        liveCategoryPath,
+        ancestorProgramIds: path.length > 0 ? narrowProgramIds(liveCategoryPath) : [1],
+        ancestorGroupIds: path.length > 0 ? narrowGroupIds(liveCategoryPath) : [10],
+        currentCategories: mockCategories,
+      }
+    },
   }
 })
 
@@ -1385,6 +1391,32 @@ describe('App breadcrumbs', () => {
     // Neither the stale-walk program chip nor an unrelated group chip survives.
     expect(within(categoryBreadcrumb).queryByText('Pathology')).not.toBeInTheDocument()
     expect(within(categoryBreadcrumb).queryByText('Lab A2')).not.toBeInTheDocument()
+  })
+
+  it('drives the visibility control from the live category after a refresh hides it', async () => {
+    // Snapshot was taken while the category was active; the live tree now has it hidden.
+    mockInitialPath = [{ ...mockCategories[0] }]
+    mockCategories[0].status = 'hidden'
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Visibility: Show category' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Visibility: Hide category' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Category' })).toBeInTheDocument()
+  })
+
+  it('hides category controls when the viewed category left the live tree', async () => {
+    mockInitialPath = [{ ...mockCategories[0], id: 99, label: 'Deleted' }]
+
+    render(<App />)
+
+    await screen.findByLabelText('category breadcrumb')
+    expect(screen.queryByRole('button', { name: /^Visibility: / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
   })
 
   it('resets expanded note state when selecting another image', () => {

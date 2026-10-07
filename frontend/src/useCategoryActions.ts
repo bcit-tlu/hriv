@@ -132,6 +132,7 @@ export function useCategoryActions({
       freshLabel: editNameCategory?.label ?? '',
       freshProgramIds: editNameCategory?.programIds ?? [],
       freshGroupIds: editNameCategory?.groupIds ?? [],
+      freshChildren: editNameCategory?.children ?? [],
     }
     if (!editNameCategory) return fallback
     const isBreadcrumbCategory = path.length > 0 && path[path.length - 1].id === editNameCategory.id
@@ -154,6 +155,7 @@ export function useCategoryActions({
         freshLabel: freshCat.label,
         freshProgramIds: freshCat.programIds,
         freshGroupIds: freshCat.groupIds,
+        freshChildren: freshCat.children,
       }
     }
     const freshChild = currentCategories.find((c) => c.id === editNameCategory.id)
@@ -166,6 +168,7 @@ export function useCategoryActions({
       freshLabel: freshChild?.label ?? editNameCategory.label,
       freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
       freshGroupIds: freshChild?.groupIds ?? editNameCategory.groupIds,
+      freshChildren: freshChild?.children ?? editNameCategory.children,
     }
   }, [
     editNameCategory,

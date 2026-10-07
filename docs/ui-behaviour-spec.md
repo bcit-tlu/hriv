@@ -99,8 +99,9 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 images> / Empty` format used on category tiles.
 - **Given** a background refresh that renames, re-restricts, hides, or
   reparents the current category or an ancestor, **Then** the grid, inherited
-  program/group chips and narrowing, hidden state, and the Edit Category
-  context follow the leaf's live ancestry (`useBrowseData.liveCategoryPath`,
+  program/group chips and narrowing, hidden state, the Hide/Show Category
+  control, the Add Category depth limit, and the Edit Category context
+  (including its descendant-incompatibility warning) follow the leaf's live ancestry (`useBrowseData.liveCategoryPath`,
   resolved by leaf id), not the navigation-time `path` entries. If the leaf has
   left the tree (deleted or no longer visible), the scope resolves empty rather
   than falling back to root. Breadcrumb labels still render the `path` entries

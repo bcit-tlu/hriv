@@ -1732,6 +1732,7 @@ describe('useCategoryActions', () => {
         freshLabel: '',
         freshProgramIds: [],
         freshGroupIds: [],
+        freshChildren: [],
       })
     })
 
@@ -1753,7 +1754,13 @@ describe('useCategoryActions', () => {
     it('reads siblings and inherited restrictions from the live ancestry after a reparent (#1587)', () => {
       const leafSnapshot = makeCategory({ id: 3, label: 'Leaf', programIds: [10] })
       const oldParent = makeCategory({ id: 1, label: 'Old', programIds: [10, 20] })
-      const liveLeaf = makeCategory({ id: 3, label: 'Leaf (renamed)', programIds: [30] })
+      const liveGrandchild = makeCategory({ id: 5, label: 'Grandchild', programIds: [40] })
+      const liveLeaf = makeCategory({
+        id: 3,
+        label: 'Leaf (renamed)',
+        programIds: [30],
+        children: [liveGrandchild],
+      })
       const newParent = makeCategory({
         id: 2,
         label: 'New',
@@ -1776,6 +1783,7 @@ describe('useCategoryActions', () => {
         freshLabel: 'Leaf (renamed)',
         freshProgramIds: [30],
         freshGroupIds: [],
+        freshChildren: [liveGrandchild],
       })
     })
 
@@ -1796,6 +1804,7 @@ describe('useCategoryActions', () => {
         freshLabel: 'Leaf',
         freshProgramIds: [10],
         freshGroupIds: [],
+        freshChildren: [],
       })
     })
 

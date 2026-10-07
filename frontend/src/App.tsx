@@ -2652,14 +2652,12 @@ export default function App() {
                           alignItems: 'center',
                         }}
                       >
-                        {path.length > 0 &&
+                        {liveCategoryPath.length > 0 &&
                           (() => {
-                            const current = path[path.length - 1]
-                            const isDirectlyHidden = current.status === 'hidden'
-                            const ancestorHidden = path
-                              .slice(0, -1)
-                              .some((p) => p.status === 'hidden')
-                            const inheritedHidden = !isDirectlyHidden && ancestorHidden
+                            const current = liveCategoryPath[liveCategoryPath.length - 1]
+                            const isDirectlyHidden = currentCategoryHiddenState.directlyHidden
+                            const inheritedHidden =
+                              !isDirectlyHidden && currentCategoryHiddenState.hiddenByAncestor
                             if (inheritedHidden) {
                               return (
                                 <Button
@@ -2701,16 +2699,17 @@ export default function App() {
                               </Button>
                             )
                           })()}
-                        {path.length < MAX_DEPTH && (
-                          <Button
-                            variant="outlined"
-                            startIcon={<CreateNewFolderIcon />}
-                            onClick={() => setAddCatOpen(true)}
-                            sx={categoryPageHiddenSx}
-                          >
-                            Add Category
-                          </Button>
-                        )}
+                        {(path.length === 0 || liveCategoryPath.length > 0) &&
+                          liveCategoryPath.length < MAX_DEPTH && (
+                            <Button
+                              variant="outlined"
+                              startIcon={<CreateNewFolderIcon />}
+                              onClick={() => setAddCatOpen(true)}
+                              sx={categoryPageHiddenSx}
+                            >
+                              Add Category
+                            </Button>
+                          )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -3041,7 +3040,7 @@ export default function App() {
         categoryStatus={editNameCategory?.status}
         ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
         categoryId={editNameCategory?.id}
-        childCategories={editNameCategory?.children}
+        childCategories={editCategoryContext.freshChildren}
       />
 
       {/* Self-edit profile modal */}
