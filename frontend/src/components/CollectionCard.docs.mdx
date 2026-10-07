@@ -15,15 +15,16 @@ import * as CollectionCardStories from './CollectionCard.stories'
 
 <Subtitle>
   Collections-page card: cover thumbnail, name, image count and visibility chip — with the type icon
-  left of the title, Move/Owners actions top-right, and an Edit pencil beside the title.
+  left of the title, a Move action top-right, and an Edit pencil beside the title.
 </Subtitle>
 
 ## When to use
 
 Use `CollectionCard` inside the collections-page grids (`CollectionsPage`) and the Browse tile
 grid to represent one `CollectionSummary`. Clicking the card body opens the collection
-(`?collection={id}`); the overlay icons call `onMove` / `onTransfer` and the title-row pencil calls
-`onEdit`. There is no card-level delete — Delete Collection lives inside the edit dialog (#1554).
+(`?collection={id}`); the overlay icon calls `onMove` and the title-row pencil calls
+`onEdit`. There is no card-level delete — Delete Collection lives inside the edit dialog (#1554),
+and owners/transfer management lives on the detail header and manage table, not the card.
 
 ## Interactive example
 
@@ -35,7 +36,7 @@ grid to represent one `CollectionSummary`. Clicking the card body opens the coll
 
 - The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
   expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
-- Move/Owners live in a top-RIGHT cover overlay (#1559); the overlay actions use the
+- Move lives in a top-RIGHT cover overlay (#1559); the overlay action uses the
   white-on-`rgba(0,0,0,0.25)` scrim convention of
   `CategoryTile` (#1554). The type renders as a bare icon left of the tile
   title — the category folder-icon spot — via the shared `CollectionTypeIcon`
@@ -49,9 +50,13 @@ grid to represent one `CollectionSummary`. Clicking the card body opens the coll
   outlined, `Private` uses the muted visibility grey.
 - A curatorially hidden card (`collection.hidden`) desaturates the whole tile and adds an eye-off
   marker beside the name — the same treatment hidden categories/images get (#1559). Only
-  non-students and the collection's owners ever see it.
-- Action icons are a UX gate only: Owners renders when `permissions.canTransfer` is true **and**
-  `onTransfer` is supplied, Edit when `permissions.canEdit` **and** `onEdit`, and Move whenever
+  non-students and the collection's owners ever see it. A card filed under a hidden category
+  (`categoryHidden` — `ImageTile`'s prop convention) desaturates the same way but renders **no**
+  marker: the eye-off glyph is reserved for the collection's own hidden flag (the `ImageTile`/
+  `CategoryTile` convention — inherited state is desaturation alone). The Browse tile grid and the
+  collections-page grid both derive it from the filed category's ancestor path.
+- Action icons are a UX gate only: Edit renders when `permissions.canEdit` **and** `onEdit` is
+  supplied, and Move whenever
   `onMove` is supplied (filing is curatorial — the caller role-gates to admin/instructor). The
   backend re-checks authority on
   every call. Overlay clicks stop propagation so they never open the card.

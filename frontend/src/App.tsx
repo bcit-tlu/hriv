@@ -57,12 +57,12 @@ import type { TypeFilter } from './components/SearchModal'
 import {
   findImageInTree,
   findCategoryPath,
-  getCategoryHiddenStateFromPath,
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
   resolveCategoryPath,
   updateImageInTree,
 } from './treeUtils'
+import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import UploadImageModal from './components/UploadImageModal'
 import {
   SYNCHRONIZED_MAX_IMAGES,
@@ -117,7 +117,6 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce, setTelemetryPage } from './observability'
 import type { FrontendPage, TelemetryNavDirection } from './observability'
-import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -433,7 +432,13 @@ export default function App() {
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
     [categories, selectedImage?.categoryId],
   )
-  const currentCategoryHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
+  // Derive from the live tree, not the navigation-time `path` objects —
+  // background refreshes replace those, so the stored status can go stale.
+  const currentCategoryHiddenState = useMemo(
+    () =>
+      getCategoryHiddenStateInTree(categories, path.length > 0 ? path[path.length - 1].id : null),
+    [categories, path],
+  )
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
     [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],
@@ -465,11 +470,19 @@ export default function App() {
         : undefined,
     [imageViewerHiddenByCategory],
   )
+  // `path` entries are navigation-time snapshots — resolve the leaf's whole
+  // ancestry in the live tree so a background refresh updates restriction
+  // chips. findCategoryPath still resolves after the leaf is reparented,
+  // where walking the stored path ids would stop short and drop them.
+  const liveCategoryPath = useMemo(
+    () => (path.length > 0 ? (findCategoryPath(categories, path[path.length - 1].id) ?? []) : []),
+    [categories, path],
+  )
+  const livePathLeaf = liveCategoryPath.at(-1)
   const breadcrumbProgramItems = useMemo(() => {
-    const leafProgramIds = path[path.length - 1]?.programIds ?? []
+    const leafProgramIds = livePathLeaf?.programIds ?? []
     const leafProgramIdSet = new Set(leafProgramIds)
-    const effectiveProgramIds = path.length > 0 ? narrowProgramIds(path) : ancestorProgramIds
-    return effectiveProgramIds
+    return narrowProgramIds(liveCategoryPath)
       .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
@@ -477,12 +490,11 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorProgramIds, path, programs])
+  }, [liveCategoryPath, livePathLeaf, path.length, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const leafGroupIds = path[path.length - 1]?.groupIds ?? []
+    const leafGroupIds = livePathLeaf?.groupIds ?? []
     const leafGroupIdSet = new Set(leafGroupIds)
-    const effectiveGroupIds = path.length > 0 ? narrowGroupIds(path) : ancestorGroupIds
-    return effectiveGroupIds
+    return narrowGroupIds(liveCategoryPath)
       .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
@@ -490,7 +502,7 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorGroupIds, groups, path])
+  }, [groups, liveCategoryPath, livePathLeaf, path.length])
   const bumpChangelogVersion = useCallback(() => {
     setChangelogVersion((version) => version + 1)
   }, [])

@@ -32,6 +32,7 @@ import { useColorMode } from '../useColorMode'
 import type { CollectionPageType } from './AppShell'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import {
   toCollectionPatch,
@@ -181,6 +182,7 @@ function CollectionDetailHeader({
   togglingHidden,
   onToggleHidden,
   canFile,
+  categoryHidden,
 }: {
   collection: Collection
   programs: Program[]
@@ -196,6 +198,11 @@ function CollectionDetailHeader({
   onManage?: () => void
   togglingHidden?: boolean
   onToggleHidden?: () => void
+  /** The filed category (or an ancestor) is hidden — the collection is
+   *  invisible to students regardless of its own `hidden` flag, so the
+   *  header desaturates and the hide control locks like the image view
+   *  (and `CollectionEditDialog`) "Hidden by Category" state. */
+  categoryHidden?: boolean
 }) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -210,7 +217,8 @@ function CollectionDetailHeader({
   // Hidden collections desaturate their controls like the hidden-image view's
   // `inactiveViewerActionSx` (#1566) — chips, Manage/Edit/Owners, and the
   // Hide link; the viewer imagery stays in color (same as the image page).
-  const hiddenSx = collection.hidden ? { filter: 'grayscale(100%)' } : undefined
+  // A collection under a hidden category gets the same treatment.
+  const hiddenSx = collection.hidden || categoryHidden ? { filter: 'grayscale(100%)' } : undefined
   // Restriction chips follow the image view / category tile convention
   // (#1567): the collection's own scope renders solid and the filed
   // category's effective scope renders at the inherited opacity.
@@ -344,24 +352,44 @@ function CollectionDetailHeader({
         </Box>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
           {/* Hide/show leads the actions — the same spot the image viewer's
-              "Hide/Show Image" text-button occupies (#1559). */}
-          {collection.permissions.canHide && onToggleHidden && (
-            <Button
-              variant="text"
-              size="small"
-              startIcon={collection.hidden ? <VisibilityOffIcon /> : <VisibilityIcon />}
-              disabled={togglingHidden}
-              onClick={onToggleHidden}
-              data-testid="collection-hide-toggle"
-              sx={
-                collection.hidden
-                  ? { color: visColors.inactive, filter: 'grayscale(100%)' }
-                  : undefined
-              }
-            >
-              {collection.hidden ? 'Show collection' : 'Hide collection'}
-            </Button>
-          )}
+              "Hide/Show Image" text-button occupies (#1559). A hidden filing
+              category wins over the collection's own flag: the control locks
+              to the disabled "Hidden by Category" state the image view and
+              CollectionEditDialog use. */}
+          {collection.permissions.canHide &&
+            onToggleHidden &&
+            (categoryHidden ? (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<VisibilityOffIcon />}
+                disabled
+                aria-label="Visibility: Hidden by category"
+                data-testid="collection-hide-toggle"
+                sx={{
+                  '&.Mui-disabled': { color: visColors.inactive },
+                  filter: 'grayscale(100%)',
+                }}
+              >
+                Hidden by Category
+              </Button>
+            ) : (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={collection.hidden ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                disabled={togglingHidden}
+                onClick={onToggleHidden}
+                data-testid="collection-hide-toggle"
+                sx={
+                  collection.hidden
+                    ? { color: visColors.inactive, filter: 'grayscale(100%)' }
+                    : undefined
+                }
+              >
+                {collection.hidden ? 'Show collection' : 'Hide collection'}
+              </Button>
+            ))}
           {/* Manage opens the member dialog (reorder/add/remove, #1566) — it
               replaces the old sequence-only Reorder toggle and applies to
               both collection types. */}
@@ -499,6 +527,13 @@ export default function CollectionsPage({
     const seg = categoryPaths.get(detail.categoryId)
     return seg ? [...seg.ancestors, seg.category] : []
   }, [categoryPaths, detail])
+  // Hidden-subtree rule: a collection filed under a hidden category is
+  // invisible to students even when its own `hidden` flag is clear — the
+  // header and the sequence filmstrip surface that inherited state.
+  const detailCategoryHidden = useMemo(
+    () => getCategoryHiddenStateFromPath(detailCategoryPath).hidden,
+    [detailCategoryPath],
+  )
 
   const handleToggleHidden = () => {
     if (!detail || togglingHidden) return
@@ -638,6 +673,7 @@ export default function CollectionsPage({
             onManage={() => setManageOpen(true)}
             togglingHidden={togglingHidden}
             onToggleHidden={handleToggleHidden}
+            categoryHidden={detailCategoryHidden}
           />
           <SequenceCollectionViewer
             collection={detail}
@@ -646,7 +682,7 @@ export default function CollectionsPage({
             onOpenImage={onOpenImage}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
-            hidden={detail.hidden}
+            hidden={detail.hidden || detailCategoryHidden}
           />
         </Box>
       )
@@ -665,6 +701,7 @@ export default function CollectionsPage({
             onManage={() => setManageOpen(true)}
             togglingHidden={togglingHidden}
             onToggleHidden={handleToggleHidden}
+            categoryHidden={detailCategoryHidden}
           />
           <SynchronizedCollectionViewer
             collection={detail}
@@ -779,12 +816,12 @@ export default function CollectionsPage({
                     collection={c}
                     onOpen={(col) => onOpenCollection(col.id)}
                     onEdit={(col) => void openEdit(col)}
-                    onTransfer={setTransferTarget}
                     onMove={canFileCollections ? onMoveCollection : undefined}
                     programs={programs}
                     inheritedProgramIds={narrowProgramIds(catPath)}
                     groups={groups}
                     inheritedGroupIds={narrowGroupIds(catPath)}
+                    categoryHidden={getCategoryHiddenStateFromPath(catPath).hidden}
                   />
                 </Box>
               )

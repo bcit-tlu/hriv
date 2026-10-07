@@ -180,6 +180,15 @@ function resetFixtures() {
   mockInitialPath = []
   visibleJobsMock = []
   processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
+  // Individual tests push extra programs (Radiology, Histology); restore the
+  // shared fixture so the leak can't reach later tests.
+  mockPrograms.splice(0, mockPrograms.length, {
+    id: 1,
+    name: 'Pathology',
+    oidc_group: null,
+    created_at: '',
+    updated_at: '',
+  })
   mockCategories.splice(0, mockCategories.length, {
     id: 1,
     label: 'Slides',
@@ -1037,6 +1046,7 @@ describe('App breadcrumbs', () => {
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
 
     const categoryBreadcrumb = screen.getByLabelText('category breadcrumb').closest('div')
     expect(categoryBreadcrumb).not.toBeNull()
@@ -1055,6 +1065,7 @@ describe('App breadcrumbs', () => {
     mockImage.active = false
 
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
@@ -1125,8 +1136,8 @@ describe('App breadcrumbs', () => {
           parentId: 1,
           children: [],
           images: [],
-          programIds: [],
-          groupIds: [],
+          programIds: [1],
+          groupIds: [10],
           status: 'active',
           sortOrder: 0,
           version: 1,
@@ -1146,6 +1157,8 @@ describe('App breadcrumbs', () => {
     mockImage.categoryId = 2
 
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
@@ -1303,6 +1316,71 @@ describe('App breadcrumbs', () => {
 
     expectEffectiveOpacity(imageProgramChip, '1')
     expect(within(imageBreadcrumb as HTMLElement).queryByText('Radiology')).not.toBeInTheDocument()
+  })
+
+  it('derives breadcrumb chips from the live tree after a category is reparented', async () => {
+    mockPrograms.push({
+      id: 3,
+      name: 'Histology',
+      oidc_group: null,
+      created_at: '',
+      updated_at: '',
+    })
+    // Navigation-time snapshot: the leaf was at root when it was opened. The
+    // live tree has since reparented it, so the stored path ids can no longer
+    // be walked — chips must come from the leaf's live ancestry instead.
+    mockInitialPath = [
+      {
+        ...mockCategories[0],
+        id: 2,
+        label: 'Leaf',
+        parentId: null,
+        programIds: [3],
+        groupIds: [],
+      },
+    ]
+    mockCategories.splice(0, mockCategories.length, {
+      id: 1,
+      label: 'Parent',
+      parentId: null,
+      children: [
+        {
+          id: 2,
+          label: 'Leaf',
+          parentId: 1,
+          children: [],
+          images: [],
+          programIds: [3],
+          groupIds: [],
+          status: 'active',
+          sortOrder: 0,
+          version: 1,
+          cardImageId: null,
+          metadataExtra: null,
+        },
+      ],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    })
+
+    render(<App />)
+
+    const categoryBreadcrumb = (await screen.findByLabelText('category breadcrumb')).closest(
+      'div',
+    ) as HTMLElement
+    const programChip = within(categoryBreadcrumb)
+      .getByText('Histology')
+      .closest('[data-testid="program-chip"]')
+    expectEffectiveOpacity(programChip, '1')
+    // Neither the stale-walk program chip nor an unrelated group chip survives.
+    expect(within(categoryBreadcrumb).queryByText('Pathology')).not.toBeInTheDocument()
+    expect(within(categoryBreadcrumb).queryByText('Lab A2')).not.toBeInTheDocument()
   })
 
   it('resets expanded note state when selecting another image', () => {

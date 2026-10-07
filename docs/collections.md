@@ -535,11 +535,17 @@ reuses the category restriction palette. Tiles render no owner reference at
 all (#1567) — neither program nor user names appear on the card — and the
 collection type shows as a bare icon left of the title, the same spot the
 category tile's folder glyph occupies (`titleAccess` names it for screen
-readers). **Move** and **Owners** stay in the
+readers). **Move** stays in the
 top-right `absolute` overlay using the
-white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554). A curatorially
+white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554) —
+owners/transfer lives on the detail header and the manage table. A curatorially
 hidden card renders the same desaturated treatment as a hidden
-category/image tile plus a `VisibilityOff` affordance by the name (#1559).
+category/image tile plus a `VisibilityOff` affordance by the name (#1559);
+a card filed under a hidden category desaturates the same way but shows
+**no** marker — the eye-off glyph is reserved for the collection's own
+hidden flag — because the hidden-subtree rule
+already removes it from student view (`categoryHidden` mirrors
+`ImageTile`'s prop; the Browse grid and the collections list both pass it).
 **Edit** is a pencil inline at the title row's right — the
 CategoryTile/ImageTile convention (#1567) — and Delete is
 gone from the card entirely (edit dialog only). Everywhere the type renders
@@ -616,8 +622,8 @@ second click calls `DELETE /api/collections/{id}`, and failures stay in the
 dialog's error area with the API message. Deleting the open collection
 returns to the list.
 
-**Owners (`CollectionOwnersDialog`, #1531).** An **Owners** action on cards
-and a pencil beside the detail header's owner name (both gated on
+**Owners (`CollectionOwnersDialog`, #1531).** A pencil beside the detail
+header's owner name (gated on
 `permissions.canTransfer`) manages the
 user-owner set and the program owner — see "Ownership management UI" below.
 
@@ -638,7 +644,9 @@ program/group chips sit right after the breadcrumb, where the image view
 renders them. The actions are **Hide collection** / **Show collection**
 (`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
-image viewer's Hide/Show Image control occupies), **Manage Images**
+image viewer's Hide/Show Image control occupies) — replaced by a disabled
+**Hidden by Category** button when the filed category (or an ancestor) is
+hidden, the same locked state the image view and edit dialog render — **Manage Images**
 (`canEdit` — opens `CollectionManageDialog`, the mini-Browse member
 manager: drag to
 reorder, the corner remove control (tooltip "Remove image"),
@@ -659,7 +667,9 @@ chips carry the restriction; an unscoped restricted collection still
 gets the pill so it is never label-less; #1567) sit to the
 left of the owner line; the description renders below the pills,
 left-aligned (#1567). Hidden state shows through greyscale alone — no
-`Hidden` chip. No Delete (#1554).
+`Hidden` chip — and the same desaturation (chips, pills, action buttons,
+sequence filmstrip) applies when the collection sits under a hidden
+category. No Delete (#1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
 404 (missing or not visible) renders the not-found alert with a
@@ -717,7 +727,17 @@ Column visibility is user-persisted through **Choose columns**
 `manage-collections` columns key, same mechanism as `manage-images`).
 Rows hidden via the switch render greyscale/dimmed — `data-dimmed` cells,
 grayscale thumbnail, inactive-color chips — matching `ManagePage`'s
-inactive-image convention.
+inactive-image convention. The same treatment (plus a disabled
+Visibility switch) applies to collections filed under a hidden category —
+the hidden-subtree rule already removes them from student view; the table
+styling only surfaces that inherited state to staff, and the row carries
+no marker icon — `VisibilityOff` is reserved for the collection's own
+hidden flag. In **Bulk Edit** the
+visibility switch likewise disables when the whole selection is
+category-hidden or the chosen target category is hidden — the same
+`allCategoryHidden`/`nextCategoryHidden` rule `BulkEditImagesModal` uses,
+and a visibility toggle pending when the switch locks is dropped from the
+save so only the refile applies.
 
 **Actions.** Row click opens the edit dialog for `permissions.canEdit`
 rows — fetching the full record first, since summaries omit the restricted
@@ -1117,8 +1137,7 @@ The write API's owner endpoints — `PUT /api/collections/{id}/owners` and
 collections pages and the Manage → Collections table (#1554) — there is no
 separate Admin section.
 
-**Entry points.** An **Owners** button appears on the detail header, an
-owners icon on each `CollectionCard`'s cover overlay (#1554) and on
+**Entry points.** An **Owners** button appears on the detail header and on
 manage-table rows, all gated on
 `permissions.can_transfer` (the API re-checks regardless). On an orphaned
 collection — found via the admin-only _No owner (orphaned)_ owner facet —

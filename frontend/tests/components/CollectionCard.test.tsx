@@ -110,32 +110,17 @@ describe('CollectionCard', () => {
     expect(screen.queryByRole('button', { name: /^Delete/ })).not.toBeInTheDocument()
   })
 
-  it('shows an owners affordance only when canTransfer grants it', () => {
-    const onTransfer = vi.fn()
-    const collection = makeCollectionSummary({
-      name: 'Mine',
-      permissions: { canEdit: false, canDelete: false, canTransfer: true, canHide: false },
-    })
-    const { unmount } = render(
-      <CollectionCard collection={collection} onOpen={vi.fn()} onTransfer={onTransfer} />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Manage owners of Mine' }))
-    expect(onTransfer).toHaveBeenCalledWith(collection)
-    unmount()
-
+  it('never renders an owners affordance — transfer lives on the detail view and manage table', () => {
     render(
       <CollectionCard
         collection={makeCollectionSummary({
-          name: 'Shared',
-          permissions: { canEdit: true, canDelete: true, canTransfer: false, canHide: false },
+          name: 'Mine',
+          permissions: { canEdit: false, canDelete: false, canTransfer: true, canHide: false },
         })}
         onOpen={vi.fn()}
-        onTransfer={onTransfer}
       />,
     )
-    expect(
-      screen.queryByRole('button', { name: 'Manage owners of Shared' }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Manage owners/ })).not.toBeInTheDocument()
   })
 
   it('shows a move affordance whenever onMove is supplied (#1529 — role-gated, not permission-gated)', () => {
@@ -171,14 +156,7 @@ describe('CollectionCard', () => {
     const collection = makeCollectionSummary({
       permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
     })
-    render(
-      <CollectionCard
-        collection={collection}
-        onOpen={vi.fn()}
-        onMove={vi.fn()}
-        onTransfer={vi.fn()}
-      />,
-    )
+    render(<CollectionCard collection={collection} onOpen={vi.fn()} onMove={vi.fn()} />)
     // The top-left type/owner overlay is gone — the title row carries the
     // type glyph (before the name), actions stay in the top-right overlay.
     expect(screen.queryByTestId('collection-type-overlay')).not.toBeInTheDocument()
@@ -198,6 +176,28 @@ describe('CollectionCard', () => {
   it('omits the hidden indicator on visible collections', () => {
     render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
     expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
+  })
+
+  it('desaturates a category-hidden collection without a marker icon', () => {
+    render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} categoryHidden />)
+    // Desaturation alone conveys the inherited state — the eye-off marker
+    // is reserved for the collection's own hidden flag (ImageTile rule).
+    expect(screen.getByTestId('collection-card-action-area')).toHaveStyle({
+      filter: 'grayscale(100%)',
+    })
+    expect(screen.queryByRole('img', { name: 'Hidden by category' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the own-hidden marker when the collection is also category-hidden', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({ hidden: true })}
+        onOpen={vi.fn()}
+        categoryHidden
+      />,
+    )
+    expect(screen.getByRole('img', { name: 'Visibility: Hidden' })).toBeInTheDocument()
   })
 
   it('renders own restriction chips solid and inherited scope dimmed (#1567)', () => {
