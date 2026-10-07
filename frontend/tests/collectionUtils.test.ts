@@ -10,6 +10,7 @@ import {
   describeCollectionOwners,
   parseCollectionIdParam,
   parseCollectionItemParam,
+  privateFilingWarning,
 } from '../src/collectionUtils'
 import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
 
@@ -33,6 +34,18 @@ const API_IMAGE: ApiImage = {
 }
 
 describe('collectionUtils mapping', () => {
+  it('warns about a single private collection filed on Browse', () => {
+    expect(privateFilingWarning()).toBe(
+      'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+    )
+  })
+
+  it('counts private collections in the bulk filing warning', () => {
+    expect(privateFilingWarning(2, 3)).toBe(
+      '2 of the 3 selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.',
+    )
+  })
+
   it('maps a user owner and a program owner (#1531)', () => {
     expect(apiCollectionOwnerToOwner({ user_id: 7, name: 'Ada' })).toEqual({
       kind: 'user',

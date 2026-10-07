@@ -1443,6 +1443,7 @@ export default function ManageCollectionsPage({
         onDelete={handleBulkDelete}
         categories={categories}
         selectedCount={selected.size}
+        privateSelectedCount={selectedRows.filter((c) => c.visibility === 'private').length}
         canCurate={canFileCollections}
         canDeleteAll={selectedRows.length > 0 && selectedRows.every((c) => c.permissions.canDelete)}
         allCategoryHidden={

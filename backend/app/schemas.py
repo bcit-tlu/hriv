@@ -405,8 +405,8 @@ class CategoryTree(CategoryOut):
     children: list["CategoryTree"] = []
     images: list["ImageOut"] = []
     # Collections filed into this category (epic #1525). Present only when the
-    # ``COLLECTIONS_ENABLED`` flag is on; uncategorized collections are not in
-    # the tree — like uncategorized images they are listed separately at root.
+    # ``COLLECTIONS_ENABLED`` flag is on; unfiled collections are not Browse
+    # tiles and are listed separately through the unfiled queue.
     collections: list["CollectionSummaryOut"] = []
 
 
@@ -727,7 +727,7 @@ class CollectionSummaryOut(BaseModel):
     group_ids: list[int] = []
     version: int = 1
     # Browse placement (epic #1525): the category the collection is filed in
-    # (``None`` = uncategorized) and its tile-order position in that scope.
+    # (``None`` = unfiled, not on Browse) and its tile-order position.
     category_id: int | None = None
     sort_order: int = 0
     created_at: datetime
@@ -845,10 +845,9 @@ class CollectionUpdate(BaseModel):
 class CollectionMove(BaseModel):
     """POST ``/{id}/move`` body filing a collection into a category.
 
-    ``category_id`` is required but nullable: an explicit ``null`` files the
-    collection at the Browse root (uncategorized), mirroring
-    ``ImageUpdate.category_id`` semantics. ``version`` is the optimistic
-    concurrency token.
+    ``category_id`` is required but nullable: an explicit ``null`` unfiles
+    the collection so it no longer appears on Browse. ``version`` is the
+    optimistic concurrency token.
     """
 
     category_id: int | None
@@ -913,8 +912,8 @@ class CollectionBulkUpdate(BaseModel):
 
     ``hidden`` and ``category_id`` are the bulk-editable fields — both are
     curatorial (admin/instructor) like ``POST …/move`` and a hidden-only
-    PATCH, so a single role gate covers the endpoint. ``category_id:
-    null`` unfiles to the Browse root (``CollectionMove`` semantics).
+    PATCH, so a single role gate covers the endpoint. ``category_id: null``
+    unfiles collections from Browse (``CollectionMove`` semantics).
     Scope fields (``visibility``/``program_ids``/``group_ids``) are
     deliberately absent: scope authority is per-collection (sole owner vs
     co-owner, program membership) and ``restricted`` needs per-collection

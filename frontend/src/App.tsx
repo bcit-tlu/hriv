@@ -360,14 +360,12 @@ export default function App() {
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
-    uncategorizedCollections,
     currentCollections,
     programs,
     groups,
     setGroups,
     loadCategories,
     loadUncategorizedImages,
-    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     refreshCategories,
@@ -382,7 +380,7 @@ export default function App() {
 
   // Collections data (#1414). The list fetch runs only while the tab is
   // active; the `move`/`loadCollection` actions are mounted unconditionally
-  // so Browse-grid collection moves (#1529) keep list/detail state in sync.
+  // so filed Browse collection moves (#1529) keep list/detail state in sync.
   const collectionsData = useCollectionsData({
     enabled:
       collectionsEnabled &&
@@ -962,7 +960,6 @@ export default function App() {
     if (currentUser) {
       loadCategories()
       loadUncategorizedImages()
-      loadUncategorizedCollections()
       loadPrograms()
       if (currentUser.role === 'admin' || currentUser.role === 'instructor') {
         loadGroups()
@@ -976,7 +973,6 @@ export default function App() {
     usersLoading,
     loadCategories,
     loadUncategorizedImages,
-    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     loadAnnouncement,
@@ -1285,10 +1281,8 @@ export default function App() {
   } = useCategoryActions({
     categories,
     uncategorizedImages,
-    uncategorizedCollections,
     loadCategories,
     loadUncategorizedImages,
-    loadUncategorizedCollections,
     moveCollectionApi: collectionsEnabled ? collectionsData.move : undefined,
     addImagesToCollectionApi: collectionsEnabled ? collectionsData.addImages : undefined,
     removeImagesFromCollectionApi: collectionsEnabled ? collectionsData.removeImages : undefined,
@@ -1488,19 +1482,13 @@ export default function App() {
     // Capture before fetching: a save committing while these requests are in
     // flight is newer than the fetched data and must survive the release.
     const marker = tileOrderingCoordinator.marker()
-    const [catResult, imgResult, colResult] = await Promise.allSettled([
+    const [catResult, imgResult] = await Promise.allSettled([
       refreshCategories(),
       refreshUncategorizedImages(),
-      loadUncategorizedCollections(),
     ])
-    // The collection loader is a `load*` variant: it resolves `false` on
-    // failure rather than rejecting, and resolves `true` flag-off (#1529).
-    const collectionsFresh = colResult.status === 'fulfilled' && colResult.value === true
     logDrag('App.handleReorderComplete fetched', {
       categories: catResult.status,
       images: imgResult.status,
-      collections: colResult.status,
-      collectionsFresh,
       dragActive: dragActiveRef.current,
     })
     if (catResult.status === 'rejected') {
@@ -1508,9 +1496,6 @@ export default function App() {
     }
     if (imgResult.status === 'rejected') {
       setWarnSnack('Could not refresh images after reorder.')
-    }
-    if (!collectionsFresh) {
-      setWarnSnack('Could not refresh collections after reorder.')
     }
     // If a new drag started while we were refreshing, the grid must not see
     // stale prop churn and this refresh may have been aborted, so queue a
@@ -1523,11 +1508,11 @@ export default function App() {
     // Once fresh authoritative data landed, drop the coordinator's cached
     // order for clean scopes so order changes made elsewhere (e.g. Manage
     // Categories) become visible immediately instead of on the next poll.
-    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled' && collectionsFresh) {
+    if (catResult.status === 'fulfilled' && imgResult.status === 'fulfilled') {
       tileOrderingCoordinator.releaseCleanScopes(marker)
       logDrag('App.handleReorderComplete released clean scopes', { marker })
     }
-  }, [refreshCategories, refreshUncategorizedImages, loadUncategorizedCollections])
+  }, [refreshCategories, refreshUncategorizedImages])
 
   const handleDragActiveChange = useCallback((source: 'browse' | 'manage', active: boolean) => {
     if (source === 'browse') {
@@ -1779,9 +1764,8 @@ export default function App() {
     collectionsEnabled && searchOpen && currentUser != null,
   )
 
-  // Root-scope collections ride `useBrowseData` now that the Browse grid
-  // renders them (#1529) — the manage-categories dialog shares that list so
-  // its submitted orders carry collection members (issue #1528).
+  // Filed collections are provided from the category tree through
+  // `useBrowseData`; the root Browse scope contains no collections.
 
   // The collection Manage dialog's "+" (#1566): records the target so search
   // picks go straight into that collection instead of the picker dialog.
@@ -2044,12 +2028,9 @@ export default function App() {
               onNavigateCategory={handleNavigateBrowseFromCollection}
               onToggleHidden={(collection) =>
                 collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
-                  // The collection's Browse tile lives in useBrowseData's
-                  // tree/uncategorized state, not in the collections-page
-                  // list — refresh both so the hidden marker (or the tile
-                  // dropping out for students) isn't stale.
+                  // Filed collection tiles live in the category tree, so
+                  // refresh it to update the hidden marker.
                   refreshCategories()
-                  void loadUncategorizedCollections()
                   return updated
                 })
               }
@@ -2078,10 +2059,8 @@ export default function App() {
               onToggleCategoryVisibility={toggleCategoryVisibility}
               onOpenCollection={(id) => handleOpenCollection(id)}
               onCategoriesChanged={() => {
-                // A bulk refile/delete changes tile membership — refresh the
-                // tree and the root-scope list like the single-move path.
+                // A bulk refile/delete changes tile membership in the tree.
                 refreshCategories()
-                void loadUncategorizedCollections()
               }}
               onError={setErrorSnack}
             />
@@ -2823,8 +2802,7 @@ export default function App() {
                 currentCategories.length === 0 &&
                 currentImages.length === 0 &&
                 currentCollections.length === 0 &&
-                (path.length > 0 ||
-                  (uncategorizedImages.length === 0 && uncategorizedCollections.length === 0)) && (
+                (path.length > 0 || uncategorizedImages.length === 0) && (
                   <Typography
                     variant="body1"
                     color="text.secondary"
@@ -2847,7 +2825,6 @@ export default function App() {
         onClose={() => setDialogOpen(false)}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
-        uncategorizedCollections={uncategorizedCollections}
         onCategoryNavigate={handleManageCategoryNavigate}
         onAddCategory={addCategoryInline}
         onDeleteCategory={deleteCategoryInline}
@@ -2878,7 +2855,7 @@ export default function App() {
       />
 
       {/* Move collection dialog (#1529) — files a collection into a Browse
-          category or back to the root; admin/instructor entry points only. */}
+          category or removes it from Browse; admin/instructor entry points only. */}
       <MoveCollectionDialog
         open={moveCollectionOpen}
         onClose={() => {

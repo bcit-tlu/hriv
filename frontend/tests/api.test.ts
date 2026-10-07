@@ -976,7 +976,7 @@ describe('Collections API', () => {
     expect(result).toHaveLength(1)
   })
 
-  it('fetchCollections serialises every filter as a query param', async () => {
+  it('fetchCollections keeps the unfiled-queue filter as a query param', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse([]))
     await fetchCollections({
       type: 'sequence',

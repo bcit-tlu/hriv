@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
-import type { Collection, Group, Program, Role, User } from '../types'
+import type { Category, Collection, Group, Program, Role, User } from '../types'
 import CollectionEditDialog from './CollectionEditDialog'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
@@ -95,14 +95,38 @@ const existing: Collection = {
   memberCount: 0,
 }
 
+const categories: Category[] = [
+  {
+    id: 1,
+    label: 'Histology',
+    parentId: null,
+    children: [],
+    images: [],
+    collections: [],
+    programIds: [],
+    groupIds: [],
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+  },
+]
+
 interface StoryArgs {
   role: Role
   collection: Collection | null
+  categories?: Category[]
   onSave: (...args: unknown[]) => Promise<void>
   onClose: () => void
 }
 
-function CollectionEditDialogExample({ role, collection, onSave, onClose }: StoryArgs) {
+function CollectionEditDialogExample({
+  role,
+  collection,
+  categories: categoryList = [],
+  onSave,
+  onClose,
+}: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(role)}>
       <CollectionEditDialog
@@ -110,6 +134,7 @@ function CollectionEditDialogExample({ role, collection, onSave, onClose }: Stor
         onClose={onClose}
         onSave={onSave}
         collection={collection}
+        categories={categoryList}
         programs={programs}
         groups={groups}
       />
@@ -168,6 +193,21 @@ export const Editing: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByText('Edit Collection')).toBeInTheDocument()
     await expect(body.getByTestId('collection-type-chip')).toHaveTextContent('Synchronized')
+  },
+}
+
+export const PrivateFilingWarning: Story = {
+  args: {
+    collection: { ...existing, categoryId: 1, visibility: 'private' },
+    categories,
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(
+      await body.findByText(
+        'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+      ),
+    ).toBeInTheDocument()
   },
 }
 

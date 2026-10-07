@@ -23,6 +23,13 @@ export const COLLECTION_VISIBILITY_LABELS: Record<CollectionVisibility, string> 
 /** `synchronized` collections show up to this many images side by side (backend 422 above it). */
 export const SYNCHRONIZED_MAX_IMAGES = 4
 
+export function privateFilingWarning(privateCount = 1, total = 1): string {
+  if (total > 1) {
+    return `${privateCount} of the ${total} selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.`
+  }
+  return 'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.'
+}
+
 /** Students and staff may not use `restricted` visibility (API 403). */
 export function canUseRestrictedVisibility(role: Role | undefined | null): boolean {
   return role === 'admin' || role === 'instructor'

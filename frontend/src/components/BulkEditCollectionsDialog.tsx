@@ -12,6 +12,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import { privateFilingWarning } from '../collectionUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import type { Category, Group, Program } from '../types'
@@ -23,6 +24,7 @@ interface BulkEditCollectionsDialogProps {
   onDelete: () => Promise<void>
   categories: Category[]
   selectedCount: number
+  privateSelectedCount?: number
   /** Curatorial fields (refile + hidden) — admin/instructor only (#1578).
    *  When false the dialog is delete-only. */
   canCurate?: boolean
@@ -63,6 +65,7 @@ export default function BulkEditCollectionsDialog({
   onDelete,
   categories,
   selectedCount,
+  privateSelectedCount = 0,
   canCurate = false,
   canDeleteAll = true,
   allCategoryHidden = false,
@@ -169,6 +172,7 @@ export default function BulkEditCollectionsDialog({
                 }}
                 label="Move to Category"
                 placeholder={!categoryChanged ? '(no change)' : undefined}
+                rootLabel="Not on Browse"
                 onAddCategory={onAddCategory}
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}
@@ -176,6 +180,11 @@ export default function BulkEditCollectionsDialog({
                 groups={groups}
               />
             </Box>
+            {categoryChanged && categoryId != null && privateSelectedCount > 0 && (
+              <Alert severity="warning">
+                {privateFilingWarning(privateSelectedCount, selectedCount)}
+              </Alert>
+            )}
             <FormControlLabel
               control={
                 <Switch

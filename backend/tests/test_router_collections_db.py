@@ -32,6 +32,7 @@ from app.models import (
     Group,
     Image,
     Program,
+    TileOrderRevision,
     User,
     collection_groups,
     collection_owners,
@@ -40,11 +41,13 @@ from app.models import (
 from app.routers.categories import delete_category
 from app.routers.collections import (
     delete_collection,
+    list_collections,
     move_collection,
     replace_collection_images,
     replace_collection_viewport,
     update_collection,
 )
+from app.routers.tile_order import get_tile_order
 from app.schemas import (
     CollectionImagesUpdate,
     CollectionMove,
@@ -526,6 +529,16 @@ async def test_move_collection_to_root_via_null(session_factory) -> None:
         collection_id = await _new_collection(
             session, "sequence", [], owner_id=admin_id
         )
+        root_before = await session.scalar(
+            select(TileOrderRevision.revision).where(
+                TileOrderRevision.scope_key == 0
+            )
+        )
+        source_before = await session.scalar(
+            select(TileOrderRevision.revision).where(
+                TileOrderRevision.scope_key == category_id
+            )
+        )
         await session.execute(
             update(Collection)
             .where(Collection.id == collection_id)
@@ -538,6 +551,18 @@ async def test_move_collection_to_root_via_null(session_factory) -> None:
             collection_id, CollectionMove(category_id=None, version=1), admin, session
         )
         assert out.category_id is None
+        root_after = await session.scalar(
+            select(TileOrderRevision.revision).where(
+                TileOrderRevision.scope_key == 0
+            )
+        )
+        source_after = await session.scalar(
+            select(TileOrderRevision.revision).where(
+                TileOrderRevision.scope_key == category_id
+            )
+        )
+        assert root_after == root_before
+        assert source_after == (source_before or 1) + 1
 
     async with session_factory() as check:
         row = await check.get(Collection, collection_id)
@@ -584,10 +609,13 @@ async def test_move_collection_unknown_category_is_422(session_factory) -> None:
 
 
 async def test_delete_category_unfiles_collection_via_set_null(
-    session_factory,
+    session_factory, monkeypatch
 ) -> None:
-    """Deleting a category unfiles its collections (category_id → NULL) —
-    the collection itself is preserved, mirroring image semantics."""
+    """Deleting a category unfiles collections: they leave Browse but remain
+    available from the uncategorized queue."""
+    from app.database import settings
+
+    monkeypatch.setattr(settings, "collections_enabled", True)
     async with session_factory() as session:
         admin_id = await _new_admin(session, "cas")
         category_id = await _new_category(session, "victim")
@@ -606,6 +634,12 @@ async def test_delete_category_unfiles_collection_via_set_null(
 
         row = await session.get(Collection, collection_id)
         assert row is not None and row.category_id is None
+        root = await get_tile_order(admin, None, session)
+        assert ("collection", collection_id) not in [
+            (item.type, item.id) for item in root.items
+        ]
+        queued = await list_collections(admin, db=session, uncategorized=True)
+        assert collection_id in [item.id for item in queued]
 
 
 async def test_image_ids_in_filed_collections_real_pg(session_factory) -> None:

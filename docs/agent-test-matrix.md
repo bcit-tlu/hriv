@@ -68,15 +68,18 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `replaceCollectionOwners` in `api.ts`, detail header + card affordances in
   `CollectionsPage.tsx` / `CollectionCard.tsx`):
   `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
-- Browse tile integration (#1529: collection tiles in `SortableTileGrid.tsx`,
-  `currentCollections`/`uncategorizedCollections` in `useBrowseData.ts`,
-  move handlers in `useCategoryActions.ts`, `MoveCollectionDialog.tsx`,
-  `?collection=&cat=` context in `useShareableImageState.ts` /
-  `useNavigationHistory.ts`, `member_count` in `collection_views.py`; #1530
-  image→collection drop-add: `drop-col-` zone + `onDropImageOnCollection` in
-  `SortableTileGrid.tsx`, `removeImagesFromCollectionApi` undo in
-  `useCategoryActions.ts`):
-  `npm test -- SortableTileGrid useBrowseData useCategoryActions MoveCollectionDialog CollectionsPage CollectionCard CategoryTile useCollectionsData useShareableImageState useNavigationHistory App.test`
+- Browse tile integration (#1529, #1583): filed collections in
+  `SortableTileGrid.tsx` and nested `currentCollections` from the category
+  tree only; there is no root `uncategorizedCollections` Browse loader.
+  Verify root has no collection fetch/tiles for any role, while nested filed
+  collections still render. Also cover `Not on Browse` picker labels,
+  unfile snackbar, private-filing warnings, and Manage Categories ordering:
+  `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
+  Backend placement/tile-order cases:
+  `poetry run pytest tests/test_tile_order.py tests/test_router_collections.py tests/test_router_collections_db.py tests/test_categories.py`.
+  #1530 image→collection drop-add still uses the `drop-col-` zone and
+  `onDropImageOnCollection` in `SortableTileGrid.tsx`; **Add to Collection**
+  remains available to add images to unfiled collections.
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See

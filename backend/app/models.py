@@ -562,9 +562,9 @@ class Collection(Base):
         ForeignKey("programs.id", ondelete="SET NULL"), nullable=True,
     )
     # Browse placement (epic #1525): the category the collection is filed in;
-    # NULL = uncategorized (shown at the Browse root like uncategorized
-    # images). Deleting the category unfiles the collection rather than
-    # deleting it. ``sort_order`` is the tile-order position inside the scope.
+    # NULL = unfiled (not on Browse). Deleting the category unfiles the
+    # collection rather than deleting it. ``sort_order`` is the tile-order
+    # position inside a category scope.
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True,
     )

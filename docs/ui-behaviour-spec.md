@@ -344,20 +344,25 @@ returned by the API (UX only — the backend re-checks).
 
 - **Given** `COLLECTIONS_ENABLED` is on, **Then** collection tiles render in
   the Browse tile grid beside categories and images — filed collections
-  inside their category's scope, uncategorized collections at the root —
+  inside their category's scope only; unfiled collections are not Browse tiles —
   using the shared `CollectionCard` inside the standard sortable tile.
-- **Given** the flag is off, **Then** no collection fetch is issued for the
-  Browse root, no collection tile renders anywhere in the grid, and a scope
-  containing only collections is not treated as pending work.
+- **Given** the flag is on or off, **Then** Browse never fetches an unfiled
+  collection queue; the root grid has no collection tiles. Filed collection
+  tiles render only inside their category's scope when the flag is on.
+- **Given** the flag is off, **Then** no collection tile renders anywhere in
+  the grid, and a scope containing only collections is not treated as pending
+  work.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
   edit dialog's category picker refiles the collection — both regardless of
   `permissions.can_edit`; **Given** a student or staff member, **Then** no
   collection move UI renders.
 - **Given** a collection move (dialog or drop), **Then** an unchanged
-  destination no-ops; otherwise the category tree and root collection list
-  refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
+  destination no-ops; otherwise the category tree refreshes, only non-null
+  source/destination tile-order scopes invalidate, and an undo snackbar
   re-posts the previous category with the version from the move response.
+  Moving to `null` unfiles the collection, removes its tile from Browse, and
+  shows the snackbar **Removed “<name>” from Browse**.
 - **Given** a collection opened from a Browse tile, **Then** the URL carries
   `?collection={id}&cat={path}`, and the error-state close action returns to
   the originating scope; the detail breadcrumb always shows the collection's
@@ -367,6 +372,31 @@ returned by the API (UX only — the backend re-checks).
 - **Given** a category containing collections, **Then** its tile detail line
   includes `N collections` summed over descendants; **Given** a Browse scope
   holding only collections, **Then** the empty-state message does not render.
+- **Given** an unfiled collection, **Then** it remains available in
+  collection-management views and the `uncategorized=true` API queue, but
+  does not appear in Browse or the root tile-order scope. A root-level
+  category such as **Featured** is the way to feature a collection near the
+  top of Browse.
+- **Given** a private collection is filed into a non-null category, **Then**
+  the filing dialog shows a warning (not a block):
+  “This collection is private. Filed on Browse, its tile is visible only to
+  its owners and to staff, instructors and admins — not to other students.”
+  The warning also appears in Edit Collection when the current edit state is
+  private and filed, and in Bulk Edit when a changed non-null destination
+  includes private selections. Public collections and an unfiled destination
+  show no warning.
+- **Given** a collection filing picker, **Then** its null option reads
+  **Not on Browse** in Move, Edit, and Bulk Edit; the shared picker default
+  remains **None (root level)**. The Move dialog says:
+  “File “<name>” into a Browse category. Collections that aren't filed don't
+  appear on Browse.”
+- **Given** a private selection is filed in Bulk Edit, **Then** the warning
+  reads “${privateCount} of the ${total} selected collections are private.
+  Filed on Browse, their tiles are visible only to their owners and to
+  staff, instructors and admins — not to other students.”
+- **Given** a collection is unfiled, **Then** **Add to Collection** remains
+  available for adding images; students no longer have the former root-tile
+  drag-add path onto their own collections.
 - **Given** a collection whose members are all restricted (`member_count > 0`
   but no visible `images`), **Then** the detail header and both viewers show
   the "All images in this collection are currently restricted." notice;

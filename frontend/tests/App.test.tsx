@@ -161,7 +161,6 @@ function resetFixtures() {
   apiMocks.deleteGroup.mockResolvedValue(undefined)
   browseDataFns.refreshCategories.mockResolvedValue([])
   browseDataFns.refreshUncategorizedImages.mockResolvedValue([])
-  browseDataFns.loadUncategorizedCollections.mockResolvedValue(true)
   mockImage.active = true
   mockImage.categoryId = 1
   mockImage.note = null
@@ -210,7 +209,6 @@ const browseDataFns = {
   setGroups: vi.fn(),
   loadCategories: vi.fn(),
   loadUncategorizedImages: vi.fn(),
-  loadUncategorizedCollections: vi.fn(),
   loadPrograms: vi.fn(),
   loadGroups: vi.fn(),
   refreshCategories: vi.fn(),
@@ -843,7 +841,6 @@ vi.mock('../src/useBrowseData', () => ({
     uncategorizedImages: [],
     uncategorizedLoaded: true,
     setUncategorizedImages: vi.fn(),
-    uncategorizedCollections: [],
     currentCollections: [],
     programs: mockPrograms,
     groups: mockGroups,
@@ -2165,7 +2162,6 @@ describe('App collection browse context (#1529)', () => {
 
     collectionsDataMocks.setHidden.mockResolvedValue({ id: 5 })
     browseDataFns.refreshCategories.mockClear()
-    browseDataFns.loadUncategorizedCollections.mockClear()
 
     const onToggleHidden = collectionsPageProps.current?.onToggleHidden as (c: {
       id: number
@@ -2174,7 +2170,6 @@ describe('App collection browse context (#1529)', () => {
     await act(() => onToggleHidden({ id: 5, hidden: false }))
     expect(collectionsDataMocks.setHidden).toHaveBeenCalledWith(5, true)
     expect(browseDataFns.refreshCategories).toHaveBeenCalled()
-    expect(browseDataFns.loadUncategorizedCollections).toHaveBeenCalled()
   })
 
   it('restores the browse context for a collection entry on back/forward', async () => {

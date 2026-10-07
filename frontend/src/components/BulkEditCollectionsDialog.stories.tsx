@@ -75,6 +75,28 @@ export const Basic: Story = {
   },
 }
 
+/** Refilling private rows warns that their Browse tiles remain private. */
+export const PrivateFilingWarning: Story = {
+  args: {
+    canCurate: true,
+    privateSelectedCount: 2,
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await body.findByRole('combobox'))
+    const listbox = await body.findByRole('listbox')
+    await userEvent.click(await within(listbox).findByRole('option', { name: /^Histology/ }))
+    await expect(
+      await body.findByText(
+        '2 of the 3 selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.',
+      ),
+    ).toBeInTheDocument()
+  },
+}
+
 /** Two-step delete — the first click arms the confirmation (#1578). */
 export const DeleteConfirm: Story = {
   args: {
