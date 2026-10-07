@@ -181,6 +181,15 @@ function resetFixtures() {
   mockInitialPath = []
   visibleJobsMock = []
   processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
+  // Individual tests push extra programs (Radiology, Histology); restore the
+  // shared fixture so the leak can't reach later tests.
+  mockPrograms.splice(0, mockPrograms.length, {
+    id: 1,
+    name: 'Pathology',
+    oidc_group: null,
+    created_at: '',
+    updated_at: '',
+  })
   mockCategories.splice(0, mockCategories.length, {
     id: 1,
     label: 'Slides',
