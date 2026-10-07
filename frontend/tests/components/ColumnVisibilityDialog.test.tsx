@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import ColumnVisibilityDialog from '../../src/components/ColumnVisibilityDialog'
+import type { DragEndEvent } from '@dnd-kit/react'
+import ColumnVisibilityDialog, {
+  resolveReorderedKeys,
+} from '../../src/components/ColumnVisibilityDialog'
 
 type TestColumn = 'name' | 'email' | 'role'
 
@@ -242,5 +245,46 @@ describe('ColumnVisibilityDialog', () => {
     await user.keyboard('{Enter}')
 
     expect(onReorderColumns).toHaveBeenCalledWith(['email', 'name', 'role'])
+  })
+})
+
+describe('resolveReorderedKeys', () => {
+  const ids = ['name', 'email', 'role'] as const
+
+  const dragEvent = (operation: object, canceled = false) =>
+    ({ canceled, operation }) as unknown as DragEndEvent
+
+  it('commits the projected order on a targetless drop (#1577 review)', () => {
+    // Pointer reflowed Name to index 1, then left every row before release —
+    // the source's projected index still describes the on-screen preview.
+    const event = dragEvent({
+      source: { id: 'name', index: 1, initialIndex: 0 },
+      target: undefined,
+    })
+    expect(resolveReorderedKeys([...ids], event)).toEqual(['email', 'name', 'role'])
+  })
+
+  it('ignores a targetless drop that projected no movement', () => {
+    const event = dragEvent({
+      source: { id: 'name', index: 0, initialIndex: 0 },
+      target: undefined,
+    })
+    expect(resolveReorderedKeys([...ids], event)).toBeNull()
+  })
+
+  it('ignores targetless drops without numeric index info', () => {
+    const event = dragEvent({
+      source: { id: 'name' },
+      target: undefined,
+    })
+    expect(resolveReorderedKeys([...ids], event)).toBeNull()
+  })
+
+  it('ignores canceled drags', () => {
+    const event = dragEvent(
+      { source: { id: 'name', index: 2, initialIndex: 0 }, target: undefined },
+      true,
+    )
+    expect(resolveReorderedKeys([...ids], event)).toBeNull()
   })
 })
