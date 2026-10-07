@@ -129,7 +129,6 @@ export const Curatorial: Story = {
         canHide: false,
       },
     }),
-    onTransfer: fn(),
     onMove: fn(),
   },
   parameters: {
@@ -142,11 +141,6 @@ export const Curatorial: Story = {
       canvas.getByRole('button', { name: 'Move Filed into Browse to a category' }),
     )
     await expect(args.onMove).toHaveBeenCalledWith(args.collection)
-    await expect(args.onOpen).not.toHaveBeenCalled()
-    await userEvent.click(
-      canvas.getByRole('button', { name: 'Manage owners of Filed into Browse' }),
-    )
-    await expect(args.onTransfer).toHaveBeenCalledWith(args.collection)
     await expect(args.onOpen).not.toHaveBeenCalled()
   },
 }

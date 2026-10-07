@@ -424,7 +424,7 @@ export default function SynchronizedCollectionViewer({
             ? 'All images in this collection are currently restricted.'
             : images.length === 0
               ? canEdit
-                ? 'A synchronized comparison needs at least two images. Use "Manage Images" to add images to the collection.'
+                ? 'A synchronized comparison needs at least two pre-existing images. Use "Manage Images" to add images to the collection.'
                 : 'A synchronized comparison needs at least two images.'
               : images.length < 2
                 ? 'A synchronized comparison needs at least two visible images. Open an image below to view it on its own.'

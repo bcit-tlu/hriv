@@ -200,6 +200,7 @@ describe('SortableTileGrid', () => {
       path: [hiddenParent],
       currentCategories: [makeCategory({ id: 11, label: 'Child Category', parentId: 10 })],
       currentImages: [makeImage({ id: 12, name: 'Child Image', categoryId: 10 })],
+      currentCollections: [makeCollectionSummary({ id: 13, name: 'Child Collection' })],
       canEditContent: false,
     })
 
@@ -209,11 +210,37 @@ describe('SortableTileGrid', () => {
       .closest('.MuiCardActionArea-root')
     const childImageCard = screen.getByText('Child Image').closest('.MuiCard-root')
     const childImageAction = screen.getByText('Child Image').closest('.MuiCardActionArea-root')
+    const childCollectionAction = screen
+      .getByText('Child Collection')
+      .closest('.MuiCardActionArea-root')
 
     expectEffectiveOpacity(childCategoryCard, '1')
     expectEffectiveOpacity(childImageCard, '1')
     expect(childCategoryAction).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(childImageAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    // Collection tiles grey out inside a hidden category the same way —
+    // the hidden-subtree rule already keeps them out of student view.
+    expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    // No marker icon for inherited hidden state — desaturation conveys it.
+    expect(screen.queryByRole('img', { name: 'Hidden by category' })).toBeNull()
+    expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).toBeNull()
+  })
+
+  it('reads hidden state from the refreshed tree when path objects are stale', () => {
+    // A background refresh after navigation leaves `path` holding the
+    // pre-refresh category object; the live tree is authoritative.
+    renderGrid({
+      allCategories: [makeCategory({ id: 10, label: 'Parent', status: 'hidden' })],
+      path: [makeCategory({ id: 10, label: 'Parent', status: 'active' })],
+      currentCollections: [makeCollectionSummary({ id: 13, name: 'Child Collection' })],
+      canEditContent: false,
+    })
+
+    const childCollectionAction = screen
+      .getByText('Child Collection')
+      .closest('.MuiCardActionArea-root')
+    expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(screen.queryByRole('img', { name: 'Hidden by category' })).toBeNull()
   })
 
   it('renders a move zone per category tile', () => {
