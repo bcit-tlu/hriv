@@ -1409,6 +1409,25 @@ describe('App breadcrumbs', () => {
     expect(screen.getByRole('button', { name: 'Add Category' })).toBeInTheDocument()
   })
 
+  it('rebases child navigation onto the live ancestry after a reparent', async () => {
+    const base = { ...mockCategories[0], children: [], programIds: [], groupIds: [] }
+    const leaf = { ...base, id: 3, label: 'Leaf', parentId: 2 }
+    // Navigation-time snapshot: the user was viewing Old Parent (id 1).
+    mockInitialPath = [{ ...base, id: 1, label: 'Old Parent' }]
+    mockCategories.splice(
+      0,
+      mockCategories.length,
+      { ...base, id: 2, label: 'New Parent', children: [leaf] },
+      { ...base, id: 1, label: 'Old Parent' },
+    )
+
+    render(<App />)
+    await screen.findByLabelText('category breadcrumb')
+    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
+
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [2, 3])
+  })
+
   it('hides category controls when the viewed category left the live tree', async () => {
     mockInitialPath = [{ ...mockCategories[0], id: 99, label: 'Deleted' }]
 

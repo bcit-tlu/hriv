@@ -1403,12 +1403,18 @@ export default function App() {
 
   const handleCategoryTileClick = useCallback(
     (cat: Category) => {
+      // Rebase onto the live ancestry so a reparent since the last
+      // navigation doesn't carry obsolete ancestor ids into `path`/the URL.
+      const nextPath = findCategoryPath(categories, cat.id) ?? [...path, cat]
       runCanvasNavigation(() => {
-        setPath((prev) => [...prev, cat])
-        pushNavState('browse', [...path.map((c) => c.id), cat.id])
+        setPath(nextPath)
+        pushNavState(
+          'browse',
+          nextPath.map((c) => c.id),
+        )
       })
     },
-    [path, pushNavState, runCanvasNavigation],
+    [categories, path, pushNavState, runCanvasNavigation],
   )
 
   const handleManageCategoryNavigate = useCallback(
