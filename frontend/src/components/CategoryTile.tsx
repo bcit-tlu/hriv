@@ -288,7 +288,22 @@ function CategoryTile({
               data-testid="category-tile-title-row"
               sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}
             >
-              <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+              {/* Centre the glyph on the title's first line — the h6 line
+                  box is taller than the icon, so bare flex-start leaves it
+                  floating above the text (#1567). `1lh` + the h6 typography
+                  metric keeps it centred whatever the theme. */}
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  typography: 'h6',
+                  height: '1lh',
+                  flexShrink: 0,
+                }}
+              >
+                <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+              </Box>
               <Tooltip title={category.label}>
                 <Typography
                   variant="h6"
@@ -306,13 +321,20 @@ function CategoryTile({
               </Tooltip>
               {category.status === 'hidden' && (
                 <Tooltip title="Visibility: Hidden">
-                  <span
+                  <Box
+                    component="span"
                     role="img"
                     aria-label="Visibility: Hidden"
-                    style={{ display: 'inline-flex', flexShrink: 0 }}
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      typography: 'h6',
+                      height: '1lh',
+                      flexShrink: 0,
+                    }}
                   >
                     <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                  </span>
+                  </Box>
                 </Tooltip>
               )}
               {onEditName && (

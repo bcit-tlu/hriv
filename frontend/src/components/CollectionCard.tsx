@@ -225,15 +225,28 @@ export default function CollectionCard({
         <CardContent sx={{ flexGrow: 1, width: '100%' }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
             {/* Type icon left of the title — the CategoryTile folder-icon
-                convention (#1567). `titleAccess` names it for screen readers. */}
-            <Tooltip title={COLLECTION_TYPE_LABELS[collection.type]}>
-              <CollectionTypeIcon
-                type={collection.type}
-                fontSize="small"
-                color="primary"
-                sx={{ flexShrink: 0 }}
-              />
-            </Tooltip>
+                convention (#1567). `titleAccess` names it for screen readers.
+                The span wrapper centres the glyph on the title's first line —
+                bare flex-start leaves it floating above the text. */}
+            <Box
+              component="span"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                typography: 'h6',
+                height: '1lh',
+                flexShrink: 0,
+              }}
+            >
+              <Tooltip title={COLLECTION_TYPE_LABELS[collection.type]}>
+                <CollectionTypeIcon
+                  type={collection.type}
+                  fontSize="small"
+                  color="primary"
+                  sx={{ flexShrink: 0 }}
+                />
+              </Tooltip>
+            </Box>
             <Tooltip title={collection.name}>
               <Typography
                 variant="h6"
@@ -251,13 +264,20 @@ export default function CollectionCard({
             </Tooltip>
             {collection.hidden && (
               <Tooltip title="Visibility: Hidden">
-                <span
+                <Box
+                  component="span"
                   role="img"
                   aria-label="Visibility: Hidden"
-                  style={{ display: 'inline-flex', flexShrink: 0 }}
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    typography: 'h6',
+                    height: '1lh',
+                    flexShrink: 0,
+                  }}
                 >
                   <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                </span>
+                </Box>
               </Tooltip>
             )}
             {/* Edit pencil sits directly right of the title — the

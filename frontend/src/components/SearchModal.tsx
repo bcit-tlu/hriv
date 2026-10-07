@@ -566,15 +566,19 @@ export default function SearchModal({
   initialTypeFilter,
   initialSelectMode = false,
 }: SearchModalProps) {
-  const [query, setQuery] = useState('')
-  const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
-  const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
   // Multi-select (#1418/#1567): image and category results get checkboxes
   // feeding a sticky footer action — but ONLY when the modal was launched
   // as a collection-image picker (`initialSelectMode`, currently the
   // Manage-collection dialog's Add flow). The normal search never shows
   // the select layer.
   const selectMode = initialSelectMode && onAddImagesToCollection != null
+  const [query, setQuery] = useState('')
+  // The picker pre-applies the Categories + Images type chips (#1567) —
+  // only addable kinds list by default; the chips stay toggleable.
+  const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(
+    () => new Set(selectMode ? ['category', 'image'] : []),
+  )
+  const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
   // The image rides along in each entry so picks survive a query change —
   // the collection-add callback emits `ImageItem`s (#1567), which a stale
   // result list could no longer supply by id alone. `direct` marks an
@@ -597,7 +601,8 @@ export default function SearchModal({
   if (open && !prevSearchOpen) {
     if (initialQuery != null || initialTypeFilter != null || initialSelectMode) {
       if (initialQuery != null) setQuery(initialQuery)
-      if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+      if (selectMode) setTypeFilters(new Set<TypeFilter>(['category', 'image']))
+      else if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
       setFieldFilters(new Set())
       setWasSeeded(true)
     }
@@ -1089,7 +1094,9 @@ export default function SearchModal({
           </Box>
         )}
 
-        <Box sx={{ flexGrow: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {/* The results region is a flex column whose list alone scrolls —
+            the select-all/results header stays pinned above it (#1567). */}
+        <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {query.trim().length === 0 ? (
             <Box
               sx={{
@@ -1119,8 +1126,8 @@ export default function SearchModal({
               </Typography>
             </Box>
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5, flexShrink: 0 }}>
                 {/* Picker mode (#1567): a bulk select/unselect for every
                     selectable row currently listed — image results and
                     category subtrees alike. */}
@@ -1140,244 +1147,258 @@ export default function SearchModal({
                     : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
                 </Typography>
               </Box>
-              {displayResults.map((result, resultIndex) => {
-                const chipNames = getResultProgramNames(result, programMap)
-                const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
-                const image = result.payload.kind === 'image' ? result.payload.image : null
-                // Categories are selectable too (#1567): checking one adds
-                // every image in its subtree (sub-categories included) in
-                // registration order.
-                const resultCategory =
-                  result.payload.kind === 'category'
-                    ? result.payload.categoryPath[result.payload.categoryPath.length - 1]
+              <Box
+                sx={{
+                  flexGrow: 1,
+                  minHeight: 0,
+                  overflow: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1,
+                }}
+              >
+                {displayResults.map((result, resultIndex) => {
+                  const chipNames = getResultProgramNames(result, programMap)
+                  const catPath =
+                    result.payload.kind === 'image' ? result.payload.categoryPath : null
+                  const image = result.payload.kind === 'image' ? result.payload.image : null
+                  // Categories are selectable too (#1567): checking one adds
+                  // every image in its subtree (sub-categories included) in
+                  // registration order.
+                  const resultCategory =
+                    result.payload.kind === 'category'
+                      ? result.payload.categoryPath[result.payload.categoryPath.length - 1]
+                      : null
+                  const subtreeImages = resultCategory
+                    ? collectSubtreeImages(resultCategory, excludeHidden)
                     : null
-                const subtreeImages = resultCategory
-                  ? collectSubtreeImages(resultCategory, excludeHidden)
-                  : null
-                const subtreeSelected =
-                  subtreeImages?.filter((i) => selectedImages.has(i.id)).length ?? 0
-                // Only image/category results are selectable; in select mode
-                // the row becomes a <label> around a real checkbox so clicking
-                // anywhere toggles and keyboard users reach the control.
-                const selectable = selectMode && (image != null || subtreeImages != null)
-                const rowInner = (
-                  <>
-                    {image?.thumb ? (
-                      <RenewingThumbnail
-                        image={image}
-                        alt={result.label}
-                        onImageRenewed={onImageRenewed}
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          objectFit: 'cover',
-                          borderRadius: 0.5,
-                          flexShrink: 0,
-                        }}
-                      />
-                    ) : result.kind !== 'program' ? (
-                      <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
-                    ) : null}
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1,
-                          mb: 0.25,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        {result.kind === 'program' ? (
-                          <Chip
-                            data-testid="program-result-chip"
-                            label={result.label}
-                            size="small"
-                          />
-                        ) : (
-                          <Typography variant="subtitle2" noWrap>
-                            {result.label}
-                          </Typography>
-                        )}
-                        <Typography
-                          variant="caption"
+                  const subtreeSelected =
+                    subtreeImages?.filter((i) => selectedImages.has(i.id)).length ?? 0
+                  // Only image/category results are selectable; in select mode
+                  // the row becomes a <label> around a real checkbox so clicking
+                  // anywhere toggles and keyboard users reach the control.
+                  const selectable = selectMode && (image != null || subtreeImages != null)
+                  const rowInner = (
+                    <>
+                      {image?.thumb ? (
+                        <RenewingThumbnail
+                          image={image}
+                          alt={result.label}
+                          onImageRenewed={onImageRenewed}
                           sx={{
-                            px: 1,
-                            py: 0.25,
-                            borderRadius: 1,
-                            bgcolor: 'action.hover',
-                            whiteSpace: 'nowrap',
+                            width: 40,
+                            height: 40,
+                            objectFit: 'cover',
+                            borderRadius: 0.5,
+                            flexShrink: 0,
                           }}
-                        >
-                          {labelForKind(result.kind)}
-                        </Typography>
-                        {!suppressExtendedResults && chipNames.length > 0 && (
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              gap: 0.5,
-                              ml: 'auto',
-                              flexWrap: 'wrap',
-                              justifyContent: 'flex-end',
-                            }}
-                          >
-                            {chipNames.map((name) => (
-                              <Chip
-                                key={name}
-                                data-testid="program-chip"
-                                label={name}
-                                size="small"
-                                color="primary"
-                              />
-                            ))}
-                          </Box>
-                        )}
-                      </Box>
-                      {result.matches.map((fm, mi) => {
-                        const { before, match, after } = contextSnippet(
-                          fm.fieldValue,
-                          fm.matchIndex,
-                          fm.matchLength,
-                        )
-                        return (
-                          <Typography
-                            key={mi}
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ wordBreak: 'break-word' }}
-                          >
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              component="span"
-                              sx={{ fontWeight: 700 }}
-                            >
-                              {fm.field}:{' '}
-                            </Typography>
-                            {before}
-                            <Box
-                              component="span"
-                              sx={{
-                                bgcolor: 'warning.light',
-                                color: 'warning.contrastText',
-                                borderRadius: 0.5,
-                                px: 0.25,
-                              }}
-                            >
-                              {match}
-                            </Box>
-                            {after}
-                          </Typography>
-                        )
-                      })}
-                      {catPath && catPath.length > 0 && (
+                        />
+                      ) : result.kind !== 'program' ? (
+                        <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                          {iconForKind(result.kind)}
+                        </Box>
+                      ) : null}
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
                         <Box
                           sx={{
-                            display: 'inline-flex',
+                            display: 'flex',
                             alignItems: 'center',
-                            mt: 0.5,
+                            gap: 1,
+                            mb: 0.25,
                             flexWrap: 'wrap',
                           }}
                         >
-                          <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
-                          {catPath.map((cat, ci) => (
+                          {result.kind === 'program' ? (
+                            <Chip
+                              data-testid="program-result-chip"
+                              label={result.label}
+                              size="small"
+                            />
+                          ) : (
+                            <Typography variant="subtitle2" noWrap>
+                              {result.label}
+                            </Typography>
+                          )}
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              px: 1,
+                              py: 0.25,
+                              borderRadius: 1,
+                              bgcolor: 'action.hover',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {labelForKind(result.kind)}
+                          </Typography>
+                          {!suppressExtendedResults && chipNames.length > 0 && (
                             <Box
-                              component="span"
-                              key={cat.id}
-                              sx={{ display: 'inline-flex', alignItems: 'center' }}
+                              sx={{
+                                display: 'flex',
+                                gap: 0.5,
+                                ml: 'auto',
+                                flexWrap: 'wrap',
+                                justifyContent: 'flex-end',
+                              }}
                             >
-                              {ci > 0 && (
-                                <ChevronRightIcon
-                                  sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }}
+                              {chipNames.map((name) => (
+                                <Chip
+                                  key={name}
+                                  data-testid="program-chip"
+                                  label={name}
+                                  size="small"
+                                  color="primary"
                                 />
-                              )}
-                              <Typography variant="caption" color="text.secondary">
-                                {cat.label}
-                              </Typography>
+                              ))}
                             </Box>
-                          ))}
+                          )}
                         </Box>
-                      )}
-                      {result.payload.kind === 'collection' && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: 'block', mt: 0.5 }}
-                        >
-                          {result.payload.collection.type === 'synchronized'
-                            ? 'Synchronized'
-                            : 'Sequence'}{' '}
-                          · {result.payload.collection.imageCount}{' '}
-                          {result.payload.collection.imageCount === 1 ? 'image' : 'images'} ·{' '}
-                          {describeCollectionOwners(result.payload.collection.owners)}
-                        </Typography>
-                      )}
-                    </Box>
-                  </>
-                )
-                return (
-                  <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
-                    {selectable ? (
-                      <Box
-                        component="label"
-                        data-testid="search-select-row"
-                        sx={{
-                          p: 2,
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: 2,
-                          cursor: 'pointer',
-                          '&:hover': { bgcolor: 'action.hover' },
-                        }}
-                      >
-                        <Checkbox
-                          data-testid="search-select-checkbox"
-                          checked={
-                            image != null
-                              ? selectedImages.has(image.id)
-                              : subtreeImages != null &&
-                                subtreeImages.length > 0 &&
-                                subtreeSelected === subtreeImages.length
-                          }
-                          indeterminate={
-                            subtreeImages != null &&
-                            subtreeSelected > 0 &&
-                            subtreeSelected < subtreeImages.length
-                          }
-                          disabled={subtreeImages != null && subtreeImages.length === 0}
-                          onChange={() =>
-                            image != null
-                              ? toggleImageSelected(image, resultIndex)
-                              : subtreeImages &&
-                                resultCategory &&
-                                toggleCategorySelected(
-                                  resultCategory.id,
-                                  subtreeImages,
-                                  resultIndex,
-                                )
-                          }
-                          slotProps={{
-                            input: {
-                              'aria-label': `Select ${image?.name ?? result.label}`,
-                            },
-                          }}
-                          sx={{ p: 0.5, mt: -0.5 }}
-                        />
-                        {rowInner}
+                        {result.matches.map((fm, mi) => {
+                          const { before, match, after } = contextSnippet(
+                            fm.fieldValue,
+                            fm.matchIndex,
+                            fm.matchLength,
+                          )
+                          return (
+                            <Typography
+                              key={mi}
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ wordBreak: 'break-word' }}
+                            >
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                component="span"
+                                sx={{ fontWeight: 700 }}
+                              >
+                                {fm.field}:{' '}
+                              </Typography>
+                              {before}
+                              <Box
+                                component="span"
+                                sx={{
+                                  bgcolor: 'warning.light',
+                                  color: 'warning.contrastText',
+                                  borderRadius: 0.5,
+                                  px: 0.25,
+                                }}
+                              >
+                                {match}
+                              </Box>
+                              {after}
+                            </Typography>
+                          )
+                        })}
+                        {catPath && catPath.length > 0 && (
+                          <Box
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              mt: 0.5,
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
+                            {catPath.map((cat, ci) => (
+                              <Box
+                                component="span"
+                                key={cat.id}
+                                sx={{ display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                {ci > 0 && (
+                                  <ChevronRightIcon
+                                    sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }}
+                                  />
+                                )}
+                                <Typography variant="caption" color="text.secondary">
+                                  {cat.label}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </Box>
+                        )}
+                        {result.payload.kind === 'collection' && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: 'block', mt: 0.5 }}
+                          >
+                            {result.payload.collection.type === 'synchronized'
+                              ? 'Synchronized'
+                              : 'Sequence'}{' '}
+                            · {result.payload.collection.imageCount}{' '}
+                            {result.payload.collection.imageCount === 1 ? 'image' : 'images'} ·{' '}
+                            {describeCollectionOwners(result.payload.collection.owners)}
+                          </Typography>
+                        )}
                       </Box>
-                    ) : (
-                      <CardActionArea
-                        data-testid="search-result-action-area"
-                        onClick={() => handleSelect(result)}
-                        sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
-                      >
-                        {rowInner}
-                      </CardActionArea>
-                    )}
-                  </Card>
-                )
-              })}
-            </Box>
+                    </>
+                  )
+                  return (
+                    <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
+                      {selectable ? (
+                        <Box
+                          component="label"
+                          data-testid="search-select-row"
+                          sx={{
+                            p: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            cursor: 'pointer',
+                            '&:hover': { bgcolor: 'action.hover' },
+                          }}
+                        >
+                          <Checkbox
+                            data-testid="search-select-checkbox"
+                            checked={
+                              image != null
+                                ? selectedImages.has(image.id)
+                                : subtreeImages != null &&
+                                  subtreeImages.length > 0 &&
+                                  subtreeSelected === subtreeImages.length
+                            }
+                            indeterminate={
+                              subtreeImages != null &&
+                              subtreeSelected > 0 &&
+                              subtreeSelected < subtreeImages.length
+                            }
+                            disabled={subtreeImages != null && subtreeImages.length === 0}
+                            onChange={() =>
+                              image != null
+                                ? toggleImageSelected(image, resultIndex)
+                                : subtreeImages &&
+                                  resultCategory &&
+                                  toggleCategorySelected(
+                                    resultCategory.id,
+                                    subtreeImages,
+                                    resultIndex,
+                                  )
+                            }
+                            slotProps={{
+                              input: {
+                                'aria-label': `Select ${image?.name ?? result.label}`,
+                              },
+                            }}
+                            sx={{ p: 0.5 }}
+                          />
+                          {rowInner}
+                        </Box>
+                      ) : (
+                        <CardActionArea
+                          data-testid="search-result-action-area"
+                          onClick={() => handleSelect(result)}
+                          sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}
+                        >
+                          {rowInner}
+                        </CardActionArea>
+                      )}
+                    </Card>
+                  )
+                })}
+              </Box>
+            </>
           )}
         </Box>
 
@@ -1397,13 +1418,6 @@ export default function SearchModal({
               {orderedSelectedImages.length} image{orderedSelectedImages.length === 1 ? '' : 's'}{' '}
               selected
             </Typography>
-            {/* Clear only earns its slot once something is actually
-                selected; Cancel leaves the picker entirely (#1567). */}
-            {orderedSelectedImages.length > 0 && (
-              <Button size="small" onClick={() => setSelectedImages(new Map())}>
-                Clear
-              </Button>
-            )}
             <Button size="small" data-testid="search-select-cancel" onClick={onClose}>
               Cancel
             </Button>

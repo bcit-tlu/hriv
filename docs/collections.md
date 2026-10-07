@@ -977,7 +977,10 @@ and no Collections chip appears.
 select layer exists only when the modal opens as a collection-image picker
 (`initialSelectMode` — currently the Manage dialog's **Add** flow,
 `requestCollectionImageSearch`); the normal search never shows a Select
-toggle, checkboxes, or the footer. Image rows become labelled checkboxes
+toggle, checkboxes, or the footer. The picker also pre-applies the
+**Categories** and **Images** type chips — only addable kinds list, and
+matches scope to name fields until the user retoggles the chips. Image
+rows become labelled checkboxes
 (`Select {image name}`) inside a `<label>` row — clicking anywhere toggles —
 and category results check the same way: a checked category stages every
 image in its subtree (sub-categories included) in registration order — the
@@ -987,7 +990,9 @@ only part of the subtree is covered. Every other kind keeps its
 `CardActionArea` navigation and is never selectable (this avoids
 nested-interactive controls, see #1345). A **Select all** /
 **Unselect all** control at the top-left of the results list bulk-toggles
-every selectable row currently displayed. Selections survive query and
+every selectable row currently displayed; that header row (with the result
+count) stays pinned while the result list scrolls beneath it. Selections
+survive query and
 filter changes: each pick records the result generation and position
 where the image appeared, so the footer count covers picks hidden by the
 current query and the payload emits them in "order encountered" — result
@@ -996,9 +1001,8 @@ Per-image provenance (`direct` vs the set of checking categories' `pins`)
 keeps the count honest under overlap: unchecking a category removes only
 members no other claim holds, so a hand-picked or other-subtree member
 survives, and checking an already-covered nested category never shrinks
-the count. The sticky footer shows "N images selected" with **Clear**
-(only while the selection is non-empty), **Cancel** (closes the picker),
-and **Add to collection**, which hands the ids to
+the count. The sticky footer shows "N images selected" with **Cancel**
+(closes the picker) and **Add to collection**, which hands the ids to
 `handleSearchAddToCollection` — staging them into the Manage dialog's
 draft when that flow launched the modal. Closing the modal or handing off
 resets the selection. When the

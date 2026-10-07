@@ -530,6 +530,9 @@ re-checks).
   `initialSelectMode`, and the select layer (checkboxes, **Select all** /
   **Unselect all** at the top-left of the results list, the sticky footer)
   exists nowhere else — the normal search carries no Select affordance.
+  The picker pre-applies the **Categories** and **Images** type chips (they
+  stay toggleable), and the select-all/results-count header stays pinned
+  while the result list scrolls.
   In picker mode, image rows gain checkboxes labelled `Select {image title}`
   and category rows `Select {category name}`; checking a category selects
   every image in its subtree (sub-categories included, hidden subtrees
@@ -543,8 +546,8 @@ re-checks).
   directly or pinned by a checked category, so unchecking a category only
   releases members no direct pick or other category still claims, and
   checking an already-covered nested category never shrinks the count. The
-  footer lays out "N images selected" then **Clear** (only while the
-  selection is non-empty), **Cancel** (closes the picker), and **Add to
+  footer lays out "N images selected" then **Cancel** (closes the picker)
+  and **Add to
   collection**, which emits the ids in "order encountered" (result order
   within a query, chronological across queries) into the Manage dialog's
   staged draft. Closing the modal or handing off resets the

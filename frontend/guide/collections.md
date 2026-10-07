@@ -118,12 +118,14 @@ finish or cancel that first.
 ### Add several images at once (search picker)
 
 From the collection's **Manage** dialog, click **Add** — the search opens
-as a picker with checkboxes already on. Tick each image you want, or tick a
+as a picker with checkboxes already on and the **Categories** and
+**Images** filters pre-applied (untick a filter chip to widen the search).
+Tick each image you want, or tick a
 **category** to select every image inside it — including its sub-categories —
 in the order they're registered; unticking removes them again, and images
 you ticked by hand stay picked. **Select all** above the results covers
-every listed row. The footer counts how many images are selected, **Clear**
-empties the set, **Cancel** returns you to the dialog, and **Add to
+every listed row. The footer counts how many images are selected,
+**Cancel** returns you to the dialog, and **Add to
 collection** stages the picks. You can keep selecting across searches —
 images picked under an earlier query still count, and they are added in
 the order they appeared in your results. Collections and other result

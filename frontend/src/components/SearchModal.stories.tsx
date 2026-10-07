@@ -161,13 +161,19 @@ export const Basic: Story = {
   },
 }
 
-/** Picker mode (`initialSelectMode`): rows gain labelled checkboxes and the
-    footer emits ids in result order. */
+/** Picker mode (`initialSelectMode`): the Categories+Images chips come
+    pre-applied, rows gain labelled checkboxes, and the footer emits ids in
+    result order. */
 export const MultiSelect: Story = {
   args: { initialSelectMode: true },
   play: async ({ args, canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
-    await userEvent.type(await body.findByPlaceholderText(/Search categories, images/), 'section')
+    // "liver kidney" unions both fixture image names — the pre-applied
+    // type chips scope matches to Name fields.
+    await userEvent.type(
+      await body.findByPlaceholderText(/Search categories, images/),
+      'liver kidney',
+    )
     await userEvent.click(await body.findByRole('checkbox', { name: 'Select Kidney Cross' }))
     await userEvent.click(await body.findByRole('checkbox', { name: 'Select Liver Section' }))
     await expect(body.getByText('2 images selected')).toBeVisible()

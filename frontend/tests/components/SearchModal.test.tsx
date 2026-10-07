@@ -1191,9 +1191,9 @@ describe('SearchModal', () => {
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
-    // "section" matches both fixture images (Liver Section name;
-    // "Cross-section" inside the Kidney Cross note).
-    await user.type(input, 'section')
+    // "liver kidney" unions both fixture image names — the picker's
+    // pre-applied Categories+Images chips scope matches to Name fields.
+    await user.type(input, 'liver kidney')
 
     // Checkboxes appear on image rows only — exactly the two fixture images.
     const checkboxes = screen.getAllByTestId('search-select-checkbox')
@@ -1234,6 +1234,12 @@ describe('SearchModal', () => {
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'liver')
+    // The picker pre-applies Categories+Images; collections join the list
+    // only if the user opts the kind back in via its chip.
+    expect(screen.queryByText('Cardiac series')).not.toBeInTheDocument()
+    await user.click(
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === 'Collections')!,
+    )
 
     // The collection result (matched on description) has no checkbox and
     // still navigates on click.
@@ -1248,7 +1254,7 @@ describe('SearchModal', () => {
     expect(onSelectCollection).toHaveBeenCalledWith(6)
   })
 
-  it('clears the selection with Clear and resets it when the modal closes', async () => {
+  it('resets the selection when the modal closes and reopens', async () => {
     const user = userEvent.setup()
     const { rerender } = render(
       <SearchModal {...defaultProps} initialSelectMode={true} open={true} />,
@@ -1256,20 +1262,12 @@ describe('SearchModal', () => {
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
-    await user.type(input, 'section')
+    await user.type(input, 'liver')
 
-    // Clear only appears once something is actually selected.
+    // There is no Clear button — Cancel and Unselect all cover its jobs.
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
-
-    await user.click(screen.getByRole('button', { name: 'Clear' }))
-    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
-    expect(screen.getByTestId('search-add-to-collection')).toBeDisabled()
-    // …and the link withdraws again once the selection is empty.
-    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
     rerender(<SearchModal {...defaultProps} initialSelectMode={true} open={false} />)
     rerender(<SearchModal {...defaultProps} open={true} />)
 
@@ -1309,11 +1307,12 @@ describe('SearchModal', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Select Kidney Cross' }))
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
 
-    // A query with no image results hides the pick, but the count stays and
-    // the footer's Cancel remains reachable.
+    // A query with no selectable results hides the pick, but the count
+    // stays and the footer's Cancel remains reachable. ("skull" only
+    // matched the collection kind, which the picker filters out.)
     await user.clear(input)
     await user.type(input, 'skull')
-    expect(screen.getByText('Skull comparison')).toBeInTheDocument()
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
     expect(screen.queryByTestId('search-select-checkbox')).not.toBeInTheDocument()
     expect(screen.getByTestId('search-select-cancel')).toBeInTheDocument()
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
@@ -1339,11 +1338,34 @@ describe('SearchModal', () => {
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
-    await user.type(input, 'section')
+    await user.type(input, 'liver kidney')
     // No Select-toggle click needed — checkboxes are already live.
     expect(screen.getAllByTestId('search-select-checkbox')).toHaveLength(2)
     expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
     expect(screen.getByTestId('search-select-cancel')).toBeInTheDocument()
+  })
+
+  it('pre-applies the Categories and Images type chips in picker mode (#1567)', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} initialSelectMode={true} open={true} />)
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'section')
+
+    // Name-scoped matching is the chip contract: "section" hits only the
+    // Liver Section name — the note-side "Cross-section" match stays out.
+    expect(screen.getByRole('checkbox', { name: 'Select Liver Section' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Select Kidney Cross' })).not.toBeInTheDocument()
+    const chipByLabel = (label: string) =>
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === label)!
+    expect(chipByLabel('Categories')).toHaveClass('MuiChip-filled')
+    expect(chipByLabel('Images')).toHaveClass('MuiChip-filled')
+    expect(chipByLabel('Collections')).toHaveClass('MuiChip-outlined')
+
+    // The chips stay toggleable — unticking Images drops its result.
+    await user.click(chipByLabel('Images'))
+    expect(screen.queryByRole('checkbox', { name: 'Select Liver Section' })).not.toBeInTheDocument()
   })
 
   it('lets a category checkbox stage its whole subtree in registration order (#1567)', async () => {
