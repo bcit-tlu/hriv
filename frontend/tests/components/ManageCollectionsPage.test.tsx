@@ -680,6 +680,45 @@ describe('ManageCollectionsPage', () => {
     expect(within(screen.getByTestId('manage-collections-table')).queryByText('Type')).toBeNull()
   })
 
+  it('renders headers and row cells in the persisted column order (#1577)', async () => {
+    localStorage.setItem(
+      'hrivpref:table-column-order:manage-collections:user:anonymous',
+      JSON.stringify([
+        'updated_at',
+        'name',
+        'cover',
+        'id',
+        'type',
+        'scope',
+        'owners',
+        'images',
+        'programs',
+        'groups',
+        'category',
+        'visibility',
+        'created_at',
+      ]),
+    )
+    vi.mocked(fetchCollections).mockResolvedValue([
+      makeApiCollectionSummary({ id: 1, name: 'Ordered' }),
+    ])
+    renderPage()
+    const row = await screen.findByTestId('manage-collection-row-1')
+
+    const table = screen.getByTestId('manage-collections-table')
+    const headerNames = within(table)
+      .getAllByRole('columnheader')
+      .map((cell) => cell.textContent ?? '')
+    expect(headerNames.indexOf('Modified')).toBeLessThan(headerNames.indexOf('Name'))
+
+    // Cells stay aligned under their headers — the trailing Actions column
+    // occupies the same slot in both arrays.
+    const cellTexts = within(row)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent ?? '')
+    expect(cellTexts.indexOf('Ordered')).toBe(headerNames.indexOf('Name'))
+  })
+
   it('deletes through the edit dialog and refetches', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchCollections).mockResolvedValue([
