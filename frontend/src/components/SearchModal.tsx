@@ -791,6 +791,19 @@ export default function SearchModal({
 
   const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
 
+  // Subtree image lists per rendered category result, memoized on the result
+  // set — selection toggles re-render every row, and walking/sorting each
+  // category's subtree per row per keystroke is wasted work (#1567).
+  const subtreeImagesByCategory = useMemo(() => {
+    const map = new Map<number, ImageItem[]>()
+    for (const result of displayResults) {
+      if (result.payload.kind !== 'category') continue
+      const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
+      map.set(cat.id, collectSubtreeImages(cat, excludeHidden))
+    }
+    return map
+  }, [displayResults, excludeHidden])
+
   // Each new result set bumps an epoch; a check stamps the image with the
   // epoch and its position in that set. Emitting sorts by (epoch, index),
   // which is result order within one query and "order encountered" across
@@ -891,13 +904,13 @@ export default function SearchModal({
           return [{ kind: 'image', image: result.payload.image, resultIndex }]
         if (result.payload.kind === 'category') {
           const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
-          const images = collectSubtreeImages(cat, excludeHidden)
+          const images = subtreeImagesByCategory.get(cat.id) ?? []
           if (images.length > 0)
             return [{ kind: 'category', categoryId: cat.id, images, resultIndex }]
         }
         return []
       }),
-    [displayResults, excludeHidden],
+    [displayResults, subtreeImagesByCategory],
   )
 
   const allSelectableCovered = useMemo(
@@ -1177,7 +1190,7 @@ export default function SearchModal({
                       ? result.payload.categoryPath[result.payload.categoryPath.length - 1]
                       : null
                   const subtreeImages = resultCategory
-                    ? collectSubtreeImages(resultCategory, excludeHidden)
+                    ? (subtreeImagesByCategory.get(resultCategory.id) ?? null)
                     : null
                   const subtreeSelected =
                     subtreeImages?.filter((i) => selectedImages.has(i.id)).length ?? 0
