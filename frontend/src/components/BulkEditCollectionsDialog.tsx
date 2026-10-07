@@ -111,7 +111,9 @@ export default function BulkEditCollectionsDialog({
     setSaveError(null)
     const data: { category_id?: number | null; hidden?: boolean } = {}
     if (categoryChanged) data.category_id = categoryId
-    if (visibleChanged) data.hidden = !visible
+    // A locked switch means the destination category governs visibility —
+    // a toggle made before it locked must not leak into the payload.
+    if (visibleChanged && !visibilityDisabled) data.hidden = !visible
     setSaving(true)
     try {
       await onSave(data)

@@ -57,7 +57,6 @@ import type { TypeFilter } from './components/SearchModal'
 import {
   findImageInTree,
   findCategoryPath,
-  getCategoryHiddenStateFromPath,
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
   resolveCategoryPath,
@@ -435,7 +434,13 @@ export default function App() {
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
     [categories, selectedImage?.categoryId],
   )
-  const currentCategoryHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
+  // Derive from the live tree, not the navigation-time `path` objects —
+  // background refreshes replace those, so the stored status can go stale.
+  const currentCategoryHiddenState = useMemo(
+    () =>
+      getCategoryHiddenStateInTree(categories, path.length > 0 ? path[path.length - 1].id : null),
+    [categories, path],
+  )
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
     [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],

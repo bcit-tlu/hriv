@@ -265,7 +265,9 @@ returned by the API (UX only — the backend re-checks).
   icon whose tooltip reads **Hidden by category**; the **Visibility**
   switch is disabled — mirroring the image table's category-hidden rows —
   and in **Bulk Edit** the visibility switch disables when the whole
-  selection is category-hidden or the chosen target category is hidden.
+  selection is category-hidden or the chosen target category is hidden —
+  a toggle flipped before the switch locked is dropped from the save, so
+  only the refile applies (same rule as `BulkEditImagesModal`).
 - **Given** a collection filed under a hidden category, **Then** its card
   (Browse tile grid and the collections-page grid alike) desaturates with a
   **Hidden by category** eye-off marker — the same desaturation a

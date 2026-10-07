@@ -709,7 +709,9 @@ the hidden-subtree rule already removes them from student view; the table
 styling only surfaces that inherited state to staff. In **Bulk Edit** the
 visibility switch likewise disables when the whole selection is
 category-hidden or the chosen target category is hidden — the same
-`allCategoryHidden`/`nextCategoryHidden` rule `BulkEditImagesModal` uses.
+`allCategoryHidden`/`nextCategoryHidden` rule `BulkEditImagesModal` uses,
+and a visibility toggle pending when the switch locks is dropped from the
+save so only the refile applies.
 
 **Actions.** Row click opens the edit dialog for `permissions.canEdit`
 rows — fetching the full record first, since summaries omit the restricted

@@ -103,6 +103,28 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
     expect(screen.getByRole('switch', { name: /hidden by category/i })).toBeDisabled()
   })
 
+  it('drops a pending visibility toggle when the chosen category is hidden', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderDialog({
+      onSave,
+      categories: [
+        makeCategory({ id: 10, label: 'Anatomy', status: 'hidden' }),
+        makeCategory({ id: 11, label: 'Histology' }),
+      ],
+    })
+
+    await user.click(screen.getByRole('switch', { name: /visible to students/i }))
+    await user.click(screen.getByRole('combobox'))
+    const listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Anatomy/ }))
+    expect(screen.getByRole('switch', { name: /hidden by category/i })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    // The locked switch's earlier toggle must not leak — only the refile.
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: 10 }))
+  })
+
   it('requires two clicks to delete and calls onDelete', async () => {
     const user = userEvent.setup()
     const onDelete = vi.fn().mockResolvedValue(undefined)

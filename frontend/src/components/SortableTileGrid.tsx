@@ -24,7 +24,7 @@ import type { ApiImage, TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
 import { DndMonitor, logDrag, recordTileRender } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
-import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import { getCategoryHiddenStateFromPath, resolveCategoryPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import CollectionCard from './CollectionCard'
 import ImageTile from './ImageTile'
@@ -388,9 +388,21 @@ export default function SortableTileGrid({
     [path.length, uncategorizedImages, currentImages],
   )
 
-  const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
-  const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
-  const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
+  // `path` entries are navigation-time snapshots — background tree
+  // refreshes replace category objects, so re-resolve ids against the live
+  // tree before reading hidden state or program/group narrowing (same walk
+  // useBrowseData's resolvePathNode/getPathRestriction perform).
+  const livePath = useMemo(
+    () =>
+      resolveCategoryPath(
+        allCategories,
+        path.map((c) => c.id),
+      ),
+    [allCategories, path],
+  )
+  const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(livePath), [livePath])
+  const inheritedProgramIds = useMemo(() => narrowProgramIds(livePath), [livePath])
+  const inheritedGroupIds = useMemo(() => narrowGroupIds(livePath), [livePath])
 
   const parentId = path.length > 0 ? path[path.length - 1].id : null
 
