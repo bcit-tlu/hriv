@@ -16,6 +16,8 @@ from app.routers import collections as collections_router
 from app.routers.collections import (
     _unseen_links,
     _ViewerContext,
+    bulk_delete_collections,
+    bulk_update_collections,
     create_collection,
     delete_collection,
     get_collection,
@@ -29,6 +31,8 @@ from app.routers.collections import (
     update_collection,
 )
 from app.schemas import (
+    CollectionBulkDelete,
+    CollectionBulkUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
@@ -2060,3 +2064,331 @@ async def test_list_student_hides_collections_in_excluded_categories(
     student = _user("student", id=2, programs=[1], groups=[5])
     out = await list_collections(student, db=_mock_db(cols))
     assert [c.id for c in out] == [2, 3]
+
+
+# ── bulk operations (#1578) ─────────────────────────────
+
+
+def _bulk_db(
+    collections: list | None = None,
+    category: object = None,
+    locked: list | None = None,
+) -> AsyncMock:
+    """Mock session for the bulk endpoints: the first ``execute`` answers
+    the unlocked ``select(Collection)`` load with *collections*; the
+    second is the FOR UPDATE re-read and answers with *locked* (defaults
+    to the same rows — no concurrent drift). ``db.get`` returns *category*
+    for the ``category_id`` validity check."""
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    first = MagicMock()
+    first.scalars.return_value.all.return_value = collections or []
+    second = MagicMock()
+    second.scalars.return_value.all.return_value = (
+        collections if locked is None else locked
+    ) or []
+    pending = [first, second]
+
+    async def _execute(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        return pending.pop(0) if pending else first
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+def test_bulk_endpoints_registered_before_id_routes() -> None:
+    """``/bulk`` must precede ``/{collection_id}`` in the route table for
+    each method or "bulk" would be parsed as an id (422, not a bulk call)."""
+    for method in ("PATCH", "DELETE"):
+        routes = [r for r in collections_router.router.routes if method in r.methods]
+        paths = [r.path for r in routes]
+        assert paths.index("/collections/bulk") < paths.index(
+            "/collections/{collection_id}"
+        )
+
+
+async def test_bulk_update_endpoint_is_admin_instructor_only() -> None:
+    route = next(
+        r
+        for r in collections_router.router.routes
+        if r.path.endswith("/bulk") and "PATCH" in r.methods
+    )
+    gate = next(
+        dep.call
+        for dep in route.dependant.dependencies
+        if dep.call.__name__ == "_check"
+    )
+    for role in ("student", "staff"):
+        with pytest.raises(HTTPException) as exc:
+            await gate(current_user=_user(role))
+        assert exc.value.status_code == 403
+    for role in ("admin", "instructor"):
+        assert (await gate(current_user=_user(role))).role == role
+
+
+async def test_bulk_update_hidden_and_category() -> None:
+    cols = [
+        _collection(1, "public", user_id=10, category_id=None),
+        _collection(2, "public", user_id=10, category_id=3),
+    ]
+    db = _bulk_db(cols, category=SimpleNamespace(id=7))
+    out = await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], category_id=7, hidden=True),
+        _user("instructor", id=9),
+        db=db,
+    )
+    for c in cols:
+        assert c.category_id == 7 and c.hidden is True and c.version == 4
+    collections_router.bump_scopes.assert_awaited_once()
+    # root scope is keyed 0: sources {None→0, 3} plus destination 7
+    assert collections_router.bump_scopes.call_args.args[1] == {0, 3, 7}
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+    assert [s.id for s in out] == [1, 2]
+    assert all(s.hidden and s.category_id == 7 for s in out)
+
+
+async def test_bulk_update_hidden_only_bumps_browse_not_scopes() -> None:
+    cols = [_collection(1, hidden=False), _collection(2, hidden=False)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    assert all(c.hidden for c in cols)
+    assert all(c.version == 4 for c in cols)
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_update_noop_skips_versions_and_bumps() -> None:
+    """Echoing current values must not advance versions or revisions —
+    mirrors PATCH /images/bulk so a no-op bulk edit stays a no-op."""
+    cols = [
+        _collection(1, category_id=7, hidden=True),
+        _collection(2, category_id=7, hidden=True),
+    ]
+    db = _bulk_db(cols, category=SimpleNamespace(id=7))
+    out = await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], category_id=7, hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_not_awaited()
+    assert [c.version for c in cols] == [3, 3]
+    assert len(out) == 2
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_update_partial_move_bumps_only_moved_sources() -> None:
+    """Only collections actually changing category contribute source scopes."""
+    cols = [
+        _collection(1, category_id=7),
+        _collection(2, category_id=3),
+    ]
+    db = _bulk_db(cols, category=SimpleNamespace(id=7))
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], category_id=7),
+        _user("admin"),
+        db=db,
+    )
+    collections_router.bump_scopes.assert_awaited_once()
+    assert collections_router.bump_scopes.call_args.args[1] == {3, 7}
+    assert cols[0].version == 3 and cols[1].version == 4
+
+
+async def test_bulk_update_unfile_to_root_via_null() -> None:
+    cols = [_collection(1, category_id=7)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1], category_id=None),
+        _user("admin"),
+        db=db,
+    )
+    assert cols[0].category_id is None
+    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    db.get.assert_not_awaited()
+
+
+async def test_bulk_update_missing_collection_is_404() -> None:
+    db = _bulk_db([_collection(1)])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_unknown_category_is_422() -> None:
+    cols = [_collection(1, category_id=3)]
+    db = _bulk_db(cols, category=None)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1], category_id=99),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 422 and "99" in exc.value.detail
+    collections_router.bump_scopes.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_delete_admin_deletes_all() -> None:
+    cols = [
+        _collection(1, "public", user_id=10, category_id=7),
+        _collection(2, "private", user_id=11, category_id=None),
+    ]
+    db = _bulk_db(cols)
+    resp = await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
+    )
+    assert resp.status_code == 204
+    assert db.delete.await_count == 2
+    collections_router.bump_scopes.assert_awaited_once()
+    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_delete_student_sole_owner() -> None:
+    """A student sole-owner may bulk-delete their own collections — the
+    same can_delete_collection gate as the single DELETE, at scale."""
+    cols = [_collection(1, "private", user_id=5)]
+    db = _bulk_db(cols)
+    resp = await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1]), _user("student", id=5), db=db
+    )
+    assert resp.status_code == 204
+    db.delete.assert_awaited_once_with(cols[0])
+
+
+async def test_bulk_delete_student_forbidden_on_others() -> None:
+    """A viewable-but-not-deletable row in the set fails the whole call."""
+    cols = [
+        _collection(1, "private", user_id=5),
+        _collection(2, "public", user_id=10),
+    ]
+    db = _bulk_db(cols)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1, 2]),
+            _user("student", id=5),
+            db=db,
+        )
+    assert exc.value.status_code == 403
+    db.delete.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_delete_unviewable_is_404_not_403() -> None:
+    """A private collection the caller cannot see answers 404 like the
+    single DELETE — private ids cannot be probed."""
+    cols = [
+        _collection(1, "private", user_id=5),
+        _collection(2, "private", user_id=10),
+    ]
+    db = _bulk_db(cols)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1, 2]),
+            _user("student", id=5),
+            db=db,
+        )
+    assert exc.value.status_code == 404
+    db.delete.assert_not_awaited()
+
+
+async def test_bulk_delete_missing_is_404() -> None:
+    db = _bulk_db([_collection(1, "public", user_id=5)])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
+        )
+    assert exc.value.status_code == 404
+    db.delete.assert_not_awaited()
+
+
+async def test_bulk_delete_lock_order_scopes_then_rows_then_browse() -> None:
+    order: list[str] = []
+    collections_router.bump_scopes.side_effect = lambda *a, **k: order.append(
+        "scopes"
+    )
+    collections_router.bump_browse_revision.side_effect = (
+        lambda *a, **k: order.append("browse")
+    )
+    cols = [
+        _collection(1, "public", user_id=10, category_id=7),
+        _collection(2, "public", user_id=10, category_id=3),
+    ]
+    db = _bulk_db(cols)
+    db.delete = AsyncMock(side_effect=lambda *a: order.append("row"))
+    await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
+    )
+    assert order == ["scopes", "row", "row", "browse"]
+
+
+async def test_bulk_update_concurrent_move_is_409() -> None:
+    """A collection refiled between the unlocked read and the row lock
+    leaves its real source scope unbumped — 409 lets the caller retry
+    rather than silently skipping the tile-order invalidation."""
+    cols = [_collection(1, category_id=7)]
+    drifted = _collection(1, category_id=8)
+    db = _bulk_db(cols, category=SimpleNamespace(id=9), locked=[drifted])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1], category_id=9),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 409
+    assert cols[0].category_id == 7  # speculative write never applied
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_missing_at_lock_is_409() -> None:
+    """A row deleted before the FOR UPDATE re-read is drift too."""
+    db = _bulk_db(
+        [_collection(1), _collection(2)],
+        locked=[_collection(1)],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 409
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_refreshes_changed_rows_for_updated_at() -> None:
+    """``updated_at`` is SQL-generated — only changed rows are refreshed
+    post-commit so summaries carry the committed modification time."""
+    cols = [_collection(1, hidden=False), _collection(2, hidden=True)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    db.refresh.assert_awaited_once_with(cols[0])
+
+
+async def test_bulk_delete_concurrent_move_is_409() -> None:
+    cols = [_collection(1, "public", user_id=10, category_id=7)]
+    drifted = _collection(1, "public", user_id=10, category_id=8)
+    db = _bulk_db(cols, locked=[drifted])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1]), _user("admin"), db=db
+        )
+    assert exc.value.status_code == 409
+    db.delete.assert_not_awaited()
+    db.commit.assert_not_awaited()

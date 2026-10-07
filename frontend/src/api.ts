@@ -835,6 +835,31 @@ export function replaceCollectionOwners(
 }
 
 /**
+ * Bulk-update curatorial fields on collections (#1578): `category_id`
+ * refiles every listed collection (`null` = Browse root) and `hidden`
+ * hides/shows for students. Admin/instructor only — filing and hiding are
+ * curatorial, independent of ownership. Scope fields (`visibility`,
+ * `program_ids`, `group_ids`) are not bulk-editable. Returns the updated
+ * summaries in request order; rows that actually change get `version + 1`.
+ */
+export function bulkUpdateCollections(body: {
+  collection_ids: number[]
+  category_id?: number | null
+  hidden?: boolean
+}): Promise<ApiCollectionSummary[]> {
+  return request('/collections/bulk', { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+/**
+ * Bulk-delete collections (#1578). Authority is per-collection (every id
+ * must be viewable and pass the single-delete rule), so owners can use it
+ * at scale; the whole call is atomic — one failure deletes nothing.
+ */
+export function bulkDeleteCollections(body: { collection_ids: number[] }): Promise<void> {
+  return request('/collections/bulk', { method: 'DELETE', body: JSON.stringify(body) })
+}
+
+/**
  * Extract the authoritative current collection from a 409 stale-version
  * ApiError (the backend puts the fresh `CollectionOut` in `detail`).
  */

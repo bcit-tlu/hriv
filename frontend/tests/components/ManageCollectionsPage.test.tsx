@@ -13,6 +13,8 @@ vi.mock('../../src/api', async (importOriginal) => {
     deleteCollection: vi.fn(),
     replaceCollectionOwners: vi.fn(),
     transferCollection: vi.fn(),
+    bulkUpdateCollections: vi.fn(),
+    bulkDeleteCollections: vi.fn(),
   }
 })
 
@@ -21,6 +23,8 @@ import {
   fetchCollection,
   updateCollection,
   deleteCollection,
+  bulkUpdateCollections,
+  bulkDeleteCollections,
 } from '../../src/api'
 import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
@@ -648,5 +652,219 @@ describe('ManageCollectionsPage', () => {
     renderPage({ onNavigateCategory })
     await user.click(await screen.findByRole('button', { name: 'Histology' }))
     expect(onNavigateCategory).toHaveBeenCalledWith([CATEGORIES[1]])
+  })
+
+  describe('bulk edit (#1578)', () => {
+    it('renders a selection column for curators and opens the bulk dialog', async () => {
+      const user = userEvent.setup()
+      vi.mocked(fetchCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'Mine' }),
+        makeApiCollectionSummary({ id: 2, name: 'Theirs' }),
+      ])
+      renderPage()
+      await screen.findByTestId('manage-collection-row-2')
+
+      // Curators may select any row — nothing is disabled.
+      expect(
+        screen.getByRole('checkbox', { name: 'Select all collections on this page' }),
+      ).toBeInTheDocument()
+      for (const name of ['Select Mine', 'Select Theirs']) {
+        expect(screen.getByRole('checkbox', { name })).toBeEnabled()
+      }
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select Mine' }))
+      const bulkBtn = await screen.findByRole('button', { name: 'Bulk Edit (1 selected)' })
+      await user.click(bulkBtn)
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByText(/Editing 1 selected collection/)).toBeInTheDocument()
+      // Curator fields are present: category picker + visibility switch.
+      expect(within(dialog).getByRole('combobox')).toBeInTheDocument()
+      expect(
+        within(dialog).getByRole('switch', { name: /visible to students/i }),
+      ).toBeInTheDocument()
+    })
+
+    it('bulk-saves a refile and hidden toggle, then clears the selection', async () => {
+      const user = userEvent.setup()
+      const onCategoriesChanged = vi.fn()
+      vi.mocked(fetchCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'Mine', category_id: 10 }),
+      ])
+      vi.mocked(bulkUpdateCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'Mine', category_id: 11, hidden: true }),
+      ])
+      renderPage({ onCategoriesChanged })
+      await screen.findByTestId('manage-collection-row-1')
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select Mine' }))
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('combobox'))
+      const listbox = await screen.findByRole('listbox')
+      await user.click(within(listbox).getByRole('option', { name: /^Histology/ }))
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+      await waitFor(() =>
+        expect(bulkUpdateCollections).toHaveBeenCalledWith({
+          collection_ids: [1],
+          category_id: 11,
+          hidden: true,
+        }),
+      )
+      await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
+      expect(onCategoriesChanged).toHaveBeenCalled()
+      expect(screen.queryByRole('button', { name: /Bulk Edit \(/ })).not.toBeInTheDocument()
+    })
+
+    it('bulk-deletes through the two-step confirm', async () => {
+      const user = userEvent.setup()
+      vi.mocked(fetchCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'One' }),
+        makeApiCollectionSummary({ id: 2, name: 'Two' }),
+      ])
+      vi.mocked(bulkDeleteCollections).mockResolvedValue(undefined)
+      renderPage()
+      await screen.findByTestId('manage-collection-row-2')
+
+      // Page-scoped select-all picks up every selectable row in view.
+      await user.click(
+        screen.getByRole('checkbox', { name: 'Select all collections on this page' }),
+      )
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (2 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', { name: 'Delete 2 Selected Collections' }),
+      )
+      expect(bulkDeleteCollections).not.toHaveBeenCalled()
+      await user.click(within(dialog).getByRole('button', { name: 'Confirm Delete 2 Collections' }))
+      await waitFor(() =>
+        expect(bulkDeleteCollections).toHaveBeenCalledWith({ collection_ids: [1, 2] }),
+      )
+      await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
+    })
+
+    it('shows no selection column when nothing on the page is actionable', async () => {
+      const readOnly = {
+        can_edit: false,
+        can_delete: false,
+        can_change_scope: false,
+        can_transfer: false,
+        can_hide: false,
+      }
+      vi.mocked(fetchCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'Theirs', permissions: readOnly }),
+      ])
+      renderPage({ currentUser: STAFF })
+      await screen.findByTestId('manage-collection-row-1')
+      expect(screen.queryByRole('checkbox', { name: /^Select/ })).not.toBeInTheDocument()
+    })
+
+    it('limits staff selection to rows they could delete singly', async () => {
+      const user = userEvent.setup()
+      const readOnly = {
+        can_edit: false,
+        can_delete: false,
+        can_change_scope: false,
+        can_transfer: false,
+        can_hide: false,
+      }
+      const deletable = {
+        can_edit: true,
+        can_delete: true,
+        can_change_scope: true,
+        can_transfer: false,
+        can_hide: false,
+      }
+      vi.mocked(fetchCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'Mine', permissions: deletable }),
+        makeApiCollectionSummary({ id: 2, name: 'Theirs', permissions: readOnly }),
+      ])
+      renderPage({ currentUser: STAFF })
+      await screen.findByTestId('manage-collection-row-2')
+
+      expect(screen.getByRole('checkbox', { name: 'Select Mine' })).toBeEnabled()
+      expect(screen.getByRole('checkbox', { name: 'Select Theirs' })).toBeDisabled()
+
+      // Staff aren't curators — the dialog is delete-only for them.
+      await user.click(screen.getByRole('checkbox', { name: 'Select Mine' }))
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
+      expect(within(dialog).queryByRole('button', { name: 'Save Changes' })).not.toBeInTheDocument()
+      expect(
+        within(dialog).getByRole('button', { name: 'Delete 1 Selected Collection' }),
+      ).toBeEnabled()
+    })
+
+    it('disables delete in the dialog when a selected row is not deletable', async () => {
+      const user = userEvent.setup()
+      const readOnly = {
+        can_edit: false,
+        can_delete: false,
+        can_change_scope: false,
+        can_transfer: false,
+        can_hide: false,
+      }
+      vi.mocked(fetchCollections).mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, name: 'Mine' }),
+        makeApiCollectionSummary({ id: 2, name: 'Theirs', permissions: readOnly }),
+      ])
+      // Instructors can refile/hide any row but only delete what passes
+      // can_delete_collection — selecting a foreign row locks delete.
+      renderPage({ currentUser: INSTRUCTOR })
+      await screen.findByTestId('manage-collection-row-2')
+
+      await user.click(
+        screen.getByRole('checkbox', { name: 'Select all collections on this page' }),
+      )
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (2 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(
+        within(dialog).getByRole('button', { name: 'Delete 2 Selected Collections' }),
+      ).toBeDisabled()
+      // Curatorial save stays available.
+      expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeEnabled()
+    })
+
+    it('drops a singly-deleted collection from the bulk selection', async () => {
+      const user = userEvent.setup()
+      const row1 = makeApiCollectionSummary({ id: 1, name: 'Doomed' })
+      const row2 = makeApiCollectionSummary({ id: 2, name: 'Survivor' })
+      // After the single delete, the refetch no longer returns row 1 —
+      // its id must leave `selected` or the next bulk call would 404.
+      vi.mocked(fetchCollections).mockResolvedValueOnce([row1, row2]).mockResolvedValue([row2])
+      vi.mocked(fetchCollection).mockResolvedValue(makeApiCollection({ id: 1, name: 'Doomed' }))
+      vi.mocked(deleteCollection).mockResolvedValue(undefined)
+      vi.mocked(bulkUpdateCollections).mockResolvedValue([])
+      renderPage()
+      await screen.findByTestId('manage-collection-row-2')
+
+      await user.click(
+        screen.getByRole('checkbox', { name: 'Select all collections on this page' }),
+      )
+      await user.click(await screen.findByText('Doomed'))
+      const editDialog = await screen.findByRole('dialog')
+      await user.click(within(editDialog).getByRole('button', { name: 'Delete Collection' }))
+      await user.click(
+        within(editDialog).getByRole('button', { name: 'Confirm Delete Collection' }),
+      )
+      await waitFor(() => expect(deleteCollection).toHaveBeenCalledWith(1))
+      await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
+
+      const bulkBtn = await screen.findByRole('button', {
+        name: 'Bulk Edit (1 selected)',
+      })
+      await user.click(bulkBtn)
+      const bulkDialog = await screen.findByRole('dialog')
+      await user.click(within(bulkDialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(bulkDialog).getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() =>
+        expect(bulkUpdateCollections).toHaveBeenCalledWith({
+          collection_ids: [2],
+          hidden: true,
+        }),
+      )
+    })
   })
 })

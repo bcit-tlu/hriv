@@ -908,6 +908,31 @@ class CollectionTransfer(BaseModel):
     version: int
 
 
+class CollectionBulkUpdate(BaseModel):
+    """PATCH ``/collections/bulk`` body (#1578): curatorial fields only.
+
+    ``hidden`` and ``category_id`` are the bulk-editable fields — both are
+    curatorial (admin/instructor) like ``POST …/move`` and a hidden-only
+    PATCH, so a single role gate covers the endpoint. ``category_id:
+    null`` unfiles to the Browse root (``CollectionMove`` semantics).
+    Scope fields (``visibility``/``program_ids``/``group_ids``) are
+    deliberately absent: scope authority is per-collection (sole owner vs
+    co-owner, program membership) and ``restricted`` needs per-collection
+    attach lists. No ``version`` token — bulk writes apply like
+    ``PATCH /images/bulk`` and bump ``version`` on actually-changed rows.
+    """
+
+    collection_ids: list[int]
+    category_id: int | None = None
+    hidden: bool | None = None
+
+
+class CollectionBulkDelete(BaseModel):
+    """DELETE ``/collections/bulk`` body (#1578)."""
+
+    collection_ids: list[int]
+
+
 class FeaturesOut(BaseModel):
     """``GET /api/features``: deployment-level feature flags the frontend
     reads at boot to decide which surfaces to render. Flags are not secrets;

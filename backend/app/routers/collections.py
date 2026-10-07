@@ -74,6 +74,8 @@ from ..models import (
     User,
 )
 from ..schemas import (
+    CollectionBulkDelete,
+    CollectionBulkUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
@@ -420,6 +422,184 @@ async def create_collection(
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)
+
+
+# ── Bulk operations (#1578) ───────────────────────────────────────────────
+# Registered before ``/{collection_id}`` so "bulk" is never parsed as an id.
+
+
+async def _select_collections_or_404(
+    db: AsyncSession, collection_ids: list[int]
+) -> list[Collection]:
+    """Load the requested collection rows; 404 when any id is missing."""
+    collections = (
+        await db.execute(
+            select(Collection).where(Collection.id.in_(collection_ids))
+        )
+    ).scalars().all()
+    if len(collections) != len(set(collection_ids)):
+        raise HTTPException(404, "One or more collections not found")
+    return collections
+
+
+async def _lock_and_verify_unchanged(
+    db: AsyncSession,
+    collection_ids: list[int],
+    snapshot: dict[int, int | None],
+) -> list[Collection]:
+    """FOR UPDATE re-read of the bulk target rows, locked after the scope
+    bumps so the scope → row → browse lock order used by ``…/{id}/move``
+    and ``DELETE`` is preserved.
+
+    Between the unlocked read and this lock another transaction may have
+    moved or deleted a row — its real source scope would then be missing
+    from the bumped set, so ``populate_existing`` refreshes the rows under
+    the lock and any drift is a 409 for the caller to retry with fresh
+    state rather than a silently skipped tile-order invalidation.
+    """
+    locked = (
+        await db.execute(
+            select(Collection)
+            .where(Collection.id.in_(collection_ids))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalars().all()
+    if len(locked) != len(snapshot) or any(
+        c.category_id != snapshot[c.id] for c in locked
+    ):
+        raise HTTPException(
+            409,
+            "One or more selected collections changed during the bulk "
+            "operation — refresh and retry",
+        )
+    return locked
+
+
+@router.patch("/bulk", response_model=list[CollectionSummaryOut])
+async def bulk_update_collections(
+    body: CollectionBulkUpdate,
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update curatorial fields for multiple collections (#1578).
+
+    Both fields are curatorial like ``POST …/{id}/move`` and a hidden-only
+    PATCH — ``category_id`` refiles every collection (``null`` = Browse
+    root) and ``hidden`` hides/shows for students — so one role gate
+    covers the call regardless of ownership. Scope fields
+    (``visibility``/``program_ids``/``group_ids``) are deliberately not
+    bulk-editable: scope authority is per-collection (sole owner vs
+    co-owner) and ``restricted`` needs per-collection attach lists.
+
+    Atomic: every id must resolve (404) and ``category_id`` must exist
+    (422) before any write, and a concurrent move/delete between the read
+    and the row lock is a 409 rather than a missed scope bump. Like
+    ``PATCH /images/bulk`` there is no per-row ``version`` token; the row
+    lock plus ``populate_existing`` makes the loaded ``version`` the
+    committed-latest, so a plain increment cannot collide with a racing
+    write, and a no-op edit advances nothing.
+    """
+    collections = await _select_collections_or_404(db, body.collection_ids)
+    provided = body.model_fields_set
+    category_provided = "category_id" in provided
+    hidden_provided = "hidden" in provided
+    new_category = body.category_id
+
+    if category_provided and new_category is not None:
+        if await db.get(Category, new_category) is None:
+            raise HTTPException(
+                422, f"Invalid category ID: {new_category}"
+            )
+
+    snapshot = {c.id: c.category_id for c in collections}
+    if category_provided:
+        # Speculative sources from the unlocked read; the locked re-read
+        # below turns real-source drift into a 409, so an over-broad bump
+        # is harmless while a missed one is not.
+        moved = [
+            cid for cid, src in snapshot.items() if src != new_category
+        ]
+        if moved:
+            affected = {scope_key_for(snapshot[cid]) for cid in moved}
+            affected.add(scope_key_for(new_category))
+            await bump_scopes(db, affected)
+
+    locked = await _lock_and_verify_unchanged(
+        db, body.collection_ids, snapshot
+    )
+
+    changed = [
+        c
+        for c in locked
+        if (category_provided and c.category_id != new_category)
+        or (hidden_provided and c.hidden != body.hidden)
+    ]
+    for c in changed:
+        if category_provided:
+            c.category_id = new_category
+        if hidden_provided:
+            c.hidden = body.hidden
+        # ``populate_existing`` under FOR UPDATE read the committed-latest
+        # version, so this increment cannot duplicate a racing write.
+        c.version += 1
+    if changed:
+        # Both fields are tile-visible: ``category_id`` is scope membership
+        # and ``hidden`` drops the tile for non-owner students.
+        await bump_browse_revision(db)
+    await db.commit()
+    # ``updated_at`` is SQL-generated (onupdate=func.now()) — refresh the
+    # changed rows post-commit like ``update_collection`` so the response
+    # carries the committed modification time.
+    for c in changed:
+        await db.refresh(c)
+    ctx = await _ViewerContext.build(db, user)
+    by_id = {c.id: c for c in collections}
+    return [
+        collection_summary_out(ctx, by_id[cid])
+        for cid in dict.fromkeys(body.collection_ids)
+    ]
+
+
+@router.delete("/bulk", status_code=204)
+async def bulk_delete_collections(
+    body: CollectionBulkDelete,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-delete collections (#1578).
+
+    Unlike ``DELETE /images/bulk`` (curator-only) authority stays
+    per-collection so owners keep the single-delete contract at scale:
+    every id must resolve and be viewable (404 — private ids cannot be
+    probed) and pass ``can_delete_collection`` (403). The call is atomic —
+    one failure deletes nothing — and a concurrent move/delete between the
+    read and the row lock is a 409 rather than a missed scope bump.
+    """
+    collections = await _select_collections_or_404(db, body.collection_ids)
+    ctx = await _ViewerContext.build(db, user)
+    for c in collections:
+        if not ctx.can_view(c):
+            raise HTTPException(404, "Collection not found")
+    for c in collections:
+        if not can_delete_collection(user, c):
+            raise HTTPException(
+                403,
+                "You may not delete one or more of the selected collections",
+            )
+    # Lock order mirrors the single delete: scope revisions first, then the
+    # rows, then the browse revision. The locked re-read guards the
+    # speculative source set against concurrent moves.
+    snapshot = {c.id: c.category_id for c in collections}
+    await bump_scopes(db, {scope_key_for(src) for src in snapshot.values()})
+    locked = await _lock_and_verify_unchanged(
+        db, body.collection_ids, snapshot
+    )
+    for c in locked:
+        await db.delete(c)
+    await bump_browse_revision(db)
+    await db.commit()
+    return Response(status_code=204)
 
 
 @router.patch("/{collection_id}", response_model=CollectionOut)

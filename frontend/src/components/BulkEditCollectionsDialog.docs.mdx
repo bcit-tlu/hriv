@@ -1,0 +1,52 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as BulkEditCollectionsDialogStories from './BulkEditCollectionsDialog.stories'
+
+<Meta of={BulkEditCollectionsDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Bulk edit for the Manage → Collections table — the collection counterpart of Bulk Edit Images
+  (#1578).
+</Subtitle>
+
+## When to use
+
+The dialog opens from the **Bulk Edit (N selected)** button that appears once rows are
+checked in the Manage → Collections table. Selection is per-row: curators
+(admin/instructor) may select any row, while staff and students can only select rows
+they could delete singly.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={BulkEditCollectionsDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Curatorial fields.** `category_id` refiles every selected collection (the picker's
+  _None (root level)_ option unfiles to the Browse root) and the Visibility switch maps
+  to `hidden` — both via `PATCH /api/collections/bulk`, which is admin/instructor-only
+  like `POST …/{id}/move`. Only fields the user touched are sent.
+- **Per-collection delete authority.** `DELETE /api/collections/bulk` mirrors the
+  single-delete gate (`can_delete_collection`) across the whole set, so owners keep
+  the ability at scale. `canDeleteAll` disables the button — with a tooltip — when any
+  selected row fails it.
+- **No scope edits.** Visibility scope (`private`/`public`/`restricted` + program/group
+  ids) is deliberately absent: authority is per-collection (sole owner vs co-owner) and
+  `restricted` needs per-collection attach lists, so it can't share one bulk answer.
+- **Two-step delete.** The first click arms the button; the second calls `onDelete`.
+- **Tile ordering.** A successful refile invalidates the affected tile-order scope
+  revisions (source scopes + destination) so a cached revision can't falsely 409 the
+  next reorder — same convention as the bulk image move.
+
+<Stories of={BulkEditCollectionsDialogStories} />
