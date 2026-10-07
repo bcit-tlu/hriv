@@ -2072,15 +2072,27 @@ async def test_list_student_hides_collections_in_excluded_categories(
 def _bulk_db(
     collections: list | None = None,
     category: object = None,
+    locked: list | None = None,
 ) -> AsyncMock:
-    """Mock session for the bulk endpoints: ``execute`` answers the
-    ``select(Collection)`` load with *collections*; ``db.get`` returns
-    *category* for the ``category_id`` validity check."""
+    """Mock session for the bulk endpoints: the first ``execute`` answers
+    the unlocked ``select(Collection)`` load with *collections*; the
+    second is the FOR UPDATE re-read and answers with *locked* (defaults
+    to the same rows — no concurrent drift). ``db.get`` returns *category*
+    for the ``category_id`` validity check."""
     db = AsyncMock()
     db.get = AsyncMock(return_value=category)
-    result = MagicMock()
-    result.scalars.return_value.all.return_value = collections or []
-    db.execute = AsyncMock(return_value=result)
+    first = MagicMock()
+    first.scalars.return_value.all.return_value = collections or []
+    second = MagicMock()
+    second.scalars.return_value.all.return_value = (
+        collections if locked is None else locked
+    ) or []
+    pending = [first, second]
+
+    async def _execute(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        return pending.pop(0) if pending else first
+
+    db.execute = AsyncMock(side_effect=_execute)
     return db
 
 
@@ -2320,3 +2332,63 @@ async def test_bulk_delete_lock_order_scopes_then_rows_then_browse() -> None:
         CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
     )
     assert order == ["scopes", "row", "row", "browse"]
+
+
+async def test_bulk_update_concurrent_move_is_409() -> None:
+    """A collection refiled between the unlocked read and the row lock
+    leaves its real source scope unbumped — 409 lets the caller retry
+    rather than silently skipping the tile-order invalidation."""
+    cols = [_collection(1, category_id=7)]
+    drifted = _collection(1, category_id=8)
+    db = _bulk_db(cols, category=SimpleNamespace(id=9), locked=[drifted])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1], category_id=9),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 409
+    assert cols[0].category_id == 7  # speculative write never applied
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_missing_at_lock_is_409() -> None:
+    """A row deleted before the FOR UPDATE re-read is drift too."""
+    db = _bulk_db(
+        [_collection(1), _collection(2)],
+        locked=[_collection(1)],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 409
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_refreshes_changed_rows_for_updated_at() -> None:
+    """``updated_at`` is SQL-generated — only changed rows are refreshed
+    post-commit so summaries carry the committed modification time."""
+    cols = [_collection(1, hidden=False), _collection(2, hidden=True)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    db.refresh.assert_awaited_once_with(cols[0])
+
+
+async def test_bulk_delete_concurrent_move_is_409() -> None:
+    cols = [_collection(1, "public", user_id=10, category_id=7)]
+    drifted = _collection(1, "public", user_id=10, category_id=8)
+    db = _bulk_db(cols, locked=[drifted])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1]), _user("admin"), db=db
+        )
+    assert exc.value.status_code == 409
+    db.delete.assert_not_awaited()
+    db.commit.assert_not_awaited()

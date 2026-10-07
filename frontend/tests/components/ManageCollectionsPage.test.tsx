@@ -826,5 +826,45 @@ describe('ManageCollectionsPage', () => {
       // Curatorial save stays available.
       expect(within(dialog).getByRole('button', { name: 'Save Changes' })).toBeEnabled()
     })
+
+    it('drops a singly-deleted collection from the bulk selection', async () => {
+      const user = userEvent.setup()
+      const row1 = makeApiCollectionSummary({ id: 1, name: 'Doomed' })
+      const row2 = makeApiCollectionSummary({ id: 2, name: 'Survivor' })
+      // After the single delete, the refetch no longer returns row 1 —
+      // its id must leave `selected` or the next bulk call would 404.
+      vi.mocked(fetchCollections).mockResolvedValueOnce([row1, row2]).mockResolvedValue([row2])
+      vi.mocked(fetchCollection).mockResolvedValue(makeApiCollection({ id: 1, name: 'Doomed' }))
+      vi.mocked(deleteCollection).mockResolvedValue(undefined)
+      vi.mocked(bulkUpdateCollections).mockResolvedValue([])
+      renderPage()
+      await screen.findByTestId('manage-collection-row-2')
+
+      await user.click(
+        screen.getByRole('checkbox', { name: 'Select all collections on this page' }),
+      )
+      await user.click(await screen.findByText('Doomed'))
+      const editDialog = await screen.findByRole('dialog')
+      await user.click(within(editDialog).getByRole('button', { name: 'Delete Collection' }))
+      await user.click(
+        within(editDialog).getByRole('button', { name: 'Confirm Delete Collection' }),
+      )
+      await waitFor(() => expect(deleteCollection).toHaveBeenCalledWith(1))
+      await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
+
+      const bulkBtn = await screen.findByRole('button', {
+        name: 'Bulk Edit (1 selected)',
+      })
+      await user.click(bulkBtn)
+      const bulkDialog = await screen.findByRole('dialog')
+      await user.click(within(bulkDialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(bulkDialog).getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() =>
+        expect(bulkUpdateCollections).toHaveBeenCalledWith({
+          collection_ids: [2],
+          hidden: true,
+        }),
+      )
+    })
   })
 })

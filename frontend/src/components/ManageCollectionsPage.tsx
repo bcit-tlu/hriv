@@ -341,6 +341,15 @@ export default function ManageCollectionsPage({
       const rows = (await loadCollections({})).map(apiCollectionSummaryToSummary)
       if (seq !== loadSeq.current) return
       setCollections(rows)
+      // Reconcile the bulk selection against the fresh rows — a collection
+      // deleted through its own edit dialog (or hidden by a concurrent
+      // change) must drop out so a later bulk call cannot 404 on a stale
+      // id (#1578).
+      const liveIds = new Set(rows.map((r) => r.id))
+      setSelected((prev) => {
+        if ([...prev].every((id) => liveIds.has(id))) return prev
+        return new Set([...prev].filter((id) => liveIds.has(id)))
+      })
       setError(null)
     } catch (err) {
       if (seq !== loadSeq.current) return
