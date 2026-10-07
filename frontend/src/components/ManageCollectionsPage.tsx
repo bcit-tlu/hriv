@@ -51,6 +51,7 @@ import {
   describeCollectionOwners,
 } from '../collectionUtils'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getVisibilityColors } from '../theme'
 import { tileOrderingCoordinator } from '../tileOrdering'
@@ -331,6 +332,19 @@ export default function ManageCollectionsPage({
     selectedCategories.size > 0
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
+
+  // A collection filed under a hidden category is invisible to students
+  // regardless of its own `hidden` flag — dim it like the image table's
+  // category-hidden rows (ManagePage's `isImageCategoryHidden` convention).
+  const isCollectionCategoryHidden = useCallback(
+    (c: CollectionSummary): boolean => {
+      if (c.categoryId == null) return false
+      const seg = categoryPaths.get(c.categoryId)
+      if (!seg) return false
+      return getCategoryHiddenStateFromPath([...seg.ancestors, seg.category]).hidden
+    },
+    [categoryPaths],
+  )
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
@@ -1116,8 +1130,10 @@ export default function ManageCollectionsPage({
           </TableHead>
           <TableBody>
             {pageCollections.map((c) => {
-              // Hidden rows dim like ManagePage's inactive images (#1567).
-              const dimAttr = c.hidden ? { 'data-dimmed': true } : undefined
+              // Hidden rows dim like ManagePage's inactive images (#1567) —
+              // and so do rows hidden by their category subtree.
+              const categoryHidden = isCollectionCategoryHidden(c)
+              const dimAttr = c.hidden || categoryHidden ? { 'data-dimmed': true } : undefined
               const catPath = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
               const catCategories = catPath ? [...catPath.ancestors, catPath.category] : []
               // Own scope chips only when restricted; the filed category's
@@ -1132,7 +1148,10 @@ export default function ManageCollectionsPage({
               const inheritedGroups = narrowGroupIds(catCategories).filter(
                 (id) => !ownGroupSet.has(id),
               )
-              const chipSx = c.hidden ? { bgcolor: visColors.inactiveChipBg, color: '#fff' } : {}
+              const chipSx =
+                c.hidden || categoryHidden
+                  ? { bgcolor: visColors.inactiveChipBg, color: '#fff' }
+                  : {}
               return (
                 <TableRow
                   key={c.id}
@@ -1185,7 +1204,7 @@ export default function ManageCollectionsPage({
                             borderRadius: 0.5,
                             display: 'block',
                             cursor: 'pointer',
-                            ...(c.hidden ? { filter: 'grayscale(100%)' } : {}),
+                            ...(c.hidden || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
                           }}
                         />
                       ) : null}
@@ -1199,11 +1218,15 @@ export default function ManageCollectionsPage({
                         sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
                       >
                         {c.name}
-                        {c.hidden && (
-                          <Tooltip title="Visibility: Hidden">
+                        {(c.hidden || categoryHidden) && (
+                          <Tooltip
+                            title={categoryHidden ? 'Hidden by category' : 'Visibility: Hidden'}
+                          >
                             <span
                               role="img"
-                              aria-label="Visibility: Hidden"
+                              aria-label={
+                                categoryHidden ? 'Hidden by category' : 'Visibility: Hidden'
+                              }
                               style={{ display: 'inline-flex', flexShrink: 0 }}
                             >
                               <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />
@@ -1219,7 +1242,7 @@ export default function ManageCollectionsPage({
                           the tile overlay and detail header (#1567). */}
                       <CollectionTypeChip
                         type={c.type}
-                        sx={c.hidden ? { filter: 'grayscale(100%)' } : undefined}
+                        sx={c.hidden || categoryHidden ? { filter: 'grayscale(100%)' } : undefined}
                       />
                     </TableCell>
                   )}
@@ -1309,17 +1332,21 @@ export default function ManageCollectionsPage({
                     <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
                       <Tooltip
                         title={
-                          c.permissions.canHide
-                            ? ''
-                            : 'Only admins and instructors can hide collections'
+                          categoryHidden
+                            ? 'Hidden by category'
+                            : c.permissions.canHide
+                              ? ''
+                              : 'Only admins and instructors can hide collections'
                         }
-                        disableHoverListener={c.permissions.canHide}
+                        disableHoverListener={!categoryHidden && c.permissions.canHide}
                       >
                         <span>
                           <Switch
                             size="small"
                             checked={!c.hidden}
-                            disabled={!c.permissions.canHide || togglingId === c.id}
+                            disabled={
+                              categoryHidden || !c.permissions.canHide || togglingId === c.id
+                            }
                             onChange={() => void toggleRowHidden(c)}
                             slotProps={{
                               input: { 'aria-label': `Visibility for ${c.name}` },
@@ -1456,6 +1483,9 @@ export default function ManageCollectionsPage({
         selectedCount={selected.size}
         canCurate={canFileCollections}
         canDeleteAll={selectedRows.length > 0 && selectedRows.every((c) => c.permissions.canDelete)}
+        allCategoryHidden={
+          selectedRows.length > 0 && selectedRows.every(isCollectionCategoryHidden)
+        }
         programs={programs}
         groups={groups}
         onAddCategory={onAddCategory}

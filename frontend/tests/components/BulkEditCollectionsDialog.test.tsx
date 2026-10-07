@@ -25,6 +25,7 @@ function renderDialog(overrides: Partial<Props> = {}) {
       selectedCount={overrides.selectedCount ?? 3}
       canCurate={overrides.canCurate ?? true}
       canDeleteAll={overrides.canDeleteAll ?? true}
+      allCategoryHidden={overrides.allCategoryHidden ?? false}
       programs={overrides.programs ?? []}
       groups={overrides.groups ?? []}
     />,
@@ -78,6 +79,28 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
     await user.click(screen.getByRole('switch', { name: /visible to students/i }))
     await user.click(screen.getByRole('button', { name: /save changes/i }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ hidden: true }))
+  })
+
+  it('disables the visibility switch when every selection is category-hidden', () => {
+    // BulkEditImagesModal's `allCategoryHidden` convention — the switch
+    // can't change what the hidden category already hides.
+    renderDialog({ allCategoryHidden: true })
+    expect(screen.getByRole('switch', { name: /hidden by category/i })).toBeDisabled()
+  })
+
+  it('disables the visibility switch when the chosen category is hidden', async () => {
+    const user = userEvent.setup()
+    renderDialog({
+      categories: [
+        makeCategory({ id: 10, label: 'Anatomy', status: 'hidden' }),
+        makeCategory({ id: 11, label: 'Histology' }),
+      ],
+    })
+
+    await user.click(screen.getByRole('combobox'))
+    const listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Anatomy/ }))
+    expect(screen.getByRole('switch', { name: /hidden by category/i })).toBeDisabled()
   })
 
   it('requires two clicks to delete and calls onDelete', async () => {

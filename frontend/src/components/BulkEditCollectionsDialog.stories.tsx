@@ -112,6 +112,23 @@ export const DeleteOnly: Story = {
   },
 }
 
+/** Every selected collection sits under a hidden category — the visibility
+ *  switch locks (same convention as Bulk Edit Images). */
+export const AllCategoryHidden: Story = {
+  args: {
+    canCurate: true,
+    canDeleteAll: true,
+    allCategoryHidden: true,
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(await body.findByRole('switch', { name: /hidden by category/i })).toBeDisabled()
+  },
+}
+
 /** Some selected rows aren't deletable by this user — delete is disabled. */
 export const PartiallyDeletable: Story = {
   args: {

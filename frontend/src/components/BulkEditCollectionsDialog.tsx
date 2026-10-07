@@ -13,6 +13,7 @@ import Switch from '@mui/material/Switch'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import { isCategoryHiddenInTree } from '../treeUtils'
 import type { Category, Group, Program } from '../types'
 
 interface BulkEditCollectionsDialogProps {
@@ -28,6 +29,9 @@ interface BulkEditCollectionsDialogProps {
   /** False when at least one selected collection fails the caller's
    *  single-delete authority — bulk delete is all-or-nothing. */
   canDeleteAll?: boolean
+  /** True when ALL selected collections sit under a hidden category —
+   *  disables the visibility switch (BulkEditImagesModal convention). */
+  allCategoryHidden?: boolean
   programs?: Program[]
   groups?: Group[]
   onAddCategory?: (
@@ -61,6 +65,7 @@ export default function BulkEditCollectionsDialog({
   selectedCount,
   canCurate = false,
   canDeleteAll = true,
+  allCategoryHidden = false,
   programs,
   groups,
   onAddCategory,
@@ -75,6 +80,12 @@ export default function BulkEditCollectionsDialog({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Same disable rule as BulkEditImagesModal: refiling into a hidden
+  // category locks the visibility switch, and so does a selection that is
+  // already entirely hidden by category.
+  const nextCategoryHidden =
+    categoryChanged && categoryId != null ? isCategoryHiddenInTree(categories, categoryId) : false
+  const visibilityDisabled = categoryChanged ? nextCategoryHidden : allCategoryHidden
 
   const resetForm = useCallback(() => {
     setCategoryId(null)
@@ -167,13 +178,18 @@ export default function BulkEditCollectionsDialog({
               control={
                 <Switch
                   checked={visible}
+                  disabled={visibilityDisabled}
                   onChange={(e) => {
                     setVisible(e.target.checked)
                     setVisibleChanged(true)
                   }}
                 />
               }
-              label="Visibility (visible to students)"
+              label={
+                visibilityDisabled
+                  ? 'Visibility (hidden by category)'
+                  : 'Visibility (visible to students)'
+              }
             />
           </>
         )}

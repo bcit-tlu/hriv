@@ -258,6 +258,13 @@ returned by the API (UX only — the backend re-checks).
   dimmed/greyscale like an inactive image row on Manage Images (#1567); the
   **Visibility** switch (shown where `canHide`) PATCHes `hidden` and the
   cover thumbnail always opens the collection view.
+- **Given** a collection filed under a hidden category, **Then** the row
+  renders the same dimmed/greyscale treatment (the hidden-subtree rule
+  already keeps it out of student view) plus a greyscale `VisibilityOff`
+  icon whose tooltip reads **Hidden by category**; the **Visibility**
+  switch is disabled — mirroring the image table's category-hidden rows —
+  and in **Bulk Edit** the visibility switch disables when the whole
+  selection is category-hidden or the chosen target category is hidden.
 - **Given** a staff user on the manage table, **Then** every API-returned row
   shows and the row's **actions** (⋮) menu follows `permissions` — View
   always, Edit only where `canEdit` or curatorial filing applies,

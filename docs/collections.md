@@ -694,7 +694,14 @@ Column visibility is user-persisted through **Choose columns**
 `manage-collections` columns key, same mechanism as `manage-images`).
 Rows hidden via the switch render greyscale/dimmed — `data-dimmed` cells,
 grayscale thumbnail, inactive-color chips — matching `ManagePage`'s
-inactive-image convention.
+inactive-image convention. The same treatment (plus a greyscale
+`VisibilityOff` marker labelled _Hidden by category_ and a disabled
+Visibility switch) applies to collections filed under a hidden category —
+the hidden-subtree rule already removes them from student view; the table
+styling only surfaces that inherited state to staff. In **Bulk Edit** the
+visibility switch likewise disables when the whole selection is
+category-hidden or the chosen target category is hidden — the same
+`allCategoryHidden`/`nextCategoryHidden` rule `BulkEditImagesModal` uses.
 
 **Actions.** Row click opens the edit dialog for `permissions.canEdit`
 rows — fetching the full record first, since summaries omit the restricted

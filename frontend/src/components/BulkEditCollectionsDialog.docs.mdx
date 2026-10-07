@@ -44,6 +44,10 @@ they could delete singly.
 - **No scope edits.** Visibility scope (`private`/`public`/`restricted` + program/group
   ids) is deliberately absent: authority is per-collection (sole owner vs co-owner) and
   `restricted` needs per-collection attach lists, so it can't share one bulk answer.
+- **Hidden categories win.** The Visibility switch disables — relabeled
+  _Visibility (hidden by category)_ — when every selected collection already
+  sits under a hidden category (`allCategoryHidden`), or when the picked target
+  category is hidden; same rule as `BulkEditImagesModal`.
 - **Two-step delete.** The first click arms the button; the second calls `onDelete`.
 - **Tile ordering.** A successful refile invalidates the affected tile-order scope
   revisions (source scopes + destination) so a cached revision can't falsely 409 the
