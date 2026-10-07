@@ -44,11 +44,13 @@ are added to or removed from a collection outside the global search/Browse add g
   reorder (Space/Enter to pick up, arrows to move) always reaches the `KeyboardSensor` (#1567).
   Pointer activation needs 8px of movement (same
   sensor policy as `SortableTileGrid`: 8px pointer distance, 250ms touch delay).
-- **Selection mode.** The header's **Select** toggle (`aria-pressed`) switches the grid into a
-  multi-pick removal mode (#1567): sortables are disabled so a click can never arm a drag, each
-  tile face becomes a labelled `role="checkbox"` (click, Space or Enter toggles) with a corner
-  check indicator replacing the ✕ badge, and a **Remove (N)** button stages the whole set in one
-  draft update. Leaving selection mode — or reopening the dialog — clears the set.
+- **Selection mode.** The header's **Multi-select** toggle (`aria-pressed`) switches the grid
+  into a multi-pick removal mode (#1567): sortables are disabled so a click can never arm a drag,
+  each tile face becomes a labelled `role="checkbox"` (click, Space or Enter toggles) with a
+  stock MUI `Checkbox` as the corner indicator (decorative — the face holds the semantics)
+  replacing the ✕ badge, and a dialog-spanning error-styled **Remove N Selected Images** button
+  pinned above the actions stages the whole set in one draft update. Leaving selection mode — or
+  reopening the dialog — clears the set.
 - **Draft staging.** Opening seeds a local draft from the detail's members; every operation —
   reorder, remove, search-add — mutates only the draft, so the page behind the dialog
   never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls

@@ -6,13 +6,12 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Checkbox from '@mui/material/Checkbox'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import CloseIcon from '@mui/icons-material/Close'
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked'
 import SelectAllIcon from '@mui/icons-material/SelectAll'
 import { DragDropProvider, DragOverlay, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
@@ -28,8 +27,8 @@ import RenewingThumbnail from './RenewingThumbnail'
 /**
  * Member-management surface for a collection (#1566) — a miniature Browse:
  * the full member list as filmstrip-size tiles (72×72 thumbs) that reorder
- * by drag-and-drop, a per-tile remove control, and a Select mode that
- * multi-picks members for a staged bulk remove (#1567). "Add" opens the
+ * by drag-and-drop, a per-tile remove control, and a Multi-select mode that
+ * picks members for a staged bulk remove (#1567). "Choose images" opens the
  * global search modal so picked images join through the standard add flow.
  *
  * All membership edits are **staged** (#1567): reorders, removals and search
@@ -58,8 +57,9 @@ export interface CollectionManageDialogProps {
    */
   onSaveMembers: (imageIds: number[]) => Promise<unknown>
   /**
-   * "+" opens the global search modal; the dialog hands over its staging
-   * channel so picks land in the draft instead of persisting immediately.
+   * "Choose images" opens the global search modal; the dialog hands over
+   * its staging channel so picks land in the draft instead of persisting
+   * immediately.
    */
   onAddImages?: (stageAdd: StageAddImages) => void
   /** Refresh a member's tokenized URLs after the thumb's renewal. */
@@ -180,6 +180,8 @@ function SortableMemberTile({
         borderRadius: 1,
         outline: selecting && selected ? '2px solid' : 'none',
         outlineColor: 'primary.main',
+        // Air between the selection outline and the caption (#1567).
+        p: selecting ? 0.5 : 0,
       }}
     >
       <Box
@@ -201,26 +203,26 @@ function SortableMemberTile({
         <MemberTileFace image={image} onImageRenewed={onImageRenewed} />
       </Box>
       {selecting ? (
-        // Decorative check state — the face carries the checkbox role, so
-        // this glyph never needs to be focusable or clickable itself.
-        <Box
-          aria-hidden
+        // A stock MUI checkbox as the visual state cue (#1567) — decorative:
+        // the face carries the checkbox role, so this never needs to be
+        // focusable or clickable itself.
+        <Checkbox
+          checked={selected}
+          size="small"
+          tabIndex={-1}
+          inputProps={{ 'aria-hidden': true }}
           data-testid={`select-indicator-${image.id}`}
           sx={{
             position: 'absolute',
             top: -8,
             left: -8,
             zIndex: 1,
-            display: 'inline-flex',
-            lineHeight: 0,
-            color: selected ? 'primary.main' : 'action.active',
+            p: 0,
             bgcolor: 'background.paper',
-            borderRadius: '50%',
+            borderRadius: 0.5,
             pointerEvents: 'none',
           }}
-        >
-          {selected ? <CheckCircleIcon /> : <RadioButtonUncheckedIcon />}
-        </Box>
+        />
       ) : (
         <IconButton
           size="small"
@@ -483,20 +485,7 @@ export default function CollectionManageDialog({
               disabled={saving}
               data-testid="collection-manage-select-toggle"
             >
-              Select
-            </Button>
-          )}
-          {selecting && (
-            <Button
-              size="small"
-              variant="outlined"
-              color="error"
-              startIcon={<DeleteOutlineIcon />}
-              onClick={removeSelected}
-              disabled={selectedCount === 0 || saving}
-              data-testid="collection-manage-remove-selected"
-            >
-              Remove{selectedCount > 0 ? ` (${selectedCount})` : ''}
+              Multi-select
             </Button>
           )}
           {onAddImages && (
@@ -509,7 +498,7 @@ export default function CollectionManageDialog({
               disabled={saving}
               data-testid="collection-manage-add"
             >
-              Add
+              Choose images
             </Button>
           )}
         </Box>
@@ -517,8 +506,8 @@ export default function CollectionManageDialog({
       <DialogContent sx={{ position: 'relative', minHeight: 220 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {selecting
-            ? 'Click thumbnails to select them, then Remove to stage the removal. ' +
-              'Choose Select again to go back to reordering.'
+            ? 'Click thumbnails to select them, then use the button below to stage the ' +
+              'removal. Choose Multi-select again to go back to reordering.'
             : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
               'from the collection. Changes apply when you choose Done.'}
         </Typography>
@@ -585,13 +574,37 @@ export default function CollectionManageDialog({
           </>
         </DragDropProvider>
       </DialogContent>
+      {/* Bulk remove — a dialog-spanning error button pinned above the
+          actions, matching the Edit Image dialog's delete style (#1567).
+          Staged removal needs no confirm step: Discard/Cancel restores. */}
+      {selecting && (
+        <Box sx={{ px: 3, pb: 1 }}>
+          <Divider sx={{ mb: 2 }} />
+          <Button
+            color="error"
+            variant="outlined"
+            fullWidth
+            onClick={removeSelected}
+            disabled={selectedCount === 0 || saving}
+            data-testid="collection-manage-remove-selected"
+          >
+            Remove {selectedCount > 0 ? `${selectedCount} ` : ''}Selected{' '}
+            {selectedCount === 1 ? 'Image' : 'Images'}
+          </Button>
+        </Box>
+      )}
       <DialogActions>
         {dirty && (
           <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', pl: 2 }}>
             Unsaved changes — apply with Done.
           </Typography>
         )}
-        <Button onClick={() => void handleDone()} disabled={saving} data-testid="manage-done">
+        <Button
+          variant="contained"
+          onClick={() => void handleDone()}
+          disabled={saving}
+          data-testid="manage-done"
+        >
           Done
         </Button>
       </DialogActions>

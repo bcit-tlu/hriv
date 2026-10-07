@@ -876,14 +876,16 @@ never move mid-edit. Dragging renders a `DragOverlay` replica while the
 source tile dims in place. Tiles keep `tabIndex`/`role="button"` on the
 activator face explicitly (not left to the dnd-kit a11y plugin's deferred
 injection) so keyboard reorder — Space/Enter to pick up, arrows to move —
-always reaches the `KeyboardSensor` (#1567). The header's **Select** toggle
-(`aria-pressed`) switches the grid into selection mode: sortables are
+always reaches the `KeyboardSensor` (#1567). The header's **Multi-select**
+toggle (`aria-pressed`) switches the grid into selection mode: sortables are
 disabled so clicks no longer arm drags, each tile face becomes a labelled
-`role="checkbox"` (click or Space/Enter toggles) with a corner check
-indicator replacing the ✕ badge, and a **Remove (N)** button stages the
-whole set at once; toggling Select off clears the set and restores the
-drag/remove affordances, and a fresh open always starts out of selection
-mode. **Done** diffs the draft against the seeded order
+`role="checkbox"` (click or Space/Enter toggles) with a stock MUI `Checkbox`
+(decorative — the face holds the semantics) replacing the ✕ badge, and a
+dialog-spanning error-styled **Remove N Selected Images** button pinned
+above the actions stages the whole set at once; toggling Multi-select off
+clears the set and restores the drag/remove affordances, and a fresh open
+always starts out of selection mode. **Done** (contained) diffs the draft
+against the seeded order
 and fires `onSaveMembers(imageIds)` once when it differs — a single
 `PUT /api/collections/{id}/images` whole-replace (`image_ids` + `version`)
 in `useCollectionsData.reorderImages`, which keeps `App`'s `detail` the

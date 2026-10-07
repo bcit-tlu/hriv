@@ -68,8 +68,9 @@ visible but can't be changed here.
   Browse view of thumbnails. Drag
   thumbnails to reorder, or click a thumbnail's corner remove icon to take
   it out of the collection. To remove several at once,
-  click **Select** in the dialog header: thumbnails become checkboxes —
-  tick the ones you want gone and click **Remove**. Click **Add** to pick
+  click **Multi-select** in the dialog header: thumbnails gain checkboxes —
+  tick the ones you want gone and click the **Remove N Selected Images**
+  button at the bottom. Click **Choose images** to pick
   through search — the search opens as a picker with checkboxes already on:
   tick individual images or a whole category (its images, and its
   sub-categories' images, are added in their order in the category), or use

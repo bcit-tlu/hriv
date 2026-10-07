@@ -407,8 +407,9 @@ always read-only (`canEditContent={false}`).
 - **Given** `permissions.can_edit`, **Then** a **Manage** button opens the
   "Manage Collection Images — {name}" dialog of filmstrip-size thumbnails;
   dragging reorders, the per-tile remove control deletes members, a
-  **Select** toggle multi-picks members for a staged **Remove (N)**, and an
-  **Add** button opens the search picker — all staged in a local
+  **Multi-select** toggle multi-picks members for a staged
+  dialog-wide **Remove N Selected Images** button, and a
+  **Choose images** button opens the search picker — all staged in a local
   draft that leaves the page behind untouched until **Done** PUTs the whole
   member id list with the collection `version` (closing a dirty draft asks
   to discard first). Non-editors never see the button.
