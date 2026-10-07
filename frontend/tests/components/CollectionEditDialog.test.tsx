@@ -124,6 +124,28 @@ describe('CollectionEditDialog', () => {
       ).toBeInTheDocument()
     })
 
+    it('switches to the other type when the selected type becomes capped after opening', async () => {
+      const view = renderDialog({ defaultType: 'sequence' }, makeAuth('student'))
+      expect(screen.getByRole('radio', { name: /Sequence/ })).toBeChecked()
+
+      view.rerender(
+        <AuthContext.Provider value={makeAuth('student')}>
+          <CollectionEditDialog
+            open
+            onClose={view.onClose}
+            onSave={view.onSave}
+            defaultType="sequence"
+            typesAtLimit={new Set(['sequence'])}
+          />
+        </AuthContext.Provider>,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('radio', { name: /Sequence/ })).toBeDisabled()
+        expect(screen.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
+      })
+    })
+
     it('disables create when both collection types are at their limit', async () => {
       const user = userEvent.setup()
       renderDialog(
@@ -189,6 +211,29 @@ describe('CollectionEditDialog', () => {
       await user.keyboard('{Enter}')
       await waitFor(() => expect(onSave).toHaveBeenCalled())
       expect(onSave.mock.calls[0][0].description).toBeNull()
+    })
+  })
+
+  it('does not change an existing collection type when that type becomes capped', async () => {
+    const collection = makeCollection({ type: 'sequence' })
+    const view = renderDialog({ collection }, makeAuth('student'))
+    expect(screen.getByTestId('collection-type-chip')).toHaveTextContent('Sequence')
+
+    view.rerender(
+      <AuthContext.Provider value={makeAuth('student')}>
+        <CollectionEditDialog
+          open
+          collection={collection}
+          onClose={view.onClose}
+          onSave={view.onSave}
+          typesAtLimit={new Set(['sequence'])}
+        />
+      </AuthContext.Provider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('collection-type-chip')).toHaveTextContent('Sequence')
+      expect(screen.queryByRole('radio', { name: /Synchronized/ })).not.toBeInTheDocument()
     })
   })
 

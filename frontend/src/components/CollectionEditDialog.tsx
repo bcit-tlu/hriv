@@ -210,6 +210,12 @@ export default function CollectionEditDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures type limits at open time
   }, [open, collection])
 
+  useEffect(() => {
+    if (!open || collection != null || !typesAtLimit?.has(type)) return
+    const otherType = type === 'sequence' ? 'synchronized' : 'sequence'
+    if (!typesAtLimit.has(otherType)) setType(otherType)
+  }, [open, typesAtLimit, type, collection])
+
   // A save that partially succeeded (metadata PATCH ok, chained category move
   // failed) returns a newer record while the dialog stays open (#1567):
   // advance baseline/version to the saved state so a retry diffs against it
@@ -267,8 +273,13 @@ export default function CollectionEditDialog({
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
   const bothTypesAtLimit = typesAtLimit?.has('sequence') && typesAtLimit.has('synchronized')
+  const selectedTypeAtLimit = !isEdit && (typesAtLimit?.has(type) ?? false)
   const canSubmit =
-    name.trim().length > 0 && !scopeMissing && !saving && !deleting && (isEdit || !bothTypesAtLimit)
+    name.trim().length > 0 &&
+    !scopeMissing &&
+    !saving &&
+    !deleting &&
+    (isEdit || (!bothTypesAtLimit && !selectedTypeAtLimit))
   // A collection filed inside a hidden category is hidden by ancestry, so its
   // own hide control is disabled — the EditImageModal convention (#1566).
   const categoryHidden = isEdit && isCategoryHiddenInTree(categories, categoryId)
