@@ -139,16 +139,24 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 3. Open the column chooser and enable the `Program` column.
 4. **Assert:** The Images table now shows the `Program` column, and the
    persistent `Filter by` bar now includes a `Program` filter control.
-5. Click Logout.
-6. Login again as `admin@example.ca` / `password`.
-7. Open the `Images` tab.
-8. **Assert:** The `Program` column is still visible.
-9. Click Logout.
-10. Login as `student@example.ca` / `password`, then logout again.
-11. Login as `admin@example.ca` / `password`.
-12. **Assert:** The `Program` column preference is still preserved for the admin user.
-13. Open the `People` tab.
-14. **Assert:** The default visible columns are `Name`, `Email`, `Role`, `Program`, and `Last Accessed`.
+5. In the column chooser, drag the `Program` row's handle (or focus the
+   handle and use Enter + arrow keys) to move `Program` before `Name`,
+   then click **Done**.
+6. **Assert:** The `Program` column now renders left of `Name` in the table,
+   and the `Program` filter control precedes `Name` in the `Filter by` bar.
+7. Click Logout.
+8. Login again as `admin@example.ca` / `password`.
+9. Open the `Images` tab.
+10. **Assert:** The `Program` column is still visible and still ordered
+    before `Name`.
+11. Click Logout.
+12. Login as `student@example.ca` / `password`, then logout again.
+13. Login as `admin@example.ca` / `password`.
+14. **Assert:** The `Program` column preference and order are still preserved
+    for the admin user.
+15. Open the `People` tab.
+16. **Assert:** The default visible columns are `Name`, `Email`, `Role`,
+    `Program`, and `Last Accessed` in that order.
 
 ---
 

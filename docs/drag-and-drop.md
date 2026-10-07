@@ -17,7 +17,11 @@ and a `col-` source dropped there files the collection into that category
 > the human feel-test gate below still do. The dialog renders drags through
 > a `DragOverlay` replica (the source tile dims in place); removal lives on
 > the per-tile corner control and the Select-mode bulk action — there is no
-> drop-to-delete target (#1567).
+> drop-to-delete target (#1567). The **Choose columns** dialog
+> (`ColumnVisibilityDialog`, #1577) is a third dnd surface: plain
+> `useSortable` rows with a drag-handle `IconButton`, Pointer +
+> Keyboard sensors, and `move()` from `@dnd-kit/helpers` computing the
+> committed order — no zones, no near/far halves.
 
 Read this before changing any collision detection, drop-zone, or activation
 code. The behaviour below thrashed across ~8 PRs because there was no written

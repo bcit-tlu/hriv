@@ -247,7 +247,8 @@ returned by the API (UX only — the backend re-checks).
   collection renders (cover, ID, name, type, scope pill, owners, image
   count, programs, groups, category breadcrumb, visibility switch,
   created, modified, actions) with stored filter facets, sortable columns,
-  per-user persisted column visibility via **Choose columns** — the default
+  per-user persisted column visibility and ordering via **Choose columns** —
+  the default
   set mirrors Manage Images' lean subset (cover, name, type, category,
   groups, visibility, modified) so the table sizes to content and wraps
   rather than scrolling — and
@@ -787,6 +788,11 @@ committed on Save) in the edit modals.
 M images> / Empty` format used on category tiles.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
+- The **Choose columns** dialog reorders as well as shows/hides: each row has
+  a drag handle (pointer drag, or focus the handle and use Enter/arrow keys)
+  and the chosen column order persists per user between logins; filter-bar
+  controls, table headers, and row cells all render in that order (#1577).
+  The People and Collections tables share the same chooser and ordering.
 - **Pagination controls render at both the top and bottom of the table** so
   users can change page or rows-per-page without scrolling to the end of a long
   list. Both controls are bound to the same page / rows-per-page state, so a

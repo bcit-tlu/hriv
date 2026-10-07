@@ -15,6 +15,76 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   } as unknown as typeof globalThis.ResizeObserver
 }
 
+// @dnd-kit's PositionObserver uses IntersectionObserver, which jsdom does not
+// provide.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class IntersectionObserver {
+    callback: IntersectionObserverCallback
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return []
+    }
+    root = null
+    rootMargin = '0px'
+    thresholds = [0]
+  } as unknown as typeof globalThis.IntersectionObserver
+}
+
+// @dnd-kit's Feedback plugin and MUI read prefers-reduced-motion via
+// window.matchMedia, which jsdom does not provide.
+if (typeof globalThis.window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList
+}
+
+// @dnd-kit's DOMRectangle measurement calls document/element.getAnimations()
+// (Web Animations API), which jsdom does not implement — stub both to no
+// animations.
+if (
+  typeof globalThis.Document !== 'undefined' &&
+  typeof Document.prototype.getAnimations === 'undefined'
+) {
+  Document.prototype.getAnimations = () => []
+}
+if (
+  typeof globalThis.Element !== 'undefined' &&
+  typeof Element.prototype.getAnimations === 'undefined'
+) {
+  Element.prototype.getAnimations = () => []
+}
+// Element.animate is also part of WAAPI; dnd-kit's drop animation only needs
+// `.finished` to resolve and `.finish()` to exist.
+if (typeof globalThis.Element !== 'undefined' && typeof Element.prototype.animate === 'undefined') {
+  Element.prototype.animate = () =>
+    ({
+      finished: Promise.resolve(),
+      finish: () => {},
+      cancel: () => {},
+      effect: null,
+    }) as unknown as Animation
+}
+if (
+  typeof globalThis.window !== 'undefined' &&
+  typeof window.requestAnimationFrame !== 'function'
+) {
+  window.requestAnimationFrame = (callback: FrameRequestCallback) =>
+    window.setTimeout(() => callback(performance.now()), 0)
+}
+
 // jsdom normally provides Web Storage, but Node >= 26 ships a native global
 // `localStorage`/`sessionStorage` gated behind `--localstorage-file`. When the
 // flag is absent the native global is unavailable yet still shadows jsdom's,
