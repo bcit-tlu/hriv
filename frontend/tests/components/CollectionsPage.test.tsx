@@ -200,7 +200,10 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('collection-card-action-area')).toHaveStyle({
         filter: 'grayscale(100%)',
       })
-      expect(screen.getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
+      // Inherited hidden state desaturates but carries no marker — the
+      // eye-off icon is reserved for the collection's own hidden flag.
+      expect(screen.queryByRole('img', { name: 'Hidden by category' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).not.toBeInTheDocument()
     })
   })
 
@@ -773,8 +776,7 @@ describe('CollectionsPage', () => {
       expect(within(dialog).getByTestId('owners-confirm')).toBeDisabled()
     })
 
-    it('shows a card owners affordance only when canTransfer', async () => {
-      const user = userEvent.setup()
+    it('keeps the owners affordance off cards — transfer lives on the detail view', () => {
       renderPage({
         collections: [
           makeCollectionSummary({
@@ -782,50 +784,11 @@ describe('CollectionsPage', () => {
             name: 'Ownable',
             permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: false },
           }),
-          makeCollectionSummary({
-            id: 4,
-            name: 'Shared',
-            permissions: { canEdit: true, canDelete: true, canTransfer: false, canHide: false },
-          }),
         ],
       })
-      expect(screen.getByRole('button', { name: 'Manage owners of Ownable' })).toBeInTheDocument()
-      expect(
-        screen.queryByRole('button', { name: 'Manage owners of Shared' }),
-      ).not.toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Manage owners of Ownable' }))
-      expect(await screen.findByRole('dialog')).toBeInTheDocument()
-      expect(
-        within(screen.getByRole('dialog')).getByRole('heading', { name: 'Owners' }),
-      ).toBeInTheDocument()
-    })
-
-    it('lets an admin reassign an orphaned collection from the card grid', async () => {
-      const user = userEvent.setup()
-      const onTransfer = vi.fn().mockResolvedValue(undefined)
-      renderPage({
-        currentUser: ADMIN,
-        programs: [{ id: 2, name: 'Ultrasound' }],
-        collections: [
-          makeCollectionSummary({
-            id: 5,
-            name: 'Orphaned set',
-            owners: [],
-            permissions: { canEdit: false, canDelete: true, canTransfer: true, canHide: false },
-          }),
-        ],
-        onTransfer,
-      })
-      // Tiles no longer render owner text (#1567) — an orphaned collection
-      // is identified by the owners affordance and the dialog's copy.
-      const transferBtn = screen.getByRole('button', { name: 'Manage owners of Orphaned set' })
-      await user.click(transferBtn)
-      const dialog = await screen.findByRole('dialog')
-      expect(within(dialog).getByText(/This collection is orphaned/)).toBeInTheDocument()
-      await user.click(within(dialog).getByLabelText('Owning program'))
-      await user.click(within(await screen.findByRole('listbox')).getByText('Ultrasound'))
-      await user.click(within(dialog).getByTestId('owners-confirm'))
-      await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(5, 2))
+      // Even a canTransfer row renders no corner control — owners management
+      // happens via the detail header (or the manage table's row menu).
+      expect(screen.queryByRole('button', { name: /Manage owners/ })).not.toBeInTheDocument()
     })
   })
 

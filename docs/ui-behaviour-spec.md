@@ -261,17 +261,19 @@ returned by the API (UX only — the backend re-checks).
   cover thumbnail always opens the collection view.
 - **Given** a collection filed under a hidden category, **Then** the row
   renders the same dimmed/greyscale treatment (the hidden-subtree rule
-  already keeps it out of student view) plus a greyscale `VisibilityOff`
-  icon whose tooltip reads **Hidden by category**; the **Visibility**
+  already keeps it out of student view); the **Visibility**
   switch is disabled — mirroring the image table's category-hidden rows —
+  and the name carries no marker icon: `VisibilityOff` is reserved for the
+  collection's own hidden flag (the image/category tile convention) —
   and in **Bulk Edit** the visibility switch disables when the whole
   selection is category-hidden or the chosen target category is hidden —
   a toggle flipped before the switch locked is dropped from the save, so
   only the refile applies (same rule as `BulkEditImagesModal`).
 - **Given** a collection filed under a hidden category, **Then** its card
-  (Browse tile grid and the collections-page grid alike) desaturates with a
-  **Hidden by category** eye-off marker — the same desaturation a
-  curatorially hidden card gets — and its detail header greys the action
+  (Browse tile grid and the collections-page grid alike) desaturates — the
+  same desaturation a curatorially hidden card gets, but **without** the
+  eye-off marker, which is reserved for the collection's own hidden flag —
+  and its detail header greys the action
   controls while the hide/show control locks to the disabled **Hidden by
   Category** state the image view and edit dialog share; the sequence
   filmstrip desaturates too.

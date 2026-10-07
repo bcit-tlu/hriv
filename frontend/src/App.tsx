@@ -116,7 +116,6 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce, setTelemetryPage } from './observability'
 import type { FrontendPage, TelemetryNavDirection } from './observability'
-import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -472,11 +471,19 @@ export default function App() {
         : undefined,
     [imageViewerHiddenByCategory],
   )
+  // `path` entries are navigation-time snapshots — resolve the leaf against
+  // the live tree so a background refresh updates restriction chips.
+  const livePathLeaf = useMemo(
+    () =>
+      path.length > 0 ? findCategoryPath(categories, path[path.length - 1].id)?.at(-1) : undefined,
+    [categories, path],
+  )
   const breadcrumbProgramItems = useMemo(() => {
-    const leafProgramIds = path[path.length - 1]?.programIds ?? []
+    const leafProgramIds = livePathLeaf?.programIds ?? []
     const leafProgramIdSet = new Set(leafProgramIds)
-    const effectiveProgramIds = path.length > 0 ? narrowProgramIds(path) : ancestorProgramIds
-    return effectiveProgramIds
+    // `ancestorProgramIds` already walks the live tree along the path ids —
+    // equivalent to narrowProgramIds on the resolved path, but never stale.
+    return ancestorProgramIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
@@ -484,12 +491,11 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorProgramIds, path, programs])
+  }, [ancestorProgramIds, livePathLeaf, path.length, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const leafGroupIds = path[path.length - 1]?.groupIds ?? []
+    const leafGroupIds = livePathLeaf?.groupIds ?? []
     const leafGroupIdSet = new Set(leafGroupIds)
-    const effectiveGroupIds = path.length > 0 ? narrowGroupIds(path) : ancestorGroupIds
-    return effectiveGroupIds
+    return ancestorGroupIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
@@ -497,7 +503,7 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorGroupIds, groups, path])
+  }, [ancestorGroupIds, groups, livePathLeaf, path.length])
   const bumpChangelogVersion = useCallback(() => {
     setChangelogVersion((version) => version + 1)
   }, [])

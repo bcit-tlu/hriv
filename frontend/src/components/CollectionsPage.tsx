@@ -816,7 +816,6 @@ export default function CollectionsPage({
                     collection={c}
                     onOpen={(col) => onOpenCollection(col.id)}
                     onEdit={(col) => void openEdit(col)}
-                    onTransfer={setTransferTarget}
                     onMove={canFileCollections ? onMoveCollection : undefined}
                     programs={programs}
                     inheritedProgramIds={narrowProgramIds(catPath)}

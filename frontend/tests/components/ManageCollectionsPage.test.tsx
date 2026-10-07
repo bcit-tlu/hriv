@@ -510,16 +510,19 @@ describe('ManageCollectionsPage', () => {
     renderPage()
     const row = await screen.findByTestId('manage-collection-row-1')
     expect(row.querySelector('td[data-dimmed]')).not.toBeNull()
+    // The eye-off marker belongs to the collection's own hidden flag.
+    expect(within(row).getByRole('img', { name: 'Visibility: Hidden' })).toBeInTheDocument()
     const other = screen.getByTestId('manage-collection-row-2')
     expect(other.querySelector('td[data-dimmed]')).toBeNull()
     expect(screen.getByRole('switch', { name: 'Visibility for Locked' })).toBeDisabled()
   })
 
   it('dims a collection hidden by its category and disables its switch', async () => {
-    // Mirrors the Manage Images table's category-hidden rows: greyscale
-    // VisibilityOff, dimmed cells, and a locked Visibility switch — even
-    // though the collection's own `hidden` flag is false and the caller may
-    // hide it (can_hide: true isolates the category cause).
+    // Mirrors the Manage Images table's category-hidden rows: dimmed cells
+    // and a locked Visibility switch — even though the collection's own
+    // `hidden` flag is false and the caller may hide it (can_hide: true
+    // isolates the category cause). No marker icon: that glyph is reserved
+    // for the collection's own hidden flag.
     vi.mocked(fetchCollections).mockResolvedValue([
       makeApiCollectionSummary({
         id: 1,
@@ -548,12 +551,12 @@ describe('ManageCollectionsPage', () => {
       ],
     })
     const row = await screen.findByTestId('manage-collection-row-1')
-    expect(within(row).getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
     expect(row.querySelector('td[data-dimmed]')).not.toBeNull()
+    expect(within(row).queryByRole('img', { name: 'Hidden by category' })).toBeNull()
+    expect(within(row).queryByRole('img', { name: 'Visibility: Hidden' })).toBeNull()
     expect(screen.getByRole('switch', { name: 'Visibility for Under hidden cat' })).toBeDisabled()
     const plain = screen.getByTestId('manage-collection-row-2')
     expect(plain.querySelector('td[data-dimmed]')).toBeNull()
-    expect(within(plain).queryByRole('img', { name: 'Hidden by category' })).toBeNull()
   })
 
   it('disables the bulk visibility switch when the selection is category-hidden', async () => {

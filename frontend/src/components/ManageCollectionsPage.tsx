@@ -1150,15 +1150,14 @@ export default function ManageCollectionsPage({
                       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
                     >
                       {c.name}
-                      {(c.hidden || categoryHidden) && (
-                        <Tooltip
-                          title={categoryHidden ? 'Hidden by category' : 'Visibility: Hidden'}
-                        >
+                      {/* The eye-off marker is reserved for the collection's
+                          own hidden flag — category-hidden rows convey the
+                          inherited state through dimming + the locked switch. */}
+                      {c.hidden && (
+                        <Tooltip title="Visibility: Hidden">
                           <span
                             role="img"
-                            aria-label={
-                              categoryHidden ? 'Hidden by category' : 'Visibility: Hidden'
-                            }
+                            aria-label="Visibility: Hidden"
                             style={{ display: 'inline-flex', flexShrink: 0 }}
                           >
                             <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />

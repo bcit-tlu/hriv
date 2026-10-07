@@ -189,7 +189,9 @@ describe('SortableTileGrid', () => {
     // Collection tiles grey out inside a hidden category the same way —
     // the hidden-subtree rule already keeps them out of student view.
     expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(screen.getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
+    // No marker icon for inherited hidden state — desaturation conveys it.
+    expect(screen.queryByRole('img', { name: 'Hidden by category' })).toBeNull()
+    expect(screen.queryByRole('img', { name: 'Visibility: Hidden' })).toBeNull()
   })
 
   it('reads hidden state from the refreshed tree when path objects are stale', () => {
@@ -206,7 +208,7 @@ describe('SortableTileGrid', () => {
       .getByText('Child Collection')
       .closest('.MuiCardActionArea-root')
     expect(childCollectionAction).toHaveStyle({ filter: 'grayscale(100%)' })
-    expect(screen.getByRole('img', { name: 'Hidden by category' })).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Hidden by category' })).toBeNull()
   })
 
   it('renders a move zone per category tile', () => {
