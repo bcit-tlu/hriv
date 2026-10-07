@@ -692,9 +692,9 @@ export interface ApiCollectionSummary {
   image_count: number
   cover_thumb: string | null
   version: number
-  /** Category the collection is filed into; `null` = uncategorized (Browse root). */
+  /** Category the collection is filed into; `null` = unfiled (not on Browse). */
   category_id: number | null
-  /** Tile-order position inside its category/root scope. */
+  /** Tile-order position inside its filed category scope. */
   sort_order: number
   /** Restriction scope (empty unless `visibility === 'restricted'`) — carried
    *  on summaries so tiles can render program/group chips (#1567). */
@@ -725,7 +725,7 @@ export interface CollectionFilters {
   owner_program_id?: number
   /** Admin-only; the API returns 403 for anyone else, so callers must not set it for non-admins. */
   orphaned?: boolean
-  /** Only collections filed at the Browse root (`category_id IS NULL`). */
+  /** Only unfiled collections (`category_id IS NULL`), not shown on Browse. */
   uncategorized?: boolean
 }
 
@@ -798,7 +798,7 @@ export function saveCollectionViewport(
 
 /**
  * File a collection into a Browse category (#1527): `category_id: null`
- * moves it to the root (uncategorized). Admin/instructor-only — filing is
+ * unfiles it from Browse. Admin/instructor-only — filing is
  * curatorial like moving images/categories, independent of ownership.
  */
 export function moveCollection(
@@ -836,7 +836,7 @@ export function replaceCollectionOwners(
 
 /**
  * Bulk-update curatorial fields on collections (#1578): `category_id`
- * refiles every listed collection (`null` = Browse root) and `hidden`
+ * refiles every listed collection (`null` = unfile from Browse) and `hidden`
  * hides/shows for students. Admin/instructor only — filing and hiding are
  * curatorial, independent of ownership. Scope fields (`visibility`,
  * `program_ids`, `group_ids`) are not bulk-editable. Returns the updated

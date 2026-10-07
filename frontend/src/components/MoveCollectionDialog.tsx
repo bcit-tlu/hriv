@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
+import { privateFilingWarning } from '../collectionUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import type { Category, CollectionSummary, Group, Program } from '../types'
 
@@ -33,8 +35,8 @@ interface MoveCollectionDialogProps {
 
 /**
  * File a collection into a Browse category (#1529). Mirrors
- * `MoveImageDialog`: the destination may be the root ("Top level" option),
- * and the picker starts at the collection's current category so an
+ * `MoveImageDialog`: an unfiled collection does not appear on Browse, and
+ * the picker starts at the collection's current category so an
  * unchanged "Move" is a harmless no-op server-side.
  */
 export default function MoveCollectionDialog({
@@ -77,7 +79,8 @@ export default function MoveCollectionDialog({
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {collection && (
           <Typography variant="body2" color="text.secondary">
-            Move &ldquo;{collection.name}&rdquo; to a different category.
+            File &ldquo;{collection.name}&rdquo; into a Browse category. Collections that
+            aren&apos;t filed don&apos;t appear on Browse.
           </Typography>
         )}
         <CategoryPickerSelect
@@ -85,12 +88,16 @@ export default function MoveCollectionDialog({
           value={newCategoryId}
           onChange={setNewCategoryId}
           label="Destination"
+          rootLabel="Not on Browse"
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
           programs={programs}
           groups={groups}
         />
+        {newCategoryId != null && collection?.visibility === 'private' && (
+          <Alert severity="warning">{privateFilingWarning()}</Alert>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>

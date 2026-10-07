@@ -1289,7 +1289,7 @@ describe('useBrowseData', () => {
   })
 })
 
-describe('collections (#1529)', () => {
+describe('collections in Browse', () => {
   beforeEach(() => {
     mockFetchCategoryTree.mockReset()
     mockFetchUncategorizedImages.mockReset()
@@ -1304,41 +1304,25 @@ describe('collections (#1529)', () => {
     mockHasUnsavedChanges.mockReturnValue(false)
   })
 
-  it('fetches root-scope collections via uncategorized when the flag is on', async () => {
-    mockFetchCollections.mockResolvedValue([
-      makeApiCollectionSummary({ id: 5, name: 'Root set', category_id: null, sort_order: 1 }),
-    ])
-    const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: true })
-    const { result } = renderHook(() => useBrowseData(deps))
+  it.each(['admin', 'instructor', 'staff', 'student'] as const)(
+    'does not fetch or show unfiled collections at root for %s',
+    async (role) => {
+      const deps = makeDeps({
+        currentUser: makeUser({ role }),
+        collectionsEnabled: true,
+      })
+      const { result } = renderHook(() => useBrowseData(deps))
 
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
 
-    expect(mockFetchCollections).toHaveBeenCalledWith(
-      { uncategorized: true },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    )
-    expect(result.current.uncategorizedCollections).toHaveLength(1)
-    expect(result.current.currentCollections[0]?.id).toBe(5)
-  })
+      expect(mockFetchCollections).not.toHaveBeenCalled()
+      expect(result.current.currentCollections).toEqual([])
+    },
+  )
 
-  it('does not fetch when the flag is off and reports empty collections', async () => {
-    const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: false })
-    const { result } = renderHook(() => useBrowseData(deps))
-
-    let applied: boolean | undefined
-    await act(async () => {
-      applied = await result.current.loadUncategorizedCollections()
-    })
-
-    expect(mockFetchCollections).not.toHaveBeenCalled()
-    expect(applied).toBe(true)
-    expect(result.current.uncategorizedCollections).toEqual([])
-    expect(result.current.currentCollections).toEqual([])
-  })
-
-  it('resolves a nested scope collections list from the tree embed', async () => {
+  it('resolves filed collection tiles from the category tree', async () => {
     mockFetchCategoryTree.mockResolvedValue([
       makeApiTree({
         id: 1,
@@ -1358,48 +1342,31 @@ describe('collections (#1529)', () => {
     rerender({ ...deps, path: [cat] })
 
     expect(result.current.currentCollections.map((c) => c.id)).toEqual([9])
-    // Root-scope fetch never ran for the nested view.
     expect(mockFetchCollections).not.toHaveBeenCalled()
   })
 
-  it('hides loaded collections when the flag turns off mid-session', async () => {
-    mockFetchCollections.mockResolvedValue([makeApiCollectionSummary({ id: 5 })])
+  it('hides filed collection tiles when the flag is off', async () => {
+    mockFetchCategoryTree.mockResolvedValue([
+      makeApiTree({
+        id: 1,
+        label: 'Cat A',
+        collections: [makeApiCollectionSummary({ id: 9, name: 'Filed set', category_id: 1 })],
+      }),
+    ])
     const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: true })
     const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
       initialProps: deps,
     })
     await act(async () => {
-      await result.current.loadUncategorizedCollections()
+      await result.current.loadCategories()
     })
+    const cat = result.current.categories[0]
+    rerender({ ...deps, path: [cat] })
     expect(result.current.currentCollections).toHaveLength(1)
 
-    rerender({ ...deps, collectionsEnabled: false })
+    rerender({ ...deps, path: [cat], collectionsEnabled: false })
 
+    expect(mockFetchCollections).not.toHaveBeenCalled()
     expect(result.current.currentCollections).toEqual([])
-    expect(result.current.uncategorizedCollections).toEqual([])
-  })
-
-  it('reuses the same CollectionSummary object across reloads when unchanged', async () => {
-    mockFetchCollections.mockResolvedValue([makeApiCollectionSummary({ id: 5, name: 'Set' })])
-    const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: true })
-    const { result } = renderHook(() => useBrowseData(deps))
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
-    const first = result.current.uncategorizedCollections[0]
-
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
-    expect(result.current.uncategorizedCollections[0]).toBe(first)
-
-    mockFetchCollections.mockResolvedValue([
-      makeApiCollectionSummary({ id: 5, name: 'Set renamed' }),
-    ])
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
-    expect(result.current.uncategorizedCollections[0]).not.toBe(first)
-    expect(result.current.uncategorizedCollections[0].name).toBe('Set renamed')
   })
 })

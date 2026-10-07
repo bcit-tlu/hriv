@@ -603,6 +603,7 @@ async def test_create_private_collection_any_role_owner_is_caller(role: str) -> 
     assert _links(created) == [(2, 0), (1, 1)]
     assert out.version == 1 and out.type == "sequence"
     db.commit.assert_awaited_once()
+    collections_router.bump_scopes.assert_not_awaited()
 
 
 async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
@@ -1928,8 +1929,8 @@ async def test_move_instructor_to_root_via_null(
     out = await move_collection(1, _move(None), _user("instructor", id=5), db=db)
     assert col.category_id is None
     collections_router.bump_scopes.assert_awaited_once()
-    # root scope is keyed 0
-    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    assert collections_router.bump_scopes.call_args.args[1] == {7}
+    collections_router.bump_browse_revision.assert_awaited_once()
     assert out.category_id is None
 
 
@@ -1939,7 +1940,7 @@ async def test_move_uncategorized_into_category() -> None:
     db = _move_db(collection=col, category=cat)
     await move_collection(1, _move(9), _user("admin"), db=db)
     assert col.category_id == 9
-    assert collections_router.bump_scopes.call_args.args[1] == {0, 9}
+    assert collections_router.bump_scopes.call_args.args[1] == {9}
 
 
 async def test_move_same_category_is_noop_without_bumps() -> None:
@@ -2035,6 +2036,19 @@ async def test_delete_lock_order_scopes_then_row_then_browse() -> None:
     db.commit = AsyncMock()
     await delete_collection(1, owner, db=db)
     assert order == ["scopes", "row", "browse"]
+
+
+async def test_delete_unfiled_collection_skips_scope_bump() -> None:
+    col = _collection(1, "public", user_id=10, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=col)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_collection(1, _user("admin"), db=db)
+
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_awaited_once()
 
 
 async def test_list_uncategorized_filter() -> None:
@@ -2140,8 +2154,8 @@ async def test_bulk_update_hidden_and_category() -> None:
     for c in cols:
         assert c.category_id == 7 and c.hidden is True and c.version == 4
     collections_router.bump_scopes.assert_awaited_once()
-    # root scope is keyed 0: sources {None→0, 3} plus destination 7
-    assert collections_router.bump_scopes.call_args.args[1] == {0, 3, 7}
+    # Only filed source and destination scopes are affected.
+    assert collections_router.bump_scopes.call_args.args[1] == {3, 7}
     collections_router.bump_browse_revision.assert_awaited_once()
     db.commit.assert_awaited_once()
     assert [s.id for s in out] == [1, 2]
@@ -2200,7 +2214,7 @@ async def test_bulk_update_partial_move_bumps_only_moved_sources() -> None:
     assert cols[0].version == 3 and cols[1].version == 4
 
 
-async def test_bulk_update_unfile_to_root_via_null() -> None:
+async def test_bulk_update_unfiles_to_null_without_root_scope_bump() -> None:
     cols = [_collection(1, category_id=7)]
     db = _bulk_db(cols)
     await bulk_update_collections(
@@ -2209,7 +2223,8 @@ async def test_bulk_update_unfile_to_root_via_null() -> None:
         db=db,
     )
     assert cols[0].category_id is None
-    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    assert collections_router.bump_scopes.call_args.args[1] == {7}
+    collections_router.bump_browse_revision.assert_awaited_once()
     db.get.assert_not_awaited()
 
 
@@ -2251,7 +2266,7 @@ async def test_bulk_delete_admin_deletes_all() -> None:
     assert resp.status_code == 204
     assert db.delete.await_count == 2
     collections_router.bump_scopes.assert_awaited_once()
-    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    assert collections_router.bump_scopes.call_args.args[1] == {7}
     collections_router.bump_browse_revision.assert_awaited_once()
     db.commit.assert_awaited_once()
 
@@ -2266,6 +2281,19 @@ async def test_bulk_delete_student_sole_owner() -> None:
     )
     assert resp.status_code == 204
     db.delete.assert_awaited_once_with(cols[0])
+
+
+async def test_bulk_delete_unfiled_collections_skips_scope_bump() -> None:
+    cols = [_collection(1, "private", user_id=10, category_id=None)]
+    db = _bulk_db(cols)
+
+    resp = await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1]), _user("admin"), db=db
+    )
+
+    assert resp.status_code == 204
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_awaited_once()
 
 
 async def test_bulk_delete_student_forbidden_on_others() -> None:

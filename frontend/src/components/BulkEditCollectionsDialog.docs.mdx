@@ -34,7 +34,7 @@ they could delete singly.
 ## Implementation guidance
 
 - **Curatorial fields.** `category_id` refiles every selected collection (the picker's
-  _None (root level)_ option unfiles to the Browse root) and the Visibility switch maps
+  _Not on Browse_ option unfiles it) and the Visibility switch maps
   to `hidden` — both via `PATCH /api/collections/bulk`, which is admin/instructor-only
   like `POST …/{id}/move`. Only fields the user touched are sent.
 - **Per-collection delete authority.** `DELETE /api/collections/bulk` mirrors the
@@ -48,5 +48,9 @@ they could delete singly.
 - **Tile ordering.** A successful refile invalidates the affected tile-order scope
   revisions (source scopes + destination) so a cached revision can't falsely 409 the
   next reorder — same convention as the bulk image move.
+- **Private collections.** Filing selected private collections into a changed, non-null
+  category shows a warning (not a block): “${privateCount} of the ${total} selected
+  collections are private. Filed on Browse, their tiles are visible only to their owners
+  and to staff, instructors and admins — not to other students.”
 
 <Stories of={BulkEditCollectionsDialogStories} />

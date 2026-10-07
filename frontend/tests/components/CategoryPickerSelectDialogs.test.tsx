@@ -23,6 +23,22 @@ afterEach(() => {
 })
 
 describe('CategoryPickerSelect — add category dialog', () => {
+  it('uses a custom root label in the collapsed value and root option', async () => {
+    const user = userEvent.setup()
+    render(
+      <CategoryPickerSelect
+        categories={[]}
+        value={null}
+        onChange={vi.fn()}
+        rootLabel="Not on Browse"
+      />,
+    )
+
+    expect(screen.getByRole('combobox')).toHaveTextContent('Not on Browse')
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByRole('option', { name: 'Not on Browse' })).toBeInTheDocument()
+  })
+
   it('adds a child under a category and selects the newly created id', async () => {
     const user = userEvent.setup()
     const onAddCategory = vi.fn().mockResolvedValue(99)

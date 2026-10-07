@@ -103,25 +103,48 @@ longer participates in authorization.
 - Deleting a **group** removes its `collection_groups` rows; unlike categories,
   a group attached to a collection does not block group deletion.
 - Deleting a **category** does _not_ delete its collections:
-  `category_id` becomes `NULL` (`SET NULL`) and the collection resurfaces at
-  the Browse root — the same reparenting rule as images.
+  `category_id` becomes `NULL` (`SET NULL`) and the collection becomes
+  unfiled, outside Browse. Images still reparent to the Browse root.
 
-### Browse placement (#1527)
+### Browse placement (#1527, #1583)
 
-`category_id` files a collection into the category tree like an image:
-`NULL` = uncategorized (shown at the Browse root via `?uncategorized`),
-otherwise the collection tile appears inside that category's node in
-`GET /api/categories/tree` (`CategoryTree.collections`). `sort_order` is the
-tile-order position inside that scope (category or root), shared with
-categories and images.
+`category_id` files a collection into a category. A collection appears as a
+Browse tile only when it is filed into a category; `NULL` means unfiled and
+not on Browse. Filed collections appear in their category node in
+`GET /api/categories/tree` (`CategoryTree.collections`) and share that
+category's tile order with images and sub-categories. The Browse root
+tile-order scope contains categories and images only.
 
-Moving is curatorial, not ownership-bound: `POST /api/collections/{id}/move`
-is admin/instructor-only (like moving images and categories) and is
-deliberately separate from the owner-gated PATCH. The move bumps the
-tile-order scope revisions of both the source and destination scopes and
-the global browse revision, so in-flight reorder clients get a 409 and the
-tree ETag invalidates. `visibility` still gates _who sees_ the tile;
-placement only gates _where_ it sits.
+Unfiled collections remain available in the Collections and collection
+management views. `GET /api/collections?uncategorized=true` keeps its
+existing filter name and returns the unfiled queue; it does not mean that
+those collections are Browse-root tiles.
+
+Filing is curatorial, not ownership-bound: `POST /api/collections/{id}/move`
+is admin/instructor-only and is deliberately separate from the owner-gated
+PATCH. A `category_id: null` move or bulk update unfiles the collection.
+Move and bulk-update writes invalidate only non-null category tile-order
+scopes, plus the global browse revision when placement changes, so in-flight
+reorder clients get a 409 and the tree ETag invalidates. `visibility` still
+gates _who sees_ a filed tile; placement only gates _where_ it sits.
+
+To feature a collection at the top of Browse, curators can file it into a
+root-level category such as **Featured**. Choosing **Not on Browse** unfiles
+it. Filing a private collection shows a warning that its Browse tile is
+visible only to its owners and to staff, instructors and admins — not to
+other students.
+
+Unfiled collections no longer provide a root Browse tile to drag an image
+onto. The **Add to Collection** dialog remains available for adding images
+to collections; this change removes the root-tile drag-add path for students
+adding to their own collections.
+
+#### Deployment note
+
+After deploying the A1 promotion model, every existing collection whose
+`category_id` is `NULL` becomes unfiled and disappears from Browse. Curators
+should file any collections intended for Browse — including home-page
+features — into a category before or after deployment.
 
 Collections are included in the admin database export/import round-trip
 (`collections` key with ordered `image_ids`, `program_ids`, `group_ids`, and
@@ -238,16 +261,16 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 
 | Method | Endpoint                         | Min role                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------ | -------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized` (only collections filed at the Browse root, `category_id IS NULL`). Ordered by `updated_at` desc.                                                                                                                                                                                                                                                                                                   |
+| GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized=true` (unfiled queue, not on Browse). Ordered by `updated_at` desc.                                                                                                                                                                                                                                                                                                                                  |
 | GET    | `/api/collections/{id}`          | student                                                              | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                                                                                                                                                                                                                                                            |
 | POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                   |
 | PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids`, `hidden` + required `version`. `type` is immutable (**422** if changed). A `hidden`-only body instead requires `can_hide_collection` (any admin/instructor — curatorial, not ownership-bound); mixing `hidden` with other fields keeps the normal gates. Returns fresh `CollectionOut`.                                                                                                                                                                                      |
 | DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                          | **204**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| PATCH  | `/api/collections/bulk`          | admin / instructor (any — curatorial, not ownership-bound)           | Bulk-update curatorial fields (#1578). Body `CollectionBulkUpdate`: `collection_ids` + optional `category_id` (refile; `null` = Browse root) and `hidden` (hide/show for students). Scope fields are not bulk-editable. **404** when any id is missing, **422** unknown category, **409** when a row moved or vanished between the read and the row lock (retry). Atomic; bumps every moved collection's source+destination scope revisions and the browse revision; `version` advances only on rows that actually change. Returns `CollectionSummaryOut[]` in request order. |
+| PATCH  | `/api/collections/bulk`          | admin / instructor (any — curatorial, not ownership-bound)           | Bulk-update curatorial fields (#1578). Body `CollectionBulkUpdate`: `collection_ids` + optional `category_id` (refile; `null` = unfiled) and `hidden` (hide/show for students). Scope fields are not bulk-editable. **404** when any id is missing, **422** unknown category, **409** when a row moved or vanished between the read and the row lock (retry). Atomic; bumps only non-null source/destination scope revisions for moved rows and the browse revision; `version` advances only on rows that actually change. Returns `CollectionSummaryOut[]` in request order. |
 | DELETE | `/api/collections/bulk`          | student (must pass `can_delete_collection` on **every** id)          | Bulk-delete (#1578). Body `CollectionBulkDelete`: `collection_ids`. **404** when any id is missing or not viewable (same no-probe rule as the single DELETE), **403** when any row fails `can_delete_collection`, **409** when a row moved or vanished between the read and the row lock. Atomic — one failure deletes nothing; **204** on success.                                                                                                                                                                                                                           |
 | PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                            | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                                       |
 | PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)                            | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| POST   | `/api/collections/{id}/move`     | admin / instructor (any — filing is curatorial, not ownership-bound) | File the collection into a category. Body `CollectionMove`: `category_id` (required, `null` = Browse root) + `version`. **404** missing collection, **422** unknown category, **409** stale version. Keeps `sort_order`; bumps source+destination scope revisions and the browse revision. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                     |
+| POST   | `/api/collections/{id}/move`     | admin / instructor (any — filing is curatorial, not ownership-bound) | File the collection into a category or unfile it from Browse. Body `CollectionMove`: `category_id` (required, `null` = unfile) + `version`. **404** missing collection, **422** unknown category, **409** stale version. Keeps `sort_order`; bumps only non-null source/destination scope revisions and the browse revision. Returns fresh `CollectionOut`.                                                                                                                                                                                                                   |
 | PUT    | `/api/collections/{id}/owners`   | instructor (must pass `can_transfer_collection`)                     | Replace the **user-owner set** wholesale (`CollectionOwnersUpdate`: `user_ids` + `version`). Targets must be active users (**422**); removing every user owner while no program owns the collection is **422** (orphan guard). **404** if not visible, **403** if not transferable, **409** stale version. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                     |
 | POST   | `/api/collections/{id}/transfer` | instructor (must pass `can_transfer_collection`)                     | Reassign **program** ownership (#1531). Body `CollectionTransfer`: `program_id` (required, `null` = back to the user owners) + `version`. Setting a program clears the `collection_owners` rows — a program owner is sole. **404** if not visible, **403** if not transferable or the program is outside the instructor's memberships, **422** unknown program / clearing a program owner with no user owners to fall back on, **409** stale version. Returns fresh `CollectionOut`.                                                                                          |
 
@@ -730,20 +753,21 @@ refetch the table, clear the selection, and a refile also fires
 
 ### Browse tile integration (#1529)
 
-**Where.** `useBrowseData.ts` (nested `resolvePathNode` collections + root
-`uncategorizedCollections` loader), `components/SortableTileGrid.tsx`
+**Where.** `useBrowseData.ts` (filed collections from nested
+`resolvePathNode` nodes), `components/SortableTileGrid.tsx`
 (`GridTile`/`DragOverlay` collection branches), `components/CollectionCard.tsx`
 (`onMove`), `components/MoveCollectionDialog.tsx`,
 `useCategoryActions.ts` (move/undo handlers), `useCollectionsData.ts` (`move`).
 
-**Tiles.** When `COLLECTIONS_ENABLED` is on, collections render in the Browse
-tile grid alongside categories and images — the same shared `CollectionCard`
-the Collections tab uses (C1 parity), wrapped in the standard sortable tile so
-dimensions, drag activation and reflow match image/category tiles. Nested
-scopes read `CategoryTree.collections`; the root scope fetches
-`GET /api/collections?uncategorized=true`. With the flag off nothing is
-fetched or rendered and the scope's freshness counts as satisfied for
-background-refresh bookkeeping.
+**Tiles.** When `COLLECTIONS_ENABLED` is on, filed collections render in
+category scopes alongside sub-categories and images — the same shared
+`CollectionCard` the Collections tab uses (C1 parity), wrapped in the
+standard sortable tile so dimensions, drag activation and reflow match
+image/category tiles. Collections come from `CategoryTree.collections`;
+unfiled collections (`category_id IS NULL`) are not fetched into Browse
+state and never render as tiles. The root scope contains categories and
+images only. With the flag off no collection tile is rendered and the
+scope's freshness counts as satisfied for background-refresh bookkeeping.
 
 **Ordering & moving.** Collection tiles carry `col-{id}` draggable ids and
 participate in the mixed category/image/collection tile-order contract
@@ -754,11 +778,19 @@ images and categories. Filing is curatorial: any admin/instructor sees the
 picker inside the edit dialog (#1566) — the detail header's separate Move
 button and the manage-table row action are gone —
 independent of `permissions.canEdit`; students and staff get no move UI. The
-move dialog (`MoveCollectionDialog`) offers every category plus "Top level",
-preselects the current category, and no-ops on an unchanged destination. A
-successful move refreshes the category tree and the root collection list,
-invalidates both scopes' tile-order revisions, and offers an undo snackbar
-that re-posts the previous category with the version from the move response.
+move dialog (`MoveCollectionDialog`) offers every category plus **Not on
+Browse**, preselects the current category, and no-ops on an unchanged
+destination. A successful move refreshes the category tree, invalidates
+only non-null source/destination tile-order scopes, and offers an undo
+snackbar that re-posts the previous category with the version from the move
+response. Unfiling says “Removed … from Browse.”
+
+Filing a private collection into a category shows this warning: “This
+collection is private. Filed on Browse, its tile is visible only to its
+owners and to staff, instructors and admins — not to other students.” The
+bulk dialog warns when a changed non-null destination includes private
+collections. The **Add to Collection** dialog remains available; unfiled
+collections no longer have root Browse tiles for drag-add.
 
 **Browse context.** Opening a collection tile keeps the originating Browse
 scope: the URL becomes `?collection={id}&cat={ancestor path}` and closing
@@ -1213,11 +1245,11 @@ the shared group-chip palette.
   list/detail visibility per role and owner, hidden-only PATCH authority,
   mixed-body 403, `can_hide` serialization), `test_router_collections_db.py`
   (hidden column round-trip, migration `0033`).
-- Browse tile integration (#1529): `useBrowseData.test.ts` (nested-scope
-  collections from the tree, root `?uncategorized` fetch, flag-off no-fetch
-  and freshness), `SortableTileGrid.test.tsx` (`col-` tiles, drag dispatch to
+- Browse tile integration (#1529, #1583): `useBrowseData.test.ts` (nested
+  filed collections from the tree, no root unfiled fetch/tiles for any role,
+  flag-off no-fetch and freshness), `SortableTileGrid.test.tsx` (`col-` tiles, drag dispatch to
   reorder vs `onDropCollectionOnCategory`), `useCategoryActions.test.ts`
-  (collection move/undo, no-op destination, root-scope lookup),
+  (collection move/undo, no-op destination, no unfiled root lookup),
   `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (edit-dialog
   category change → move wiring, browse-context close, all-restricted
   notice),

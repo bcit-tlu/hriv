@@ -10,6 +10,19 @@ that accepts `img-` sources only. `drop-cat-<id>` remains the only move zone,
 and a `col-` source dropped there files the collection into that category
 (`onDropCollectionOnCategory`) instead of reordering.
 
+### Collection placement on Browse (#1583)
+
+Unfiled collections (`category_id IS NULL`) are not Browse tiles, so the root
+grid contains categories and images only. Collection drag sources, reorder,
+category filing, and image-to-collection drop-add are available only for
+collections filed into a category. Curators who want a collection featured
+near the top of Browse can file it into a root-level category such as
+**Featured**; choosing **Not on Browse** removes it from Browse.
+
+The **Add to Collection** dialog remains available for adding images to
+collections. The former root-tile drag-add path is no longer available to
+students adding images to their own unfiled collections.
+
 > **Scope.** This contract is Browse-grid-specific. The collection member
 > manager (`CollectionManageDialog`, #1566) runs its own `DragDropProvider`
 > with plain `useSortable` member tiles (`cmi-` sources only) — none of the

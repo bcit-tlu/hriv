@@ -227,6 +227,32 @@ describe('CollectionEditDialog', () => {
       expect(onSave.mock.calls[0][0]).toMatchObject({ categoryId: 20 })
     })
 
+    it('warns when a private collection is filed and hides it when unfiled', async () => {
+      const user = userEvent.setup()
+      renderDialog({
+        collection: makeCollection({ name: 'Lab 2', categoryId: 10, visibility: 'private' }),
+        categories: [makeCategory({ id: 10, label: 'Histology' })],
+      })
+
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+      )
+
+      await user.click(screen.getByRole('combobox', { name: 'Category' }))
+      const unfiledOption = await screen.findByRole('option', { name: /Not on Browse/ })
+      await user.click(unfiledOption)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('does not warn when a public collection is filed', () => {
+      renderDialog({
+        collection: makeCollection({ categoryId: 10, visibility: 'public' }),
+        categories: [makeCategory({ id: 10, label: 'Histology' })],
+      })
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
     it('omits the category picker in create mode and for non-curatorial roles', () => {
       renderDialog({ categories: [makeCategory({ id: 10, label: 'Histology' })] })
       expect(screen.queryByRole('combobox', { name: 'Category' })).not.toBeInTheDocument()

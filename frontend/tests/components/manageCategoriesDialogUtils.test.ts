@@ -91,16 +91,7 @@ describe('collectImagesByParent', () => {
 // ---------------------------------------------------------------------------
 
 describe('collectCollectionsByParent', () => {
-  it('collects uncategorized collections under key "null" sorted by sortOrder', () => {
-    const uncategorized = [
-      makeCollectionSummary({ id: 30, sortOrder: 2 }),
-      makeCollectionSummary({ id: 31, sortOrder: 0 }),
-    ]
-    const result = collectCollectionsByParent([], uncategorized)
-    expect(result.get('null')!.map((c) => c.id)).toEqual([31, 30])
-  })
-
-  it('collects filed collections from the category tree', () => {
+  it('collects only filed collections from the category tree', () => {
     const cats = [
       makeCategory({
         id: 1,
@@ -117,7 +108,8 @@ describe('collectCollectionsByParent', () => {
         ],
       }),
     ]
-    const result = collectCollectionsByParent(cats, [])
+    const result = collectCollectionsByParent(cats)
+    expect(result.has('null')).toBe(false)
     expect(result.get('1')!.map((c) => c.id)).toEqual([30])
     expect(result.get('2')!.map((c) => c.id)).toEqual([32, 31])
   })

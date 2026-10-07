@@ -23,6 +23,7 @@ function renderDialog(overrides: Partial<Props> = {}) {
       onDelete={onDelete}
       categories={overrides.categories ?? CATEGORIES}
       selectedCount={overrides.selectedCount ?? 3}
+      privateSelectedCount={overrides.privateSelectedCount}
       canCurate={overrides.canCurate ?? true}
       canDeleteAll={overrides.canDeleteAll ?? true}
       programs={overrides.programs ?? []}
@@ -58,16 +59,61 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: 11 }))
   })
 
-  it('can unfile to the Browse root with the root option', async () => {
+  it('can unfile with the Not on Browse option', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
     renderDialog({ onSave })
 
     await user.click(screen.getByRole('combobox'))
     const listbox = await screen.findByRole('listbox')
-    await user.click(within(listbox).getByRole('option', { name: /None \(root level\)/ }))
+    await user.click(within(listbox).getByRole('option', { name: /Not on Browse/ }))
     await user.click(screen.getByRole('button', { name: /save changes/i }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: null }))
+  })
+
+  it('warns when selected private collections are filed into a category', async () => {
+    const user = userEvent.setup()
+    renderDialog({ privateSelectedCount: 2 })
+
+    await user.click(screen.getByRole('combobox'))
+    const listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Histology/ }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '2 of the 3 selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.',
+    )
+  })
+
+  it('hides the bulk warning for public selections or an unfiled destination', async () => {
+    const user = userEvent.setup()
+    const { rerender } = renderDialog({ privateSelectedCount: 0 })
+
+    await user.click(screen.getByRole('combobox'))
+    let listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Histology/ }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    rerender(
+      <BulkEditCollectionsDialog
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        categories={CATEGORIES}
+        selectedCount={3}
+        privateSelectedCount={2}
+        canCurate
+        canDeleteAll
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Histology/ }))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox'))
+    listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /Not on Browse/ }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('maps the visibility switch to hidden when toggled off', async () => {

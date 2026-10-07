@@ -1492,6 +1492,6 @@ async def test_delete_category_bumps_parent_and_root_scopes(
     db.commit = AsyncMock()
     await delete_category(5, _make_user(), db=db)
     categories_router.bump_scopes.assert_awaited_once()
-    # Parent scope loses the tile; root gains members reparented by
-    # ON DELETE SET NULL (images and collections in the subtree).
+    # Parent scope loses the tile; root gains images reparented by ON DELETE
+    # SET NULL. Collections become unfiled, not root-scope members.
     assert categories_router.bump_scopes.call_args.args[1] == {2, 0}

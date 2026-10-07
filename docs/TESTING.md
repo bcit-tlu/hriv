@@ -378,22 +378,68 @@ viewer types, the manage table, and the ownership-management UI (#1419,
 
 ## Test Case 12: Collections in the Browse Hierarchy — Tiles, Filing, Drag-Add (UI)
 
-**Purpose:** Walk the Browse-side collection surface from epic #1525 — tiles
-nested inside categories, move filing, mixed-tile reorder, and the
-image-onto-collection add gesture. Requires `COLLECTIONS_ENABLED=true` and
-the seeded **Italian Cathedrals** sequence collection (filed under
-_Architecture → Italian_, public, instructor-owned). See
+**Purpose:** Walk the Browse-side collection surface and A1 promotion model
+(#1583) — filed tiles nested inside categories, unfiled collections outside
+Browse, move filing, mixed-tile reorder, and the image-onto-collection add
+gesture. Requires `COLLECTIONS_ENABLED=true` and the seeded
+**Italian Cathedrals** sequence collection (filed under _Architecture →
+Italian_, public, instructor-owned). See
 [docs/drag-and-drop.md](drag-and-drop.md) and
 [docs/tile-ordering.md](tile-ordering.md).
 
-1. Login as `instructor@example.ca`, open **Browse** → drill into _Architecture → Italian_. **Assert:** the Italian Cathedrals collection tile renders beside category and image tiles (same size and hover parameters), shows its icon-bearing type pill and image count — tiles carry no owner text; a program-owned collection shows a program chip beneath the type pill (#1567).
-2. Open the collection tile. **Assert:** the sequence viewer loads and the URL carries `?collection={id}`; the header breadcrumb shows the collection's filed location (_Home : Architecture : Italian_) — each link navigates Browse to that scope (#1559).
-3. Back on Browse, drag the collection tile past an image tile's centre. **Assert:** the mixed order persists after a reload (`PUT /api/tile-order` with interleaved `collection`/`image` refs — categories sort first, then collections, then images at equal sort_order).
-4. Drag the collection tile onto another category tile's **Move into category** zone (near half). **Assert:** the collection disappears from the current scope and appears inside the target category; undo via the snackbar to restore it.
-5. Drag an image tile onto the collection tile's near half. **Assert:** the **Add to collection** overlay highlights; on drop the image count grows and a snackbar offers **Undo**. The far half still reorders normally.
-6. Click the collection card's **Move** button (rendered for admins/instructors on Browse tiles). File the collection back to _Top level_, then into _Italian_ again via the dialog. **Assert:** both directions work and the undo snackbar re-posts the previous category.
-7. Login as `student@example.ca` and browse to _Italian_. **Assert:** the public collection tile is visible and opens, but no **Move** affordance renders on it (filing is curatorial) and no drag handles appear on any tile (all Browse dragging needs `canEditContent`; the add zone also requires `canEdit` on the collection itself).
-8. With `COLLECTIONS_ENABLED=false`, restart and reload Browse. **Assert:** no collection tiles render anywhere, reordering works on categories/images alone, and `GET /api/categories/tree` nodes carry empty `collections` lists.
+1. Login as `instructor@example.ca`, open **Browse** at the root. **Assert:**
+   no unfiled collection appears as a tile; the root tile-order scope contains
+   categories and images only. Repeat Browse with admin, staff, and student
+   accounts to confirm unfiled collections are absent for every role.
+2. In **Manage → Collections**, confirm an unfiled collection remains
+   manageable and is available from the existing
+   `GET /api/collections?uncategorized=true` unfiled queue. Filing it into a
+   root-level category such as **Featured** makes it available in that
+   category's Browse scope.
+3. As instructor, check `GET /api/tile-order` with no
+   `parent_category_id`: **Assert:** it omits all collection refs. A root
+   `PUT /api/tile-order` containing only categories and images succeeds while
+   unfiled collections exist; adding an unfiled collection ref returns
+   **400** with `Collections not in scope`.
+4. Open **Browse** → drill into _Architecture → Italian_. **Assert:** the
+   Italian Cathedrals collection tile renders beside category and image tiles
+   (same size and hover parameters), shows its icon-bearing type pill and
+   image count — tiles carry no owner text; a program-owned collection shows
+   a program chip beneath the type pill (#1567).
+5. Open the collection tile. **Assert:** the sequence viewer loads and the
+   URL carries `?collection={id}`; the header breadcrumb shows the collection's
+   filed location (_Home : Architecture : Italian_) — each link navigates
+   Browse to that scope (#1559).
+6. Back on Browse, drag the collection tile past an image tile's centre.
+   **Assert:** the mixed order persists after a reload (`PUT /api/tile-order`
+   with `collection`/`image` refs in the category scope).
+7. Drag the collection tile onto another category tile's **Move into
+   category** zone (near half). **Assert:** the collection disappears from
+   the current scope and appears inside the target category; undo via the
+   snackbar to restore it.
+8. Drag an image tile onto the filed collection tile's near half. **Assert:**
+   the **Add to collection** overlay highlights; on drop the image count
+   grows and a snackbar offers **Undo**. The far half still reorders normally.
+   The **Add to Collection** dialog remains available for unfiled collections.
+9. Click the collection card's **Move** button (admins/instructors only).
+   Choose **Not on Browse**. **Assert:** the tile disappears from Browse and
+   the snackbar says **Removed “<name>” from Browse**; Undo restores its
+   previous category. File it back into _Italian_ using the dialog.
+10. File a private collection into a category. **Assert:** a warning appears,
+    not a block, with the exact text: “This collection is private. Filed on
+    Browse, its tile is visible only to its owners and to staff, instructors
+    and admins — not to other students.” Selecting **Not on Browse** hides
+    the warning; public collections show no warning. In Bulk Edit, confirm
+    the matching selected-private-count warning appears only for a changed,
+    non-null category.
+11. Login as `student@example.ca` and browse to _Italian_. **Assert:** the
+    public collection tile is visible and opens, but no **Move** affordance
+    renders on it (filing is curatorial); students no longer have a root-tile
+    drag-add path to their own unfiled collections.
+12. With `COLLECTIONS_ENABLED=false`, restart and reload Browse. **Assert:**
+    no collection tiles render anywhere, reordering works on categories and
+    images alone, and `GET /api/categories/tree` nodes carry empty
+    `collections` lists.
 
 ---
 

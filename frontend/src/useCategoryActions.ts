@@ -41,11 +41,8 @@ function moveDestinationLabel(parentId: number | null, ancestorPath: Category[])
 export interface UseCategoryActionsDeps {
   categories: Category[]
   uncategorizedImages: ImageItem[]
-  /** Root-scope collections (#1529) — the DnD move source list. */
-  uncategorizedCollections?: CollectionSummary[]
   loadCategories: () => Promise<unknown>
   loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<unknown>
-  loadUncategorizedCollections?: (opts?: { signal?: AbortSignal }) => Promise<unknown>
   /**
    * Performs `POST /api/collections/{id}/move` (#1527) and keeps the
    * Collections-page list/detail state in sync (`useCollectionsData.move`).
@@ -97,10 +94,8 @@ type CategoryStatusUpdate = 'active' | 'hidden'
 export function useCategoryActions({
   categories,
   uncategorizedImages,
-  uncategorizedCollections = [],
   loadCategories,
   loadUncategorizedImages,
-  loadUncategorizedCollections,
   moveCollectionApi,
   addImagesToCollectionApi,
   removeImagesFromCollectionApi,
@@ -600,31 +595,29 @@ export function useCategoryActions({
       }
       const targetName =
         newCategoryId === null
-          ? 'the Browse root'
+          ? null
           : (findCategoryPath(categories, newCategoryId)?.at(-1)?.label ?? 'category')
       try {
         const updated = await moveCollectionApi(collection.id, newCategoryId, collection.version)
-        tileOrderingCoordinator.invalidateRevision(prevCategoryId)
-        tileOrderingCoordinator.invalidateRevision(newCategoryId)
+        if (prevCategoryId != null) tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+        if (newCategoryId != null) tileOrderingCoordinator.invalidateRevision(newCategoryId)
         setMoveCollectionOpen(false)
         setMovingCollection(null)
         await loadCategories()
-        await loadUncategorizedCollections?.()
         setMoveSnack({
           message:
             newCategoryId === null
-              ? `Moved “${collection.name}” to ${targetName}`
-              : `Moved “${collection.name}” to “${targetName}”`,
+              ? `Removed “${collection.name}” from Browse`
+              : `Moved “${collection.name}” to “${targetName ?? 'category'}”`,
           onUndo: async () => {
             try {
               setMoveSnack(null)
               // Undo targets the pre-move scope with the version the move
               // response returned — the API bumps it on every write.
               await moveCollectionApi(collection.id, prevCategoryId, updated.version)
-              tileOrderingCoordinator.invalidateRevision(prevCategoryId)
-              tileOrderingCoordinator.invalidateRevision(newCategoryId)
+              if (prevCategoryId != null) tileOrderingCoordinator.invalidateRevision(prevCategoryId)
+              if (newCategoryId != null) tileOrderingCoordinator.invalidateRevision(newCategoryId)
               await loadCategories()
-              await loadUncategorizedCollections?.()
             } catch (undoErr) {
               setErrorSnack(userMessage(undoErr, 'Failed to undo move.'))
             }
@@ -647,14 +640,7 @@ export function useCategoryActions({
       }
       return true
     },
-    [
-      categories,
-      moveCollectionApi,
-      loadCategories,
-      loadUncategorizedCollections,
-      setMoveSnack,
-      setErrorSnack,
-    ],
+    [categories, moveCollectionApi, loadCategories, setMoveSnack, setErrorSnack],
   )
 
   /** Dialog entry point — the picker keeps the collection's current scope
@@ -677,12 +663,12 @@ export function useCategoryActions({
   const handleDropCollectionOnCategory = useCallback(
     async (collectionId: number, targetCategoryId: number) => {
       const found = findCollectionInTree(categories, collectionId)
-      const col = found?.collection ?? uncategorizedCollections.find((c) => c.id === collectionId)
+      const col = found?.collection
       if (!col) return
       if (col.categoryId === targetCategoryId) return
       await doMoveCollection(col, targetCategoryId)
     },
-    [categories, uncategorizedCollections, doMoveCollection],
+    [categories, doMoveCollection],
   )
 
   /**
@@ -690,15 +676,13 @@ export function useCategoryActions({
    * collection tile's near-half "Add to collection" zone lands here. The
    * injected API fetches the fresh record, dedupes, and enforces the
    * synchronized cap; membership adds change the tile's `imageCount`, so the
-   * containing scope's tree/root lists refresh after a successful add. Undo
+   * containing category tree refreshes after a successful add. Undo
    * removes just the added member via the whole-replace `PUT /images`.
    */
   const handleDropImageOnCollection = useCallback(
     async (imageId: number, collectionId: number) => {
       if (!addImagesToCollectionApi || !removeImagesFromCollectionApi) return
-      const col =
-        findCollectionInTree(categories, collectionId)?.collection ??
-        uncategorizedCollections.find((c) => c.id === collectionId)
+      const col = findCollectionInTree(categories, collectionId)?.collection
       // The drop zone only renders for `permissions.canEdit`; this guard
       // covers the stale-list window before that summary refreshes.
       if (!col || !col.permissions.canEdit) return
@@ -719,7 +703,6 @@ export function useCategoryActions({
           uncategorizedImages.find((i) => i.id === imageId)?.name ??
           'image'
         await loadCategories()
-        await loadUncategorizedCollections?.()
         setMoveSnack({
           message: `Added “${imgName}” to “${result.collection.name}”.`,
           // Undo pins the post-add record's version: a later write to the
@@ -730,7 +713,6 @@ export function useCategoryActions({
               setMoveSnack(null)
               await removeImagesFromCollectionApi(collectionId, [imageId], result.collection)
               await loadCategories()
-              await loadUncategorizedCollections?.()
             } catch (undoErr) {
               setErrorSnack(userMessage(undoErr, 'Failed to undo add to collection.'))
             }
@@ -743,12 +725,10 @@ export function useCategoryActions({
     },
     [
       categories,
-      uncategorizedCollections,
       uncategorizedImages,
       addImagesToCollectionApi,
       removeImagesFromCollectionApi,
       loadCategories,
-      loadUncategorizedCollections,
       setInfoSnack,
       setMoveSnack,
       setErrorSnack,

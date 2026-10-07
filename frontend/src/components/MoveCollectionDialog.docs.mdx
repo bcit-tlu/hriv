@@ -19,9 +19,9 @@ import * as MoveCollectionDialogStories from './MoveCollectionDialog.stories'
 
 ## When to use
 
-The dialog opens from the **Move** affordance on a collection Browse tile, a Collections
-list card, or the collection detail header. Filing is curatorial, so the affordance is
-gated on the admin/instructor role rather than `permissions.canEdit`.
+The dialog opens from the **Move** affordance on a collection Browse tile or a Collections
+page card. Filing is curatorial, so the affordance is gated on the admin/instructor role
+rather than `permissions.canEdit`.
 
 ## Interactive example
 
@@ -31,9 +31,8 @@ gated on the admin/instructor role rather than `permissions.canEdit`.
 
 ## Implementation guidance
 
-- **Destination picker.** Reuses `CategoryPickerSelect`, including its
-  _None (root level)_ option, so a collection can move between any category and the
-  Browse root.
+- **Destination picker.** Reuses `CategoryPickerSelect`; _Not on Browse_ unfiles a
+  collection, while any category files it onto Browse.
 - **No-op protection.** The picker preselects the collection's current category on
   open; `useCategoryActions` treats an unchanged destination as a close, not a POST.
 - **Versioned write.** `POST /api/collections/{id}/move` carries `version`; on a 409
@@ -41,5 +40,10 @@ gated on the admin/instructor role rather than `permissions.canEdit`.
   posts the fresh version.
 - **Undo.** The success snackbar's Undo re-posts the previous category with the move
   response's (bumped) version.
+- **Private collections.** Filing a private collection shows a warning (not a block):
+  “This collection is private. Filed on Browse, its tile is visible only to its owners
+  and to staff, instructors and admins — not to other students.”
+- **Unfiling.** Removing a collection from Browse reports `Removed “<name>” from Browse`;
+  Undo restores its previous category.
 
 <Stories of={MoveCollectionDialogStories} />

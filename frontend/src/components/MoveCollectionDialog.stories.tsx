@@ -94,16 +94,14 @@ export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     await expect(
-      await body.findByText(/Move “Lab 2 — Epithelium set” to a different category/),
+      await body.findByText(/File “Lab 2 — Epithelium set” into a Browse category/),
     ).toBeInTheDocument()
     await userEvent.click(await body.findByRole('combobox'))
-    await expect(
-      await body.findByRole('option', { name: /None \(root level\)/ }),
-    ).toBeInTheDocument()
+    await expect(await body.findByRole('option', { name: /Not on Browse/ })).toBeInTheDocument()
   },
 }
 
-/** Root-filed collection — "None (root level)" is the preselected destination. */
+/** Unfiled collection — "Not on Browse" is the preselected destination. */
 export const AtRoot: Story = {
   args: {
     collection: { ...collection, categoryId: null },
@@ -111,6 +109,21 @@ export const AtRoot: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     const picker = await body.findByRole('combobox')
-    await expect(picker).toHaveTextContent(/None \(root level\)/)
+    await expect(picker).toHaveTextContent(/Not on Browse/)
+  },
+}
+
+/** Private collection filed into Browse — the visibility warning is shown. */
+export const PrivateFilingWarning: Story = {
+  args: {
+    collection: { ...collection, categoryId: 2, visibility: 'private' },
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(
+      await body.findByText(
+        'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+      ),
+    ).toBeInTheDocument()
   },
 }

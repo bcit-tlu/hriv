@@ -19,13 +19,18 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
 3. **View:** click a card. `synchronized` shows linked panes (link toggles +
    reset); `sequence` shows a filmstrip with Previous/Next, ←/→ keys, and a
    `?item={image_id}` deep-linkable position.
-4. **Browse:** collection tiles render beside category/image tiles (fixed
-   300px width), nested inside categories via `category_id`. The seeded
-   **Italian Cathedrals** sequence lives under _Architecture → Italian_.
-   File with the card's **Move** overlay action (admin/instructor) or by dragging
-   the tile onto a category's **Move here** zone; reorder by dragging past
-   any tile's centre; add an image by dropping an `img-` tile on an
-   editable collection tile's near half (**Add to collection** zone).
+4. **Browse:** filed collection tiles render beside category/image tiles
+   (fixed 300px width) inside their category scope; the root Browse scope
+   contains categories and images only. Unfiled collections have no Browse
+   tile and remain available in collection-management views and the
+   `uncategorized=true` unfiled queue. The seeded **Italian Cathedrals**
+   sequence lives under _Architecture → Italian_. File with the card's
+   **Move** action (admin/instructor) or by dragging the tile onto a
+   category's **Move here** zone; choose **Not on Browse** to unfile.
+   Reorder by dragging past any tile's centre; add an image by dropping an
+   `img-` tile on an editable, filed collection tile's near half (**Add to
+   collection** zone). **Add to Collection** remains available for unfiled
+   collections.
 5. **Deep links:** `?page=collections&type=sequence|synchronized` (missing
    `type` → sequence), `?collection={id}`,
    `?collection={id}&item={image_id}` all restore on load and on
