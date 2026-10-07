@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -479,13 +480,27 @@ export default function ManageCollectionsPage({
 
   // Choose Columns — per-user persisted visibility, same hook + storage
   // convention as ManagePage's `manage-images` table (#1567).
-  const { visibleColumns, isColumnVisible, toggleColumn } =
-    useTableColumnPreferences<ManageCollectionColumn>({
-      tableKey: 'manage-collections',
-      allColumns: MANAGE_COLLECTION_COLUMNS,
-      defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTION_COLUMNS,
-    })
+  const {
+    visibleColumns,
+    isColumnVisible,
+    toggleColumn,
+    columnOrder,
+    orderedVisibleColumns,
+    setColumnOrder,
+  } = useTableColumnPreferences<ManageCollectionColumn>({
+    tableKey: 'manage-collections',
+    allColumns: MANAGE_COLLECTION_COLUMNS,
+    defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTION_COLUMNS,
+  })
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  // Dialog options follow the persisted column order (#1577) so drag
+  // reordering in the chooser matches the rendered table order.
+  const orderedColumnOptions = useMemo(() => {
+    const byKey = new Map(MANAGE_COLLECTION_COLUMN_OPTIONS.map((option) => [option.key, option]))
+    return columnOrder
+      .map((key) => byKey.get(key))
+      .filter((option): option is ColumnVisibilityOption<ManageCollectionColumn> => option != null)
+  }, [columnOrder])
   const visibleColumnCount = MANAGE_COLLECTION_COLUMNS.filter((col) => isColumnVisible(col)).length
 
   const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('manage-collections')
@@ -745,6 +760,45 @@ export default function ManageCollectionsPage({
     id,
     label: getCategoryLabel(categoryPaths, id) || `Category ${id}`,
   }))
+
+  // Per-column header cells keyed like the column options (#1577): the
+  // TableHead renders `orderedVisibleColumns.map(c => columnHeaderCells[c])`
+  // so headers follow the user's persisted order; visibility filtering
+  // happens in `orderedVisibleColumns`, not here.
+  const sortableHeaderCell = (sortKey: SortableColumn, label: string) => (
+    <TableCell sortDirection={sortColumn === sortKey ? sortDirection : false}>
+      <TableSortLabel
+        active={sortColumn === sortKey}
+        direction={sortColumn === sortKey ? sortDirection : 'asc'}
+        onClick={() => handleSort(sortKey)}
+      >
+        {label}
+      </TableSortLabel>
+    </TableCell>
+  )
+
+  const columnHeaderCells: Record<ManageCollectionColumn, ReactNode> = {
+    cover: (
+      <TableCell sx={{ width: 48, p: 0.5 }}>
+        <Box component="span" sx={visuallyHidden}>
+          Cover
+        </Box>
+      </TableCell>
+    ),
+    id: sortableHeaderCell('id', 'ID'),
+    name: sortableHeaderCell('name', 'Name'),
+    type: sortableHeaderCell('type', 'Type'),
+    // Scope sorts by the underlying visibility field (#1567).
+    scope: sortableHeaderCell('visibility', 'Scope'),
+    owners: sortableHeaderCell('owners', 'Owners'),
+    images: sortableHeaderCell('images', 'Images'),
+    programs: <TableCell>Programs</TableCell>,
+    groups: <TableCell>Groups</TableCell>,
+    category: sortableHeaderCell('category', 'Category'),
+    visibility: <TableCell>Visibility</TableCell>,
+    created_at: <TableCell>Created</TableCell>,
+    updated_at: sortableHeaderCell('updated_at', 'Modified'),
+  }
 
   return (
     <Box data-testid="manage-collections-page">
@@ -1012,105 +1066,9 @@ export default function ManageCollectionsPage({
                   />
                 </TableCell>
               )}
-              {isColumnVisible('cover') && (
-                <TableCell sx={{ width: 48, p: 0.5 }}>
-                  <Box component="span" sx={visuallyHidden}>
-                    Cover
-                  </Box>
-                </TableCell>
-              )}
-              {isColumnVisible('id') && (
-                <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'id'}
-                    direction={sortColumn === 'id' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('id')}
-                  >
-                    ID
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('name') && (
-                <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'name'}
-                    direction={sortColumn === 'name' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('name')}
-                  >
-                    Name
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('type') && (
-                <TableCell sortDirection={sortColumn === 'type' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'type'}
-                    direction={sortColumn === 'type' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('type')}
-                  >
-                    Type
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('scope') && (
-                <TableCell sortDirection={sortColumn === 'visibility' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'visibility'}
-                    direction={sortColumn === 'visibility' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('visibility')}
-                  >
-                    Scope
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('owners') && (
-                <TableCell sortDirection={sortColumn === 'owners' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'owners'}
-                    direction={sortColumn === 'owners' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('owners')}
-                  >
-                    Owners
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('images') && (
-                <TableCell sortDirection={sortColumn === 'images' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'images'}
-                    direction={sortColumn === 'images' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('images')}
-                  >
-                    Images
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('programs') && <TableCell>Programs</TableCell>}
-              {isColumnVisible('groups') && <TableCell>Groups</TableCell>}
-              {isColumnVisible('category') && (
-                <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'category'}
-                    direction={sortColumn === 'category' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('category')}
-                  >
-                    Category
-                  </TableSortLabel>
-                </TableCell>
-              )}
-              {isColumnVisible('visibility') && <TableCell>Visibility</TableCell>}
-              {isColumnVisible('created_at') && <TableCell>Created</TableCell>}
-              {isColumnVisible('updated_at') && (
-                <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'updated_at'}
-                    direction={sortColumn === 'updated_at' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('updated_at')}
-                  >
-                    Modified
-                  </TableSortLabel>
-                </TableCell>
-              )}
+              {orderedVisibleColumns.map((column) => (
+                <Fragment key={column}>{columnHeaderCells[column]}</Fragment>
+              ))}
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -1133,6 +1091,181 @@ export default function ManageCollectionsPage({
                 (id) => !ownGroupSet.has(id),
               )
               const chipSx = c.hidden ? { bgcolor: visColors.inactiveChipBg, color: '#fff' } : {}
+              // Per-column cells keyed like `columnHeaderCells` (#1577);
+              // rendered below in the user's persisted column order.
+              const bodyCells: Record<ManageCollectionColumn, ReactNode> = {
+                cover: (
+                  <TableCell
+                    data-interactive="true"
+                    sx={{ p: 0.5 }}
+                    onClick={(e) => {
+                      // Thumbnail navigates to the collection — the Manage
+                      // Images table's cover contract (#1567).
+                      e.stopPropagation()
+                      onOpenCollection(c.id)
+                    }}
+                  >
+                    {c.coverThumb ? (
+                      <RenewingThumbnail
+                        image={{ id: c.id, thumb: c.coverThumb }}
+                        renewThumb={renewCoverThumb}
+                        alt={c.name}
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          objectFit: 'cover',
+                          borderRadius: 0.5,
+                          display: 'block',
+                          cursor: 'pointer',
+                          ...(c.hidden ? { filter: 'grayscale(100%)' } : {}),
+                        }}
+                      />
+                    ) : null}
+                  </TableCell>
+                ),
+                id: <TableCell {...dimAttr}>{c.id}</TableCell>,
+                name: (
+                  <TableCell {...dimAttr}>
+                    <Box
+                      component="span"
+                      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                      {c.name}
+                      {c.hidden && (
+                        <Tooltip title="Visibility: Hidden">
+                          <span
+                            role="img"
+                            aria-label="Visibility: Hidden"
+                            style={{ display: 'inline-flex', flexShrink: 0 }}
+                          >
+                            <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />
+                          </span>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </TableCell>
+                ),
+                type: (
+                  <TableCell {...dimAttr}>
+                    {/* Shared type pill — same red-outlined icon chip as
+                        the tile overlay and detail header (#1567). */}
+                    <CollectionTypeChip
+                      type={c.type}
+                      sx={c.hidden ? { filter: 'grayscale(100%)' } : undefined}
+                    />
+                  </TableCell>
+                ),
+                scope: (
+                  <TableCell {...dimAttr}>
+                    <CollectionVisibilityChip
+                      visibility={c.visibility}
+                      hasScopeChips={c.programIds.length + c.groupIds.length > 0}
+                    />
+                  </TableCell>
+                ),
+                owners: <TableCell {...dimAttr}>{describeCollectionOwners(c.owners)}</TableCell>,
+                images: <TableCell {...dimAttr}>{c.imageCount}</TableCell>,
+                programs: (
+                  <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                    {ownProgramIds.length === 0 && inheritedPrograms.length === 0 ? (
+                      '—'
+                    ) : (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {ownProgramIds.map((pid) => (
+                          <Chip
+                            key={`p${pid}`}
+                            data-testid="program-chip"
+                            label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                            size="small"
+                            color="primary"
+                            sx={chipSx}
+                          />
+                        ))}
+                        {inheritedPrograms.map((pid) => (
+                          <Chip
+                            key={`p${pid}`}
+                            data-testid="program-chip"
+                            label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                            size="small"
+                            color="primary"
+                            sx={getInheritedRestrictionSx(true, chipSx)}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  </TableCell>
+                ),
+                groups: (
+                  <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                    {ownGroupIds.length === 0 && inheritedGroups.length === 0 ? (
+                      '—'
+                    ) : (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {ownGroupIds.map((gid) => (
+                          <Chip
+                            key={`g${gid}`}
+                            data-testid="group-chip"
+                            label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                            size="small"
+                            color="secondary"
+                            sx={chipSx}
+                          />
+                        ))}
+                        {inheritedGroups.map((gid) => (
+                          <Chip
+                            key={`g${gid}`}
+                            data-testid="group-chip"
+                            label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                            size="small"
+                            color="secondary"
+                            sx={getInheritedRestrictionSx(true, chipSx)}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  </TableCell>
+                ),
+                category: (
+                  <TableCell {...dimAttr}>
+                    <CategoryBreadcrumb
+                      categoryId={c.categoryId}
+                      categoryPaths={categoryPaths}
+                      onNavigate={onNavigateCategory}
+                      hiddenColor={visColors.inactive}
+                    />
+                  </TableCell>
+                ),
+                visibility: (
+                  <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
+                    <Tooltip
+                      title={
+                        c.permissions.canHide
+                          ? ''
+                          : 'Only admins and instructors can hide collections'
+                      }
+                      disableHoverListener={c.permissions.canHide}
+                    >
+                      <span>
+                        <Switch
+                          size="small"
+                          checked={!c.hidden}
+                          disabled={!c.permissions.canHide || togglingId === c.id}
+                          onChange={() => void toggleRowHidden(c)}
+                          slotProps={{
+                            input: { 'aria-label': `Visibility for ${c.name}` },
+                          }}
+                        />
+                      </span>
+                    </Tooltip>
+                  </TableCell>
+                ),
+                created_at: (
+                  <TableCell {...dimAttr}>{new Date(c.createdAt).toLocaleDateString()}</TableCell>
+                ),
+                updated_at: (
+                  <TableCell {...dimAttr}>{new Date(c.updatedAt).toLocaleDateString()}</TableCell>
+                ),
+              }
               return (
                 <TableRow
                   key={c.id}
@@ -1162,179 +1295,10 @@ export default function ManageCollectionsPage({
                       />
                     </TableCell>
                   )}
-                  {isColumnVisible('cover') && (
-                    <TableCell
-                      data-interactive="true"
-                      sx={{ p: 0.5 }}
-                      onClick={(e) => {
-                        // Thumbnail navigates to the collection — the Manage
-                        // Images table's cover contract (#1567).
-                        e.stopPropagation()
-                        onOpenCollection(c.id)
-                      }}
-                    >
-                      {c.coverThumb ? (
-                        <RenewingThumbnail
-                          image={{ id: c.id, thumb: c.coverThumb }}
-                          renewThumb={renewCoverThumb}
-                          alt={c.name}
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            objectFit: 'cover',
-                            borderRadius: 0.5,
-                            display: 'block',
-                            cursor: 'pointer',
-                            ...(c.hidden ? { filter: 'grayscale(100%)' } : {}),
-                          }}
-                        />
-                      ) : null}
-                    </TableCell>
-                  )}
-                  {isColumnVisible('id') && <TableCell {...dimAttr}>{c.id}</TableCell>}
-                  {isColumnVisible('name') && (
-                    <TableCell {...dimAttr}>
-                      <Box
-                        component="span"
-                        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
-                      >
-                        {c.name}
-                        {c.hidden && (
-                          <Tooltip title="Visibility: Hidden">
-                            <span
-                              role="img"
-                              aria-label="Visibility: Hidden"
-                              style={{ display: 'inline-flex', flexShrink: 0 }}
-                            >
-                              <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />
-                            </span>
-                          </Tooltip>
-                        )}
-                      </Box>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('type') && (
-                    <TableCell {...dimAttr}>
-                      {/* Shared type pill — same red-outlined icon chip as
-                          the tile overlay and detail header (#1567). */}
-                      <CollectionTypeChip
-                        type={c.type}
-                        sx={c.hidden ? { filter: 'grayscale(100%)' } : undefined}
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('scope') && (
-                    <TableCell {...dimAttr}>
-                      <CollectionVisibilityChip
-                        visibility={c.visibility}
-                        hasScopeChips={c.programIds.length + c.groupIds.length > 0}
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('owners') && (
-                    <TableCell {...dimAttr}>{describeCollectionOwners(c.owners)}</TableCell>
-                  )}
-                  {isColumnVisible('images') && <TableCell {...dimAttr}>{c.imageCount}</TableCell>}
-                  {isColumnVisible('programs') && (
-                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
-                      {ownProgramIds.length === 0 && inheritedPrograms.length === 0 ? (
-                        '—'
-                      ) : (
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                          {ownProgramIds.map((pid) => (
-                            <Chip
-                              key={`p${pid}`}
-                              data-testid="program-chip"
-                              label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
-                              size="small"
-                              color="primary"
-                              sx={chipSx}
-                            />
-                          ))}
-                          {inheritedPrograms.map((pid) => (
-                            <Chip
-                              key={`p${pid}`}
-                              data-testid="program-chip"
-                              label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
-                              size="small"
-                              color="primary"
-                              sx={getInheritedRestrictionSx(true, chipSx)}
-                            />
-                          ))}
-                        </Box>
-                      )}
-                    </TableCell>
-                  )}
-                  {isColumnVisible('groups') && (
-                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
-                      {ownGroupIds.length === 0 && inheritedGroups.length === 0 ? (
-                        '—'
-                      ) : (
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                          {ownGroupIds.map((gid) => (
-                            <Chip
-                              key={`g${gid}`}
-                              data-testid="group-chip"
-                              label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
-                              size="small"
-                              color="secondary"
-                              sx={chipSx}
-                            />
-                          ))}
-                          {inheritedGroups.map((gid) => (
-                            <Chip
-                              key={`g${gid}`}
-                              data-testid="group-chip"
-                              label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
-                              size="small"
-                              color="secondary"
-                              sx={getInheritedRestrictionSx(true, chipSx)}
-                            />
-                          ))}
-                        </Box>
-                      )}
-                    </TableCell>
-                  )}
-                  {isColumnVisible('category') && (
-                    <TableCell {...dimAttr}>
-                      <CategoryBreadcrumb
-                        categoryId={c.categoryId}
-                        categoryPaths={categoryPaths}
-                        onNavigate={onNavigateCategory}
-                        hiddenColor={visColors.inactive}
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('visibility') && (
-                    <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
-                      <Tooltip
-                        title={
-                          c.permissions.canHide
-                            ? ''
-                            : 'Only admins and instructors can hide collections'
-                        }
-                        disableHoverListener={c.permissions.canHide}
-                      >
-                        <span>
-                          <Switch
-                            size="small"
-                            checked={!c.hidden}
-                            disabled={!c.permissions.canHide || togglingId === c.id}
-                            onChange={() => void toggleRowHidden(c)}
-                            slotProps={{
-                              input: { 'aria-label': `Visibility for ${c.name}` },
-                            }}
-                          />
-                        </span>
-                      </Tooltip>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('created_at') && (
-                    <TableCell {...dimAttr}>{new Date(c.createdAt).toLocaleDateString()}</TableCell>
-                  )}
-                  {isColumnVisible('updated_at') && (
-                    <TableCell {...dimAttr}>{new Date(c.updatedAt).toLocaleDateString()}</TableCell>
-                  )}
+                  {orderedVisibleColumns.map((column) => (
+                    <Fragment key={column}>{bodyCells[column]}</Fragment>
+                  ))}
+
                   <TableCell
                     align="right"
                     data-interactive="true"
@@ -1439,10 +1403,11 @@ export default function ManageCollectionsPage({
       <ColumnVisibilityDialog
         open={columnDialogOpen}
         title="Choose collection table columns"
-        columns={MANAGE_COLLECTION_COLUMN_OPTIONS}
+        columns={orderedColumnOptions}
         visibleColumns={visibleColumns}
         onClose={() => setColumnDialogOpen(false)}
         onToggleColumn={toggleColumn}
+        onReorderColumns={setColumnOrder}
       />
 
       {/* Bulk edit (#1578) — curator fields when admin/instructor; delete
