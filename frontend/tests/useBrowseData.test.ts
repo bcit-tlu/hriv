@@ -723,7 +723,7 @@ describe('useBrowseData', () => {
     })
   })
 
-  describe('getPathRestriction', () => {
+  describe('ancestorProgramIds', () => {
     it('returns empty when no path segments have programs', async () => {
       mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 1, label: 'Root' })])
 
@@ -765,34 +765,157 @@ describe('useBrowseData', () => {
       expect(result.current.ancestorProgramIds).toEqual([10, 20])
     })
 
-    it('supports depth parameter for partial restriction', async () => {
-      const child = makeApiTree({
-        id: 2,
-        label: 'Child',
-        parent_id: 1,
-        program_ids: [10],
-      })
-      const root = makeApiTree({
-        id: 1,
-        label: 'Root',
-        children: [child],
-        program_ids: [10, 20, 30],
-      })
+    it('exposes the live ancestry of the path leaf', async () => {
+      const child = makeApiTree({ id: 2, label: 'Child', parent_id: 1, program_ids: [10] })
+      const root = makeApiTree({ id: 1, label: 'Root', children: [child], program_ids: [10, 20] })
       mockFetchCategoryTree.mockResolvedValue([root])
-
-      const rootCat = apiTreeToCategory(root)
-      const childCat = apiTreeToCategory(child)
 
       const deps = makeDeps({
         currentUser: makeUser(),
-        path: [rootCat, childCat],
+        path: [apiTreeToCategory(root), apiTreeToCategory(child)],
       })
       const { result } = renderHook(() => useBrowseData(deps))
 
       await triggerInitialLoad(result)
 
-      // Only first ancestor: [10, 20, 30]
-      expect(result.current.getPathRestriction(1)).toEqual([10, 20, 30])
+      expect(result.current.liveCategoryPath.map((c) => c.id)).toEqual([1, 2])
+      expect(result.current.liveCategoryPath[0].programIds).toEqual([10, 20])
+    })
+  })
+
+  // `path` holds navigation-time snapshots; a background refresh that
+  // reshapes the tree must not strand the derived scope (#1587).
+  describe('live path resolution after a tree refresh (#1587)', () => {
+    const snapshotPath = (): Category[] => [
+      apiTreeToCategory(makeApiTree({ id: 1, label: 'Parent', program_ids: [10, 20] })),
+      apiTreeToCategory(makeApiTree({ id: 2, label: 'Child', parent_id: 1 })),
+    ]
+
+    it('follows a reparented leaf to its new parent', async () => {
+      const child = makeApiTree({
+        id: 2,
+        label: 'Child',
+        parent_id: 3,
+        program_ids: [30],
+        group_ids: [7],
+        children: [makeApiTree({ id: 4, label: 'Grandchild', parent_id: 2 })],
+        images: [makeApiImage(40, { category_id: 2 })],
+      })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'Parent', program_ids: [10, 20] }),
+        makeApiTree({
+          id: 3,
+          label: 'New Parent',
+          program_ids: [30, 40],
+          group_ids: [7, 8],
+          children: [child],
+        }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath.map((c) => c.id)).toEqual([3, 2])
+      expect(result.current.currentCategories.map((c) => c.id)).toEqual([4])
+      expect(result.current.currentImages.map((i) => i.id)).toEqual([40])
+      // [30,40] ∩ [30] — the former parent's [10,20] no longer applies.
+      expect(result.current.ancestorProgramIds).toEqual([30])
+      expect(result.current.ancestorGroupIds).toEqual([7])
+    })
+
+    it('follows a reparented ancestor', async () => {
+      const child = makeApiTree({ id: 2, label: 'Child', parent_id: 1 })
+      const parent = makeApiTree({
+        id: 1,
+        label: 'Parent',
+        parent_id: 5,
+        program_ids: [10, 20],
+        children: [child],
+      })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 5, label: 'Top', program_ids: [20], children: [parent] }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath.map((c) => c.id)).toEqual([5, 1, 2])
+      expect(result.current.ancestorProgramIds).toEqual([20])
+    })
+
+    it('reads live restrictions rather than the snapshot after an edit', async () => {
+      const child = makeApiTree({ id: 2, label: 'Child', parent_id: 1 })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'Parent', program_ids: [99], children: [child] }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.ancestorProgramIds).toEqual([99])
+    })
+
+    it('resolves an empty scope (not root) when the leaf left the tree', async () => {
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'Parent', program_ids: [10, 20] }),
+        makeApiTree({ id: 9, label: 'Other' }),
+      ])
+      mockFetchUncategorizedImages.mockResolvedValue([makeApiImage(50)])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath).toEqual([])
+      expect(result.current.currentCategories).toEqual([])
+      expect(result.current.currentImages).toEqual([])
+      expect(result.current.ancestorProgramIds).toEqual([])
+      expect(result.current.ancestorGroupIds).toEqual([])
+    })
+
+    it('keeps filtering hidden children for students under a reparented leaf', async () => {
+      const child = makeApiTree({
+        id: 2,
+        label: 'Child',
+        parent_id: 3,
+        children: [
+          makeApiTree({ id: 4, label: 'Visible', parent_id: 2 }),
+          makeApiTree({ id: 6, label: 'Hidden', parent_id: 2, status: 'hidden' }),
+        ],
+      })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 3, label: 'New Parent', children: [child] }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser({ role: 'student' }), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.currentCategories.map((c) => c.label)).toEqual(['Visible'])
+    })
+
+    it('keeps the root scope unchanged for an empty path', async () => {
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'A', program_ids: [10] }),
+        makeApiTree({ id: 2, label: 'B' }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath).toEqual([])
+      expect(result.current.currentCategories.map((c) => c.id)).toEqual([1, 2])
+      expect(result.current.ancestorProgramIds).toEqual([])
     })
   })
 
@@ -1154,7 +1277,7 @@ describe('useBrowseData', () => {
     })
   })
 
-  describe('getPathGroupRestriction', () => {
+  describe('ancestorGroupIds', () => {
     it('narrows group ids through the ancestor path independently of programs', async () => {
       const child = makeApiTree({
         id: 2,
@@ -1180,8 +1303,6 @@ describe('useBrowseData', () => {
 
       // narrowGroupIds intersects: [10,20,30] ∩ [10,20] = [10,20]
       expect(result.current.ancestorGroupIds).toEqual([10, 20])
-      // depth=1 returns only the root's groups
-      expect(result.current.getPathGroupRestriction(1)).toEqual([10, 20, 30])
     })
 
     it('loads groups via loadGroups', async () => {

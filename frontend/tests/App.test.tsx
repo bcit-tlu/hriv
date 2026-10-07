@@ -351,6 +351,7 @@ const categoryActionsMock = {
     inheritedProgramIds: [],
     freshGroupIds: [],
     inheritedGroupIds: [],
+    freshChildren: [],
   },
   addCategoryInline: vi.fn(),
   deleteCategoryInline: vi.fn(),
@@ -833,26 +834,35 @@ vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
 
-vi.mock('../src/useBrowseData', () => ({
-  useBrowseData: () => ({
-    categories: mockCategories,
-    categoriesLoading: false,
-    setCategories: vi.fn(),
-    uncategorizedImages: [],
-    uncategorizedLoaded: true,
-    setUncategorizedImages: vi.fn(),
-    currentCollections: [],
-    programs: mockPrograms,
-    groups: mockGroups,
-    ...browseDataFns,
-    currentImages: currentImagesMock,
-    getPathRestriction: () => [1],
-    ancestorProgramIds: [1],
-    getPathGroupRestriction: () => [10],
-    ancestorGroupIds: [10],
-    currentCategories: mockCategories,
-  }),
-}))
+vi.mock('../src/useBrowseData', async () => {
+  const { narrowGroupIds, narrowProgramIds } =
+    await vi.importActual<typeof import('../src/categoryUtils')>('../src/categoryUtils')
+  const { findLiveCategoryPath } =
+    await vi.importActual<typeof import('../src/treeUtils')>('../src/treeUtils')
+  return {
+    // Mirror the hook: resolve the leaf's live ancestry in the mock tree.
+    useBrowseData: ({ path }: { path: MockCategory[] }) => {
+      const liveCategoryPath = findLiveCategoryPath(mockCategories, path)
+      return {
+        categories: mockCategories,
+        categoriesLoading: false,
+        setCategories: vi.fn(),
+        uncategorizedImages: [],
+        uncategorizedLoaded: true,
+        setUncategorizedImages: vi.fn(),
+        currentCollections: [],
+        programs: mockPrograms,
+        groups: mockGroups,
+        ...browseDataFns,
+        currentImages: currentImagesMock,
+        liveCategoryPath,
+        ancestorProgramIds: path.length > 0 ? narrowProgramIds(liveCategoryPath) : [1],
+        ancestorGroupIds: path.length > 0 ? narrowGroupIds(liveCategoryPath) : [10],
+        currentCategories: mockCategories,
+      }
+    },
+  }
+})
 
 const pushNavStateMock = vi.fn()
 let popStateHandler:
@@ -1381,6 +1391,51 @@ describe('App breadcrumbs', () => {
     // Neither the stale-walk program chip nor an unrelated group chip survives.
     expect(within(categoryBreadcrumb).queryByText('Pathology')).not.toBeInTheDocument()
     expect(within(categoryBreadcrumb).queryByText('Lab A2')).not.toBeInTheDocument()
+  })
+
+  it('drives the visibility control from the live category after a refresh hides it', async () => {
+    // Snapshot was taken while the category was active; the live tree now has it hidden.
+    mockInitialPath = [{ ...mockCategories[0] }]
+    mockCategories[0].status = 'hidden'
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Visibility: Show category' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Visibility: Hide category' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Category' })).toBeInTheDocument()
+  })
+
+  it('rebases child navigation onto the live ancestry after a reparent', async () => {
+    const base = { ...mockCategories[0], children: [], programIds: [], groupIds: [] }
+    const leaf = { ...base, id: 3, label: 'Leaf', parentId: 2 }
+    // Navigation-time snapshot: the user was viewing Old Parent (id 1).
+    mockInitialPath = [{ ...base, id: 1, label: 'Old Parent' }]
+    mockCategories.splice(
+      0,
+      mockCategories.length,
+      { ...base, id: 2, label: 'New Parent', children: [leaf] },
+      { ...base, id: 1, label: 'Old Parent' },
+    )
+
+    render(<App />)
+    await screen.findByLabelText('category breadcrumb')
+    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
+
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [2, 3])
+  })
+
+  it('hides category controls when the viewed category left the live tree', async () => {
+    mockInitialPath = [{ ...mockCategories[0], id: 99, label: 'Deleted' }]
+
+    render(<App />)
+
+    await screen.findByLabelText('category breadcrumb')
+    expect(screen.queryByRole('button', { name: /^Visibility: / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
   })
 
   it('resets expanded note state when selecting another image', () => {

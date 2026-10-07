@@ -57,12 +57,12 @@ import type { TypeFilter } from './components/SearchModal'
 import {
   findImageInTree,
   findCategoryPath,
+  getCategoryHiddenStateFromPath,
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
   resolveCategoryPath,
   updateImageInTree,
 } from './treeUtils'
-import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import UploadImageModal from './components/UploadImageModal'
 import {
   SYNCHRONIZED_MAX_IMAGES,
@@ -371,9 +371,8 @@ export default function App() {
     refreshCategories,
     refreshUncategorizedImages,
     currentImages,
-    getPathRestriction,
+    liveCategoryPath,
     ancestorProgramIds,
-    getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
@@ -432,12 +431,11 @@ export default function App() {
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
     [categories, selectedImage?.categoryId],
   )
-  // Derive from the live tree, not the navigation-time `path` objects —
-  // background refreshes replace those, so the stored status can go stale.
+  // Derive from the live ancestry, not the navigation-time `path` snapshots,
+  // so a background refresh that hides or reparents an ancestor is reflected.
   const currentCategoryHiddenState = useMemo(
-    () =>
-      getCategoryHiddenStateInTree(categories, path.length > 0 ? path[path.length - 1].id : null),
-    [categories, path],
+    () => getCategoryHiddenStateFromPath(liveCategoryPath),
+    [liveCategoryPath],
   )
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
@@ -470,19 +468,10 @@ export default function App() {
         : undefined,
     [imageViewerHiddenByCategory],
   )
-  // `path` entries are navigation-time snapshots — resolve the leaf's whole
-  // ancestry in the live tree so a background refresh updates restriction
-  // chips. findCategoryPath still resolves after the leaf is reparented,
-  // where walking the stored path ids would stop short and drop them.
-  const liveCategoryPath = useMemo(
-    () => (path.length > 0 ? (findCategoryPath(categories, path[path.length - 1].id) ?? []) : []),
-    [categories, path],
-  )
-  const livePathLeaf = liveCategoryPath.at(-1)
   const breadcrumbProgramItems = useMemo(() => {
-    const leafProgramIds = livePathLeaf?.programIds ?? []
+    const leafProgramIds = liveCategoryPath[liveCategoryPath.length - 1]?.programIds ?? []
     const leafProgramIdSet = new Set(leafProgramIds)
-    return narrowProgramIds(liveCategoryPath)
+    return ancestorProgramIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
@@ -490,11 +479,11 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [liveCategoryPath, livePathLeaf, path.length, programs])
+  }, [ancestorProgramIds, liveCategoryPath, path.length, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const leafGroupIds = livePathLeaf?.groupIds ?? []
+    const leafGroupIds = liveCategoryPath[liveCategoryPath.length - 1]?.groupIds ?? []
     const leafGroupIdSet = new Set(leafGroupIds)
-    return narrowGroupIds(liveCategoryPath)
+    return ancestorGroupIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
@@ -502,7 +491,7 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [groups, liveCategoryPath, livePathLeaf, path.length])
+  }, [ancestorGroupIds, groups, liveCategoryPath, path.length])
   const bumpChangelogVersion = useCallback(() => {
     setChangelogVersion((version) => version + 1)
   }, [])
@@ -1288,9 +1277,8 @@ export default function App() {
     removeImagesFromCollectionApi: collectionsEnabled ? collectionsData.removeImages : undefined,
     currentCategories,
     ancestorProgramIds,
-    getPathRestriction,
     ancestorGroupIds,
-    getPathGroupRestriction,
+    liveCategoryPath,
     path,
     setPath,
     editNameCategory,
@@ -1415,12 +1403,18 @@ export default function App() {
 
   const handleCategoryTileClick = useCallback(
     (cat: Category) => {
+      // Rebase onto the live ancestry so a reparent since the last
+      // navigation doesn't carry obsolete ancestor ids into `path`/the URL.
+      const nextPath = findCategoryPath(categories, cat.id) ?? [...path, cat]
       runCanvasNavigation(() => {
-        setPath((prev) => [...prev, cat])
-        pushNavState('browse', [...path.map((c) => c.id), cat.id])
+        setPath(nextPath)
+        pushNavState(
+          'browse',
+          nextPath.map((c) => c.id),
+        )
       })
     },
-    [path, pushNavState, runCanvasNavigation],
+    [categories, path, pushNavState, runCanvasNavigation],
   )
 
   const handleManageCategoryNavigate = useCallback(
@@ -2664,14 +2658,12 @@ export default function App() {
                           alignItems: 'center',
                         }}
                       >
-                        {path.length > 0 &&
+                        {liveCategoryPath.length > 0 &&
                           (() => {
-                            const current = path[path.length - 1]
-                            const isDirectlyHidden = current.status === 'hidden'
-                            const ancestorHidden = path
-                              .slice(0, -1)
-                              .some((p) => p.status === 'hidden')
-                            const inheritedHidden = !isDirectlyHidden && ancestorHidden
+                            const current = liveCategoryPath[liveCategoryPath.length - 1]
+                            const isDirectlyHidden = currentCategoryHiddenState.directlyHidden
+                            const inheritedHidden =
+                              !isDirectlyHidden && currentCategoryHiddenState.hiddenByAncestor
                             if (inheritedHidden) {
                               return (
                                 <Button
@@ -2713,16 +2705,17 @@ export default function App() {
                               </Button>
                             )
                           })()}
-                        {path.length < MAX_DEPTH && (
-                          <Button
-                            variant="outlined"
-                            startIcon={<CreateNewFolderIcon />}
-                            onClick={() => setAddCatOpen(true)}
-                            sx={categoryPageHiddenSx}
-                          >
-                            Add Category
-                          </Button>
-                        )}
+                        {(path.length === 0 || liveCategoryPath.length > 0) &&
+                          liveCategoryPath.length < MAX_DEPTH && (
+                            <Button
+                              variant="outlined"
+                              startIcon={<CreateNewFolderIcon />}
+                              onClick={() => setAddCatOpen(true)}
+                              sx={categoryPageHiddenSx}
+                            >
+                              Add Category
+                            </Button>
+                          )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -3053,7 +3046,7 @@ export default function App() {
         categoryStatus={editNameCategory?.status}
         ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
         categoryId={editNameCategory?.id}
-        childCategories={editNameCategory?.children}
+        childCategories={editCategoryContext.freshChildren}
       />
 
       {/* Self-edit profile modal */}

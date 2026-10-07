@@ -36,9 +36,8 @@ function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryA
     loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
     currentCategories: [],
     ancestorProgramIds: [],
-    getPathRestriction: vi.fn().mockReturnValue([]),
     ancestorGroupIds: [],
-    getPathGroupRestriction: vi.fn().mockReturnValue([]),
+    liveCategoryPath: [],
     path: [],
     setPath: vi.fn(),
     editNameCategory: null,
@@ -1733,6 +1732,7 @@ describe('useCategoryActions', () => {
         freshLabel: '',
         freshProgramIds: [],
         freshGroupIds: [],
+        freshChildren: [],
       })
     })
 
@@ -1742,13 +1742,70 @@ describe('useCategoryActions', () => {
       const deps = makeDeps({
         categories: [catA, catB],
         path: [catA],
+        liveCategoryPath: [catA],
         editNameCategory: catA,
-        getPathRestriction: vi.fn().mockReturnValue([10]),
       })
       const { result } = renderHook(() => useCategoryActions(deps))
 
       expect(result.current.editCategoryContext.siblingNames).toEqual(['B'])
       expect(result.current.editCategoryContext.freshLabel).toBe('A')
+    })
+
+    it('reads siblings and inherited restrictions from the live ancestry after a reparent (#1587)', () => {
+      const leafSnapshot = makeCategory({ id: 3, label: 'Leaf', programIds: [10] })
+      const oldParent = makeCategory({ id: 1, label: 'Old', programIds: [10, 20] })
+      const liveGrandchild = makeCategory({ id: 5, label: 'Grandchild', programIds: [40] })
+      const liveLeaf = makeCategory({
+        id: 3,
+        label: 'Leaf (renamed)',
+        programIds: [30],
+        children: [liveGrandchild],
+      })
+      const newParent = makeCategory({
+        id: 2,
+        label: 'New',
+        programIds: [30, 40],
+        groupIds: [7],
+        children: [liveLeaf, makeCategory({ id: 4, label: 'Sibling' })],
+      })
+      const deps = makeDeps({
+        categories: [oldParent, newParent],
+        path: [oldParent, leafSnapshot],
+        liveCategoryPath: [newParent, liveLeaf],
+        editNameCategory: leafSnapshot,
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      expect(result.current.editCategoryContext).toEqual({
+        siblingNames: ['Sibling'],
+        inheritedProgramIds: [30, 40],
+        inheritedGroupIds: [7],
+        freshLabel: 'Leaf (renamed)',
+        freshProgramIds: [30],
+        freshGroupIds: [],
+        freshChildren: [liveGrandchild],
+      })
+    })
+
+    it('falls back to the dialog category when the breadcrumb leaf left the tree', () => {
+      const leaf = makeCategory({ id: 3, label: 'Leaf', programIds: [10] })
+      const deps = makeDeps({
+        categories: [makeCategory({ id: 1, label: 'Other' })],
+        path: [leaf],
+        liveCategoryPath: [],
+        editNameCategory: leaf,
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      expect(result.current.editCategoryContext).toEqual({
+        siblingNames: [],
+        inheritedProgramIds: [],
+        inheritedGroupIds: [],
+        freshLabel: 'Leaf',
+        freshProgramIds: [10],
+        freshGroupIds: [],
+        freshChildren: [],
+      })
     })
 
     it('returns sibling info for a child category', () => {
