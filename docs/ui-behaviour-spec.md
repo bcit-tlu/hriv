@@ -190,10 +190,11 @@ returned by the API (UX only — the backend re-checks).
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
-- **Given** a `CollectionCard`, **Then** the type chip, **Move** and
+- **Given** a `CollectionCard`, **Then** the type icon sits left of the
+  title (the category folder-icon spot), **Move** and
   **Owners** actions sit in a top-right cover overlay (the CategoryTile
   scrim convention, #1554), **Edit** sits in the metadata area, and no
-  Delete affordance exists on the card.
+  Delete affordance or owner reference exists on the card (#1567).
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
@@ -238,20 +239,31 @@ returned by the API (UX only — the backend re-checks).
   returns **404**, **Then** the not-found `Alert` with a back-to-list action
   is shown instead.
 - **Given** a collection whose `permissions.can_transfer` is true, **Then** an
-  **Owners** action appears in its card overlay, the detail header, and its
-  manage-table row; **Given**
-  it is false, **Then** neither affordance renders.
+  **Owners** action appears in its card overlay, a pencil beside the detail
+  header's owner name, and its manage-table row; **Given**
+  it is false, **Then** none of the affordances render.
 - **Given** a non-student opens **Manage → Collections**
   (`?page=manage-collections`), **Then** a table of every API-visible
-  collection renders (thumbnail, ID, name, type, visibility, owners, image
-  count, category breadcrumb, modified, actions) with stored filter facets,
-  sortable columns and pagination (#1554); **Given** a student deep-links the
+  collection renders (cover, ID, name, type, scope pill, owners, image
+  count, programs, groups, category breadcrumb, visibility switch,
+  created, modified, actions) with stored filter facets, sortable columns,
+  per-user persisted column visibility via **Choose columns** — the default
+  set mirrors Manage Images' lean subset (cover, name, type, category,
+  groups, visibility, modified) so the table sizes to content and wraps
+  rather than scrolling — and
+  pagination (#1554, #1567); **Given** a student deep-links the
   page, **Then** the table renders nothing (role gate) and telemetry reports
   browse.
+- **Given** a curatorially hidden collection row, **Then** its cells render
+  dimmed/greyscale like an inactive image row on Manage Images (#1567); the
+  **Visibility** switch (shown where `canHide`) PATCHes `hidden` and the
+  cover thumbnail always opens the collection view.
 - **Given** a staff user on the manage table, **Then** every API-returned row
-  shows and row actions follow `permissions` — Edit only where `canEdit`,
-  and never Move/Owners/Delete; **Given** an admin or instructor, **Then**
-  Move and (where `canTransfer`) Owners are also offered.
+  shows and the row's **actions** (⋮) menu follows `permissions` — View
+  always, Edit only where `canEdit` or curatorial filing applies,
+  and never Owners/Delete; **Given** an admin or instructor, **Then**
+  (where `canTransfer`) Owners is also offered. No row carries a Move action
+  — category filing lives in the edit dialog's category picker (#1566).
 - **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then**
   the staged state shows the current user owners as chips plus the owning
   program. The **User owners** autocomplete offers scope tabs — _Students_
@@ -271,12 +283,19 @@ returned by the API (UX only — the backend re-checks).
   `PUT /api/collections/{id}/owners` is sent and the card leaves the
   filtered list.
 - **Given** the collection detail, **Then** below the top container the
-  pills row shows the type chip (Synchronized / Sequence), the visibility
-  chip, a `Hidden` chip when `hidden`, and — when `restricted` — a chip per
+  pills row shows the icon-bearing type pill (Synchronized / Sequence — the
+  shared `CollectionTypeChip` used on tiles and in the manage table) and
+  the visibility
+  chip, and — when `restricted` — a chip per
   attached program and group sits right after the breadcrumb; the owner
-  line (`describeCollectionOwners` — user names, `_X_ (program)` for a
-  program owner, `No owner` when orphaned) and description sit beside/below
-  the pills.
+  line ("Managed by program _X_" or "Managed by _A, B_" —
+  `describeCollectionOwners`, `No owner` when orphaned, with the
+  transfer-horizontal owners icon beside it
+  when `canTransfer`) sits beside the pills and the description renders
+  below the pills, left-aligned. **Edit** is a pencil on the final
+  breadcrumb item, like Edit Category — there is no right-side Edit button
+  (#1567). Hidden state shows through greyscale
+  alone — no `Hidden` chip (#1567).
 - **Given** a collection detail is open (#1559, #1564), **Then** the header
   mirrors the image view's top container — no `<h1>` title; the
   `MuiBreadcrumbs` of its filed location (Home icon + category ancestors +
@@ -287,13 +306,15 @@ returned by the API (UX only — the backend re-checks).
   Browse to that spot. **Then**
   the actions order: **Hide
   collection** / **Show collection** (`canHide` — admins and instructors
-  only; PATCHes `hidden` with the OCC version), **Move** (admin/instructor),
-  **Reorder** (sequence + `canEdit` — the viewer's strip goes into drag mode
-  while pressed), **Edit** (`canEdit`), and **Owners** (`canTransfer`).
+  only; PATCHes `hidden` with the OCC version), **Manage** (`canEdit` —
+  opens `CollectionManageDialog` for reorder/add/remove, #1566),
+  **Edit** (`canEdit`), and an owners pencil beside the owner name
+  (`canTransfer`). The header no longer
+  carries **Move** — filing happens in the edit dialog's category picker
+  (#1566).
 - **Given** a curatorially hidden collection, **Then** non-students see it
   everywhere with the desaturated card treatment and a `VisibilityOff`
-  marker (card name, Manage → Collections Name cell, `Hidden` chip on the
-  detail); students see it only if they own it — for everyone else it is
+  marker (card name, Manage → Collections Name cell); students see it only if they own it — for everyone else it is
   absent from lists/Browse/search and `GET` answers **404**.
 
 #### Collections in the Browse tile grid (#1529)
@@ -309,10 +330,11 @@ returned by the API (UX only — the backend re-checks).
 - **Given** the flag is off, **Then** no collection fetch is issued for the
   Browse root, no collection tile renders anywhere in the grid, and a scope
   containing only collections is not treated as pending work.
-- **Given** an admin or instructor, **Then** collection tiles and collection
-  detail headers offer **Move** (`MoveCollectionDialog` or drag onto a
-  category tile's move zone) regardless of `permissions.can_edit`; **Given**
-  a student or staff member, **Then** no collection move UI renders.
+- **Given** an admin or instructor, **Then** collection tiles offer **Move**
+  (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
+  edit dialog's category picker refiles the collection — both regardless of
+  `permissions.can_edit`; **Given** a student or staff member, **Then** no
+  collection move UI renders.
 - **Given** a collection move (dialog or drop), **Then** an unchanged
   destination no-ops; otherwise the category tree and root collection list
   refresh, both scopes' tile-order revisions invalidate, and an undo snackbar
@@ -361,7 +383,10 @@ always read-only (`canEditContent={false}`).
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
 - **Given** a sequence collection opens, **Then** the viewer region
-  autofocuses (#1564) so ← / → step the sequence immediately; switching
+  autofocuses (#1564) to reveal the edge nav, and ← / → step the sequence
+  from a document-level binding (#1567) — they keep working after a dialog
+  closes, after clicking a chevron or thumbnail, or when focus sits
+  anywhere else on the page. Switching
   images does not re-steal focus, but opening another collection focuses
   it again.
 - **Given** the pointer enters or moves over the viewer frame, **Then** the
@@ -369,11 +394,13 @@ always read-only (`canEditContent={false}`).
   edges; **Then** after ~2 s idle or on pointer leave they fade out again
   (keyboard focus also reveals them).
 - **Given** the user clicks **Next** / **Previous**, a strip thumbnail, or
-  presses ← / → while the sequence has focus, **Then** the current image
+  presses ← / → while the collection page is open, **Then** the current image
   changes, the position readout and `?item=` URL update, and the viewer
   remounts (keyed by image id — no viewport bleed).
-- **Given** focus is in an input / textarea / select / textbox, **Then**
-  arrow keys do not navigate; the same applies while reorder mode is on.
+- **Given** focus is in an input / textarea / select / textbox, on a
+  roving-focus widget (tablist, tree, radio group, slider), **or** a
+  dialog, menu or listbox is open, **Then**
+  arrow keys do not navigate.
 - **Given** **Open image** is clicked, **Then** the normal `?image={id}`
   view opens where annotations can be edited.
 - **Given** the current image's tiles fail mid-session, **Then** the error
@@ -382,10 +409,18 @@ always read-only (`canEditContent={false}`).
   `Alert` replaces the viewer.
 - **Given** the collection has no visible images, **Then** an info `Alert`
   says there is nothing to show.
-- **Given** `permissions.can_edit`, **Then** a **Reorder** toggle appears;
-  in reorder mode the strip becomes draggable and a drop PUTs the whole
-  member id list with the collection `version`, reordering optimistically
-  and rolling back on error. Non-editors never see the toggle.
+- **Given** `permissions.can_edit`, **Then** a **Manage Images** button
+  opens the "Manage Collection Images — {name}" dialog of filmstrip-size
+  thumbnails;
+  dragging reorders, the per-tile corner control removes members (tooltip
+  "Remove image"), a
+  **Multi-select** toggle multi-picks members for a staged
+  dialog-wide **Remove N Selected Images** button, and a
+  **Choose images** button opens the search picker — all staged in a local
+  draft that leaves the page behind untouched until **Done** PUTs the whole
+  member id list with the collection `version`; **Cancel** closes without
+  saving (a dirty draft asks to discard first). Non-editors never see the
+  button.
 
 ### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
 
@@ -412,13 +447,14 @@ measurement metadata.
   and clicking it PUTs every rendered pane's current viewport as
   `viewport_state` with the collection `version`; a failure surfaces
   `userMessage` on the snackbar. Non-editors never see **Save view**.
-- **Given** the **Reset view** button (everyone), **When** clicked, **Then**
-  each pane re-applies its saved position — or its home when nothing is
-  saved — and the link baselines re-arm.
-- **Given** each pane's **pin** button at the top-right of its viewport
-  (#1564), **Then** panes start pinned (linked); **When** a pane is
-  unpinned, **Then** it pans/zooms/rotates independently — it neither leads
-  nor follows the linked panes; **When** re-pinned, **Then** the baselines
+- **Given** the **Restore view** button (everyone), **Then** it stays
+  disabled until a view has been saved (#1567); **When** clicked, **Then**
+  each pane re-applies its saved position and the link baselines re-arm.
+- **Given** each pane's **link** button at the top-right of its viewport
+  (#1564 — a link icon when linked, link-off when unlinked), **Then**
+  panes start linked; **When** a pane is
+  unlinked, **Then** it pans/zooms/rotates independently — it neither leads
+  nor follows the linked panes; **When** re-linked, **Then** the baselines
   re-capture the current alignment so the pane rejoins without snapping.
 - **Given** `(orientation: portrait)`, **Then** a full-area hint
   ("rotate your device") covers the pane area while the viewers stay mounted
@@ -499,18 +535,37 @@ re-checks).
   student never sees a restricted-failing collection. A collection row shows
   its type, image count, and owners, and selecting it navigates to
   `?collection={id}`.
-- Multi-select is image-only: a **Select** toggle appears next to the result
-  count when image results exist (or select mode is already active). In
-  select mode, image rows gain checkboxes labelled `Select {image title}`
-  and the row click toggles the check instead of navigating; every other
-  kind stays navigable and is never selectable. Selections persist across
-  query and filter changes — the footer count includes picks hidden by the
-  current query and **Add to collection** opens `AddToCollectionDialog`
-  with the ids in "order encountered" (result order within a query,
-  chronological across queries). Closing the modal, toggling select mode
-  off, or handing off to the dialog resets the selection. When the
-  collections feature flag is off the modal hides collection results, the
-  Collections chip, and the collections wording in the placeholder.
+- Multi-select covers images and categories, but only in picker mode
+  (#1567): the Manage dialog's **Add** flow opens the modal with
+  `initialSelectMode`, and the select layer (checkboxes, **Select all** /
+  **Unselect all** at the top-left of the results list, the sticky footer)
+  exists nowhere else — the normal search carries no Select affordance.
+  The picker offers only the two addable kinds — **Categories** and
+  **Images** type chips, pre-applied and toggleable; no other type chips or
+  Field chips render (unticking both widens to all kinds), and the
+  select-all/results-count header stays pinned while the result list
+  scrolls.
+  In picker mode, image rows gain checkboxes labelled `Select {image title}`
+  and category rows `Select {category name}`; checking a category selects
+  every image in its subtree (sub-categories included, hidden subtrees
+  excluded) in registration order, and the box shows indeterminate when the
+  subtree is only partially covered. Row clicks toggle the check instead of
+  navigating; every other kind stays navigable and is never selectable.
+  Selections persist across query and filter changes — the footer count
+  includes picks hidden by the current query and enumerates unique image
+  objects (a checked category counts its whole subtree once). Provenance
+  keeps overlap honest (#1567): an image remembers whether it was picked
+  directly or pinned by a checked category, so unchecking a category only
+  releases members no direct pick or other category still claims, and
+  checking an already-covered nested category never shrinks the count. The
+  footer lays out "N images selected" then **Cancel** (closes the picker)
+  and **Add to
+  collection**, which emits the ids in "order encountered" (result order
+  within a query, chronological across queries) into the Manage dialog's
+  staged draft. Closing the modal or handing off resets the
+  selection. When the collections feature flag is off the modal hides
+  collection results, the Collections chip, and the collections wording in
+  the placeholder.
 - Search result field labels render in a stronger secondary style so the field
   name reads as metadata rather than body text.
 - Staff searches also match the user guide: each guide page is split into
@@ -681,7 +736,8 @@ committed on Save) in the edit modals.
 - `CategoryPickerSelect` renders the category tree as an indented,
   collapsible list and shows each category's total descendant sub-category and
   image count in the same `<N sub-categories · M images> / Empty` format used on
-  category tiles. It is used by the Add Images and Edit Image details dialogs,
+  category tiles. It is used by the Add Images, Edit Image details, and Edit
+  Collection dialogs,
   which have the same medium desktop width as the Manage Categories dialog so
   the longer count suffixes still fit. Restricted categories render a lock icon —
   per accessibility convention (see [`REVIEW.md`](../REVIEW.md)), the lock is a

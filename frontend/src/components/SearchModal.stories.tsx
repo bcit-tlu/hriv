@@ -88,6 +88,8 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     coverThumb: null,
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
@@ -159,16 +161,26 @@ export const Basic: Story = {
   },
 }
 
-/** Image rows gain labelled checkboxes; the footer emits ids in result order. */
+/** Picker mode (`initialSelectMode`): the Categories+Images chips come
+    pre-applied, rows gain labelled checkboxes, and the footer emits ids in
+    result order. */
 export const MultiSelect: Story = {
+  args: { initialSelectMode: true },
   play: async ({ args, canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
-    await userEvent.type(await body.findByPlaceholderText(/Search categories, images/), 'section')
-    await userEvent.click(await body.findByTestId('search-select-toggle'))
+    // "liver kidney" unions both fixture image names — the pre-applied
+    // type chips scope matches to Name fields.
+    await userEvent.type(
+      await body.findByPlaceholderText(/Search categories, images/),
+      'liver kidney',
+    )
     await userEvent.click(await body.findByRole('checkbox', { name: 'Select Kidney Cross' }))
     await userEvent.click(await body.findByRole('checkbox', { name: 'Select Liver Section' }))
     await expect(body.getByText('2 images selected')).toBeVisible()
     await userEvent.click(body.getByTestId('search-add-to-collection'))
-    await expect(args.onAddImagesToCollection).toHaveBeenCalledWith([10, 11])
+    await expect(args.onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 10 }),
+      expect.objectContaining({ id: 11 }),
+    ])
   },
 }

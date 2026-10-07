@@ -157,6 +157,11 @@ def _summary_fields(
         "version": collection.version,
         "category_id": collection.category_id,
         "sort_order": collection.sort_order,
+        # Restriction scope on summaries so Browse tiles can show program/
+        # group chips like category tiles (#1567) — ids only, matching the
+        # category summary convention.
+        "program_ids": [p.id for p in collection.programs],
+        "group_ids": [g.id for g in collection.groups],
         "created_at": collection.created_at,
         "updated_at": collection.updated_at,
         "permissions": _permissions_for(ctx.user, collection),
@@ -176,8 +181,6 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
     return CollectionOut(
         **_summary_fields(ctx, collection, images),
         images=[ImageOut.model_validate(img) for img in images],
-        program_ids=[p.id for p in collection.programs],
-        group_ids=[g.id for g in collection.groups],
         viewport_state=dict(collection.viewport_state or {}),
         # Nominal membership for unfiltered viewers (non-students). For
         # students the true total would disclose how many images are

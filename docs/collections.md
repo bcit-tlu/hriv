@@ -481,17 +481,22 @@ shows the
 cover (`RenewingThumbnail` with a collection-scoped renewer that refreshes the
 token via `GET /api/collections/{id}`; a renewed cover that loads and later
 expires again is renewed once more, while a cover that never loads is renewed
-only once), name, image count, the co-owner names joined by `describeCollectionOwners`
-(`No owner` when orphaned), and a visibility chip that
-reuses the category restriction palette. The type chip pins to a top-LEFT
-cover overlay (`top: 4, left: 4`, #1559) while **Move** and **Owners** stay
-top-right — two independent `absolute` overlays using the
-white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554), so
-the chip's position never shifts with the available actions. A curatorially
+only once), name, image count, and a visibility chip that
+reuses the category restriction palette. Tiles render no owner reference at
+all (#1567) — neither program nor user names appear on the card — and the
+collection type shows as a bare icon left of the title, the same spot the
+category tile's folder glyph occupies (`titleAccess` names it for screen
+readers). **Move** and **Owners** stay in the
+top-right `absolute` overlay using the
+white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554). A curatorially
 hidden card renders the same desaturated treatment as a hidden
 category/image tile plus a `VisibilityOff` affordance by the name (#1559).
-**Edit** stays in the metadata area and Delete is
-gone from the card entirely (edit dialog only). Filters — type is the page,
+**Edit** is a pencil inline at the title row's right — the
+CategoryTile/ImageTile convention (#1567) — and Delete is
+gone from the card entirely (edit dialog only). Everywhere the type renders
+as a pill (detail header, edit dialog, manage table) it is the shared
+`CollectionTypeChip`: red (primary) outline and text on a white fill with
+the type's icon (#1567). Filters — type is the page,
 not a facet (#1554): a **My collections** chip (`mine=true`;
 clears and disables the owner facet) and — for admin, instructor and staff
 only — an **Owner** select built from the owners in the loaded list, both
@@ -545,6 +550,15 @@ the visibility radio and the program/group pickers render read-only while
 name and description stay editable; the backend field-level split enforces
 the same boundary regardless.
 
+On edits the dialog is the wider variant (same width as the Edit Image and
+Manage Categories dialogs) so two additions fit (#1566): a **Category**
+picker (`CategoryPickerSelect`, admins/instructors only — filing stays
+curatorial) that turns a changed filing into a move call after the PATCH,
+and a **Hide Collection** / **Show Collection** link in the title row
+(`canHide`), which toggles local hidden state that the PATCH commits —
+"Hidden by Category" disables it when the filing category is hidden, the
+same contract as Edit Image.
+
 **Delete.** Lives inside `CollectionEditDialog` only (#1554 — the
 `EditImageModal` convention; there is no card or detail-header delete):
 a **Delete Collection** button at the bottom of the dialog content arms on
@@ -554,7 +568,8 @@ dialog's error area with the API message. Deleting the open collection
 returns to the list.
 
 **Owners (`CollectionOwnersDialog`, #1531).** An **Owners** action on cards
-and the detail header (gated on `permissions.canTransfer`) manages the
+and a pencil beside the detail header's owner name (both gated on
+`permissions.canTransfer`) manages the
 user-owner set and the program owner — see "Ownership management UI" below.
 
 **Permissions are UX gates only.** Edit/delete controls render when
@@ -574,13 +589,28 @@ program/group chips sit right after the breadcrumb, where the image view
 renders them. The actions are **Hide collection** / **Show collection**
 (`canHide` — curatorial; PATCHes `hidden` via `useCollectionsData.setHidden`
 with the OCC version and 409 merge; the same text-button + eye-icon spot the
-image viewer's Hide/Show Image control occupies), **Move**, **Reorder**
-(sequence collections with `canEdit` only — the
-toggle that used to live in the viewer toolbar), **Edit**, and **Owners**
-(`canTransfer`). Below the top row, the **type chip** (Synchronized /
-Sequence) and the **visibility chip** (Public/Private/Restricted — plus a
-`Hidden` chip on hidden collections) sit to the left of the owner line and
-description, which keep their place below (#1564). No Delete (#1554).
+image viewer's Hide/Show Image control occupies), **Manage Images**
+(`canEdit` — opens `CollectionManageDialog`, the mini-Browse member
+manager: drag to
+reorder, the corner remove control (tooltip "Remove image"),
+**Multi-select** + the bottom **Remove N Selected Images** to bulk-remove,
+**Choose images** to
+add via the search flow — all staged locally until **Done** commits the
+staged list once or **Cancel** discards it; #1566/#1567). **Edit** is a pencil on the final
+breadcrumb item — the Edit Category breadcrumb-pencil pattern — gated on
+`canEdit` or filing rights (`canFile`), and the owners affordance is the
+transfer-horizontal (`SwapHoriz`) icon beside the
+"Managed by …" line (`canTransfer`). Filing moved into the edit dialog's
+**Category** picker —
+the header carries no **Move** button (#1566). Below the top row, the **type
+pill** — the shared `CollectionTypeChip` with the type's icon
+(Synchronized / Sequence, #1567) — and the **visibility chip**
+(Public/Private — restricted renders no pill when program/group scope
+chips carry the restriction; an unscoped restricted collection still
+gets the pill so it is never label-less; #1567) sit to the
+left of the owner line; the description renders below the pills,
+left-aligned (#1567). Hidden state shows through greyscale alone — no
+`Hidden` chip. No Delete (#1554).
 `sequence` collections mount the sequence viewer (#1416, below) and
 `synchronized` collections mount the synchronized viewer (#1417, below). A
 404 (missing or not visible) renders the not-found alert with a
@@ -619,20 +649,39 @@ persisted under the `manage-collections` table-preferences key), sortable
 columns (`TableSortLabel`), client-side `TablePagination` with the shared
 rows-per-page preference, and a Category column rendering
 `CategoryBreadcrumb` (extracted from `ManagePage`; segments link into
-Browse, hidden-subtree rows get the eye icon). Columns: thumbnail
+Browse, hidden-subtree rows get the eye icon). Columns (#1567): Cover
 (`RenewingThumbnail`), ID, Name (with a `VisibilityOff` marker on
-curatorially hidden rows, #1559), Type, Visibility
-(`CollectionVisibilityChip`), Owners (`describeCollectionOwners`), image
-count, Category, Modified, Actions.
+curatorially hidden rows, #1559), Type (the shared `CollectionTypeChip`
+pill), Scope
+(`CollectionVisibilityChip` — a Public/Private pill; restricted shows no
+pill when scope chips render, but an unscoped restricted collection keeps
+the Restricted label, #1567), Owners
+(`describeCollectionOwners`), image count, Programs and Groups (own scope
+solid plus the filed category's scope at inherited opacity), Category,
+**Visibility** (a per-row show/hide `Switch` gated on `permissions.canHide`,
+same as Manage Images' Visibility column), Created, Modified, Actions.
+The default-visible set mirrors ManagePage's lean six — Cover, Name, Type,
+Category, Groups, Visibility, Modified — so the table sizes to content and
+wraps instead of overflowing into horizontal scroll; the rest are opt-in.
+Column visibility is user-persisted through **Choose columns**
+(`ColumnVisibilityDialog` + `useTableColumnPreferences` under the
+`manage-collections` columns key, same mechanism as `manage-images`).
+Rows hidden via the switch render greyscale/dimmed — `data-dimmed` cells,
+grayscale thumbnail, inactive-color chips — matching `ManagePage`'s
+inactive-image convention.
 
 **Actions.** Row click opens the edit dialog for `permissions.canEdit`
 rows — fetching the full record first, since summaries omit the restricted
 scope — and calls `onOpenCollection` (the collection detail view) for
-read-only rows. Action icons: **Edit** (`canEdit`), **Owners**
-(`canTransfer`, `CollectionOwnersDialog`), **Move** (admin/instructor only
-via `canFileCollections` plus the `onMoveCollection` handler → shared
-`MoveCollectionDialog`). Staff therefore get Edit only where the API
-grants it and never see Move/Owners/Delete affordances they cannot use;
+read-only rows; the cover thumbnail always navigates to the collection
+view (#1567, matching Manage Images). A single kebab **actions** button
+opens a contextual menu (#1567): **View** (always), **Edit**
+(`canEdit` or curatorial filing), **Manage owners** (`canTransfer`,
+`CollectionOwnersDialog`). Rows carry no **Move** action —
+category filing moved into the edit dialog's **Category** picker (#1566),
+with the Browse card's Move overlay and tile drag as the other curatorial
+paths. Staff therefore get Edit only where the API
+grants it and never see Owners/Delete affordances they cannot use;
 Delete stays inside the edit dialog, same convention as `EditImageModal`.
 Owners/transfer saves fetch a fresh record for `version` before PUT/POST,
 and the page refetches after every mutation or whenever the `categories`
@@ -660,7 +709,9 @@ participate in the mixed category/image/collection tile-order contract
 (#1528). Dropping a collection onto a category tile's move zone files it into
 that category (the same API as `POST /api/collections/{id}/move`) — like
 images and categories. Filing is curatorial: any admin/instructor sees the
-**Move** affordance on Browse tiles, list cards and the detail header,
+**Move** affordance on Browse tiles and list cards, plus the **Category**
+picker inside the edit dialog (#1566) — the detail header's separate Move
+button and the manage-table row action are gone —
 independent of `permissions.canEdit`; students and staff get no move UI. The
 move dialog (`MoveCollectionDialog`) offers every category plus "Top level",
 preselects the current category, and no-ops on an unchanged destination. A
@@ -781,11 +832,9 @@ render read-only via `canvasAnnotationsFromMetadata` /
 
 **Caption.** A caption row under the viewport — the same pattern the
 synchronized panes use (#1564) — holds the member name (left) and, at the
-right, the `n of N` live region plus the **Open image** action. The
-**Reorder** toggle moved to
-the detail header between **Move** and **Edit** (#1559) —
-`CollectionsPage` owns the `reordering` state and passes it down as a
-controlled prop.
+right, the `n of N` live region plus the **Open image** action. Member
+management moved into the detail header's **Manage Images** dialog
+(#1566/#1567).
 
 **Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
 overlay the viewport's left and right edges (#1561); like the OSD toolbar's
@@ -794,14 +843,18 @@ and fade back out after ~2 s idle or on pointer leave (keyboard focus also
 reveals them). The buttons stay mounted — only opacity and pointer-events
 toggle — so screen readers and tab focus still reach them. Strip
 thumbnails (`Go to {name}`) and ←/→ arrow keys change the current item
-too. Arrows are handled on keydown-capture at the sequence container so
-OpenSeadragon's own keyboard panning never sees them; editable targets
-(inputs, textareas, selects, `[role="textbox"]`, contenteditable) are
-skipped, and while reorder mode is on the keys belong to dnd-kit's
-`KeyboardSensor` instead. The container itself is focusable
-(`tabIndex={-1}`) and autofocuses when a collection opens (#1564), so the
-arrow keys work immediately — switching images never steals focus back,
-but opening a different collection focuses it again.
+too. Arrows are handled by a document-level keydown-capture listener
+(#1567) — focus placement is irrelevant, so a dialog returning focus to a
+header trigger or a chevron/thumbnail click can no longer strand ←/→.
+OpenSeadragon's own keyboard panning never sees them (capture still wins),
+editable targets (inputs, textareas, selects, `[role="textbox"]`,
+contenteditable) are skipped, roving-focus widgets keep their keys while
+focused (tablists like the AppShell nav, trees, radio groups, sliders),
+and the listener yields whenever a dialog, menu, or listbox is open. The
+container itself is focusable
+(`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
+edge-nav cue reveals immediately — switching images never steals focus
+back, but opening a different collection focuses it again.
 
 **Thumbnail strip.** `RenewingThumbnail` buttons _above_ the viewer
 (#1564); the
@@ -820,18 +873,40 @@ the current image's tiles fail mid-session the viewer reports the error via
 the nearest still-available image (preferring the next one). When every
 image has failed, an error alert replaces the viewer.
 
-**Reorder.** The header's Reorder toggle (controlled `reordering` prop,
-#1559) swaps the strip for `useSortable`
-thumbnails (`type: 'sequence-strip-item'`; pointer: 250 ms touch delay /
-8 px mouse distance; a separate `DragDropProvider` — the locked
-`SortableTileGrid` collision contract is untouched). On drag-end the new
-order is computed with `move()`; a no-change drop or a cancel sends
-nothing. `useCollectionsData.reorderImages` applies the order to `detail`
-immediately, then sends the whole id list as
-`PUT /api/collections/{id}/images` (`image_ids` + `version`); on error it
-restores the prior order and surfaces the message via `onError`. Doing the
-optimistic reorder in the hook keeps `App`'s `detail` the single source of
-truth — the strip and any subsequent edits see the same member order.
+**Manage dialog.** The header's **Manage Images** button (replaces the #1559
+Reorder toggle, #1566) opens `CollectionManageDialog` — a mini-Browse grid
+of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
+the locked `SortableTileGrid` collision contract is untouched). The dialog
+is a local draft editor (#1567): opening seeds the draft from the detail's
+member list, and every operation — `move()` reorder on drag-end, the corner
+remove control, a selection-mode bulk removal,
+and picks returned by the
+add-images search flow (`onAddImages` → App opens `SearchModal`, whose
+selected `ImageItem`s land back in the draft via a staged-add channel) —
+mutates only the draft, so the detail page and filmstrip behind the dialog
+never move mid-edit. Dragging renders a `DragOverlay` replica while the
+source tile dims in place. Tiles keep `tabIndex`/`role="button"` on the
+activator face explicitly (not left to the dnd-kit a11y plugin's deferred
+injection) so keyboard reorder — Space/Enter to pick up, arrows to move —
+always reaches the `KeyboardSensor` (#1567). The header's **Multi-select**
+toggle (`aria-pressed`) switches the grid into selection mode: sortables are
+disabled so clicks no longer arm drags, each tile face becomes a labelled
+`role="checkbox"` (click or Space/Enter toggles) with a stock MUI `Checkbox`
+(decorative — the face holds the semantics) replacing the ✕ badge, and a
+dialog-spanning error-styled **Remove N Selected Images** button pinned
+above the actions stages the whole set at once; toggling Multi-select off
+clears the set and restores the drag/remove affordances, and a fresh open
+always starts out of selection mode. **Done** (contained) diffs the draft
+against the seeded order
+and fires `onSaveMembers(imageIds)` once when it differs — a single
+`PUT /api/collections/{id}/images` whole-replace (`image_ids` + `version`)
+in `useCollectionsData.reorderImages`, which keeps `App`'s `detail` the
+single source of truth and surfaces errors via `onError`; a failed commit
+keeps the dialog open with the draft intact. Closing a dirty draft
+(Esc/backdrop/close) asks to discard first; a clean close needs no
+confirmation. Staged additions dedupe by image id and enforce the
+four-image synchronized cap, reporting already/full outcomes through
+`onError`.
 
 ### Synchronized collection viewer (#1417)
 
@@ -866,11 +941,12 @@ on reset (#1561). A leader's move applies its displacement from its own
 baseline — a multiplicative zoom ratio and additive centre/rotation deltas —
 onto each pinned follower's baseline, so saved positions around different
 highlights stay aligned while navigation mirrors. For two panes this is
-the pairwise offset the viewer originally captured. **Pins** (#1564) —
-a per-pane button at the top-right of each viewport — replace the old
-global **Link views** switch: panes start pinned (linked), unpinning
+the pairwise offset the viewer originally captured. **Link toggles**
+(#1564, #1567) — a per-pane button at the top-right of each viewport
+rendering a link icon (linked) or link-off icon (unlinked) — replace the
+old global **Link views** switch: panes start linked, unlinking
 detaches one pane's navigation entirely (it neither leads nor follows),
-and re-pinning re-captures the baselines at the current positions (it does
+and re-linking re-captures the baselines at the current positions (it does
 not snap the pane back to where it left).
 
 **Persisted view.** **Save view** (editors only,
@@ -880,9 +956,13 @@ not snap the pane back to where it left).
 `version`), so the layout restores exactly after a reload or via a
 `?collection={id}` share link. `saveViewport` is serialized with
 `reorderImages` through the same mutation queue so the two writes can never
-consume each other's version. **Reset view** (everyone) re-applies the saved
-positions — or each viewer's home when nothing is saved — then re-arms the
-baselines. Saved entries that do not match the shape are ignored by
+consume each other's version. The save stays put — a tile-source refresh
+from the response re-opens the pyramid but preserves the live viewport
+(`ImageViewer` snapshots it before `open`, same as the token-renewal
+path). **Restore view** (everyone) re-applies the saved
+positions and re-arms the baselines; it is disabled until a viewport has
+been saved for at least one rendered pane (#1567). Saved entries that do
+not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
 
 **Orientation.** `(orientation: portrait)` covers the pane area with a
@@ -912,28 +992,50 @@ searchOpen)` — a lazy list fetch each time the modal opens, shared with
 `permissions.canEdit`). When the feature flag is off the list stays empty
 and no Collections chip appears.
 
-**Multi-select (image results only).** A **Select** toggle next to the
-result count appears when image results exist (or select mode is already
-on) and `onAddImagesToCollection` is provided. Image rows become labelled
-checkboxes (`Select {image name}`) inside a `<label>` row — clicking
-anywhere toggles — while every other kind keeps its `CardActionArea`
-navigation and is never selectable (this avoids nested-interactive
-controls, see #1345). Selections survive query and filter changes: each
-check records the result generation and position where the image
-appeared, so the footer count covers picks hidden by the current query
-and the payload emits them in "order encountered" — result order within
-one query, chronological batches across queries. A sticky footer shows
-"N images selected" with **Clear** and **Add to collection**, which opens
-`AddToCollectionDialog` with `imageIds`, reusing the #1415 dialog,
-capacity checks, and snackbar feedback. Closing the modal, cancelling
-select mode, or handing off resets the selection. When the collections
-feature flag is off, the modal hides collection results, the Collections
-chip, and the collections wording in the placeholder.
+**Multi-select (image and category results) — picker mode only.** The
+select layer exists only when the modal opens as a collection-image picker
+(`initialSelectMode` — currently the Manage dialog's **Choose images** flow,
+`requestCollectionImageSearch`); the normal search never shows a Select
+toggle, checkboxes, or the footer. The picker also narrows the chip row to
+just the two addable kinds — **Categories** and **Images**, pre-applied —
+with no other type chips and no Field chips; unticking both widens the
+search to every kind again. Matches scope to name fields while a chip is
+on. Image
+rows become labelled checkboxes
+(`Select {image name}`) inside a `<label>` row — clicking anywhere toggles —
+and category results check the same way: a checked category stages every
+image in its subtree (sub-categories included) in registration order — the
+category's own images by `sortOrder`, then each child's subtree in tree
+order, honoring the `excludeHidden` rule — and shows indeterminate when
+only part of the subtree is covered. Every other kind keeps its
+`CardActionArea` navigation and is never selectable (this avoids
+nested-interactive controls, see #1345). A **Select all** /
+**Unselect all** control at the top-left of the results list bulk-toggles
+every selectable row currently displayed; that header row (with the result
+count) stays pinned while the result list scrolls beneath it. Selections
+survive query and
+filter changes: each pick records the result generation and position
+where the image appeared, so the footer count covers picks hidden by the
+current query and the payload emits them in "order encountered" — result
+order within one query, chronological batches across queries.
+Per-image provenance (`direct` vs the set of checking categories' `pins`)
+keeps the count honest under overlap: unchecking a category removes only
+members no other claim holds, so a hand-picked or other-subtree member
+survives, and checking an already-covered nested category never shrinks
+the count. The sticky footer shows "N images selected" with **Cancel**
+(closes the picker) and **Add to collection**, which hands the ids to
+`handleSearchAddToCollection` — staging them into the Manage dialog's
+draft when that flow launched the modal. Closing the modal or handing off
+resets the selection. When the
+collections feature flag is off, the modal hides collection results, the
+Collections chip, and the collections wording in the placeholder.
 
-**Image ids.** `App` keeps `addToCollectionImageIds` as state: the viewer
-button sets `[selectedImage.id]`, the search footer sets the checked ids;
-the dialog renders whenever `collectionsEnabled && currentUser`, so
-search-driven adds work with no image open.
+**Image ids.** `App` keeps `addToCollectionImageIds` as state for the
+viewer's **Add to Collection** button (`[selectedImage.id]`); the search
+picker's footer feeds `handleSearchAddToCollection`, which stages into the
+Manage dialog's draft when that flow launched the modal (and otherwise
+opens `AddToCollectionDialog`). The dialog renders whenever
+`collectionsEnabled && currentUser`, so adds work with no image open.
 
 ### Ownership management UI (#1419)
 
@@ -983,9 +1085,12 @@ open detail (e.g. card-level reassignment). A saved row that no longer
 matches the current filters — reassigned away under **My collections**, or
 adopted out of **No owner (orphaned)** — leaves the list.
 
-**Detail header.** Shows the owners via `describeCollectionOwners` —
-co-owner names joined with commas, "Managed by program _X_" for
-program-owned collections, _No owner_ for orphans — plus the visibility
+**Detail header.** The owner line reads "Managed by …" for both management
+styles (#1567) — "Managed by program _X_" for program-owned collections and
+"Managed by _A, B_" for user-owned ones (names joined via
+`describeCollectionOwners`) — with _No owner_ left bare for orphans. The
+`canTransfer` owners affordance beside it is the transfer-horizontal
+(`SwapHoriz`) icon, not a pencil. The line sits beside the visibility
 chip and — for `restricted` — a chip per attached program and group using
 the shared group-chip palette.
 
@@ -1030,11 +1135,12 @@ the shared group-chip palette.
   every role when `collectionsEnabled` is false.
 - Per-type pages + manage table (#1554): `CollectionsPage.test.tsx`
   (locked `collectionPageType`, header filters, edit-dialog delete flow),
-  `CollectionCard.test.tsx` (cover-overlay type chip / Move / Owners,
+  `CollectionCard.test.tsx` (title-row type icon, Move/Owners overlay,
   non-propagating actions, no delete affordance),
-  `CollectionEditDialog.test.tsx` (delete arm/confirm/failure),
+  `CollectionEditDialog.test.tsx` (delete arm/confirm/failure, category
+  picker save + hide link, #1566),
   `ManageCollectionsPage.test.tsx` (unfiltered fetch, facets/sort, row
-  actions on `permissions`, staff Move hidden, breadcrumb navigation,
+  actions on `permissions`, no row Move, breadcrumb navigation,
   categories-change refetch), `App.test.tsx` (`collectionPageType` state,
   `?type=` emit/parse, detail→type sync, `manage-collections` gate).
 - Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
@@ -1053,12 +1159,14 @@ the shared group-chip palette.
   type MenuItem selected), `CollectionsPage.test.tsx` (`Home`/category
   breadcrumb navigation, name + `(N images)` count as the breadcrumb's
   trailing item, actions share the breadcrumb row, type/visibility pills
-  above the description, Reorder between Move/Edit for editable sequence
-  detail, Hidden chip + Hide/Show link on
+  above the description, Manage Images button wiring for editable detail,
+  Hidden
+  chip + Hide/Show link on
   `canHide`, `onToggleHidden` call + error surface),
-  `SequenceCollectionViewer.test.tsx` (controlled `reordering` prop),
-  `CollectionCard.test.tsx` (type chip in the left overlay independent of
-  right-side actions, hidden indicator), `useCollectionsData.test.ts`
+  `CollectionManageDialog.test.tsx` (member grid, drag reorder, no-target
+  drop no-op, add/remove callbacks, selection-mode bulk removal),
+  `CollectionCard.test.tsx` (type icon left of the title, actions overlay,
+  hidden indicator), `useCollectionsData.test.ts`
   (`setHidden` PATCH + 409 merge), `App.test.tsx` (`onNavigateCategory` /
   `onToggleHidden` wiring); backend `test_router_collections.py` (hidden
   list/detail visibility per role and owner, hidden-only PATCH authority,
@@ -1069,27 +1177,32 @@ the shared group-chip palette.
   and freshness), `SortableTileGrid.test.tsx` (`col-` tiles, drag dispatch to
   reorder vs `onDropCollectionOnCategory`), `useCategoryActions.test.ts`
   (collection move/undo, no-op destination, root-scope lookup),
-  `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (role-gated
-  Move, browse-context close, all-restricted notice),
+  `MoveCollectionDialog.test.tsx`, `CollectionsPage.test.tsx` (edit-dialog
+  category change → move wiring, browse-context close, all-restricted
+  notice),
   `useCollectionsData.test.ts` (`move` row/detail sync),
   `CategoryTile.test.tsx` (recursive collection counts), viewer tests
   (all-restricted empty state); backend `test_router_collections.py`
   (`member_count` on `CollectionOut`, absent from summaries).
 - `frontend/tests/components/SequenceCollectionViewer.test.tsx`,
-  `useCollectionsData.test.ts` (#1416) — position readout, `?item=` restore
+  `CollectionManageDialog.test.tsx`,
+  `useCollectionsData.test.ts` (#1416, #1566) — position readout, `?item=` restore
   and non-member fallback, button / thumbnail / arrow-key navigation,
-  editable-target and reorder-mode key guards, read-only `ImageViewer` props
+  editable-target key guard, read-only `ImageViewer` props
   (annotations / overlays / measurement from `metadataExtra`), tile-renewal
-  forwarding, mid-session failure skip + all-failed state, controlled
-  reorder prop (toggle lives in the detail header, #1559), `move()` reorder → `PUT` with version, optimistic order in
-  `detail`, rollback on error, `renewCollectionImage` member swap.
+  forwarding, mid-session failure skip + all-failed state, hidden-prop
+  filmstrip desaturation; the Manage dialog covers `move()` reorder →
+  `PUT` with version, optimistic order in
+  `detail`, rollback on error, corner-control removal, `renewCollectionImage`
+  member swap.
 - `frontend/tests/components/SynchronizedCollectionViewer.test.tsx`,
   `useCollectionsData.test.ts` (#1417, #1561, #1564) — two-pane render with
   read-only props, `viewport-change` mirroring with the saved offset in both
   directions, no write-back/oscillation, leader→followers mirroring and
-  per-pane offsets for three/four panes, per-pane pin toggles (default
-  pinned, unpinned leader/follower detachment, re-pin re-arms at current
-  positions), Save view payload for all panes, Reset to saved/home, portrait
+  per-pane offsets for three/four panes, per-pane link toggles (default
+  linked, unlinked leader/follower detachment, re-link re-arms at current
+  positions), Save view payload for all panes, Restore gated on a saved
+  view, portrait
   hint, `< 2`
   fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
   slide-up, editor-only Save;
@@ -1109,11 +1222,13 @@ the shared group-chip palette.
   desaturation, success / info / error snackbars and **View collection**
   navigation.
 - `frontend/tests/components/SearchModal.test.tsx`,
-  `useAddToCollection.test.tsx`, `App.test.tsx` (#1418) — collection results
+  `useAddToCollection.test.tsx`, `App.test.tsx` (#1418, #1567) — collection results
   on name/description, Collections chip field scoping, `?collection={id}`
-  navigation, collections visible under `suppressExtendedResults`, Select
-  toggle gating (image results + handler only), image-only checkboxes,
-  result-order payload, Clear/close reset, `useVisibleCollections` keeping
+  navigation, collections visible under `suppressExtendedResults`, picker-only
+  select layer (`initialSelectMode` + handler required — normal search never
+  shows it), image and category-subtree checkboxes, pin/direct provenance
+  under overlap, Select-all coverage, result-order payload, Clear/close reset,
+  footer Cancel/Add layout, `useVisibleCollections` keeping
   non-editable rows, dialog plumbing with the multi-selected ids.
 - `frontend/tests/components/CollectionOwnersDialog.test.tsx`,
   `CollectionsPage.test.tsx`, `CollectionCard.test.tsx`,
@@ -1121,7 +1236,7 @@ the shared group-chip palette.
   user-owner autocomplete + chip removal, program select narrowing for
   instructors, program-select disabling the user picker, orphan-guard and
   403/409/422 inline errors; `canTransfer` affordances on cards and the
-  detail header, plural "Managed by program _X_" / `No owner` descriptions,
+  detail header, plural "Managed by …" / `No owner` descriptions,
   restricted scope chips, admin orphan reassignment; the `saveOwners` /
   `transfer` hooks' version resolution (open detail vs fetched),
   mutation-queue serialization behind a reorder, filtered-list removal, and

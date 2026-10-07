@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
@@ -6,18 +6,18 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import FormControl from '@mui/material/FormControl'
+import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
-import DoneIcon from '@mui/icons-material/Done'
-import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
-import ReorderIcon from '@mui/icons-material/Reorder'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
@@ -27,11 +27,17 @@ import {
   describeCollectionOwner,
   describeCollectionOwners,
 } from '../collectionUtils'
-import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import type { CollectionPageType } from './AppShell'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
-import type { CollectionListFilters, CollectionOwnerFilter } from '../useCollectionsData'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
+import {
+  toCollectionPatch,
+  type CollectionListFilters,
+  type CollectionOwnerFilter,
+} from '../useCollectionsData'
 import type {
   Category,
   Collection,
@@ -42,8 +48,9 @@ import type {
   Program,
   User,
 } from '../types'
-import CollectionCard, { CollectionVisibilityChip } from './CollectionCard'
+import CollectionCard, { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
@@ -72,6 +79,10 @@ export interface CollectionsPageProps {
   /** Sequence viewer state (`?item=` position) and mutations (#1416). */
   selectedCollectionItemId: number | null
   onSelectCollectionItem: (imageId: number) => void
+  /**
+   * Whole-replace member order — the Manage dialog's Done commits its staged
+   * draft (reorder + removals + additions) through this one PUT (#1567).
+   */
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
@@ -85,7 +96,7 @@ export interface CollectionsPageProps {
     values: CollectionFormValues,
     version: number,
     baseline: Collection | null,
-  ) => Promise<unknown>
+  ) => Promise<Collection>
   onDelete: (id: number) => Promise<void>
   /** Replace the user-owner set (`PUT …/owners`, #1531) — `canTransfer`-gated. */
   onSaveOwners: (id: number, userIds: number[]) => Promise<unknown>
@@ -97,8 +108,40 @@ export interface CollectionsPageProps {
    * the dialog + snackbar.
    */
   onMoveCollection?: (collection: CollectionSummary) => void
+  /**
+   * Category filing saved straight from the Edit dialog's picker (#1566) —
+   * routes through the shared move path (POST …/move + snackbar + undo).
+   */
+  onMoveCollectionToCategory?: (
+    collection: CollectionSummary,
+    categoryId: number | null,
+  ) => Promise<unknown>
+  /**
+   * Manage dialog "+" affordance (#1566): opens the global search modal so
+   * picked images land in this collection through the standard add flow.
+   */
+  /**
+   * Opens global search targeted at the collection; `stageAdd` is the Manage
+   * dialog's draft-staging channel — picks join the draft, and Done persists
+   * them in one whole-replace PUT (#1567).
+   */
+  onRequestCollectionImageSearch?: (collection: Collection, stageAdd: StageAddImages) => void
   /** Browse category tree — resolves the detail breadcrumb's location (#1559). */
   categories: Category[]
+  /** Edit dialog category picker's inline affordances (#1566). */
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleCategoryVisibility?: (categoryId: number) => Promise<void>
   /**
    * Navigate to a Browse category path (`[]` = root). The detail header's
    * breadcrumb uses this: `Home : …ancestors : collection name` (#1559).
@@ -134,33 +177,59 @@ function CollectionDetailHeader({
   onNavigateCategory,
   onEdit,
   onTransfer,
-  onMove,
-  reordering,
-  onToggleReorder,
+  onManage,
   togglingHidden,
   onToggleHidden,
+  canFile,
 }: {
   collection: Collection
   programs: Program[]
   groups: Group[]
   categoryPath: Category[]
   onNavigateCategory: (categoryPath: Category[]) => void
+  /** Admin/instructor filing right (#1567) — opens the edit dialog for the
+   *  category picker even on collections they can't edit. */
+  canFile?: boolean
   onEdit?: () => void
   onTransfer?: () => void
-  onMove?: () => void
-  /** Sequence collections only: controlled reorder mode lifted from the viewer. */
-  reordering?: boolean
-  onToggleReorder?: () => void
+  /** Opens the member Manage dialog (#1566) — replaces the Reorder toggle. */
+  onManage?: () => void
   togglingHidden?: boolean
   onToggleHidden?: () => void
 }) {
   const { mode } = useColorMode()
-  const groupColors = getGroupChipColors(mode)
   const visColors = getVisibilityColors(mode)
   const programOwner = collection.owners.find((o) => o.kind === 'program')
+  // 'Managed by …' for program- and user-managed collections alike (#1567);
+  // an ownerless collection keeps the bare 'No owner' readout.
   const ownerText = programOwner
     ? `Managed by program ${programOwner.name}`
-    : describeCollectionOwners(collection.owners)
+    : collection.owners.length > 0
+      ? `Managed by ${describeCollectionOwners(collection.owners)}`
+      : 'No owner'
+  // Hidden collections desaturate their controls like the hidden-image view's
+  // `inactiveViewerActionSx` (#1566) — chips, Manage/Edit/Owners, and the
+  // Hide link; the viewer imagery stays in color (same as the image page).
+  const hiddenSx = collection.hidden ? { filter: 'grayscale(100%)' } : undefined
+  // Restriction chips follow the image view / category tile convention
+  // (#1567): the collection's own scope renders solid and the filed
+  // category's effective scope renders at the inherited opacity.
+  const ownProgramIds = collection.visibility === 'restricted' ? collection.programIds : []
+  const ownGroupIds = collection.visibility === 'restricted' ? collection.groupIds : []
+  const ownProgramSet = new Set(ownProgramIds)
+  const ownGroupSet = new Set(ownGroupIds)
+  const programChips = [
+    ...ownProgramIds.map((id) => ({ id, inherited: false })),
+    ...narrowProgramIds(categoryPath)
+      .filter((id) => !ownProgramSet.has(id))
+      .map((id) => ({ id, inherited: true })),
+  ]
+  const groupChips = [
+    ...ownGroupIds.map((id) => ({ id, inherited: false })),
+    ...narrowGroupIds(categoryPath)
+      .filter((id) => !ownGroupSet.has(id))
+      .map((id) => ({ id, inherited: true })),
+  ]
   return (
     <>
       {/* Top container mirrors the image view header (#1564): breadcrumb +
@@ -189,7 +258,14 @@ function CollectionDetailHeader({
             maxWidth: '100%',
           }}
         >
-          <Breadcrumbs aria-label="collection breadcrumb" data-testid="collection-breadcrumb">
+          {/* `flex: 1` lets the breadcrumb consume the slack so the
+              restriction chips land flush-left of the action buttons —
+              the exact mechanism the image/category headers use (#1567). */}
+          <Breadcrumbs
+            aria-label="collection breadcrumb"
+            data-testid="collection-breadcrumb"
+            sx={{ flex: '1 1 auto', minWidth: 0 }}
+          >
             <Link
               component="button"
               variant="body2"
@@ -226,33 +302,45 @@ function CollectionDetailHeader({
               >
                 ({collection.images.length} {collection.images.length === 1 ? 'image' : 'images'})
               </Typography>
+              {/* Edit pencil on the final crumb — the Edit Category
+                  breadcrumb-pencil pattern (#1567). Opens for owners
+                  (canEdit) and curatorial filers (canFile). */}
+              {(collection.permissions.canEdit || canFile) && onEdit && (
+                <IconButton
+                  size="small"
+                  onClick={onEdit}
+                  aria-label="Edit collection"
+                  sx={{ ml: 0.25, ...hiddenSx }}
+                >
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              )}
             </Box>
           </Breadcrumbs>
           {/* Restriction chips sit right after the breadcrumb — the same
-              slot the image view renders them in. */}
-          {collection.visibility === 'restricted' && (
-            <>
-              {collection.programIds.map((pid) => (
-                <Chip
-                  key={`p${pid}`}
-                  size="small"
-                  variant="outlined"
-                  color="primary"
-                  data-testid="detail-program-chip"
-                  label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
-                />
-              ))}
-              {collection.groupIds.map((gid) => (
-                <Chip
-                  key={`g${gid}`}
-                  size="small"
-                  data-testid="detail-group-chip"
-                  label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
-                  sx={{ bgcolor: groupColors.subtleBg, color: groupColors.subtleText }}
-                />
-              ))}
-            </>
-          )}
+              slot the image view renders them in: the collection's own
+              scope solid, the filed category's scope at inherited opacity
+              (#1567). */}
+          {programChips.map((item) => (
+            <Chip
+              key={`p${item.id}`}
+              size="small"
+              color="primary"
+              data-testid="detail-program-chip"
+              label={programs.find((p) => p.id === item.id)?.name ?? `Program ${item.id}`}
+              sx={getInheritedRestrictionSx(item.inherited, hiddenSx)}
+            />
+          ))}
+          {groupChips.map((item) => (
+            <Chip
+              key={`g${item.id}`}
+              size="small"
+              color="secondary"
+              data-testid="detail-group-chip"
+              label={groups.find((g) => g.id === item.id)?.name ?? `Group ${item.id}`}
+              sx={getInheritedRestrictionSx(item.inherited, hiddenSx)}
+            />
+          ))}
         </Box>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1 }}>
           {/* Hide/show leads the actions — the same spot the image viewer's
@@ -274,94 +362,83 @@ function CollectionDetailHeader({
               {collection.hidden ? 'Show collection' : 'Hide collection'}
             </Button>
           )}
-          {onMove && (
+          {/* Manage opens the member dialog (reorder/add/remove, #1566) — it
+              replaces the old sequence-only Reorder toggle and applies to
+              both collection types. */}
+          {onManage && collection.permissions.canEdit && (
             <Button
               variant="outlined"
               size="small"
-              startIcon={<DriveFileMoveIcon />}
-              onClick={onMove}
+              startIcon={<ViewModuleIcon />}
+              onClick={onManage}
+              data-testid="collection-manage-open"
+              sx={hiddenSx}
             >
-              Move
-            </Button>
-          )}
-          {onToggleReorder && collection.permissions.canEdit && (
-            <Button
-              variant={reordering ? 'contained' : 'outlined'}
-              size="small"
-              startIcon={reordering ? <DoneIcon /> : <ReorderIcon />}
-              onClick={onToggleReorder}
-              aria-pressed={reordering}
-              data-testid="sequence-reorder-toggle"
-            >
-              {reordering ? 'Done' : 'Reorder'}
-            </Button>
-          )}
-          {collection.permissions.canEdit && onEdit && (
-            <Button variant="outlined" size="small" startIcon={<EditIcon />} onClick={onEdit}>
-              Edit
-            </Button>
-          )}
-          {collection.permissions.canTransfer && onTransfer && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<SwapHorizIcon />}
-              onClick={onTransfer}
-            >
-              Owners
+              Manage Images
             </Button>
           )}
         </Box>
       </Box>
 
-      {/* Second row (#1564): type + visibility (+ hidden) pills to the left
-          of the owner line and description, which keep their place. */}
+      {/* Second row (#1564): type + visibility pills to the left of the
+          owner line, all vertically centered (#1567). Hidden state shows
+          through the greyscale alone — no chip (#1567). */}
       <Box
         sx={{
           display: 'flex',
           flexWrap: 'wrap',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           gap: 1,
-          mb: 2,
+          mb: 1,
         }}
       >
-        <Chip
-          size="small"
-          variant="outlined"
-          color="primary"
-          label={COLLECTION_TYPE_LABELS[collection.type]}
-        />
-        <CollectionVisibilityChip visibility={collection.visibility} />
-        {collection.hidden && (
-          <Chip
-            size="small"
-            icon={<VisibilityOffIcon />}
-            label="Hidden"
-            data-testid="collection-hidden-chip"
-            sx={{ bgcolor: visColors.inactiveChipBg, color: '#fff' }}
+        {/* The shared type pill — red outline/text on white with the type
+            icon, matching the tile and table (#1567). */}
+        <CollectionTypeChip type={collection.type} sx={hiddenSx} />
+        <Box sx={hiddenSx}>
+          <CollectionVisibilityChip
+            visibility={collection.visibility}
+            hasScopeChips={programChips.length > 0 || groupChips.length > 0}
           />
-        )}
-        <Box sx={{ flex: '1 1 240px', minWidth: 0 }}>
+        </Box>
+        <Box sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center' }}>
           <Typography variant="body2" color="text.secondary">
             {ownerText}
           </Typography>
-          {collection.memberCount > 0 && collection.images.length === 0 && (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mt: 0.5, fontStyle: 'italic' }}
-              data-testid="collection-all-restricted"
-            >
-              All images in this collection are currently restricted.
-            </Typography>
-          )}
-          {collection.description && (
-            <Typography variant="body1" sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>
-              {collection.description}
-            </Typography>
+          {/* Owners management lives on the owner line — the
+              transfer-horizontal glyph beside the name opens the owners
+              dialog (#1567). */}
+          {collection.permissions.canTransfer && onTransfer && (
+            <Tooltip title="Manage owners">
+              <IconButton
+                size="small"
+                onClick={onTransfer}
+                aria-label="Manage owners"
+                data-testid="collection-owners-edit"
+                sx={{ ml: 0.25, p: 0.25, ...hiddenSx }}
+              >
+                <SwapHorizIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           )}
         </Box>
       </Box>
+      {collection.memberCount > 0 && collection.images.length === 0 && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mb: 1, fontStyle: 'italic' }}
+          data-testid="collection-all-restricted"
+        >
+          All images in this collection are currently restricted.
+        </Typography>
+      )}
+      {/* Description sits under the type chip, left-aligned (#1567). */}
+      {collection.description && (
+        <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
+          {collection.description}
+        </Typography>
+      )}
     </>
   )
 }
@@ -396,7 +473,12 @@ export default function CollectionsPage({
   onSaveOwners,
   onTransfer,
   onMoveCollection,
+  onMoveCollectionToCategory,
+  onRequestCollectionImageSearch,
   categories,
+  onAddCategory,
+  onEditCategory,
+  onToggleCategoryVisibility,
   onNavigateCategory,
   onToggleHidden,
   collectionPageType,
@@ -406,14 +488,9 @@ export default function CollectionsPage({
   const [editLoadError, setEditLoadError] = useState<string | null>(null)
   const [transferTarget, setTransferTarget] = useState<CollectionSummary | null>(null)
   const [togglingHidden, setTogglingHidden] = useState(false)
-  // Reorder mode for the sequence viewer — lifted so its toggle lives in
-  // the detail header between Move and Edit (#1559). Resets whenever the
-  // open collection changes or the detail closes.
-  const [reordering, setReordering] = useState(false)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset reorder mode when a different collection opens
-    setReordering(false)
-  }, [selectedCollectionId])
+  // Member-management dialog (#1566) — reorder/add/remove live here now that
+  // the sequence viewer's inline reorder mode is gone.
+  const [manageOpen, setManageOpen] = useState(false)
   const editRequestRef = useRef(0)
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
@@ -476,7 +553,34 @@ export default function CollectionsPage({
     baseline: Collection | null,
   ) => {
     if (editing && version != null) {
-      await onUpdate(editing.id, values, version, baseline)
+      // PATCH only real field diffs (#1567 review): a version-only body is a
+      // content write the backend 403s for filing-only curators (and a no-op
+      // bump for everyone else). A hidden-only diff still PATCHes — hide is
+      // curatorial, not owner-scoped.
+      const updated = Object.keys(toCollectionPatch(values, baseline, version)).some(
+        (k) => k !== 'version',
+      )
+        ? await onUpdate(editing.id, values, version, baseline)
+        : editing
+      // Advance the record the dialog is seeded from (#1567): if the chained
+      // move below fails, the editor stays open with baseline/version already
+      // at the saved state — a retry diffs clean instead of replaying a
+      // stale-version PATCH.
+      setEditing(updated)
+      // Category filing is a move, not a PATCH (#1566) — apply it after the
+      // metadata save so the move posts the just-refreshed version. A failed
+      // move must not read as a successful save: the move op already showed
+      // its error snackbar, so rethrow the API error — the dialog stays open
+      // with the real message (and its 409 conflict-reload path) (#1567).
+      if (values.categoryId !== (baseline?.categoryId ?? null)) {
+        const moved = await onMoveCollectionToCategory?.(updated, values.categoryId)
+        if (moved instanceof Error) throw moved
+        // Filing bypasses `update`, which is what normally refreshes the open
+        // detail — refetch so the breadcrumb and the next filing's version
+        // don't work from the pre-move record (#1567). Best-effort: the save
+        // already succeeded, so a refresh failure must not read as one.
+        void loadCollection(editing.id).catch(() => {})
+      }
     } else {
       await onCreate(values)
     }
@@ -528,13 +632,10 @@ export default function CollectionsPage({
             groups={groups}
             categoryPath={detailCategoryPath}
             onNavigateCategory={onNavigateCategory}
+            canFile={canFileCollections}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
-            onMove={
-              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
-            }
-            reordering={reordering}
-            onToggleReorder={() => setReordering((v) => !v)}
+            onManage={() => setManageOpen(true)}
             togglingHidden={togglingHidden}
             onToggleHidden={handleToggleHidden}
           />
@@ -543,11 +644,9 @@ export default function CollectionsPage({
             itemId={selectedCollectionItemId}
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
-            onReorder={(imageIds) => onReorderImages(detail.id, imageIds)}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
-            reordering={reordering}
-            onReorderingChange={setReordering}
+            hidden={detail.hidden}
           />
         </Box>
       )
@@ -560,11 +659,10 @@ export default function CollectionsPage({
             groups={groups}
             categoryPath={detailCategoryPath}
             onNavigateCategory={onNavigateCategory}
+            canFile={canFileCollections}
             onEdit={() => void openEdit(detail)}
             onTransfer={() => setTransferTarget(detail)}
-            onMove={
-              canFileCollections && onMoveCollection ? () => onMoveCollection(detail) : undefined
-            }
+            onManage={() => setManageOpen(true)}
             togglingHidden={togglingHidden}
             onToggleHidden={handleToggleHidden}
           />
@@ -672,17 +770,25 @@ export default function CollectionsPage({
           </Box>
         ) : (
           <Box data-testid="collections-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-            {collections.map((c) => (
-              <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
-                <CollectionCard
-                  collection={c}
-                  onOpen={(col) => onOpenCollection(col.id)}
-                  onEdit={(col) => void openEdit(col)}
-                  onTransfer={setTransferTarget}
-                  onMove={canFileCollections ? onMoveCollection : undefined}
-                />
-              </Box>
-            ))}
+            {collections.map((c) => {
+              const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+              const catPath = seg ? [...seg.ancestors, seg.category] : []
+              return (
+                <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
+                  <CollectionCard
+                    collection={c}
+                    onOpen={(col) => onOpenCollection(col.id)}
+                    onEdit={(col) => void openEdit(col)}
+                    onTransfer={setTransferTarget}
+                    onMove={canFileCollections ? onMoveCollection : undefined}
+                    programs={programs}
+                    inheritedProgramIds={narrowProgramIds(catPath)}
+                    groups={groups}
+                    inheritedGroupIds={narrowGroupIds(catPath)}
+                  />
+                </Box>
+              )
+            })}
           </Box>
         )}
       </>
@@ -707,6 +813,29 @@ export default function CollectionsPage({
         groups={groups}
         onSave={handleSave}
         onDelete={editing?.permissions.canDelete ? deleteFromDialog : undefined}
+        categories={categories}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
+      />
+
+      {/* The Manage dialog stages membership edits locally (#1567); Done
+          commits them through one whole-replace PUT — only then does the
+          detail behind it change. */}
+      <CollectionManageDialog
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        collection={detail}
+        onSaveMembers={(imageIds) =>
+          detail ? onReorderImages(detail.id, imageIds) : Promise.resolve()
+        }
+        onAddImages={
+          detail && onRequestCollectionImageSearch
+            ? (stageAdd) => onRequestCollectionImageSearch(detail, stageAdd)
+            : undefined
+        }
+        onImageRenewed={(image) => detail && onCollectionImageRenewed(detail.id, image)}
+        onError={onViewerError}
       />
 
       <CollectionOwnersDialog

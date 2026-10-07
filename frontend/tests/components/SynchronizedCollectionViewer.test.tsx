@@ -505,7 +505,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(fakes.get(103)!.viewer.viewport!.setRotation).toHaveBeenLastCalledWith(180, true)
   })
 
-  it('reset without a saved view returns both viewers home', () => {
+  it('restore stays disabled until a view has been saved (#1567)', () => {
     openPair({ zoom: 5, x: 0.8, y: 0.9, rotation: 30 }, { zoom: 3, x: 0.2, y: 0.2, rotation: 60 })
     renderViewer()
     const fakeA = mockState.fakes.get(100)!
@@ -513,12 +513,11 @@ describe('SynchronizedCollectionViewer', () => {
       fakeA.open()
       mockState.fakes.get(101)!.open()
     })
-    fireEvent.click(screen.getByTestId('synchronized-reset'))
-    expect(fakeA.viewport!.goHome).toHaveBeenCalledWith(true)
-    expect(mockState.fakes.get(101)!.viewport!.goHome).toHaveBeenCalledWith(true)
-    // goHome preserves rotation, so Reset must clear it explicitly.
-    expect(fakeA.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
-    expect(mockState.fakes.get(101)!.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
+    const reset = screen.getByTestId('synchronized-reset')
+    expect(reset).toBeDisabled()
+    fireEvent.click(reset)
+    expect(fakeA.viewport!.goHome).not.toHaveBeenCalled()
+    expect(mockState.fakes.get(101)!.viewport!.goHome).not.toHaveBeenCalled()
   })
 
   it('pins every pane by default; unpinning detaches it from the mirror (#1564)', () => {
@@ -535,11 +534,11 @@ describe('SynchronizedCollectionViewer', () => {
     // Default: both panes pinned (linked).
     expect(pinA).toHaveAttribute('aria-pressed', 'true')
     expect(pinB).toHaveAttribute('aria-pressed', 'true')
-    expect(pinA).toHaveAccessibleName('Unpin Slice 1')
-    // Unpin B — a leader move on A no longer reaches it.
+    expect(pinA).toHaveAccessibleName('Unlink Slice 1')
+    // Unlink B — a leader move on A no longer reaches it.
     fireEvent.click(pinB)
     expect(pinB).toHaveAttribute('aria-pressed', 'false')
-    expect(pinB).toHaveAccessibleName('Pin Slice 2')
+    expect(pinB).toHaveAccessibleName('Link Slice 2')
     fakeB.viewport!.panTo.mockClear()
     act(() => {
       fakeA.viewport!.panTo({ x: 0.9, y: 0.9 })
@@ -672,8 +671,23 @@ describe('SynchronizedCollectionViewer', () => {
 
   it('shows the fallback without a list for an empty collection', () => {
     renderViewer({ collection: syncCollection({ images: [] }) })
-    expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
+    const fallback = screen.getByTestId('synchronized-viewer-fallback')
+    expect(fallback).toHaveTextContent(
+      'A synchronized comparison needs at least two images. Use "Manage Images" to add images to the collection.',
+    )
     expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+  })
+
+  it('points non-editors at no action for an empty collection', () => {
+    renderViewer({
+      collection: syncCollection({
+        images: [],
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+      }),
+    })
+    const fallback = screen.getByTestId('synchronized-viewer-fallback')
+    expect(fallback).toHaveTextContent('A synchronized comparison needs at least two images.')
+    expect(fallback).not.toHaveTextContent('Manage Images')
   })
 
   it('says all images are restricted when members exist but none are visible (#1529)', () => {
@@ -702,7 +716,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
   })
 
-  it('hides Save view from non-editors but keeps Reset view', () => {
+  it('hides Save view from non-editors but keeps Restore view', () => {
     const collection = syncCollection({
       permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
     })

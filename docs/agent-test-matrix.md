@@ -47,7 +47,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   locally `docker compose up -d db migrate` then `export
 TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   otherwise it skips.
-- frontend: `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- frontend: `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog CollectionManageDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
 - Per-type pages / card overlay / manage table / dialog delete (#1554):
   `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog navigation AppShell App.test`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
@@ -56,8 +56,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - Sequence collection viewer (#1416: `SequenceCollectionViewer.tsx`,
   `?item=` in `useShareableImageState.ts`, `reorderImages` /
   `renewCollectionImage` in `useCollectionsData.ts`, detail mount in
-  `CollectionsPage.tsx`):
-  `npm test -- SequenceCollectionViewer useCollectionsData useShareableImageState CollectionsPage App.test`
+  `CollectionsPage.tsx`; #1566 member manager: `CollectionManageDialog.tsx`):
+  `npm test -- SequenceCollectionViewer CollectionManageDialog useCollectionsData useShareableImageState CollectionsPage App.test`
 - Synchronized collection viewer (#1417: `SynchronizedCollectionViewer.tsx`,
   `onViewerReady` in `ImageViewer.tsx`, `viewportStateFromSaved` in
   `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail

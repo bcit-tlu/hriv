@@ -47,6 +47,8 @@ const collection: CollectionSummary = {
   coverThumb: null,
   categoryId: null,
   sortOrder: 0,
+  programIds: [],
+  groupIds: [],
   version: 3,
   createdAt: FIXED_AT,
   updatedAt: FIXED_AT,

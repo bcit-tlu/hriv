@@ -638,7 +638,14 @@ export function useCategoryActions({
         const conflict = collectionConflictCurrent(err)
         if (conflict) setMovingCollection(apiCollectionToCollection(conflict))
         setErrorSnack(userMessage(err, 'Failed to move collection.'))
+        // Edit-dialog filing chains on this (#1567): return the failure as
+        // an Error so the caller can rethrow it — the editor stays open with
+        // the real message instead of closing on a partial save. `true |
+        // Error | undefined` keeps the result unambiguous for callers that
+        // ignore it (move dialog, drag handlers).
+        return err instanceof Error ? err : new Error('Failed to move collection.')
       }
+      return true
     },
     [
       categories,
@@ -847,6 +854,12 @@ export function useCategoryActions({
     setMovingCollection,
     handleRequestMoveCollection,
     handleMoveCollection,
+    /**
+     * Direct filing without the move dialog (#1566) — the Edit Collection
+     * dialog's category picker saves through the same move path (snackbar +
+     * undo + tile-order invalidation).
+     */
+    moveCollectionTo: doMoveCollection,
     handleDropCollectionOnCategory,
     handleDropImageOnCollection,
     handleSetCardImage,

@@ -722,6 +722,10 @@ export default function SortableTileGrid({
           collection={collection}
           onOpen={onCollectionClick ?? (() => {})}
           onMove={canEditContent ? onMoveCollection : undefined}
+          programs={programs}
+          inheritedProgramIds={inheritedProgramIds}
+          groups={groups}
+          inheritedGroupIds={inheritedGroupIds}
         />
       )
       if (!collection.permissions.canEdit) return tile
@@ -737,7 +741,15 @@ export default function SortableTileGrid({
         </DroppableCollectionZone>
       )
     },
-    [canEditContent, onCollectionClick, onMoveCollection],
+    [
+      canEditContent,
+      onCollectionClick,
+      onMoveCollection,
+      programs,
+      groups,
+      inheritedProgramIds,
+      inheritedGroupIds,
+    ],
   )
 
   const sensors = useMemo(

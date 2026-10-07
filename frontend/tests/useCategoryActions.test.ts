@@ -1096,6 +1096,32 @@ describe('useCategoryActions', () => {
       expect(moveCollectionApi).toHaveBeenLastCalledWith(7, 1, 4)
     })
 
+    it('moveCollectionTo reports success or the failure error so edit-dialog filing can react (#1567)', async () => {
+      const col = makeCollectionSummary({ id: 7, name: 'Set', categoryId: 1, version: 3 })
+      const catA = makeCategory({ id: 1, collections: [col] })
+      const catB = makeCategory({ id: 2 })
+      const failure = new api.ApiError(409, 'stale version')
+      const moveCollectionApi = vi
+        .fn()
+        .mockResolvedValueOnce(makeCollection({ id: 7, categoryId: 2, version: 4 }))
+        .mockRejectedValueOnce(failure)
+      const deps = makeDeps({ categories: [catA, catB], moveCollectionApi })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      let ok: unknown
+      await act(async () => {
+        ok = await result.current.moveCollectionTo(col, 2)
+      })
+      expect(ok).toBe(true)
+
+      await act(async () => {
+        ok = await result.current.moveCollectionTo({ ...col, categoryId: 2 }, 1)
+      })
+      // The caller rethrows this so the edit dialog keeps the real message.
+      expect(ok).toBe(failure)
+      expect(deps.setErrorSnack).toHaveBeenCalled()
+    })
+
     it('no-ops without moveCollectionApi (flag off)', async () => {
       const col = makeCollectionSummary({ id: 7, categoryId: 1 })
       const cat = makeCategory({ id: 1, collections: [col] })

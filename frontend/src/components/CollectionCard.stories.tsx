@@ -19,6 +19,8 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     coverThumb: '/hriv-splash2.jpg',
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
@@ -47,6 +49,7 @@ const meta = {
   },
   args: {
     collection: makeSummary(),
+    programs: [],
     onOpen: fn(),
     onEdit: fn(),
   },

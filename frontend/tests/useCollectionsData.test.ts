@@ -607,6 +607,57 @@ describe('useCollectionsData', () => {
       expect(loaded).toMatchObject({ id: 5, programIds: [2] })
       expect(result.current.detail).toBeNull()
     })
+
+    it('loadCollection refreshes the open detail when ids match (#1567)', async () => {
+      // The detail view loads id 9…
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 9, name: 'Before' }))
+      const { result } = renderData({ selectedCollectionId: 9 })
+      await waitFor(() => expect(result.current.detail?.name).toBe('Before'))
+
+      // …then a category filing refetches the same record — the open detail
+      // picks up the moved state instead of going stale.
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Before', category_id: 20, version: 6 }),
+      )
+      let loaded: Awaited<ReturnType<typeof result.current.loadCollection>> | undefined
+      await act(async () => {
+        loaded = await result.current.loadCollection(9)
+      })
+      expect(loaded?.categoryId).toBe(20)
+      await waitFor(() => expect(result.current.detail?.categoryId).toBe(20))
+      expect(result.current.detail?.version).toBe(6)
+    })
+
+    it('loadCollection does not regress the open detail to an older version (#1567)', async () => {
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Current', version: 6 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 9 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(6))
+
+      // A refetch started before another write landed resolves last with
+      // stale data — the detail must keep the newer record.
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Stale', version: 5 }),
+      )
+      await act(async () => {
+        await result.current.loadCollection(9)
+      })
+      expect(result.current.detail?.version).toBe(6)
+      expect(result.current.detail?.name).toBe('Current')
+    })
+
+    it('loadCollection leaves a different open detail alone', async () => {
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 7, name: 'Open' }))
+      const { result } = renderData({ selectedCollectionId: 7 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(7))
+
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 9, name: 'Other' }))
+      await act(async () => {
+        await result.current.loadCollection(9)
+      })
+      expect(result.current.detail?.id).toBe(7)
+    })
   })
 
   describe('mutations', () => {

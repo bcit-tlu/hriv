@@ -32,11 +32,12 @@ with annotations and measurement markings visible on each.
   relative positions — handy when the views highlight different spots.
 - Each pane's caption shows the image name and an **Open image** link to
   the normal image view.
-- The **pin** at the top-right of each pane keeps it linked to the others —
-  panes start pinned. Click it to unpin a pane and adjust it on its own;
-  click again to re-pin, which keeps the new relative positions.
-- **Reset view** returns every pane to the saved view (or its starting
-  position if none was saved).
+- The **link** icon at the top-right of each pane keeps it synced with the
+  others — panes start linked. Click it to unlink a pane and adjust it on
+  its own (the icon switches to link-off); click again to re-link, which
+  keeps the new relative positions.
+- **Restore view** returns every pane to the saved view. It stays
+  unavailable until someone has saved a view for the collection.
 - On a phone held upright the panes are replaced by a hint to rotate to
   landscape — your view is still there when you rotate back.
 
@@ -57,15 +58,31 @@ visible but can't be changed here.
 - Step through with the **‹** and **›** buttons that appear on the viewer's
   left and right edges when you point at it (they fade away when idle, like
   the image toolbar), click a thumbnail in the strip above the viewer, or
-  press the ← and → arrow keys — the viewer already has focus, so the keys
-  work as soon as the collection opens.
+  press the ← and → arrow keys — they step the sequence from anywhere on
+  the page, so they keep working after a dialog closes or a button click
+  moves focus elsewhere.
 - The caption under the viewer shows the image name, the position
   (`n of N` — part of the page link, so copying the URL shares the exact
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.
-- If you can edit the collection, a **Reorder** button in the top-right
-  header (between **Move** and **Edit**) turns the thumbnail strip into a
-  drag-and-drop list; drag images into place and choose **Done**.
+- If you can edit the collection, a **Manage Images** button in the
+  top-right header opens the **Manage Collection Images** dialog — a
+  miniature
+  Browse view of thumbnails. Drag
+  thumbnails to reorder, or click a thumbnail's corner remove icon to take
+  it out of the collection. To remove several at once,
+  click **Multi-select** in the dialog header: thumbnails gain checkboxes —
+  tick the ones you want gone and click the **Remove N Selected Images**
+  button at the bottom. Click **Choose images** to pick
+  through search — the search opens as a picker with checkboxes already on:
+  tick individual images or a whole category (its images, and its
+  sub-categories' images, are added in their order in the category), or use
+  **Select all** above the results. The footer shows how many images are
+  selected; **Cancel** returns to the dialog and **Add to collection**
+  stages the picks. Changes
+  apply inside the dialog only — **Done** saves them all at once, and
+  closing without Done asks before discarding. This works for synchronized
+  collections too.
 
 The breadcrumb at the top of the page shows where the collection lives in
 Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each
@@ -102,15 +119,23 @@ Type in the filter box to narrow a long list.
 The button is unavailable while you are editing annotations on the canvas —
 finish or cancel that first.
 
-### Add several images at once (from search)
+### Add several images at once (search picker)
 
-In the top-bar **Search**, click **Select** next to the result count, tick
-each image you want, then click **Add to collection** in the footer. The
-same dialog opens with all of them selected. You can keep selecting across
-searches — images you picked under an earlier query still count, and they
-are added in the order they appeared in your results. Only image results
-can be selected; categories, collections, and other kinds still open when
-you click them.
+From the collection's **Manage Images** dialog, click **Choose images** —
+the search opens
+as a picker with checkboxes already on. Only the **Categories** and
+**Images** filter chips are shown — both on to start; untick a chip to
+narrow further, or untick both to search every kind.
+Tick each image you want, or tick a
+**category** to select every image inside it — including its sub-categories —
+in the order they're registered; unticking removes them again, and images
+you ticked by hand stay picked. **Select all** above the results covers
+every listed row. The footer counts how many images are selected,
+**Cancel** returns you to the dialog, and **Add to
+collection** stages the picks. You can keep selecting across searches —
+images picked under an earlier query still count, and they are added in
+the order they appeared in your results. Collections and other result
+kinds still open when you click them and are never selected.
 
 ### Add an image from Browse (drag onto the tile)
 
@@ -136,8 +161,8 @@ page shows its filed location and links back into Browse.
   viewer.
 - Admins and instructors can **file** a collection into a category (or back
   to the top level) with the card's **Move** action (the folder icon in the
-  cover's top-right corner, or the **Move** button on the collection page),
-  or by dragging the tile
+  cover's top-right corner), the **Category** picker in the collection's
+  edit dialog, or by dragging the tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not
   ownership-bound — any admin/instructor can file any collection.
 - A category tile's detail line counts the collections inside its subtree
@@ -148,14 +173,15 @@ page shows its filed location and links back into Browse.
 ## Hide or show a collection (instructors and admins)
 
 Curators can hide a collection with the **Hide collection** link at the top
-right of the collection page — like hiding an image or a category. A hidden
+right of the collection page or the **Hide Collection** link in the edit
+dialog's title row — like hiding an image or a category. A hidden
 collection:
 
 - disappears from students' lists, Browse tiles, and search results —
   **except for its owners**, who keep full access to their own work;
 - stays visible to admins, instructors and staff, shown desaturated with an
-  eye-off marker on cards and in the Manage → Collections table, plus a
-  **Hidden** chip on the collection page;
+  eye-off marker on cards and in the Manage → Collections table (the page
+  itself greys its controls — no separate marker);
 - keeps its place in the category structure and tile order — nothing moves.
 
 Click **Show collection** in the same spot to make it visible again. Hiding
@@ -171,8 +197,9 @@ Synchronized** in the app bar — then use the filters in the header row:
 - **Owner** – collections co-owned by a particular person, or owned by a
   program (not shown to students).
 
-Each card shows the cover image, how many images it holds, its owners, a
-type chip on the cover, and a visibility chip.
+Each card shows the cover image, how many images it holds, a type icon
+beside the name (carousel for a sequence, columns for a synchronized
+collection), and a visibility chip.
 
 Collections also appear in the top-bar **Search** — both name and
 description are searched, and the **Collections** chip narrows results to
@@ -181,15 +208,18 @@ just collections. Choosing a result opens it here.
 ## Edit or delete
 
 If you co-own a collection (or teach in the program that owns it), the card
-shows a **pencil** icon and the collection page shows an **Edit** button. A
+shows a **pencil** icon next to its name and the collection page shows a
+**pencil** at the end of its breadcrumb — either one opens the editor. A
 collection can have several user co-owners plus, or instead of, a program
 owner.
 
 - **Edit** lets you change the name, description, visibility, and — for
-  restricted collections — the programs and groups. Student co-owners can
-  change the name, description and images, but the visibility and program /
-  group scope stay locked (they can only change those on a collection they
-  own alone).
+  restricted collections — the programs and groups. Admins and instructors
+  also get a **Category** picker that refiles the collection in Browse.
+  Student co-owners can
+  change the name, description and images, but the visibility, category and
+  program / group scope stay locked (they can only change those on a
+  collection they own alone).
 - **Delete Collection** lives inside the edit dialog, at the bottom — click
   once to arm, then again to confirm. Deleting a collection never deletes
   the images in it. Co-owned and program-owned collections can't be deleted
@@ -203,8 +233,10 @@ picks up their changes so you can re-apply yours.
 
 ## Manage owners
 
-If a collection shows an **Owners** action (in the card's cover overlay, at
-the top of the collection page, or on its Manage → Collections table row),
+If a collection shows an owners affordance (the **Owners** action in the
+card's cover overlay, the transfer icon beside the "Managed by" line on the
+collection page, or **Manage owners** in its Manage → Collections row
+menu),
 you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:
@@ -240,10 +272,22 @@ with **Owners**.
 The **Manage → Collections** table lists every collection you can see —
 both types together — in sortable columns with filter facets for name,
 type, visibility, owner, and category. The **Category** column links into
-Browse at that location. Rows offer the same actions the cards do where you
-have permission: **Edit**, **Owners**, and (admins/instructors) **Move** —
-while delete stays inside the edit dialog. Clicking a row you can edit opens
-the editor; clicking a read-only row opens the collection itself.
+Browse at that location; the **Programs** and **Groups** columns show each
+collection's restriction scope (including scope inherited from its filed
+category, shown dimmed), and **Created**/**Modified** show dates. The
+**Visibility** switch hides or shows a collection to students where you
+have that permission — hidden rows render greyscale, just like the Manage
+Images table. Clicking a row's thumbnail opens the collection itself.
+
+Use **Choose columns** to show or hide columns — the choice is remembered
+between sessions, as on the Manage Images table. Like that table, only a
+compact set shows by default (cover, name, type, category, groups,
+visibility, modified); opt the rest in as you need them. Rows offer actions
+through a single **actions** (⋮) menu where you have permission: **View**,
+**Edit**, and **Manage owners** — filing lives in the edit dialog's
+Category picker, and delete stays inside the edit dialog. Clicking a row
+you can edit opens the editor; clicking a read-only row opens the
+collection itself.
 
 ## Share a link
 

@@ -5,7 +5,12 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
+import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -18,9 +23,11 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { visuallyHidden } from '@mui/utils'
 import AddIcon from '@mui/icons-material/Add'
-import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import {
   createCollection,
@@ -40,9 +47,12 @@ import {
   describeCollectionOwner,
   describeCollectionOwners,
 } from '../collectionUtils'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import { toCollectionPatch } from '../useCollectionsData'
+import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { ROWS_PER_PAGE_OPTIONS, useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import {
   getFilterTerms,
@@ -71,7 +81,8 @@ import CategoryFilterTreePanel from './CategoryFilterTreePanel'
 import CollectionEditDialog from './CollectionEditDialog'
 import type { CollectionFormValues } from './CollectionEditDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
-import { CollectionVisibilityChip } from './CollectionCard'
+import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
@@ -81,6 +92,71 @@ import RenewingThumbnail from './RenewingThumbnail'
 type SortableColumn =
   'id' | 'name' | 'type' | 'visibility' | 'owners' | 'images' | 'category' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
+
+/** Hideable columns — the Actions column always renders (#1567), same as
+ *  ManagePage. `scope` is the Private/Public/Restricted chip; `visibility`
+ *  is the show/hide switch (the Manage Images 'Visibility' column). */
+type ManageCollectionColumn =
+  | 'cover'
+  | 'id'
+  | 'name'
+  | 'type'
+  | 'scope'
+  | 'owners'
+  | 'images'
+  | 'programs'
+  | 'groups'
+  | 'category'
+  | 'visibility'
+  | 'created_at'
+  | 'updated_at'
+
+const MANAGE_COLLECTION_COLUMNS: readonly ManageCollectionColumn[] = [
+  'cover',
+  'id',
+  'name',
+  'type',
+  'scope',
+  'owners',
+  'images',
+  'programs',
+  'groups',
+  'category',
+  'visibility',
+  'created_at',
+  'updated_at',
+]
+
+const MANAGE_COLLECTION_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageCollectionColumn>[] =
+  [
+    { key: 'cover', label: 'Cover' },
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: 'Name' },
+    { key: 'type', label: 'Type' },
+    { key: 'scope', label: 'Scope' },
+    { key: 'owners', label: 'Owners' },
+    { key: 'images', label: 'Images' },
+    { key: 'programs', label: 'Programs' },
+    { key: 'groups', label: 'Groups' },
+    { key: 'category', label: 'Category' },
+    { key: 'visibility', label: 'Visibility' },
+    { key: 'created_at', label: 'Created' },
+    { key: 'updated_at', label: 'Modified' },
+  ]
+
+/** Lean default set mirroring ManagePage's six (thumbnail, name, category,
+ *  group, visibility, modified) so the table sizes to content and wraps
+ *  rather than overflowing into horizontal scroll; everything else is
+ *  opt-in via Choose columns (#1567). */
+const DEFAULT_VISIBLE_COLLECTION_COLUMNS: readonly ManageCollectionColumn[] = [
+  'cover',
+  'name',
+  'type',
+  'category',
+  'groups',
+  'visibility',
+  'updated_at',
+]
 
 interface ManageCollectionsStoredFilters {
   text?: Record<string, string>
@@ -129,11 +205,28 @@ export interface ManageCollectionsPageProps {
    */
   onNavigateCategory?: (categoryPath: Category[]) => void
   /**
-   * Open the shared MoveCollectionDialog (admin/instructor filing, #1529);
-   * the page refetches once `categories` refreshes, so no completion signal
-   * is needed. Omit to hide the affordance.
+   * Category filing saved straight from the Edit dialog's picker (#1566) —
+   * routes through the shared move path (POST …/move + snackbar + undo).
+   * Superseded the row-level Move affordance.
    */
-  onMoveCollection?: (collection: CollectionSummary) => void
+  onMoveCollectionToCategory?: (
+    collection: CollectionSummary,
+    categoryId: number | null,
+  ) => Promise<unknown>
+  /** Edit dialog category picker's inline affordances (#1566). */
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleCategoryVisibility?: (categoryId: number) => Promise<void>
   /** Open the collection detail view (`?collection={id}`) — read-only rows. */
   onOpenCollection: (id: number) => void
   /** Route mutation failures to the page-level snackbar. */
@@ -161,15 +254,20 @@ export default function ManageCollectionsPage({
   groups,
   currentUser,
   onNavigateCategory,
-  onMoveCollection,
+  onMoveCollectionToCategory,
+  onAddCategory,
+  onEditCategory,
+  onToggleCategoryVisibility,
   onOpenCollection,
   onError,
   loadCollections = fetchCollections,
 }: ManageCollectionsPageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  // Filing is curatorial (admin/instructor) — wider than per-collection
+  // canEdit: an instructor may refile a colleague's collection, and the edit
+  // dialog's category picker is the filing path now (#1566/#1567).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
-  const showMove = canFileCollections && onMoveCollection != null
 
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -353,6 +451,17 @@ export default function ManageCollectionsPage({
     return sorted
   }, [filteredCollections, sortColumn, sortDirection, categoryPaths])
 
+  // Choose Columns — per-user persisted visibility, same hook + storage
+  // convention as ManagePage's `manage-images` table (#1567).
+  const { visibleColumns, isColumnVisible, toggleColumn } =
+    useTableColumnPreferences<ManageCollectionColumn>({
+      tableKey: 'manage-collections',
+      allColumns: MANAGE_COLLECTION_COLUMNS,
+      defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTION_COLUMNS,
+    })
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const visibleColumnCount = MANAGE_COLLECTION_COLUMNS.filter((col) => isColumnVisible(col)).length
+
   const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('manage-collections')
   const [currentPage, setCurrentPage] = useState(0)
   const maxPage = Math.max(0, Math.ceil(sortedCollections.length / rowsPerPage) - 1)
@@ -394,6 +503,9 @@ export default function ManageCollectionsPage({
   const [editing, setEditing] = useState<Collection | null>(null)
   const [ownersTarget, setOwnersTarget] = useState<CollectionSummary | null>(null)
   const editRequestRef = useRef(0)
+  // Single kebab menu per row — the ManagePage pattern (#1567).
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [menuCollection, setMenuCollection] = useState<CollectionSummary | null>(null)
 
   const openEdit = async (summary: CollectionSummary) => {
     const request = ++editRequestRef.current
@@ -413,21 +525,47 @@ export default function ManageCollectionsPage({
     version: number | null,
     baseline: Collection | null,
   ) => {
-    if (editing && version != null) {
-      await updateCollection(editing.id, toCollectionPatch(values, baseline, version))
-    } else {
-      await createCollection({
-        name: values.name,
-        description: values.description,
-        type: values.type,
-        visibility: values.visibility,
-        image_ids: [],
-        ...(values.visibility === 'restricted'
-          ? { program_ids: values.programIds, group_ids: values.groupIds }
-          : {}),
-      })
+    try {
+      if (editing && version != null) {
+        // PATCH only real field diffs (#1567 review): a version-only body is
+        // a content write the backend 403s for filing-only curators (and a
+        // no-op bump for everyone else). A hidden-only diff still PATCHes —
+        // hide is curatorial, not owner-scoped.
+        const patch = toCollectionPatch(values, baseline, version)
+        const updated = Object.keys(patch).some((k) => k !== 'version')
+          ? apiCollectionToCollection(await updateCollection(editing.id, patch))
+          : editing
+        // Advance the record the dialog is seeded from (#1567): if the
+        // chained move below fails, the editor stays open with
+        // baseline/version already at the saved state — a retry diffs clean
+        // instead of replaying a stale-version PATCH.
+        setEditing(updated)
+        // Category filing is a move, not a PATCH (#1566) — apply it after the
+        // metadata save so the move posts the just-refreshed version. A failed
+        // move must not read as a successful save: the move op already showed
+        // its error snackbar, so rethrow the API error — the dialog stays open
+        // with the real message (and its 409 conflict-reload path) (#1567).
+        if (values.categoryId !== (baseline?.categoryId ?? null)) {
+          const moved = await onMoveCollectionToCategory?.(updated, values.categoryId)
+          if (moved instanceof Error) throw moved
+        }
+      } else {
+        await createCollection({
+          name: values.name,
+          description: values.description,
+          type: values.type,
+          visibility: values.visibility,
+          image_ids: [],
+          ...(values.visibility === 'restricted'
+            ? { program_ids: values.programIds, group_ids: values.groupIds }
+            : {}),
+        })
+      }
+    } finally {
+      // Refresh even when the save/move chain throws — a partial success
+      // (metadata saved, move failed) still changed the row.
+      void load()
     }
-    void load()
   }
 
   // Delete lives inside the edit dialog only (#1554) — EditImageModal's
@@ -453,10 +591,35 @@ export default function ManageCollectionsPage({
   }
 
   const handleRowClick = (c: CollectionSummary) => {
-    // Mirror ManagePage: row click opens the editor; read-only rows (staff,
-    // co-owner-less instructors) open the collection view instead.
-    if (c.permissions.canEdit) void openEdit(c)
+    // Mirror ManagePage: row click opens the editor — for owners, and for
+    // curators who can file but not edit (the dialog's category picker is
+    // the filing affordance, #1567). Other read-only rows open the view.
+    if (c.permissions.canEdit || canFileCollections) void openEdit(c)
     else onOpenCollection(c.id)
+  }
+
+  // Row Visibility switch (#1567): curatorial hide/show, same PATCH path
+  // the detail header's Hide link uses — refetch keeps OCC versions fresh.
+  const [togglingId, setTogglingId] = useState<number | null>(null)
+  const toggleRowHidden = async (c: CollectionSummary) => {
+    setTogglingId(c.id)
+    try {
+      await updateCollection(c.id, { hidden: !c.hidden, version: c.version })
+    } catch (err) {
+      onError?.(userMessage(err, 'Failed to update collection.'))
+    } finally {
+      setTogglingId(null)
+      void load()
+    }
+  }
+
+  const handleMenuOpen = (e: React.MouseEvent<HTMLElement>, c: CollectionSummary) => {
+    setMenuAnchor(e.currentTarget)
+    setMenuCollection(c)
+  }
+  const handleMenuClose = () => {
+    setMenuAnchor(null)
+    setMenuCollection(null)
   }
 
   const renewCoverThumb = useCallback(
@@ -619,6 +782,16 @@ export default function ManageCollectionsPage({
             </>
           ) : undefined
         }
+        actions={
+          <Button
+            size="small"
+            startIcon={<ViewColumnIcon fontSize="small" />}
+            aria-label="Choose columns"
+            onClick={() => setColumnDialogOpen(true)}
+          >
+            Choose columns
+          </Button>
+        }
       >
         <FilterPopoverButton
           label="Name"
@@ -700,198 +873,342 @@ export default function ManageCollectionsPage({
       <TableContainer component={Paper} variant="outlined">
         <Table size="small" data-testid="manage-collections-table">
           <TableHead
-            sx={{ '& th': { bgcolor: (theme) => filterSurfaceBg(theme), fontWeight: 600 } }}
+            sx={{
+              // Same selector + sizing contract as ManagePage's table head.
+              '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) },
+              '& th': { fontWeight: 600 },
+            }}
           >
             <TableRow>
-              <TableCell sx={{ width: 48, p: 0.5 }}>
-                <Box component="span" sx={visuallyHidden}>
-                  Cover
-                </Box>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'id'}
-                  direction={sortColumn === 'id' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('id')}
-                >
-                  ID
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'name'}
-                  direction={sortColumn === 'name' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('name')}
-                >
-                  Name
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'type' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'type'}
-                  direction={sortColumn === 'type' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('type')}
-                >
-                  Type
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'visibility' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'visibility'}
-                  direction={sortColumn === 'visibility' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('visibility')}
-                >
-                  Visibility
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'owners' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'owners'}
-                  direction={sortColumn === 'owners' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('owners')}
-                >
-                  Owners
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'images' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'images'}
-                  direction={sortColumn === 'images' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('images')}
-                >
-                  Images
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'category'}
-                  direction={sortColumn === 'category' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('category')}
-                >
-                  Category
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'updated_at'}
-                  direction={sortColumn === 'updated_at' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('updated_at')}
-                >
-                  Modified
-                </TableSortLabel>
-              </TableCell>
+              {isColumnVisible('cover') && (
+                <TableCell sx={{ width: 48, p: 0.5 }}>
+                  <Box component="span" sx={visuallyHidden}>
+                    Cover
+                  </Box>
+                </TableCell>
+              )}
+              {isColumnVisible('id') && (
+                <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'id'}
+                    direction={sortColumn === 'id' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('id')}
+                  >
+                    ID
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('name') && (
+                <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'name'}
+                    direction={sortColumn === 'name' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('name')}
+                  >
+                    Name
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('type') && (
+                <TableCell sortDirection={sortColumn === 'type' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'type'}
+                    direction={sortColumn === 'type' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('type')}
+                  >
+                    Type
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('scope') && (
+                <TableCell sortDirection={sortColumn === 'visibility' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'visibility'}
+                    direction={sortColumn === 'visibility' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('visibility')}
+                  >
+                    Scope
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('owners') && (
+                <TableCell sortDirection={sortColumn === 'owners' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'owners'}
+                    direction={sortColumn === 'owners' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('owners')}
+                  >
+                    Owners
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('images') && (
+                <TableCell sortDirection={sortColumn === 'images' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'images'}
+                    direction={sortColumn === 'images' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('images')}
+                  >
+                    Images
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('programs') && <TableCell>Programs</TableCell>}
+              {isColumnVisible('groups') && <TableCell>Groups</TableCell>}
+              {isColumnVisible('category') && (
+                <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'category'}
+                    direction={sortColumn === 'category' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('category')}
+                  >
+                    Category
+                  </TableSortLabel>
+                </TableCell>
+              )}
+              {isColumnVisible('visibility') && <TableCell>Visibility</TableCell>}
+              {isColumnVisible('created_at') && <TableCell>Created</TableCell>}
+              {isColumnVisible('updated_at') && (
+                <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'updated_at'}
+                    direction={sortColumn === 'updated_at' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('updated_at')}
+                  >
+                    Modified
+                  </TableSortLabel>
+                </TableCell>
+              )}
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {pageCollections.map((c) => {
-              const rowCanEdit = c.permissions.canEdit
-              const rowCanTransfer = c.permissions.canTransfer
+              // Hidden rows dim like ManagePage's inactive images (#1567).
+              const dimAttr = c.hidden ? { 'data-dimmed': true } : undefined
+              const catPath = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+              const catCategories = catPath ? [...catPath.ancestors, catPath.category] : []
+              // Own scope chips only when restricted; the filed category's
+              // effective scope renders dimmed beneath them (#1567).
+              const ownProgramIds = c.visibility === 'restricted' ? c.programIds : []
+              const ownGroupIds = c.visibility === 'restricted' ? c.groupIds : []
+              const ownProgramSet = new Set(ownProgramIds)
+              const ownGroupSet = new Set(ownGroupIds)
+              const inheritedPrograms = narrowProgramIds(catCategories).filter(
+                (id) => !ownProgramSet.has(id),
+              )
+              const inheritedGroups = narrowGroupIds(catCategories).filter(
+                (id) => !ownGroupSet.has(id),
+              )
+              const chipSx = c.hidden ? { bgcolor: visColors.inactiveChipBg, color: '#fff' } : {}
               return (
                 <TableRow
                   key={c.id}
                   hover
                   data-testid={`manage-collection-row-${c.id}`}
-                  sx={{ cursor: 'pointer' }}
+                  sx={{
+                    cursor: 'pointer',
+                    '& td[data-dimmed]': { color: visColors.inactive },
+                    '& td[data-dimmed] a, & td[data-dimmed] button': { color: 'inherit' },
+                  }}
                   onClick={() => handleRowClick(c)}
                 >
-                  <TableCell data-interactive="true" sx={{ p: 0.5 }}>
-                    {c.coverThumb ? (
-                      <RenewingThumbnail
-                        image={{ id: c.id, thumb: c.coverThumb }}
-                        renewThumb={renewCoverThumb}
-                        alt={c.name}
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          objectFit: 'cover',
-                          borderRadius: 0.5,
-                          display: 'block',
-                        }}
-                      />
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{c.id}</TableCell>
-                  <TableCell>
-                    <Box
-                      component="span"
-                      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                  {isColumnVisible('cover') && (
+                    <TableCell
+                      data-interactive="true"
+                      sx={{ p: 0.5 }}
+                      onClick={(e) => {
+                        // Thumbnail navigates to the collection — the Manage
+                        // Images table's cover contract (#1567).
+                        e.stopPropagation()
+                        onOpenCollection(c.id)
+                      }}
                     >
-                      {c.name}
-                      {c.hidden && (
-                        <Tooltip title="Visibility: Hidden">
-                          <span
-                            role="img"
-                            aria-label="Visibility: Hidden"
-                            style={{ display: 'inline-flex', flexShrink: 0 }}
-                          >
-                            <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />
-                          </span>
-                        </Tooltip>
+                      {c.coverThumb ? (
+                        <RenewingThumbnail
+                          image={{ id: c.id, thumb: c.coverThumb }}
+                          renewThumb={renewCoverThumb}
+                          alt={c.name}
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            objectFit: 'cover',
+                            borderRadius: 0.5,
+                            display: 'block',
+                            cursor: 'pointer',
+                            ...(c.hidden ? { filter: 'grayscale(100%)' } : {}),
+                          }}
+                        />
+                      ) : null}
+                    </TableCell>
+                  )}
+                  {isColumnVisible('id') && <TableCell {...dimAttr}>{c.id}</TableCell>}
+                  {isColumnVisible('name') && (
+                    <TableCell {...dimAttr}>
+                      <Box
+                        component="span"
+                        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                      >
+                        {c.name}
+                        {c.hidden && (
+                          <Tooltip title="Visibility: Hidden">
+                            <span
+                              role="img"
+                              aria-label="Visibility: Hidden"
+                              style={{ display: 'inline-flex', flexShrink: 0 }}
+                            >
+                              <VisibilityOffIcon sx={{ fontSize: 14, color: visColors.inactive }} />
+                            </span>
+                          </Tooltip>
+                        )}
+                      </Box>
+                    </TableCell>
+                  )}
+                  {isColumnVisible('type') && (
+                    <TableCell {...dimAttr}>
+                      {/* Shared type pill — same red-outlined icon chip as
+                          the tile overlay and detail header (#1567). */}
+                      <CollectionTypeChip
+                        type={c.type}
+                        sx={c.hidden ? { filter: 'grayscale(100%)' } : undefined}
+                      />
+                    </TableCell>
+                  )}
+                  {isColumnVisible('scope') && (
+                    <TableCell {...dimAttr}>
+                      <CollectionVisibilityChip
+                        visibility={c.visibility}
+                        hasScopeChips={c.programIds.length + c.groupIds.length > 0}
+                      />
+                    </TableCell>
+                  )}
+                  {isColumnVisible('owners') && (
+                    <TableCell {...dimAttr}>{describeCollectionOwners(c.owners)}</TableCell>
+                  )}
+                  {isColumnVisible('images') && <TableCell {...dimAttr}>{c.imageCount}</TableCell>}
+                  {isColumnVisible('programs') && (
+                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                      {ownProgramIds.length === 0 && inheritedPrograms.length === 0 ? (
+                        '—'
+                      ) : (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {ownProgramIds.map((pid) => (
+                            <Chip
+                              key={`p${pid}`}
+                              data-testid="program-chip"
+                              label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                              size="small"
+                              color="primary"
+                              sx={chipSx}
+                            />
+                          ))}
+                          {inheritedPrograms.map((pid) => (
+                            <Chip
+                              key={`p${pid}`}
+                              data-testid="program-chip"
+                              label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                              size="small"
+                              color="primary"
+                              sx={getInheritedRestrictionSx(true, chipSx)}
+                            />
+                          ))}
+                        </Box>
                       )}
-                    </Box>
-                  </TableCell>
-                  <TableCell>{COLLECTION_TYPE_LABELS[c.type]}</TableCell>
-                  <TableCell>
-                    <CollectionVisibilityChip visibility={c.visibility} />
-                  </TableCell>
-                  <TableCell>{describeCollectionOwners(c.owners)}</TableCell>
-                  <TableCell>{c.imageCount}</TableCell>
-                  <TableCell>
-                    <CategoryBreadcrumb
-                      categoryId={c.categoryId}
-                      categoryPaths={categoryPaths}
-                      onNavigate={onNavigateCategory}
-                      hiddenColor={visColors.inactive}
-                    />
-                  </TableCell>
-                  <TableCell>{new Date(c.updatedAt).toLocaleDateString()}</TableCell>
+                    </TableCell>
+                  )}
+                  {isColumnVisible('groups') && (
+                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                      {ownGroupIds.length === 0 && inheritedGroups.length === 0 ? (
+                        '—'
+                      ) : (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {ownGroupIds.map((gid) => (
+                            <Chip
+                              key={`g${gid}`}
+                              data-testid="group-chip"
+                              label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                              size="small"
+                              color="secondary"
+                              sx={chipSx}
+                            />
+                          ))}
+                          {inheritedGroups.map((gid) => (
+                            <Chip
+                              key={`g${gid}`}
+                              data-testid="group-chip"
+                              label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                              size="small"
+                              color="secondary"
+                              sx={getInheritedRestrictionSx(true, chipSx)}
+                            />
+                          ))}
+                        </Box>
+                      )}
+                    </TableCell>
+                  )}
+                  {isColumnVisible('category') && (
+                    <TableCell {...dimAttr}>
+                      <CategoryBreadcrumb
+                        categoryId={c.categoryId}
+                        categoryPaths={categoryPaths}
+                        onNavigate={onNavigateCategory}
+                        hiddenColor={visColors.inactive}
+                      />
+                    </TableCell>
+                  )}
+                  {isColumnVisible('visibility') && (
+                    <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
+                      <Tooltip
+                        title={
+                          c.permissions.canHide
+                            ? ''
+                            : 'Only admins and instructors can hide collections'
+                        }
+                        disableHoverListener={c.permissions.canHide}
+                      >
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={!c.hidden}
+                            disabled={!c.permissions.canHide || togglingId === c.id}
+                            onChange={() => void toggleRowHidden(c)}
+                            slotProps={{
+                              input: { 'aria-label': `Visibility for ${c.name}` },
+                            }}
+                          />
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  )}
+                  {isColumnVisible('created_at') && (
+                    <TableCell {...dimAttr}>{new Date(c.createdAt).toLocaleDateString()}</TableCell>
+                  )}
+                  {isColumnVisible('updated_at') && (
+                    <TableCell {...dimAttr}>{new Date(c.updatedAt).toLocaleDateString()}</TableCell>
+                  )}
                   <TableCell
                     align="right"
                     data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
-                    sx={{ whiteSpace: 'nowrap' }}
                   >
-                    {rowCanEdit && (
-                      <Tooltip title="Edit collection">
-                        <IconButton
-                          size="small"
-                          aria-label={`Edit ${c.name}`}
-                          onClick={() => void openEdit(c)}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {rowCanTransfer && (
-                      <Tooltip title="Manage owners">
-                        <IconButton
-                          size="small"
-                          aria-label={`Manage owners of ${c.name}`}
-                          onClick={() => setOwnersTarget(c)}
-                        >
-                          <SwapHorizIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {showMove && (
-                      <Tooltip title="Move to category">
-                        <IconButton
-                          size="small"
-                          aria-label={`Move ${c.name} to a category`}
-                          onClick={() => onMoveCollection?.(c)}
-                        >
-                          <DriveFileMoveIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
+                    <IconButton
+                      size="small"
+                      aria-label={`Actions for ${c.name}`}
+                      onClick={(e) => handleMenuOpen(e, c)}
+                    >
+                      <MoreVertIcon fontSize="small" />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               )
             })}
             {pageCollections.length === 0 && !loading && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell
+                  colSpan={visibleColumnCount + 1}
+                  align="center"
+                  sx={{ py: 4, color: 'text.secondary' }}
+                >
                   {hasActiveFilters
                     ? 'No collections match the current filters.'
                     : 'No collections yet.'}
@@ -900,25 +1217,79 @@ export default function ManageCollectionsPage({
             )}
             {loading && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={visibleColumnCount + 1} align="center" sx={{ py: 4 }}>
                   <CircularProgress size={24} aria-label="Loading collections" />
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        {/* Pagination inside the TableContainer — ManagePage's structure,
+            so the container width contract is identical (#1567). */}
+        <TablePagination
+          component="div"
+          count={sortedCollections.length}
+          page={Math.min(currentPage, maxPage)}
+          onPageChange={(_e, p) => setCurrentPage(p)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10))
+            setCurrentPage(0)
+          }}
+          rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+        />
       </TableContainer>
-      <TablePagination
-        component="div"
-        count={sortedCollections.length}
-        page={Math.min(currentPage, maxPage)}
-        onPageChange={(_e, p) => setCurrentPage(p)}
-        rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={(e) => {
-          setRowsPerPage(parseInt(e.target.value, 10))
-          setCurrentPage(0)
-        }}
-        rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+
+      {/* Row action menu — one kebab per row, ManagePage-style (#1567).
+          Items are gated on the target row's permissions, so the menu keeps
+          a snapshot of the collection it was opened for. */}
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={handleMenuClose}>
+        <MenuItem
+          onClick={() => {
+            if (menuCollection) onOpenCollection(menuCollection.id)
+            handleMenuClose()
+          }}
+        >
+          <ListItemIcon>
+            <VisibilityIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>View</ListItemText>
+        </MenuItem>
+        {(menuCollection?.permissions.canEdit || canFileCollections) && (
+          <MenuItem
+            onClick={() => {
+              if (menuCollection) void openEdit(menuCollection)
+              handleMenuClose()
+            }}
+          >
+            <ListItemIcon>
+              <EditIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Edit</ListItemText>
+          </MenuItem>
+        )}
+        {menuCollection?.permissions.canTransfer && (
+          <MenuItem
+            onClick={() => {
+              if (menuCollection) setOwnersTarget(menuCollection)
+              handleMenuClose()
+            }}
+          >
+            <ListItemIcon>
+              <SwapHorizIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Manage owners</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
+
+      <ColumnVisibilityDialog
+        open={columnDialogOpen}
+        title="Choose collection table columns"
+        columns={MANAGE_COLLECTION_COLUMN_OPTIONS}
+        visibleColumns={visibleColumns}
+        onClose={() => setColumnDialogOpen(false)}
+        onToggleColumn={toggleColumn}
       />
 
       <CollectionEditDialog
@@ -930,6 +1301,10 @@ export default function ManageCollectionsPage({
         groups={groups}
         onSave={handleSave}
         onDelete={editing?.permissions.canDelete ? deleteFromDialog : undefined}
+        categories={categories}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
       />
 
       <CollectionOwnersDialog

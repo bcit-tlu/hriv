@@ -1,0 +1,83 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionManageDialogStories from './CollectionManageDialog.stories'
+
+<Meta of={CollectionManageDialogStories} />
+
+<Title />
+
+<Subtitle>
+  The member-management surface for a collection ("Manage Collection Images") — a miniature Browse:
+  every member as a filmstrip-size tile that reorders by drag-and-drop, a corner control that
+  removes it (tooltip "Remove image"), a Multi-select mode that multi-picks tiles for staged
+  removal, and a Choose images action that hands off to the global search picker. All edits stage in
+  a local draft and commit once via Done — or are discarded by Cancel.
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` mounts this from the detail header's **Manage Images** button (`canEdit` collections,
+#1566). It replaces the sequence viewer's old inline reorder mode and is the only place members
+are added to or removed from a collection outside the global search/Browse add gestures.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionManageDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Tiles.** Each member renders a 72×72 `RenewingThumbnail` with a one-line caption — the same
+  thumbnail size the sequence filmstrip uses. A corner ✕ removes the member without dragging. The
+  sortable `ref` rides the outer wrapper so the drag transform carries the badge with the tile,
+  while `handleRef` scopes the activator (role/tabindex/listeners) to the tile face — the badge
+  sits inside the transformed wrapper but outside the activator, so it can't start a drag and
+  there's no nested-interactive axe violation. The face declares `tabIndex`/`role="button"`
+  explicitly rather than relying on the a11y plugin's deferred attribute injection, so keyboard
+  reorder (Space/Enter to pick up, arrows to move) always reaches the `KeyboardSensor` (#1567).
+  Pointer activation needs 8px of movement (same
+  sensor policy as `SortableTileGrid`: 8px pointer distance, 250ms touch delay).
+- **Selection mode.** The header's **Multi-select** toggle (`aria-pressed`) switches the grid
+  into a multi-pick removal mode (#1567): sortables are disabled so a click can never arm a drag,
+  each tile face becomes a labelled `role="checkbox"` (click, Space or Enter toggles) with a
+  stock MUI `Checkbox` as the corner indicator (decorative — the face holds the semantics)
+  replacing the ✕ badge, and a dialog-spanning error-styled **Remove N Selected Images** button
+  pinned above the actions stages the whole set in one draft update. Leaving selection mode — or
+  reopening the dialog — clears the set.
+- **Draft staging.** Opening seeds a local draft from the detail's members; every operation —
+  reorder, remove, search-add — mutates only the draft, so the page behind the dialog
+  never moves mid-edit (#1567). **Done** diffs the draft against the seeded list and calls
+  `onSaveMembers(imageIds)` once on a difference — a single `PUT …/images` whole-replace through
+  `useCollectionsData.reorderImages`. Membership changes that land while the dialog is open are
+  merged into the commit (externally removed members drop out, external adds append) so a stale
+  draft can't clobber them. A failed commit keeps the dialog open with the draft intact; closing a
+  dirty draft (Esc/backdrop/Cancel) asks to discard first.
+- **Reorder.** Tiles are `useSortable` inside their own `DragDropProvider` — the locked
+  `SortableTileGrid` move-vs-reorder collision contract is untouched. On drag-end `move()` derives
+  the draft order; a no-change drop or a cancelled drag changes nothing. Drags render through a
+  `DragOverlay` replica while the source tile dims in place, keeping the ✕ attached to the dragged
+  tile.
+- **Choose images.** The title row's **Choose images** button (Browse's
+  `AddPhotoAlternateIcon` convention) calls `onAddImages`; `App` opens the
+  search modal in add-to-collection mode with multi-select already engaged
+  (`initialSelectMode`). Search results check individually — and whole
+  categories check too, staging every image in their subtree in
+  registration order — then the selected `ImageItem`s route back into the
+  draft (dedupe by id, four-image cap on synchronized collections —
+  already/full outcomes report through `onError`).
+- **Restricted members.** When `memberCount` exceeds the rendered list, the dialog notes how many
+  members are hidden by restriction — they can't be managed from here.
+- **Errors.** Mutation failures surface through `onError`; a failed Done commit keeps the dialog
+  open with the draft intact so nothing is lost.
+
+## Stories
+
+<Stories includePrimary={false} />

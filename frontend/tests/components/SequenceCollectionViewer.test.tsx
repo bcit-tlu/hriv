@@ -3,9 +3,8 @@
  *
  * ImageViewer is mocked at the component boundary so tests can assert the
  * read-only prop set and drive `onError`/`onTileSourceRenewed` directly.
- * `DragDropProvider` is wrapped (not mocked) to capture `onDragEnd`, so the
- * real @dnd-kit `move()` semantics run against synthetic operations that
- * carry the projected-index fields the helper commits on.
+ * Member reorder/add/remove live in CollectionManageDialog (#1566) — its
+ * test file carries the drag-end coverage this file used to host.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -25,30 +24,6 @@ vi.mock('../../src/components/ImageViewer', () => ({
     return <div data-testid="image-viewer" data-image-id={String(props.imageId)} />
   },
 }))
-
-// ── DragDropProvider wrapper — captures onDragEnd for direct invocation ──
-type SortableMeta = { index?: number; initialIndex?: number; group?: string }
-type DragEndHandler = (event: {
-  operation: {
-    source: ({ id: string | number } & SortableMeta) | null
-    target: ({ id: string | number } & SortableMeta) | null
-    canceled: boolean
-  }
-}) => void | Promise<void>
-
-let capturedOnDragEnd: DragEndHandler | undefined
-
-vi.mock('@dnd-kit/react', async () => {
-  const actual = await vi.importActual<typeof import('@dnd-kit/react')>('@dnd-kit/react')
-  return {
-    ...actual,
-    DragDropProvider: (props: Record<string, unknown>) => {
-      capturedOnDragEnd = props.onDragEnd as DragEndHandler | undefined
-      const ActualProvider = actual.DragDropProvider as React.ComponentType<Record<string, unknown>>
-      return <ActualProvider {...props} />
-    },
-  }
-})
 
 function images(count: number): ImageItem[] {
   return Array.from({ length: count }, (_, i) =>
@@ -70,11 +45,8 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
     itemId: null,
     onSelectItem: vi.fn(),
     onOpenImage: vi.fn(),
-    onReorder: vi.fn().mockResolvedValue(undefined),
     onImageRenewed: vi.fn(),
     onError: vi.fn(),
-    reordering: false,
-    onReorderingChange: vi.fn(),
     ...overrides,
   }
   return { ...render(<SequenceCollectionViewer {...props} />), props }
@@ -82,7 +54,6 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
 
 beforeEach(() => {
   lastViewerProps = null
-  capturedOnDragEnd = undefined
 })
 
 describe('SequenceCollectionViewer', () => {
@@ -215,6 +186,54 @@ describe('SequenceCollectionViewer', () => {
     expect(props.onSelectItem).toHaveBeenCalledWith(100)
   })
 
+  it('navigates with arrows even when focus sits outside the region (#1567)', () => {
+    // After a dialog closes or a nav control is clicked, focus lands on a
+    // header button — the document-level binding must still step the
+    // sequence without the user clicking back into the viewer.
+    const { props } = renderViewer({ itemId: 101 })
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(100)
+  })
+
+  it('yields arrow keys while a dialog or menu is open (#1567)', () => {
+    const { props } = renderViewer({ itemId: 101 })
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inside = document.createElement('button')
+    dialog.appendChild(inside)
+    document.body.appendChild(dialog)
+    try {
+      // Events inside the dialog…
+      fireEvent.keyDown(inside, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+      // …and even on the page while the dialog is mounted.
+      fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+    } finally {
+      dialog.remove()
+    }
+  })
+
+  it('yields arrow keys to a focused tab strip (#1567)', () => {
+    // MUI Tabs (the AppShell nav) move between tabs on ←/→ — the
+    // document-level binding must not eat a roving-focus widget's keys.
+    const { props } = renderViewer({ itemId: 101 })
+    const tablist = document.createElement('div')
+    tablist.setAttribute('role', 'tablist')
+    const tab = document.createElement('button')
+    tab.setAttribute('role', 'tab')
+    tablist.appendChild(tab)
+    document.body.appendChild(tablist)
+    try {
+      fireEvent.keyDown(tab, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+    } finally {
+      tablist.remove()
+    }
+  })
+
   it('autofocuses the region so arrows step the sequence immediately (#1564)', () => {
     const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
     try {
@@ -249,11 +268,8 @@ describe('SequenceCollectionViewer', () => {
           itemId: 101,
           onSelectItem: props.onSelectItem,
           onOpenImage: props.onOpenImage,
-          onReorder: props.onReorder,
           onImageRenewed: props.onImageRenewed,
           onError: props.onError,
-          reordering: false,
-          onReorderingChange: props.onReorderingChange,
         }}
       />,
     )
@@ -266,11 +282,8 @@ describe('SequenceCollectionViewer', () => {
           itemId: null,
           onSelectItem: props.onSelectItem,
           onOpenImage: props.onOpenImage,
-          onReorder: props.onReorder,
           onImageRenewed: props.onImageRenewed,
           onError: props.onError,
-          reordering: false,
-          onReorderingChange: props.onReorderingChange,
         }}
       />,
     )
@@ -386,69 +399,21 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeDisabled()
   })
 
-  it('resets failures and reorder mode when a different collection opens', () => {
-    const { props, rerender } = renderViewer({ reordering: true })
+  it('resets failures when a different collection opens', () => {
+    const { props, rerender } = renderViewer()
     act(() => {
       ;(lastViewerProps!.onError as (m: string) => void)('gone')
     })
     const next = seqCollection({ id: 77, images: [makeImage({ id: 100, name: 'Slice 1' })] })
-    rerender(
-      <SequenceCollectionViewer {...props} collection={next} itemId={100} reordering={false} />,
-    )
-    // The controlled reorder mode is exited by the collection-change effect
-    // and the shared image id is no longer failed.
-    expect(props.onReorderingChange).toHaveBeenCalledWith(false)
+    rerender(<SequenceCollectionViewer {...props} collection={next} itemId={100} />)
+    // The shared image id is no longer failed under the new collection.
     expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeEnabled()
   })
 
-  it('offers reorder mode via the controlled prop and persists a drag reorder', async () => {
-    const collection = seqCollection()
-    const { props } = renderViewer({ collection, reordering: true })
-    expect(capturedOnDragEnd).toBeDefined()
-    // Drag the first item onto the third: move() commits source.index.
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 2, initialIndex: 0, group: 'strip' },
-        target: { id: 'seq-102', index: 2, initialIndex: 2, group: 'strip' },
-        canceled: false,
-      },
+  it('desaturates the filmstrip for a hidden collection (#1566)', () => {
+    renderViewer({ hidden: true })
+    expect(screen.getByTestId('sequence-thumbnail-strip')).toHaveStyle({
+      filter: 'grayscale(100%)',
     })
-    expect(props.onReorder).toHaveBeenCalledWith([101, 102, 100])
-  })
-
-  it('reports a reorder failure through onError', async () => {
-    const err = new Error('stale version')
-    const onReorder = vi.fn().mockRejectedValue(err)
-    const { props } = renderViewer({ onReorder, reordering: true })
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 2, initialIndex: 0, group: 'strip' },
-        target: { id: 'seq-102', index: 2, initialIndex: 2, group: 'strip' },
-        canceled: false,
-      },
-    })
-    await vi.waitFor(() =>
-      expect(props.onError).toHaveBeenCalledWith('Failed to reorder collection images.'),
-    )
-  })
-
-  it('ignores a canceled drag and a drop that changes nothing', () => {
-    const { props } = renderViewer({ reordering: true })
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },
-        target: null,
-        canceled: true,
-      },
-    })
-    // Dropping the item back onto itself leaves the order unchanged.
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },
-        target: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },
-        canceled: false,
-      },
-    })
-    expect(props.onReorder).not.toHaveBeenCalled()
   })
 })

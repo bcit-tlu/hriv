@@ -1139,31 +1139,37 @@ describe('SearchModal', () => {
 
   // ── Multi-select (#1418) ─────────────────────────────────────────────
 
-  it('shows the Select toggle only when image results exist and a handler is provided', async () => {
+  it('keeps the select layer out of normal search even when results and a handler exist', async () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
 
-    // Collection-only results: no toggle.
-    await user.type(input, 'Skull')
-    expect(screen.queryByTestId('search-select-toggle')).not.toBeInTheDocument()
-
-    // Adding an image result reveals it.
-    await user.clear(input)
+    // Without `initialSelectMode` (the Manage-dialog add flow) there is no
+    // way to turn selection on — no toggle, no checkboxes, no footer.
     await user.type(input, 'Liver')
-    expect(screen.getByTestId('search-select-toggle')).toBeInTheDocument()
+    expect(screen.queryByTestId('search-select-all')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('search-select-checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('search-select-footer')).not.toBeInTheDocument()
   })
 
-  it('hides the Select toggle when no add handler is provided', async () => {
+  it('ignores initialSelectMode when no add handler is provided', async () => {
     const user = userEvent.setup()
-    render(<SearchModal {...defaultProps} onAddImagesToCollection={undefined} open={true} />)
+    render(
+      <SearchModal
+        {...defaultProps}
+        initialSelectMode={true}
+        onAddImagesToCollection={undefined}
+        open={true}
+      />,
+    )
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'Liver')
-    expect(screen.queryByTestId('search-select-toggle')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('search-select-checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('search-select-footer')).not.toBeInTheDocument()
   })
 
   it('lets the user check image results only and emits ids in result order', async () => {
@@ -1177,6 +1183,7 @@ describe('SearchModal', () => {
         onClose={onClose}
         onSelectImage={onSelectImage}
         onAddImagesToCollection={onAddImagesToCollection}
+        initialSelectMode={true}
         open={true}
       />,
     )
@@ -1184,10 +1191,9 @@ describe('SearchModal', () => {
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
-    // "section" matches both fixture images (Liver Section name;
-    // "Cross-section" inside the Kidney Cross note).
-    await user.type(input, 'section')
-    await user.click(screen.getByTestId('search-select-toggle'))
+    // "liver kidney" unions both fixture image names — the picker's
+    // pre-applied Categories+Images chips scope matches to Name fields.
+    await user.type(input, 'liver kidney')
 
     // Checkboxes appear on image rows only — exactly the two fixture images.
     const checkboxes = screen.getAllByTestId('search-select-checkbox')
@@ -1205,19 +1211,37 @@ describe('SearchModal', () => {
 
     await user.click(screen.getByTestId('search-add-to-collection'))
     expect(onClose).toHaveBeenCalled()
-    expect(onAddImagesToCollection).toHaveBeenCalledWith([10, 11])
+    // Picks carry the ImageItems — the Manage dialog stages them (#1567).
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 10 }),
+      expect.objectContaining({ id: 11 }),
+    ])
   })
 
   it('keeps non-image rows navigable and unselectable in select mode', async () => {
     const user = userEvent.setup()
     const onSelectCollection = vi.fn()
-    render(<SearchModal {...defaultProps} onSelectCollection={onSelectCollection} open={true} />)
+    render(
+      <SearchModal
+        {...defaultProps}
+        onSelectCollection={onSelectCollection}
+        initialSelectMode={true}
+        open={true}
+      />,
+    )
 
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
     await user.type(input, 'liver')
-    await user.click(screen.getByTestId('search-select-toggle'))
+    // The picker offers only the Categories and Images chips; a collection
+    // joins the list only if the user clears both chips (empty filter set =
+    // all kinds, the same as normal search).
+    expect(screen.queryByText('Cardiac series')).not.toBeInTheDocument()
+    const chipByLabel = (label: string) =>
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === label)!
+    await user.click(chipByLabel('Categories'))
+    await user.click(chipByLabel('Images'))
 
     // The collection result (matched on description) has no checkbox and
     // still navigates on click.
@@ -1232,24 +1256,21 @@ describe('SearchModal', () => {
     expect(onSelectCollection).toHaveBeenCalledWith(6)
   })
 
-  it('clears the selection with Clear and resets it when the modal closes', async () => {
+  it('resets the selection when the modal closes and reopens', async () => {
     const user = userEvent.setup()
-    const { rerender } = render(<SearchModal {...defaultProps} open={true} />)
+    const { rerender } = render(
+      <SearchModal {...defaultProps} initialSelectMode={true} open={true} />,
+    )
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
-    await user.type(input, 'section')
-    await user.click(screen.getByTestId('search-select-toggle'))
+    await user.type(input, 'liver')
 
+    // There is no Clear button — Cancel and Unselect all cover its jobs.
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
-
-    await user.click(screen.getByRole('button', { name: 'Clear' }))
-    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
-    expect(screen.getByTestId('search-add-to-collection')).toBeDisabled()
-
-    await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
-    rerender(<SearchModal {...defaultProps} open={false} />)
+    rerender(<SearchModal {...defaultProps} initialSelectMode={true} open={false} />)
     rerender(<SearchModal {...defaultProps} open={true} />)
 
     // Selection mode and the selection itself are gone after reopening.
@@ -1275,6 +1296,7 @@ describe('SearchModal', () => {
       <SearchModal
         {...defaultProps}
         onAddImagesToCollection={onAddImagesToCollection}
+        initialSelectMode={true}
         open={true}
       />,
     )
@@ -1284,17 +1306,17 @@ describe('SearchModal', () => {
 
     // First query: select Kidney Cross (id 11).
     await user.type(input, 'kidney')
-    await user.click(screen.getByTestId('search-select-toggle'))
     await user.click(screen.getByRole('checkbox', { name: 'Select Kidney Cross' }))
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
 
-    // A query with no image results hides the pick, but the count stays and
-    // the Cancel toggle remains reachable.
+    // A query with no selectable results hides the pick, but the count
+    // stays and the footer's Cancel remains reachable. ("skull" only
+    // matched the collection kind, which the picker filters out.)
     await user.clear(input)
     await user.type(input, 'skull')
-    expect(screen.getByText('Skull comparison')).toBeInTheDocument()
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
     expect(screen.queryByTestId('search-select-checkbox')).not.toBeInTheDocument()
-    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('search-select-cancel')).toBeInTheDocument()
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
 
     // A second image in a later query joins the selection.
@@ -1306,36 +1328,363 @@ describe('SearchModal', () => {
     // Kidney was encountered first, so the payload is [11, 10] — not the
     // current result order and never the click order.
     await user.click(screen.getByTestId('search-add-to-collection'))
-    expect(onAddImagesToCollection).toHaveBeenCalledWith([11, 10])
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 11 }),
+      expect.objectContaining({ id: 10 }),
+    ])
   })
 
-  it('keeps the Cancel control reachable in no-result and empty-query states', async () => {
+  it('opens in select mode when initialSelectMode seeds it (#1567)', async () => {
     const user = userEvent.setup()
-    render(<SearchModal {...defaultProps} open={true} />)
+    render(<SearchModal {...defaultProps} initialSelectMode={true} open={true} />)
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'liver kidney')
+    // No Select-toggle click needed — checkboxes are already live.
+    expect(screen.getAllByTestId('search-select-checkbox')).toHaveLength(2)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
+    expect(screen.getByTestId('search-select-cancel')).toBeInTheDocument()
+  })
+
+  it('pre-applies the Categories and Images type chips in picker mode (#1567)', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} initialSelectMode={true} open={true} />)
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'section')
+
+    // Name-scoped matching is the chip contract: "section" hits only the
+    // Liver Section name — the note-side "Cross-section" match stays out.
+    expect(screen.getByRole('checkbox', { name: 'Select Liver Section' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Select Kidney Cross' })).not.toBeInTheDocument()
+    const chipByLabel = (label: string) =>
+      screen.getAllByTestId('type-filter-chip').find((chip) => chip.textContent === label)!
+    // Only the two addable kinds are offered — no other type chips and no
+    // field chips render in the picker.
+    expect(screen.getAllByTestId('type-filter-chip')).toHaveLength(2)
+    expect(chipByLabel('Categories')).toHaveClass('MuiChip-filled')
+    expect(chipByLabel('Images')).toHaveClass('MuiChip-filled')
+    expect(screen.queryAllByTestId('field-filter-chip')).toHaveLength(0)
+
+    // The chips stay toggleable — unticking Images drops its result.
+    await user.click(chipByLabel('Images'))
+    expect(screen.queryByRole('checkbox', { name: 'Select Liver Section' })).not.toBeInTheDocument()
+  })
+
+  it('lets a category checkbox stage its whole subtree in registration order (#1567)', async () => {
+    const user = userEvent.setup()
+    const onAddImagesToCollection = vi.fn()
+    const img = (id: number, name: string, categoryId: number, sortOrder: number) => ({
+      id,
+      name,
+      thumb: `/thumb/${id}.jpg`,
+      tileSources: `/tiles/${id}.dzi`,
+      categoryId,
+      copyright: null,
+      note: null,
+      active: true,
+      sortOrder,
+      version: 1,
+      metadataExtra: null,
+    })
+    const subtreeChild = {
+      id: 22,
+      label: 'Sub A',
+      parentId: 21,
+      children: [],
+      // Deliberately out of sortOrder — registration order applies.
+      images: [img(32, 'Anatomy Slice', 22, 1), img(33, 'Sub Img', 22, 0)],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 1,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const subtreeHidden = {
+      ...subtreeChild,
+      id: 23,
+      label: 'Hidden Sub',
+      sortOrder: 0,
+      status: 'hidden' as const,
+      images: [img(34, 'Hidden Img', 23, 0)],
+    }
+    const subtreeParent = {
+      id: 21,
+      label: 'Anatomy',
+      parentId: null,
+      children: [subtreeHidden, subtreeChild],
+      images: [img(30, 'Anatomy Atlas', 21, 0)],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[subtreeParent]}
+        excludeHidden={true}
+        initialSelectMode={true}
+        onAddImagesToCollection={onAddImagesToCollection}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+
+    // The category row carries its own checkbox; matching image rows do too.
+    const catBox = screen.getByRole('checkbox', { name: 'Select Anatomy' })
+    expect(screen.getByRole('checkbox', { name: 'Select Anatomy Atlas' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Select Anatomy Slice' })).toBeInTheDocument()
+
+    // Partially selecting a subtree member renders the category indeterminate.
+    await user.click(screen.getByRole('checkbox', { name: 'Select Anatomy Slice' }))
+    expect(catBox).toHaveAttribute('data-indeterminate', 'true')
+
+    // Checking the category completes the subtree: own image first, then the
+    // child's images sorted by sortOrder — the hidden child is skipped.
+    await user.click(catBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('3 images selected')
+    await user.click(screen.getByTestId('search-add-to-collection'))
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 30 }),
+      expect.objectContaining({ id: 33 }),
+      expect.objectContaining({ id: 32 }),
+    ])
+  })
+
+  it('unchecking a category removes every subtree image at once (#1567)', async () => {
+    const user = userEvent.setup()
+    const img = (id: number, name: string, categoryId: number, sortOrder: number) => ({
+      id,
+      name,
+      thumb: `/thumb/${id}.jpg`,
+      tileSources: `/tiles/${id}.dzi`,
+      categoryId,
+      copyright: null,
+      note: null,
+      active: true,
+      sortOrder,
+      version: 1,
+      metadataExtra: null,
+    })
+    const parent = {
+      id: 21,
+      label: 'Anatomy',
+      parentId: null,
+      children: [],
+      images: [img(30, 'Anatomy Atlas', 21, 0), img(31, 'Anatomy Slice', 21, 1)],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[parent]}
+        initialSelectMode={true}
+        onAddImagesToCollection={vi.fn()}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+    const catBox = screen.getByRole('checkbox', { name: 'Select Anatomy' })
+    await user.click(catBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+    await user.click(catBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
+  })
+
+  // Shared fixtures for the pin/direct selection tests (#1567): a parent
+  // category, a child whose label also matches the query, and members in
+  // each so their coverage can overlap.
+  const nestedImg = (id: number, name: string, categoryId: number, sortOrder: number) => ({
+    id,
+    name,
+    thumb: `/thumb/${id}.jpg`,
+    tileSources: `/tiles/${id}.dzi`,
+    categoryId,
+    copyright: null,
+    note: null,
+    active: true,
+    sortOrder,
+    version: 1,
+    metadataExtra: null,
+  })
+  const nestedChild = {
+    id: 22,
+    label: 'Anatomy Sub',
+    parentId: 21,
+    children: [],
+    images: [nestedImg(32, 'Sub Slice', 22, 0)],
+    programIds: [],
+    groupIds: [],
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+    metadataExtra: null,
+  }
+  const nestedParent = {
+    id: 21,
+    label: 'Anatomy',
+    parentId: null,
+    children: [nestedChild],
+    images: [nestedImg(30, 'Anatomy Atlas', 21, 0)],
+    programIds: [],
+    groupIds: [],
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+    metadataExtra: null,
+  }
+
+  it('keeps an individually picked member when its category is unchecked (#1567)', async () => {
+    const user = userEvent.setup()
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[nestedParent]}
+        initialSelectMode={true}
+        onAddImagesToCollection={vi.fn()}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+
+    // Pick the member directly, then toggle its category on and off — the
+    // direct pick must survive the uncheck (#1567: count only reflects
+    // claims that still hold).
+    await user.click(screen.getByRole('checkbox', { name: 'Select Anatomy Atlas' }))
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+    await user.click(screen.getByRole('checkbox', { name: 'Select Anatomy' }))
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+    await user.click(screen.getByRole('checkbox', { name: 'Select Anatomy' }))
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+    expect(screen.getByRole('checkbox', { name: 'Select Anatomy Atlas' })).toBeChecked()
+  })
+
+  it('lets a nested category keep its subtree when the parent is unchecked (#1567)', async () => {
+    const user = userEvent.setup()
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[nestedParent]}
+        initialSelectMode={true}
+        onAddImagesToCollection={vi.fn()}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+
+    const parentBox = screen.getByRole('checkbox', { name: 'Select Anatomy' })
+    const childBox = screen.getByRole('checkbox', { name: 'Select Anatomy Sub' })
+    await user.click(parentBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+    // Checking the child while covered by the parent must not drop the
+    // shared member — the count can only grow or stay, never shrink.
+    await user.click(childBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+    // Unchecking the parent lifts only its own claim — the child's subtree
+    // stays selected via the child's pin.
+    await user.click(parentBox)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
+    expect(childBox).toBeChecked()
+    expect(parentBox).not.toBeChecked()
+    expect(parentBox).toHaveAttribute('data-indeterminate', 'true')
+  })
+
+  it('Select all covers every listed row and Unselect all clears them (#1567)', async () => {
+    const user = userEvent.setup()
+    const onAddImagesToCollection = vi.fn()
+    render(
+      <SearchModal
+        {...defaultProps}
+        categories={[nestedParent]}
+        initialSelectMode={true}
+        onAddImagesToCollection={onAddImagesToCollection}
+        open={true}
+      />,
+    )
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+
+    const selectAll = screen.getByTestId('search-select-all')
+    expect(selectAll).toHaveTextContent('Select all')
+    await user.click(selectAll)
+    // Both category results + both image rows resolve to the same two ids.
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('2 images selected')
+    expect(selectAll).toHaveTextContent('Unselect all')
+    for (const name of ['Select Anatomy', 'Select Anatomy Sub']) {
+      expect(screen.getByRole('checkbox', { name })).toBeChecked()
+    }
+
+    await user.click(selectAll)
+    expect(screen.getByTestId('search-select-footer').textContent).toContain('0 images selected')
+    expect(selectAll).toHaveTextContent('Select all')
+
+    // Select-all then emits the full set in result order.
+    await user.click(selectAll)
+    await user.click(screen.getByTestId('search-add-to-collection'))
+    expect(onAddImagesToCollection).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 30 }),
+      expect.objectContaining({ id: 32 }),
+    ])
+  })
+
+  it('keeps the footer Cancel reachable in no-result and empty-query states', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<SearchModal {...defaultProps} onClose={onClose} initialSelectMode={true} open={true} />)
     const input = screen.getByPlaceholderText(
       'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
     )
 
     await user.type(input, 'section')
-    await user.click(screen.getByTestId('search-select-toggle'))
     await user.click(screen.getByRole('checkbox', { name: 'Select Liver Section' }))
 
-    // A query with no matches: the footer and Cancel survive.
+    // A query with no matches: the footer (with its Cancel) survives.
     await user.clear(input)
     await user.type(input, 'zzzz')
     expect(screen.getByText(/No results found/)).toBeInTheDocument()
-    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('search-select-cancel')).toBeInTheDocument()
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
 
     // An empty query offers the same escape hatch.
     await user.clear(input)
     expect(screen.getByText(/Start typing/)).toBeInTheDocument()
-    expect(screen.getByTestId('search-select-toggle')).toHaveTextContent('Cancel')
+    expect(screen.getByTestId('search-select-cancel')).toBeInTheDocument()
     expect(screen.getByTestId('search-select-footer').textContent).toContain('1 image selected')
 
-    // Cancelling exits select mode entirely.
-    await user.click(screen.getByTestId('search-select-toggle'))
-    expect(screen.queryByTestId('search-select-footer')).not.toBeInTheDocument()
+    // Cancel abandons the picker — the modal closes, the pick goes nowhere.
+    await user.click(screen.getByTestId('search-select-cancel'))
+    expect(onClose).toHaveBeenCalled()
+    expect(defaultProps.onAddImagesToCollection).not.toHaveBeenCalled()
   })
 
   it('hides collection results, the Collections chip, and collection copy when the feature is off', async () => {

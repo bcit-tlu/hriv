@@ -439,6 +439,36 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
   })
 
+  it('preserves the live viewport across a same-image tile-source refresh (#1567)', () => {
+    // A save/refetch response re-tokenizes tile_sources — reopening the
+    // pyramid must not bounce the user back to the home position, and
+    // existing overlays survive the same-image swap.
+    const { rerender } = render(<ImageViewer tileSources="/tiles.dzi?tile_token=old" imageId={7} />)
+    const v = viewer()
+    act(() => v.fire('open'))
+    const overlay = document.createElement('div')
+    act(() => v.addOverlay(overlay))
+    v.viewport.getZoom.mockReturnValue(5)
+    v.viewport.getCenter.mockReturnValue({ x: 0.2, y: 0.3 })
+    v.viewport.getRotation.mockReturnValue(15)
+    v.viewport.zoomTo.mockClear()
+    v.viewport.panTo.mockClear()
+    v.viewport.setRotation.mockClear()
+
+    rerender(<ImageViewer tileSources="/tiles.dzi?tile_token=new" imageId={7} />)
+
+    expect(v.open).toHaveBeenCalledWith('/tiles.dzi?tile_token=new')
+    expect(v.activeOverlays.has(overlay)).toBe(true)
+
+    act(() => v.fire('open'))
+    expect(v.viewport.zoomTo).toHaveBeenLastCalledWith(5, undefined, true)
+    expect(v.viewport.panTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0.2, y: 0.3 }),
+      true,
+    )
+    expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
+  })
+
   it('does not renew tile sources for non-auth loading failures', async () => {
     render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
     const v = viewer()

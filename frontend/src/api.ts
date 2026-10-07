@@ -696,6 +696,10 @@ export interface ApiCollectionSummary {
   category_id: number | null
   /** Tile-order position inside its category/root scope. */
   sort_order: number
+  /** Restriction scope (empty unless `visibility === 'restricted'`) — carried
+   *  on summaries so tiles can render program/group chips (#1567). */
+  program_ids: number[]
+  group_ids: number[]
   created_at: string
   updated_at: string
   permissions: ApiCollectionPermissions
@@ -704,8 +708,6 @@ export interface ApiCollectionSummary {
 export interface ApiCollection extends ApiCollectionSummary {
   /** Ordered, visible-to-caller members with tokenized `thumb` / `tile_sources`. */
   images: ApiImage[]
-  program_ids: number[]
-  group_ids: number[]
   viewport_state: Record<string, unknown>
   /**
    * Nominal member count including members hidden from the caller

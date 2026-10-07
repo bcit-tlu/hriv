@@ -66,6 +66,8 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     coverThumb: '/hriv-splash2.jpg',
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
@@ -254,7 +256,7 @@ function CollectionsPageExample(args: StoryArgs) {
           onSaveViewport={async () => undefined}
           loadCollection={async () => detail}
           onCreate={async () => undefined}
-          onUpdate={async () => undefined}
+          onUpdate={async () => detail}
           onDelete={async () => undefined}
           onSaveOwners={async () => undefined}
           onTransfer={async () => undefined}
@@ -391,8 +393,8 @@ export const DetailFiled: Story = {
 
 export const DetailHidden: Story = {
   name: 'Detail (hidden)',
-  // Curator view of a hidden collection (#1559): Hidden chip beside the
-  // visibility chip and the action reads "Show collection".
+  // Curator view of a hidden collection (#1559): the controls desaturate
+  // (no Hidden chip, #1567) and the action reads "Show collection".
   args: {
     collectionPageType: 'sequence',
     selectedCollectionId: 5,

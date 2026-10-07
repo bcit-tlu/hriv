@@ -720,6 +720,11 @@ class CollectionSummaryOut(BaseModel):
     owners: list[CollectionOwnerOut] = []
     image_count: int = 0
     cover_thumb: str | None = None
+    # Restriction scope rides on summaries too so Browse tiles can render the
+    # collection's own program/group chips like category tiles do (#1567).
+    # Empty unless ``visibility == "restricted"``.
+    program_ids: list[int] = []
+    group_ids: list[int] = []
     version: int = 1
     # Browse placement (epic #1525): the category the collection is filed in
     # (``None`` = uncategorized) and its tile-order position in that scope.
@@ -743,8 +748,6 @@ class CollectionSummaryOut(BaseModel):
 
 class CollectionOut(CollectionSummaryOut):
     images: list[ImageOut] = []
-    program_ids: list[int] = []
-    group_ids: list[int] = []
     viewport_state: dict = {}
     # Nominal member count for unfiltered viewers (non-students), so the
     # detail view can distinguish "empty collection" from "all members are

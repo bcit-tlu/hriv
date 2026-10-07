@@ -52,6 +52,8 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     version: api.version,
     categoryId: api.category_id,
     sortOrder: api.sort_order,
+    programIds: api.program_ids,
+    groupIds: api.group_ids,
     createdAt: api.created_at,
     updatedAt: api.updated_at,
     permissions: {
@@ -89,8 +91,6 @@ export function apiCollectionToCollection(api: ApiCollection): Collection {
   return {
     ...apiCollectionSummaryToSummary(api),
     images: api.images.map(apiImageToItem),
-    programIds: api.program_ids,
-    groupIds: api.group_ids,
     viewportState: api.viewport_state,
     memberCount: api.member_count,
   }

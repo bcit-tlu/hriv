@@ -14,15 +14,15 @@ import * as CollectionCardStories from './CollectionCard.stories'
 <Title />
 
 <Subtitle>
-  Collections-page card: cover thumbnail, name, image count, owners and visibility chip — with the
-  type chip pinned top-left, Move/Owners actions top-right, and Edit in the metadata area.
+  Collections-page card: cover thumbnail, name, image count and visibility chip — with the type icon
+  left of the title, Move/Owners actions top-right, and an Edit pencil beside the title.
 </Subtitle>
 
 ## When to use
 
 Use `CollectionCard` inside the collections-page grids (`CollectionsPage`) and the Browse tile
 grid to represent one `CollectionSummary`. Clicking the card body opens the collection
-(`?collection={id}`); the overlay icons call `onMove` / `onTransfer` and the metadata pencil calls
+(`?collection={id}`); the overlay icons call `onMove` / `onTransfer` and the title-row pencil calls
 `onEdit`. There is no card-level delete — Delete Collection lives inside the edit dialog (#1554).
 
 ## Interactive example
@@ -35,9 +35,14 @@ grid to represent one `CollectionSummary`. Clicking the card body opens the coll
 
 - The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
   expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
-- The type chip pins to a top-LEFT cover overlay (`top: 4, left: 4`) while Move/Owners stay in a
-  separate top-RIGHT overlay (#1559) — the chip's position never shifts with the available
-  actions. Both use the white-on-`rgba(0,0,0,0.25)` scrim convention of `CategoryTile` (#1554).
+- Move/Owners live in a top-RIGHT cover overlay (#1559); the overlay actions use the
+  white-on-`rgba(0,0,0,0.25)` scrim convention of
+  `CategoryTile` (#1554). The type renders as a bare icon left of the tile
+  title — the category folder-icon spot — via the shared `CollectionTypeIcon`
+  (`titleAccess` names it for screen readers); where the type renders as a pill
+  (detail header, edit dialog, manage table) it is the shared `CollectionTypeChip` — red (primary)
+  outline and text on a white fill with the type's icon (#1567). Tiles carry no
+  owner reference at all — neither program nor user (#1567).
   The visibility chip lives
   in the metadata area and reuses the
   category restriction palette — `Restricted` borrows the group-chip colours, `Public` is neutral

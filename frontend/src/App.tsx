@@ -69,9 +69,9 @@ import {
   parseCollectionIdParam,
   parseCollectionItemParam,
 } from './collectionUtils'
+import type { StageAddImages } from './components/CollectionManageDialog'
 import { useCollectionsData } from './useCollectionsData'
 import {
-  addImagesToCollection,
   createCollectionWithImages,
   useEditableCollections,
   useVisibleCollections,
@@ -109,7 +109,7 @@ import {
   useProcessingJobs,
 } from './useProcessingJobs'
 import type { ProcessingJob } from './useProcessingJobs'
-import type { Category, Group, ImageItem } from './types'
+import type { Category, Collection, Group, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
@@ -1263,6 +1263,7 @@ export default function App() {
     setMovingCollection,
     handleRequestMoveCollection,
     handleMoveCollection,
+    moveCollectionTo,
     handleDropCollectionOnCategory,
     handleDropImageOnCollection,
     handleSetCardImage,
@@ -1770,10 +1771,32 @@ export default function App() {
   // renders them (#1529) — the manage-categories dialog shares that list so
   // its submitted orders carry collection members (issue #1528).
 
-  const handleSearchAddToCollection = useCallback((imageIds: number[]) => {
-    setAddToCollectionImageIds(imageIds)
-    setAddToCollectionOpen(true)
+  // The collection Manage dialog's "+" (#1566): records the target so search
+  // picks go straight into that collection instead of the picker dialog.
+  // The target is set/cleared when Search *opens* — never on close — because
+  // SearchModal calls onClose() before onAddImagesToCollection, so a close-
+  // time clear would drop the target before the add callback reads it (#1567).
+  // `stageAdd` is the dialog's staging channel — Manage commits membership
+  // once on Done, so picks land in its draft rather than persisting here.
+  const manageSearchTarget = useRef<{
+    collection: Collection
+    stageAdd: StageAddImages
+  } | null>(null)
+  // Manage-dialog adds open the modal with Select already on (#1567).
+  const [searchInitialSelectMode, setSearchInitialSelectMode] = useState(false)
+  const openSearch = useCallback(() => {
+    manageSearchTarget.current = null
+    setSearchInitialSelectMode(false)
+    setSearchOpen(true)
   }, [])
+  const requestCollectionImageSearch = useCallback(
+    (collection: Collection, stageAdd: StageAddImages) => {
+      manageSearchTarget.current = { collection, stageAdd }
+      setSearchInitialSelectMode(true)
+      setSearchOpen(true)
+    },
+    [],
+  )
 
   const reportAddedToCollection = useCallback(
     (collection: { id: number; name: string }, addedCount: number) => {
@@ -1795,10 +1818,16 @@ export default function App() {
   )
 
   const handleAddToCollection = useCallback(
-    async (collection: { id: number; name: string }): Promise<boolean> => {
-      if (addToCollectionImageIds.length === 0) return true
+    async (
+      collection: { id: number; name: string },
+      imageIdsOverride?: number[],
+    ): Promise<boolean> => {
+      const imageIds = imageIdsOverride ?? addToCollectionImageIds
+      if (imageIds.length === 0) return true
       try {
-        const result = await addImagesToCollection(collection.id, addToCollectionImageIds)
+        // collectionsData.addImages merges the result into the open detail,
+        // so a Manage dialog left open behind the search modal updates live.
+        const result = await collectionsData.addImages(collection.id, imageIds)
         if (result.status === 'added') {
           reportAddedToCollection(result.collection, result.addedCount)
           return true
@@ -1816,8 +1845,39 @@ export default function App() {
         return false
       }
     },
-    [addToCollectionImageIds, reportAddedToCollection],
+    [addToCollectionImageIds, collectionsData, reportAddedToCollection],
   )
+
+  const handleSearchAddToCollection = useCallback((images: ImageItem[]) => {
+    const target = manageSearchTarget.current
+    manageSearchTarget.current = null
+    if (target) {
+      // Skip the picker — the manage dialog already identified the target.
+      // Picks stage into its draft; Done persists them in the same
+      // whole-replace PUT as any staged reorder/removal (#1567).
+      const result = target.stageAdd(images)
+      if (result.status === 'added') {
+        setInfoSnack(
+          result.addedCount === 1
+            ? `Staged 1 image for "${target.collection.name}" — press Done to apply.`
+            : `Staged ${result.addedCount} images for "${target.collection.name}" — press Done to apply.`,
+        )
+      } else if (result.status === 'already') {
+        setInfoSnack(
+          images.length === 1
+            ? `This image is already in "${target.collection.name}".`
+            : `Those images are already in "${target.collection.name}".`,
+        )
+      } else {
+        setErrorSnack(
+          `Adding this selection to "${target.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+        )
+      }
+      return
+    }
+    setAddToCollectionImageIds(images.map((img) => img.id))
+    setAddToCollectionOpen(true)
+  }, [])
 
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
@@ -1893,7 +1953,7 @@ export default function App() {
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
       onOpenAnnouncement={openAnnModal}
-      onSearchOpen={() => setSearchOpen(true)}
+      onSearchOpen={openSearch}
       mode={mode}
       frontendVersion={frontendVersion}
       backendVersion={backendVersion}
@@ -1963,7 +2023,12 @@ export default function App() {
               onSaveOwners={collectionsData.saveOwners}
               onTransfer={collectionsData.transfer}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
+              onRequestCollectionImageSearch={requestCollectionImageSearch}
               categories={categories}
+              onAddCategory={addCategoryInline}
+              onEditCategory={editCategoryInline}
+              onToggleCategoryVisibility={toggleCategoryVisibility}
               onNavigateCategory={handleNavigateBrowseFromCollection}
               onToggleHidden={(collection) =>
                 collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
@@ -1995,7 +2060,10 @@ export default function App() {
                   )
                 })
               }}
-              onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
+              onAddCategory={addCategoryInline}
+              onEditCategory={editCategoryInline}
+              onToggleCategoryVisibility={toggleCategoryVisibility}
               onOpenCollection={(id) => handleOpenCollection(id)}
               onError={setErrorSnack}
             />
@@ -2070,7 +2138,7 @@ export default function App() {
               onSearchProgram={(programName) => {
                 setSearchInitialQuery(programName)
                 setSearchInitialTypeFilter('program')
-                setSearchOpen(true)
+                openSearch()
               }}
               initialProgramFilter={manageProgramFilter}
               onInitialProgramFilterConsumed={clearManageProgramFilter}
@@ -3105,9 +3173,14 @@ export default function App() {
           setSearchOpen(false)
           setSearchInitialQuery(undefined)
           setSearchInitialTypeFilter(undefined)
+          setSearchInitialSelectMode(false)
+          // The manage-dialog add target intentionally survives close —
+          // SearchModal fires onClose() before onAddImagesToCollection (#1567),
+          // and every generic opener resets it via openSearch().
         }}
         initialQuery={searchInitialQuery}
         initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}
+        initialSelectMode={searchInitialSelectMode}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
         programs={programs}

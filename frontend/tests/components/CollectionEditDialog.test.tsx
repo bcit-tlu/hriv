@@ -6,8 +6,8 @@ import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionEditDialog from '../../src/components/CollectionEditDialog'
 import type { CollectionEditDialogProps } from '../../src/components/CollectionEditDialog'
 import { ApiError } from '../../src/api'
-import type { Group, Program, Role } from '../../src/types'
-import { makeApiCollection, makeCollection } from '../helpers/fixtures'
+import type { Category, Group, Program, Role } from '../../src/types'
+import { makeApiCollection, makeCategory, makeCollection } from '../helpers/fixtures'
 
 function makeAuth(role: Role, overrides: { id?: number; program_ids?: number[] } = {}) {
   return {
@@ -82,6 +82,10 @@ function renderDialog(
         programs={props.programs ?? PROGRAMS}
         groups={props.groups ?? GROUPS}
         onDelete={props.onDelete}
+        categories={props.categories}
+        onAddCategory={props.onAddCategory}
+        onEditCategory={props.onEditCategory}
+        onToggleVisibility={props.onToggleVisibility}
       />
     </AuthContext.Provider>,
   )
@@ -107,6 +111,24 @@ describe('CollectionEditDialog', () => {
       expect(screen.getByRole('radio', { name: /Sequence/ })).not.toBeChecked()
     })
 
+    it('renders the Type section first — above the name field (#1567)', () => {
+      renderDialog()
+      const typeLabel = screen.getByText('Type')
+      const nameField = screen.getByLabelText('Collection name')
+      expect(
+        typeLabel.compareDocumentPosition(nameField) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
+    it('lists Sequence above Synchronized (#1567)', () => {
+      renderDialog()
+      const sequence = screen.getByRole('radio', { name: /Sequence/ })
+      const synchronized = screen.getByRole('radio', { name: /Synchronized/ })
+      expect(
+        sequence.compareDocumentPosition(synchronized) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    })
+
     it('submits trimmed values with an empty scope when not restricted', async () => {
       const user = userEvent.setup()
       const { onSave, onClose } = renderDialog()
@@ -124,6 +146,8 @@ describe('CollectionEditDialog', () => {
           visibility: 'public',
           programIds: [],
           groupIds: [],
+          categoryId: null,
+          hidden: false,
         },
         null,
         null,
@@ -179,6 +203,120 @@ describe('CollectionEditDialog', () => {
       expect(chipA).toHaveClass('MuiChip-outlined')
       const cohort2 = screen.getByText('Cohort 2').closest('[data-testid="group-chip"]')!
       expect(cohort2).toHaveClass('MuiChip-filled')
+    })
+
+    it('offers the category picker to curatorial roles and saves the filing (#1566)', async () => {
+      const user = userEvent.setup()
+      const categories: Category[] = [
+        makeCategory({ id: 10, label: 'Histology' }),
+        makeCategory({ id: 20, label: 'Epithelium', parentId: 10 }),
+      ]
+      const { onSave } = renderDialog({
+        collection: makeCollection({ name: 'Lab 2', categoryId: 10 }),
+        categories,
+      })
+      const picker = screen.getByRole('combobox', { name: 'Category' })
+      expect(picker).toHaveTextContent('Histology')
+
+      // Pick the child category — saved as `categoryId`; the caller turns
+      // the change into a move call.
+      await user.click(picker)
+      await user.click(await screen.findByRole('option', { name: /Epithelium/ }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      expect(onSave.mock.calls[0][0]).toMatchObject({ categoryId: 20 })
+    })
+
+    it('omits the category picker in create mode and for non-curatorial roles', () => {
+      renderDialog({ categories: [makeCategory({ id: 10, label: 'Histology' })] })
+      expect(screen.queryByRole('combobox', { name: 'Category' })).not.toBeInTheDocument()
+
+      renderDialog(
+        {
+          collection: makeCollection({ name: 'Mine' }),
+          categories: [makeCategory({ id: 10, label: 'Histology' })],
+        },
+        makeAuth('staff'),
+      )
+      expect(screen.queryByRole('combobox', { name: 'Category' })).not.toBeInTheDocument()
+    })
+
+    it('toggles local hidden state via the title link — committed on Save (#1566)', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      renderDialog({
+        onSave,
+        collection: makeCollection({
+          name: 'Mine',
+          permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: true },
+        }),
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility: Hide collection' }))
+      expect(
+        screen.getByRole('button', { name: 'Visibility: Show collection' }),
+      ).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      expect(onSave.mock.calls[0][0]).toMatchObject({ hidden: true })
+    })
+
+    it('disables the hide link when the filing category is hidden (#1566)', () => {
+      renderDialog({
+        collection: makeCollection({
+          name: 'Mine',
+          categoryId: 10,
+          permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: true },
+        }),
+        categories: [makeCategory({ id: 10, label: 'Hidden cat', status: 'hidden' })],
+      })
+      const btn = screen.getByRole('button', { name: /hidden by category/i })
+      expect(btn).toBeDisabled()
+    })
+
+    it('shows no hide link in create mode or without canHide', () => {
+      renderDialog()
+      expect(
+        screen.queryByRole('button', { name: /visibility: hide collection/i }),
+      ).not.toBeInTheDocument()
+      renderDialog({
+        collection: makeCollection({
+          permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: false },
+        }),
+      })
+      expect(
+        screen.queryByRole('button', { name: /visibility: hide collection/i }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('opens in filing mode for curators who cannot edit metadata (#1567)', () => {
+      // canEdit is owner-scoped but filing is curatorial: an instructor on a
+      // colleague's collection gets the picker + hide link, not the fields.
+      renderDialog(
+        {
+          collection: makeCollection({
+            name: 'Colleague set',
+            categoryId: 10,
+            permissions: {
+              canEdit: false,
+              canDelete: false,
+              canTransfer: false,
+              canHide: true,
+            },
+          }),
+          categories: [makeCategory({ id: 10, label: 'Histology' })],
+        },
+        makeAuth('instructor'),
+      )
+      expect(screen.getByText('File Collection')).toBeInTheDocument()
+      expect(screen.getByTestId('filing-only-note')).toBeInTheDocument()
+      expect(screen.getByLabelText('Collection name')).toBeDisabled()
+      expect(screen.getByLabelText('Description')).toBeDisabled()
+      expect(screen.getByRole('combobox', { name: 'Category' })).toBeEnabled()
+      // Hide is curatorial too — the link survives filing mode.
+      expect(
+        screen.getByRole('button', { name: 'Visibility: Hide collection' }),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
     })
   })
 
@@ -449,5 +587,46 @@ describe('CollectionEditDialog', () => {
       </AuthContext.Provider>,
     )
     expect(screen.getByDisplayValue('Second')).toBeInTheDocument()
+  })
+
+  it('advances baseline on a mid-open version bump without reseeding fields (#1567)', async () => {
+    // After a partial save (metadata PATCH ok, chained move failed) the page
+    // feeds the saved record back as `collection` — the dialog must adopt the
+    // new version/baseline but keep the user's in-progress field values.
+    const user = userEvent.setup()
+    const saved = makeCollection({ id: 9, name: 'Saved name', version: 5 })
+    const { rerender } = renderDialog({
+      collection: makeCollection({ id: 9, name: 'Original', version: 4 }),
+    })
+    const nameField = screen.getByLabelText('Collection name')
+    await user.clear(nameField)
+    await user.type(nameField, 'Typed name')
+
+    rerender(
+      <AuthContext.Provider value={makeAuth('admin')}>
+        <CollectionEditDialog open onClose={vi.fn()} onSave={vi.fn()} collection={saved} />
+      </AuthContext.Provider>,
+    )
+
+    // The typed value survives — only baseline/version advance.
+    expect(screen.getByDisplayValue('Typed name')).toBeInTheDocument()
+  })
+
+  it('does not regress baseline when the prop delivers an older record', () => {
+    const { rerender } = renderDialog({
+      collection: makeCollection({ id: 9, name: 'Newer', version: 5 }),
+    })
+    rerender(
+      <AuthContext.Provider value={makeAuth('admin')}>
+        <CollectionEditDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          collection={makeCollection({ id: 9, name: 'Older', version: 3 })}
+        />
+      </AuthContext.Provider>,
+    )
+    // An older record arriving while open is stale data — ignore it.
+    expect(screen.getByDisplayValue('Newer')).toBeInTheDocument()
   })
 })

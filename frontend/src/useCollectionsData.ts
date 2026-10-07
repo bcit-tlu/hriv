@@ -112,6 +112,9 @@ export function toCollectionPatch(
   const patch: Parameters<typeof updateCollection>[1] = { version }
   if (values.name !== baseline.name) patch.name = values.name
   if (values.description !== baseline.description) patch.description = values.description
+  // Curatorial hide rides the same PATCH (#1566) — the dialog's title link
+  // only changes `hidden` for callers the `canHide` gate allows.
+  if (values.hidden !== baseline.hidden) patch.hidden = values.hidden
   const visibilityChanged = values.visibility !== baseline.visibility
   if (visibilityChanged) patch.visibility = values.visibility
   if (
@@ -278,10 +281,15 @@ export function useCollectionsData({
     }
   }, [enabled, currentUser, selectedCollectionId])
 
-  const loadCollection = useCallback(
-    async (id: number): Promise<Collection> => apiCollectionToCollection(await fetchCollection(id)),
-    [],
-  )
+  const loadCollection = useCallback(async (id: number): Promise<Collection> => {
+    const mapped = apiCollectionToCollection(await fetchCollection(id))
+    // Keep the open detail in sync when the refetch is for the record on
+    // screen — e.g. a category filing mutates the record without going
+    // through `update` (#1567). The version guard keeps a slow refetch from
+    // regressing a newer write that landed in the meantime.
+    setDetail((prev) => (prev && prev.id === id && mapped.version >= prev.version ? mapped : prev))
+    return mapped
+  }, [])
 
   const create = useCallback(async (values: CollectionFormValues): Promise<Collection> => {
     const created = apiCollectionToCollection(
