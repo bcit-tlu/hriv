@@ -5,20 +5,28 @@ import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionsPage from '../../src/components/CollectionsPage'
 import type { CollectionsPageProps } from '../../src/components/CollectionsPage'
-import { ApiError } from '../../src/api'
+import { ApiError, fetchCollections } from '../../src/api'
 import { DEFAULT_COLLECTION_FILTERS } from '../../src/useCollectionsData'
 import type { User } from '../../src/types'
-import { makeCategory, makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
+import {
+  makeApiCollectionSummary,
+  makeCategory,
+  makeCollection,
+  makeCollectionSummary,
+  makeImage,
+} from '../helpers/fixtures'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
   return {
     ...actual,
     fetchCollection: vi.fn(),
+    fetchCollections: vi.fn(),
     fetchImage: vi.fn(),
     fetchUsersPaged: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   }
 })
+const fetchCollectionsMock = vi.mocked(fetchCollections)
 
 // Sequence and synchronized details mount the real OpenSeadragon viewer,
 // which jsdom cannot run; stub both components and record their props so
@@ -133,6 +141,7 @@ function renderPage(overrides: Partial<CollectionsPageProps> = {}) {
 describe('CollectionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    fetchCollectionsMock.mockResolvedValue([])
     sequenceViewerProps.current = null
     synchronizedViewerProps.current = null
     manageDialogProps.current = null
@@ -145,7 +154,7 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
     })
 
-    it('disables New collection for a student at the current type limit', async () => {
+    it('keeps New collection available when only the page type is at cap', async () => {
       const user = userEvent.setup()
       const collections = Array.from({ length: 10 }, (_, i) =>
         makeCollectionSummary({
@@ -154,16 +163,62 @@ describe('CollectionsPage', () => {
           owners: [{ kind: 'user', userId: STUDENT.id, name: STUDENT.name }],
         }),
       )
+      fetchCollectionsMock.mockResolvedValue(
+        collections.map((collection) =>
+          makeApiCollectionSummary({
+            id: collection.id,
+            type: collection.type,
+            owners: [{ user_id: STUDENT.id, name: STUDENT.name }],
+          }),
+        ),
+      )
       renderPage({
         currentUser: STUDENT,
         collections,
         collectionPageType: 'sequence',
       })
+      await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledWith({ mine: true }))
       const button = screen.getByRole('button', { name: 'New collection' })
-      expect(button).toBeDisabled()
+      expect(button).toBeEnabled()
+      await user.click(button)
+      expect(await screen.findByText('New Collection')).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByRole('radio', { name: /Sequence/ })).toBeDisabled())
+      expect(screen.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
+    })
+
+    it('disables New collection when both student type caps are reached', async () => {
+      const user = userEvent.setup()
+      const sequenceRows = Array.from({ length: 10 }, (_, i) =>
+        makeApiCollectionSummary({
+          id: i + 1,
+          type: 'sequence',
+          owners: [{ user_id: STUDENT.id, name: STUDENT.name }],
+        }),
+      )
+      const synchronizedRows = Array.from({ length: 10 }, (_, i) =>
+        makeApiCollectionSummary({
+          id: i + 11,
+          type: 'synchronized',
+          owners: [{ user_id: STUDENT.id, name: STUDENT.name }],
+        }),
+      )
+      fetchCollectionsMock.mockResolvedValue([...sequenceRows, ...synchronizedRows])
+      renderPage({
+        currentUser: STUDENT,
+        collections: sequenceRows.map((row) =>
+          makeCollectionSummary({
+            id: row.id,
+            type: row.type,
+            owners: [{ kind: 'user', userId: STUDENT.id, name: STUDENT.name }],
+          }),
+        ),
+        collectionPageType: 'sequence',
+      })
+      const button = screen.getByRole('button', { name: 'New collection' })
+      await waitFor(() => expect(button).toBeDisabled())
       await user.hover(button.parentElement as HTMLElement)
       expect(await screen.findByRole('tooltip')).toHaveTextContent(
-        "You've reached the limit of 10 sequence collections.",
+        "You've reached the limit of 10 collections of each type.",
       )
     })
 
@@ -181,6 +236,7 @@ describe('CollectionsPage', () => {
         collectionPageType: 'sequence',
       })
       expect(screen.getByRole('button', { name: 'New collection' })).toBeEnabled()
+      expect(fetchCollectionsMock).not.toHaveBeenCalled()
     })
 
     it('shows the load error as a plain notification', () => {

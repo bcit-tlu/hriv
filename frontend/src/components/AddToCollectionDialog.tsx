@@ -21,9 +21,9 @@ import AddIcon from '@mui/icons-material/Add'
 import SearchIcon from '@mui/icons-material/Search'
 import { AuthContext } from '../authContextValue'
 import {
+  COLLECTIONS_AT_CAP_TOOLTIP,
   COLLECTION_TYPE_LABELS,
   collectionImageCap,
-  STUDENT_MAX_COLLECTIONS_PER_TYPE,
   STUDENT_SEQUENCE_MAX_IMAGES,
   studentTypesAtCap,
   SYNCHRONIZED_MAX_IMAGES,
@@ -59,7 +59,6 @@ interface CollectionGroup {
 
 export const CAP_REACHED_TOOLTIP = `Synchronized collections hold at most ${SYNCHRONIZED_MAX_IMAGES} images.`
 const STUDENT_SEQUENCE_CAP_REACHED_TOOLTIP = `Students can add at most ${STUDENT_SEQUENCE_MAX_IMAGES} images to a sequence collection.`
-const COLLECTIONS_AT_CAP_TOOLTIP = `You've reached the limit of ${STUDENT_MAX_COLLECTIONS_PER_TYPE} collections of each type.`
 
 export default function AddToCollectionDialog({
   open,

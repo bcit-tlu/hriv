@@ -103,11 +103,12 @@ Browse tile.
 4. Click **Create**.
 
 Students can own up to 10 collections of each type. Co-owned collections
-count toward the limit. When a student reaches the limit for one type, that
-type is disabled in the create form; reaching both limits disables creating
-another collection. The 10-collection count and 10-image sequence limits do
-not apply to admins, instructors, or staff, and existing collections are
-not removed when a limit is reached.
+count toward the limit. On a Collections type page, **New collection** stays
+available until both type limits are reached. In the create form, a capped type
+is disabled and the other type is selected when the page's default type is
+capped. The 10-collection count and 10-image sequence limits do not apply to
+admins, instructors, or staff, and existing collections are not removed when a
+limit is reached.
 
 ## Add an image to a collection
 

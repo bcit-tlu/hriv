@@ -27,6 +27,7 @@ export const SYNCHRONIZED_MAX_IMAGES = 4
 /** Student caps mirror backend/app/models.py (#1583). */
 export const STUDENT_SEQUENCE_MAX_IMAGES = 10
 export const STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
+export const COLLECTIONS_AT_CAP_TOOLTIP = `You've reached the limit of ${STUDENT_MAX_COLLECTIONS_PER_TYPE} collections of each type.`
 
 export function collectionImageCap(
   type: CollectionType,

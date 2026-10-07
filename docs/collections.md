@@ -398,6 +398,9 @@ program-only-owned collections do not, and `collections.user_id` is creator
 audit data only. The cap applies to the caller's role, not the collection
 owner's role; admins, instructors and staff are never capped. It is not
 retroactive and is not enforced by owner-replacement or transfer endpoints.
+On a Collections type page, **New collection** stays available until both
+types are capped; in the create form, a capped type is disabled and the other
+type is selected when the page's default type is capped.
 
 **Viewport (`PUT …/viewport`).** `viewport_state` is overwritten with the
 submitted object — never a partial JSONB merge. The synchronized viewer

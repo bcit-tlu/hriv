@@ -627,11 +627,15 @@ is not inherited and is outside the instructor's attach authority.
 image limits (#1583). Use a fresh student account with visible images, plus an
 instructor account for the uncapped-role checks.
 
-1. As the student, create 10 sequence collections and 10 synchronized
-   collections. **Assert:** all 20 creates succeed. Attempt an 11th of each
-   type. **Assert:** both return **422** with
-   `Students may own at most 10 {type} collections`; creating a collection
-   of the other type remains allowed until that type also reaches 10.
+1. As the student, create 10 sequence collections. On the Sequence
+   Collections page, while there are no synchronized collections, **Assert:**
+   **New collection** remains enabled. Open it and **Assert:** Sequence is
+   disabled and Synchronized is selected. Close the dialog, then create 10
+   synchronized collections. **Assert:** all 20 creates succeed. At both
+   limits, **Assert:** **New collection** is disabled with the tooltip
+   `You've reached the limit of 10 collections of each type.` Attempt an 11th
+   create of each type through the API. **Assert:** both return **422** with
+   `Students may own at most 10 {type} collections`.
 2. As the student, create a sequence with 11 visible image IDs.
    **Assert:** the create returns **422** with
    `Students may add at most 10 images to a sequence collection`. Repeat with
