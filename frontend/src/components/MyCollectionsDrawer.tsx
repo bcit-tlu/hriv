@@ -7,7 +7,6 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Drawer from '@mui/material/Drawer'
-import Fab from '@mui/material/Fab'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
@@ -36,6 +35,7 @@ export interface MyCollectionsDrawerProps {
   onNewCollection: () => void
   newCollectionDisabled?: boolean
   onPinnedHeightChange?: (px: number) => void
+  bottomOffset: number
 }
 
 export default function MyCollectionsDrawer({
@@ -54,6 +54,7 @@ export default function MyCollectionsDrawer({
   onNewCollection,
   newCollectionDisabled = false,
   onPinnedHeightChange,
+  bottomOffset,
 }: MyCollectionsDrawerProps) {
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
   const paperRef = useRef<HTMLDivElement | null>(null)
@@ -87,20 +88,20 @@ export default function MyCollectionsDrawer({
   return (
     <>
       {!drawerOpen && collections.length > 0 && (
-        <Fab
-          variant="extended"
-          color="primary"
+        <Button
+          variant="contained"
+          startIcon={<CollectionsIcon />}
           onClick={() => onOpenChange(true)}
           sx={{
             position: 'fixed',
             left: 16,
-            bottom: 16,
+            bottom: bottomOffset + 16,
             zIndex: (theme) => theme.zIndex.speedDial,
+            boxShadow: 6,
           }}
         >
-          <CollectionsIcon sx={{ mr: 1 }} />
           My collections
-        </Fab>
+        </Button>
       )}
 
       <Drawer
@@ -108,6 +109,7 @@ export default function MyCollectionsDrawer({
         variant={pinned ? 'persistent' : 'temporary'}
         open={drawerOpen}
         onClose={() => onOpenChange(false)}
+        sx={!pinned ? { bottom: bottomOffset } : undefined}
         slotProps={{
           paper: {
             ref: paperRef,
@@ -115,10 +117,12 @@ export default function MyCollectionsDrawer({
             sx: {
               width: '100%',
               maxHeight: '50vh',
+              bottom: bottomOffset,
               overflowX: 'hidden',
               overflowY: 'auto',
             },
           },
+          ...(!pinned ? { backdrop: { sx: { bottom: bottomOffset } } } : {}),
         }}
       >
         <Box
@@ -186,6 +190,7 @@ export default function MyCollectionsDrawer({
               display: 'flex',
               flexShrink: 0,
               gap: 2,
+              justifyContent: 'flex-start',
               overflowX: 'auto',
               px: 2,
               pb: 2,
@@ -196,12 +201,13 @@ export default function MyCollectionsDrawer({
                 collection.categoryId != null ? categoryPaths.get(collection.categoryId) : undefined
               const categoryPath = segment ? [...segment.ancestors, segment.category] : []
               return (
-                <Box key={collection.id} sx={{ flex: '0 0 260px' }}>
+                <Box key={collection.id} sx={{ flex: '1 0 160px', minWidth: 160, maxWidth: 180 }}>
                   <CollectionCard
                     collection={collection}
                     onOpen={onOpen}
                     onEdit={onEdit}
                     onPickCoverImage={onPickCoverImage}
+                    density="compact"
                     titleHeadingLevel="h3"
                     programs={programs}
                     inheritedProgramIds={narrowProgramIds(categoryPath)}

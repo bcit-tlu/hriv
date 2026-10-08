@@ -373,10 +373,13 @@ returned by the API (UX only — the backend re-checks).
   `SortableTileGrid`; no button renders while the owned feed is loading or
   empty. Opening it shows a bottom drawer with up to eight most recently
   updated collections, **New collection**, and **See all** (Sequence with
-  `mine=true`). The temporary drawer has a backdrop and closes on navigation;
-  pinning removes the backdrop, keeps Browse interactive, persists per user,
-  and reserves its height below the Browse content. The drawer never renders
-  on image-viewer or collection pages and has no drag, reorder, or drop
+  `mine=true`). The standard contained button and drawer sit above the
+  always-visible footer. Compact cards are 160–180 px wide (at most 60% of a
+  300 px Browse tile) and scroll horizontally below about 1424 px. The
+  temporary drawer has a backdrop that stops at the footer and closes on
+  navigation; pinning removes the backdrop, keeps Browse interactive, persists
+  per user, and reserves its height below the Browse content. The drawer never
+  renders on image-viewer or collection pages and has no drag, reorder, or drop
   targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the

@@ -20,19 +20,20 @@ function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
     onOpen: vi.fn(),
     onSeeAll: vi.fn(),
     onNewCollection: vi.fn(),
+    bottomOffset: 0,
     ...overrides,
   }
   return { ...render(<MyCollectionsDrawer {...props} />), props }
 }
 
 describe('MyCollectionsDrawer', () => {
-  it('does not render the Fab when there are no collections', () => {
+  it('does not render the button when there are no collections', () => {
     renderDrawer({ collections: [] })
 
     expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
   })
 
-  it('opens from the Fab', () => {
+  it('opens from the button', () => {
     const { props } = renderDrawer()
 
     fireEvent.click(screen.getByRole('button', { name: 'My collections' }))
@@ -40,7 +41,7 @@ describe('MyCollectionsDrawer', () => {
     expect(props.onOpenChange).toHaveBeenCalledWith(true)
   })
 
-  it('does not render the Fab while open', () => {
+  it('does not render the button while open', () => {
     renderDrawer({ open: true })
 
     expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()

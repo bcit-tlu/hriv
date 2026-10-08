@@ -127,9 +127,12 @@ Sequence page with the owned-collections filter. The temporary state uses a
 backdrop and closes during collection navigation; the per-user pin preference
 switches it to a persistent state without a backdrop, keeps Browse interactive,
 and adds enough bottom spacing that the drawer does not cover the final tile
-row. The drawer is hidden on image-viewer and collection pages, while the feed
-is loading, and when no owned collection is visible. It is not a Browse tile:
-it has no drag, reorder, or drop targets.
+row. The drawer sits above the always-visible Browse footer; the standard
+contained **My collections** button sits just above it. Compact cards are
+160–180 px wide (at most 60% of a 300 px Browse tile) and scroll horizontally
+below about 1424 px. The drawer is hidden on image-viewer and collection pages,
+while the feed is loading, and when no owned collection is visible. It is not a
+Browse tile: it has no drag, reorder, or drop targets.
 
 `GET /api/collections` accepts an optional `limit` from 1 to 100. It is
 applied after visibility filtering so inaccessible collections do not consume

@@ -58,6 +58,7 @@ export interface CollectionCardProps {
   /** Effective group restriction inherited from the filed category. */
   inheritedGroupIds?: number[]
   titleHeadingLevel?: 'h3' | 'h4' | 'h5' | 'h6'
+  density?: 'default' | 'compact'
   /** Filed category (or an ancestor) is hidden — the collection is
    *  invisible to students regardless of its own `hidden` flag; the card
    *  desaturates like an own-hidden tile but carries no marker icon —
@@ -191,9 +192,12 @@ export default function CollectionCard({
   inheritedGroupIds = [],
   titleHeadingLevel = 'h6',
   categoryHidden = false,
+  density = 'default',
 }: CollectionCardProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  const compact = density === 'compact'
+  const titleVariant = compact ? 'subtitle1' : 'h6'
   const cover = collection.coverThumb
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
@@ -238,10 +242,10 @@ export default function CollectionCard({
             image={{ id: collection.id, thumb: cover }}
             renewThumb={renewCoverThumb}
             alt={collection.name}
+            style={compact ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' } : undefined}
             sx={{
               display: 'block',
-              width: '100%',
-              height: 140,
+              ...(compact ? {} : { width: '100%', height: 140 }),
               objectFit: 'cover',
               objectPosition: 'center',
             }}
@@ -249,7 +253,9 @@ export default function CollectionCard({
         ) : (
           <Box
             sx={{
-              height: 140,
+              ...(compact
+                ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' }
+                : { height: 140 }),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -257,10 +263,16 @@ export default function CollectionCard({
               color: 'white',
             }}
           >
-            <CollectionsIcon sx={{ fontSize: 64, opacity: 0.85 }} />
+            <CollectionsIcon sx={{ fontSize: compact ? 40 : 64, opacity: 0.85 }} />
           </Box>
         )}
-        <CardContent sx={{ flexGrow: 1, width: '100%' }}>
+        <CardContent
+          sx={{
+            flexGrow: 1,
+            width: '100%',
+            ...(compact ? { p: 1.5, '&:last-child': { pb: 1.5 } } : {}),
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
             {/* Type icon left of the title — the CategoryTile folder-icon
                 convention (#1567). `titleAccess` names it for screen readers.
@@ -271,7 +283,7 @@ export default function CollectionCard({
               sx={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                typography: 'h6',
+                typography: titleVariant,
                 height: '1lh',
                 flexShrink: 0,
               }}
@@ -288,7 +300,7 @@ export default function CollectionCard({
             <Tooltip title={collection.name}>
               <Typography
                 component={titleHeadingLevel}
-                variant="h6"
+                variant={titleVariant}
                 sx={{
                   color: collection.hidden || categoryHidden ? visColors.inactive : 'primary.main',
                   display: '-webkit-box',
@@ -313,7 +325,7 @@ export default function CollectionCard({
                   sx={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    typography: 'h6',
+                    typography: titleVariant,
                     height: '1lh',
                     flexShrink: 0,
                   }}
@@ -334,7 +346,11 @@ export default function CollectionCard({
                   e.preventDefault()
                   onEdit?.(collection)
                 }}
-                sx={{ flexShrink: 0, ml: 0.25 }}
+                sx={{
+                  flexShrink: 0,
+                  ml: 0.25,
+                  ...(compact ? { typography: 'subtitle1' } : {}),
+                }}
               >
                 <EditIcon sx={{ fontSize: 16 }} />
               </IconButton>

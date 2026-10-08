@@ -40,9 +40,7 @@ describe('useMyCollectionsShelf', () => {
     fetchCollections.mockRejectedValue(new Error('network'))
     const { result } = renderHook(() => useMyCollectionsShelf(true))
 
-    await waitFor(() =>
-      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)]),
-    )
+    await waitFor(() => expect(result.current.collections).toEqual([]))
   })
 
   it('retains previous rows while refetching after being disabled and re-enabled', async () => {
@@ -59,7 +57,9 @@ describe('useMyCollectionsShelf', () => {
       ({ enabled }: { enabled: boolean }) => useMyCollectionsShelf(enabled),
       { initialProps: { enabled: true } },
     )
-    await waitFor(() => expect(result.current.collections).toEqual([]))
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)]),
+    )
 
     act(() => rerender({ enabled: false }))
     expect(result.current.collections).toBeNull()

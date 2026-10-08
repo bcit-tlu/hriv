@@ -318,6 +318,7 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
   const [myCollectionsDrawerHeight, setMyCollectionsDrawerHeight] = useState(0)
+  const [myCollectionsFooterHeight, setMyCollectionsFooterHeight] = useState(0)
   const [myCollectionsCapState, setMyCollectionsCapState] = useState<{
     userId: number
     types: ReadonlySet<CollectionType>
@@ -2159,6 +2160,8 @@ export default function App() {
       backendVersion={backendVersion}
       backupVersion={backupVersion}
       onReportIssue={() => setReportIssueOpen(true)}
+      stickyFooter={myCollectionsShelfEnabled}
+      onFooterHeightChange={setMyCollectionsFooterHeight}
       notificationSlot={
         currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
           <NotificationMenu
@@ -2991,6 +2994,7 @@ export default function App() {
                   onNewCollection={() => setMyCollectionsCreateOpen(true)}
                   newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
                   onPinnedHeightChange={setMyCollectionsDrawerHeight}
+                  bottomOffset={myCollectionsFooterHeight}
                 />
               )}
 

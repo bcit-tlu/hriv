@@ -12,13 +12,15 @@ import * as MyCollectionsDrawerStories from './MyCollectionsDrawer.stories'
 
 ## When to use
 
-Render the collapsed **My collections** button on Browse when the personal-drawer feature flag is
-enabled and the user has visible owned collections. Opening it provides collection navigation,
-creation, and **See all** without adding personal collections to the sortable Browse grid.
+Render the standard contained **My collections** button on Browse when the personal-drawer feature
+flag is enabled and the user has visible owned collections. The button sits above the always-visible
+Browse footer. Opening it provides collection navigation, creation, and **See all** without adding
+personal collections to the sortable Browse grid.
 
 The temporary state uses a backdrop and closes during navigation. Pinning changes it to a persistent
 surface that keeps Browse available and reserves enough bottom space to avoid covering the final
-tile row.
+tile row. Compact tiles are 160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
+horizontally below about 1424 px.
 
 ## Interactive example
 

@@ -85,6 +85,7 @@ const meta = {
     onOpen: fn(),
     onSeeAll: fn(),
     onNewCollection: fn(),
+    bottomOffset: 0,
   },
   decorators: [
     (Story) => (
@@ -100,7 +101,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
-  name: 'Closed (Fab)',
+  name: 'Closed (Button)',
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'My collections' }))

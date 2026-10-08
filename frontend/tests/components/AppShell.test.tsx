@@ -122,6 +122,31 @@ describe('AppShell', () => {
       expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     })
 
+    it('reports the measured footer height', () => {
+      const onFooterHeightChange = vi.fn()
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        top: 0,
+        right: 100,
+        bottom: 48,
+        left: 0,
+        height: 48,
+        width: 100,
+        toJSON: () => ({}),
+      } as DOMRect)
+
+      render(<AppShell {...makeProps({ onFooterHeightChange })} />)
+
+      expect(onFooterHeightChange).toHaveBeenCalledWith(48)
+    })
+
+    it('passes the sticky footer setting through to FooterBar', () => {
+      render(<AppShell {...makeProps({ stickyFooter: true })} />)
+
+      expect(screen.getByRole('contentinfo')).toHaveStyle({ position: 'sticky', bottom: '0px' })
+    })
+
     it('renders version info in footer for admin users', () => {
       render(
         <AppShell
