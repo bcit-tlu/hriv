@@ -983,6 +983,7 @@ describe('Collections API', () => {
       mine: true,
       owner_user_id: 7,
       owner_program_id: 3,
+      limit: 5,
       orphaned: true,
       uncategorized: true,
     })
@@ -992,6 +993,7 @@ describe('Collections API', () => {
     expect(qs.get('mine')).toBe('true')
     expect(qs.get('owner_user_id')).toBe('7')
     expect(qs.get('owner_program_id')).toBe('3')
+    expect(qs.get('limit')).toBe('5')
     expect(qs.get('orphaned')).toBe('true')
     expect(qs.get('uncategorized')).toBe('true')
   })

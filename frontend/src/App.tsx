@@ -32,6 +32,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
+import MyCollectionsShelf from './components/MyCollectionsShelf'
 import ReorderSnackbar from './components/ReorderSnackbar'
 import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
@@ -77,6 +78,7 @@ import {
   useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
+import { useMyCollectionsShelf } from './useMyCollectionsShelf'
 import { isAcceptedFile } from './fileUtils'
 import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
@@ -388,6 +390,14 @@ export default function App() {
     currentUser,
     selectedCollectionId,
   })
+
+  const myCollectionsShelfEnabled =
+    features?.collectionsHomeShelf === true &&
+    currentUser != null &&
+    page === 'browse' &&
+    path.length === 0 &&
+    selectedImage == null
+  const myCollectionsShelf = useMyCollectionsShelf(myCollectionsShelfEnabled)
 
   // #1554: the page's type is the list's type filter — keep them in lockstep.
   useEffect(() => {
@@ -1759,7 +1769,7 @@ export default function App() {
   )
 
   // Filed collections are provided from the category tree through
-  // `useBrowseData`; the root Browse scope contains no collections.
+  // `useBrowseData`; the root shelf stays outside the sortable tile grid.
 
   // The collection Manage dialog's "+" (#1566): records the target so search
   // picks go straight into that collection instead of the picker dialog.
@@ -2733,6 +2743,29 @@ export default function App() {
                     )
                   })()}
               </Box>
+
+              {page === 'browse' &&
+                path.length === 0 &&
+                selectedImage == null &&
+                myCollectionsShelf !== null && (
+                  <MyCollectionsShelf
+                    collections={myCollectionsShelf}
+                    categories={categories}
+                    programs={programs}
+                    groups={groups}
+                    onOpen={(collection) =>
+                      handleOpenCollection(collection.id, { fromBrowse: true })
+                    }
+                    onSeeAll={() => {
+                      handleCollectionsTypeChange('sequence')
+                      collectionsData.setFilters({
+                        ...collectionsData.filters,
+                        mine: true,
+                        owner: 'any',
+                      })
+                    }}
+                  />
+                )}
 
               {/* Tile grid */}
               <SortableTileGrid

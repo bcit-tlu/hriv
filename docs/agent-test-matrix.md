@@ -68,13 +68,15 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `replaceCollectionOwners` in `api.ts`, detail header + card affordances in
   `CollectionsPage.tsx` / `CollectionCard.tsx`):
   `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
-- Browse tile integration (#1529, #1583): filed collections in
+- Browse integration (#1529, #1583): filed collections in
   `SortableTileGrid.tsx` and nested `currentCollections` from the category
   tree only; there is no root `uncategorizedCollections` Browse loader.
-  Verify root has no collection fetch/tiles for any role, while nested filed
+  Verify the root grid has no collection tiles, and test the separate
+  flag-controlled My collections shelf and its `{ mine: true, limit: 8 }`
+  request. Nested filed collections still render.
   collections still render. Also cover `Not on Browse` picker labels,
   unfile snackbar, private-filing warnings, and Manage Categories ordering:
-  `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
+  `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard MyCollectionsShelf useMyCollectionsShelf useFeatures CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
   Backend placement/tile-order cases:
   `poetry run pytest tests/test_tile_order.py tests/test_router_collections.py tests/test_router_collections_db.py tests/test_categories.py`.
   #1530 image→collection drop-add still uses the `drop-col-` zone and

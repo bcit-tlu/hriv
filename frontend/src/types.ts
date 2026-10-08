@@ -81,9 +81,11 @@ export interface Group {
 export interface Features {
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
+  /** My collections shelf at the Browse root (#1583). */
+  collectionsHomeShelf: boolean
 }
 
-export const DEFAULT_FEATURES: Features = { collections: false }
+export const DEFAULT_FEATURES: Features = { collections: false, collectionsHomeShelf: false }
 
 // ── Collections (docs/collections.md) ─────────────────────
 
