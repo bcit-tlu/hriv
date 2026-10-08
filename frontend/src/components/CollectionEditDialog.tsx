@@ -674,15 +674,26 @@ export default function CollectionEditDialog({
       {confirmView && (
         <Box
           data-testid="unsaved-changes-bar"
-          sx={{ px: 3, py: 1, display: 'flex', alignItems: 'center', gap: 1 }}
+          sx={{
+            px: 3,
+            py: 1.5,
+            bgcolor: 'warning.light',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
         >
-          <Typography sx={{ flex: 1 }}>
+          <Typography variant="body2">
             You have unsaved changes. Discard and view collection?
           </Typography>
-          <Button onClick={() => setConfirmView(false)}>Cancel</Button>
-          <Button color="warning" variant="contained" onClick={onViewCollection}>
-            Discard &amp; View
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1, ml: 2, flexShrink: 0 }}>
+            <Button size="small" onClick={() => setConfirmView(false)}>
+              Cancel
+            </Button>
+            <Button size="small" variant="contained" color="warning" onClick={onViewCollection}>
+              Discard &amp; View
+            </Button>
+          </Box>
         </Box>
       )}
       <DialogActions>
