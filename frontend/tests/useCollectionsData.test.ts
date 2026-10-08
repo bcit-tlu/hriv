@@ -1608,7 +1608,7 @@ describe('useCollectionsData', () => {
           id: 1,
           type: 'sequence',
           version: 3,
-          images: Array.from({ length: 10 }, (_, i) => ({ id: i + 1 }) as never),
+          images: Array.from({ length: 20 }, (_, i) => ({ id: i + 1 }) as never),
         }),
       )
       const { result } = renderData({}, makeUser({ role: 'student' }))
@@ -1616,7 +1616,7 @@ describe('useCollectionsData', () => {
 
       let status: string | undefined
       await act(async () => {
-        status = (await result.current.addImages(1, [11])).status
+        status = (await result.current.addImages(1, [21])).status
       })
 
       expect(status).toBe('full')
