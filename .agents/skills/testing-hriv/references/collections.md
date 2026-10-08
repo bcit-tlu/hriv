@@ -45,6 +45,30 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
    edit dialog only (#1554 — **Delete Collection** at the bottom, click to
    arm then click to confirm), gated by `permissions.can_delete`.
 
+### My collections drawer and cover picker
+
+- **Cover-picker fixtures:** Inspect the two member thumbnails before testing a
+  cover change. Seeded Duomo and Gothic Detail images can share a thumbnail URL,
+  so saving a different selection may have no visible effect. Use distinct
+  thumbnails in disposable local fixtures, make and save the selection through
+  the UI, then verify the card and its cover after reload. Restore any seed
+  thumbnail you change.
+- **Drawer layout:** Use a genuinely overflowing Browse category, not only a
+  short root page. The footer is sticky only on Browse root and category pages.
+  In both pinned and unpinned modes, measure the footer's bottom against the
+  viewport height and the drawer's bottom against the footer's top.
+- Drawer tiles are 160–180px wide: about 180px from a viewport width of 1584px,
+  and 160px below about 1424px, where the row scrolls horizontally. A 15px
+  vertical scrollbar reduces the row's available width by about 1.9px per card
+  across eight cards, so record actual viewport and card widths.
+- At short heights, wheel over the drawer body and compare the drawer's
+  `scrollTop` with `window.scrollY`. Clipped card content before scrolling is
+  not itself a failure if the drawer scroll reveals it. Wait for transitions to
+  settle before taking screenshots.
+- The unpinned drawer has `role="dialog"` too. When closing a nested feedback or
+  edit dialog, wait for that specific dialog to close rather than waiting for
+  all dialogs to disappear.
+
 ### Filters
 
 - The collection **type is the page** (nav sub-menu), not a filter; the
