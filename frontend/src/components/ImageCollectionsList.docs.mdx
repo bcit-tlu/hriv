@@ -1,0 +1,63 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ImageCollectionsListStories from './ImageCollectionsList.stories'
+
+<Meta of={ImageCollectionsListStories} />
+
+<Title />
+
+<Subtitle>
+  Read-only list of the collections an image belongs to, shown in the image viewer metadata area,
+  truncated to three names with an inline "more" expander.
+</Subtitle>
+
+## When to use
+
+Use `ImageCollectionsList` in the image viewer metadata row to tell a viewer which collections the
+current image is part of (#1586). It is purely informational — it does not add or remove membership.
+
+The names passed in are already **visibility-filtered server-side**: the
+`GET /api/images/{id}/collections` endpoint only returns collections the caller may view, so a
+student never sees a private or restricted collection they could not open.
+
+## Interactive example
+
+`Basic` exposes the `names` and `limit` controls. With more than `limit` names (default 3), the
+extras collapse behind a "… and N more" link that expands them inline.
+
+<Primary />
+
+<Controls of={ImageCollectionsListStories.Basic} />
+
+## Implementation guidance
+
+- Renders nothing when `names` is empty — the caller can mount it unconditionally.
+- The label pluralizes ("Collection" vs "Collections"), matching the Program/Group metadata rows.
+- Styling matches the viewer metadata area: `body2`, `text.secondary`, inline `component="span"`.
+- In the viewer, pass `key={imageId}` so the expand toggle resets when the user switches images.
+- Names are plain text today; linking each name to open its collection is an easy future addition.
+
+## Examples
+
+### Single collection
+
+<Canvas of={ImageCollectionsListStories.SingleCollection} />
+
+### Exactly three (no truncation)
+
+<Canvas of={ImageCollectionsListStories.ExactlyThree} />
+
+### Truncated (more than three)
+
+<Canvas of={ImageCollectionsListStories.Truncated} />
+
+## Stories
+
+<Stories includePrimary={false} />

@@ -36,6 +36,7 @@ import SortableTileGrid from './components/SortableTileGrid'
 import MyCollectionsDrawer from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
 import NoteDisplay from './components/NoteDisplay'
+import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
@@ -102,9 +103,10 @@ import {
   updateGroup,
   deleteGroup,
   fetchCollections,
+  fetchImageCollections,
   userMessage,
 } from './api'
-import type { ApiImage, ApiUser } from './api'
+import type { ApiCollectionSummary, ApiImage, ApiUser } from './api'
 import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveCollectionDialog from './components/MoveCollectionDialog'
@@ -315,6 +317,36 @@ export default function App() {
   useEffect(() => {
     selectedImageRef.current = selectedImage
   })
+  // #1586: collections the viewed image belongs to, shown in the metadata row.
+  // Server-filtered to those the caller may view. The result is tagged with the
+  // image id it was fetched for; a late response for a previously-viewed image
+  // is dropped by the `cancelled` guard, and the derived value below shows the
+  // row only when the stored data matches the current image (so switching
+  // images never flashes the prior image's collections).
+  const [imageCollectionsResult, setImageCollectionsResult] = useState<{
+    imageId: number
+    rows: ApiCollectionSummary[]
+  } | null>(null)
+  useEffect(() => {
+    const imageId = selectedImage?.id
+    if (imageId == null) return
+    let cancelled = false
+    void fetchImageCollections(imageId)
+      .then((rows) => {
+        if (!cancelled) setImageCollectionsResult({ imageId, rows })
+      })
+      .catch(() => {
+        // 404 (hidden/inactive image or feature off) ⇒ no row.
+        if (!cancelled) setImageCollectionsResult({ imageId, rows: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedImage?.id])
+  const selectedImageCollections =
+    imageCollectionsResult && imageCollectionsResult.imageId === selectedImage?.id
+      ? imageCollectionsResult.rows
+      : []
   const [dialogOpen, setDialogOpen] = useState(false)
   const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
   const [myCollectionsDrawerHeight, setMyCollectionsDrawerHeight] = useState(0)
@@ -2661,6 +2693,14 @@ export default function App() {
                       .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
                       .join(', ')}
                   </Typography>
+                )}
+                {/* #1586: collections this image belongs to (key resets the
+                    "more" toggle when the viewer switches images). */}
+                {selectedImageCollections.length > 0 && (
+                  <ImageCollectionsList
+                    key={selectedImage.id}
+                    names={selectedImageCollections.map((c) => c.name)}
+                  />
                 )}
                 {selectedImage.note && (
                   <Box
