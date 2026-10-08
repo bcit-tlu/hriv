@@ -14,6 +14,7 @@ so the module shares the database with the reorder-fixture tests safely.
 """
 
 import os
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -93,6 +94,17 @@ async def _new_admin(session: AsyncSession, suffix: str) -> int:
         name=f"{TEST_PREFIX}admin-{suffix}-{uuid4().hex[:8]}",
         email=f"{TEST_PREFIX}{suffix}-{uuid4().hex[:8]}@example.test",
         role="admin",
+    )
+    session.add(user)
+    await session.commit()
+    return user.id
+
+
+async def _new_student(session: AsyncSession, suffix: str) -> int:
+    user = User(
+        name=f"{TEST_PREFIX}student-{suffix}-{uuid4().hex[:8]}",
+        email=f"{TEST_PREFIX}student-{suffix}-{uuid4().hex[:8]}@example.test",
+        role="student",
     )
     session.add(user)
     await session.commit()
@@ -496,6 +508,59 @@ async def _new_category(
     session.add(cat)
     await session.commit()
     return cat.id
+
+
+async def test_list_limit_orders_and_truncates(session_factory) -> None:
+    async with session_factory() as session:
+        student_id = await _new_student(session, "limit-order")
+        collection_ids = [
+            await _new_collection(session, "sequence", [], owner_id=student_id)
+            for _ in range(6)
+        ]
+        newest = datetime.now(timezone.utc)
+        for age, collection_id in enumerate(collection_ids):
+            await session.execute(
+                update(Collection)
+                .where(Collection.id == collection_id)
+                .values(updated_at=newest + timedelta(minutes=age))
+            )
+        await session.commit()
+
+        student = await _get_user(session, student_id)
+        rows = await list_collections(student, mine=True, limit=3, db=session)
+        assert [row.id for row in rows] == list(reversed(collection_ids[-3:]))
+
+
+async def test_list_limit_applies_after_student_visibility_filter(
+    session_factory,
+) -> None:
+    async with session_factory() as session:
+        student_id = await _new_student(session, "limit-visible")
+        hidden_category_id = await _new_category(session, "limit-hidden")
+        await session.execute(
+            update(Category)
+            .where(Category.id == hidden_category_id)
+            .values(status="hidden")
+        )
+        hidden_collection_id = await _new_collection(
+            session, "sequence", [], owner_id=student_id
+        )
+        await session.execute(
+            update(Collection)
+            .where(Collection.id == hidden_collection_id)
+            .values(category_id=hidden_category_id)
+        )
+        visible_ids = [
+            await _new_collection(session, "sequence", [], owner_id=student_id)
+            for _ in range(5)
+        ]
+        await session.commit()
+
+        student = await _get_user(session, student_id)
+        rows = await list_collections(student, mine=True, limit=5, db=session)
+        assert len(rows) == 5
+        assert {row.id for row in rows} == set(visible_ids)
+        assert hidden_collection_id not in {row.id for row in rows}
 
 
 async def test_move_collection_persists_category_and_bumps_version(

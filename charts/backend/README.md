@@ -202,6 +202,10 @@ chart default until the epic is promoted. Only the API pod needs the variable
 (no migration: the collections tables are additive and already present). See
 [`docs/collections.md`](../../docs/collections.md).
 
+`collections.homeShelf` renders `COLLECTIONS_HOME_SHELF` and defaults to
+`false`. The shelf is effective only when `collections.enabled` is also true;
+the `latest` overlay may enable it independently of `stable`.
+
 ## API configuration
 
 The API (backend) Deployment carries its own component profile via the

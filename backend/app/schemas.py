@@ -939,6 +939,7 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+    collections_home_shelf: bool
 
 
 # Rebuild forward refs for nested models (``CategoryTree`` embeds

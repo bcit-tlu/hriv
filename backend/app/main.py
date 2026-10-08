@@ -381,7 +381,12 @@ async def health():
 @app.get("/api/features", response_model=FeaturesOut)
 async def features() -> FeaturesOut:
     """Deployment feature flags (unauthenticated; see docs/collections.md)."""
-    return FeaturesOut(collections=settings.collections_enabled)
+    return FeaturesOut(
+        collections=settings.collections_enabled,
+        collections_home_shelf=(
+            settings.collections_enabled and settings.collections_home_shelf
+        ),
+    )
 
 
 @app.get("/api/health/queue")

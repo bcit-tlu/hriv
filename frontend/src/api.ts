@@ -723,6 +723,7 @@ export interface CollectionFilters {
   mine?: boolean
   owner_user_id?: number
   owner_program_id?: number
+  limit?: number
   /** Admin-only; the API returns 403 for anyone else, so callers must not set it for non-admins. */
   orphaned?: boolean
   /** Only unfiled collections (`category_id IS NULL`), not shown on Browse. */
@@ -739,6 +740,7 @@ export function fetchCollections(
   if (filters.owner_user_id != null) params.set('owner_user_id', String(filters.owner_user_id))
   if (filters.owner_program_id != null)
     params.set('owner_program_id', String(filters.owner_program_id))
+  if (filters.limit != null) params.set('limit', String(filters.limit))
   if (filters.orphaned) params.set('orphaned', 'true')
   if (filters.uncategorized) params.set('uncategorized', 'true')
   const qs = params.toString()
@@ -2233,6 +2235,7 @@ export interface VersionsResponse {
 /** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
 export interface ApiFeatures {
   collections: boolean
+  collections_home_shelf: boolean
 }
 
 export function fetchFeatures(): Promise<ApiFeatures> {
