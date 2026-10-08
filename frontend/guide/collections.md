@@ -94,6 +94,8 @@ Browse tile.
 
 1. Click **New collection**.
 2. Give it a name (a description is optional).
+   Admins and instructors also choose a category; students' and staff
+   collections remain unfiled until a curator files them.
 3. Pick the **type** and who it's **visible to**:
    - **Private** – only you.
    - **Public** – everyone who can sign in.

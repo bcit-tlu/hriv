@@ -53,6 +53,7 @@ function findCategoryById(nodes: Category[], id: number): Category | null {
 
 // Sentinel value so MUI fires onChange even when external value is already null
 const ROOT_VALUE = '__root__'
+const ADD_ROOT_VALUE = '__add_root__'
 
 interface CategoryPickerSelectProps {
   categories: Category[]
@@ -230,6 +231,7 @@ export default function CategoryPickerSelect({
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
+    if (val === ADD_ROOT_VALUE) return
     onChange(val === '' || val === ROOT_VALUE ? null : Number(val))
   }
 
@@ -288,6 +290,10 @@ export default function CategoryPickerSelect({
           labelId={labelId}
           displayEmpty={includeRoot || !!placeholder}
           renderValue={(selected) => {
+            if (selected === ADD_ROOT_VALUE) {
+              if (placeholder) return <em>{placeholder}</em>
+              return ''
+            }
             if (selected === '') {
               if (placeholder) return <em>{placeholder}</em>
               return ''
@@ -325,7 +331,17 @@ export default function CategoryPickerSelect({
               </Box>
             </MenuItem>
           )}
-          {visibleOptions.length === 0 && (
+          {!includeRoot && onAddCategory && (
+            <MenuItem
+              value={ADD_ROOT_VALUE}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => handleAddClick(e, null)}
+            >
+              <AddIcon fontSize="small" sx={{ mr: 1 }} />
+              <ListItemText>New top-level category</ListItemText>
+            </MenuItem>
+          )}
+          {visibleOptions.length === 0 && (includeRoot || !onAddCategory) && (
             <MenuItem disabled>
               <ListItemText>
                 <Typography variant="body2" color="text.secondary">

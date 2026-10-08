@@ -532,6 +532,8 @@ describe('CollectionManageDialog', () => {
   it('shows the empty state and restricted-member note', () => {
     renderDialog({ collection: manageCollection({ images: [] }) })
     expect(screen.getByTestId('manage-empty')).toBeInTheDocument()
+    expect(screen.queryByText(/Drag thumbnails to reorder/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Click thumbnails to select them/)).not.toBeInTheDocument()
     renderDialog({ collection: manageCollection({ images: [], memberCount: 2 }) })
     expect(screen.getByText(/2 restricted images not shown/)).toBeInTheDocument()
   })

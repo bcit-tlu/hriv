@@ -95,7 +95,7 @@ export interface CollectionsPageProps {
   onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
-  onCreate: (values: CollectionFormValues) => Promise<unknown>
+  onCreate: (values: CollectionFormValues) => Promise<Collection>
   onUpdate: (
     id: number,
     values: CollectionFormValues,
@@ -644,7 +644,8 @@ export default function CollectionsPage({
         void loadCollection(editing.id).catch(() => {})
       }
     } else {
-      await onCreate(values)
+      const created = await onCreate(values)
+      onOpenCollection(created.id)
     }
   }
 
@@ -891,6 +892,14 @@ export default function CollectionsPage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleCategoryVisibility}
+        onViewCollection={
+          editing && editing.id !== selectedCollectionId
+            ? () => {
+                setEditorOpen(false)
+                onOpenCollection(editing.id)
+              }
+            : undefined
+        }
       />
 
       {/* The Manage dialog stages membership edits locally (#1567); Done

@@ -99,6 +99,7 @@ export async function createCollectionWithImages(
       description: values.description,
       type: values.type,
       visibility: values.visibility,
+      ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
       image_ids: Array.from(new Set(imageIds)),
       ...(values.visibility === 'restricted'
         ? { program_ids: values.programIds, group_ids: values.groupIds }

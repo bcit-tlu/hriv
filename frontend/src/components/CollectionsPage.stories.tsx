@@ -255,7 +255,7 @@ function CollectionsPageExample(args: StoryArgs) {
           onViewerError={() => undefined}
           onSaveViewport={async () => undefined}
           loadCollection={async () => detail}
-          onCreate={async () => undefined}
+          onCreate={async () => detail}
           onUpdate={async () => detail}
           onDelete={async () => undefined}
           onSaveOwners={async () => undefined}

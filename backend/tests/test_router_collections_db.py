@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.models import (
+    BrowseState,
     Category,
     Collection,
     CollectionImage,
@@ -324,13 +325,18 @@ async def test_student_collection_count_uses_user_owners_not_creator(
 async def test_instructor_collection_count_is_not_capped(session_factory) -> None:
     async with session_factory() as session:
         instructor_id = await _new_user(session, "instructor", "count")
+        category_id = await _new_category(session, "instructor-count")
         for _ in range(10):
             await _new_collection(
                 session, "sequence", [], owner_id=instructor_id
             )
         instructor = await _get_user(session, instructor_id)
         created = await create_collection(
-            CollectionCreate(name=f"{TEST_PREFIX}instructor-eleventh", type="sequence"),
+            CollectionCreate(
+                name=f"{TEST_PREFIX}instructor-eleventh",
+                type="sequence",
+                category_id=category_id,
+            ),
             instructor,
             session,
         )
@@ -784,6 +790,99 @@ async def _new_category(
     session.add(cat)
     await session.commit()
     return cat.id
+
+
+async def test_create_collection_files_category_and_invalidates_browse(session_factory) -> None:
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "create-filed")
+        category_id = await _new_category(session, "create-filed")
+        admin = await _get_user(session, admin_id)
+        root_before = (
+            await session.execute(
+                select(TileOrderRevision.revision).where(TileOrderRevision.scope_key == 0)
+            )
+        ).scalar_one_or_none()
+        category_before = (
+            await session.execute(
+                select(TileOrderRevision.revision).where(
+                    TileOrderRevision.scope_key == category_id
+                )
+            )
+        ).scalar_one_or_none()
+        browse_before = (
+            await session.execute(
+                select(BrowseState.revision).where(BrowseState.id == 1)
+            )
+        ).scalar_one_or_none() or 0
+
+        out = await create_collection(
+            CollectionCreate(name=f"{TEST_PREFIX}filed", type="sequence", category_id=category_id),
+            admin,
+            session,
+        )
+        assert out.category_id == category_id
+        category_after = (
+            await session.execute(
+                select(TileOrderRevision.revision).where(
+                    TileOrderRevision.scope_key == category_id
+                )
+            )
+        ).scalar_one()
+        root_after = (
+            await session.execute(
+                select(TileOrderRevision.revision).where(TileOrderRevision.scope_key == 0)
+            )
+        ).scalar_one_or_none()
+        browse_after = (
+            await session.execute(
+                select(BrowseState.revision).where(BrowseState.id == 1)
+            )
+        ).scalar_one()
+        assert category_after > (category_before or 0)
+        assert root_after == root_before
+        assert browse_after == browse_before + 1
+
+
+async def test_create_unfiled_student_does_not_invalidate_browse(session_factory) -> None:
+    async with session_factory() as session:
+        student = User(
+            name=f"{TEST_PREFIX}student-create-{uuid4().hex[:8]}",
+            email=f"{TEST_PREFIX}student-create-{uuid4().hex[:8]}@example.test",
+            role="student",
+        )
+        session.add(student)
+        await session.flush()
+        student_id = student.id
+        await session.commit()
+        student = await _get_user(session, student_id)
+        await session.refresh(student, attribute_names=["programs", "groups"])
+        root_before = (
+            await session.execute(
+                select(TileOrderRevision.revision).where(TileOrderRevision.scope_key == 0)
+            )
+        ).scalar_one_or_none()
+        browse_before = (
+            await session.execute(
+                select(BrowseState.revision).where(BrowseState.id == 1)
+            )
+        ).scalar_one_or_none()
+
+        out = await create_collection(
+            CollectionCreate(name=f"{TEST_PREFIX}unfiled", type="sequence"),
+            student,
+            session,
+        )
+        assert out.category_id is None
+        assert (
+            await session.execute(
+                select(TileOrderRevision.revision).where(TileOrderRevision.scope_key == 0)
+            )
+        ).scalar_one_or_none() == root_before
+        assert (
+            await session.execute(
+                select(BrowseState.revision).where(BrowseState.id == 1)
+            )
+        ).scalar_one_or_none() == browse_before
 
 
 async def test_list_limit_orders_and_truncates(session_factory) -> None:

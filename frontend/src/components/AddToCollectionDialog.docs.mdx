@@ -56,6 +56,7 @@ form's visibility options follow the role.
 - **New collection…** reuses `CollectionEditDialog` in create mode; `onCreate` receives the form
   values and the caller posts them with `image_ids` preset (`createCollectionWithImages`).
   Students may own at most 10 collections of each type; at both limits, the button is disabled.
+  Curators must choose a category; creating from this flow keeps the user on the image.
   Rejections render inside the create form, as they do on the Collections tab.
 - **Permissions are UX gates only.** The backend re-checks edit authority and image visibility
   on every write.

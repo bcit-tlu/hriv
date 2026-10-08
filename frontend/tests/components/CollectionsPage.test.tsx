@@ -393,14 +393,17 @@ describe('CollectionsPage', () => {
 
     it('opens the create dialog and forwards the values to onCreate', async () => {
       const user = userEvent.setup()
-      const onCreate = vi.fn().mockResolvedValue(undefined)
-      renderPage({ onCreate })
+      const created = makeCollection({ id: 42 })
+      const onCreate = vi.fn().mockResolvedValue(created)
+      const onOpenCollection = vi.fn()
+      renderPage({ currentUser: STAFF, onCreate, onOpenCollection })
       await user.click(screen.getByRole('button', { name: 'New collection' }))
       expect(await screen.findByText('New Collection')).toBeInTheDocument()
       await user.type(screen.getByLabelText('Collection name'), 'Skulls')
       await user.click(screen.getByRole('button', { name: 'Create' }))
       await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
       expect(onCreate.mock.calls[0][0]).toMatchObject({ name: 'Skulls', type: 'sequence' })
+      expect(onOpenCollection).toHaveBeenCalledWith(created.id)
       await waitFor(() => expect(screen.queryByText('New Collection')).not.toBeInTheDocument())
     })
 
