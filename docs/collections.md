@@ -369,10 +369,10 @@ sole-owner lifecycle as students. Program ownership is only reachable via
   not add a new image to a sequence once the resulting list would exceed that
   limit (**422**).
 - On a student `PUT …/images`, the submitted ids plus retained unseen members
-  count toward the sequence limit. A replacement that would exceed 10 is
-  rejected only when it adds a new member, so students can still remove or
-  reorder an already-over-cap collection. Existing over-cap data is not
-  modified retroactively.
+  count toward the sequence limit. A replacement that would exceed
+  `STUDENT_SEQUENCE_MAX_IMAGES` (20) is rejected only when it adds a new
+  member, so students can still remove or reorder an already-over-cap
+  collection. Existing over-cap data is not modified retroactively.
 - Student sequence-cap errors return **422** with detail
   `Students may add at most 20 images to a sequence collection`.
 - Students may only reference images they can open: `active` **and** category

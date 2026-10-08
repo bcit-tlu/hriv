@@ -43,7 +43,7 @@ form's visibility options follow the role.
   collections_ and _Other collections_ (anything else an admin may edit, including orphaned
   collections). Empty groups are omitted; a client-side name filter narrows all three.
 - **Capacity.** A `synchronized` row is disabled with the `CAP_REACHED_TOOLTIP` tooltip at
-  `SYNCHRONIZED_MAX_IMAGES` (4) for every role. A student's `sequence` row is disabled at 10
+  `SYNCHRONIZED_MAX_IMAGES` (4) for every role. A student's `sequence` row is disabled at 20
   images. Borderline rows stay clickable because the summary count cannot see which `imageIds`
   are already members — `addImagesToCollection` dedupes against the fetched member list and
   returns `full` only when genuinely-new images overflow. Other roles have no sequence cap.
