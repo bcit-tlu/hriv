@@ -802,6 +802,7 @@ class CollectionCreate(BaseModel):
     description: str | None = None
     type: CollectionType
     visibility: CollectionVisibility = "private"
+    category_id: int | None = None
     image_ids: list[int] = []
     program_ids: list[int] = []
     group_ids: list[int] = []

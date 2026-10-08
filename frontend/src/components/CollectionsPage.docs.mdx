@@ -52,6 +52,10 @@ with deterministic fixtures.
 - **Create / edit.** Both use `CollectionEditDialog`. Editing from a card first loads the full
   record (summaries omit the restricted scope); editing from the detail header reuses the loaded
   detail.
+- **Student collection count caps.** The type-page **New collection** button stays enabled until
+  both types are capped. Since the visible list is type-filtered, the page fetches all of the
+  student's collection summaries to determine both caps; the create dialog disables capped types
+  and selects the other type when its default type is capped.
 - **Delete.** Lives inside `CollectionEditDialog` only (#1554, the `EditImageModal` pattern):
   first click arms, second click confirms; a failure keeps the dialog open with the API message.
   Deleting the currently open collection returns to the list.

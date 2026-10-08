@@ -66,7 +66,7 @@ import {
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import {
-  SYNCHRONIZED_MAX_IMAGES,
+  collectionFullMessage,
   parseCollectionIdParam,
   parseCollectionItemParam,
 } from './collectionUtils'
@@ -1283,9 +1283,12 @@ export default function App() {
     loadCategories,
     loadUncategorizedImages,
     moveCollectionApi: collectionsEnabled ? collectionsData.move : undefined,
-    addImagesToCollectionApi: collectionsEnabled ? collectionsData.addImages : undefined,
+    addImagesToCollectionApi: collectionsEnabled
+      ? (id, imageIds, role) => collectionsData.addImages(id, imageIds, role)
+      : undefined,
     removeImagesFromCollectionApi: collectionsEnabled ? collectionsData.removeImages : undefined,
     currentCategories,
+    currentUserRole: currentUser?.role,
     ancestorProgramIds,
     ancestorGroupIds,
     liveCategoryPath,
@@ -1837,7 +1840,7 @@ export default function App() {
           return true
         }
         setErrorSnack(
-          `Adding this selection to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+          collectionFullMessage(result.collection.name, result.collection.type, 'selection'),
         )
         return false
       } catch (err) {
@@ -1870,7 +1873,7 @@ export default function App() {
         )
       } else {
         setErrorSnack(
-          `Adding this selection to "${target.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+          collectionFullMessage(target.collection.name, target.collection.type, 'selection'),
         )
       }
       return
@@ -1882,9 +1885,10 @@ export default function App() {
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
       const created = await createCollectionWithImages(values, addToCollectionImageIds)
+      if (created.categoryId != null) refreshCategories()
       reportAddedToCollection(created, addToCollectionImageIds.length)
     },
-    [addToCollectionImageIds, reportAddedToCollection],
+    [addToCollectionImageIds, refreshCategories, reportAddedToCollection],
   )
 
   // "Open image" from the collection detail placeholder → the regular
@@ -2017,7 +2021,11 @@ export default function App() {
               onViewerError={setErrorSnack}
               onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
-              onCreate={collectionsData.create}
+              onCreate={async (values) => {
+                const created = await collectionsData.create(values)
+                if (created.categoryId != null) refreshCategories()
+                return created
+              }}
               onUpdate={collectionsData.update}
               onDelete={collectionsData.remove}
               onSaveOwners={collectionsData.saveOwners}
@@ -3170,6 +3178,10 @@ export default function App() {
           error={editableCollections.error}
           programs={programs}
           groups={groups}
+          categories={categories}
+          onAddCategory={addCategoryInline}
+          onEditCategory={editCategoryInline}
+          onToggleVisibility={toggleCategoryVisibility}
           onAdd={handleAddToCollection}
           onCreate={handleCreateCollectionWithImage}
         />

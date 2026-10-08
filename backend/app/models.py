@@ -513,6 +513,10 @@ COLLECTION_VISIBILITIES: tuple[str, ...] = ("private", "public", "restricted")
 # renders the first two; the extra slots are reserved for future layouts.
 SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
 
+# Student collection caps (#1583).
+STUDENT_SEQUENCE_MAX_IMAGES = 20
+STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
+
 
 class Collection(Base):
     """A user- and/or program-owned grouping of existing images.

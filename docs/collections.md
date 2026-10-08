@@ -278,7 +278,7 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 | ------ | -------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized=true` (unfiled queue, not on Browse). Ordered by `updated_at` desc.                                                                                                                                                                                                                                                                                                                                  |
 | GET    | `/api/collections/{id}`          | student                                                              | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                                                                                                                                                                                                                                                            |
-| POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), ordered `image_ids`, `program_ids` / `group_ids` (restricted only). **201** `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                   |
+| POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), `category_id?`, ordered `image_ids`, `program_ids` / `group_ids` (restricted only). Admins and instructors must provide a valid category; staff and students create unfiled collections and cannot file on create. Filed creates bump the category tile-order scope and Browse revisions. **201** `CollectionOut`.                                                                                                                             |
 | PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids`, `hidden` + required `version`. `type` is immutable (**422** if changed). A `hidden`-only body instead requires `can_hide_collection` (any admin/instructor — curatorial, not ownership-bound); mixing `hidden` with other fields keeps the normal gates. Returns fresh `CollectionOut`.                                                                                                                                                                                      |
 | DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                          | **204**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | PATCH  | `/api/collections/bulk`          | admin / instructor (any — curatorial, not ownership-bound)           | Bulk-update curatorial fields (#1578). Body `CollectionBulkUpdate`: `collection_ids` + optional `category_id` (refile; `null` = unfiled) and `hidden` (hide/show for students). Scope fields are not bulk-editable. **404** when any id is missing, **422** unknown category, **409** when a row moved or vanished between the read and the row lock (retry). Atomic; bumps only non-null source/destination scope revisions for moved rows and the browse revision; `version` advances only on rows that actually change. Returns `CollectionSummaryOut[]` in request order. |
@@ -379,7 +379,17 @@ sole-owner lifecycle as students. Program ownership is only reachable via
 - Every id must exist (**422**, detail lists the offenders).
 - No duplicates (**422**, rejected by the schema and again by the router).
 - `synchronized` collections hold at most `SYNCHRONIZED_COLLECTION_MAX_IMAGES`
-  (4) images (**422**); `sequence` has no cap.
+  (4) images (**422**) for every role. Students may create sequence
+  collections with at most `STUDENT_SEQUENCE_MAX_IMAGES` (20) images and may
+  not add a new image to a sequence once the resulting list would exceed that
+  limit (**422**).
+- On a student `PUT …/images`, the submitted ids plus retained unseen members
+  count toward the sequence limit. A replacement that would exceed
+  `STUDENT_SEQUENCE_MAX_IMAGES` (20) is rejected only when it adds a new
+  member, so students can still remove or reorder an already-over-cap
+  collection. Existing over-cap data is not modified retroactively.
+- Student sequence-cap errors return **422** with detail
+  `Students may add at most 20 images to a sequence collection`.
 - Students may only reference images they can open: `active` **and** category
   passing the program AND group dual gate (`get_student_excluded_category_ids`
   with both `{p.id for p in user.programs}` and `{g.id for g in user.groups}`).
@@ -392,6 +402,20 @@ sole-owner lifecycle as students. Program ownership is only reachable via
   in their existing relative order, and still count toward the `synchronized`
   cap (the 422 detail then says how many hidden members are retained). Since
   non-students see every image, this only affects students.
+
+**Student collection count (#1583).** A student may own up to
+`STUDENT_MAX_COLLECTIONS_PER_TYPE` (10) collections of each type. Only
+`POST /api/collections` enforces this cap: the 11th create of one type returns
+**422** with detail `Students may own at most 10 {type} collections`, while
+the other type remains available until its own limit is reached. The count is
+based on user-owner rows (`Collection.owners`): co-owned collections count,
+program-only-owned collections do not, and `collections.user_id` is creator
+audit data only. The cap applies to the caller's role, not the collection
+owner's role; admins, instructors and staff are never capped. It is not
+retroactive and is not enforced by owner-replacement or transfer endpoints.
+On a Collections type page, **New collection** stays available until both
+types are capped; in the create form, a capped type is disabled and the other
+type is selected when the page's default type is capped.
 
 **Viewport (`PUT …/viewport`).** `viewport_state` is overwritten with the
 submitted object — never a partial JSONB merge. The synchronized viewer
@@ -975,7 +999,9 @@ thumbnails' renewal callback flow through `onImageRenewed` →
 `useCollectionsData.renewCollectionImage`, which swaps the refreshed
 `ApiImage` into `detail` so short-lived tile/thumb tokens keep working.
 
-**Fallback states.** Empty collection → "no visible images" info alert. If
+**Fallback states.** A truly empty editable collection says "This collection
+has no images. Use 'Manage Images' to add some."; a read-only collection says
+"This collection has no images." Restricted-member messaging remains distinct. If
 the current image's tiles fail mid-session the viewer reports the error via
 `onError`, marks the id failed (dimmed, disabled thumbnail), and skips to
 the nearest still-available image (preferring the next one). When every

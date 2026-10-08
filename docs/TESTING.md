@@ -329,9 +329,11 @@ orphans (admin-only), and that an admin can reassign them with
 `PUT /api/collections/{id}/owners`. See [collections.md](collections.md)
 ("Owner management", "Ownership & lifecycle").
 
+Curators must include an existing `category_id` when creating a collection.
+
 1. Obtain tokens for `admin@example.ca` and `instructor@example.ca` (Test Case 4b).
 2. As admin, create a throw-away program: `POST /api/programs {"name": "Orphan Test"}` → note its `id` as `$PID`, and add the instructor to it (`PATCH /api/users/{instructor_id}` with `program_ids` including `$PID`).
-3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "image_ids": [1]}` → note `id` as `$CID` and `version`.
+3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "category_id": <existing category id>, "image_ids": [1]}` → note `id` as `$CID` and `version`.
 4. As the instructor, move it onto the program: `POST /api/collections/$CID/transfer {"program_id": $PID, "version": <version>}`.
    **Assert:** `200`, `owners` is `[{"user_id": null, "program_id": $PID, "name": "Orphan Test"}]` (the program becomes the sole owner — user-owner rows are cleared), `version` incremented, `permissions.can_edit` is `true`.
 5. As the instructor, stage a co-owner on the program-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [<instructor id>], "version": <version>}`.
@@ -340,7 +342,7 @@ orphans (admin-only), and that an admin can reassign them with
    **Assert:** `204`. The staged instructor owner keeps the collection un-orphaned — `GET /api/collections/$CID` still shows the instructor in `owners` and the instructor can PATCH it (`200`).
 7. As the instructor, empty the owner set on the now-user-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [], "version": <version>}`.
    **Assert:** `422` — a collection with no program owner may not lose its last user owner.
-8. As admin, create a second throw-away program (`POST /api/programs {"name": "Orphan Test 2"}` → `$PID2`), then a collection (`POST /api/collections` → `$CID2`) and `POST /api/collections/$CID2/transfer {"program_id": $PID2, ...}` so `$PID2` is its sole owner. Delete `$PID2` without staging any user owners.
+8. As admin, create a second throw-away program (`POST /api/programs {"name": "Orphan Test 2"}` → `$PID2`), then a collection (`POST /api/collections {"name": "Orphaned collection", "type": "sequence", "visibility": "public", "category_id": <existing category id>, "image_ids": [1]}` → `$CID2`) and `POST /api/collections/$CID2/transfer {"program_id": $PID2, ...}` so `$PID2` is its sole owner. Delete `$PID2` without staging any user owners.
    **Assert:** `GET /api/collections?orphaned=true` lists `$CID2` with `owners: []`; `GET /api/collections/$CID2` still returns the collection and its image.
 9. As the instructor, `PATCH /api/collections/$CID2 {"name": "x", "version": <version>}`, `PUT /api/collections/$CID2/owners {"user_ids": [<instructor id>], "version": <version>}`, and `POST /api/collections/$CID2/transfer {"program_id": <another program>, "version": <version>}`.
    **Assert:** all `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID2` still returns `200` (public visibility survives orphaning).
@@ -358,7 +360,7 @@ viewer types, the manage table, and the ownership-management UI (#1419,
 (default in local dev). See [collections.md](collections.md).
 
 1. Login as `instructor@example.ca` and click the **Collections** tab. **Assert:** the tab only opens a sub-menu — no navigation happens — offering **Sequence** and **Synchronized** (same pattern as Manage; #1559). Pick **Synchronized** — **Assert:** the URL is `?page=collections&type=synchronized`, the header reads "Synchronized collections", and only synchronized cards render (a sequence collection never appears). Switch to **Sequence** via the tab and back; strip `type=` from the URL — **Assert:** it defaults to the Sequence list.
-2. On the Synchronized page: **New collection** → name "Skull study", type **Synchronized**, visibility **Public** → **Create**. **Assert:** the card appears with the Synchronized type icon immediately left of the name (#1567) and a Public visibility chip in the metadata area. **Assert:** **Move** and **Owners** sit in a top-right cover overlay, **Edit** is a pencil right of the title, and no Delete affordance or owner text exists on the card.
+2. On the Synchronized page: **New collection** → name "Skull study", type **Synchronized**, visibility **Public** → choose a category as the instructor, then **Create**. **Assert:** create is disabled until a category is selected, the filed collection opens immediately, and the card appears with the Synchronized type icon immediately left of the name (#1567) and a Public visibility chip in the metadata area. **Assert:** **Move** and **Owners** sit in a top-right cover overlay, **Edit** is a pencil right of the title, and no Delete affordance or owner text exists on the card. As a student or staff member, create without a category and verify the collection opens unfiled.
 3. Open the collection; add images via an image's **Add to Collection** viewer action (or select images in **Search** → **Add to collection**). **Assert:** the synchronized viewer shows the panes with the restore/save controls, each pane has a **link** icon at its top-right corner (all start linked — pan/zoom/rotate on one mirrors to the others; click it to unlink that pane — the icon flips to link-off — and move it independently, then re-link to rejoin without snapping; #1564, #1567), **Restore view** is disabled until **Save view** has been clicked (#1567), and the header leads with a **Home** breadcrumb — no `<h1>` title; the actions sit on the same line (the collection is unfiled) instead of the old "All collections" link (#1559, #1564). With three or four images added, **Assert:** all render in a 2×2 grid (up to the four-member cap), any linked pane's pan/zoom/rotate mirrors to every other linked pane, and **Save view** stores the layout without resetting the current view (#1561, #1566, #1567).
 4. Switch to the library and copy the address bar (`?collection={id}`); open the URL in an incognito window logged in as a student. **Assert:** the public collection opens directly on the same view.
 5. Back as the instructor, file the collection into a category: click the **pencil** at the end of the header breadcrumb (#1567) and pick a category in the dialog's **Category** picker (e.g. _Hematology → Lab 3_; #1566) → **Save**. Reopen it and **Assert:** the header breadcrumb reads _Home : Hematology : Lab 3 : ‹collection name› (N images)_ — the name and muted count trail the last link, like the image view (#1564) — and each link navigates Browse to that spot (#1559). **Assert:** the action buttons sharing the breadcrumb line on the right are Hide / Manage Images only — no Edit button (the breadcrumb pencil), no Move, Owners, or Delete (Owners is the transfer-horizontal icon beside the "Managed by …" line; #1559, #1566, #1567). **Assert:** the edit dialog is the wider variant with the **Category** picker under the **Type** section and the **Hide Collection** link in the title row (#1566, #1567); change the description and save. **Assert:** the detail header updates; below the breadcrumb row the pills order **Synchronized** type chip then the **Public** visibility chip, left of the owner line, with the description below the pills (#1564, #1567).
@@ -638,3 +640,34 @@ IDs even when the instructor does not belong to those programs or manage those
 groups. Those inherited IDs are treated as pre-existing restrictions. The
 request must still return **403** for any additional program or group ID that
 is not inherited and is outside the instructor's attach authority.
+
+## Test Case 13: Student Collection and Sequence Caps
+
+**Purpose:** Verify the student-only per-type collection count and sequence
+image limits (#1583). Use a fresh student account with visible images, plus an
+instructor account for the uncapped-role checks.
+
+1. As the student, create 10 sequence collections. On the Sequence
+   Collections page, while there are no synchronized collections, **Assert:**
+   **New collection** remains enabled. Open it and **Assert:** Sequence is
+   disabled and Synchronized is selected. Close the dialog, then create 10
+   synchronized collections. **Assert:** all 20 creates succeed. At both
+   limits, **Assert:** **New collection** is disabled with the tooltip
+   `You've reached the limit of 10 collections of each type.` Attempt an 11th
+   create of each type through the API. **Assert:** both return **422** with
+   `Students may own at most 10 {type} collections`.
+2. As the student, create a sequence with 21 visible image IDs.
+   **Assert:** the create returns **422** with
+   `Students may add at most 20 images to a sequence collection`. Repeat with
+   20 IDs and **Assert:** it succeeds. Synchronized collections still reject
+   a fifth image for every role.
+3. As a student owner of a 20-image sequence, use **Manage Images** to add a
+   21st image. **Assert:** the write is rejected with the same sequence
+   cap detail. Reorder the existing images or remove one and **Assert:** those
+   edits succeed. On an instructor-seeded 22-image sequence co-owned by the
+   student, remove or reorder without adding and **Assert:** it remains
+   editable; try adding a new image while still over 20 and **Assert:** it is
+   rejected.
+4. As the instructor, create and update a sequence with more than 20 images.
+   **Assert:** both operations succeed. Verify student limits do not apply
+   when a non-student edits a student-owned collection.

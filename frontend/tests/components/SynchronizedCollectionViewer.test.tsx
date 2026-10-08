@@ -673,7 +673,7 @@ describe('SynchronizedCollectionViewer', () => {
     renderViewer({ collection: syncCollection({ images: [] }) })
     const fallback = screen.getByTestId('synchronized-viewer-fallback')
     expect(fallback).toHaveTextContent(
-      'A synchronized comparison needs at least two pre-existing images. Use "Manage Images" to add images to the collection.',
+      'This collection has no images. Use "Manage Images" to add some.',
     )
     expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
   })
@@ -686,7 +686,7 @@ describe('SynchronizedCollectionViewer', () => {
       }),
     })
     const fallback = screen.getByTestId('synchronized-viewer-fallback')
-    expect(fallback).toHaveTextContent('A synchronized comparison needs at least two images.')
+    expect(fallback).toHaveTextContent('This collection has no images.')
     expect(fallback).not.toHaveTextContent('Manage Images')
   })
 

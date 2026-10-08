@@ -13,6 +13,7 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import Collections from '@mui/icons-material/Collections'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { collectionConflictCurrent, userMessage } from '../api'
@@ -20,6 +21,7 @@ import { AuthContext } from '../authContextValue'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
+  STUDENT_MAX_COLLECTIONS_PER_TYPE,
   SYNCHRONIZED_MAX_IMAGES,
   apiCollectionToCollection,
   canUseRestrictedVisibility,
@@ -76,6 +78,8 @@ export interface CollectionEditDialogProps {
    * is looking at. Ignored when editing.
    */
   defaultType?: CollectionType
+  /** Collection types at the student's create limit. */
+  typesAtLimit?: ReadonlySet<CollectionType>
   programs?: Program[]
   groups?: Group[]
   /**
@@ -115,6 +119,7 @@ export interface CollectionEditDialogProps {
     groupIds?: number[],
   ) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
+  onViewCollection?: () => void
 }
 
 const TYPE_HELP: Record<CollectionType, string> = {
@@ -127,6 +132,7 @@ export default function CollectionEditDialog({
   onClose,
   collection = null,
   defaultType = 'sequence',
+  typesAtLimit,
   programs = EMPTY_PROGRAMS,
   groups = EMPTY_GROUPS,
   onSave,
@@ -135,6 +141,7 @@ export default function CollectionEditDialog({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  onViewCollection,
 }: CollectionEditDialogProps) {
   const isEdit = collection != null
   const auth = useContext(AuthContext)
@@ -169,13 +176,21 @@ export default function CollectionEditDialog({
   const [conflict, setConflict] = useState<Collection | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmView, setConfirmView] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const seedFrom = (source: Collection | null) => {
     setName(source?.name ?? '')
     setDescription(source?.description ?? '')
-    setType(source?.type ?? defaultType)
+    const initialType =
+      source?.type ??
+      (typesAtLimit?.has(defaultType)
+        ? defaultType === 'sequence'
+          ? 'synchronized'
+          : 'sequence'
+        : defaultType)
+    setType(initialType)
     setVisibility(source?.visibility ?? 'private')
     setCategoryId(source?.categoryId ?? null)
     setHidden(source?.hidden ?? false)
@@ -187,6 +202,7 @@ export default function CollectionEditDialog({
     setConflict(null)
     setSaving(false)
     setConfirmDelete(false)
+    setConfirmView(false)
     setDeleting(false)
   }
 
@@ -196,8 +212,14 @@ export default function CollectionEditDialog({
   useEffect(() => {
     if (open && !prevOpen.current) seedFrom(collection)
     prevOpen.current = open
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures defaultType at open time
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures type limits at open time
   }, [open, collection])
+
+  useEffect(() => {
+    if (!open || collection != null || !typesAtLimit?.has(type)) return
+    const otherType = type === 'sequence' ? 'synchronized' : 'sequence'
+    if (!typesAtLimit.has(otherType)) setType(otherType)
+  }, [open, typesAtLimit, type, collection])
 
   // A save that partially succeeded (metadata PATCH ok, chained category move
   // failed) returns a newer record while the dialog stays open (#1567):
@@ -255,11 +277,37 @@ export default function CollectionEditDialog({
 
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
-  const canSubmit = name.trim().length > 0 && !scopeMissing && !saving && !deleting
+  const bothTypesAtLimit = typesAtLimit?.has('sequence') && typesAtLimit.has('synchronized')
+  const selectedTypeAtLimit = !isEdit && (typesAtLimit?.has(type) ?? false)
+  const canSubmit =
+    name.trim().length > 0 &&
+    !scopeMissing &&
+    (isEdit || !canFile || categoryId != null) &&
+    !saving &&
+    !deleting &&
+    (isEdit || (!bothTypesAtLimit && !selectedTypeAtLimit))
+  const sameIds = (current: Set<number>, original: number[]) =>
+    current.size === original.length && original.every((id) => current.has(id))
+  const isDirty =
+    isEdit &&
+    baseline != null &&
+    (name.trim() !== baseline.name ||
+      (description.trim() || null) !== baseline.description ||
+      visibility !== baseline.visibility ||
+      categoryId !== (baseline.categoryId ?? null) ||
+      hidden !== baseline.hidden ||
+      !sameIds(selectedProgramIds, baseline.programIds) ||
+      !sameIds(selectedGroupIds, baseline.groupIds))
   // A collection filed inside a hidden category is hidden by ancestry, so its
   // own hide control is disabled — the EditImageModal convention (#1566).
   const categoryHidden = isEdit && isCategoryHiddenInTree(categories, categoryId)
   const showHideControl = isEdit && collection?.permissions.canHide
+
+  const handleViewCollection = () => {
+    if (!onViewCollection) return
+    if (isDirty) setConfirmView(true)
+    else onViewCollection()
+  }
 
   const handleSubmit = async () => {
     const trimmed = name.trim()
@@ -329,44 +377,59 @@ export default function CollectionEditDialog({
             EditCategoryDialog title-link convention: it toggles local state
             and persists on Save. "Hidden by Category" mirrors the image
             modal's disabled state when the filing category is hidden. */}
-        {showHideControl &&
-          (categoryHidden ? (
-            <Button
-              variant="text"
-              size="small"
-              startIcon={<VisibilityOff />}
-              disabled
-              aria-label="Visibility: Hidden by category"
-              sx={{
-                '&.Mui-disabled': { color: visColors.inactive },
-                filter: 'grayscale(100%)',
-              }}
-            >
-              Hidden by Category
-            </Button>
-          ) : hidden ? (
-            <Button
-              variant="text"
-              size="small"
-              startIcon={<VisibilityOff />}
-              onClick={() => setHidden(false)}
-              aria-label="Visibility: Show collection"
-              sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
-            >
-              Show Collection
-            </Button>
-          ) : (
-            <Button
-              variant="text"
-              size="small"
-              startIcon={<Visibility />}
-              onClick={() => setHidden(true)}
-              aria-label="Visibility: Hide collection"
-              color="primary"
-            >
-              Hide Collection
-            </Button>
-          ))}
+        {(showHideControl || (isEdit && onViewCollection)) && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {showHideControl &&
+              (categoryHidden ? (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<VisibilityOff />}
+                  disabled
+                  aria-label="Visibility: Hidden by category"
+                  sx={{
+                    '&.Mui-disabled': { color: visColors.inactive },
+                    filter: 'grayscale(100%)',
+                  }}
+                >
+                  Hidden by Category
+                </Button>
+              ) : hidden ? (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<VisibilityOff />}
+                  onClick={() => setHidden(false)}
+                  aria-label="Visibility: Show collection"
+                  sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+                >
+                  Show Collection
+                </Button>
+              ) : (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<Visibility />}
+                  onClick={() => setHidden(true)}
+                  aria-label="Visibility: Hide collection"
+                  color="primary"
+                >
+                  Hide Collection
+                </Button>
+              ))}
+            {isEdit && onViewCollection && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Collections />}
+                onClick={handleViewCollection}
+                disabled={saving || deleting}
+              >
+                View Collection
+              </Button>
+            )}
+          </Box>
+        )}
       </DialogTitle>
       <DialogContent>
         {!canEditMeta && (
@@ -401,12 +464,19 @@ export default function CollectionEditDialog({
                   key={t}
                   value={t}
                   control={<Radio size="small" />}
+                  disabled={typesAtLimit?.has(t)}
                   label={
                     <Box>
                       <Typography variant="body2">{COLLECTION_TYPE_LABELS[t]}</Typography>
                       <Typography variant="caption" color="text.secondary">
                         {TYPE_HELP[t]}
                       </Typography>
+                      {typesAtLimit?.has(t) && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          You've reached the limit of {STUDENT_MAX_COLLECTIONS_PER_TYPE} {t}{' '}
+                          collections.
+                        </Typography>
+                      )}
                     </Box>
                   }
                   sx={{ alignItems: 'flex-start', mb: 0.5 }}
@@ -448,13 +518,15 @@ export default function CollectionEditDialog({
         {/* Category filing renders below Type (#1567) and only for roles the
             move endpoint allows (#1566). The picker's inline add/rename/hide
             affordances match the shared move dialog's. */}
-        {isEdit && canFile && (
+        {canFile && (
           <Box sx={{ mt: 2 }}>
             <CategoryPickerSelect
               categories={categories}
               value={categoryId}
               onChange={setCategoryId}
+              includeRoot={isEdit}
               rootLabel="Not on Browse"
+              placeholder={isEdit ? undefined : 'Select a category'}
               onAddCategory={onAddCategory}
               onEditCategory={onEditCategory}
               onToggleVisibility={onToggleVisibility}
@@ -463,7 +535,7 @@ export default function CollectionEditDialog({
             />
           </Box>
         )}
-        {isEdit && canFile && categoryId != null && visibility === 'private' && (
+        {canFile && categoryId != null && visibility === 'private' && (
           <Alert severity="warning" sx={{ mt: 2 }}>
             {privateFilingWarning()}
           </Alert>
@@ -627,6 +699,37 @@ export default function CollectionEditDialog({
           </>
         )}
       </DialogContent>
+      {confirmView && (
+        <Box
+          data-testid="unsaved-changes-bar"
+          sx={{
+            px: 3,
+            py: 1.5,
+            bgcolor: 'warning.light',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="body2">
+            You have unsaved changes. Discard and view collection?
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, ml: 2, flexShrink: 0 }}>
+            <Button size="small" onClick={() => setConfirmView(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="warning"
+              onClick={onViewCollection}
+              disabled={saving || deleting}
+            >
+              Discard &amp; View
+            </Button>
+          </Box>
+        </Box>
+      )}
       <DialogActions>
         <Button onClick={onClose} disabled={saving || deleting}>
           Cancel

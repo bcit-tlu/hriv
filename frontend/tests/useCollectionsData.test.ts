@@ -674,6 +674,7 @@ describe('useCollectionsData', () => {
         created = await result.current.create({
           ...VALUES,
           visibility: 'restricted',
+          categoryId: 10,
           programIds: [1],
           groupIds: [10],
         })
@@ -683,6 +684,7 @@ describe('useCollectionsData', () => {
         description: 'Frontal vs lateral',
         type: 'sequence',
         visibility: 'restricted',
+        category_id: 10,
         image_ids: [],
         program_ids: [1],
         group_ids: [10],
@@ -1600,6 +1602,27 @@ describe('useCollectionsData', () => {
       expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
       // The fetched record still replaces the stale summary row.
       expect(result.current.collections[0]).toMatchObject({ id: 1, version: 3 })
+    })
+
+    it('applies the student sequence capacity in addImages', async () => {
+      fetchCollectionMock.mockResolvedValue(
+        makeApiCollection({
+          id: 1,
+          type: 'sequence',
+          version: 3,
+          images: Array.from({ length: 20 }, (_, i) => ({ id: i + 1 }) as never),
+        }),
+      )
+      const { result } = renderData({}, makeUser({ role: 'student' }))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let status: string | undefined
+      await act(async () => {
+        status = (await result.current.addImages(1, [21])).status
+      })
+
+      expect(status).toBe('full')
+      expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
     })
 
     it('removeImages PUTs the list minus removed ids (drop-add undo)', async () => {
