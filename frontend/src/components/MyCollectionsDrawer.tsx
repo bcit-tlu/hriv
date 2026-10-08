@@ -113,6 +113,7 @@ export default function MyCollectionsDrawer({
               maxHeight: '50vh',
               overflowX: 'hidden',
               overflowY: 'auto',
+              overscrollBehavior: 'contain',
             },
           },
         }}
@@ -120,7 +121,7 @@ export default function MyCollectionsDrawer({
         <Box
           component="section"
           aria-labelledby={DRAWER_TITLE_ID}
-          sx={{ display: 'flex', minHeight: 0, flexDirection: 'column' }}
+          sx={{ display: 'flex', flexShrink: 0, flexDirection: 'column' }}
         >
           <Box
             sx={{
@@ -176,7 +177,7 @@ export default function MyCollectionsDrawer({
           <Box
             sx={{
               display: 'flex',
-              minHeight: 0,
+              flexShrink: 0,
               gap: 2,
               overflowX: 'auto',
               px: 2,
