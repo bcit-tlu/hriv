@@ -72,7 +72,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `SortableTileGrid.tsx` and nested `currentCollections` from the category
   tree only; there is no root `uncategorizedCollections` Browse loader.
   Verify the root grid has no collection tiles, and test the separate
-  flag-controlled My collections shelf and its `{ mine: true, limit: 5 }`
+  flag-controlled My collections shelf and its `{ mine: true, limit: 8 }`
   request. Nested filed collections still render.
   collections still render. Also cover `Not on Browse` picker labels,
   unfile snackbar, private-filing warnings, and Manage Categories ordering:

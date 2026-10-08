@@ -1999,7 +1999,7 @@ describe('App collections deep links (#1414)', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
-    expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 5 })
+    expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
   })
 
   it('clears the owner filter when See all opens My collections', async () => {

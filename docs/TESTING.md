@@ -449,7 +449,7 @@ tiles, shows only visible owned collections, and navigates to the owned list.
 1. Enable `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF`, then sign in as
    a student, instructor, or admin with at least one visible owned collection.
 2. Open Browse home. Confirm **My collections** appears above the tile grid
-   with at most five collections, ordered by most recently updated. Confirm
+   with at most eight collections, ordered by most recently updated. Confirm
    the shelf has no move, reorder, or drop targets.
 3. Select a collection and confirm it opens. Select **See all** and confirm
    the Sequence page is filtered to **My collections**; switch to

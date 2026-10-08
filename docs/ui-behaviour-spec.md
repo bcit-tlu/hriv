@@ -363,7 +363,7 @@ returned by the API (UX only — the backend re-checks).
   work.
 - **Given** `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF` are on and the
   caller has visible owned collections, **Then** Browse home shows a separate,
-  read-only shelf of up to five most recently updated collections above and
+  read-only shelf of up to eight most recently updated collections above and
   outside `SortableTileGrid`. It is hidden for an empty visible result; its
   **See all** action opens Sequence with `mine=true`. The shelf has no drag,
   reorder, or drop targets.

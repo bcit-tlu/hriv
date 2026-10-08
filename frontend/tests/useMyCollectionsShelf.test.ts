@@ -17,14 +17,14 @@ describe('useMyCollectionsShelf', () => {
     fetchCollections.mockReset()
   })
 
-  it('fetches five owned collections and maps the API summaries', async () => {
+  it('fetches eight owned collections and maps the API summaries', async () => {
     const row = makeApiCollectionSummary()
     fetchCollections.mockResolvedValue([row])
     const { result } = renderHook(() => useMyCollectionsShelf(true))
 
     expect(result.current).toBeNull()
     await waitFor(() => expect(result.current).toEqual([apiCollectionSummaryToSummary(row)]))
-    expect(fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 5 })
+    expect(fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
   })
 
   it('does not fetch while disabled and returns null', () => {

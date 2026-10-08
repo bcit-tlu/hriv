@@ -120,7 +120,8 @@ tile-order scope contains categories and images only.
 
 Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
 the Browse home shows a read-only **My collections** shelf for the caller's
-five most recently updated visible owned collections. The shelf is available
+up to eight of the caller's most recently updated visible owned collections.
+The shelf is available
 to any role, hidden when no owned collection is visible, and has a **See all**
 action that opens the Sequence page with the owned-collections filter. It is
 not a Browse tile: it has no drag, reorder, or drop targets.

@@ -6,7 +6,7 @@ import type { CollectionSummary } from '../types'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
 
-const collections: CollectionSummary[] = [
+const collectionExamples: [CollectionSummary, CollectionSummary] = [
   {
     id: 1,
     name: 'Skull comparison',
@@ -58,6 +58,15 @@ const collections: CollectionSummary[] = [
     },
   },
 ]
+
+const collections: CollectionSummary[] = Array.from({ length: 8 }, (_, index) => {
+  const collection = index % 2 === 0 ? collectionExamples[0] : collectionExamples[1]
+  return {
+    ...collection,
+    id: index + 1,
+    name: `${collection.name} ${index + 1}`,
+  }
+})
 
 const meta = {
   title: 'Components/MyCollectionsShelf',

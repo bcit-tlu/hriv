@@ -12,7 +12,7 @@ export function useMyCollectionsShelf(enabled: boolean): CollectionSummary[] | n
     // A fresh enable cycle returns to loading rather than briefly showing an old shelf.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCollections(null)
-    fetchCollections({ mine: true, limit: 5 })
+    fetchCollections({ mine: true, limit: 8 })
       .then((rows) => {
         if (!cancelled) setCollections(rows.map(apiCollectionSummaryToSummary))
       })
