@@ -17,6 +17,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
+    coverImageId: null,
     categoryId: null,
     sortOrder: 0,
     programIds: [],
@@ -130,6 +131,7 @@ export const Curatorial: Story = {
       },
     }),
     onMove: fn(),
+    onPickCoverImage: fn(),
   },
   parameters: {
     a11y: { test: 'todo' },
@@ -141,6 +143,8 @@ export const Curatorial: Story = {
       canvas.getByRole('button', { name: 'Move Filed into Browse to a category' }),
     )
     await expect(args.onMove).toHaveBeenCalledWith(args.collection)
+    await userEvent.click(canvas.getByRole('button', { name: 'Set Filed into Browse cover image' }))
+    await expect(args.onPickCoverImage).toHaveBeenCalledWith(args.collection)
     await expect(args.onOpen).not.toHaveBeenCalled()
   },
 }
@@ -177,6 +181,7 @@ export const NoCover: Story = {
       name: 'Empty collection',
       imageCount: 0,
       coverThumb: null,
+      coverImageId: null,
       owners: [],
     }),
   },

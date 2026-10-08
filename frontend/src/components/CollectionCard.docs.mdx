@@ -15,14 +15,15 @@ import * as CollectionCardStories from './CollectionCard.stories'
 
 <Subtitle>
   Collections-page card: cover thumbnail, name, image count and visibility chip — with the type icon
-  left of the title, a Move action top-right, and an Edit pencil beside the title.
+  left of the title, Move/Set-cover actions top-right, and an Edit pencil beside the title.
 </Subtitle>
 
 ## When to use
 
 Use `CollectionCard` inside the collections-page grids (`CollectionsPage`) and the Browse tile
 grid to represent one `CollectionSummary`. Clicking the card body opens the collection
-(`?collection={id}`); the overlay icon calls `onMove` and the title-row pencil calls
+(`?collection={id}`); the overlay icons call `onPickCoverImage` (member cover picker —
+`CollectionCoverPickerModal`) and `onMove`, and the title-row pencil calls
 `onEdit`. There is no card-level delete — Delete Collection lives inside the edit dialog (#1554),
 and owners/transfer management lives on the detail header and manage table, not the card.
 
@@ -36,9 +37,10 @@ and owners/transfer management lives on the detail header and manage table, not 
 
 - The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
   expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
-- Move lives in a top-RIGHT cover overlay (#1559); the overlay action uses the
+- Move and Set-cover live in a top-RIGHT cover overlay (#1559); the overlay actions use the
   white-on-`rgba(0,0,0,0.25)` scrim convention of
-  `CategoryTile` (#1554). The type renders as a bare icon left of the tile
+  `CategoryTile` (#1554) — Set-cover mirrors that tile's image-icon button exactly. The
+  type renders as a bare icon left of the tile
   title — the category folder-icon spot — via the shared `CollectionTypeIcon`
   (`titleAccess` names it for screen readers); where the type renders as a pill
   (detail header, edit dialog, manage table) it is the shared `CollectionTypeChip` — red (primary)
@@ -55,8 +57,8 @@ and owners/transfer management lives on the detail header and manage table, not 
   marker: the eye-off glyph is reserved for the collection's own hidden flag (the `ImageTile`/
   `CategoryTile` convention — inherited state is desaturation alone). The Browse tile grid and the
   collections-page grid both derive it from the filed category's ancestor path.
-- Action icons are a UX gate only: Edit renders when `permissions.canEdit` **and** `onEdit` is
-  supplied, and Move whenever
+- Action icons are a UX gate only: Edit and Set-cover render when `permissions.canEdit` **and**
+  their handler (`onEdit` / `onPickCoverImage`) is supplied, and Move whenever
   `onMove` is supplied (filing is curatorial — the caller role-gates to admin/instructor). The
   backend re-checks authority on
   every call. Overlay clicks stop propagation so they never open the card.

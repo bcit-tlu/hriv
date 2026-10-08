@@ -7,11 +7,6 @@ import CollectionCard, {
 } from '../../src/components/CollectionCard'
 import { makeCollectionSummary } from '../helpers/fixtures'
 
-vi.mock('../../src/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/api')>()
-  return { ...actual, fetchCollection: vi.fn() }
-})
-
 describe('CollectionCard', () => {
   it('renders name, image count, type icon and visibility chip', () => {
     render(
@@ -141,6 +136,41 @@ describe('CollectionCard', () => {
     expect(
       screen.queryByRole('button', { name: 'Move Mine to a category' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('signals the cover picker on overlay click (CategoryTile convention)', () => {
+    const onPickCoverImage = vi.fn()
+    const collection = makeCollectionSummary({
+      permissions: { canEdit: true, canDelete: false, canTransfer: false, canHide: false },
+    })
+    const onOpen = vi.fn()
+    render(
+      <CollectionCard
+        collection={collection}
+        onOpen={onOpen}
+        onPickCoverImage={onPickCoverImage}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Set Skull comparison cover image' }))
+    expect(onPickCoverImage).toHaveBeenCalledWith(collection)
+    // The overlay button must not also navigate into the collection.
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('gates the cover picker on canEdit like the edit pencil', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+        })}
+        onOpen={vi.fn()}
+        onPickCoverImage={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /Set .* cover image/ })).not.toBeInTheDocument()
+    // And it stays off without a handler even when permitted.
+    render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /Set .* cover image/ })).not.toBeInTheDocument()
   })
 
   it('does not open the collection when an action button is clicked', () => {

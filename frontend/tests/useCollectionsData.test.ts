@@ -1453,6 +1453,54 @@ describe('useCollectionsData', () => {
       expect(updateCollectionMock).toHaveBeenLastCalledWith(1, { hidden: true, version: 4 })
       expect(result.current.detail?.hidden).toBe(true)
     })
+
+    it('setCoverImage PATCHes the pinned member with the detail version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, cover_image_id: 12 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.setCoverImage(1, 12)
+      })
+      expect(updateCollectionMock).toHaveBeenCalledWith(1, {
+        cover_image_id: 12,
+        version: 3,
+      })
+      expect(result.current.detail?.coverImageId).toBe(12)
+      expect(result.current.collections[0].coverImageId).toBe(12)
+    })
+
+    it('setCoverImage null clears the pin and merges a 409 record for retry', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 3, cover_image_id: 12 }),
+      )
+      updateCollectionMock
+        .mockRejectedValueOnce(new ApiError(409, 'Stale', makeApiCollection({ id: 1, version: 4 })))
+        .mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5, cover_image_id: null }))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementation(() => new Promise(() => {}))
+
+      await act(async () => {
+        await expect(result.current.setCoverImage(1, null)).rejects.toBeInstanceOf(ApiError)
+      })
+      expect(result.current.detail?.version).toBe(4)
+
+      await act(async () => {
+        await result.current.setCoverImage(1, null)
+      })
+      expect(updateCollectionMock).toHaveBeenLastCalledWith(1, {
+        cover_image_id: null,
+        version: 4,
+      })
+      expect(result.current.detail?.coverImageId).toBeNull()
+    })
   })
 
   describe('move (#1529)', () => {

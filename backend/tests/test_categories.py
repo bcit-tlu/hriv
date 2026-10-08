@@ -66,6 +66,7 @@ def _make_collection(
         ),
         category_id=category_id,
         sort_order=sort_order,
+        cover_image_id=None,
         viewport_state={},
         version=1,
         # Multi-owner rows (#1531): user_id is creator-only audit; ``owners``

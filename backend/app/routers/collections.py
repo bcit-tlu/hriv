@@ -771,6 +771,22 @@ async def update_collection(
             )
         new_programs, new_groups = [], []
 
+    if "cover_image_id" in fields and body.cover_image_id is not None:
+        # The pinned cover must be a member the caller can actually view —
+        # a cover the picker could not show would silently fall back to the
+        # first member anyway, so naming one is a 422 (mirrors the
+        # invisible-member rule on PUT /images).
+        member_ids = {link.image_id for link in collection.image_links}
+        visible_ids = {img.id for img in ctx.visible_images(collection)}
+        if (
+            body.cover_image_id not in member_ids
+            or body.cover_image_id not in visible_ids
+        ):
+            raise HTTPException(
+                422,
+                "cover_image_id must reference an image in this collection",
+            )
+
     await _bump_version_or_409(db, ctx, collection, body.version)
     if body.name is not None:
         collection.name = body.name
@@ -784,6 +800,8 @@ async def update_collection(
         collection.programs = new_programs
     if new_groups is not None:
         collection.groups = new_groups
+    if "cover_image_id" in fields:
+        collection.cover_image_id = body.cover_image_id
     # Tile-visible fields (name/visibility/counts rendered on Browse tiles)
     # may have changed — invalidate the category-tree ETag.
     await bump_browse_revision(db)
@@ -844,6 +862,15 @@ async def replace_collection_images(
     )
     await _bump_version_or_409(db, ctx, collection, body.version)
     _replace_image_links(collection, images, unseen)
+    # A pinned cover that is no longer a member reverts to the first-member
+    # fallback — a retained *unseen* member still counts, so the pin survives
+    # edits by callers who cannot view it.
+    member_ids = {link.image_id for link in collection.image_links}
+    if (
+        collection.cover_image_id is not None
+        and collection.cover_image_id not in member_ids
+    ):
+        collection.cover_image_id = None
     # Member count and cover thumbnail are shown on the Browse tile.
     await bump_browse_revision(db)
     await db.commit()

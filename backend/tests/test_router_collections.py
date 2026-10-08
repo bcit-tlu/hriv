@@ -98,6 +98,7 @@ def _collection(
     category_id: int | None = None,
     sort_order: int = 0,
     hidden: bool = False,
+    cover_image_id: int | None = None,
 ) -> SimpleNamespace:
     # ``user_id`` is the creator audit column; ownership is the ``owners``
     # list (``collection_owners`` rows), defaulting to the creator like the
@@ -125,6 +126,7 @@ def _collection(
         category_id=category_id,
         sort_order=sort_order,
         hidden=hidden,
+        cover_image_id=cover_image_id,
         viewport_state={"1": {"zoom": 1.0}},
         version=3,
         created_at=NOW,
@@ -1262,6 +1264,125 @@ async def test_permissions_can_hide_serializes_by_role(
         1, _patch(name="x"), _user(role, id=2 if role != "admin" else 1), db=_write_db(get=col)
     )
     assert out.permissions.can_hide is expected
+
+
+# ── pinned cover ──────────────────────────────────────────
+
+
+async def test_update_cover_pins_member_and_serializes() -> None:
+    col = _collection(1, "private", user_id=2, images=[_image(1), _image(2)])
+    out = await update_collection(
+        1, _patch(cover_image_id=2), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_image_id == 2
+    assert out.cover_image_id == 2
+    assert out.cover_thumb.endswith("/thumbs/2.jpg")
+    assert col.version == 4
+
+
+async def test_update_cover_null_restores_first_member_fallback() -> None:
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_image_id=2
+    )
+    out = await update_collection(
+        1, _patch(cover_image_id=None), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_image_id is None
+    assert out.cover_image_id is None
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_update_cover_nonmember_is_422() -> None:
+    col = _collection(1, "private", user_id=2, images=[_image(1)])
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(cover_image_id=9), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 422
+    assert col.cover_image_id is None and col.version == 3
+
+
+async def test_update_cover_invisible_member_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member hidden from the caller cannot be pinned — the picker never
+    offers it and naming one must not leak its membership."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2, category_id=20)],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(cover_image_id=2), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 422
+    assert col.cover_image_id is None and col.version == 3
+
+
+async def test_summary_cover_falls_back_for_unseen_pinned_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pin on a member the viewer cannot see is reported as no pin, and
+    the thumb falls back to the first visible member."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2, category_id=20)],
+        cover_image_id=2,
+    )
+    out = await update_collection(
+        1, _patch(name="x"), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert out.cover_image_id is None
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_replace_images_clears_cover_on_dropped_member() -> None:
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_image_id=2
+    )
+    db = _write_db(get=col, images=[_image(1)])
+    out = await replace_collection_images(
+        1, _images_body([1]), _user("student", id=2), db=db
+    )
+    assert col.cover_image_id is None
+    assert out.cover_image_id is None
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_replace_images_keeps_cover_on_retained_unseen_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pin on a member the editor cannot view survives member edits —
+    the retained unseen link still counts as membership."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2, category_id=20)],
+        cover_image_id=2,
+    )
+    db = _write_db(get=col, images=[_image(1), _image(3)])
+    await replace_collection_images(
+        1, _images_body([3, 1]), _user("student", id=2), db=db
+    )
+    assert [link.image_id for link in col.image_links] == [3, 1, 2]
+    assert col.cover_image_id == 2
 
 
 # ── images ────────────────────────────────────────────────

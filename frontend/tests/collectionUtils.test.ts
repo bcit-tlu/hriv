@@ -111,13 +111,13 @@ describe('collection capacity helpers', () => {
 describe('collectionUtils mapping', () => {
   it('warns about a single private collection filed on Browse', () => {
     expect(privateFilingWarning()).toBe(
-      'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+      'This collection is private. Students will not be able to see the images in this collection.',
     )
   })
 
   it('counts private collections in the bulk filing warning', () => {
     expect(privateFilingWarning(2, 3)).toBe(
-      '2 of the 3 selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.',
+      '2 of the 3 selected collections are private. Students will not be able to see the images in these collections.',
     )
   })
 
@@ -167,6 +167,7 @@ describe('collectionUtils mapping', () => {
       owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
+      coverImageId: null,
       version: 1,
       categoryId: null,
       sortOrder: 0,
@@ -180,6 +181,11 @@ describe('collectionUtils mapping', () => {
         canHide: false,
       },
     })
+  })
+
+  it('maps a pinned cover_image_id through to coverImageId', () => {
+    const summary = apiCollectionSummaryToSummary(makeApiCollectionSummary({ cover_image_id: 42 }))
+    expect(summary.coverImageId).toBe(42)
   })
 
   it('maps ApiImage → ImageItem field by field', () => {

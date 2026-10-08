@@ -64,6 +64,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
+    coverImageId: null,
     categoryId: null,
     sortOrder: 0,
     programIds: [],
@@ -135,6 +136,7 @@ const summaries: CollectionSummary[] = [
     type: 'sequence',
     imageCount: 0,
     coverThumb: null,
+    coverImageId: null,
   }),
 ]
 

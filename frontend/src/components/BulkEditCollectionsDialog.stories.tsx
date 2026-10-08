@@ -91,7 +91,7 @@ export const PrivateFilingWarning: Story = {
     await userEvent.click(await within(listbox).findByRole('option', { name: /^Histology/ }))
     await expect(
       await body.findByText(
-        '2 of the 3 selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.',
+        '2 of the 3 selected collections are private. Students will not be able to see the images in these collections.',
       ),
     ).toBeInTheDocument()
   },

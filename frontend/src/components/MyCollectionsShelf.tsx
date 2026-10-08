@@ -14,6 +14,10 @@ export interface MyCollectionsShelfProps {
   programs: Program[]
   groups?: Group[]
   onOpen: (collection: CollectionSummary) => void
+  /** Title edit pencil — the card's `canEdit` gate decides, like Browse. */
+  onEdit?: (collection: CollectionSummary) => void
+  /** Cover-image picker — the card's `canEdit` gate decides, like Browse. */
+  onPickCoverImage?: (collection: CollectionSummary) => void
   onSeeAll: () => void
 }
 
@@ -23,6 +27,8 @@ export default function MyCollectionsShelf({
   programs,
   groups,
   onOpen,
+  onEdit,
+  onPickCoverImage,
   onSeeAll,
 }: MyCollectionsShelfProps) {
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
@@ -66,6 +72,8 @@ export default function MyCollectionsShelf({
               key={collection.id}
               collection={collection}
               onOpen={onOpen}
+              onEdit={onEdit}
+              onPickCoverImage={onPickCoverImage}
               programs={programs}
               inheritedProgramIds={narrowProgramIds(catPath)}
               groups={groups}
