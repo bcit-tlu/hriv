@@ -413,7 +413,7 @@ export default function App() {
     setOpen: setMyCollectionsDrawerOpen,
     pinned: myCollectionsDrawerPinned,
     setPinned: setMyCollectionsDrawerPinned,
-  } = useMyCollectionsDrawerState()
+  } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
   const myCollectionsDrawerVisible =
     myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
   const myCollectionsTypesAtLimit =

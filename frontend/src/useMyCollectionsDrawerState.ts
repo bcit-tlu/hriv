@@ -1,33 +1,55 @@
-import { useCallback, useMemo, useState } from 'react'
-import { getStoredUserScope } from './userScope'
+import { useCallback, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 
 const STORAGE_PREFIX = 'hrivpref:my-collections-drawer:pinned:user:'
 
-function loadPinned(storageKey: string): boolean {
+interface DrawerState {
+  userScope: string
+  pinned: boolean
+  open: boolean
+}
+
+function loadPinned(userScope: string): boolean {
   try {
-    return localStorage.getItem(storageKey) === 'true'
+    return localStorage.getItem(`${STORAGE_PREFIX}${userScope}`) === 'true'
   } catch {
     return false
   }
 }
 
-export function useMyCollectionsDrawerState() {
-  const storageKey = useMemo(() => `${STORAGE_PREFIX}${getStoredUserScope()}`, [])
-  const [pinned, setPinnedState] = useState(() => loadPinned(storageKey))
-  const [open, setOpen] = useState(pinned)
+export function useMyCollectionsDrawerState(userScope: string) {
+  const [state, setState] = useState<DrawerState>(() => {
+    const pinned = loadPinned(userScope)
+    return { userScope, pinned, open: pinned }
+  })
+
+  if (state.userScope !== userScope) {
+    const pinned = loadPinned(userScope)
+    setState({ userScope, pinned, open: pinned })
+  }
+
+  const setOpen = useCallback<Dispatch<SetStateAction<boolean>>>((nextOpen) => {
+    setState((current) => ({
+      ...current,
+      open: typeof nextOpen === 'function' ? nextOpen(current.open) : nextOpen,
+    }))
+  }, [])
 
   const setPinned = useCallback(
     (nextPinned: boolean) => {
-      setPinnedState(nextPinned)
-      if (!nextPinned) setOpen(false)
+      setState((current) => ({
+        ...current,
+        pinned: nextPinned,
+        open: nextPinned ? current.open : false,
+      }))
       try {
-        localStorage.setItem(storageKey, String(nextPinned))
+        localStorage.setItem(`${STORAGE_PREFIX}${userScope}`, String(nextPinned))
       } catch {
         // Ignore localStorage write failures and keep the in-memory preference.
       }
     },
-    [storageKey],
+    [userScope],
   )
 
-  return { open, setOpen, pinned, setPinned }
+  return { open: state.open, setOpen, pinned: state.pinned, setPinned }
 }

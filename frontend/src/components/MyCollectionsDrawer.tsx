@@ -111,7 +111,8 @@ export default function MyCollectionsDrawer({
             sx: {
               width: '100%',
               maxHeight: '50vh',
-              overflow: 'hidden',
+              overflowX: 'hidden',
+              overflowY: 'auto',
             },
           },
         }}
@@ -121,7 +122,16 @@ export default function MyCollectionsDrawer({
           aria-labelledby={DRAWER_TITLE_ID}
           sx={{ display: 'flex', minHeight: 0, flexDirection: 'column' }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.5 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexWrap: 'wrap',
+              px: 2,
+              py: 1.5,
+            }}
+          >
             <IconButton
               aria-label="Collapse My collections"
               onClick={() => onOpenChange(false)}
@@ -133,18 +143,27 @@ export default function MyCollectionsDrawer({
               My collections
             </Typography>
             <Box sx={{ flexGrow: 1 }} />
-            <Tooltip title={newCollectionDisabled ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
-              <span>
-                <Button
-                  startIcon={<AddIcon />}
-                  onClick={onNewCollection}
-                  disabled={newCollectionDisabled}
-                >
-                  New collection
-                </Button>
-              </span>
-            </Tooltip>
-            <Button onClick={onSeeAll}>See all</Button>
+            <Box
+              sx={{
+                display: 'flex',
+                gap: 1,
+                order: { xs: 3, sm: 0 },
+                width: { xs: '100%', sm: 'auto' },
+              }}
+            >
+              <Tooltip title={newCollectionDisabled ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
+                <span>
+                  <Button
+                    startIcon={<AddIcon />}
+                    onClick={onNewCollection}
+                    disabled={newCollectionDisabled}
+                  >
+                    New collection
+                  </Button>
+                </span>
+              </Tooltip>
+              <Button onClick={onSeeAll}>See all</Button>
+            </Box>
             <IconButton
               aria-label={pinned ? 'Unpin My collections' : 'Pin My collections'}
               aria-pressed={pinned}

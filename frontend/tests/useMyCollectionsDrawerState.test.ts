@@ -7,35 +7,46 @@ const STORAGE_KEY = 'hrivpref:my-collections-drawer:pinned:user:7'
 describe('useMyCollectionsDrawerState', () => {
   beforeEach(() => {
     localStorage.clear()
-    localStorage.setItem('hriv_user', JSON.stringify({ id: 7 }))
   })
 
   it('defaults to closed and unpinned', () => {
-    const { result } = renderHook(() => useMyCollectionsDrawerState())
+    const { result } = renderHook(() => useMyCollectionsDrawerState('anonymous'))
 
     expect(result.current.open).toBe(false)
     expect(result.current.pinned).toBe(false)
   })
 
-  it('loads the exact pinned preference key and starts open', () => {
+  it('uses the passed user scope for the pinned preference key', () => {
     localStorage.setItem(STORAGE_KEY, 'true')
 
-    const { result } = renderHook(() => useMyCollectionsDrawerState())
+    const { result } = renderHook(() => useMyCollectionsDrawerState('7'))
 
     expect(result.current.pinned).toBe(true)
     expect(result.current.open).toBe(true)
   })
 
-  it('persists pin changes under the exact user-scoped key', () => {
-    const { result } = renderHook(() => useMyCollectionsDrawerState())
+  it('reloads the preference when the user scope changes and writes to the new key', () => {
+    localStorage.setItem(STORAGE_KEY, 'true')
+    const { result, rerender } = renderHook(
+      ({ userScope }: { userScope: string }) => useMyCollectionsDrawerState(userScope),
+      { initialProps: { userScope: 'anonymous' } },
+    )
 
+    expect(result.current.pinned).toBe(false)
+    rerender({ userScope: '7' })
+
+    expect(result.current.pinned).toBe(true)
+    expect(result.current.open).toBe(true)
+
+    localStorage.removeItem(STORAGE_KEY)
     act(() => result.current.setPinned(true))
 
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true')
+    expect(localStorage.getItem('hrivpref:my-collections-drawer:pinned:user:anonymous')).toBeNull()
   })
 
   it('closes when unpinned', () => {
-    const { result } = renderHook(() => useMyCollectionsDrawerState())
+    const { result } = renderHook(() => useMyCollectionsDrawerState('7'))
 
     act(() => {
       result.current.setOpen(true)
@@ -48,7 +59,7 @@ describe('useMyCollectionsDrawerState', () => {
   })
 
   it('keeps the pinned preference when collapsed', () => {
-    const { result } = renderHook(() => useMyCollectionsDrawerState())
+    const { result } = renderHook(() => useMyCollectionsDrawerState('7'))
 
     act(() => result.current.setPinned(true))
     act(() => result.current.setOpen(true))
