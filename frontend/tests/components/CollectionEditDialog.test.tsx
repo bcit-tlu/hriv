@@ -93,6 +93,11 @@ function renderDialog(
   return { ...utils, onSave, onClose }
 }
 
+async function waitForDialogEntryFocus() {
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  await waitFor(() => expect(screen.getByLabelText('Collection name')).toHaveFocus())
+}
+
 describe('CollectionEditDialog', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -149,6 +154,7 @@ describe('CollectionEditDialog', () => {
     it('submits trimmed values with an empty scope when not restricted', async () => {
       const user = userEvent.setup()
       const { onSave, onClose } = renderDialog({}, makeAuth('student'))
+      await waitForDialogEntryFocus()
       await user.type(screen.getByLabelText('Collection name'), '  Skulls  ')
       await user.type(screen.getByLabelText('Description'), 'Frontal vs lateral')
       await user.click(screen.getByRole('radio', { name: /Synchronized/ }))
