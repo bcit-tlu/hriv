@@ -262,6 +262,9 @@ export default function MyCollectionsDrawer({
             <Box
               sx={{
                 display: 'flex',
+                // Cards keep their natural height so a capped row scrolls
+                // instead of squashing (and clipping) the tiles.
+                alignItems: 'flex-start',
                 gap: 2,
                 justifyContent: 'flex-start',
                 overflowX: 'auto',
