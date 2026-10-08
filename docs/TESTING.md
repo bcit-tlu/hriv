@@ -424,12 +424,13 @@ Italian_, public, instructor-owned). See
    grows and a snackbar offers **Undo**. The far half still reorders normally.
    The **Add to Collection** dialog remains available for unfiled collections.
 9. Click the collection card's **Move** button (admins/instructors only).
-   Choose **Not on Browse**. **Assert:** the tile disappears from Browse and
+   Choose **None. Access in Manage > Collections.** **Assert:** the tile
+   disappears from Browse and
    the snackbar says **Removed “<name>” from Browse**; Undo restores its
    previous category. File it back into _Italian_ using the dialog.
 10. File a private collection into a category. **Assert:** a warning appears,
     not a block, with the exact text: “This collection is private. Students
-    will not be able to see the images in this collection.” Selecting **Not on Browse** hides
+    will not be able to see the images in this collection.” Selecting **None. Access in Manage > Collections.** hides
     the warning; public collections show no warning. In Bulk Edit, confirm
     the matching selected-private-count warning appears only for a changed,
     non-null category.
@@ -440,9 +441,9 @@ Italian_, public, instructor-owned). See
     **Set cover image** overlay icon (top-right, same spot as the category
     tile's card-image button). **Assert:** `CollectionCoverPickerModal` radios
     over the collection's visible members; pick a different member and **Save**
-    — **Assert:** the tile cover swaps to the picked image. Reopen and click
-    **Clear** → **Save** — **Assert:** the cover falls back to the first
-    member.
+    — **Assert:** the tile cover swaps to the picked image. Reopen, pick the
+    leading **None** row → **Save** — **Assert:** the cover falls back to the
+    first member.
 12. On the Browse toolbar, click **Add Collection** (between **Add Category**
     and **Add Images**). **Assert:** `CollectionEditDialog` opens in create
     mode with the current category already filed in the **Category** picker;

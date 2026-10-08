@@ -98,11 +98,13 @@ export const Basic: Story = {
       await body.findByText(/File “Lab 2 — Epithelium set” into a Browse category/),
     ).toBeInTheDocument()
     await userEvent.click(await body.findByRole('combobox'))
-    await expect(await body.findByRole('option', { name: /Not on Browse/ })).toBeInTheDocument()
+    await expect(
+      await body.findByRole('option', { name: /None\. Access in Manage > Collections\./ }),
+    ).toBeInTheDocument()
   },
 }
 
-/** Unfiled collection — "Not on Browse" is the preselected destination. */
+/** Unfiled collection — the "None" destination is preselected. */
 export const AtRoot: Story = {
   args: {
     collection: { ...collection, categoryId: null },
@@ -110,7 +112,7 @@ export const AtRoot: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     const picker = await body.findByRole('combobox')
-    await expect(picker).toHaveTextContent(/Not on Browse/)
+    await expect(picker).toHaveTextContent(/None\. Access in Manage > Collections\./)
   },
 }
 

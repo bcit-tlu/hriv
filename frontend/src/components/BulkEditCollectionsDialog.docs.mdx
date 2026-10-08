@@ -34,7 +34,7 @@ they could delete singly.
 ## Implementation guidance
 
 - **Curatorial fields.** `category_id` refiles every selected collection (the picker's
-  _Not on Browse_ option unfiles it) and the Visibility switch maps
+  _None. Access in Manage > Collections._ option unfiles it) and the Visibility switch maps
   to `hidden` — both via `PATCH /api/collections/bulk`, which is admin/instructor-only
   like `POST …/{id}/move`. Only fields the user touched are sent.
 - **Per-collection delete authority.** `DELETE /api/collections/bulk` mirrors the

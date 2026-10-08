@@ -144,7 +144,7 @@ reorder clients get a 409 and the tree ETag invalidates. `visibility` still
 gates _who sees_ a filed tile; placement only gates _where_ it sits.
 
 To feature a collection at the top of Browse, curators can file it into a
-root-level category such as **Featured**. Choosing **Not on Browse** unfiles
+root-level category such as **Featured**. Choosing **None. Access in Manage > Collections.** unfiles
 it. Filing a private collection shows a warning that its Browse tile is
 visible only to its owners and to staff, instructors and admins — not to
 other students.
@@ -594,8 +594,8 @@ gone from the card entirely (edit dialog only). A **Set cover image**
 image-icon button joins Move in the top-right overlay (the `CategoryTile`
 "Set card image" convention), gated on `permissions.canEdit` like the
 pencil; it opens `CollectionCoverPickerModal`, which radios over the
-collection's visible members and PATCHes `cover_image_id` (`null` via
-**Clear** restores the first-member fallback). Everywhere the type renders
+collection's visible members and PATCHes `cover_image_id` (the leading
+**None** row restores the first-member fallback). Everywhere the type renders
 as a pill (detail header, edit dialog, manage table) it is the shared
 `CollectionTypeChip`: red (primary) outline and text on a white fill with
 the type's icon (#1567). Filters — type is the page,
