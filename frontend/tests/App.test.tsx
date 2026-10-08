@@ -15,11 +15,13 @@ import {
   updateGroup,
   updateProgram,
 } from '../src/api'
+import { makeApiCollectionSummary } from './helpers/fixtures'
 
 const apiMocks = vi.hoisted(() => ({
   fetchUsers: vi.fn(),
   fetchVersions: vi.fn(),
   fetchFeatures: vi.fn(),
+  fetchCollections: vi.fn(),
   fetchFrontendVersion: vi.fn(),
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
@@ -151,7 +153,11 @@ function resetFixtures() {
   vi.resetAllMocks()
   apiMocks.fetchUsers.mockResolvedValue([])
   apiMocks.fetchVersions.mockResolvedValue({ backend: '1.0.0', backup: '1.0.0' })
-  apiMocks.fetchFeatures.mockResolvedValue({ collections: true })
+  apiMocks.fetchFeatures.mockResolvedValue({
+    collections: true,
+    collections_home_shelf: false,
+  })
+  apiMocks.fetchCollections.mockResolvedValue([])
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
   apiMocks.createProgram.mockResolvedValue({})
   apiMocks.updateProgram.mockResolvedValue({})
@@ -1979,6 +1985,50 @@ describe('App collections deep links (#1414)', () => {
       expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
     )
   }
+
+  it('shows the shelf at the Browse root when its flag is enabled', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
+    expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 5 })
+  })
+
+  it('does not fetch or show the shelf when its flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: false,
+    })
+
+    render(<App />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: 'My collections' })).not.toBeInTheDocument()
+  })
+
+  it('does not fetch or show the shelf inside a category', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    mockInitialPath = [mockCategories[0]]
+
+    render(<App />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
+    expect(screen.queryByRole('heading', { name: 'My collections' })).not.toBeInTheDocument()
+  })
 
   it('opens the Collections tab from the shell for a student', async () => {
     authState = { ...authState, canEditContent: false, canViewPeople: false }

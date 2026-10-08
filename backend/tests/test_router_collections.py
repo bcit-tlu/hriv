@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.sql.dml import Update
 
@@ -419,6 +420,7 @@ async def test_list_applies_query_filters_to_statement() -> None:
         owner_user_id=4,
         owner_program_id=5,
         orphaned=True,
+        limit=2,
     )
     sql = str(db.execute.call_args.args[0])
     assert "collections.type =" in sql
@@ -429,6 +431,30 @@ async def test_list_applies_query_filters_to_statement() -> None:
     assert "NOT" in sql and "EXISTS" in sql
     assert "collections.owner_program_id IS NULL" in sql
     assert "ORDER BY collections.updated_at DESC" in sql
+    assert "LIMIT" not in sql
+
+
+def test_list_rejects_out_of_range_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.auth import get_current_user
+    from app.database import get_db, settings
+
+    test_app = FastAPI()
+    test_app.include_router(collections_router.router)
+
+    async def current_user():
+        return _user("admin")
+
+    async def unused_db():
+        yield AsyncMock()
+
+    test_app.dependency_overrides[get_current_user] = current_user
+    test_app.dependency_overrides[get_db] = unused_db
+    monkeypatch.setattr(settings, "collections_enabled", True)
+
+    with TestClient(test_app) as client:
+        for limit in (0, 101):
+            response = client.get(f"/collections?limit={limit}")
+            assert response.status_code == 422
 
 
 async def test_list_student_image_count_omits_hidden_images(

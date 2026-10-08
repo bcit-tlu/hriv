@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # defaults it off and the `latest` overlay turns it on (docs/collections.md).
     collections_enabled: bool = False
 
+    # My collections Browse shelf (#1583), gated by collections_enabled.
+    collections_home_shelf: bool = False
+
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
     # the exact path or a subpath (e.g. /api/metrics matches /api/metrics but not

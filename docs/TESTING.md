@@ -441,6 +441,24 @@ Italian_, public, instructor-owned). See
     images alone, and `GET /api/categories/tree` nodes carry empty
     `collections` lists.
 
+## Test Case 13: My Collections Browse Home Shelf (UI)
+
+**Purpose:** Verify the flag-controlled personal shelf is separate from Browse
+tiles, shows only visible owned collections, and navigates to the owned list.
+
+1. Enable `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF`, then sign in as
+   a student, instructor, or admin with at least one visible owned collection.
+2. Open Browse home. Confirm **My collections** appears above the tile grid
+   with at most five collections, ordered by most recently updated. Confirm
+   the shelf has no move, reorder, or drop targets.
+3. Select a collection and confirm it opens. Select **See all** and confirm
+   the Sequence page is filtered to **My collections**; switch to
+   Synchronized and confirm the filter remains.
+4. Sign in as a user with no visible owned collections and confirm the shelf
+   is absent. Disable `COLLECTIONS_HOME_SHELF` and confirm it is absent for a
+   user with owned collections. Disable `COLLECTIONS_ENABLED` and confirm the
+   shelf remains unavailable.
+
 ---
 
 All endpoints except login require a valid JWT bearer token in the `Authorization` header.

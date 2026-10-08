@@ -1,0 +1,23 @@
+import { Controls, Meta, Primary, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as MyCollectionsShelfStories from './MyCollectionsShelf.stories'
+
+<Meta of={MyCollectionsShelfStories} />
+
+<Title />
+
+<Subtitle>
+  Read-only Browse-home shelf for the five most recently updated visible collections owned by the
+  current user.
+</Subtitle>
+
+## When to use
+
+Render the shelf above the Browse root tile grid when the personal-shelf feature flag is enabled
+and the user has visible owned collections. The shelf is separate from sortable tiles and exposes
+only collection opening and **See all** navigation.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={MyCollectionsShelfStories.Basic} />

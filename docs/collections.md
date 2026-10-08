@@ -13,7 +13,7 @@ Epic: [#1409](https://github.com/bcit-tlu/hriv/issues/1409). This page is
 extended as each child issue lands; sections marked _planned_ are not yet
 implemented.
 
-## Feature flag (`COLLECTIONS_ENABLED`)
+## Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_HOME_SHELF`)
 
 Collections are **dark-launched** so the rest of the app can keep releasing
 (patch/minor bumps via release-please, `stable` re-pins) while the epic lands
@@ -34,8 +34,10 @@ one child issue at a time on `main`.
   `collections` tables regardless of the flag (they exist in the schema
   either way).
 - **`GET /api/features`** (`main.py`, unauthenticated, `FeaturesOut`) returns
-  `{"collections": <bool>}`. It is a UX hint only — flags are not secrets and
-  each one is enforced independently by the backend.
+  `{"collections": <bool>, "collections_home_shelf": <bool>}`. The shelf
+  value is effective only when both settings are enabled. It is a UX hint
+  only — flags are not secrets and each one is enforced independently by the
+  backend.
 - **Frontend.** `useFeatures()` fetches `/api/features` once per mount
   (`fetchFeatures` in `api.ts`; `Features` / `DEFAULT_FEATURES` in
   `types.ts`). Until the response arrives nothing collections-related
@@ -48,7 +50,8 @@ one child issue at a time on `main`.
   `browse` to telemetry). When `true`, behaviour is exactly as described in
   the sections below.
 - **Deployment.** Helm value `collections.enabled` (default `false`) renders
-  `COLLECTIONS_ENABLED` on the backend API pod (`charts/backend`). The
+  `COLLECTIONS_ENABLED` and `collections.homeShelf` (default `false`) renders
+  `COLLECTIONS_HOME_SHELF` on the backend API pod (`charts/backend`). The
   `flux-fleet` `latest` overlay
   (`apps/overlays/latest/hriv/backend/values-latest.yaml`) sets it `true`;
   `stable` inherits the chart default until the epic is promoted. Because
@@ -56,7 +59,7 @@ one child issue at a time on `main`.
   ([RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md)), `latest`
   shows no collections between this flag landing and the next backend
   release. `docker-compose.yml` sets `COLLECTIONS_ENABLED=true` for local
-  development.
+  development; `COLLECTIONS_HOME_SHELF` defaults to `true` there.
 - **Removal.** The flag, `/api/features`' `collections` key and the frontend
   gating are deleted in the epic's closing issue
   ([#1419](https://github.com/bcit-tlu/hriv/issues/1419)).
@@ -114,6 +117,17 @@ not on Browse. Filed collections appear in their category node in
 `GET /api/categories/tree` (`CategoryTree.collections`) and share that
 category's tile order with images and sub-categories. The Browse root
 tile-order scope contains categories and images only.
+
+Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
+the Browse home shows a read-only **My collections** shelf for the caller's
+five most recently updated visible owned collections. The shelf is available
+to any role, hidden when no owned collection is visible, and has a **See all**
+action that opens the Sequence page with the owned-collections filter. It is
+not a Browse tile: it has no drag, reorder, or drop targets.
+
+`GET /api/collections` accepts an optional `limit` from 1 to 100. It is
+applied after visibility filtering so inaccessible collections do not consume
+result slots; the existing updated-time descending order is retained.
 
 Unfiled collections remain available in the Collections and collection
 management views. `GET /api/collections?uncategorized=true` keeps its
