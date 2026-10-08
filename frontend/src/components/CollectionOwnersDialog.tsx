@@ -99,6 +99,19 @@ export default function CollectionOwnersDialog({
     .map((o) => o.userId)
   const currentProgramId = collection?.owners.find((o) => o.kind === 'program')?.programId ?? null
 
+  // The current program owner always renders as a chip even when it is not
+  // an assignable option — e.g. an instructor co-owner who left the owning
+  // program can still clear its ownership (the backend allows the transfer
+  // to null when user owners survive).
+  const programChips: Array<{ id: number; name: string }> = (() => {
+    const chips: Array<{ id: number; name: string }> = [...programOptions]
+    if (currentProgramId != null && !chips.some((p) => p.id === currentProgramId)) {
+      const owner = collection?.owners.find((o) => o.kind === 'program')
+      if (owner) chips.push({ id: owner.programId, name: owner.name })
+    }
+    return chips
+  })()
+
   const defaultRole: RoleFilter = isAdmin ? 'all' : 'student'
 
   // Lazy seeds cover the open-on-mount case; the render-time reset below
@@ -212,7 +225,12 @@ export default function CollectionOwnersDialog({
     })
   }
 
-  const ownerRows = rows.filter((row) => currentUserOwnerIds.includes(row.id))
+  // Current owners render from the collection itself, not the fetched
+  // page — an owner who is inactive or outside the viewer's directory
+  // scope must stay removable, or their id would linger in the staged set
+  // and 422 the PUT.
+  const currentOwnerUsers = (collection?.owners ?? []).filter((o) => o.kind === 'user')
+  const fetchedById = new Map(rows.map((row) => [row.id, row]))
   const otherRows = rows.filter((row) => !currentUserOwnerIds.includes(row.id))
   const allPageSelected = rows.length > 0 && rows.every((row) => selectedUserIds.has(row.id))
   const somePageSelected = rows.some((row) => selectedUserIds.has(row.id))
@@ -257,7 +275,54 @@ export default function CollectionOwnersDialog({
   const hasActiveUserFilters = searchInput.trim().length > 0 || programFilterIds.length > 0
   const selectedProgramFilters = programs.filter((p) => programFilterIds.includes(p.id))
 
-  const renderUserRow = (user: ApiUser, isOwner: boolean) => (
+  const renderOwnerRow = (owner: { userId: number; name: string }) => {
+    const fetched = fetchedById.get(owner.userId)
+    return (
+      <TableRow
+        key={owner.userId}
+        hover
+        onClick={() => toggleUser(owner.userId)}
+        sx={{ cursor: 'pointer' }}
+      >
+        <TableCell padding="checkbox">
+          <Checkbox
+            checked={selectedUserIds.has(owner.userId)}
+            onClick={(event) => event.stopPropagation()}
+            onChange={() => toggleUser(owner.userId)}
+            inputProps={{ 'aria-label': `select ${owner.name}` }}
+          />
+        </TableCell>
+        <TableCell>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <span>{owner.name}</span>
+            <Chip
+              label="Owner"
+              size="small"
+              color="success"
+              variant="outlined"
+              sx={{ height: 20 }}
+            />
+          </Stack>
+        </TableCell>
+        <TableCell>{fetched?.email ?? '—'}</TableCell>
+        <TableCell>
+          <Stack direction="row" flexWrap="wrap" gap={0.5}>
+            {fetched?.program_ids.map((programId) => (
+              <Chip
+                key={programId}
+                data-testid="program-chip"
+                label={programNameById.get(programId) ?? `#${programId}`}
+                size="small"
+                color="primary"
+              />
+            ))}
+          </Stack>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  const renderUserRow = (user: ApiUser) => (
     <TableRow key={user.id} hover onClick={() => toggleUser(user.id)} sx={{ cursor: 'pointer' }}>
       <TableCell padding="checkbox">
         <Checkbox
@@ -267,20 +332,7 @@ export default function CollectionOwnersDialog({
           inputProps={{ 'aria-label': `select ${user.name}` }}
         />
       </TableCell>
-      <TableCell>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <span>{user.name}</span>
-          {isOwner && (
-            <Chip
-              label="Owner"
-              size="small"
-              color="success"
-              variant="outlined"
-              sx={{ height: 20 }}
-            />
-          )}
-        </Stack>
-      </TableCell>
+      <TableCell>{user.name}</TableCell>
       <TableCell>{user.email}</TableCell>
       <TableCell>
         <Stack direction="row" flexWrap="wrap" gap={0.5}>
@@ -341,7 +393,7 @@ export default function CollectionOwnersDialog({
               Select a program to own this collection.
             </Typography>
             <Stack direction="row" flexWrap="wrap" gap={1}>
-              {programOptions.map((program) => {
+              {programChips.map((program) => {
                 const selected = programChoice === program.id
                 return (
                   <Chip
@@ -356,7 +408,7 @@ export default function CollectionOwnersDialog({
                 )
               })}
             </Stack>
-            {programOptions.length === 0 && !isAdmin && (
+            {programChips.length === 0 && !isAdmin && (
               <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }} display="block">
                 You do not belong to any programs.
               </Typography>
@@ -514,45 +566,44 @@ export default function CollectionOwnersDialog({
                   </TableRow>
                 </TableHead>
                 <TableBody>
+                  {currentOwnerUsers.length > 0 && (
+                    <>
+                      <TableRow>
+                        <TableCell colSpan={4} sx={{ bgcolor: 'action.hover', py: 0.5 }}>
+                          <Typography variant="caption" fontWeight={600} color="text.secondary">
+                            CURRENT OWNERS
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                      {currentOwnerUsers.map((owner) => renderOwnerRow(owner))}
+                    </>
+                  )}
                   {loading ? (
                     <TableRow>
                       <TableCell colSpan={4} align="center" sx={{ py: 6 }}>
                         <CircularProgress size={24} />
                       </TableCell>
                     </TableRow>
-                  ) : rows.length === 0 ? (
+                  ) : (
+                    otherRows.length > 0 && (
+                      <>
+                        <TableRow>
+                          <TableCell colSpan={4} sx={{ bgcolor: 'action.hover', py: 0.5 }}>
+                            <Typography variant="caption" fontWeight={600} color="text.secondary">
+                              AVAILABLE USERS
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                        {otherRows.map((user) => renderUserRow(user))}
+                      </>
+                    )
+                  )}
+                  {!loading && currentOwnerUsers.length === 0 && rows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} align="center" sx={{ py: 6 }}>
                         <Typography color="text.secondary">No users found.</Typography>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    <>
-                      {ownerRows.length > 0 && (
-                        <>
-                          <TableRow>
-                            <TableCell colSpan={4} sx={{ bgcolor: 'action.hover', py: 0.5 }}>
-                              <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                CURRENT OWNERS
-                              </Typography>
-                            </TableCell>
-                          </TableRow>
-                          {ownerRows.map((user) => renderUserRow(user, true))}
-                        </>
-                      )}
-                      {otherRows.length > 0 && (
-                        <>
-                          <TableRow>
-                            <TableCell colSpan={4} sx={{ bgcolor: 'action.hover', py: 0.5 }}>
-                              <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                AVAILABLE USERS
-                              </Typography>
-                            </TableCell>
-                          </TableRow>
-                          {otherRows.map((user) => renderUserRow(user, false))}
-                        </>
-                      )}
-                    </>
                   )}
                 </TableBody>
               </Table>

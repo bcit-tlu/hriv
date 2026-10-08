@@ -328,4 +328,48 @@ describe('CollectionOwnersDialog (#1531)', () => {
     renderDialog({ collection: ORPHANED })
     expect(screen.getByText(/This collection is orphaned/)).toBeInTheDocument()
   })
+
+  it('lists owners missing from the directory so they stay removable', async () => {
+    const user = userEvent.setup()
+    // Harry is an owner but absent from the fetched page — e.g. an
+    // inactive or admin-scoped account an instructor cannot see.
+    const hiddenOwner = makeCollectionSummary({
+      id: 9,
+      name: 'Mixed visibility set',
+      owners: [
+        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+        { kind: 'user', userId: 99, name: 'Hidden Harry' },
+      ],
+    })
+    const props = renderDialog({ collection: hiddenOwner })
+    await screen.findByText('CURRENT OWNERS')
+    const harryRow = screen.getByText('Hidden Harry').closest('tr')!
+    expect(within(harryRow).getByRole('checkbox')).toBeChecked()
+    await user.click(within(harryRow).getByRole('checkbox'))
+    await user.click(screen.getByTestId('owners-confirm'))
+    // His id must not linger in the replacement set — the backend would
+    // 422 an unknown or inactive owner id.
+    await waitFor(() => expect(props.onSaveOwners).toHaveBeenCalledWith(9, [7]))
+  })
+
+  it('shows a departed program owner as a removable chip', async () => {
+    const user = userEvent.setup()
+    // Ada co-owns the collection as a user but no longer belongs to
+    // Radiography — the owning program is not an assignable option, yet
+    // clearing it is legal while user owners survive.
+    const departed = makeCollectionSummary({
+      id: 10,
+      name: 'Departed program set',
+      owners: [
+        { kind: 'program', programId: 1, name: 'Radiography' },
+        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+      ],
+    })
+    const props = renderDialog({ collection: departed }, makeAuth('instructor', 7, [2]))
+    const chip = await screen.findByTestId('program-choice-1')
+    expect(chip).toHaveClass('MuiChip-filled')
+    await user.click(within(chip).getByTestId('CancelIcon'))
+    await user.click(screen.getByTestId('owners-confirm'))
+    await waitFor(() => expect(props.onTransfer).toHaveBeenCalledWith(10, null))
+  })
 })
