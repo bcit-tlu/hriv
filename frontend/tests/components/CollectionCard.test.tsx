@@ -31,6 +31,21 @@ describe('CollectionCard', () => {
     )
   })
 
+  it('uses a 4:3 thumbnail and subtitle1 title in compact density', () => {
+    render(
+      <CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} density="compact" />,
+    )
+
+    expect(screen.getByRole('img', { name: 'Skull comparison' })).toHaveStyle({
+      width: '100%',
+      aspectRatio: '4 / 3',
+      height: 'auto',
+    })
+    expect(screen.getByRole('heading', { name: 'Skull comparison' })).toHaveClass(
+      'MuiTypography-subtitle1',
+    )
+  })
+
   it('renders no owner reference — program or user — on the tile (#1567)', () => {
     render(
       <CollectionCard

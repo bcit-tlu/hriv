@@ -116,6 +116,8 @@ export interface AppShellProps {
   backendVersion: string | null
   backupVersion: string | null
   onReportIssue: () => void
+  stickyFooter?: boolean
+  onFooterHeightChange?: (px: number) => void
   notificationSlot?: ReactNode
   // Children (main content)
   children: ReactNode
@@ -152,9 +154,27 @@ export default function AppShell(props: AppShellProps) {
     backendVersion,
     backupVersion,
     onReportIssue,
+    stickyFooter = false,
+    onFooterHeightChange,
     notificationSlot,
     children,
   } = props
+  const footerRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const footer = footerRef.current
+    if (!footer || !onFooterHeightChange) return
+
+    const reportHeight = () => onFooterHeightChange(footer.getBoundingClientRect().height)
+    reportHeight()
+    if (typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(reportHeight)
+    observer.observe(footer)
+    return () => {
+      observer.disconnect()
+      onFooterHeightChange(0)
+    }
+  }, [onFooterHeightChange])
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
   const [collectionsMenuAnchor, setCollectionsMenuAnchor] = useState<HTMLElement | null>(null)
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
@@ -711,11 +731,13 @@ export default function AppShell(props: AppShellProps) {
       {children}
 
       <FooterBar
+        rootRef={footerRef}
         canManageUsers={canManageUsers}
         frontendVersion={frontendVersion || undefined}
         backendVersion={backendVersion ?? undefined}
         backupVersion={backupVersion ?? undefined}
         onReportIssue={onReportIssue}
+        sticky={stickyFooter}
       />
     </Box>
   )
