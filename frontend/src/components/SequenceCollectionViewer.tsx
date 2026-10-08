@@ -52,16 +52,16 @@ const NAV_HIDE_DELAY_MS = 2000
  */
 const stripThumbRing = (isCurrent: boolean) =>
   ({
-    outline: isCurrent ? '3px solid' : '1px solid',
+    outline: isCurrent ? '4px solid' : '1px solid',
     outlineColor: isCurrent ? 'primary.main' : 'divider',
-    outlineOffset: isCurrent ? -3 : -1,
+    outlineOffset: isCurrent ? -4 : -1,
     // Keyboard focus needs its own cue — the selection outline overrides the
     // UA focus ring, so focus-visible swaps to a distinct info ring (the
     // selection cue returns on blur).
     '&:focus-visible': {
-      outline: '3px solid',
+      outline: '4px solid',
       outlineColor: 'info.main',
-      outlineOffset: -3,
+      outlineOffset: -4,
     },
   }) as const
 

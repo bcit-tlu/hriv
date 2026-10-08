@@ -65,6 +65,54 @@ const PROGRAM_OWNED = makeCollectionSummary({
   owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
 })
 
+const DIRECTORY_USERS = [
+  {
+    id: 7,
+    name: 'Ada Lovelace',
+    email: 'ada@example.com',
+    role: 'admin',
+    active: true,
+    program_ids: [],
+    program_names: [],
+    group_ids: [],
+    group_names: [],
+    last_access: null,
+    metadata_extra: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 9,
+    name: 'Grace Hopper',
+    email: 'grace@example.com',
+    role: 'instructor',
+    active: true,
+    program_ids: [1],
+    program_names: ['Radiography'],
+    group_ids: [],
+    group_names: [],
+    last_access: null,
+    metadata_extra: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 10,
+    name: 'Inactive Ian',
+    email: 'ian@example.com',
+    role: 'instructor',
+    active: false,
+    program_ids: [],
+    program_names: [],
+    group_ids: [],
+    group_names: [],
+    last_access: null,
+    metadata_extra: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  },
+]
+
 function renderDialog(
   overrides: Partial<CollectionOwnersDialogProps> = {},
   auth: AuthContextValue = makeAuth('admin'),
@@ -86,68 +134,31 @@ function renderDialog(
   return props
 }
 
-/** Pick `name` from the owners autocomplete's listbox. */
+/** Switch to the User pane and check `name`'s row. */
 async function pickUser(user: ReturnType<typeof userEvent.setup>, name: string) {
-  const input = screen.getByLabelText('User owners')
-  await user.click(input)
-  await user.type(input, name)
-  const option = await screen.findByRole('option', { name: new RegExp(name) })
-  await user.click(option)
+  await user.click(await screen.findByRole('checkbox', { name: `select ${name}` }))
 }
 
 describe('CollectionOwnersDialog (#1531)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    fetchUsersPagedMock.mockResolvedValue({
-      items: [
-        {
-          id: 9,
-          name: 'Grace Hopper',
-          email: 'grace@example.com',
-          role: 'instructor',
-          active: true,
-          program_ids: [],
-          program_names: [],
-          group_ids: [],
-          group_names: [],
-          last_access: null,
-          metadata_extra: null,
-          created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-        {
-          id: 10,
-          name: 'Inactive Ian',
-          email: 'ian@example.com',
-          role: 'instructor',
-          active: false,
-          program_ids: [],
-          program_names: [],
-          group_ids: [],
-          group_names: [],
-          last_access: null,
-          metadata_extra: null,
-          created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-      ],
-      total: 2,
-    })
+    fetchUsersPagedMock.mockResolvedValue({ items: DIRECTORY_USERS, total: 2 })
   })
 
-  it('renders the current user owners and program owner', () => {
+  it('renders the current owners and a Program/User radio row', () => {
     renderDialog({ collection: CO_OWNED })
     expect(screen.getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
     expect(screen.getByText(/Ada Lovelace, Grace Hopper/)).toBeInTheDocument()
-    expect(screen.getByText('Grace Hopper')).toBeInTheDocument() // selected chip
+    expect(screen.getByRole('radio', { name: 'Program' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'User' })).toBeChecked()
   })
 
-  it('keeps Save disabled until something changes', () => {
+  it('keeps the confirm disabled until something changes', () => {
     renderDialog()
     expect(screen.getByTestId('owners-confirm')).toBeDisabled()
   })
 
-  it('adds a co-owner via the user picker and PUTs the full set', async () => {
+  it('checks staged users in the table and PUTs the full set', async () => {
     const user = userEvent.setup()
     const props = renderDialog()
     await pickUser(user, 'Grace Hopper')
@@ -156,25 +167,24 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(props.onClose).toHaveBeenCalled()
   })
 
-  it('removes a co-owner via the chip delete affordance', async () => {
+  it('unchecking a current owner drops them from the PUT set', async () => {
     const user = userEvent.setup()
     const props = renderDialog({ collection: CO_OWNED })
-    // Each selected owner renders a removable MUI Chip (CancelIcon = delete).
-    await user.click(screen.getAllByTestId('CancelIcon')[1])
+    // Grace Hopper is a current owner — she starts checked.
+    const row = (await screen.findByText('Grace Hopper')).closest('tr')!
+    expect(within(row).getByRole('checkbox')).toBeChecked()
+    await user.click(within(row).getByRole('checkbox'))
     await user.click(screen.getByTestId('owners-confirm'))
     await waitFor(() => expect(props.onSaveOwners).toHaveBeenCalledWith(2, [7]))
   })
 
-  it('never offers inactive users in the picker', async () => {
-    const user = userEvent.setup()
+  it('never lists inactive users in the table', async () => {
     renderDialog()
-    const input = screen.getByLabelText('User owners')
-    await user.click(input)
-    await screen.findByRole('option', { name: /Grace Hopper/ })
-    expect(screen.queryByRole('option', { name: /Inactive Ian/ })).not.toBeInTheDocument()
+    await screen.findByText('Grace Hopper')
+    expect(screen.queryByText('Inactive Ian')).not.toBeInTheDocument()
   })
 
-  it('defaults admin searches to the Everyone mode (no role param)', async () => {
+  it('defaults admin searches to the Everyone scope (no role param)', async () => {
     renderDialog()
     await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
     expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
@@ -182,78 +192,42 @@ describe('CollectionOwnersDialog (#1531)', () => {
     )
   })
 
-  it('scopes instructor searches like the group picker (students, then instructors)', async () => {
+  it('scopes instructor searches like the group picker via the Role filter', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [1]))
     await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
-    // Same default as the group member picker: the students tab.
+    // Same default as the group member picker: the students scope.
     expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ role: 'student', programIds: undefined }),
     )
-    await user.click(screen.getByRole('button', { name: 'Instructors' }))
+    await user.click(screen.getByRole('button', { name: 'Role' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Instructors' }))
     await waitFor(() =>
       expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ role: 'instructor' }),
       ),
     )
-    // Instructors never see admin/staff/Admin-program accounts — the
-    // role-scoped endpoint enforces that; the picker mirrors the group tabs.
-    expect(screen.queryByRole('button', { name: 'Everyone' })).not.toBeInTheDocument()
-  })
-
-  it('drops stale suggestions synchronously when the search scope changes', async () => {
-    const user = userEvent.setup()
-    // First fetch resolves; every later fetch pends forever, so the window
-    // between a scope change and its refetch is fully deterministic.
-    fetchUsersPagedMock.mockReturnValue(new Promise(() => {}))
-    fetchUsersPagedMock.mockResolvedValueOnce({
-      items: [
-        {
-          id: 11,
-          name: 'Staff Alex',
-          email: 'alex@example.com',
-          role: 'staff',
-          active: true,
-          program_ids: [],
-          program_names: [],
-          group_ids: [],
-          group_names: [],
-          last_access: null,
-          metadata_extra: null,
-          created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-      ],
-      total: 1,
-    })
-    renderDialog() // admin — Everyone mode; the first fetch resolves.
-    const input = screen.getByLabelText('User owners')
-    await user.click(input)
-    await screen.findByRole('option', { name: /Staff Alex/ })
-    await user.click(screen.getByRole('button', { name: 'Students' }))
-    // The Everyone-mode result must be gone immediately, before the
-    // pending refetch could ever resolve.
-    await user.click(input)
-    expect(screen.queryByRole('option', { name: /Staff Alex/ })).not.toBeInTheDocument()
+    // Instructors never see the Everyone option — the role-scoped endpoint
+    // enforces the same boundary for admins/staff.
+    expect(screen.queryByRole('menuitemradio', { name: 'Everyone' })).not.toBeInTheDocument()
   })
 
   it('narrows only the student search by the optional program filter', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [1]))
     await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
-    // Program chips appear only on the Students tab (group-picker parity).
-    const filterInput = screen.getByLabelText('Filter by program')
-    await user.click(filterInput)
-    await user.click(await screen.findByRole('option', { name: 'Radiography' }))
+    // Program narrowing is offered only in the Students scope (group parity).
+    await user.click(screen.getByRole('button', { name: 'Program' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Radiography' }))
     await waitFor(() =>
       expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ role: 'student', programIds: [1] }),
       ),
     )
-    // Switching to the Instructors tab ignores the program filter — exactly
-    // like the group co-instructor search.
-    await user.click(screen.getByRole('button', { name: 'Instructors' }))
-    expect(screen.queryByLabelText('Filter by program')).not.toBeInTheDocument()
+    // Switching to Instructors hides the button and ignores the filter.
+    await user.click(screen.getByRole('button', { name: 'Role' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Instructors' }))
+    expect(screen.queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
     await waitFor(() =>
       expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ role: 'instructor', programIds: undefined }),
@@ -264,74 +238,52 @@ describe('CollectionOwnersDialog (#1531)', () => {
   it('blocks saving an empty owner set with no program (orphan guard)', async () => {
     const user = userEvent.setup()
     renderDialog()
-    await user.click(screen.getByTestId('CancelIcon'))
+    // Ada is the only current owner — unchecking her leaves an empty set.
+    const adaRow = (await screen.findAllByText('Ada Lovelace'))
+      .map((el) => el.closest('tr'))
+      .find((tr): tr is HTMLTableRowElement => tr != null)!
+    await user.click(within(adaRow).getByRole('checkbox'))
     // No program owner and no user owners → the dialog must not even try.
     expect(screen.getByTestId('owners-confirm')).toBeDisabled()
   })
 
-  it('assigning a program owner calls transfer and skips the owners PUT', async () => {
+  it('opens on the Program pane for a program-owned collection', async () => {
+    renderDialog({ collection: PROGRAM_OWNED })
+    expect(screen.getByRole('radio', { name: 'Program' })).toBeChecked()
+    // The owning program renders as the filled, deletable chip.
+    const chip = screen.getByTestId('program-choice-1')
+    expect(chip).toHaveClass('MuiChip-filled')
+    expect(within(chip).getByTestId('CancelIcon')).toBeInTheDocument()
+  })
+
+  it('selects a program chip and transfers ownership', async () => {
     const user = userEvent.setup()
     const props = renderDialog()
-    await user.click(screen.getByLabelText('Owning program'))
-    await user.click(await screen.findByRole('option', { name: 'Ultrasound' }))
+    await user.click(screen.getByRole('radio', { name: 'Program' }))
+    await user.click(screen.getByTestId('program-choice-2'))
     await user.click(screen.getByTestId('owners-confirm'))
     await waitFor(() => expect(props.onTransfer).toHaveBeenCalledWith(1, 2))
     expect(props.onSaveOwners).not.toHaveBeenCalled()
   })
 
-  it('disables the user picker while a program is being assigned', async () => {
+  it('chip delete reverts to outlined and only one chip can be active', async () => {
     const user = userEvent.setup()
-    renderDialog()
-    await user.click(screen.getByLabelText('Owning program'))
-    await user.click(await screen.findByRole('option', { name: 'Ultrasound' }))
-    expect(screen.getByLabelText('User owners')).toBeDisabled()
+    renderDialog({ collection: PROGRAM_OWNED })
+    // Radiography starts active; picking Ultrasound swaps the selection.
+    await user.click(screen.getByTestId('program-choice-2'))
+    expect(screen.getByTestId('program-choice-2')).toHaveClass('MuiChip-filled')
+    expect(screen.getByTestId('program-choice-1')).toHaveClass('MuiChip-outlined')
+    // The delete icon on the active chip reverts it to outlined.
+    await user.click(within(screen.getByTestId('program-choice-2')).getByTestId('CancelIcon'))
+    expect(screen.getByTestId('program-choice-2')).toHaveClass('MuiChip-outlined')
   })
 
-  it('saves new user owners before clearing the program owner', async () => {
-    const user = userEvent.setup()
-    const order: string[] = []
-    const onSaveOwners = vi.fn(async () => {
-      order.push('owners')
-    })
-    const onTransfer = vi.fn(async () => {
-      order.push('transfer')
-    })
-    renderDialog({ collection: PROGRAM_OWNED, onSaveOwners, onTransfer })
-    // Clearing the program requires at least one user owner — add one first.
-    await user.click(screen.getByLabelText('Owning program'))
-    await user.click(await screen.findByRole('option', { name: /None — owned by users/ }))
-    await pickUser(user, 'Grace Hopper')
-    await user.click(screen.getByTestId('owners-confirm'))
-    // Owners must land before the program clears so the row is never orphaned.
-    await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(6, null))
-    expect(onSaveOwners).toHaveBeenCalledWith(6, [9])
-    expect(order).toEqual(['owners', 'transfer'])
-  })
-
-  it('stages co-owners alongside an unchanged program owner', async () => {
-    const user = userEvent.setup()
-    const props = renderDialog({ collection: PROGRAM_OWNED })
-    // Clear the program to unlock the picker, add a co-owner, then reselect
-    // the same program — the PUT must still run (regression: this used to
-    // silently discard the edit when the program value round-tripped).
-    await user.click(screen.getByLabelText('Owning program'))
-    await user.click(await screen.findByRole('option', { name: /None — owned by users/ }))
-    await pickUser(user, 'Grace Hopper')
-    await user.click(screen.getByLabelText('Owning program'))
-    await user.click(await screen.findByRole('option', { name: 'Radiography' }))
-    await user.click(screen.getByTestId('owners-confirm'))
-    await waitFor(() => expect(props.onSaveOwners).toHaveBeenCalledWith(6, [9]))
-    // The program never changed, so no transfer runs.
-    expect(props.onTransfer).not.toHaveBeenCalled()
-  })
-
-  it('narrows the program list to the instructor’s own programs', async () => {
+  it('narrows the program chips to the instructor’s own programs', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [2]))
-    await user.click(screen.getByLabelText('Owning program'))
-    const listbox = await screen.findByRole('listbox')
-    expect(within(listbox).getByText('Ultrasound')).toBeInTheDocument()
-    expect(within(listbox).queryByText('Radiography')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'Program' }))
+    expect(screen.getByTestId('program-choice-2')).toBeInTheDocument()
+    expect(screen.queryByTestId('program-choice-1')).not.toBeInTheDocument()
   })
 
   it('surfaces a stale-version 409 inside the dialog', async () => {
@@ -340,7 +292,8 @@ describe('CollectionOwnersDialog (#1531)', () => {
       .fn()
       .mockRejectedValue(new ApiError(409, 'Stale version', { version: 9 }))
     renderDialog({ collection: CO_OWNED, onSaveOwners })
-    await user.click(screen.getAllByTestId('CancelIcon')[1])
+    const row = (await screen.findByText('Grace Hopper')).closest('tr')!
+    await user.click(within(row).getByRole('checkbox'))
     await user.click(screen.getByTestId('owners-confirm'))
     expect(await screen.findByTestId('owners-error')).toHaveTextContent(/Stale version/)
     // The dialog stays open so the admin can retry.
@@ -352,11 +305,22 @@ describe('CollectionOwnersDialog (#1531)', () => {
     const onTransfer = vi
       .fn()
       .mockRejectedValue(new ApiError(422, 'A collection must keep at least one owner'))
-    renderDialog({ collection: PROGRAM_OWNED, onTransfer })
-    await user.click(screen.getByLabelText('Owning program'))
-    await user.click(await screen.findByRole('option', { name: /None — owned by users/ }))
-    await pickUser(user, 'Grace Hopper')
+    // Program-owned with user co-owners so the chip delete stays legal.
+    const both = makeCollectionSummary({
+      id: 8,
+      name: 'Mixed set',
+      owners: [
+        { kind: 'program', programId: 1, name: 'Radiography' },
+        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+      ],
+    })
+    renderDialog({ collection: both, onTransfer })
+    // Deselect the only chip → "no program owner" → transfer(null).
+    await user.click(
+      within(await screen.findByTestId('program-choice-1')).getByTestId('CancelIcon'),
+    )
     await user.click(screen.getByTestId('owners-confirm'))
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledWith(8, null))
     expect(await screen.findByTestId('owners-error')).toHaveTextContent(/at least one owner/)
   })
 
