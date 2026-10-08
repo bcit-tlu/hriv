@@ -1732,11 +1732,14 @@ export default function App() {
   const collEditRequestRef = useRef(0)
   // Navigation epoch: a pending detail fetch must not open the editor or
   // cover picker over a view the user already left — page changes, Browse
-  // drill-downs, and opening an image all count.
+  // drill-downs, and opening an image all count. Keyed on the ID sequence
+  // rather than object identity so a same-scope `setPath` refresh (e.g.
+  // toggling category visibility) does not read as navigation.
   const collNavEpochRef = useRef(0)
+  const collNavKey = `${page}/${path.map((c) => c.id).join('/')}/${selectedImage?.id ?? ''}`
   useEffect(() => {
     collNavEpochRef.current += 1
-  }, [page, path, selectedImage])
+  }, [collNavKey])
   const {
     loadCollection: loadCollectionDetail,
     create: createCollection,
