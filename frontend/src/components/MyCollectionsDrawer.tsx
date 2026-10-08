@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import AddIcon from '@mui/icons-material/Add'
+import CloseIcon from '@mui/icons-material/Close'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
@@ -50,7 +51,6 @@ export interface MyCollectionsDrawerProps {
   onOpen: (collection: CollectionSummary) => void
   onEdit?: (collection: CollectionSummary) => void
   onPickCoverImage?: (collection: CollectionSummary) => void
-  onSeeAll: () => void
   onNewCollection: () => void
   newCollectionDisabled?: boolean
 }
@@ -76,7 +76,6 @@ export default function MyCollectionsDrawer({
   onOpen,
   onEdit,
   onPickCoverImage,
-  onSeeAll,
   onNewCollection,
   newCollectionDisabled = false,
 }: MyCollectionsDrawerProps) {
@@ -275,6 +274,19 @@ export default function MyCollectionsDrawer({
               >
                 My collections
               </Button>
+              <IconButton
+                aria-label={pinned ? 'Unpin My collections' : 'Pin My collections'}
+                aria-pressed={pinned}
+                // Unpinning must not collapse the sheet — it only hands the
+                // drawer back to temporary mode (backdrop + clickable trigger).
+                onClick={() => onPinnedChange(!pinned)}
+                // The pinned state reads as a filled light-grey circle, like
+                // MUI's icon-in-Avatar pattern, so it stands out from the
+                // bare outlined glyph of the unpinned state.
+                sx={{ bgcolor: pinned ? 'action.selected' : undefined }}
+              >
+                {pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
+              </IconButton>
               <Box
                 sx={{
                   display: 'flex',
@@ -296,16 +308,14 @@ export default function MyCollectionsDrawer({
                     </Button>
                   </span>
                 </Tooltip>
-                <Button onClick={onSeeAll}>See all</Button>
-                <IconButton
-                  aria-label={pinned ? 'Unpin My collections' : 'Pin My collections'}
-                  aria-pressed={pinned}
-                  // Unpinning must not collapse the sheet — it only hands the
-                  // drawer back to temporary mode (backdrop + clickable trigger).
-                  onClick={() => onPinnedChange(!pinned)}
-                >
-                  {pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
-                </IconButton>
+                {/* The pinned sheet is page furniture with no close control —
+                it only goes away via unpin + close, matching Escape and the
+                trigger button. */}
+                {!pinned && (
+                  <IconButton aria-label="Close My collections" onClick={() => onOpenChange(false)}>
+                    <CloseIcon />
+                  </IconButton>
+                )}
               </Box>
             </Box>
 

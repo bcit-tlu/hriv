@@ -379,8 +379,8 @@ returned by the API (UX only — the backend re-checks).
   scopes show a fixed bottom-left **My collections** button outside
   `SortableTileGrid`; no button renders while the owned feed is loading or
   empty. Opening it shows a bottom drawer with up to eight most recently
-  updated collections, **New collection**, and **See all** (Sequence with
-  `mine=true`). The sheet is docked in flow directly above the sticky
+  updated collections, **New collection**, and a close control. The sheet
+  is docked in flow directly above the sticky
   footer, so it rises out from _behind_ the footer's top border (the footer
   paints over the sheet's bottom edge, so only the sheet's top shows
   elevation) and a pinned sheet moves with the footer during rubber-band
@@ -388,7 +388,10 @@ returned by the API (UX only — the backend re-checks).
   is open and doubles as its title (`aria-labelledby`): it rests 16 px above
   the footer, attaches to the sheet's title slot once the rising header
   reaches it, rides up with the sheet, and detaches again at the same point
-  on the way down. Tiles are title-only (no image count, no chips). Compact
+  on the way down. A pin control sits beside the title placeholder — it
+  fills with a light-grey circle while the sheet is pinned — and the
+  temporary header's action cluster ends in a close button. Tiles are
+  title-only (no image count, no chips) with ~110 px-tall media. Compact
   cards are 160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
   horizontally below about 1424 px. The card row's height is capped so the
   dock (header + cards + footer) never outgrows the viewport — the header
@@ -396,8 +399,9 @@ returned by the API (UX only — the backend re-checks).
   admin footer shrinks the card row instead of pushing the sheet's controls
   above the top edge. The temporary state has a backdrop that leaves the
   footer undimmed, locks document scrolling until the sheet closes or pins
-  (the card row still scrolls), and closes on Escape, backdrop click, or a
-  second press of the button; pinning removes the backdrop, keeps Browse
+  (the card row still scrolls), and closes on Escape, backdrop click, the
+  header's close button, or a second press of the button; pinning removes
+  the backdrop (and the close control), keeps Browse
   interactive, persists per user, turns the button into an outlined,
   non-clickable title, and lets the page grow by the sheet's height so the
   last Browse row stays reachable. The same sheet stays mounted across both

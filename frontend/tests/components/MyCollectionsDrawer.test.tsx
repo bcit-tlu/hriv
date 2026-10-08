@@ -20,7 +20,6 @@ function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
     onOpenChange: vi.fn(),
     onPinnedChange: vi.fn(),
     onOpen: vi.fn(),
-    onSeeAll: vi.fn(),
     onNewCollection: vi.fn(),
     ...overrides,
   }
@@ -276,15 +275,36 @@ describe('MyCollectionsDrawer', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(COLLECTIONS_AT_CAP_TOOLTIP)
   })
 
-  it('opens a card and navigates to See all', () => {
+  it('closes the temporary sheet from the close button, but not while pinned', () => {
+    const { props, rerender } = renderDrawer({ open: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close My collections' }))
+    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+
+    // The pinned sheet is page furniture — no close control, matching Escape.
+    rerender(<MyCollectionsDrawer {...props} pinned />)
+    expect(screen.queryByRole('button', { name: 'Close My collections' })).not.toBeInTheDocument()
+  })
+
+  it('sits the pin control next to the title and fills it while pinned', () => {
+    const { props, rerender, container } = renderDrawer({ open: true })
+
+    const placeholder = container.querySelector('button[aria-hidden="true"]')
+    const pin = screen.getByRole('button', { name: 'Pin My collections' })
+    expect(pin.parentElement).toBe(placeholder?.parentElement)
+    expect(getComputedStyle(pin).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+
+    rerender(<MyCollectionsDrawer {...props} pinned />)
+    const pinnedPin = screen.getByRole('button', { name: 'Unpin My collections' })
+    expect(getComputedStyle(pinnedPin).backgroundColor).toBe('rgba(0, 0, 0, 0.08)')
+  })
+
+  it('opens a card', () => {
     const collection = makeCollectionSummary({ id: 7, name: 'Filed sequence' })
     const { props } = renderDrawer({ collections: [collection], open: true })
 
     fireEvent.click(screen.getByTestId('collection-card-action-area'))
     expect(props.onOpen).toHaveBeenCalledWith(collection)
-
-    fireEvent.click(screen.getByRole('button', { name: 'See all' }))
-    expect(props.onSeeAll).toHaveBeenCalledOnce()
   })
 
   it('forwards edit and cover-picker actions for editable collections', () => {

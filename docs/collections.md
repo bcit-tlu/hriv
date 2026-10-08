@@ -122,14 +122,17 @@ Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
 Browse root and category scopes show a collapsed **My collections** button at
 the bottom-left for any role with a visible owned collection. Opening it shows
 a bottom drawer with up to eight of the caller's most recently updated visible
-owned collections, **New collection**, and a **See all** action that opens the
-Sequence page with the owned-collections filter. The **My collections** button
+owned collections, **New collection**, a pin control beside the title, and a
+close button. The **My collections** button
 stays mounted in both states and doubles as the sheet's title: it rests just
 above the footer, attaches to the sheet's title slot as the rising header
 reaches it, and detaches again on the way down. While pinned it becomes an
-outlined, non-clickable title. Tiles are title-only (`density="minimal"`) to
+outlined, non-clickable title and the pin fills with a light-grey circle.
+Tiles are title-only (`density="minimal"`) with ~110 px-tall media to
 keep the drawer minimally invasive. The temporary state uses a backdrop and
-closes on Escape; the per-user pin preference removes the backdrop. The sheet
+closes on Escape, backdrop click, the header's close button, or a second
+press of the title button; the per-user pin preference removes the backdrop
+and the close control. The sheet
 is rendered through `AppShell`'s `footerDockSlot`, directly above `FooterBar`
 inside the sticky footer dock, so it is ordinary in-flow content: opening
 animates its height from 0 to its measured natural height, the sheet emerges

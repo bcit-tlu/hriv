@@ -85,7 +85,6 @@ const meta = {
     onOpenChange: fn(),
     onPinnedChange: fn(),
     onOpen: fn(),
-    onSeeAll: fn(),
     onNewCollection: fn(),
   },
   decorators: [

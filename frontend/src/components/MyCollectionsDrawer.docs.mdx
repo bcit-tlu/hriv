@@ -14,18 +14,20 @@ import * as MyCollectionsDrawerStories from './MyCollectionsDrawer.stories'
 
 Render the standard contained **My collections** button on Browse when the personal-drawer feature
 flag is enabled and the user has visible owned collections. The button sits above the always-visible
-Browse footer. Opening it provides collection navigation, creation, and **See all** without adding
+Browse footer. Opening it provides collection navigation and creation without adding
 personal collections to the sortable Browse grid.
 
 The always-mounted trigger button doubles as the sheet's title (`aria-labelledby`) and floats above
-the sheet's bottom-left corner — the sheet slides up _beneath_ it. Tiles carry only the cover and
-title (`density="minimal"`) to keep the drawer minimally invasive.
+the sheet's bottom-left corner — the sheet slides up _beneath_ it. A pin control sits beside the
+title in the sheet header and fills with a light-grey circle while the sheet is pinned. Tiles carry
+only the cover and title (`density="minimal"`, ~110 px media) to keep the drawer minimally invasive.
 
-The temporary state shows a backdrop and closes on Escape. Pinning swaps the backdrop for reserved
-page bottom space — the same sheet stays mounted in both modes, so pinning never reloads tiles.
-Unpinning keeps the drawer open (the pin is not a close control). The sheet's bottom edge rides the
-footer's live on-screen gap, so when the footer scrolls into view the sheet attaches to its top edge
-and moves with it — it never covers the footer. Compact tiles are 160–180 px wide and scroll
+The temporary state shows a backdrop, locks document scrolling, and closes on Escape, backdrop
+click, the header's close button, or a second press of the title button. Pinning swaps the backdrop
+and close control for reserved page bottom space — the same sheet stays mounted in both modes, so
+pinning never reloads tiles. Unpinning keeps the drawer open (the pin is not a close control). The
+sheet renders inside the sticky footer dock directly above the footer, so it moves with it on
+overscroll and never covers it. Compact tiles are 160–180 px wide and scroll
 horizontally below about 1424 px.
 
 ## Interactive example

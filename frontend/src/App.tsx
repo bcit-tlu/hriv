@@ -2176,15 +2176,6 @@ export default function App() {
             }}
             onEdit={(collection) => void openBrowseCollectionEdit(collection)}
             onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}
-            onSeeAll={() => {
-              if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
-              handleCollectionsTypeChange('sequence')
-              collectionsData.setFilters({
-                ...collectionsData.filters,
-                mine: true,
-                owner: 'any',
-              })
-            }}
             onNewCollection={() => setMyCollectionsCreateOpen(true)}
             newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
           />
