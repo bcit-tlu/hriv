@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -12,6 +13,7 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
+import { visuallyHidden } from '@mui/utils'
 import type { ImageItem } from '../types'
 
 interface CollectionCoverPickerModalProps {
@@ -62,7 +64,11 @@ export default function CollectionCoverPickerModal({
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell padding="checkbox" />
+                  <TableCell padding="checkbox">
+                    <Box component="span" sx={visuallyHidden}>
+                      Select cover image
+                    </Box>
+                  </TableCell>
                   <TableCell>Name</TableCell>
                 </TableRow>
               </TableHead>
@@ -108,7 +114,7 @@ export default function CollectionCoverPickerModal({
                         size="small"
                         checked={selectedId === image.id}
                         onChange={() => setSelectedId(image.id)}
-                        inputProps={{ 'aria-label': image.name }}
+                        inputProps={{ 'aria-label': `Use ${image.name} as the cover image` }}
                       />
                     </TableCell>
                     <TableCell>{image.name}</TableCell>

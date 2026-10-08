@@ -190,6 +190,16 @@ export const NoCover: Story = {
   },
 }
 
+export const Compact: Story = {
+  args: {
+    collection: makeSummary({ name: 'Compact drawer tile' }),
+    density: 'compact',
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
 export const Hidden: Story = {
   // Curatorially hidden card (#1559): desaturated tile plus the eye-off
   // marker by the name — the same treatment hidden categories/images get.

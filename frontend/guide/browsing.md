@@ -13,9 +13,10 @@ The **Home** tab is the image library — the same view your students get
 - **Collection tiles** appear inside a category only after a curator files
   the collection there. Unfiled collections do not appear as Browse tiles;
   use a root-level category such as **Featured** to highlight one near the top.
-- When enabled, **My collections** appears above the Browse home tiles with
-  up to eight of your recently updated visible collections. Use **See all** to
-  open your collections list; the shelf is read-only and is not reorderable.
+- When enabled, a bottom-left **My collections** button appears on Browse root
+  and inside categories when you own a visible collection. Open the bottom
+  drawer to create or visit a collection, use **See all** for your collections
+  list, or pin it while you continue browsing. The drawer is not reorderable.
 - Use the **breadcrumbs** at the top to jump back up, or **Home** to return
   to the top level.
 - The **search icon** in the top bar searches across images by name, note,
