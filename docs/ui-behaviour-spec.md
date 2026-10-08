@@ -380,20 +380,24 @@ returned by the API (UX only — the backend re-checks).
   `SortableTileGrid`; no button renders while the owned feed is loading or
   empty. Opening it shows a bottom drawer with up to eight most recently
   updated collections, **New collection**, and **See all** (Sequence with
-  `mine=true`). The standard contained button stays mounted while the sheet
-  is open, doubles as its title (`aria-labelledby`), and floats above the
-  sheet's bottom-left corner — the sheet slides up _beneath_ it. Tiles are
-  title-only (no image count, no chips). The sheet's bottom edge rides the
-  footer's live on-screen gap: it rests on the viewport bottom while the
-  footer is below the fold, attaches to the footer's top edge once the
-  footer scrolls into view, and never covers the footer. Compact cards are
-  160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
+  `mine=true`). The sheet is docked in flow directly above the sticky
+  footer, so it rises out from _behind_ the footer's top border (the footer
+  paints over the sheet's bottom edge, so only the sheet's top shows
+  elevation) and a pinned sheet moves with the footer during rubber-band
+  overscroll. The standard contained button stays mounted while the sheet
+  is open and doubles as its title (`aria-labelledby`): it rests 16 px above
+  the footer, attaches to the sheet's title slot once the rising header
+  reaches it, rides up with the sheet, and detaches again at the same point
+  on the way down. Tiles are title-only (no image count, no chips). Compact
+  cards are 160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
   horizontally below about 1424 px. The temporary state has a backdrop that
-  stops at the footer's top edge and closes on Escape, backdrop click, or a
+  leaves the footer undimmed and closes on Escape, backdrop click, or a
   second press of the button; pinning removes the backdrop, keeps Browse
-  interactive, persists per user, and reserves the sheet's height below the
-  Browse content. The same sheet stays mounted across both modes — pinning
-  does not reload it — and unpinning leaves the drawer open (the pin is not
+  interactive, persists per user, turns the button into an outlined,
+  non-clickable title, and lets the page grow by the sheet's height so the
+  last Browse row stays reachable. The same sheet stays mounted across both
+  modes — pinning does not reload it — and unpinning leaves the drawer open
+  (the pin is not
   a close control). The drawer never renders on image-viewer or collection
   pages and has no drag, reorder, or drop targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**

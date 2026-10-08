@@ -43,15 +43,6 @@ describe('FooterBar', () => {
     expect(screen.queryByRole('link', { name: 'MPL-2.0' })).not.toBeInTheDocument()
   })
 
-  it('sticks to the viewport bottom only when requested', () => {
-    render(<FooterBar canManageUsers={false} sticky />)
-
-    expect(screen.getByRole('contentinfo')).toHaveStyle({
-      position: 'sticky',
-      bottom: '0px',
-    })
-  })
-
   it('invokes onReportIssue when Send Feedback is clicked', async () => {
     const onReportIssue = vi.fn()
     const user = userEvent.setup()

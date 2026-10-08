@@ -470,20 +470,23 @@ Browse, supports temporary and persistent modes, and stays off other pages.
    **My collections** button appears in both places. Open it and confirm the
    bottom drawer shows at most eight collections ordered by most recently
    updated, plus **New collection**, **See all**, and a pin button. Confirm
-   the button stays put as the sheet slides up beneath it and doubles as the
-   sheet's title, that tiles show only the cover and name (no image count or
+   the sheet rises from behind the footer (its bottom edge never shows above
+   the footer), that the button attaches to the sheet's title slot and rides
+   up with it, doubling as the sheet's title, that tiles show only the cover
+   and name (no image count or
    chips), and that the drawer has no move, reorder, or drop targets.
 3. Leave the drawer unpinned. Confirm it has a backdrop that prevents Browse
    interaction but stops above the footer, and that backdrop click, Escape,
    and a second press of the **My collections** button each close it.
 4. Open and pin the drawer, then reload Browse. Confirm it returns pinned and
    open, has no backdrop, leaves the visible Browse area clickable, and does
-   not cover the final tile row. Press the pin again — **Assert:** the drawer
-   stays open and only returns to the temporary (backdrop) state; it never
-   reloads its tiles on the pin toggle. Scroll until the footer enters the
-   viewport — **Assert:** the drawer's bottom edge attaches to the footer's
-   top and moves with it, never overlapping the footer. Collapse it via the
-   **My collections** button and confirm the pin preference is retained.
+   not cover the final tile row, and that the **My collections** button is
+   outlined and not clickable. Press the pin again — **Assert:** the drawer
+   stays open and only returns to the temporary (backdrop, filled clickable
+   button) state; it never reloads its tiles on the pin toggle. Re-pin and
+   overscroll past the end of the page — **Assert:** the footer and the
+   drawer move together as one block. Unpin, collapse it via the
+   **My collections** button, and confirm the pin preference is retained.
 5. Select a collection and confirm it opens. Reopen the drawer, select
    **See all**, and confirm the Sequence page is filtered to
    **My collections**; switch to Synchronized and confirm the filter remains.

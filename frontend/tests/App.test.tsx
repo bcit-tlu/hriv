@@ -395,8 +395,10 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
+    footerDockSlot,
   }: {
     children: ReactNode
+    footerDockSlot?: ReactNode
     onTabChange: (v: string) => void
     onHomeClick: () => void
     onSearchOpen: () => void
@@ -450,6 +452,7 @@ vi.mock('../src/components/AppShell', () => ({
         Shell logout
       </button>
       {children}
+      {footerDockSlot}
     </div>
   ),
 }))

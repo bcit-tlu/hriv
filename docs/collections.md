@@ -124,17 +124,21 @@ the bottom-left for any role with a visible owned collection. Opening it shows
 a bottom drawer with up to eight of the caller's most recently updated visible
 owned collections, **New collection**, and a **See all** action that opens the
 Sequence page with the owned-collections filter. The **My collections** button
-stays mounted in both states and doubles as the sheet's title — the sheet
-slides up beneath it. Tiles are title-only (`density="minimal"`) to keep the
-drawer minimally invasive. The temporary state uses a backdrop and closes on
-Escape; the per-user pin preference swaps the backdrop for reserved page
-bottom space. The sheet itself is a single `Slide` that stays mounted across
-both modes, so pinning never reloads tiles and unpinning never collapses the
-drawer — the pin is not a close control. The sheet's bottom edge rides the
-footer's live on-screen gap: while the footer is below the fold the sheet
-rests on the viewport bottom, and once the footer scrolls into view the sheet
-attaches to its top edge and moves with it — the drawer never covers the
-footer. Compact cards are 160–180 px wide and scroll horizontally below about
+stays mounted in both states and doubles as the sheet's title: it rests just
+above the footer, attaches to the sheet's title slot as the rising header
+reaches it, and detaches again on the way down. While pinned it becomes an
+outlined, non-clickable title. Tiles are title-only (`density="minimal"`) to
+keep the drawer minimally invasive. The temporary state uses a backdrop and
+closes on Escape; the per-user pin preference removes the backdrop. The sheet
+is rendered through `AppShell`'s `footerDockSlot`, directly above `FooterBar`
+inside the sticky footer dock, so it is ordinary in-flow content: opening
+animates its height from 0 to its measured natural height, the sheet emerges
+from behind the footer (which paints over its bottom edge), the page grows by
+the sheet's height while pinned, and overscroll moves footer and sheet
+together. One sheet
+stays mounted across both modes, so pinning never reloads tiles and unpinning
+never collapses the drawer — the pin is not a close control. Compact cards are
+160–180 px wide and scroll horizontally below about
 1424 px. The drawer is hidden on image-viewer and collection pages, while the
 feed is loading, and when no owned collection is visible. It is not a Browse
 tile: it has no drag, reorder, or drop targets.

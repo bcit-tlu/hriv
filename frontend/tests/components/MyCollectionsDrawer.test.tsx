@@ -22,13 +22,33 @@ function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
     onOpen: vi.fn(),
     onSeeAll: vi.fn(),
     onNewCollection: vi.fn(),
-    bottomOffset: 0,
     ...overrides,
   }
   return { ...render(<MyCollectionsDrawer {...props} />), props }
 }
 
 describe('MyCollectionsDrawer', () => {
+  it('renders the trigger as a filled, clickable button while unpinned', () => {
+    const { props } = renderDrawer({ open: true })
+
+    const trigger = screen.getByRole('button', { name: 'My collections' })
+    expect(trigger).toHaveClass('MuiButton-contained')
+    expect(trigger).not.toHaveAttribute('aria-disabled')
+    fireEvent.click(trigger)
+    expect(props.onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('renders the trigger as an outlined, non-clickable title while pinned', () => {
+    const { props } = renderDrawer({ open: true, pinned: true })
+
+    const trigger = screen.getByRole('button', { name: 'My collections' })
+    expect(trigger).toHaveClass('MuiButton-outlined')
+    expect(trigger).toHaveAttribute('aria-disabled', 'true')
+    expect(trigger).toHaveStyle({ pointerEvents: 'none' })
+    fireEvent.click(trigger)
+    expect(props.onOpenChange).not.toHaveBeenCalled()
+  })
+
   it('does not render the button when there are no collections', () => {
     renderDrawer({ collections: [] })
 

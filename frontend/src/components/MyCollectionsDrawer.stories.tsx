@@ -87,12 +87,32 @@ const meta = {
     onOpen: fn(),
     onSeeAll: fn(),
     onNewCollection: fn(),
-    bottomOffset: 0,
   },
   decorators: [
     (Story) => (
-      <Box sx={{ minHeight: 480, p: 2 }}>
-        <Story />
+      // Mirror the AppShell footer dock: the sheet sits in flow directly
+      // above a footer-like bar, which paints over the sheet's bottom edge.
+      <Box sx={{ minHeight: 480, display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ flexGrow: 1, p: 2 }}>Browse content</Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          <Story />
+          <Box
+            component="footer"
+            sx={{
+              position: 'relative',
+              zIndex: 2,
+              px: 2,
+              py: 1,
+              borderTop: 1,
+              borderColor: 'divider',
+              bgcolor: 'background.default',
+              typography: 'caption',
+              color: 'text.secondary',
+            }}
+          >
+            High Resolution Image Viewer
+          </Box>
+        </Box>
       </Box>
     ),
   ],
