@@ -188,7 +188,7 @@ export const StudentAtCaps: Story = {
           id: i + 1,
           name: i === 0 ? 'Full sequence' : `Sequence ${i + 1}`,
           type: 'sequence',
-          imageCount: i === 0 ? 10 : 2,
+          imageCount: i === 0 ? 20 : 2,
         }),
       ),
       ...Array.from({ length: 10 }, (_, i) =>
@@ -207,7 +207,7 @@ export const StudentAtCaps: Story = {
     await expect(fullSequence).toHaveAttribute('aria-disabled', 'true')
     await userEvent.hover(fullSequence.parentElement as HTMLElement)
     await expect(
-      await body.findByText('Students can add at most 10 images to a sequence collection.'),
+      await body.findByText('Students can add at most 20 images to a sequence collection.'),
     ).toBeInTheDocument()
     const create = await body.findByRole('button', { name: 'New collection…' })
     await expect(create).toBeDisabled()

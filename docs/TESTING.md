@@ -636,18 +636,18 @@ instructor account for the uncapped-role checks.
    `You've reached the limit of 10 collections of each type.` Attempt an 11th
    create of each type through the API. **Assert:** both return **422** with
    `Students may own at most 10 {type} collections`.
-2. As the student, create a sequence with 11 visible image IDs.
+2. As the student, create a sequence with 21 visible image IDs.
    **Assert:** the create returns **422** with
-   `Students may add at most 10 images to a sequence collection`. Repeat with
-   10 IDs and **Assert:** it succeeds. Synchronized collections still reject
+   `Students may add at most 20 images to a sequence collection`. Repeat with
+   20 IDs and **Assert:** it succeeds. Synchronized collections still reject
    a fifth image for every role.
-3. As a student owner of a 10-image sequence, use **Manage Images** to add an
-   eleventh image. **Assert:** the write is rejected with the same sequence
+3. As a student owner of a 20-image sequence, use **Manage Images** to add a
+   21st image. **Assert:** the write is rejected with the same sequence
    cap detail. Reorder the existing images or remove one and **Assert:** those
-   edits succeed. On an instructor-seeded 12-image sequence co-owned by the
+   edits succeed. On an instructor-seeded 22-image sequence co-owned by the
    student, remove or reorder without adding and **Assert:** it remains
-   editable; try adding a new image while still over 10 and **Assert:** it is
+   editable; try adding a new image while still over 20 and **Assert:** it is
    rejected.
-4. As the instructor, create and update a sequence with more than 10 images.
+4. As the instructor, create and update a sequence with more than 20 images.
    **Assert:** both operations succeed. Verify student limits do not apply
    when a non-student edits a student-owned collection.

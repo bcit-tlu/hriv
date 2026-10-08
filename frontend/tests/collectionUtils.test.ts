@@ -44,7 +44,7 @@ const API_IMAGE: ApiImage = {
 describe('collection capacity helpers', () => {
   it('returns role-aware image caps while keeping synchronized capped for everyone', () => {
     expect(collectionImageCap('synchronized', null)).toBe(4)
-    expect(collectionImageCap('sequence', 'student')).toBe(10)
+    expect(collectionImageCap('sequence', 'student')).toBe(20)
     expect(collectionImageCap('sequence', 'instructor')).toBeNull()
   })
 
@@ -56,7 +56,7 @@ describe('collection capacity helpers', () => {
       'Adding this image to "Lab set" would exceed the 4-image limit for synchronized collections.',
     )
     expect(collectionFullMessage('Lab set', 'sequence', 'selection')).toBe(
-      'Adding this selection to "Lab set" would exceed the 10-image limit students have for sequence collections.',
+      'Adding this selection to "Lab set" would exceed the 20-image limit students have for sequence collections.',
     )
   })
 

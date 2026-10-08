@@ -189,7 +189,7 @@ describe('AddToCollectionDialog', () => {
     expect(screen.getByText('Choose a collection for this 2 images.')).toBeInTheDocument()
   })
 
-  it('disables a student sequence row at ten images and explains the cap', async () => {
+  it('disables a student sequence row at twenty images and explains the cap', async () => {
     const user = userEvent.setup()
     renderDialog(
       {
@@ -198,7 +198,7 @@ describe('AddToCollectionDialog', () => {
             id: 9,
             name: 'Full sequence',
             type: 'sequence',
-            imageCount: 10,
+            imageCount: 20,
           }),
         ],
       },
@@ -208,11 +208,11 @@ describe('AddToCollectionDialog', () => {
     expect(row).toHaveAttribute('aria-disabled', 'true')
     await user.hover(row.parentElement as HTMLElement)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      'Students can add at most 10 images to a sequence collection.',
+      'Students can add at most 20 images to a sequence collection.',
     )
   })
 
-  it('leaves a sequence row at ten images enabled for a non-student', () => {
+  it('leaves a sequence row at twenty images enabled for a non-student', () => {
     renderDialog(
       {
         collections: [
@@ -220,7 +220,7 @@ describe('AddToCollectionDialog', () => {
             id: 9,
             name: 'Long sequence',
             type: 'sequence',
-            imageCount: 10,
+            imageCount: 20,
           }),
         ],
       },

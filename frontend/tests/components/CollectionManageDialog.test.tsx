@@ -291,20 +291,20 @@ describe('CollectionManageDialog', () => {
     })
   })
 
-  it('blocks student sequence staging when ten images are already present', () => {
+  it('blocks student sequence staging when twenty images are already present', () => {
     const sequence = manageCollection({
-      images: Array.from({ length: 10 }, (_, i) =>
+      images: Array.from({ length: 20 }, (_, i) =>
         makeImage({ id: i + 1, name: `Image ${i + 1}` }),
       ),
-      memberCount: 10,
+      memberCount: 20,
     })
     const { props } = renderDialog({ collection: sequence }, 'student')
     fireEvent.click(screen.getByRole('button', { name: 'Choose images' }))
     const stageAdd = props.onAddImages!.mock.calls[0][0] as StageAddImages
     act(() => {
-      expect(stageAdd([makeImage({ id: 11, name: 'New image' })]).status).toBe('full')
+      expect(stageAdd([makeImage({ id: 21, name: 'New image' })]).status).toBe('full')
     })
-    expect(screen.queryByTestId('manage-tile-11')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('manage-tile-21')).not.toBeInTheDocument()
   })
 
   it('Done merges membership changes that landed while the dialog was open (#1567)', async () => {

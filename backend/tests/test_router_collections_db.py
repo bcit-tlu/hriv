@@ -325,7 +325,7 @@ async def test_instructor_collection_count_is_not_capped(session_factory) -> Non
         assert created.type == "sequence"
 
 
-async def test_student_sequence_create_rejects_eleven_images(session_factory) -> None:
+async def test_student_sequence_create_rejects_twenty_one_images(session_factory) -> None:
     async with session_factory() as session:
         student_id = await _new_user(session, "student", "create-images")
         student = await _get_user(session, student_id)
@@ -334,14 +334,14 @@ async def test_student_sequence_create_rejects_eleven_images(session_factory) ->
                 CollectionCreate(
                     name=f"{TEST_PREFIX}long-sequence",
                     type="sequence",
-                    image_ids=list(range(1, 12)),
+                    image_ids=list(range(1, 22)),
                 ),
                 student,
                 session,
             )
         assert exc.value.status_code == 422
         assert exc.value.detail == (
-            "Students may add at most 10 images to a sequence collection"
+            "Students may add at most 20 images to a sequence collection"
         )
 
 
@@ -350,7 +350,7 @@ async def test_student_sequence_add_and_over_cap_edits(session_factory) -> None:
         student_id = await _new_user(session, "student", "put-images")
         instructor_id = await _new_user(session, "instructor", "put-images")
         image_ids = [
-            await _new_image(session, f"cap-{index}") for index in range(1, 14)
+            await _new_image(session, f"cap-{index}") for index in range(1, 24)
         ]
         collection_id = await _new_collection(
             session,
@@ -362,18 +362,18 @@ async def test_student_sequence_add_and_over_cap_edits(session_factory) -> None:
         instructor = await _get_user(session, instructor_id)
         seeded = await replace_collection_images(
             collection_id,
-            CollectionImagesUpdate(image_ids=image_ids[:12], version=1),
+            CollectionImagesUpdate(image_ids=image_ids[:22], version=1),
             instructor,
             session,
         )
-        assert seeded.version == 2 and seeded.image_count == 12
+        assert seeded.version == 2 and seeded.image_count == 22
 
         student = await _get_user(session, student_id)
         with pytest.raises(HTTPException) as exc:
             await replace_collection_images(
                 collection_id,
                 CollectionImagesUpdate(
-                    image_ids=[*image_ids[2:12], image_ids[12]],
+                    image_ids=[*image_ids[2:22], image_ids[22]],
                     version=2,
                 ),
                 student,
@@ -381,18 +381,18 @@ async def test_student_sequence_add_and_over_cap_edits(session_factory) -> None:
             )
         assert exc.value.status_code == 422
         assert exc.value.detail == (
-            "Students may add at most 10 images to a sequence collection"
+            "Students may add at most 20 images to a sequence collection"
         )
 
         reordered = await replace_collection_images(
             collection_id,
-            CollectionImagesUpdate(image_ids=list(reversed(image_ids[:10])), version=2),
+            CollectionImagesUpdate(image_ids=list(reversed(image_ids[:20])), version=2),
             student,
             session,
         )
-        assert reordered.version == 3 and reordered.image_count == 10
+        assert reordered.version == 3 and reordered.image_count == 20
         assert [image.id for image in reordered.images] == list(
-            reversed(image_ids[:10])
+            reversed(image_ids[:20])
         )
 
 
@@ -402,7 +402,7 @@ async def test_student_sequence_retained_unseen_images_count_toward_cap(
     async with session_factory() as session:
         student_id = await _new_user(session, "student", "retained")
         visible_ids = [
-            await _new_image(session, f"visible-{index}") for index in range(9)
+            await _new_image(session, f"visible-{index}") for index in range(18)
         ]
         hidden_ids = [
             await _new_image(session, f"hidden-{index}") for index in range(2)
@@ -434,7 +434,7 @@ async def test_student_sequence_retained_unseen_images_count_toward_cap(
             )
         assert exc.value.status_code == 422
         assert exc.value.detail == (
-            "Students may add at most 10 images to a sequence collection"
+            "Students may add at most 20 images to a sequence collection"
         )
 
 

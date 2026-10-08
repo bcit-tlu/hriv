@@ -629,12 +629,14 @@ async def test_create_student_collection_count_cap_per_type(collection_type: str
 
 
 async def test_create_student_sequence_cap_is_422() -> None:
-    body = CollectionCreate(name="Long sequence", type="sequence", image_ids=list(range(1, 12)))
+    body = CollectionCreate(
+        name="Long sequence", type="sequence", image_ids=list(range(1, 22))
+    )
     db = _write_db(collection_count=0)
     with pytest.raises(HTTPException) as exc:
         await create_collection(body, _user("student", id=42), db=db)
     assert exc.value.status_code == 422
-    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
     assert db.add.call_count == 0
 
 
@@ -1177,57 +1179,57 @@ async def test_replace_images_synchronized_cap_is_422() -> None:
 
 async def test_replace_images_sequence_has_no_cap() -> None:
     col = _collection(1, "private", user_id=2, type="sequence")
-    images = [_image(i) for i in range(1, 12)]
+    images = [_image(i) for i in range(1, 22)]
     await replace_collection_images(
         1,
-        _images_body(list(range(1, 12))),
+        _images_body(list(range(1, 22))),
         _user("instructor", id=2),
         db=_write_db(get=col, images=images),
     )
-    assert [o for _, o in _links(col)] == list(range(11))
+    assert [o for _, o in _links(col)] == list(range(21))
 
 
 async def test_replace_images_student_sequence_cap_rejects_new_images() -> None:
-    member_images = [_image(i) for i in range(1, 11)]
+    member_images = [_image(i) for i in range(1, 22)]
     col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
-    db = _write_db(get=col, images=[*member_images, _image(11)])
+    db = _write_db(get=col, images=[*member_images, _image(22)])
     with pytest.raises(HTTPException) as exc:
         await replace_collection_images(
-            1, _images_body([*range(1, 11), 11]), _user("student", id=2), db=db
+            1, _images_body([*range(1, 22), 22]), _user("student", id=2), db=db
         )
     assert exc.value.status_code == 422
-    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
     assert col.version == 3
     assert not any(isinstance(call.args[0], Update) for call in db.execute.await_args_list)
 
 
 async def test_replace_images_over_cap_sequence_allows_removal_and_reorder() -> None:
-    member_images = [_image(i) for i in range(1, 13)]
+    member_images = [_image(i) for i in range(1, 23)]
     col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
     db = _write_db(get=col, images=member_images)
     out = await replace_collection_images(
         1,
-        _images_body([12, 11, 10, 9, 8, 7, 6, 5, 4, 3]),
+        _images_body(list(range(22, 2, -1))),
         _user("student", id=2),
         db=db,
     )
-    assert [image_id for image_id, _ in _links(col)] == [12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
+    assert [image_id for image_id, _ in _links(col)] == list(range(22, 2, -1))
     assert out.version == 4
 
 
 async def test_replace_images_over_cap_sequence_rejects_remove_two_add_one() -> None:
-    member_images = [_image(i) for i in range(1, 13)]
+    member_images = [_image(i) for i in range(1, 23)]
     col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
-    db = _write_db(get=col, images=[*member_images, _image(13)])
+    db = _write_db(get=col, images=[*member_images, _image(23)])
     with pytest.raises(HTTPException) as exc:
         await replace_collection_images(
             1,
-            _images_body([*range(3, 13), 13]),
+            _images_body([*range(3, 23), 23]),
             _user("student", id=2),
             db=db,
         )
     assert exc.value.status_code == 422
-    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
     assert col.version == 3
 
 
@@ -1239,19 +1241,19 @@ async def test_replace_images_student_sequence_retained_unseen_count_toward_cap(
         AsyncMock(return_value={20}),
     )
     hidden = [_image(20, category_id=20), _image(21, category_id=20)]
-    visible = [_image(i) for i in range(1, 10)]
+    visible = [_image(i) for i in range(1, 19)]
     new_image = _image(30)
     col = _collection(1, "private", user_id=2, type="sequence", images=[*hidden, *visible])
     db = _write_db(get=col, images=[*visible, new_image])
     with pytest.raises(HTTPException) as exc:
         await replace_collection_images(
             1,
-            _images_body([*range(1, 10), 30]),
+            _images_body([*range(1, 19), 30]),
             _user("student", id=2),
             db=db,
         )
     assert exc.value.status_code == 422
-    assert exc.value.detail == "Students may add at most 10 images to a sequence collection"
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
     assert col.version == 3
 
 

@@ -17,7 +17,7 @@ been switched on there — ask your administrator.)
 - **Synchronized** – up to four images shown together; pan and zoom move
   all of them together. The four-image limit applies to every role.
 - **Sequence** – images in a fixed order, stepped through one at a time.
-  Students can add up to 10 images; other roles have no sequence limit.
+  Students can add up to 20 images; other roles have no sequence limit.
 
 You choose the type when you create a collection and can't change it later —
 create a new collection instead.
@@ -106,7 +106,7 @@ Students can own up to 10 collections of each type. Co-owned collections
 count toward the limit. On a Collections type page, **New collection** stays
 available until both type limits are reached. In the create form, a capped type
 is disabled and the other type is selected when the page's default type is
-capped. The 10-collection count and 10-image sequence limits do not apply to
+capped. The 10-collection count and 20-image sequence limits do not apply to
 admins, instructors, or staff, and existing collections are not removed when a
 limit is reached.
 
@@ -120,7 +120,7 @@ Type in the filter box to narrow a long list.
   nothing changes and a note tells you so.
 - A synchronized collection that already holds four images is greyed out;
   hover it to see why.
-- For students, a sequence collection holding 10 images is also greyed out.
+- For students, a sequence collection holding 20 images is also greyed out.
   Existing over-cap sequences can still be reordered or have images removed,
   but students cannot add images while the collection remains over its limit.
 - Use **New collection…** in the dialog to create a collection that starts

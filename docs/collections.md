@@ -365,7 +365,7 @@ sole-owner lifecycle as students. Program ownership is only reachable via
 - No duplicates (**422**, rejected by the schema and again by the router).
 - `synchronized` collections hold at most `SYNCHRONIZED_COLLECTION_MAX_IMAGES`
   (4) images (**422**) for every role. Students may create sequence
-  collections with at most `STUDENT_SEQUENCE_MAX_IMAGES` (10) images and may
+  collections with at most `STUDENT_SEQUENCE_MAX_IMAGES` (20) images and may
   not add a new image to a sequence once the resulting list would exceed that
   limit (**422**).
 - On a student `PUT …/images`, the submitted ids plus retained unseen members
@@ -374,7 +374,7 @@ sole-owner lifecycle as students. Program ownership is only reachable via
   reorder an already-over-cap collection. Existing over-cap data is not
   modified retroactively.
 - Student sequence-cap errors return **422** with detail
-  `Students may add at most 10 images to a sequence collection`.
+  `Students may add at most 20 images to a sequence collection`.
 - Students may only reference images they can open: `active` **and** category
   passing the program AND group dual gate (`get_student_excluded_category_ids`
   with both `{p.id for p in user.programs}` and `{g.id for g in user.groups}`).

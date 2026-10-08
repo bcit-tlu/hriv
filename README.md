@@ -75,7 +75,7 @@ instructor in the owning program) is described in
 ‖ Collections support multiple user co-owners plus, or instead of, a program
 owner. Every role may create collections (the creator becomes the first user
 owner). Students may own at most 10 collections of each type and may add at
-most 10 images to a sequence collection; synchronized collections keep the
+most 20 images to a sequence collection; synchronized collections keep the
 four-image cap for every role. Admins and instructors may edit/delete
 collections they co-own or whose owning program they belong to; students and
 staff share one rule —

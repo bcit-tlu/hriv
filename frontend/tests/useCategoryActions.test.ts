@@ -1365,7 +1365,7 @@ describe('useCategoryActions', () => {
 
       expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42], 'student')
       expect(deps.setErrorSnack).toHaveBeenCalledWith(
-        expect.stringContaining('10-image limit students have for sequence collections'),
+        expect.stringContaining('20-image limit students have for sequence collections'),
       )
     })
 

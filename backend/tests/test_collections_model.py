@@ -34,7 +34,7 @@ def test_collection_constants() -> None:
     assert COLLECTION_TYPES == ("synchronized", "sequence")
     assert COLLECTION_VISIBILITIES == ("private", "public", "restricted")
     assert SYNCHRONIZED_COLLECTION_MAX_IMAGES == 4
-    assert STUDENT_SEQUENCE_MAX_IMAGES == 10
+    assert STUDENT_SEQUENCE_MAX_IMAGES == 20
     assert STUDENT_MAX_COLLECTIONS_PER_TYPE == 10
 
 

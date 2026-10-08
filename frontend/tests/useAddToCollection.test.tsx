@@ -62,8 +62,8 @@ describe('fitsCollectionCapacity', () => {
 
   it('caps sequence collections only for students', () => {
     expect(fitsCollectionCapacity({ type: 'sequence' }, 400, [1, 2, 3])).toBe(true)
-    expect(fitsCollectionCapacity({ type: 'sequence' }, 9, [1], 'student')).toBe(true)
-    expect(fitsCollectionCapacity({ type: 'sequence' }, 10, [1], 'student')).toBe(false)
+    expect(fitsCollectionCapacity({ type: 'sequence' }, 19, [1], 'student')).toBe(true)
+    expect(fitsCollectionCapacity({ type: 'sequence' }, 20, [1], 'student')).toBe(false)
     expect(fitsCollectionCapacity({ type: 'sequence' }, 400, [1, 2, 3], 'instructor')).toBe(true)
   })
 })
@@ -121,15 +121,15 @@ describe('addImagesToCollection', () => {
     expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
   })
 
-  it('refuses a student sequence addition above ten images without calling the API', async () => {
+  it('refuses a student sequence addition above twenty images without calling the API', async () => {
     apiMocks.fetchCollection.mockResolvedValue(
       makeApiCollection({
         id: 5,
         type: 'sequence',
-        images: Array.from({ length: 10 }, (_, i) => apiImage(i + 1)),
+        images: Array.from({ length: 20 }, (_, i) => apiImage(i + 1)),
       }),
     )
-    const result = await addImagesToCollection(5, [11], 'student')
+    const result = await addImagesToCollection(5, [21], 'student')
     expect(result.status).toBe('full')
     expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
   })
@@ -139,12 +139,12 @@ describe('addImagesToCollection', () => {
       makeApiCollection({
         id: 5,
         type: 'sequence',
-        member_count: 10,
-        images: Array.from({ length: 9 }, (_, i) => apiImage(i + 1)),
+        member_count: 20,
+        images: Array.from({ length: 19 }, (_, i) => apiImage(i + 1)),
       }),
     )
 
-    const result = await addImagesToCollection(5, [10], 'student')
+    const result = await addImagesToCollection(5, [20], 'student')
 
     expect(result.status).toBe('full')
     expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
@@ -155,35 +155,35 @@ describe('addImagesToCollection', () => {
       makeApiCollection({
         id: 5,
         type: 'sequence',
-        member_count: 9,
-        images: Array.from({ length: 9 }, (_, i) => apiImage(i + 1)),
+        member_count: 19,
+        images: Array.from({ length: 19 }, (_, i) => apiImage(i + 1)),
       }),
     )
     apiMocks.replaceCollectionImages.mockResolvedValue(
       makeApiCollection({
         id: 5,
         type: 'sequence',
-        member_count: 10,
-        images: Array.from({ length: 10 }, (_, i) => apiImage(i + 1)),
+        member_count: 20,
+        images: Array.from({ length: 20 }, (_, i) => apiImage(i + 1)),
       }),
     )
 
-    const result = await addImagesToCollection(5, [10], 'student')
+    const result = await addImagesToCollection(5, [20], 'student')
 
     expect(result.status).toBe('added')
     expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
-      image_ids: Array.from({ length: 10 }, (_, i) => i + 1),
+      image_ids: Array.from({ length: 20 }, (_, i) => i + 1),
       version: 1,
     })
   })
 
-  it('allows a non-student to add more than ten sequence images', async () => {
+  it('allows a non-student to add more than twenty sequence images', async () => {
     apiMocks.fetchCollection.mockResolvedValue(
       makeApiCollection({
         id: 5,
         type: 'sequence',
         version: 3,
-        images: Array.from({ length: 10 }, (_, i) => apiImage(i + 1)),
+        images: Array.from({ length: 20 }, (_, i) => apiImage(i + 1)),
       }),
     )
     apiMocks.replaceCollectionImages.mockResolvedValue(
@@ -191,13 +191,13 @@ describe('addImagesToCollection', () => {
         id: 5,
         type: 'sequence',
         version: 4,
-        images: Array.from({ length: 11 }, (_, i) => apiImage(i + 1)),
+        images: Array.from({ length: 21 }, (_, i) => apiImage(i + 1)),
       }),
     )
-    const result = await addImagesToCollection(5, [11], 'instructor')
+    const result = await addImagesToCollection(5, [21], 'instructor')
     expect(result.status).toBe('added')
     expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
-      image_ids: Array.from({ length: 11 }, (_, i) => i + 1),
+      image_ids: Array.from({ length: 21 }, (_, i) => i + 1),
       version: 3,
     })
   })
