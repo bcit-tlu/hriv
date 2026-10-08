@@ -456,23 +456,36 @@ Italian_, public, instructor-owned). See
     images alone, and `GET /api/categories/tree` nodes carry empty
     `collections` lists.
 
-## Test Case 13: My Collections Browse Home Shelf (UI)
+## Test Case 13: My Collections Browse Drawer (UI)
 
-**Purpose:** Verify the flag-controlled personal shelf is separate from Browse
-tiles, shows only visible owned collections, and navigates to the owned list.
+**Purpose:** Verify the flag-controlled personal drawer is available throughout
+Browse, supports temporary and persistent modes, and stays off other pages.
 
 1. Enable `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF`, then sign in as
    a student, instructor, or admin with at least one visible owned collection.
-2. Open Browse home. Confirm **My collections** appears above the tile grid
-   with at most eight collections, ordered by most recently updated. Confirm
-   the shelf has no move, reorder, or drop targets.
-3. Select a collection and confirm it opens. Select **See all** and confirm
-   the Sequence page is filtered to **My collections**; switch to
-   Synchronized and confirm the filter remains.
-4. Sign in as a user with no visible owned collections and confirm the shelf
-   is absent. Disable `COLLECTIONS_HOME_SHELF` and confirm it is absent for a
-   user with owned collections. Disable `COLLECTIONS_ENABLED` and confirm the
-   shelf remains unavailable.
+2. Open Browse home and a nested category. Confirm a bottom-left
+   **My collections** button appears in both places. Open it and confirm the
+   bottom drawer shows at most eight collections ordered by most recently
+   updated, plus **New collection**, **See all**, and a pin button. Confirm it
+   has no move, reorder, or drop targets.
+3. Leave the drawer unpinned. Confirm it has a backdrop that prevents Browse
+   interaction, and that backdrop click, Escape, and the collapse button each
+   close it.
+4. Open and pin the drawer, then reload Browse. Confirm it returns pinned and
+   open, has no backdrop, leaves the visible Browse area clickable, and does
+   not cover the final tile row. Collapse it and confirm the pin preference is
+   retained.
+5. Select a collection and confirm it opens. Reopen the drawer, select
+   **See all**, and confirm the Sequence page is filtered to
+   **My collections**; switch to Synchronized and confirm the filter remains.
+   Reopen Browse, choose **New collection**, create one, and confirm the new
+   collection page opens directly.
+6. Open an image viewer and a collection page. Confirm neither the button nor
+   the drawer appears on either page.
+7. Sign in as a user with no visible owned collections and confirm the button
+   and drawer are absent. Disable `COLLECTIONS_HOME_SHELF` and confirm they are
+   absent for a user with owned collections. Disable `COLLECTIONS_ENABLED` and
+   confirm the drawer remains unavailable.
 
 ---
 

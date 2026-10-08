@@ -1,4 +1,5 @@
 import { Box, Link, Typography } from '@mui/material'
+import type { Ref } from 'react'
 import { useColorMode } from '../useColorMode'
 
 const RELEASES_HREF = 'https://github.com/bcit-tlu/hriv/releases'
@@ -66,6 +67,8 @@ export interface FooterBarProps {
   backendVersion?: string
   backupVersion?: string
   onReportIssue?: () => void
+  sticky?: boolean
+  rootRef?: Ref<HTMLDivElement>
 }
 
 export default function FooterBar({
@@ -74,11 +77,14 @@ export default function FooterBar({
   backendVersion,
   backupVersion,
   onReportIssue,
+  sticky = false,
+  rootRef,
 }: FooterBarProps) {
   const { mode } = useColorMode()
 
   return (
     <Box
+      ref={rootRef}
       component="footer"
       sx={{
         py: 1,
@@ -90,6 +96,13 @@ export default function FooterBar({
         borderTop: 1,
         borderColor: 'divider',
         flex: '0 0 auto',
+        ...(sticky
+          ? {
+              position: 'sticky',
+              bottom: 0,
+              zIndex: (theme) => theme.zIndex.appBar,
+            }
+          : {}),
       }}
     >
       <Typography variant="caption" color="text.secondary">
