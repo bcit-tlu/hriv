@@ -45,6 +45,7 @@ const collection: CollectionSummary = {
   owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
   imageCount: 9,
   coverThumb: null,
+  coverImageId: null,
   categoryId: null,
   sortOrder: 0,
   programIds: [],
@@ -122,7 +123,7 @@ export const PrivateFilingWarning: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await expect(
       await body.findByText(
-        'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+        'This collection is private. Students will not be able to see the images in this collection.',
       ),
     ).toBeInTheDocument()
   },

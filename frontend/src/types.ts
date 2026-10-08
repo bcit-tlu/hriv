@@ -122,6 +122,8 @@ export interface CollectionSummary {
   owners: CollectionOwner[]
   imageCount: number
   coverThumb: string | null
+  /** Pinned cover member id; `null` = first-member fallback. */
+  coverImageId: number | null
   version: number
   /** Category the collection is filed into (null = unfiled, not on Browse). */
   categoryId: number | null

@@ -30,6 +30,8 @@ export interface MyCollectionsDrawerProps {
   onOpenChange: (open: boolean) => void
   onPinnedChange: (pinned: boolean) => void
   onOpen: (collection: CollectionSummary) => void
+  onEdit?: (collection: CollectionSummary) => void
+  onPickCoverImage?: (collection: CollectionSummary) => void
   onSeeAll: () => void
   onNewCollection: () => void
   newCollectionDisabled?: boolean
@@ -46,6 +48,8 @@ export default function MyCollectionsDrawer({
   onOpenChange,
   onPinnedChange,
   onOpen,
+  onEdit,
+  onPickCoverImage,
   onSeeAll,
   onNewCollection,
   newCollectionDisabled = false,
@@ -196,6 +200,8 @@ export default function MyCollectionsDrawer({
                   <CollectionCard
                     collection={collection}
                     onOpen={onOpen}
+                    onEdit={onEdit}
+                    onPickCoverImage={onPickCoverImage}
                     titleHeadingLevel="h3"
                     programs={programs}
                     inheritedProgramIds={narrowProgramIds(categoryPath)}

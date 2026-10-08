@@ -200,10 +200,16 @@ returned by the API (UX only — the backend re-checks).
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
 - **Given** a `CollectionCard`, **Then** the type icon sits left of the
-  title (the category folder-icon spot), **Move** and
-  **Owners** actions sit in a top-right cover overlay (the CategoryTile
-  scrim convention, #1554), **Edit** sits in the metadata area, and no
+  title (the category folder-icon spot), **Move** and **Set cover image**
+  actions sit in a top-right cover overlay (the CategoryTile
+  scrim convention, #1554 — Set-cover mirrors that tile's image-icon
+  button), **Edit** is a pencil right of the title, and no
   Delete affordance or owner reference exists on the card (#1567).
+- **Given** a card whose `permissions.can_edit` is true, **When** the user
+  clicks **Set cover image**, **Then** `CollectionCoverPickerModal` radios
+  over the collection's visible members (loaded via `GET
+/api/collections/{id}` — summaries carry none) and **Save** PATCHes
+  `cover_image_id`; **Clear** restores the first-member fallback.
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
@@ -399,8 +405,8 @@ returned by the API (UX only — the backend re-checks).
   top of Browse.
 - **Given** a private collection is filed into a non-null category, **Then**
   the filing dialog shows a warning (not a block):
-  “This collection is private. Filed on Browse, its tile is visible only to
-  its owners and to staff, instructors and admins — not to other students.”
+  “This collection is private. Students will not be able to see the images in
+  this collection.”
   The warning also appears in Edit Collection when the current edit state is
   private and filed, and in Bulk Edit when a changed non-null destination
   includes private selections. Public collections and an unfiled destination
@@ -412,8 +418,7 @@ returned by the API (UX only — the backend re-checks).
   appear on Browse.”
 - **Given** a private selection is filed in Bulk Edit, **Then** the warning
   reads “${privateCount} of the ${total} selected collections are private.
-  Filed on Browse, their tiles are visible only to their owners and to
-  staff, instructors and admins — not to other students.”
+  Students will not be able to see the images in these collections.”
 - **Given** a collection is unfiled, **Then** **Add to Collection** remains
   available for adding images; students no longer have the former root-tile
   drag-add path onto their own collections.
@@ -620,7 +625,9 @@ re-checks).
   and category rows `Select {category name}`; checking a category selects
   every image in its subtree (sub-categories included, hidden subtrees
   excluded) in registration order, and the box shows indeterminate when the
-  subtree is only partially covered. Row clicks toggle the check instead of
+  subtree is only partially covered. A category whose subtree holds no
+  addable images is not listed in picker mode — a disabled checkbox cannot
+  explain why — while normal search still surfaces it. Row clicks toggle the check instead of
   navigating; every other kind stays navigable and is never selectable.
   Selections persist across query and filter changes — the footer count
   includes picks hidden by the current query and enumerates unique image
@@ -750,6 +757,11 @@ committed on Save) in the edit modals.
   renders, **Then** the visibility button shows "Hidden by Parent" and is
   disabled; "Add Category" and "Add Images" buttons are desaturated
   (`grayscale(100%)`).
+- **Given** an editor (`canEditContent`) on a Browse category page with the
+  collections feature enabled, **Then** an "Add Collection" button sits
+  between "Add Category" and "Add Images"; clicking it opens
+  `CollectionEditDialog` in create mode with the current Browse category
+  pre-filed (`defaultCategoryId`).
 - **EditCategoryDialog** visibility button uses local state; the actual
   `status` change is committed only when Save is pressed.
 

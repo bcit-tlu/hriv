@@ -78,6 +78,12 @@ export interface CollectionEditDialogProps {
    * is looking at. Ignored when editing.
    */
   defaultType?: CollectionType
+  /**
+   * Initial category for a new collection — e.g. the Browse scope the
+   * "+ Add Collection" button was clicked from. Ignored when editing (the
+   * collection's own `categoryId` wins).
+   */
+  defaultCategoryId?: number | null
   /** Collection types at the student's create limit. */
   typesAtLimit?: ReadonlySet<CollectionType>
   programs?: Program[]
@@ -132,6 +138,7 @@ export default function CollectionEditDialog({
   onClose,
   collection = null,
   defaultType = 'sequence',
+  defaultCategoryId = null,
   typesAtLimit,
   programs = EMPTY_PROGRAMS,
   groups = EMPTY_GROUPS,
@@ -192,7 +199,7 @@ export default function CollectionEditDialog({
         : defaultType)
     setType(initialType)
     setVisibility(source?.visibility ?? 'private')
-    setCategoryId(source?.categoryId ?? null)
+    setCategoryId(source ? source.categoryId : defaultCategoryId)
     setHidden(source?.hidden ?? false)
     setSelectedProgramIds(new Set(source?.programIds ?? []))
     setSelectedGroupIds(new Set(source?.groupIds ?? []))

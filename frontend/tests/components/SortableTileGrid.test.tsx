@@ -1103,4 +1103,28 @@ describe('collection tiles (#1529)', () => {
     screen.getByText('Set').click()
     expect(onCollectionClick).toHaveBeenCalledWith(collection)
   })
+
+  it('invokes onEditCollection from the title pencil when the card permits', () => {
+    const onEditCollection = vi.fn()
+    const collection = makeCollectionSummary({ id: 3, name: 'Set' })
+    renderGrid({
+      currentCollections: [collection],
+      canEditContent: true,
+      onEditCollection,
+    })
+    screen.getByRole('button', { name: 'Edit Set' }).click()
+    expect(onEditCollection).toHaveBeenCalledWith(collection)
+  })
+
+  it('invokes onPickCollectionCover from the cover overlay when the card permits', () => {
+    const onPickCollectionCover = vi.fn()
+    const collection = makeCollectionSummary({ id: 3, name: 'Set' })
+    renderGrid({
+      currentCollections: [collection],
+      canEditContent: true,
+      onPickCollectionCover,
+    })
+    screen.getByRole('button', { name: 'Set Set cover image' }).click()
+    expect(onPickCollectionCover).toHaveBeenCalledWith(collection)
+  })
 })

@@ -314,6 +314,12 @@ export interface SortableTileGridProps {
   onDropFilesOnCategory?: (categoryId: number, files: File[]) => void
 
   onCollectionClick?: (collection: CollectionSummary) => void
+  /** Opens the Edit Collection dialog — the card's `canEdit` gate decides. */
+  onEditCollection?: (collection: CollectionSummary) => void
+  /** Opens the tile cover picker — the card's `canEdit` gate decides, like
+   *  the edit pencil. The parent loads the detail record for the member
+   *  list before rendering the modal. */
+  onPickCollectionCover?: (collection: CollectionSummary) => void
   /** Opens the Move Collection dialog — admin/instructor-only call sites. */
   onMoveCollection?: (collection: CollectionSummary) => void
   /** A `col-` tile dropped on a category's near-half move zone (#1529). */
@@ -369,6 +375,8 @@ export default function SortableTileGrid({
   onDropCategoryOnCategory,
   onDropFilesOnCategory,
   onCollectionClick,
+  onEditCollection,
+  onPickCollectionCover,
   onMoveCollection,
   onDropCollectionOnCategory,
   onDropImageOnCollection,
@@ -713,7 +721,9 @@ export default function SortableTileGrid({
   // C1 Browse tile params; the SortableTile wrapper provides the fixed 300px
   // width and drag affordance. Move is role-gated by canEditContent — filing
   // is curatorial, not ownership-bound (unlike the card's own permission-
-  // gated edit/delete/transfer buttons, which stay off in Browse).
+  // gated delete/transfer buttons, which stay off in Browse). The title edit
+  // pencil and cover-image picker are ownership/edit actions — the card
+  // gates them on `permissions.canEdit` itself, like the drop zone below.
   // Editable collections also carry the "Add to collection" drop zone
   // (#1530): rendered only for `permissions.canEdit` — adding members is an
   // ownership/edit action, unlike the role-gated curatorial move.
@@ -723,7 +733,9 @@ export default function SortableTileGrid({
         <CollectionCard
           collection={collection}
           onOpen={onCollectionClick ?? (() => {})}
+          onEdit={onEditCollection}
           onMove={canEditContent ? onMoveCollection : undefined}
+          onPickCoverImage={onPickCollectionCover}
           programs={programs}
           inheritedProgramIds={inheritedProgramIds}
           groups={groups}
@@ -747,6 +759,8 @@ export default function SortableTileGrid({
     [
       canEditContent,
       onCollectionClick,
+      onEditCollection,
+      onPickCollectionCover,
       onMoveCollection,
       programs,
       groups,

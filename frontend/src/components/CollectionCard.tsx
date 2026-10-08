@@ -9,6 +9,7 @@ import Typography from '@mui/material/Typography'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
+import ImageIcon from '@mui/icons-material/Image'
 import LockIcon from '@mui/icons-material/Lock'
 import PublicIcon from '@mui/icons-material/Public'
 import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
@@ -41,6 +42,14 @@ export interface CollectionCardProps {
    * curatorial, not ownership-bound), so it renders whenever provided.
    */
   onMove?: (collection: CollectionSummary) => void
+  /**
+   * Open the tile cover picker — the member-pick modal mirrors
+   * CategoryTile's "Set card image" button. The summary carries no member
+   * list, so the parent loads the collection detail before rendering the
+   * modal. Rendered only when `collection.permissions.canEdit`, like the
+   * edit pencil.
+   */
+  onPickCoverImage?: (collection: CollectionSummary) => void
   /** Restriction chip lookup (#1567) — same contract as CategoryTile. */
   programs: Program[]
   /** Effective program restriction inherited from the filed category. */
@@ -175,6 +184,7 @@ export default function CollectionCard({
   onOpen,
   onEdit,
   onMove,
+  onPickCoverImage,
   programs,
   inheritedProgramIds = [],
   groups = [],
@@ -188,6 +198,7 @@ export default function CollectionCard({
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showMove = Boolean(onMove)
+  const showCoverPicker = Boolean(onPickCoverImage) && collection.permissions.canEdit
 
   // Restriction chips mirror the category tile (#1567): the collection's own
   // scope renders solid; the filed category's effective scope renders at the
@@ -335,12 +346,22 @@ export default function CollectionCard({
           <Typography variant="body2" color="text.secondary">
             {imageCountText}
           </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-            <CollectionVisibilityChip
-              visibility={collection.visibility}
-              hasScopeChips={programChips.length > 0 || groupChips.length > 0}
-            />
-          </Box>
+          {/* The visibility row mounts only when a pill renders — a
+              restricted collection with scope chips shows no pill
+              (#1567), and an empty row would add a phantom gap the
+              category tiles don't have. `mt: 0.5` matches CategoryTile's
+              chip-row spacing. */}
+          {!(
+            collection.visibility === 'restricted' &&
+            (programChips.length > 0 || groupChips.length > 0)
+          ) && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              <CollectionVisibilityChip
+                visibility={collection.visibility}
+                hasScopeChips={programChips.length > 0 || groupChips.length > 0}
+              />
+            </Box>
+          )}
           {/* Own/inherited scope render as separate rows, matching
               CategoryTile (#1567). */}
           {programChips.length > 0 && (
@@ -413,6 +434,26 @@ export default function CollectionCard({
           gap: 0.5,
         }}
       >
+        {showCoverPicker && (
+          <Tooltip title="Set cover image">
+            <IconButton
+              size="small"
+              sx={{
+                color: 'white',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+              }}
+              aria-label={`Set ${collection.name} cover image`}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                onPickCoverImage?.(collection)
+              }}
+            >
+              <ImageIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
         {showMove && (
           <Tooltip title="Move to category">
             <IconButton

@@ -81,7 +81,7 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
     await user.click(within(listbox).getByRole('option', { name: /^Histology/ }))
 
     expect(screen.getByRole('alert')).toHaveTextContent(
-      '2 of the 3 selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.',
+      '2 of the 3 selected collections are private. Students will not be able to see the images in these collections.',
     )
   })
 

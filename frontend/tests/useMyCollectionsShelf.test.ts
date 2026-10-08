@@ -22,15 +22,17 @@ describe('useMyCollectionsShelf', () => {
     fetchCollections.mockResolvedValue([row])
     const { result } = renderHook(() => useMyCollectionsShelf(true))
 
-    expect(result.current).toBeNull()
-    await waitFor(() => expect(result.current).toEqual([apiCollectionSummaryToSummary(row)]))
+    expect(result.current.collections).toBeNull()
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(row)]),
+    )
     expect(fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
   })
 
   it('does not fetch while disabled and returns null', () => {
     const { result } = renderHook(() => useMyCollectionsShelf(false))
 
-    expect(result.current).toBeNull()
+    expect(result.current.collections).toBeNull()
     expect(fetchCollections).not.toHaveBeenCalled()
   })
 
@@ -38,7 +40,9 @@ describe('useMyCollectionsShelf', () => {
     fetchCollections.mockRejectedValue(new Error('network'))
     const { result } = renderHook(() => useMyCollectionsShelf(true))
 
-    await waitFor(() => expect(result.current).toEqual([]))
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)]),
+    )
   })
 
   it('retains previous rows while refetching after being disabled and re-enabled', async () => {
@@ -55,14 +59,34 @@ describe('useMyCollectionsShelf', () => {
       ({ enabled }: { enabled: boolean }) => useMyCollectionsShelf(enabled),
       { initialProps: { enabled: true } },
     )
-    await waitFor(() => expect(result.current).toEqual([apiCollectionSummaryToSummary(first)]))
+    await waitFor(() => expect(result.current.collections).toEqual([]))
 
     act(() => rerender({ enabled: false }))
-    expect(result.current).toBeNull()
+    expect(result.current.collections).toBeNull()
     act(() => rerender({ enabled: true }))
-    expect(result.current).toEqual([apiCollectionSummaryToSummary(first)])
+    expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)])
     await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
     act(() => resolveRefetch?.([second]))
-    await waitFor(() => expect(result.current).toEqual([apiCollectionSummaryToSummary(second)]))
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(second)]),
+    )
+  })
+
+  it('reload() refetches without blanking the current rows', async () => {
+    const first = makeApiCollectionSummary({ id: 1 })
+    const second = makeApiCollectionSummary({ id: 2 })
+    fetchCollections.mockResolvedValueOnce([first]).mockResolvedValueOnce([second])
+    const { result } = renderHook(() => useMyCollectionsShelf(true))
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)]),
+    )
+
+    act(() => result.current.reload())
+    // In-place refresh keeps the stale rows until the fetch lands.
+    expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)])
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(second)]),
+    )
+    expect(fetchCollections).toHaveBeenCalledTimes(2)
   })
 })

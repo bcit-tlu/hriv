@@ -720,6 +720,10 @@ class CollectionSummaryOut(BaseModel):
     owners: list[CollectionOwnerOut] = []
     image_count: int = 0
     cover_thumb: str | None = None
+    # Pinned cover member (``collections.cover_image_id``) when it resolves
+    # to an image visible to the caller; ``None`` means the tile uses the
+    # first-member fallback.
+    cover_image_id: int | None = None
     # Restriction scope rides on summaries too so Browse tiles can render the
     # collection's own program/group chips like category tiles do (#1567).
     # Empty unless ``visibility == "restricted"``.
@@ -835,6 +839,10 @@ class CollectionUpdate(BaseModel):
     program_ids: list[int] | None = None
     group_ids: list[int] | None = None
     hidden: bool | None = None
+    # Pinned tile cover: must reference a member the caller can view
+    # (``null`` restores the first-member fallback). Content field — same
+    # authority as ``name``/``description``.
+    cover_image_id: int | None = None
     version: int
 
     _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)

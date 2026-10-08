@@ -144,6 +144,13 @@ def _permissions_for(user: User, collection: Collection) -> CollectionPermission
 def _summary_fields(
     ctx: _ViewerContext, collection: Collection, images: list[Image]
 ) -> dict:
+    # Pinned cover: honored only while it still resolves to a member the
+    # caller can view; otherwise the tile falls back to the first visible
+    # member and the summary reports ``cover_image_id=None``.
+    cover = next(
+        (img for img in images if img.id == collection.cover_image_id),
+        images[0] if images else None,
+    )
     return {
         "id": collection.id,
         "name": collection.name,
@@ -153,7 +160,12 @@ def _summary_fields(
         "hidden": collection.hidden,
         "owners": _owners_out(collection),
         "image_count": len(images),
-        "cover_thumb": images[0].thumb if images else None,
+        "cover_thumb": cover.thumb if cover is not None else None,
+        "cover_image_id": (
+            collection.cover_image_id
+            if cover is not None and cover.id == collection.cover_image_id
+            else None
+        ),
         "version": collection.version,
         "category_id": collection.category_id,
         "sort_order": collection.sort_order,

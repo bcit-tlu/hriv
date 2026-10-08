@@ -284,11 +284,11 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 | GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized=true` (unfiled queue, not on Browse). Ordered by `updated_at` desc.                                                                                                                                                                                                                                                                                                                                  |
 | GET    | `/api/collections/{id}`          | student                                                              | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                                                                                                                                                                                                                                                            |
 | POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), `category_id?`, ordered `image_ids`, `program_ids` / `group_ids` (restricted only). Admins and instructors must provide a valid category; staff and students create unfiled collections and cannot file on create. Filed creates bump the category tile-order scope and Browse revisions. **201** `CollectionOut`.                                                                                                                             |
-| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids`, `hidden` + required `version`. `type` is immutable (**422** if changed). A `hidden`-only body instead requires `can_hide_collection` (any admin/instructor — curatorial, not ownership-bound); mixing `hidden` with other fields keeps the normal gates. Returns fresh `CollectionOut`.                                                                                                                                                                                      |
+| PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids`, `hidden`, `cover_image_id` + required `version`. `type` is immutable (**422** if changed). `cover_image_id` pins the tile cover to a member the caller can view (**422** for a non-member or invisible member; `null` restores the first-member fallback). A `hidden`-only body instead requires `can_hide_collection` (any admin/instructor — curatorial, not ownership-bound); mixing `hidden` with other fields keeps the normal gates. Returns fresh `CollectionOut`.    |
 | DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                          | **204**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | PATCH  | `/api/collections/bulk`          | admin / instructor (any — curatorial, not ownership-bound)           | Bulk-update curatorial fields (#1578). Body `CollectionBulkUpdate`: `collection_ids` + optional `category_id` (refile; `null` = unfiled) and `hidden` (hide/show for students). Scope fields are not bulk-editable. **404** when any id is missing, **422** unknown category, **409** when a row moved or vanished between the read and the row lock (retry). Atomic; bumps only non-null source/destination scope revisions for moved rows and the browse revision; `version` advances only on rows that actually change. Returns `CollectionSummaryOut[]` in request order. |
 | DELETE | `/api/collections/bulk`          | student (must pass `can_delete_collection` on **every** id)          | Bulk-delete (#1578). Body `CollectionBulkDelete`: `collection_ids`. **404** when any id is missing or not viewable (same no-probe rule as the single DELETE), **403** when any row fails `can_delete_collection`, **409** when a row moved or vanished between the read and the row lock. Atomic — one failure deletes nothing; **204** on success.                                                                                                                                                                                                                           |
-| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                            | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                                       |
+| PUT    | `/api/collections/{id}/images`   | student (must pass `can_edit_collection`)                            | Replace the whole ordered image list (add / remove / reorder in one call). Body `CollectionImagesUpdate`: `image_ids`, `version`. `sort_order` is rewritten to `0..n-1`. A dropped pinned member clears `cover_image_id` back to the fallback; a retained member the caller cannot see keeps the pin. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                          |
 | PUT    | `/api/collections/{id}/viewport` | student (must pass `can_edit_collection`)                            | Replace `viewport_state` wholesale. Body `CollectionViewportUpdate`: `viewport_state` (JSON object), `version`. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | POST   | `/api/collections/{id}/move`     | admin / instructor (any — filing is curatorial, not ownership-bound) | File the collection into a category or unfile it from Browse. Body `CollectionMove`: `category_id` (required, `null` = unfile) + `version`. **404** missing collection, **422** unknown category, **409** stale version. Keeps `sort_order`; bumps only non-null source/destination scope revisions and the browse revision. Returns fresh `CollectionOut`.                                                                                                                                                                                                                   |
 | PUT    | `/api/collections/{id}/owners`   | instructor (must pass `can_transfer_collection`)                     | Replace the **user-owner set** wholesale (`CollectionOwnersUpdate`: `user_ids` + `version`). Targets must be active users (**422**); removing every user owner while no program owns the collection is **422** (orphan guard). **404** if not visible, **403** if not transferable, **409** stale version. Returns fresh `CollectionOut`.                                                                                                                                                                                                                                     |
@@ -300,7 +300,10 @@ as `true` on collections they own), `owners` (`[{user_id, program_id,
 name}]` — user entries carry `user_id`,
 the program entry carries `program_id`, the unused id is `null`; `[]` when
 orphaned), `image_count` (visible-to-caller), `cover_thumb`
-(first visible image thumb), `version`, `category_id`, `sort_order`,
+(pinned `cover_image_id` thumb when it resolves to a member visible to the
+caller, else the first visible image thumb), `cover_image_id` (the honored
+pin, or `null` when the stored pin is unset or invisible to the caller),
+`version`, `category_id`, `sort_order`,
 `created_at`, `updated_at`,
 `permissions {can_edit, can_delete, can_change_scope, can_transfer,
 can_hide}`.
@@ -592,7 +595,12 @@ already removes it from student view (`categoryHidden` mirrors
 `ImageTile`'s prop; the Browse grid and the collections list both pass it).
 **Edit** is a pencil inline at the title row's right — the
 CategoryTile/ImageTile convention (#1567) — and Delete is
-gone from the card entirely (edit dialog only). Everywhere the type renders
+gone from the card entirely (edit dialog only). A **Set cover image**
+image-icon button joins Move in the top-right overlay (the `CategoryTile`
+"Set card image" convention), gated on `permissions.canEdit` like the
+pencil; it opens `CollectionCoverPickerModal`, which radios over the
+collection's visible members and PATCHes `cover_image_id` (`null` via
+**Clear** restores the first-member fallback). Everywhere the type renders
 as a pill (detail header, edit dialog, manage table) it is the shared
 `CollectionTypeChip`: red (primary) outline and text on a white fill with
 the type's icon (#1567). Filters — type is the page,
@@ -636,7 +644,11 @@ attach logic: instructors can only select programs they belong to
 stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
 visibility. Create from a Collections page posts `image_ids: []`; create from
-the image view (#1415, below) posts the selected image id(s). Every role —
+the image view (#1415, below) posts the selected image id(s); create from
+the Browse toolbar's **Add Collection** button (between **Add Category**
+and **Add Images**, `canEditContent` + the collections flag — the same
+gate as its neighbours) seeds the current Browse category via
+`defaultCategoryId` and posts it as `category_id`. Every role —
 staff included — gets the **New collection** button and the unfiltered
 empty-state create link (#1531).
 Edit sends the collection `version` in the PATCH body; a **409** shows the
@@ -850,8 +862,8 @@ snackbar that re-posts the previous category with the version from the move
 response. Unfiling says “Removed … from Browse.”
 
 Filing a private collection into a category shows this warning: “This
-collection is private. Filed on Browse, its tile is visible only to its
-owners and to staff, instructors and admins — not to other students.” The
+collection is private. Students will not be able to see the images in this
+collection.” The
 bulk dialog warns when a changed non-null destination includes private
 collections. The **Add to Collection** dialog remains available; unfiled
 collections no longer have root Browse tiles for drag-add.
@@ -1146,7 +1158,11 @@ and category results check the same way: a checked category stages every
 image in its subtree (sub-categories included) in registration order — the
 category's own images by `sortOrder`, then each child's subtree in tree
 order, honoring the `excludeHidden` rule — and shows indeterminate when
-only part of the subtree is covered. Every other kind keeps its
+only part of the subtree is covered. A category result whose subtree
+holds no addable images is not listed in picker mode at all — a greyed-out
+checkbox cannot say why the category is unavailable, so the row is
+filtered from `displayResults` (and from **Select all**'s coverage);
+normal search keeps showing it. Every other kind keeps its
 `CardActionArea` navigation and is never selectable (this avoids
 nested-interactive controls, see #1345). A **Select all** /
 **Unselect all** control at the top-left of the results list bulk-toggles

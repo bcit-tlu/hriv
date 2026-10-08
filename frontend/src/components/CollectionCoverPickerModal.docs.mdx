@@ -1,0 +1,46 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionCoverPickerModalStories from './CollectionCoverPickerModal.stories'
+
+<Meta of={CollectionCoverPickerModalStories} />
+
+<Title />
+
+<Subtitle>
+  Pick the collection tile's cover image — the collection counterpart of the category card-image
+  picker.
+</Subtitle>
+
+## When to use
+
+The modal opens from the **Set cover image** overlay on a collection tile (the image icon,
+top-right, `canEdit`-gated like the title edit pencil). The tile summary carries no member
+list, so the caller loads the collection detail first and passes its `images` — visible
+members only, in member order.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionCoverPickerModalStories.Basic} />
+
+## Implementation guidance
+
+- **Save pins a member.** `onSave` emits the picked image id; the app PATCHes
+  `cover_image_id` on the collection (`null` restores the first-member fallback).
+- **Clear restores the fallback.** It appears only while a member is selected.
+- **Backend validation.** `PATCH /api/collections/{id}` 422s a `cover_image_id` that is
+  not a member visible to the caller; removing the pinned member clears the pin, and
+  deleting the image row clears it via `ON DELETE SET NULL`.
+- **Invisible pins read as no pin.** If the pinned member is not visible to the viewer,
+  summaries report `cover_image_id: null` and `cover_thumb` falls back to the first
+  visible member.
+
+<Stories of={CollectionCoverPickerModalStories} />

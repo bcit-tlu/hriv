@@ -106,4 +106,17 @@ describe('MyCollectionsDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'See all' }))
     expect(props.onSeeAll).toHaveBeenCalledOnce()
   })
+
+  it('forwards edit and cover-picker actions for editable collections', () => {
+    const collection = makeCollectionSummary({ id: 7, name: 'Editable collection' })
+    const onEdit = vi.fn()
+    const onPickCoverImage = vi.fn()
+    renderDrawer({ collections: [collection], open: true, onEdit, onPickCoverImage })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Editable collection' }))
+    expect(onEdit).toHaveBeenCalledWith(collection)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set Editable collection cover image' }))
+    expect(onPickCoverImage).toHaveBeenCalledWith(collection)
+  })
 })

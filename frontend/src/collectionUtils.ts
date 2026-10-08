@@ -77,9 +77,9 @@ export function studentTypesAtCap(
 
 export function privateFilingWarning(privateCount = 1, total = 1): string {
   if (total > 1) {
-    return `${privateCount} of the ${total} selected collections are private. Filed on Browse, their tiles are visible only to their owners and to staff, instructors and admins — not to other students.`
+    return `${privateCount} of the ${total} selected collections are private. Students will not be able to see the images in these collections.`
   }
-  return 'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.'
+  return 'This collection is private. Students will not be able to see the images in this collection.'
 }
 
 /** Students and staff may not use `restricted` visibility (API 403). */
@@ -108,6 +108,7 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
       .filter((o): o is CollectionOwner => o != null),
     imageCount: api.image_count,
     coverThumb: api.cover_thumb,
+    coverImageId: api.cover_image_id,
     version: api.version,
     categoryId: api.category_id,
     sortOrder: api.sort_order,
