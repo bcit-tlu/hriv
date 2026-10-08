@@ -29,9 +29,14 @@ const HEADER_PAD_Y_PX = 12
  *  the live measurement once mounted: MUI medium Button height, offset by
  *  the header padding. */
 const DEFAULT_TITLE_SLOT = { top: HEADER_PAD_Y_PX, height: 36.5 }
-// Header (padding + 36.5px button), card-row bottom padding and the footer:
-// everything in the dock other than the cards themselves.
-const SHEET_CHROME_PX = 140
+/** Fallback chrome allowances, replaced by live measurement once mounted:
+ *  the sheet header (padding + ~36.5px button row — can wrap to several
+ *  lines on narrow viewports), the card row's bottom padding, and the
+ *  dock's footer (whose admin version links can wrap too). */
+const HEADER_CHROME_PX = HEADER_PAD_Y_PX * 2 + DEFAULT_TITLE_SLOT.height
+const CARD_ROW_PAD_Y_PX = 16
+const FOOTER_CHROME_PX = 63.5
+const SHEET_CHROME_PX = HEADER_CHROME_PX + CARD_ROW_PAD_Y_PX + FOOTER_CHROME_PX
 
 export interface MyCollectionsDrawerProps {
   collections: CollectionSummary[]
@@ -77,9 +82,11 @@ export default function MyCollectionsDrawer({
 }: MyCollectionsDrawerProps) {
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
   const contentRef = useRef<HTMLDivElement | null>(null)
+  const headerRef = useRef<HTMLDivElement | null>(null)
   const titleSlotRef = useRef<HTMLButtonElement | null>(null)
   const [contentHeight, setContentHeight] = useState<number | null>(null)
   const [titleSlot, setTitleSlot] = useState(DEFAULT_TITLE_SLOT)
+  const [chromePx, setChromePx] = useState(SHEET_CHROME_PX)
   const drawerOpen = open && collections.length > 0
 
   // The sheet's natural height drives the open/close height animation (the
@@ -89,6 +96,13 @@ export default function MyCollectionsDrawer({
   useEffect(() => {
     const content = contentRef.current
     const slot = titleSlotRef.current
+    const header = headerRef.current
+    // The footer is outside the sheet — AppShell renders it inside the same
+    // sticky dock — so it is located through the container. Its height counts
+    // toward the cap: a wrapped multi-line footer must shrink the card row,
+    // not push the sheet's header above the viewport.
+    const footer =
+      content?.closest('[data-testid="footer-dock"]')?.querySelector(':scope > footer') ?? null
     if (!content || !slot || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       const contentRect = content.getBoundingClientRect()
@@ -102,9 +116,18 @@ export default function MyCollectionsDrawer({
             : { top, height: slotRect.height },
         )
       }
+      // A zero-height reading (unmounted layout, jsdom) keeps the fallback
+      // share for that element.
+      setChromePx(
+        (header?.getBoundingClientRect().height || HEADER_CHROME_PX) +
+          CARD_ROW_PAD_Y_PX +
+          (footer?.getBoundingClientRect().height || FOOTER_CHROME_PX),
+      )
     })
     observer.observe(content)
     observer.observe(slot)
+    if (header) observer.observe(header)
+    if (footer) observer.observe(footer)
     return () => observer.disconnect()
   }, [collections.length])
 
@@ -118,6 +141,32 @@ export default function MyCollectionsDrawer({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen, pinned, onOpenChange])
+
+  // Lock document scrolling while the temporary sheet is open — the fixed
+  // backdrop blocks pointer input but not wheel, touch, scrollbar, or
+  // keyboard scrolling, which the old MUI temporary Drawer's modal layer
+  // suppressed. Locking the document element (not <body>, which MUI modals
+  // manage) keeps dialogs launched from the sheet from contending over the
+  // same style, and padding compensates for the removed scrollbar so the
+  // page does not shift. Scrolling inside the card row is unaffected.
+  // Pinned mode never locks: the sheet is page furniture.
+  useEffect(() => {
+    if (!drawerOpen || pinned) return
+    const root = document.documentElement
+    const previousOverflow = root.style.overflow
+    const previousPaddingRight = root.style.paddingRight
+    const scrollbarWidth = window.innerWidth - root.clientWidth
+    root.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) {
+      root.style.paddingRight = `${
+        (parseFloat(getComputedStyle(root).paddingRight) || 0) + scrollbarWidth
+      }px`
+    }
+    return () => {
+      root.style.overflow = previousOverflow
+      root.style.paddingRight = previousPaddingRight
+    }
+  }, [drawerOpen, pinned])
 
   if (collections.length === 0) return null
 
@@ -203,6 +252,7 @@ export default function MyCollectionsDrawer({
         >
           <Box ref={contentRef}>
             <Box
+              ref={headerRef}
               sx={{
                 display: 'flex',
                 alignItems: 'center',
@@ -260,6 +310,7 @@ export default function MyCollectionsDrawer({
             </Box>
 
             <Box
+              data-testid="my-collections-card-row"
               sx={{
                 display: 'flex',
                 // Cards keep their natural height so a capped row scrolls
@@ -269,12 +320,13 @@ export default function MyCollectionsDrawer({
                 justifyContent: 'flex-start',
                 overflowX: 'auto',
                 overflowY: 'auto',
-                // Cap the card row so the sticky dock (header + cards +
-                // footer) can never outgrow a short viewport and push the
-                // header's actions off-screen.
-                maxHeight: `min(50vh, calc(100vh - ${SHEET_CHROME_PX}px))`,
+                // Cap the card row by the measured dock chrome (header +
+                // row padding + footer, which can wrap) so the sticky dock
+                // can never outgrow a short viewport and push the header's
+                // actions off-screen.
+                maxHeight: `min(50vh, calc(100vh - ${chromePx}px))`,
                 px: `${TRIGGER_INSET_PX}px`,
-                pb: 2,
+                pb: `${CARD_ROW_PAD_Y_PX}px`,
               }}
             >
               {collections.slice(0, 8).map((collection) => {

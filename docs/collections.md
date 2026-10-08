@@ -137,7 +137,12 @@ from behind the footer (which paints over its bottom edge), the page grows by
 the sheet's height while pinned, and overscroll moves footer and sheet
 together. One sheet
 stays mounted across both modes, so pinning never reloads tiles and unpinning
-never collapses the drawer — the pin is not a close control. Compact cards are
+never collapses the drawer — the pin is not a close control. The temporary
+sheet also locks document scrolling (restoring it on close or pin), matching
+the modal behaviour the drawer replaced. The card row is capped against the
+measured header and footer heights, so a wrapped header or multi-line admin
+footer shrinks the row on short viewports rather than hiding the sheet's
+controls above the viewport. Compact cards are
 160–180 px wide and scroll horizontally below about
 1424 px. The drawer is hidden on image-viewer and collection pages, while the
 feed is loading, and when no owned collection is visible. It is not a Browse

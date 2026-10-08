@@ -126,6 +126,45 @@ describe('MyCollectionsDrawer', () => {
     expect(screen.getByTestId('my-collections-backdrop')).toBeInTheDocument()
   })
 
+  it('locks document scrolling while the temporary sheet is open', () => {
+    const root = document.documentElement
+    const { props, rerender } = renderDrawer({ open: true })
+
+    expect(root.style.overflow).toBe('hidden')
+
+    rerender(<MyCollectionsDrawer {...props} open={false} />)
+    expect(root.style.overflow).toBe('')
+    expect(root.style.paddingRight).toBe('')
+  })
+
+  it('releases the document scroll lock when the sheet pins', () => {
+    const root = document.documentElement
+    const { props, rerender } = renderDrawer({ open: true })
+
+    expect(root.style.overflow).toBe('hidden')
+
+    // Pinning hands the sheet back to page furniture — the page must scroll.
+    rerender(<MyCollectionsDrawer {...props} pinned />)
+    expect(root.style.overflow).toBe('')
+  })
+
+  it('never locks document scrolling while pinned', () => {
+    renderDrawer({ open: true, pinned: true })
+
+    expect(document.documentElement.style.overflow).toBe('')
+  })
+
+  it('caps the card row against the dock chrome so the header stays on-screen', () => {
+    renderDrawer({ open: true })
+
+    // jsdom reports zero-height layout, so the fallback 140px chrome applies;
+    // in a real browser the header and footer heights are measured live so
+    // wrapped lines shrink the card row instead of pushing controls off-screen.
+    // jsdom's 768px viewport resolves min(50vh, calc(100vh - 140px)) = 384px.
+    const cardRow = screen.getByTestId('my-collections-card-row')
+    expect(getComputedStyle(cardRow).maxHeight).toBe('384px')
+  })
+
   it('pulls outside focus back into the temporary sheet', () => {
     renderDrawer({ open: true })
 

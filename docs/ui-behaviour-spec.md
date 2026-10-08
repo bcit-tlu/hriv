@@ -390,8 +390,13 @@ returned by the API (UX only — the backend re-checks).
   reaches it, rides up with the sheet, and detaches again at the same point
   on the way down. Tiles are title-only (no image count, no chips). Compact
   cards are 160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
-  horizontally below about 1424 px. The temporary state has a backdrop that
-  leaves the footer undimmed and closes on Escape, backdrop click, or a
+  horizontally below about 1424 px. The card row's height is capped so the
+  dock (header + cards + footer) never outgrows the viewport — the header
+  and footer heights are measured live, so a wrapped header or a multi-line
+  admin footer shrinks the card row instead of pushing the sheet's controls
+  above the top edge. The temporary state has a backdrop that leaves the
+  footer undimmed, locks document scrolling until the sheet closes or pins
+  (the card row still scrolls), and closes on Escape, backdrop click, or a
   second press of the button; pinning removes the backdrop, keeps Browse
   interactive, persists per user, turns the button into an outlined,
   non-clickable title, and lets the page grow by the sheet's height so the
