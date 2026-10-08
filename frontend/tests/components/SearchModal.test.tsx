@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
+import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import SearchModal from '../../src/components/SearchModal'
@@ -1404,6 +1405,7 @@ describe('SearchModal', () => {
       sortOrder: 1,
       version: 1,
       cardImageId: null,
+      collections: [],
       metadataExtra: null,
     }
     const subtreeHidden = {
@@ -1426,6 +1428,7 @@ describe('SearchModal', () => {
       sortOrder: 0,
       version: 1,
       cardImageId: null,
+      collections: [],
       metadataExtra: null,
     }
     render(
@@ -1494,6 +1497,7 @@ describe('SearchModal', () => {
       sortOrder: 0,
       version: 1,
       cardImageId: null,
+      collections: [],
       metadataExtra: null,
     }
     const filledCategory = {
@@ -1555,6 +1559,7 @@ describe('SearchModal', () => {
       sortOrder: 0,
       version: 1,
       cardImageId: null,
+      collections: [],
       metadataExtra: null,
     }
     render(
@@ -1605,6 +1610,7 @@ describe('SearchModal', () => {
     sortOrder: 0,
     version: 1,
     cardImageId: null,
+    collections: [],
     metadataExtra: null,
   }
   const nestedParent = {
@@ -1619,6 +1625,7 @@ describe('SearchModal', () => {
     sortOrder: 0,
     version: 1,
     cardImageId: null,
+    collections: [],
     metadataExtra: null,
   }
 
