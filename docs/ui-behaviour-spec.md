@@ -299,20 +299,24 @@ returned by the API (UX only — the backend re-checks).
   and never Owners/Delete; **Given** an admin or instructor, **Then**
   (where `canTransfer`) Owners is also offered. No row carries a Move action
   — category filing lives in the edit dialog's category picker (#1566).
-- **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then**
-  the staged state shows the current user owners as chips plus the owning
-  program. The **User owners** autocomplete offers scope tabs — _Students_
-  (default) and _Instructors_ for instructors, plus _Everyone_ for admins;
-  on the _Students_ tab an optional **Filter by program** chip set narrows
-  the search (`GET /api/users/?role=&program_id=`).
-- **Given** a program is selected in **Owning program**, **Then** the user
-  picker disables (assigning a program clears user owners server-side);
-  for instructors the select lists only their own programs.
+- **Given** the owners dialog is open (`CollectionOwnersDialog`), **Then** a
+  **Program / User** radio row picks which pane edits: the **User** pane
+  shows a checkbox table (Name, Email, Program) with current owners
+  pre-checked under a _CURRENT OWNERS_ caption; the **Role** popover button
+  scopes the list — _Students_ (default) and _Instructors_ for instructors,
+  plus _Everyone_ for admins; in the _Students_ scope an optional
+  **Program** filter button narrows the search
+  (`GET /api/users/?role=&program_id=`). **Change Owner(s)** PUTs the
+  checked set.
+- **Given** the **Program** pane, **Then** the programs render as outlined
+  single-select chips — clicking one stages it as the filled, deletable
+  chip whose delete icon reverts it to outlined; for instructors the chips
+  list only their own programs. Assigning a program clears user owners
+  server-side; **Change Owner** POSTs `/transfer`.
 - **Given** the staged result would leave no user owner and no program
   owner, **Then** confirm stays disabled (orphan guard); **Given** the API
   returns **403** / **409** / **422**, **Then** the message stays inline in
-  the open dialog. On save, changed user owners `PUT` first, then a changed
-  program `POST`s `/transfer`.
+  the open dialog. Each pane commits only its own endpoint.
 - **Given** an admin viewing the owner facet's _No owner (orphaned)_ list,
   **When** they open a card's **Owners** action and assign an owner, **Then**
   `PUT /api/collections/{id}/owners` is sent and the card leaves the

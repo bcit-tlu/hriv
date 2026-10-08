@@ -1208,29 +1208,34 @@ manage-table rows, all gated on
 collection — found via the admin-only _No owner (orphaned)_ owner facet —
 the action is the reassignment flow.
 
-**`CollectionOwnersDialog`.** One dialog covers both ownership surfaces:
+**`CollectionOwnersDialog`.** A **Program / User** radio row at the top picks
+which ownership surface the pane below edits:
 
-- The **user-owner picker** mirrors the group-membership picker in
-  `GroupManagementModal`: **Students / Instructors** role tabs drive a
-  debounced `fetchUsersPaged` autocomplete (admins get a third **Everyone**
-  mode with no `role` param), and an optional **Filter by program** chip
-  autocomplete narrows the Students search (`program_id=`) — ignored on the
-  Instructors tab, matching group co-instructor selection. Instructors
-  automatically get the mini user projection: students and instructors
-  only, with admins, staff and `Admin`-program users excluded by the
-  endpoint. Selected owners render as MUI chips; any active user is a
-  valid target.
-- The **program-owner select** lists every program for admins and only the
-  instructor's own `program_ids` for instructors — the same boundary the
-  backend 403s across.
-- Selecting a program owner disables the user picker with a hint that the
-  program becomes the sole owner (assigning a program clears the
-  `collection_owners` rows server-side). Clearing a program is only offered
-  when at least one user owner is selected — the backend's orphan guard
-  would 422 otherwise.
-- When both surfaces change in one save, the `PUT /owners` lands before the
-  `POST /transfer` so the collection is never momentarily orphaned. The
-  confirm stays disabled until something differs from the current owners.
+- The **User pane** mirrors the `GroupManagementModal` member table: a
+  checkbox table (Name, Email, Program columns) over a debounced, paged
+  `fetchUsersPaged` list. The role scope lives in a **Role** popover button
+  beside the **Search** and **Program** filter buttons — Students /
+  Instructors for everyone, plus an admin-only **Everyone** option (no
+  `role` param). The **Program** filter narrows the Students scope only,
+  matching group co-instructor selection. Instructors automatically get
+  the mini user projection: students and instructors only, with admins,
+  staff and `Admin`-program users excluded by the endpoint. The checked
+  set _is_ the replacement owner set — current owners start checked under
+  a **CURRENT OWNERS** caption with an **Owner** chip — and
+  **Change Owner(s)** sends the `PUT /owners`.
+- The **Program pane** lists the programs as single-select chips: outlined
+  by default; clicking one stages it as the filled, deletable chip (its
+  delete icon reverts to outlined). **Change Owner** sends the
+  `POST /transfer`. Admins see every program; instructors only their own
+  `program_ids` — the same boundary the backend 403s across.
+- Assigning a program clears the `collection_owners` rows server-side —
+  the pane hints at it while a chip is active. Clearing the program chip
+  (revert to user ownership) is only confirmable when user owners survive
+  — the backend's orphan guard would 422 otherwise; likewise an empty
+  user selection is only confirmable while a program owner exists.
+- Each pane commits only its own endpoint — one save, one call — and the
+  confirm stays disabled until the staged value differs from the current
+  owners.
 - Rejections surface inline via `userMessage`: 403 (outside your
   authority), 409 (stale `version` — "modified by another user"), 422
   (invalid/inactive target or orphaning).

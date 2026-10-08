@@ -145,31 +145,27 @@ export default meta
 type Story = StoryObj<StoryArgs>
 
 export const Basic: Story = {
-  name: 'Co-owned — user owners + program select',
+  name: 'Co-owned — user pane with member table',
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
     await expect(body.getByText(/Ada Lovelace, Grace Hopper/)).toBeInTheDocument()
+    await expect(body.getByRole('radio', { name: 'User' })).toBeChecked()
     // Nothing changed → confirm stays disabled.
     await expect(body.getByTestId('owners-confirm')).toBeDisabled()
   },
 }
 
 export const InstructorProgramsOnly: Story = {
-  name: 'Instructor — programs narrowed to memberships',
+  name: 'Instructor — program chips narrowed to memberships',
   args: { role: 'instructor', collection: coOwned },
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
-    await userEvent.click(body.getByLabelText('Owning program'))
-    const listbox = await body.findByRole('listbox')
+    await userEvent.click(body.getByRole('radio', { name: 'Program' }))
     // Instructor belongs to programs 1 + 3 — Sonography is hidden.
-    await expect(within(listbox).getByText('Radiography')).toBeInTheDocument()
-    await expect(within(listbox).getByText('CT')).toBeInTheDocument()
-    await expect(within(listbox).queryByText('Sonography')).not.toBeInTheDocument()
-  },
-  parameters: {
-    // MUI Select listbox portals trigger known nested-interactive debt (#1345 class).
-    a11y: { test: 'todo' },
+    await expect(body.getByTestId('program-choice-1')).toBeInTheDocument()
+    await expect(body.getByTestId('program-choice-3')).toBeInTheDocument()
+    await expect(body.queryByTestId('program-choice-2')).not.toBeInTheDocument()
   },
 }
 
@@ -179,41 +175,38 @@ export const OrphanedReassign: Story = {
   play: async ({ canvasElement, args }) => {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByText(/This collection is orphaned/)).toBeInTheDocument()
-    await userEvent.click(body.getByLabelText('Owning program'))
-    await userEvent.click(await body.findByRole('option', { name: 'Sonography' }))
+    await userEvent.click(body.getByRole('radio', { name: 'Program' }))
+    await userEvent.click(body.getByTestId('program-choice-2'))
     await userEvent.click(body.getByTestId('owners-confirm'))
     await expect(args.onTransfer).toHaveBeenCalledWith(14, 2)
-  },
-  parameters: {
-    a11y: { test: 'todo' },
   },
 }
 
 export const ProgramOwned: Story = {
-  name: 'Program-owned — picker stays disabled while a program is set',
+  name: 'Program-owned — owning program chip starts filled + deletable',
   args: { collection: programOwned },
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
-    // A program owner exists → the user-owner picker is disabled (transfer clears it).
-    await expect(body.getByLabelText('User owners')).toBeDisabled()
-  },
-  parameters: {
-    // Disabled helper-text contrast is MUI's stock disabled palette (#1345 class).
-    a11y: { test: 'todo' },
+    await expect(body.getByRole('radio', { name: 'Program' })).toBeChecked()
+    const chip = await body.findByTestId('program-choice-1')
+    await expect(chip.className).toContain('MuiChip-filled')
+    await expect(within(chip).getByTestId('CancelIcon')).toBeInTheDocument()
   },
 }
 
 export const ConflictError: Story = {
   name: 'Stale version 409 surfaces inline',
   args: {
-    onSaveOwners: fn(async () => {
+    collection: programOwned,
+    onTransfer: fn(async () => {
       throw new ApiError(409, 'Stale version', { version: 9 })
     }),
   },
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
-    // Remove a co-owner so confirm enables, then the save 409s.
-    await userEvent.click((await body.findAllByTestId('CancelIcon'))[1])
+    // No directory fetch needed on the Program pane — pick a different
+    // program chip, then the transfer 409s.
+    await userEvent.click(await body.findByTestId('program-choice-2'))
     await userEvent.click(body.getByTestId('owners-confirm'))
     await expect(await body.findByTestId('owners-error')).toHaveTextContent(/Stale version/)
   },

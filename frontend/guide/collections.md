@@ -261,19 +261,24 @@ you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
 program they teach:
 
-- **User owners** — pick co-owners from the **Students** or **Instructors**
-  tabs (administrators also get **Everyone**). The student tab offers an
-  optional **Filter by program** to narrow the search — the same people
-  picker used when managing groups. Instructors only ever see students and
-  fellow instructors; administrator and staff accounts can only be added by
-  an administrator. A collection can have several co-owners of any role,
-  including students. The last user owner can't be removed unless a program
-  owns the collection.
-- **Program owner** — administrators can pick any program; instructors only
-  a program they belong to. Assigning a program makes it the sole owner —
-  the user-owner list clears, and picking a program disables the user list
-  to say so. Clearing a program hands the collection back to its user
-  owners, so there must be at least one first.
+The dialog starts with a **Program / User** choice:
+
+- **User owners** — a checkbox table of people, the same list used when
+  managing groups. Use the **Role** filter to show **Students** or
+  **Instructors** (administrators also get **Everyone**), plus **Search**
+  and — for students — **Program** filters to narrow the list. Current
+  owners start checked. Instructors only ever see students and fellow
+  instructors; administrator and staff accounts can only be added by an
+  administrator. Check the people you want, then click **Change
+  Owner(s)**. A collection can have several co-owners of any role,
+  including students. The last user owner can't be removed unless a
+  program owns the collection.
+- **Program owner** — click a program chip to make that program the owner;
+  click the ✕ on the selected chip to clear it. Administrators can pick
+  any program; instructors only a program they belong to. Assigning a
+  program makes it the sole owner — the user-owner list clears. Clearing
+  a program hands the collection back to its user owners, so there must
+  be at least one first.
 
 Confirm to save — the collection keeps its images and visibility; only who
 manages it changes. If the collection was edited by someone else while the
