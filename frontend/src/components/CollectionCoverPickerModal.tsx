@@ -80,6 +80,7 @@ export default function CollectionCoverPickerModal({
                       size="small"
                       checked={selectedId === null}
                       onChange={() => setSelectedId(null)}
+                      inputProps={{ 'aria-label': 'None — uses the first image' }}
                     />
                   </TableCell>
                   <TableCell>
@@ -107,6 +108,7 @@ export default function CollectionCoverPickerModal({
                         size="small"
                         checked={selectedId === image.id}
                         onChange={() => setSelectedId(image.id)}
+                        inputProps={{ 'aria-label': image.name }}
                       />
                     </TableCell>
                     <TableCell>{image.name}</TableCell>
