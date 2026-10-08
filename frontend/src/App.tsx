@@ -104,6 +104,7 @@ import {
   deleteGroup,
   fetchCollections,
   fetchImageCollections,
+  ApiError,
   userMessage,
 } from './api'
 import type { ApiCollectionSummary, ApiImage, ApiUser } from './api'
@@ -333,16 +334,32 @@ export default function App() {
     // guaranteed-404 request to every image view on flag-off deployments.
     if (imageId == null || !collectionsEnabled) return
     let cancelled = false
-    void fetchImageCollections(imageId)
-      .then((rows) => {
-        if (!cancelled) setImageCollectionsResult({ imageId, rows })
-      })
-      .catch(() => {
-        // 404 (hidden or inactive image) ⇒ no row.
-        if (!cancelled) setImageCollectionsResult({ imageId, rows: [] })
-      })
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const run = () => {
+      void fetchImageCollections(imageId)
+        .then((rows) => {
+          if (!cancelled) setImageCollectionsResult({ imageId, rows })
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          // A 404 is the definitive answer — the image is hidden/inactive/not
+          // viewable — so record an empty result (no row). A transient failure
+          // (network error or 5xx) must NOT be cached as empty, or it would
+          // falsely claim the image is in no collections; retry a couple of
+          // times with backoff, then leave the row hidden without asserting it.
+          if (err instanceof ApiError && err.status === 404) {
+            setImageCollectionsResult({ imageId, rows: [] })
+          } else if (attempts < 2) {
+            attempts += 1
+            retryTimer = setTimeout(run, 1500 * attempts)
+          }
+        })
+    }
+    run()
     return () => {
       cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
     }
   }, [selectedImage?.id, collectionsEnabled])
   const selectedImageCollections =
