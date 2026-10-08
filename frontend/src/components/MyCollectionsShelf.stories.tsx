@@ -64,6 +64,7 @@ const meta = {
   component: MyCollectionsShelf,
   args: {
     collections,
+    categories: [],
     programs: [],
     groups: [],
     onOpen: fn(),

@@ -184,6 +184,7 @@ function resetFixtures() {
     canViewPeople: false,
   }
   mockInitialPath = []
+  collectionsDataMocks.filters = { type: 'all', mine: false, owner: 'any' }
   visibleJobsMock = []
   processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
   // Individual tests push extra programs (Radiology, Histology); restore the
@@ -628,14 +629,16 @@ const collectionsDataMocks = vi.hoisted(() => ({
   move: vi.fn(),
   saveOwners: vi.fn(),
   setHidden: vi.fn(),
+  filters: { type: 'all' as string, mine: false, owner: 'any' as string },
+  setFilters: vi.fn(),
 }))
 vi.mock('../src/useCollectionsData', () => ({
   useCollectionsData: () => ({
     collections: [],
     loading: false,
     error: null,
-    filters: { type: 'all', mine: false, owner: 'any' },
-    setFilters: vi.fn(),
+    filters: collectionsDataMocks.filters,
+    setFilters: collectionsDataMocks.setFilters,
     ownerOptions: [],
     reload: vi.fn(),
     detail: null,
@@ -1997,6 +2000,28 @@ describe('App collections deep links (#1414)', () => {
 
     expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
     expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 5 })
+  })
+
+  it('clears the owner filter when See all opens My collections', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    const filters = { type: 'sequence', mine: false, owner: 'orphaned' }
+    collectionsDataMocks.filters = filters
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
+    collectionsDataMocks.setFilters.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'See all' }))
+
+    expect(collectionsDataMocks.setFilters).toHaveBeenCalledWith({
+      ...filters,
+      mine: true,
+      owner: 'any',
+    })
   })
 
   it('does not fetch or show the shelf when its flag is off', async () => {

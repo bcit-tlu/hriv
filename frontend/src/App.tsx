@@ -2745,6 +2745,7 @@ export default function App() {
                 myCollectionsShelf !== null && (
                   <MyCollectionsShelf
                     collections={myCollectionsShelf}
+                    categories={categories}
                     programs={programs}
                     groups={groups}
                     onOpen={(collection) =>
@@ -2755,6 +2756,7 @@ export default function App() {
                       collectionsData.setFilters({
                         ...collectionsData.filters,
                         mine: true,
+                        owner: 'any',
                       })
                     }}
                   />

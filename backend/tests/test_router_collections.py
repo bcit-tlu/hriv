@@ -434,6 +434,27 @@ async def test_list_applies_query_filters_to_statement() -> None:
     assert "LIMIT" not in sql
 
 
+async def test_list_limits_summaries_after_visibility_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collections = [_collection(id=i, visibility="public") for i in range(1, 6)]
+    can_view = MagicMock(side_effect=lambda collection: collection.id != 2)
+    ctx = SimpleNamespace(can_view=can_view)
+    summary_out = MagicMock(side_effect=lambda _ctx, collection: collection.id)
+    monkeypatch.setattr(
+        collections_router._ViewerContext, "build", AsyncMock(return_value=ctx)
+    )
+    monkeypatch.setattr(collections_router, "collection_summary_out", summary_out)
+
+    rows = await list_collections(
+        _user("admin"), db=_mock_db(collections), limit=2
+    )
+
+    assert rows == [1, 3]
+    assert can_view.call_count == len(collections)
+    assert [call.args[1].id for call in summary_out.call_args_list] == [1, 3]
+
+
 def test_list_rejects_out_of_range_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.auth import get_current_user
     from app.database import get_db, settings

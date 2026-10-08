@@ -1,11 +1,16 @@
+import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
-import type { CollectionSummary, Group, Program } from '../types'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import type { Category, CollectionSummary, Group, Program } from '../types'
+import { buildCategoryPaths } from './CategoryBreadcrumb'
 import CollectionCard from './CollectionCard'
 
 export interface MyCollectionsShelfProps {
   collections: CollectionSummary[]
+  categories: Category[]
   programs: Program[]
   groups?: Group[]
   onOpen: (collection: CollectionSummary) => void
@@ -14,11 +19,14 @@ export interface MyCollectionsShelfProps {
 
 export default function MyCollectionsShelf({
   collections,
+  categories,
   programs,
   groups,
   onOpen,
   onSeeAll,
 }: MyCollectionsShelfProps) {
+  const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
+
   if (collections.length === 0) return null
 
   return (
@@ -49,15 +57,23 @@ export default function MyCollectionsShelf({
           gap: 2,
         }}
       >
-        {collections.map((collection) => (
-          <CollectionCard
-            key={collection.id}
-            collection={collection}
-            onOpen={onOpen}
-            programs={programs}
-            groups={groups}
-          />
-        ))}
+        {collections.map((collection) => {
+          const seg =
+            collection.categoryId != null ? categoryPaths.get(collection.categoryId) : undefined
+          const catPath = seg ? [...seg.ancestors, seg.category] : []
+          return (
+            <CollectionCard
+              key={collection.id}
+              collection={collection}
+              onOpen={onOpen}
+              programs={programs}
+              inheritedProgramIds={narrowProgramIds(catPath)}
+              groups={groups}
+              inheritedGroupIds={narrowGroupIds(catPath)}
+              categoryHidden={getCategoryHiddenStateFromPath(catPath).hidden}
+            />
+          )
+        })}
       </Box>
     </Box>
   )

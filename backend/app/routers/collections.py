@@ -159,10 +159,10 @@ async def list_collections(
 
     collections = (await db.execute(stmt)).scalars().unique().all()
     ctx = await _ViewerContext.build(db, user)
-    visible = [
-        collection_summary_out(ctx, c) for c in collections if ctx.can_view(c)
-    ]
-    return visible[:limit] if limit is not None else visible
+    visible = [c for c in collections if ctx.can_view(c)]
+    if limit is not None:
+        visible = visible[:limit]
+    return [collection_summary_out(ctx, c) for c in visible]
 
 
 @router.get("/{collection_id}", response_model=CollectionOut)
