@@ -126,6 +126,30 @@ describe('CategoryPickerSelect — add category dialog', () => {
     await waitFor(() => expect(onAddCategory).toHaveBeenCalledWith('New category', null, [], []))
     expect(onChange).toHaveBeenCalledWith(99)
   })
+
+  it('does not change the selection when the top-level category dialog is cancelled', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <CategoryPickerSelect
+        categories={[]}
+        value={null}
+        onChange={onChange}
+        includeRoot={false}
+        placeholder="Select a category"
+        onAddCategory={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'New top-level category' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'New Category' })).not.toBeInTheDocument(),
+    )
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })
 
 describe('CategoryPickerSelect — edit category dialog', () => {

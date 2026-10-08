@@ -112,6 +112,22 @@ describe('CollectionEditDialog', () => {
       expect(screen.getByRole('radio', { name: /Sequence/ })).not.toBeChecked()
     })
 
+    it('keeps create disabled after cancelling a top-level category add', async () => {
+      const user = userEvent.setup()
+      renderDialog({ categories: [], onAddCategory: vi.fn() }, makeAuth('instructor'))
+      const createButton = screen.getByRole('button', { name: 'Create' })
+      expect(createButton).toBeDisabled()
+
+      await user.click(screen.getByRole('combobox', { name: 'Category' }))
+      await user.click(screen.getByRole('option', { name: 'New top-level category' }))
+      await user.click(screen.getAllByRole('button', { name: 'Cancel' }).at(-1)!)
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'New Category' })).not.toBeInTheDocument(),
+      )
+
+      expect(createButton).toBeDisabled()
+    })
+
     it('renders the Type section first — above the name field (#1567)', () => {
       renderDialog()
       const typeLabel = screen.getByText('Type')
