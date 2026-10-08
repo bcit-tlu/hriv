@@ -51,6 +51,7 @@ function makeApiSummary(overrides: Partial<ApiCollectionSummary> = {}): ApiColle
     owners: [{ user_id: 7, name: 'Ada Lovelace' }],
     image_count: 2,
     cover_thumb: '/hriv-splash2.jpg',
+    cover_image_id: null,
     version: 1,
     category_id: 2,
     sort_order: 0,
@@ -100,6 +101,7 @@ const rows: ApiCollectionSummary[] = [
     ],
     category_id: 3,
     cover_thumb: null,
+    cover_image_id: null,
     permissions: {
       can_edit: true,
       can_delete: false,

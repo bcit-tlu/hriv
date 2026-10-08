@@ -86,6 +86,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: null,
+    coverImageId: null,
     categoryId: null,
     sortOrder: 0,
     programIds: [],

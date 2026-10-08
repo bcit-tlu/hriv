@@ -45,7 +45,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   deleted.
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
-### Collection _(added in `0030_collections`; multi-owner in `0032`; `hidden` in `0033`)_
+### Collection _(added in `0030_collections`; multi-owner in `0032`; `hidden` in `0033`; `cover_image_id` in `0034`)_
 
 - **Purpose:** user- or program-owned grouping of existing images for
   `sequence` or `synchronized` viewing; never duplicates image/category rows.
@@ -59,6 +59,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   ownership edge); `owner_program_id` (FK to Program,
   **SET NULL**); `category_id` (FK to Category, **SET NULL** — #1527, files
   the collection into the Browse hierarchy; `NULL` = uncategorized root);
+  `cover_image_id` (FK to Image, **SET NULL** — pinned tile cover picked
+  from the members via `PATCH`; `NULL` = first-member fallback, and the
+  pin clears when the member leaves the collection or the image row is
+  deleted);
   `sort_order` (tile-order position inside its scope); `viewport_state`
   (JSONB, default `{}`); `version` (optimistic
   concurrency, starts at 1). User co-ownership lives in `collection_owners`
@@ -75,7 +79,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   collection for which they were the sole owner (co-owned and program-owned
   collections survive); deleting a program orphans collections that have no
   remaining user owners; deleting an image removes it from every
-  collection; deleting a category unfiles its collections (`category_id` →
+  collection and nulls any `cover_image_id` pin pointing at it; deleting a
+  category unfiles its collections (`category_id` →
   `NULL`), the same reparenting rule as images.
 - See [Collections](collections.md).
 

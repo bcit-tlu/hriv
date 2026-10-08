@@ -28,6 +28,7 @@ function makeCollection(images: ImageItem[], memberCount = images.length): Colle
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: memberCount,
     coverThumb: '/hriv-splash2.jpg',
+    coverImageId: null,
     categoryId: null,
     sortOrder: 0,
     version: 1,

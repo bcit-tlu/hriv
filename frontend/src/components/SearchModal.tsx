@@ -789,20 +789,34 @@ export default function SearchModal({
     return [...groups.values()]
   }, [filteredResults])
 
-  const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
-
-  // Subtree image lists per rendered category result, memoized on the result
-  // set — selection toggles re-render every row, and walking/sorting each
-  // category's subtree per row per keystroke is wasted work (#1567).
+  // Subtree image lists per category result, memoized on the result set —
+  // selection toggles re-render every row, and walking/sorting each
+  // category's subtree per row per keystroke is wasted work (#1567). Built
+  // over `groupedResults` (not just the displayed slice) so the picker
+  // filter below can consult it before capping at MAX_RESULTS.
   const subtreeImagesByCategory = useMemo(() => {
     const map = new Map<number, ImageItem[]>()
-    for (const result of displayResults) {
+    for (const result of groupedResults) {
       if (result.payload.kind !== 'category') continue
       const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
       map.set(cat.id, collectSubtreeImages(cat, excludeHidden))
     }
     return map
-  }, [displayResults, excludeHidden])
+  }, [groupedResults, excludeHidden])
+
+  // Picker mode drops category results with no addable subtree images —
+  // a greyed-out checkbox can't explain why the category isn't addable,
+  // so the row simply isn't offered.
+  const pickerResults = useMemo(() => {
+    if (!selectMode) return groupedResults
+    return groupedResults.filter((result) => {
+      if (result.payload.kind !== 'category') return true
+      const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
+      return (subtreeImagesByCategory.get(cat.id) ?? []).length > 0
+    })
+  }, [groupedResults, selectMode, subtreeImagesByCategory])
+
+  const displayResults = useMemo(() => pickerResults.slice(0, MAX_RESULTS), [pickerResults])
 
   // Each new result set bumps an epoch; a check stamps the image with the
   // epoch and its position in that set. Emitting sorts by (epoch, index),
@@ -1131,7 +1145,7 @@ export default function SearchModal({
                 Start typing to search&hellip;
               </Typography>
             </Box>
-          ) : groupedResults.length === 0 ? (
+          ) : pickerResults.length === 0 ? (
             <Box
               sx={{
                 display: 'flex',
@@ -1162,9 +1176,9 @@ export default function SearchModal({
                   </Button>
                 )}
                 <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
-                  {groupedResults.length > MAX_RESULTS
-                    ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
-                    : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
+                  {pickerResults.length > MAX_RESULTS
+                    ? `Showing ${MAX_RESULTS} of ${pickerResults.length} results`
+                    : `${pickerResults.length} result${pickerResults.length !== 1 ? 's' : ''}`}
                 </Typography>
               </Box>
               <Box

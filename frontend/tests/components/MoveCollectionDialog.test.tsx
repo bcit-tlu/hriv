@@ -130,7 +130,7 @@ describe('MoveCollectionDialog', () => {
       />,
     )
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'This collection is private. Filed on Browse, its tile is visible only to its owners and to staff, instructors and admins — not to other students.',
+      'This collection is private. Students will not be able to see the images in this collection.',
     )
 
     await user.selectOptions(screen.getByTestId('category-picker'), '')

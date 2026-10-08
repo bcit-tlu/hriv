@@ -1462,6 +1462,70 @@ describe('SearchModal', () => {
     ])
   })
 
+  it('hides categories with no addable subtree images in select mode', async () => {
+    // A category whose subtree holds nothing selectable used to render a
+    // disabled checkbox that could not explain why — now the row is not
+    // offered at all. Normal search still lists it.
+    const user = userEvent.setup()
+    const img = (id: number, name: string, categoryId: number) => ({
+      id,
+      name,
+      thumb: `/thumb/${id}.jpg`,
+      tileSources: `/tiles/${id}.dzi`,
+      categoryId,
+      copyright: null,
+      note: null,
+      active: true,
+      sortOrder: 0,
+      version: 1,
+      metadataExtra: null,
+    })
+    const emptyCategory = {
+      id: 24,
+      label: 'Anatomy Lab',
+      parentId: null,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: null,
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const filledCategory = {
+      ...emptyCategory,
+      id: 21,
+      label: 'Anatomy',
+      images: [img(30, 'Anatomy Atlas', 21)],
+    }
+    const props = {
+      ...defaultProps,
+      categories: [filledCategory, emptyCategory],
+      excludeHidden: true,
+      initialSelectMode: true,
+      onAddImagesToCollection: vi.fn(),
+    }
+    const { rerender } = render(<SearchModal {...props} open={true} />)
+    const input = screen.getByPlaceholderText(
+      'Search categories, images, collections, programs, people, the guide — "quotes" for exact phrases',
+    )
+    await user.type(input, 'anatomy')
+
+    // Select mode: the empty category is filtered out; the addable one
+    // keeps its subtree checkbox.
+    expect(screen.getByRole('checkbox', { name: 'Select Anatomy' })).toBeInTheDocument()
+    expect(screen.queryByText('Anatomy Lab')).not.toBeInTheDocument()
+
+    // Normal search mode: the same category still surfaces as a result
+    // ('Anatomy' also appears as the image's category path — hence
+    // getAllByText here).
+    rerender(<SearchModal {...props} initialSelectMode={false} open={true} />)
+    expect(screen.getByText('Anatomy Lab')).toBeInTheDocument()
+    expect(screen.getAllByText('Anatomy').length).toBeGreaterThan(0)
+  })
+
   it('unchecking a category removes every subtree image at once (#1567)', async () => {
     const user = userEvent.setup()
     const img = (id: number, name: string, categoryId: number, sortOrder: number) => ({

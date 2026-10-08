@@ -575,6 +575,13 @@ class Collection(Base):
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Pinned tile cover: a member image picked via the tile's cover picker.
+    # NULL = the tile falls back to the first member. SET NULL so deleting
+    # the image row clears the pin; membership drops also clear it (the
+    # serializer falls back when the pinned image is not a visible member).
+    cover_image_id: Mapped[int | None] = mapped_column(
+        ForeignKey("images.id", ondelete="SET NULL"), nullable=True,
+    )
     # Curatorial hide (#1559): a hidden collection drops out of student
     # view unless the student owns it — owners keep access (unlike images,
     # collections can be student-owned). Toggle authority is curator-only

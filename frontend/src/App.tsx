@@ -23,6 +23,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
@@ -43,7 +44,8 @@ import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
 import ManageCollectionsPage from './components/ManageCollectionsPage'
 import AddToCollectionDialog from './components/AddToCollectionDialog'
-import type { CollectionFormValues } from './components/CollectionEditDialog'
+import CollectionEditDialog, { type CollectionFormValues } from './components/CollectionEditDialog'
+import CollectionCoverPickerModal from './components/CollectionCoverPickerModal'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
@@ -71,7 +73,7 @@ import {
   parseCollectionItemParam,
 } from './collectionUtils'
 import type { StageAddImages } from './components/CollectionManageDialog'
-import { useCollectionsData } from './useCollectionsData'
+import { toCollectionPatch, useCollectionsData } from './useCollectionsData'
 import {
   createCollectionWithImages,
   useEditableCollections,
@@ -1718,6 +1720,125 @@ export default function App() {
     [pushNavState, runCanvasNavigation],
   )
 
+  // Browse collection editor (#1525 UX): the tile title's edit pencil opens
+  // the shared CollectionEditDialog — the same form the Collections pages
+  // use — and "+ Add Collection" opens it in create mode seeded with the
+  // current Browse category. `editing` carries the full record (summaries
+  // omit program/group scope), matching CollectionsPage.openEdit.
+  const [collEditorOpen, setCollEditorOpen] = useState(false)
+  const [collEditing, setCollEditing] = useState<Collection | null>(null)
+  const [collCreateCategoryId, setCollCreateCategoryId] = useState<number | null>(null)
+  const collEditRequestRef = useRef(0)
+  const {
+    loadCollection: loadCollectionDetail,
+    create: createCollection,
+    update: updateCollection,
+    remove: removeCollection,
+    setCoverImage: setCollectionCoverImage,
+  } = collectionsData
+
+  const openBrowseCollectionEdit = useCallback(
+    async (summary: { id: number }) => {
+      // Only the most recent Edit click may open the form.
+      const request = ++collEditRequestRef.current
+      try {
+        const full = await loadCollectionDetail(summary.id)
+        if (request !== collEditRequestRef.current) return
+        setCollEditing(full)
+        setCollEditorOpen(true)
+      } catch (err) {
+        if (request !== collEditRequestRef.current) return
+        setErrorSnack(userMessage(err, 'Failed to load collection.'))
+      }
+    },
+    [loadCollectionDetail],
+  )
+
+  const openBrowseCollectionCreate = useCallback(() => {
+    // Supersede any Edit fetch still in flight so it cannot replace this form.
+    collEditRequestRef.current++
+    setCollEditing(null)
+    setCollCreateCategoryId(liveCategoryPath.length > 0 ? liveCategoryPath.at(-1)!.id : null)
+    setCollEditorOpen(true)
+  }, [liveCategoryPath])
+
+  const handleBrowseCollectionSave = useCallback(
+    async (values: CollectionFormValues, version: number | null, baseline: Collection | null) => {
+      if (collEditing && version != null) {
+        // PATCH only real field diffs — a version-only body is a content
+        // write the backend 403s for filing-only curators (CollectionsPage's
+        // convention). A hidden-only diff still PATCHes.
+        const updated = Object.keys(toCollectionPatch(values, baseline, version)).some(
+          (k) => k !== 'version',
+        )
+          ? await updateCollection(collEditing.id, values, version, baseline)
+          : collEditing
+        setCollEditing(updated)
+        // Category filing is a move, not a PATCH (#1566) — apply it after
+        // the metadata save so the move posts the just-refreshed version.
+        // `canEditContent`-gated like CollectionsPage: a student's filing
+        // pick is inert (filing is curatorial, not owner-scoped).
+        if (canEditContent && values.categoryId !== (baseline?.categoryId ?? null)) {
+          const moved = await moveCollectionTo?.(updated, values.categoryId)
+          if (moved instanceof Error) throw moved
+          void loadCollectionDetail(collEditing.id).catch(() => {})
+        }
+      } else {
+        const created = await createCollection(values)
+        handleOpenCollection(created.id, { fromBrowse: true })
+      }
+      await refreshCategories()
+    },
+    [
+      collEditing,
+      updateCollection,
+      createCollection,
+      loadCollectionDetail,
+      canEditContent,
+      moveCollectionTo,
+      handleOpenCollection,
+      refreshCategories,
+    ],
+  )
+
+  const handleBrowseCollectionDelete = useCallback(async () => {
+    if (!collEditing) return
+    await removeCollection(collEditing.id)
+    setCollEditorOpen(false)
+    await refreshCategories()
+  }, [collEditing, removeCollection, refreshCategories])
+
+  // Tile cover picker (CollectionCard's ImageIcon overlay — CategoryTile's
+  // "Set card image" convention). The summary carries no member list, so
+  // clicking loads the full record first — same pattern as the edit
+  // pencil. Saving pins a member (or clears back to the first-member
+  // fallback), then refreshes the tree so the tile repaints.
+  const [coverPickerFor, setCoverPickerFor] = useState<Collection | null>(null)
+
+  const openBrowseCoverPicker = useCallback(
+    async (summary: { id: number }) => {
+      const request = ++collEditRequestRef.current
+      try {
+        const full = await loadCollectionDetail(summary.id)
+        if (request !== collEditRequestRef.current) return
+        setCoverPickerFor(full)
+      } catch (err) {
+        if (request !== collEditRequestRef.current) return
+        setErrorSnack(userMessage(err, 'Failed to load collection images.'))
+      }
+    },
+    [loadCollectionDetail],
+  )
+
+  const handleSetCollectionCoverImage = useCallback(
+    (collection: { id: number }, imageId: number | null) => {
+      void setCollectionCoverImage(collection.id, imageId)
+        .then(() => refreshCategories())
+        .catch((err: unknown) => setErrorSnack(userMessage(err, 'Failed to set cover image.')))
+    },
+    [setCollectionCoverImage, refreshCategories],
+  )
+
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
   // shareable and in history, so back steps through viewed items (#1416).
   const handleSelectCollectionItem = useCallback(
@@ -2030,6 +2151,7 @@ export default function App() {
               onDelete={collectionsData.remove}
               onSaveOwners={collectionsData.saveOwners}
               onTransfer={collectionsData.transfer}
+              onPickCoverImage={(col) => void openBrowseCoverPicker(col)}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
               onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
               onRequestCollectionImageSearch={requestCollectionImageSearch}
@@ -2734,6 +2856,16 @@ export default function App() {
                               Add Category
                             </Button>
                           )}
+                        {collectionsEnabled && (
+                          <Button
+                            variant="outlined"
+                            startIcon={<CollectionsIcon />}
+                            onClick={openBrowseCollectionCreate}
+                            sx={categoryPageHiddenSx}
+                          >
+                            Add Collection
+                          </Button>
+                        )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -2759,6 +2891,8 @@ export default function App() {
                     onOpen={(collection) =>
                       handleOpenCollection(collection.id, { fromBrowse: true })
                     }
+                    onEdit={(collection) => void openBrowseCollectionEdit(collection)}
+                    onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}
                     onSeeAll={() => {
                       handleCollectionsTypeChange('sequence')
                       collectionsData.setFilters({
@@ -2791,6 +2925,8 @@ export default function App() {
                 onDropCollectionOnCategory={handleDropCollectionOnCategory}
                 onDropImageOnCollection={handleDropImageOnCollection}
                 onCollectionClick={(col) => handleOpenCollection(col.id, { fromBrowse: true })}
+                onEditCollection={(col) => void openBrowseCollectionEdit(col)}
+                onPickCollectionCover={(col) => void openBrowseCoverPicker(col)}
                 onMoveCollection={handleRequestMoveCollection}
                 onDropFilesOnCategory={handleFilesDropOnCategory}
                 onImageClick={handleImageClick}
@@ -2887,6 +3023,50 @@ export default function App() {
         programs={programs}
         groups={groups}
       />
+
+      {/* Collection edit/create dialog opened from Browse — the tile
+          title's edit pencil and the toolbar's "+ Add Collection". Shares
+          the Collections pages' form; filing and hide ride the same
+          picker/link conventions (#1566). */}
+      <CollectionEditDialog
+        open={collEditorOpen}
+        onClose={() => setCollEditorOpen(false)}
+        collection={collEditing}
+        defaultCategoryId={collEditing == null ? collCreateCategoryId : null}
+        programs={programs}
+        groups={groups}
+        onSave={handleBrowseCollectionSave}
+        onDelete={collEditing?.permissions.canDelete ? handleBrowseCollectionDelete : undefined}
+        categories={categories}
+        onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
+        onViewCollection={
+          collEditing && collEditing.id !== selectedCollectionId
+            ? () => {
+                setCollEditorOpen(false)
+                handleOpenCollection(collEditing.id, { fromBrowse: true })
+              }
+            : undefined
+        }
+      />
+
+      {/* Tile cover picker — the summary carries no members, so the card's
+          overlay button loads the detail record via openBrowseCoverPicker
+          and this modal radios over its `images`. */}
+      {coverPickerFor && (
+        <CollectionCoverPickerModal
+          open
+          onClose={() => setCoverPickerFor(null)}
+          onSave={(imageId) => {
+            const target = coverPickerFor
+            setCoverPickerFor(null)
+            handleSetCollectionCoverImage(target, imageId)
+          }}
+          images={coverPickerFor.images}
+          currentImageId={coverPickerFor.coverImageId}
+        />
+      )}
 
       {/* Move collection dialog (#1529) — files a collection into a Browse
           category or removes it from Browse; admin/instructor entry points only. */}

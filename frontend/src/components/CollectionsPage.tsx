@@ -108,6 +108,13 @@ export interface CollectionsPageProps {
   /** Program-owner reassignment (`POST …/transfer`, #1531) — `canTransfer`-gated. */
   onTransfer: (id: number, programId: number | null) => Promise<unknown>
   /**
+   * Open the tile cover picker (CategoryTile's "Set card image"
+   * convention). The summary carries no member list, so the caller loads
+   * the collection detail before rendering the modal; the card's
+   * `canEdit` gate decides visibility.
+   */
+  onPickCoverImage?: (collection: CollectionSummary) => void
+  /**
    * File into a Browse category (#1529). Role-gated here (any
    * admin/instructor — filing is curatorial, not ownership-bound); App owns
    * the dialog + snackbar.
@@ -504,6 +511,7 @@ export default function CollectionsPage({
   onDelete,
   onSaveOwners,
   onTransfer,
+  onPickCoverImage,
   onMoveCollection,
   onMoveCollectionToCategory,
   onRequestCollectionImageSearch,
@@ -853,6 +861,7 @@ export default function CollectionsPage({
                     collection={c}
                     onOpen={(col) => onOpenCollection(col.id)}
                     onEdit={(col) => void openEdit(col)}
+                    onPickCoverImage={onPickCoverImage}
                     onMove={canFileCollections ? onMoveCollection : undefined}
                     programs={programs}
                     inheritedProgramIds={narrowProgramIds(catPath)}

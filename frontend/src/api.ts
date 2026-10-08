@@ -691,6 +691,8 @@ export interface ApiCollectionSummary {
   owners: ApiCollectionOwner[]
   image_count: number
   cover_thumb: string | null
+  /** Pinned cover member; `null` = first-member fallback. */
+  cover_image_id: number | null
   version: number
   /** Category the collection is filed into; `null` = unfiled (not on Browse). */
   category_id: number | null
@@ -774,6 +776,8 @@ export function updateCollection(
     program_ids?: number[]
     group_ids?: number[]
     hidden?: boolean
+    /** Pinned cover member; `null` restores the first-member fallback. */
+    cover_image_id?: number | null
     version: number
   },
 ): Promise<ApiCollection> {
