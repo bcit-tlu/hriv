@@ -84,6 +84,7 @@ const testCategory: Category = {
   sortOrder: 0,
   version: 1,
   cardImageId: null,
+  collections: [],
   metadataExtra: null,
 }
 
@@ -97,6 +98,7 @@ const testUsers: ApiUser[] = [
     name: 'Jane Doe',
     email: 'jane@bcit.ca',
     role: 'instructor',
+    active: true,
     program_ids: [1],
     program_names: ['Medical Lab Science'],
     group_ids: [],
