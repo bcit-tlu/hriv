@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
 import userEvent from '@testing-library/user-event'
 import { COLLECTIONS_AT_CAP_TOOLTIP } from '../../src/collectionUtils'
 import MyCollectionsDrawer, {
@@ -159,6 +161,39 @@ describe('MyCollectionsDrawer', () => {
     } finally {
       outside.remove()
       modal.remove()
+    }
+  })
+
+  it('hands focus to a real Dialog and takes enforcement back when it closes', () => {
+    renderDrawer({ open: true })
+
+    const dialog = render(
+      <Dialog open>
+        <DialogTitle>Pick a cover</DialogTitle>
+        <input aria-label="dialog field" />
+      </Dialog>,
+    )
+    const field = screen.getByLabelText('dialog field')
+    field.focus()
+    expect(document.activeElement).toBe(field)
+
+    // Closing flips the dialog's own trap off while its root is still
+    // mounted for the exit transition — outside focus must snap back to the
+    // sheet instead of escaping to the page.
+    dialog.rerender(
+      <Dialog open={false}>
+        <DialogTitle>Pick a cover</DialogTitle>
+        <input aria-label="dialog field" />
+      </Dialog>,
+    )
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    try {
+      outside.focus()
+      expect(document.activeElement).not.toBe(outside)
+    } finally {
+      outside.remove()
+      dialog.unmount()
     }
   })
 
