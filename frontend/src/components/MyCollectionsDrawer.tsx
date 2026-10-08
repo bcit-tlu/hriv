@@ -29,6 +29,9 @@ const HEADER_PAD_Y_PX = 12
  *  the live measurement once mounted: MUI medium Button height, offset by
  *  the header padding. */
 const DEFAULT_TITLE_SLOT = { top: HEADER_PAD_Y_PX, height: 36.5 }
+// Header (padding + 36.5px button), card-row bottom padding and the footer:
+// everything in the dock other than the cards themselves.
+const SHEET_CHROME_PX = 140
 
 export interface MyCollectionsDrawerProps {
   collections: CollectionSummary[]
@@ -263,7 +266,10 @@ export default function MyCollectionsDrawer({
                 justifyContent: 'flex-start',
                 overflowX: 'auto',
                 overflowY: 'auto',
-                maxHeight: '50vh',
+                // Cap the card row so the sticky dock (header + cards +
+                // footer) can never outgrow a short viewport and push the
+                // header's actions off-screen.
+                maxHeight: `min(50vh, calc(100vh - ${SHEET_CHROME_PX}px))`,
                 px: `${TRIGGER_INSET_PX}px`,
                 pb: 2,
               }}
