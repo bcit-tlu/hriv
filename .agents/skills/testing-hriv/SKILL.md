@@ -38,7 +38,7 @@ docker compose up -d --build   # frontend :5173, backend :8000, db, redis, worke
 | Drag-and-drop, tile reorder persistence, file drops, synthetic events                                           | [references/drag-and-drop.md](references/drag-and-drop.md)                                                              |
 | Admin export/import, archive contents                                                                           | [references/admin-export-import.md](references/admin-export-import.md)                                                  |
 | Image upload/processing, bulk import + ManagePage auto-refresh, image replacement                               | [references/upload-processing.md](references/upload-processing.md)                                                      |
-| Browser/CDP/test-environment tips, localhost throttling, nginx body size                                        | [references/environment-tips.md](references/environment-tips.md)                                                        |
+| Browser/CDP and local-stack tips, localhost throttling, nginx body size                                         | [references/environment-tips.md](references/environment-tips.md)                                                        |
 
 ## Local Setup
 
