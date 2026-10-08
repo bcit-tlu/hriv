@@ -207,21 +207,25 @@ function SortableMemberTile({
       {selecting ? (
         // A stock MUI checkbox as the visual state cue (#1567) — decorative:
         // the face carries the checkbox role, so this never needs to be
-        // focusable or clickable itself.
+        // focusable or clickable itself. It sits ON the thumb's top-left
+        // corner (inside the tile's click bounds — an overhanging checkbox
+        // drops the clicks that land on its protruding half) and stays
+        // medium-sized so the hit target reads as generous, not fiddly.
         <Checkbox
           checked={selected}
-          size="small"
           tabIndex={-1}
           inputProps={{ 'aria-hidden': true }}
           data-testid={`select-indicator-${image.id}`}
           sx={{
             position: 'absolute',
-            top: -8,
-            left: -8,
+            top: 4,
+            left: 14,
             zIndex: 1,
             p: 0,
             bgcolor: 'background.paper',
             borderRadius: 0.5,
+            border: 1,
+            borderColor: 'divider',
             pointerEvents: 'none',
           }}
         />

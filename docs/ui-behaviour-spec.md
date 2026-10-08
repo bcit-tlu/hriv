@@ -208,9 +208,11 @@ returned by the API (UX only — the backend re-checks).
 - **Given** a card whose `permissions.can_edit` is true, **When** the user
   clicks **Set cover image**, **Then** `CollectionCoverPickerModal` radios
   over the collection's visible members (loaded via `GET
-/api/collections/{id}` — summaries carry none) and **Save** PATCHes
-  `cover_image_id`; the leading **None** row restores the first-member
-  fallback.
+/api/collections/{id}` — summaries carry none) and **Save** PATCHes the
+  cover fields: the leading **None** row sets `cover_blank` (the tile
+  renders the type-logo placeholder like an uncovered category), the
+  **Automatic** row clears both states back to the first-member fallback,
+  and a member row pins `cover_image_id`.
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
@@ -378,14 +380,22 @@ returned by the API (UX only — the backend re-checks).
   `SortableTileGrid`; no button renders while the owned feed is loading or
   empty. Opening it shows a bottom drawer with up to eight most recently
   updated collections, **New collection**, and **See all** (Sequence with
-  `mine=true`). The standard contained button and drawer sit above the
-  always-visible footer. Compact cards are 160–180 px wide (at most 60% of a
-  300 px Browse tile) and scroll horizontally below about 1424 px. The
-  temporary drawer has a backdrop that stops at the footer and closes on
-  navigation; pinning removes the backdrop, keeps Browse interactive, persists
-  per user, and reserves its height below the Browse content. The drawer never
-  renders on image-viewer or collection pages and has no drag, reorder, or drop
-  targets.
+  `mine=true`). The standard contained button stays mounted while the sheet
+  is open, doubles as its title (`aria-labelledby`), and floats above the
+  sheet's bottom-left corner — the sheet slides up _beneath_ it. Tiles are
+  title-only (no image count, no chips). The sheet's bottom edge rides the
+  footer's live on-screen gap: it rests on the viewport bottom while the
+  footer is below the fold, attaches to the footer's top edge once the
+  footer scrolls into view, and never covers the footer. Compact cards are
+  160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
+  horizontally below about 1424 px. The temporary state has a backdrop that
+  stops at the footer's top edge and closes on Escape, backdrop click, or a
+  second press of the button; pinning removes the backdrop, keeps Browse
+  interactive, persists per user, and reserves the sheet's height below the
+  Browse content. The same sheet stays mounted across both modes — pinning
+  does not reload it — and unpinning leaves the drawer open (the pin is not
+  a close control). The drawer never renders on image-viewer or collection
+  pages and has no drag, reorder, or drop targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
   edit dialog's category picker refiles the collection — both regardless of

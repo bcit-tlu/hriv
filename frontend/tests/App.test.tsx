@@ -2006,7 +2006,9 @@ describe('App collections deep links (#1414)', () => {
     render(<App />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
-    expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
+    // No heading — the always-mounted trigger button doubles as the
+    // sheet's accessible name.
+    expect(await screen.findByRole('dialog', { name: 'My collections' })).toBeInTheDocument()
     expect(screen.getByText('Sequence overview')).toBeInTheDocument()
     expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
   })

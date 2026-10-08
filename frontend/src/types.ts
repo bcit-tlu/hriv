@@ -124,6 +124,8 @@ export interface CollectionSummary {
   coverThumb: string | null
   /** Pinned cover member id; `null` = first-member fallback. */
   coverImageId: number | null
+  /** Explicit "no cover" pick — the tile renders the type-logo placeholder. */
+  coverBlank: boolean
   version: number
   /** Category the collection is filed into (null = unfiled, not on Browse). */
   categoryId: number | null

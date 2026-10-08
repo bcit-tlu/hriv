@@ -212,11 +212,10 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(screen.queryByRole('menuitemradio', { name: 'Everyone' })).not.toBeInTheDocument()
   })
 
-  it('narrows only the student search by the optional program filter', async () => {
+  it('narrows the search by the optional program filter in every scope', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [1]))
     await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
-    // Program narrowing is offered only in the Students scope (group parity).
     await user.click(screen.getByRole('button', { name: 'Program' }))
     await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Radiography' }))
     await waitFor(() =>
@@ -224,13 +223,14 @@ describe('CollectionOwnersDialog (#1531)', () => {
         expect.objectContaining({ role: 'student', programIds: [1] }),
       ),
     )
-    // Switching to Instructors hides the button and ignores the filter.
+    // Unlike the group member picker, the filter stays available in every
+    // scope — the endpoint applies program narrowing to instructors too.
     await user.click(screen.getByRole('button', { name: 'Role' }))
     await user.click(await screen.findByRole('menuitemradio', { name: 'Instructors' }))
-    expect(screen.queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Program' })).toBeInTheDocument()
     await waitFor(() =>
       expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ role: 'instructor', programIds: undefined }),
+        expect.objectContaining({ role: 'instructor', programIds: [1] }),
       ),
     )
   })

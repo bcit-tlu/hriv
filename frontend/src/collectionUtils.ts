@@ -109,6 +109,7 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     imageCount: api.image_count,
     coverThumb: api.cover_thumb,
     coverImageId: api.cover_image_id,
+    coverBlank: api.cover_blank,
     version: api.version,
     categoryId: api.category_id,
     sortOrder: api.sort_order,

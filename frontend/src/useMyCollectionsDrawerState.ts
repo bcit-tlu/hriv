@@ -40,7 +40,10 @@ export function useMyCollectionsDrawerState(userScope: string) {
       setState((current) => ({
         ...current,
         pinned: nextPinned,
-        open: nextPinned ? current.open : false,
+        // Unpinning must not collapse the sheet — it only hands the drawer
+        // back to temporary mode (the backdrop returns); the pin is not a
+        // close control.
+        open: current.open,
       }))
       try {
         localStorage.setItem(`${STORAGE_PREFIX}${userScope}`, String(nextPinned))

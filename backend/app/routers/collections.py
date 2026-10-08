@@ -802,6 +802,11 @@ async def update_collection(
         collection.groups = new_groups
     if "cover_image_id" in fields:
         collection.cover_image_id = body.cover_image_id
+        collection.cover_blank = False
+    if "cover_blank" in fields:
+        collection.cover_blank = bool(body.cover_blank)
+        if collection.cover_blank:
+            collection.cover_image_id = None
     # Tile-visible fields (name/visibility/counts rendered on Browse tiles)
     # may have changed — invalidate the category-tree ETag.
     await bump_browse_revision(db)

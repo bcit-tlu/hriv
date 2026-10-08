@@ -65,6 +65,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
     programIds: [],
@@ -137,6 +138,7 @@ const summaries: CollectionSummary[] = [
     imageCount: 0,
     coverThumb: null,
     coverImageId: null,
+    coverBlank: false,
   }),
 ]
 

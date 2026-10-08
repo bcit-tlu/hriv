@@ -582,6 +582,12 @@ class Collection(Base):
     cover_image_id: Mapped[int | None] = mapped_column(
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True,
     )
+    # Explicit "no cover" state from the cover picker: the tile renders the
+    # type-logo placeholder instead of falling back to the first member.
+    # Mutually exclusive with a pinned cover — writes to one clear the other.
+    cover_blank: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Curatorial hide (#1559): a hidden collection drops out of student
     # view unless the student owns it — owners keep access (unlike images,
     # collections can be student-owned). Toggle authority is curator-only

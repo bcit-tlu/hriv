@@ -1312,6 +1312,7 @@ async def run_db_export(task_id: int) -> None:
                             if c.cover_image_id in exported_image_ids
                             else None
                         ),
+                        "cover_blank": c.cover_blank,
                         "program_ids": [p.id for p in c.programs],
                         "group_ids": [g.id for g in c.groups],
                         "created_at": dt(c.created_at),
@@ -1747,9 +1748,13 @@ async def run_db_import(task_id: int) -> None:
                         for position, image_id in enumerate(c.get("image_ids", []))
                     ]
                     # Pinned cover survives only while it names an imported
-                    # member (older dumps predate the field).
+                    # member (older dumps predate the field). The explicit
+                    # "no cover" flag survives independently of members.
                     if c.get("cover_image_id") in (c.get("image_ids") or []):
                         collection.cover_image_id = c["cover_image_id"]
+                    collection.cover_blank = bool(c.get("cover_blank"))
+                    if collection.cover_blank:
+                        collection.cover_image_id = None
                     # Owner rows (#1531): new-format dumps carry owner_ids;
                     # older dumps only have the single-owner user_id, which
                     # backfills one owner row (it also remains the creator).

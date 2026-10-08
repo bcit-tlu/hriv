@@ -70,6 +70,7 @@ function makeCollection(
     imageCount: images.length,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
     version: 1,
