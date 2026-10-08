@@ -35,7 +35,8 @@ members only, in member order.
 
 - **Save pins a member.** `onSave` emits the picked image id; the app PATCHes
   `cover_image_id` on the collection (`null` restores the first-member fallback).
-- **Clear restores the fallback.** It appears only while a member is selected.
+- **"None" restores the fallback.** The first row clears the pin so the tile
+  uses the first member again; it is pre-selected when no cover is pinned.
 - **Backend validation.** `PATCH /api/collections/{id}` 422s a `cover_image_id` that is
   not a member visible to the caller; removing the pinned member clears the pin, and
   deleting the image row clears it via `ON DELETE SET NULL`.

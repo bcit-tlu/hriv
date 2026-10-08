@@ -60,7 +60,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Radio picker for the collection tile cover — the member list comes from the loaded collection detail (tile summaries carry no images), in member order. Saving pins `cover_image_id`; Clear restores the first-member fallback.',
+          'Radio picker for the collection tile cover — the member list comes from the loaded collection detail (tile summaries carry no images), in member order. Saving pins `cover_image_id`; the "None" option restores the first-member fallback.',
       },
     },
   },
@@ -81,9 +81,9 @@ export const Basic: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByText('Choose Cover Image')).toBeInTheDocument()
     await expect(body.getByText('Lateral skull')).toBeInTheDocument()
-    // No pin → no selection and no Clear affordance.
-    await expect(body.queryByRole('radio', { checked: true })).not.toBeInTheDocument()
-    await expect(body.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument()
+    // No pin → the "None" row is pre-selected.
+    const noneRow = (await body.findByText('None')).closest('tr')!
+    await expect(within(noneRow).getByRole('radio')).toBeChecked()
   },
 }
 
@@ -94,7 +94,8 @@ export const PinnedMember: Story = {
     const body = within(canvasElement.ownerDocument.body)
     const row = (await body.findByText('Lateral skull')).closest('tr')!
     await expect(within(row).getByRole('radio')).toBeChecked()
-    await expect(body.getByRole('button', { name: 'Clear' })).toBeInTheDocument()
+    const noneRow = (await body.findByText('None')).closest('tr')!
+    await expect(within(noneRow).getByRole('radio')).not.toBeChecked()
   },
 }
 

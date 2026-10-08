@@ -532,7 +532,7 @@ export default function CollectionEditDialog({
               value={categoryId}
               onChange={setCategoryId}
               includeRoot={isEdit}
-              rootLabel="Not on Browse"
+              rootLabel="None. Access in Manage > Collections."
               placeholder={isEdit ? undefined : 'Select a category'}
               onAddCategory={onAddCategory}
               onEditCategory={onEditCategory}

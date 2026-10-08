@@ -385,7 +385,9 @@ describe('CollectionEditDialog', () => {
       )
 
       await user.click(screen.getByRole('combobox', { name: 'Category' }))
-      const unfiledOption = await screen.findByRole('option', { name: /Not on Browse/ })
+      const unfiledOption = await screen.findByRole('option', {
+        name: /None. Access in Manage > Collections./,
+      })
       await user.click(unfiledOption)
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })

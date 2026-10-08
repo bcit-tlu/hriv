@@ -17,7 +17,7 @@ grid contains categories and images only. Collection drag sources, reorder,
 category filing, and image-to-collection drop-add are available only for
 collections filed into a category. Curators who want a collection featured
 near the top of Browse can file it into a root-level category such as
-**Featured**; choosing **Not on Browse** removes it from Browse.
+**Featured**; choosing **None. Access in Manage > Collections.** removes it from Browse.
 
 The **Add to Collection** dialog remains available for adding images to
 collections. The former root-tile drag-add path is no longer available to

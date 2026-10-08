@@ -88,7 +88,7 @@ export default function MoveCollectionDialog({
           value={newCategoryId}
           onChange={setNewCategoryId}
           label="Destination"
-          rootLabel="Not on Browse"
+          rootLabel="None. Access in Manage > Collections."
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
