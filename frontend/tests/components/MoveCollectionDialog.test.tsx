@@ -104,7 +104,7 @@ describe('MoveCollectionDialog', () => {
     expect(onMove).toHaveBeenCalledWith(null)
   })
 
-  it('labels the null destination Not on Browse', () => {
+  it('labels the null destination None. Access in Manage > Collections.', () => {
     render(
       <MoveCollectionDialog
         open
@@ -115,7 +115,9 @@ describe('MoveCollectionDialog', () => {
       />,
     )
 
-    expect(screen.getByRole('option', { name: 'Not on Browse' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: 'None. Access in Manage > Collections.' }),
+    ).toBeInTheDocument()
   })
 
   it('warns when filing a private collection and hides the warning when unfiled', async () => {

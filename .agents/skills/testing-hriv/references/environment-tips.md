@@ -32,6 +32,16 @@
   ```bash
   VITE_API_URL=http://localhost:8000 npm run dev -- --host
   ```
+- **Reusing a live local frontend (bind-mount revision check):** Before
+  trusting a running Vite server, inspect which checkout the frontend container
+  mounts; Compose can serve a separate worktree. Match the mount's host `Source`
+  to the frontend tree, then compare that checkout's revision with the one you
+  intend to test:
+  ```bash
+  docker inspect <frontend-container> --format '{{json .Mounts}}'
+  git -C <mounted-worktree-root> rev-parse HEAD
+  git -C <intended-checkout> rev-parse HEAD
+  ```
 - **Compose environment flag changes:** Recreate the backend instead of only
   restarting it:
   ```bash

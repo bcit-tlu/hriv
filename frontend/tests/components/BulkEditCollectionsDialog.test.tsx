@@ -60,14 +60,16 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: 11 }))
   })
 
-  it('can unfile with the Not on Browse option', async () => {
+  it('can unfile with the None. Access in Manage > Collections. option', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
     renderDialog({ onSave })
 
     await user.click(screen.getByRole('combobox'))
     const listbox = await screen.findByRole('listbox')
-    await user.click(within(listbox).getByRole('option', { name: /Not on Browse/ }))
+    await user.click(
+      within(listbox).getByRole('option', { name: /None. Access in Manage > Collections./ }),
+    )
     await user.click(screen.getByRole('button', { name: /save changes/i }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: null }))
   })
@@ -113,7 +115,9 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
     await user.click(screen.getByRole('combobox'))
     listbox = await screen.findByRole('listbox')
-    await user.click(within(listbox).getByRole('option', { name: /Not on Browse/ }))
+    await user.click(
+      within(listbox).getByRole('option', { name: /None. Access in Manage > Collections./ }),
+    )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 

@@ -175,7 +175,7 @@ root-level category such as **Featured**.
   images and categories in the same folder; the order is shared for every
   viewer.
 - Admins and instructors can **file** a collection into a category or choose
-  **Not on Browse** to unfile it, using the card's **Move** action (the
+  **None. Access in Manage > Collections.** to unfile it, using the card's **Move** action (the
   folder icon in the cover's top-right corner), the **Category** picker in
   the collection's edit dialog, or by dragging a filed tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not

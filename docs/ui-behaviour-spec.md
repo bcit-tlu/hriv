@@ -209,7 +209,8 @@ returned by the API (UX only — the backend re-checks).
   clicks **Set cover image**, **Then** `CollectionCoverPickerModal` radios
   over the collection's visible members (loaded via `GET
 /api/collections/{id}` — summaries carry none) and **Save** PATCHes
-  `cover_image_id`; **Clear** restores the first-member fallback.
+  `cover_image_id`; the leading **None** row restores the first-member
+  fallback.
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
@@ -419,8 +420,8 @@ returned by the API (UX only — the backend re-checks).
   includes private selections. Public collections and an unfiled destination
   show no warning.
 - **Given** a collection filing picker, **Then** its null option reads
-  **Not on Browse** in Move, Edit, and Bulk Edit; the shared picker default
-  remains **None (root level)**. The Move dialog says:
+  **None. Access in Manage > Collections.** in Move, Edit, and Bulk Edit;
+  the shared picker default remains **None (root level)**. The Move dialog says:
   “File “<name>” into a Browse category. Collections that aren't filed don't
   appear on Browse.”
 - **Given** a private selection is filed in Bulk Edit, **Then** the warning

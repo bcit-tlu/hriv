@@ -74,7 +74,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   Verify the root grid has no collection tiles, and test the separate
   flag-controlled My collections drawer and its `{ mine: true, limit: 8 }`
   request. Nested filed collections still render.
-  collections still render. Also cover `Not on Browse` picker labels,
+  Also cover `None. Access in Manage > Collections.` picker labels,
   unfile snackbar, private-filing warnings, and Manage Categories ordering:
   `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard MyCollectionsDrawer useMyCollectionsDrawerState useMyCollectionsShelf useFeatures CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
   Backend placement/tile-order cases:

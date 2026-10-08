@@ -172,7 +172,7 @@ export default function BulkEditCollectionsDialog({
                 }}
                 label="Move to Category"
                 placeholder={!categoryChanged ? '(no change)' : undefined}
-                rootLabel="Not on Browse"
+                rootLabel="None. Access in Manage > Collections."
                 onAddCategory={onAddCategory}
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}

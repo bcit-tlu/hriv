@@ -33,9 +33,10 @@ interface CollectionCoverPickerModalProps {
 
 /**
  * The collection-tile analogue of `CardImagePickerModal`: radios over the
- * collection's visible members in member order, with Clear/Cancel/Save.
- * Unlike the category version the member list is a prop — tile summaries
- * carry no images, so the caller fetches the collection detail first.
+ * collection's visible members in member order, headed by a "None" row
+ * that restores the first-member fallback. Unlike the category version
+ * the member list is a prop — tile summaries carry no images, so the
+ * caller fetches the collection detail first.
  */
 export default function CollectionCoverPickerModal({
   open,
@@ -72,6 +73,34 @@ export default function CollectionCoverPickerModal({
                 </TableRow>
               </TableHead>
               <TableBody>
+                {/* Fallback row — "none" clears the pin so the tile uses
+                    the first member again. */}
+                <TableRow
+                  hover
+                  selected={selectedId === null}
+                  sx={{ cursor: 'pointer' }}
+                  onClick={() => setSelectedId(null)}
+                >
+                  <TableCell padding="checkbox">
+                    <Radio
+                      size="small"
+                      checked={selectedId === null}
+                      onChange={() => setSelectedId(null)}
+                      inputProps={{ 'aria-label': 'None — uses the first image' }}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <em>None</em>
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ ml: 1 }}
+                    >
+                      — uses the first image
+                    </Typography>
+                  </TableCell>
+                </TableRow>
                 {images.map((image) => (
                   <TableRow
                     key={image.id}
@@ -97,11 +126,6 @@ export default function CollectionCoverPickerModal({
         )}
       </DialogContent>
       <DialogActions>
-        {selectedId != null && (
-          <Button onClick={() => setSelectedId(null)} color="inherit" sx={{ mr: 'auto' }}>
-            Clear
-          </Button>
-        )}
         <Button onClick={onClose}>Cancel</Button>
         <Button variant="contained" onClick={handleSave}>
           Save

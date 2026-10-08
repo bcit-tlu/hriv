@@ -24,7 +24,7 @@ describe('CollectionCoverPickerModal', () => {
     expect(onSave).toHaveBeenCalledWith(12)
   })
 
-  it('starts on the pinned member and Clear restores the fallback', () => {
+  it('starts on the pinned member and the None option restores the fallback', () => {
     const onSave = vi.fn()
     render(
       <CollectionCoverPickerModal
@@ -38,9 +38,24 @@ describe('CollectionCoverPickerModal', () => {
     const modal = screen.getByRole('dialog')
     const pinnedRow = within(modal).getByText('Frontal').closest('tr')!
     expect(within(pinnedRow).getByRole('radio')).toBeChecked()
-    fireEvent.click(within(modal).getByRole('button', { name: 'Clear' }))
+    fireEvent.click(within(modal).getByText('None'))
     fireEvent.click(within(modal).getByRole('button', { name: 'Save' }))
     expect(onSave).toHaveBeenCalledWith(null)
+  })
+
+  it('pre-selects the None option when no cover is pinned', () => {
+    render(
+      <CollectionCoverPickerModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        images={members}
+        currentImageId={null}
+      />,
+    )
+    const modal = screen.getByRole('dialog')
+    const noneRow = within(modal).getByText('None').closest('tr')!
+    expect(within(noneRow).getByRole('radio')).toBeChecked()
   })
 
   it('shows the empty state when the collection has no visible members', () => {
