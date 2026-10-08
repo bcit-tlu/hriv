@@ -1731,11 +1731,12 @@ export default function App() {
   const [collCreateCategoryId, setCollCreateCategoryId] = useState<number | null>(null)
   const collEditRequestRef = useRef(0)
   // Navigation epoch: a pending detail fetch must not open the editor or
-  // cover picker over a page the user already left.
+  // cover picker over a view the user already left — page changes, Browse
+  // drill-downs, and opening an image all count.
   const collNavEpochRef = useRef(0)
   useEffect(() => {
     collNavEpochRef.current += 1
-  }, [page])
+  }, [page, path, selectedImage])
   const {
     loadCollection: loadCollectionDetail,
     create: createCollection,
