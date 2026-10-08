@@ -329,20 +329,22 @@ export default function App() {
   } | null>(null)
   useEffect(() => {
     const imageId = selectedImage?.id
-    if (imageId == null) return
+    // Skip entirely when collections are dark-launched off: no point adding a
+    // guaranteed-404 request to every image view on flag-off deployments.
+    if (imageId == null || !collectionsEnabled) return
     let cancelled = false
     void fetchImageCollections(imageId)
       .then((rows) => {
         if (!cancelled) setImageCollectionsResult({ imageId, rows })
       })
       .catch(() => {
-        // 404 (hidden/inactive image or feature off) ⇒ no row.
+        // 404 (hidden or inactive image) ⇒ no row.
         if (!cancelled) setImageCollectionsResult({ imageId, rows: [] })
       })
     return () => {
       cancelled = true
     }
-  }, [selectedImage?.id])
+  }, [selectedImage?.id, collectionsEnabled])
   const selectedImageCollections =
     imageCollectionsResult && imageCollectionsResult.imageId === selectedImage?.id
       ? imageCollectionsResult.rows
