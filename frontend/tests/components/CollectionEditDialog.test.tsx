@@ -193,6 +193,31 @@ describe('CollectionEditDialog', () => {
       expect(onViewCollection).toHaveBeenCalledOnce()
     })
 
+    it('disables View Collection actions while a save is pending', async () => {
+      const user = userEvent.setup()
+      let resolveSave: (() => void) | undefined
+      const onSave = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSave = resolve
+          }),
+      )
+      renderDialog({
+        onSave,
+        onViewCollection: vi.fn(),
+        collection: makeCollection({ name: 'Original' }),
+      })
+      await user.clear(screen.getByLabelText('Collection name'))
+      await user.type(screen.getByLabelText('Collection name'), 'Changed')
+      await user.click(screen.getByRole('button', { name: 'View Collection' }))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
+      expect(screen.getByRole('button', { name: 'View Collection' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Discard & View' })).toBeDisabled()
+      resolveSave?.()
+    })
+
     it('pre-fills the form, locks the type, and passes the version on save', async () => {
       const user = userEvent.setup()
       const collection = makeCollection({

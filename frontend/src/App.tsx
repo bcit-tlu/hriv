@@ -1872,9 +1872,10 @@ export default function App() {
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
       const created = await createCollectionWithImages(values, addToCollectionImageIds)
+      if (created.categoryId != null) refreshCategories()
       reportAddedToCollection(created, addToCollectionImageIds.length)
     },
-    [addToCollectionImageIds, reportAddedToCollection],
+    [addToCollectionImageIds, refreshCategories, reportAddedToCollection],
   )
 
   // "Open image" from the collection detail placeholder → the regular
@@ -2007,7 +2008,11 @@ export default function App() {
               onViewerError={setErrorSnack}
               onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
-              onCreate={collectionsData.create}
+              onCreate={async (values) => {
+                const created = await collectionsData.create(values)
+                if (created.categoryId != null) refreshCategories()
+                return created
+              }}
               onUpdate={collectionsData.update}
               onDelete={collectionsData.remove}
               onSaveOwners={collectionsData.saveOwners}

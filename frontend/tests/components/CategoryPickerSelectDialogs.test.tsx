@@ -100,6 +100,32 @@ describe('CategoryPickerSelect — add category dialog', () => {
     // No numeric id returned: the selection must not change.
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it('adds a top-level category when the root option is hidden and no categories exist', async () => {
+    const user = userEvent.setup()
+    const onAddCategory = vi.fn().mockResolvedValue(99)
+    const onChange = vi.fn()
+    render(
+      <CategoryPickerSelect
+        categories={[]}
+        value={null}
+        onChange={onChange}
+        includeRoot={false}
+        placeholder="Select a category"
+        onAddCategory={onAddCategory}
+      />,
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.queryByText('No other categories available')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: 'New top-level category' }))
+    expect(screen.getByLabelText('Category name')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Category name'), 'New category')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(onAddCategory).toHaveBeenCalledWith('New category', null, [], []))
+    expect(onChange).toHaveBeenCalledWith(99)
+  })
 })
 
 describe('CategoryPickerSelect — edit category dialog', () => {

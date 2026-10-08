@@ -329,9 +329,11 @@ orphans (admin-only), and that an admin can reassign them with
 `PUT /api/collections/{id}/owners`. See [collections.md](collections.md)
 ("Owner management", "Ownership & lifecycle").
 
+Curators must include an existing `category_id` when creating a collection.
+
 1. Obtain tokens for `admin@example.ca` and `instructor@example.ca` (Test Case 4b).
 2. As admin, create a throw-away program: `POST /api/programs {"name": "Orphan Test"}` → note its `id` as `$PID`, and add the instructor to it (`PATCH /api/users/{instructor_id}` with `program_ids` including `$PID`).
-3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "image_ids": [1]}` → note `id` as `$CID` and `version`.
+3. As the instructor, create a collection: `POST /api/collections {"name": "Orphan me", "type": "sequence", "visibility": "public", "category_id": <existing category id>, "image_ids": [1]}` → note `id` as `$CID` and `version`.
 4. As the instructor, move it onto the program: `POST /api/collections/$CID/transfer {"program_id": $PID, "version": <version>}`.
    **Assert:** `200`, `owners` is `[{"user_id": null, "program_id": $PID, "name": "Orphan Test"}]` (the program becomes the sole owner — user-owner rows are cleared), `version` incremented, `permissions.can_edit` is `true`.
 5. As the instructor, stage a co-owner on the program-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [<instructor id>], "version": <version>}`.
@@ -340,7 +342,7 @@ orphans (admin-only), and that an admin can reassign them with
    **Assert:** `204`. The staged instructor owner keeps the collection un-orphaned — `GET /api/collections/$CID` still shows the instructor in `owners` and the instructor can PATCH it (`200`).
 7. As the instructor, empty the owner set on the now-user-owned collection: `PUT /api/collections/$CID/owners {"user_ids": [], "version": <version>}`.
    **Assert:** `422` — a collection with no program owner may not lose its last user owner.
-8. As admin, create a second throw-away program (`POST /api/programs {"name": "Orphan Test 2"}` → `$PID2`), then a collection (`POST /api/collections` → `$CID2`) and `POST /api/collections/$CID2/transfer {"program_id": $PID2, ...}` so `$PID2` is its sole owner. Delete `$PID2` without staging any user owners.
+8. As admin, create a second throw-away program (`POST /api/programs {"name": "Orphan Test 2"}` → `$PID2`), then a collection (`POST /api/collections {"name": "Orphaned collection", "type": "sequence", "visibility": "public", "category_id": <existing category id>}` → `$CID2`) and `POST /api/collections/$CID2/transfer {"program_id": $PID2, ...}` so `$PID2` is its sole owner. Delete `$PID2` without staging any user owners.
    **Assert:** `GET /api/collections?orphaned=true` lists `$CID2` with `owners: []`; `GET /api/collections/$CID2` still returns the collection and its image.
 9. As the instructor, `PATCH /api/collections/$CID2 {"name": "x", "version": <version>}`, `PUT /api/collections/$CID2/owners {"user_ids": [<instructor id>], "version": <version>}`, and `POST /api/collections/$CID2/transfer {"program_id": <another program>, "version": <version>}`.
    **Assert:** all `403` — the orphan is admin-only even though the instructor created it. As a student, `GET /api/collections/$CID2` still returns `200` (public visibility survives orphaning).

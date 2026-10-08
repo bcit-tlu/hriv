@@ -403,6 +403,7 @@ export default function CollectionEditDialog({
                 variant="outlined"
                 startIcon={<Collections />}
                 onClick={handleViewCollection}
+                disabled={saving || deleting}
               >
                 View Collection
               </Button>
@@ -690,7 +691,13 @@ export default function CollectionEditDialog({
             <Button size="small" onClick={() => setConfirmView(false)}>
               Cancel
             </Button>
-            <Button size="small" variant="contained" color="warning" onClick={onViewCollection}>
+            <Button
+              size="small"
+              variant="contained"
+              color="warning"
+              onClick={onViewCollection}
+              disabled={saving || deleting}
+            >
               Discard &amp; View
             </Button>
           </Box>

@@ -152,6 +152,26 @@ describe('ManageCollectionsPage', () => {
     await waitFor(() => expect(onOpenCollection).toHaveBeenCalledWith(42))
   })
 
+  it('refreshes categories before opening a filed collection created from Manage Collections', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createCollection).mockResolvedValue(
+      makeApiCollection({ id: 42, name: 'New', category_id: 10 }),
+    )
+    const onCategoriesChanged = vi.fn()
+    const onOpenCollection = vi.fn()
+    renderPage({ currentUser: INSTRUCTOR, onCategoriesChanged, onOpenCollection })
+    await user.click(screen.getByRole('button', { name: 'New collection' }))
+    await user.type(screen.getByLabelText('Collection name'), 'New')
+    await user.click(screen.getByRole('combobox', { name: 'Category' }))
+    await user.click(await screen.findByRole('option', { name: /Anatomy/ }))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCategoriesChanged).toHaveBeenCalledOnce())
+    expect(onCategoriesChanged.mock.invocationCallOrder[0]).toBeLessThan(
+      onOpenCollection.mock.invocationCallOrder[0],
+    )
+    expect(onOpenCollection).toHaveBeenCalledWith(42)
+  })
+
   it('renders rows with type, visibility, owners, image count, and category', async () => {
     vi.mocked(fetchCollections).mockResolvedValue([
       makeApiCollectionSummary({

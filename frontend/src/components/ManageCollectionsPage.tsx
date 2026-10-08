@@ -696,6 +696,7 @@ export default function ManageCollectionsPage({
             ? { program_ids: values.programIds, group_ids: values.groupIds }
             : {}),
         })
+        if (values.categoryId != null) onCategoriesChanged?.()
         onOpenCollection(created.id)
       }
     } finally {

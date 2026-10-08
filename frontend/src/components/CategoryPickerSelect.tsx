@@ -325,7 +325,16 @@ export default function CategoryPickerSelect({
               </Box>
             </MenuItem>
           )}
-          {visibleOptions.length === 0 && (
+          {!includeRoot && onAddCategory && (
+            <MenuItem
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => handleAddClick(e, null)}
+            >
+              <AddIcon fontSize="small" sx={{ mr: 1 }} />
+              <ListItemText>New top-level category</ListItemText>
+            </MenuItem>
+          )}
+          {visibleOptions.length === 0 && (includeRoot || !onAddCategory) && (
             <MenuItem disabled>
               <ListItemText>
                 <Typography variant="body2" color="text.secondary">
