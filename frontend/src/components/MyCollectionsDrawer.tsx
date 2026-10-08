@@ -113,7 +113,6 @@ export default function MyCollectionsDrawer({
               maxHeight: '50vh',
               overflowX: 'hidden',
               overflowY: 'auto',
-              overscrollBehavior: 'contain',
             },
           },
         }}
@@ -125,6 +124,10 @@ export default function MyCollectionsDrawer({
         >
           <Box
             sx={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 1,
+              bgcolor: 'background.paper',
               display: 'flex',
               alignItems: 'center',
               gap: 1,
