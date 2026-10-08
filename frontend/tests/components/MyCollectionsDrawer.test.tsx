@@ -117,21 +117,48 @@ describe('MyCollectionsDrawer', () => {
     }
   })
 
+  const appendModal = (trapping: boolean) => {
+    // A real MUI modal's FocusTrap sentinels flip tabIndex with `open` —
+    // 0 while the modal traps, -1 once it starts exiting.
+    const modal = document.createElement('div')
+    modal.className = 'MuiModal-root'
+    const sentinel = document.createElement('div')
+    sentinel.dataset.testid = 'sentinelStart'
+    sentinel.tabIndex = trapping ? 0 : -1
+    const field = document.createElement('input')
+    modal.append(sentinel, field)
+    document.body.appendChild(modal)
+    return { modal, field }
+  }
+
   it('yields focus to a MUI modal layered above the temporary sheet', () => {
     renderDrawer({ open: true })
 
     // Dialogs/menus opened from the sheet portal outside the trap's subtree —
     // while one is open the trap must defer or the modal's inputs go dead.
-    const modal = document.createElement('div')
-    modal.className = 'MuiModal-root'
-    const field = document.createElement('input')
-    modal.appendChild(field)
-    document.body.appendChild(modal)
+    const { modal, field } = appendModal(true)
     try {
       field.focus()
       expect(document.activeElement).toBe(field)
     } finally {
-      document.body.removeChild(modal)
+      modal.remove()
+    }
+  })
+
+  it('keeps trapping while a MUI modal above it exits', () => {
+    renderDrawer({ open: true })
+
+    // An exiting modal leaves its root mounted but its own trap inactive —
+    // the drawer must re-engage immediately, not wait for the unmount.
+    const { modal } = appendModal(false)
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    try {
+      outside.focus()
+      expect(document.activeElement).not.toBe(outside)
+    } finally {
+      outside.remove()
+      modal.remove()
     }
   })
 

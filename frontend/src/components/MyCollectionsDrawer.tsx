@@ -104,12 +104,17 @@ export default function MyCollectionsDrawer({
     // trap the old MUI Drawer had — the trigger button sits inside the trap
     // as the first tabbable (it is the sheet's title), and focus returns to
     // it on close. Pinned mode never traps: the sheet is page furniture.
-    // `isEnabled` defers to any open MUI modal — dialogs and menus launched
-    // from the sheet portal outside this subtree, and the modal's own trap
-    // must win or their inputs would be unfocusable.
+    // `isEnabled` defers to any actively-open MUI modal — dialogs and menus
+    // launched from the sheet portal outside this subtree, and the modal's
+    // own trap must win or their inputs would be unfocusable. The marker is
+    // the modal's own FocusTrap sentinel: its tabIndex flips to -1 the
+    // moment the modal's `open` goes false, so a root lingering through the
+    // exit transition does not keep this trap suppressed.
     <TrapFocus
       open={!pinned && drawerOpen}
-      isEnabled={() => !document.querySelector('.MuiModal-root')}
+      isEnabled={() =>
+        !document.querySelector('.MuiModal-root [data-testid="sentinelStart"][tabindex="0"]')
+      }
     >
       <Box>
         {collections.length > 0 && (
