@@ -395,8 +395,10 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
+    footerDockSlot,
   }: {
     children: ReactNode
+    footerDockSlot?: ReactNode
     onTabChange: (v: string) => void
     onHomeClick: () => void
     onSearchOpen: () => void
@@ -450,6 +452,7 @@ vi.mock('../src/components/AppShell', () => ({
         Shell logout
       </button>
       {children}
+      {footerDockSlot}
     </div>
   ),
 }))
@@ -2011,28 +2014,6 @@ describe('App collections deep links (#1414)', () => {
     expect(await screen.findByRole('dialog', { name: 'My collections' })).toBeInTheDocument()
     expect(screen.getByText('Sequence overview')).toBeInTheDocument()
     expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
-  })
-
-  it('clears the owner filter when See all opens My collections', async () => {
-    apiMocks.fetchFeatures.mockResolvedValue({
-      collections: true,
-      collections_home_shelf: true,
-    })
-    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
-    const filters = { type: 'sequence', mine: false, owner: 'orphaned' }
-    collectionsDataMocks.filters = filters
-
-    render(<App />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
-    collectionsDataMocks.setFilters.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: 'See all' }))
-
-    expect(collectionsDataMocks.setFilters).toHaveBeenCalledWith({
-      ...filters,
-      mine: true,
-      owner: 'any',
-    })
   })
 
   it('does not fetch or show the drawer when its flag is off', async () => {

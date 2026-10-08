@@ -55,8 +55,9 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   thumbnail you change.
 - **Drawer layout:** Use a genuinely overflowing Browse category, not only a
   short root page. The footer is sticky only on Browse root and category pages.
-  In both pinned and unpinned modes, measure the footer's bottom against the
-  viewport height and the drawer's bottom against the footer's top.
+  The drawer is docked in flow directly above the footer (`footer-dock`), so in
+  both modes measure the footer's bottom against the viewport height and the
+  drawer's bottom against the footer's top; on overscroll both move together.
 - Drawer tiles are 160–180px wide: about 180px from a viewport width of 1584px,
   and 160px below about 1424px, where the row scrolls horizontally. A 15px
   vertical scrollbar reduces the row's available width by about 1.9px per card

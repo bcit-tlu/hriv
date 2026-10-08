@@ -200,6 +200,13 @@ export default function CollectionCard({
   const visColors = getVisibilityColors(mode)
   const compact = density === 'compact' || density === 'minimal'
   const minimal = density === 'minimal'
+  // `minimal` tiles (the drawer) cap their media at ~110px tall — shorter
+  // than the compact 4:3 aspect — to keep the sheet minimally invasive.
+  const mediaBox = minimal
+    ? { width: '100%', height: 110 }
+    : compact
+      ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' }
+      : undefined
   const titleVariant = compact ? 'subtitle1' : 'h6'
   // `cover_blank` wins over any thumb the record still carries — an
   // explicit "None" means the type-logo tile, full stop.
@@ -247,7 +254,7 @@ export default function CollectionCard({
             image={{ id: collection.id, thumb: cover }}
             renewThumb={renewCoverThumb}
             alt={collection.name}
-            style={compact ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' } : undefined}
+            style={mediaBox}
             sx={{
               display: 'block',
               ...(compact ? {} : { width: '100%', height: 140 }),
@@ -258,9 +265,7 @@ export default function CollectionCard({
         ) : (
           <Box
             sx={{
-              ...(compact
-                ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' }
-                : { height: 140 }),
+              ...(mediaBox ?? { height: 140 }),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
