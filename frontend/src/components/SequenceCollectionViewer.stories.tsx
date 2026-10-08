@@ -102,6 +102,7 @@ const READ_ONLY = makeCollection(
   false,
 )
 const EMPTY = makeCollection([], true)
+const EMPTY_READ_ONLY = makeCollection([], false)
 
 interface StoryArgs {
   collection: Collection
@@ -201,4 +202,9 @@ export const EmptySequence: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByTestId('sequence-viewer-empty')).toBeInTheDocument()
   },
+}
+
+export const EmptySequenceReadOnly: Story = {
+  name: 'Empty Sequence Read Only',
+  args: { collection: EMPTY_READ_ONLY },
 }

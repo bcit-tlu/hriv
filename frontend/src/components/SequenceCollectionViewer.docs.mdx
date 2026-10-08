@@ -63,7 +63,8 @@ browser history.
 - **Strip highlight.** The current thumbnail's ring is an `outline` pulled _inside_ the
   thumbnail box with a negative `outline-offset` — an outward outline was clipped
   asymmetrically by the strip's `overflow-x` scroll port, cropping the highlight (#1561).
-- **Fallback states.** An empty collection shows "no visible images"; if the current image's
+- **Fallback states.** An empty editable collection prompts use of **Manage Images**; a
+  read-only empty collection says "This collection has no images." If the current image's
   tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
   nearest still-available image. When every image has failed, an error alert replaces the
   viewer.

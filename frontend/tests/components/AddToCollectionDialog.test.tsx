@@ -237,7 +237,10 @@ describe('AddToCollectionDialog', () => {
 
   it('keeps the create form open with the message when onCreate rejects', async () => {
     const user = userEvent.setup()
-    const { props } = renderDialog({ onCreate: vi.fn(async () => Promise.reject(new Error('x'))) })
+    const { props } = renderDialog(
+      { onCreate: vi.fn(async () => Promise.reject(new Error('x'))) },
+      makeAuth('student'),
+    )
     await user.click(screen.getByRole('button', { name: 'New collection…' }))
     await user.type(await screen.findByLabelText('Collection name'), 'Fresh set')
     await user.click(screen.getByRole('button', { name: 'Create' }))

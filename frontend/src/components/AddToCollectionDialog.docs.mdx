@@ -55,6 +55,7 @@ form's visibility options follow the role.
   `true` closes the dialog; `false` keeps it open so another collection can be picked.
 - **New collection…** reuses `CollectionEditDialog` in create mode; `onCreate` receives the form
   values and the caller posts them with `image_ids` preset (`createCollectionWithImages`).
+  Curators must choose a category; creating from this flow keeps the user on the image.
   Rejections render inside the create form, as they do on the Collections tab.
 - **Permissions are UX gates only.** The backend re-checks edit authority and image visibility
   on every write.

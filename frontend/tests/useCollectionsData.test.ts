@@ -674,6 +674,7 @@ describe('useCollectionsData', () => {
         created = await result.current.create({
           ...VALUES,
           visibility: 'restricted',
+          categoryId: 10,
           programIds: [1],
           groupIds: [10],
         })
@@ -683,6 +684,7 @@ describe('useCollectionsData', () => {
         description: 'Frontal vs lateral',
         type: 'sequence',
         visibility: 'restricted',
+        category_id: 10,
         image_ids: [],
         program_ids: [1],
         group_ids: [10],

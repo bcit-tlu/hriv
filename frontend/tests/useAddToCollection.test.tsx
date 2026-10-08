@@ -219,6 +219,7 @@ describe('createCollectionWithImages', () => {
         description: null,
         type: 'sequence',
         visibility: 'private',
+        categoryId: 10,
         programIds: [],
         groupIds: [],
       },
@@ -229,6 +230,7 @@ describe('createCollectionWithImages', () => {
       description: null,
       type: 'sequence',
       visibility: 'private',
+      category_id: 10,
       image_ids: [42, 7],
     })
     expect(created.id).toBe(8)

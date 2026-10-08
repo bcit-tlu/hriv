@@ -118,6 +118,7 @@ interface StoryArgs {
   categories?: Category[]
   onSave: (...args: unknown[]) => Promise<void>
   onClose: () => void
+  onViewCollection?: () => void
 }
 
 function CollectionEditDialogExample({
@@ -126,6 +127,7 @@ function CollectionEditDialogExample({
   categories: categoryList = [],
   onSave,
   onClose,
+  onViewCollection,
 }: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(role)}>
@@ -137,6 +139,7 @@ function CollectionEditDialogExample({
         categories={categoryList}
         programs={programs}
         groups={groups}
+        onViewCollection={onViewCollection}
       />
     </AuthContext.Provider>
   )
@@ -193,6 +196,26 @@ export const Editing: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByText('Edit Collection')).toBeInTheDocument()
     await expect(body.getByTestId('collection-type-chip')).toHaveTextContent('Synchronized')
+  },
+}
+
+export const InstructorCreateWithCategory: Story = {
+  name: 'Instructor Create With Category',
+  args: { role: 'instructor', categories },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(body.getByRole('combobox', { name: 'Category' })).toBeInTheDocument()
+    await expect(body.getByRole('button', { name: 'Create' })).toBeDisabled()
+  },
+}
+
+export const EditingWithViewCollection: Story = {
+  name: 'Editing With View Collection',
+  args: { collection: existing, onViewCollection: fn() },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement.ownerDocument.body).getByRole('button', { name: 'View Collection' }),
+    ).toBeInTheDocument()
   },
 }
 
