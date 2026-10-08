@@ -366,8 +366,22 @@ describe('SequenceCollectionViewer', () => {
 
   it('shows the empty state when the collection has no visible images', () => {
     renderViewer({ collection: seqCollection({ images: [] }) })
-    expect(screen.getByTestId('sequence-viewer-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('sequence-viewer-empty')).toHaveTextContent(
+      'This collection has no images. Use "Manage Images" to add some.',
+    )
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
+  })
+
+  it('uses simple empty copy for non-editors', () => {
+    renderViewer({
+      collection: seqCollection({
+        images: [],
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+      }),
+    })
+    expect(screen.getByTestId('sequence-viewer-empty')).toHaveTextContent(
+      'This collection has no images.',
+    )
   })
 
   it('says all images are restricted when members exist but none are visible (#1529)', () => {

@@ -21,8 +21,11 @@ import AddIcon from '@mui/icons-material/Add'
 import SearchIcon from '@mui/icons-material/Search'
 import { AuthContext } from '../authContextValue'
 import { COLLECTION_TYPE_LABELS, SYNCHRONIZED_MAX_IMAGES } from '../collectionUtils'
-import type { CollectionSummary, Group, Program } from '../types'
-import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import type { Category, CollectionSummary, Group, Program } from '../types'
+import CollectionEditDialog, {
+  type CollectionEditDialogProps,
+  type CollectionFormValues,
+} from './CollectionEditDialog'
 
 export interface AddToCollectionDialogProps {
   open: boolean
@@ -35,6 +38,10 @@ export interface AddToCollectionDialogProps {
   error: string | null
   programs?: Program[]
   groups?: Group[]
+  categories?: Category[]
+  onAddCategory?: CollectionEditDialogProps['onAddCategory']
+  onEditCategory?: CollectionEditDialogProps['onEditCategory']
+  onToggleVisibility?: CollectionEditDialogProps['onToggleVisibility']
   /**
    * Add the images to `collection`. Resolve `true` to close the dialog; resolve
    * `false` to keep it open (the caller has already reported the outcome).
@@ -61,6 +68,10 @@ export default function AddToCollectionDialog({
   error,
   programs = [],
   groups = [],
+  categories = [],
+  onAddCategory,
+  onEditCategory,
+  onToggleVisibility,
   onAdd,
   onCreate,
 }: AddToCollectionDialogProps) {
@@ -275,6 +286,10 @@ export default function AddToCollectionDialog({
         collection={null}
         programs={programs}
         groups={groups}
+        categories={categories}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleVisibility}
         onSave={handleCreate}
       />
     </>

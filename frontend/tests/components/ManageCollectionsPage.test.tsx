@@ -21,6 +21,7 @@ vi.mock('../../src/api', async (importOriginal) => {
 import {
   fetchCollections,
   fetchCollection,
+  createCollection,
   updateCollection,
   deleteCollection,
   bulkUpdateCollections,
@@ -138,6 +139,17 @@ describe('ManageCollectionsPage', () => {
     renderPage()
     await waitFor(() => expect(fetchCollections).toHaveBeenCalledWith({}))
     expect(await screen.findByTestId('manage-collections-table')).toBeInTheDocument()
+  })
+
+  it('opens a collection created from Manage Collections', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createCollection).mockResolvedValue(makeApiCollection({ id: 42, name: 'New' }))
+    const onOpenCollection = vi.fn()
+    renderPage({ currentUser: STAFF, onOpenCollection })
+    await user.click(screen.getByRole('button', { name: 'New collection' }))
+    await user.type(screen.getByLabelText('Collection name'), 'New')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onOpenCollection).toHaveBeenCalledWith(42))
   })
 
   it('renders rows with type, visibility, owners, image count, and category', async () => {

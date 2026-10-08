@@ -3137,6 +3137,10 @@ export default function App() {
           error={editableCollections.error}
           programs={programs}
           groups={groups}
+          categories={categories}
+          onAddCategory={addCategoryInline}
+          onEditCategory={editCategoryInline}
+          onToggleVisibility={toggleCategoryVisibility}
           onAdd={handleAddToCollection}
           onCreate={handleCreateCollectionWithImage}
         />

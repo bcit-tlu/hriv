@@ -685,16 +685,18 @@ export default function ManageCollectionsPage({
           if (moved instanceof Error) throw moved
         }
       } else {
-        await createCollection({
+        const created = await createCollection({
           name: values.name,
           description: values.description,
           type: values.type,
           visibility: values.visibility,
+          ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
           image_ids: [],
           ...(values.visibility === 'restricted'
             ? { program_ids: values.programIds, group_ids: values.groupIds }
             : {}),
         })
+        onOpenCollection(created.id)
       }
     } finally {
       // Refresh even when the save/move chain throws — a partial success
@@ -1469,6 +1471,14 @@ export default function ManageCollectionsPage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleCategoryVisibility}
+        onViewCollection={
+          editing
+            ? () => {
+                setEditorOpen(false)
+                onOpenCollection(editing.id)
+              }
+            : undefined
+        }
       />
 
       <CollectionOwnersDialog

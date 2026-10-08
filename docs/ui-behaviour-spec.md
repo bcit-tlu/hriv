@@ -466,7 +466,9 @@ always read-only (`canEditContent={false}`).
   nearest still-available image; when all members have failed, an error
   `Alert` replaces the viewer.
 - **Given** the collection has no visible images, **Then** an info `Alert`
-  says there is nothing to show.
+  says "This collection has no images." Editable collections add the
+  **Manage Images** instruction; collections with restricted members retain
+  the restricted-member message.
 - **Given** `permissions.can_edit`, **Then** a **Manage Images** button
   opens the "Manage Collection Images — {name}" dialog of filmstrip-size
   thumbnails;

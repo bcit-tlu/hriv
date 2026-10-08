@@ -263,7 +263,9 @@ export default function SequenceCollectionViewer({
       <Alert severity="info" sx={{ mt: 3 }} data-testid="sequence-viewer-empty">
         {collection.memberCount > 0
           ? 'All images in this collection are currently restricted.'
-          : 'This collection has no visible images to show.'}
+          : collection.permissions.canEdit
+            ? 'This collection has no images. Use "Manage Images" to add some.'
+            : 'This collection has no images.'}
       </Alert>
     )
   }

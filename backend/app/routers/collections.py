@@ -386,13 +386,34 @@ async def create_collection(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a collection owned by the caller. Any authenticated role may
-    create — the caller becomes the first user owner and is recorded as
-    creator (``collections.user_id`` audit). ``restricted`` visibility
-    additionally needs attach authority over every program/group id, so only
-    admins and instructors may use it.
+    """Create a collection owned by the caller.
+
+    Admins and instructors must file new collections into an existing Browse
+    category. Other authenticated roles may create only unfiled collections.
+    The caller becomes the first user owner and is recorded as creator
+    (``collections.user_id`` audit). ``restricted`` visibility additionally
+    needs attach authority over every program/group id.
     """
     ctx = await _ViewerContext.build(db, user)
+    if user.role in {"admin", "instructor"}:
+        if body.category_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A category is required when creating a collection",
+            )
+        if await db.get(Category, body.category_id) is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid category ID: {body.category_id}",
+            )
+        affected = collection_scope_keys({body.category_id})
+        if affected:
+            await bump_scopes(db, affected)
+    elif body.category_id is not None:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins and instructors may file collections",
+        )
     progs: list[Program] = []
     grps: list[Group] = []
     if body.visibility == "restricted":
@@ -406,6 +427,7 @@ async def create_collection(
         description=body.description,
         type=body.type,
         visibility=body.visibility,
+        category_id=body.category_id,
         # user_id is the creator audit column (#1531); ownership is the
         # ``owners`` row added below.
         user_id=user.id,
@@ -418,6 +440,8 @@ async def create_collection(
     collection.groups = grps
     _replace_image_links(collection, images)
     db.add(collection)
+    if body.category_id is not None:
+        await bump_browse_revision(db)
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)

@@ -754,6 +754,7 @@ export function createCollection(body: {
   description?: string | null
   type: ApiCollectionType
   visibility: ApiCollectionVisibility
+  category_id?: number
   image_ids: number[]
   program_ids?: number[]
   group_ids?: number[]

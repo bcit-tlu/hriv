@@ -169,6 +169,7 @@ def _write_db(
     programs: list | None = None,
     groups: list | None = None,
     users: list | None = None,
+    categories: list | None = None,
     cas_rowcount: int = 1,
 ) -> AsyncMock:
     """Mock session for the write API.
@@ -180,7 +181,14 @@ def _write_db(
     """
     db = AsyncMock()
     db.add = MagicMock()
-    db.get = AsyncMock(return_value=get)
+    category_by_id = {category.id: category for category in categories or []}
+
+    async def _get(entity, entity_id):
+        if entity is Category:
+            return category_by_id.get(entity_id)
+        return get
+
+    db.get = AsyncMock(side_effect=_get)
     rows_by_entity = {
         Image: images or [],
         Program: programs or [],
@@ -589,28 +597,95 @@ async def test_get_collection_skips_dangling_links() -> None:
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
 async def test_create_private_collection_any_role_owner_is_caller(role: str) -> None:
-    db = _write_db(images=[_image(1), _image(2)])
-    body = CollectionCreate(name="  Mine ", type="sequence", image_ids=[2, 1])
+    curator = role in {"admin", "instructor"}
+    db = _write_db(
+        images=[_image(1), _image(2)],
+        categories=[Category(id=1, label="C1")] if curator else [],
+    )
+    body = CollectionCreate(
+        name="  Mine ",
+        type="sequence",
+        image_ids=[2, 1],
+        category_id=1 if curator else None,
+    )
     out = await create_collection(body, _user(role, id=42), db=db)
     created = db.add.call_args.args[0]
     assert isinstance(created, Collection)
     assert created.user_id == 42 and created.owner_program_id is None
     assert [o.id for o in created.owners] == [42]
     assert created.name == "Mine"
+    assert created.category_id == body.category_id
     assert created.visibility == "private"
     assert created.version == 1
     assert created.viewport_state == {}
     assert _links(created) == [(2, 0), (1, 1)]
     assert out.version == 1 and out.type == "sequence"
     db.commit.assert_awaited_once()
+    if curator:
+        collections_router.bump_scopes.assert_awaited_once()
+        collections_router.bump_browse_revision.assert_awaited_once()
+    else:
+        collections_router.bump_scopes.assert_not_awaited()
+        collections_router.bump_browse_revision.assert_not_awaited()
+
+
+@pytest.mark.parametrize("role", ["admin", "instructor"])
+async def test_create_curator_requires_category(role: str) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(
+            CollectionCreate(name="C", type="sequence"),
+            _user(role),
+            db=_write_db(),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "A category is required when creating a collection"
+
+
+async def test_create_curator_rejects_unknown_category() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(
+            CollectionCreate(name="C", type="sequence", category_id=9),
+            _user("admin"),
+            db=_write_db(),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Invalid category ID: 9"
+
+
+@pytest.mark.parametrize("role", ["staff", "student"])
+async def test_create_non_curator_cannot_file_collection(role: str) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(
+            CollectionCreate(name="C", type="sequence", category_id=1),
+            _user(role),
+            db=_write_db(),
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Only admins and instructors may file collections"
+
+
+@pytest.mark.parametrize("role", ["staff", "student"])
+async def test_create_non_curator_collection_is_unfiled(role: str) -> None:
+    db = _write_db()
+    out = await create_collection(
+        CollectionCreate(name="C", type="sequence"),
+        _user(role),
+        db=db,
+    )
+    assert out.category_id is None
     collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_not_awaited()
 
 
 async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
-    db = _write_db(programs=[_program(1), _program(2)], groups=[_group(5, [99])])
+    db = _write_db(
+        programs=[_program(1), _program(2)],
+        groups=[_group(5, [99])],
+        categories=[Category(id=1, label="C1")],
+    )
     body = CollectionCreate(
         name="R", type="synchronized", visibility="restricted",
-        program_ids=[1, 2], group_ids=[5],
+        program_ids=[1, 2], group_ids=[5], category_id=1,
     )
     out = await create_collection(body, _user("admin"), db=db)
     created = db.add.call_args.args[0]
@@ -620,19 +695,23 @@ async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
 
 
 async def test_create_restricted_instructor_own_program_and_managed_group() -> None:
-    db = _write_db(programs=[_program(1)], groups=[_group(5, [7])])
+    db = _write_db(
+        programs=[_program(1)],
+        groups=[_group(5, [7])],
+        categories=[Category(id=1, label="C1")],
+    )
     body = CollectionCreate(
         name="R", type="sequence", visibility="restricted",
-        program_ids=[1], group_ids=[5],
+        program_ids=[1], group_ids=[5], category_id=1,
     )
     out = await create_collection(body, _user("instructor", id=7, programs=[1]), db=db)
     assert out.program_ids == [1] and out.group_ids == [5]
 
 
 async def test_create_restricted_instructor_foreign_program_is_403() -> None:
-    db = _write_db(programs=[_program(2)])
+    db = _write_db(programs=[_program(2)], categories=[Category(id=1, label="C1")])
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", program_ids=[2],
+        name="R", type="sequence", visibility="restricted", program_ids=[2], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
         await create_collection(body, _user("instructor", id=7, programs=[1]), db=db)
@@ -641,9 +720,9 @@ async def test_create_restricted_instructor_foreign_program_is_403() -> None:
 
 
 async def test_create_restricted_instructor_unmanaged_group_is_403() -> None:
-    db = _write_db(groups=[_group(5, [8])])
+    db = _write_db(groups=[_group(5, [8])], categories=[Category(id=1, label="C1")])
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", group_ids=[5],
+        name="R", type="sequence", visibility="restricted", group_ids=[5], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
         await create_collection(body, _user("instructor", id=7), db=db)
@@ -660,24 +739,42 @@ async def test_create_restricted_staff_and_student_are_403(role: str) -> None:
 
 async def test_create_restricted_unknown_program_or_group_is_422() -> None:
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", program_ids=[1, 9],
+        name="R", type="sequence", visibility="restricted", program_ids=[1, 9], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("admin"), db=_write_db(programs=[_program(1)]))
+        await create_collection(
+            body,
+            _user("admin"),
+            db=_write_db(
+                programs=[_program(1)],
+                categories=[Category(id=1, label="C1")],
+            ),
+        )
     assert exc.value.status_code == 422 and "[9]" in exc.value.detail
 
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", group_ids=[5],
+        name="R", type="sequence", visibility="restricted", group_ids=[5], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("admin"), db=_write_db())
+        await create_collection(
+            body,
+            _user("admin"),
+            db=_write_db(categories=[Category(id=1, label="C1")]),
+        )
     assert exc.value.status_code == 422 and "[5]" in exc.value.detail
 
 
 async def test_create_with_missing_image_id_is_422() -> None:
-    body = CollectionCreate(name="C", type="sequence", image_ids=[1, 7])
+    body = CollectionCreate(name="C", type="sequence", image_ids=[1, 7], category_id=1)
     with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("admin"), db=_write_db(images=[_image(1)]))
+        await create_collection(
+            body,
+            _user("admin"),
+            db=_write_db(
+                images=[_image(1)],
+                categories=[Category(id=1, label="C1")],
+            ),
+        )
     assert exc.value.status_code == 422 and "[7]" in exc.value.detail
 
 
@@ -697,8 +794,14 @@ async def test_create_student_invisible_image_is_422(
 
 @pytest.mark.parametrize("role", ["instructor", "staff"])
 async def test_create_non_student_may_add_inactive_image(role: str) -> None:
-    db = _write_db(images=[_image(3, active=False)])
-    body = CollectionCreate(name="C", type="sequence", image_ids=[3])
+    curator = role == "instructor"
+    db = _write_db(
+        images=[_image(3, active=False)],
+        categories=[Category(id=1, label="C1")] if curator else [],
+    )
+    body = CollectionCreate(
+        name="C", type="sequence", image_ids=[3], category_id=1 if curator else None
+    )
     await create_collection(body, _user(role, id=3), db=db)
     assert _links(db.add.call_args.args[0]) == [(3, 0)]
 

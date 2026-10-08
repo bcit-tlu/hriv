@@ -507,13 +507,15 @@ export default function CollectionManageDialog({
         </Box>
       </DialogTitle>
       <DialogContent sx={{ position: 'relative', minHeight: 220 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {selecting
-            ? 'Click thumbnails to select them, then use the button below to stage the ' +
-              'removal. Choose Multi-select again to go back to reordering.'
-            : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
-              'from the collection. Changes apply when you choose Done.'}
-        </Typography>
+        {draft.length > 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {selecting
+              ? 'Click thumbnails to select them, then use the button below to stage the ' +
+                'removal. Choose Multi-select again to go back to reordering.'
+              : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
+                'from the collection. Changes apply when you choose Done.'}
+          </Typography>
+        )}
         {hiddenRestrictedCount > 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
             {hiddenRestrictedCount} restricted {hiddenRestrictedCount === 1 ? 'image' : 'images'}{' '}
