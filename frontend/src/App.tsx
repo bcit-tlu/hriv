@@ -399,7 +399,8 @@ export default function App() {
     page === 'browse' &&
     path.length === 0 &&
     selectedImage == null
-  const myCollectionsShelf = useMyCollectionsShelf(myCollectionsShelfEnabled)
+  const { collections: myCollectionsShelf, reload: reloadMyCollectionsShelf } =
+    useMyCollectionsShelf(myCollectionsShelfEnabled)
 
   // #1554: the page's type is the list's type filter — keep them in lockstep.
   useEffect(() => {
@@ -1729,6 +1730,12 @@ export default function App() {
   const [collEditing, setCollEditing] = useState<Collection | null>(null)
   const [collCreateCategoryId, setCollCreateCategoryId] = useState<number | null>(null)
   const collEditRequestRef = useRef(0)
+  // Navigation epoch: a pending detail fetch must not open the editor or
+  // cover picker over a page the user already left.
+  const collNavEpochRef = useRef(0)
+  useEffect(() => {
+    collNavEpochRef.current += 1
+  }, [page])
   const {
     loadCollection: loadCollectionDetail,
     create: createCollection,
@@ -1739,15 +1746,17 @@ export default function App() {
 
   const openBrowseCollectionEdit = useCallback(
     async (summary: { id: number }) => {
-      // Only the most recent Edit click may open the form.
+      // Only the most recent Edit click may open the form — and only while
+      // the user hasn't navigated away since the click.
       const request = ++collEditRequestRef.current
+      const navEpoch = collNavEpochRef.current
       try {
         const full = await loadCollectionDetail(summary.id)
-        if (request !== collEditRequestRef.current) return
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
         setCollEditing(full)
         setCollEditorOpen(true)
       } catch (err) {
-        if (request !== collEditRequestRef.current) return
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
         setErrorSnack(userMessage(err, 'Failed to load collection.'))
       }
     },
@@ -1772,7 +1781,10 @@ export default function App() {
           (k) => k !== 'version',
         )
           ? await updateCollection(collEditing.id, values, version, baseline)
-          : collEditing
+          : // Filing-only save: the dialog's baseline may have been reloaded
+            // past collEditing after a conflict — post the move against the
+            // freshest record we have or the move 409s again.
+            (baseline ?? collEditing)
         setCollEditing(updated)
         // Category filing is a move, not a PATCH (#1566) — apply it after
         // the metadata save so the move posts the just-refreshed version.
@@ -1788,6 +1800,7 @@ export default function App() {
         handleOpenCollection(created.id, { fromBrowse: true })
       }
       await refreshCategories()
+      reloadMyCollectionsShelf()
     },
     [
       collEditing,
@@ -1798,6 +1811,7 @@ export default function App() {
       moveCollectionTo,
       handleOpenCollection,
       refreshCategories,
+      reloadMyCollectionsShelf,
     ],
   )
 
@@ -1806,7 +1820,8 @@ export default function App() {
     await removeCollection(collEditing.id)
     setCollEditorOpen(false)
     await refreshCategories()
-  }, [collEditing, removeCollection, refreshCategories])
+    reloadMyCollectionsShelf()
+  }, [collEditing, removeCollection, refreshCategories, reloadMyCollectionsShelf])
 
   // Tile cover picker (CollectionCard's ImageIcon overlay — CategoryTile's
   // "Set card image" convention). The summary carries no member list, so
@@ -1818,12 +1833,13 @@ export default function App() {
   const openBrowseCoverPicker = useCallback(
     async (summary: { id: number }) => {
       const request = ++collEditRequestRef.current
+      const navEpoch = collNavEpochRef.current
       try {
         const full = await loadCollectionDetail(summary.id)
-        if (request !== collEditRequestRef.current) return
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
         setCoverPickerFor(full)
       } catch (err) {
-        if (request !== collEditRequestRef.current) return
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
         setErrorSnack(userMessage(err, 'Failed to load collection images.'))
       }
     },
@@ -1833,10 +1849,13 @@ export default function App() {
   const handleSetCollectionCoverImage = useCallback(
     (collection: { id: number }, imageId: number | null) => {
       void setCollectionCoverImage(collection.id, imageId)
-        .then(() => refreshCategories())
+        .then(() => {
+          refreshCategories()
+          reloadMyCollectionsShelf()
+        })
         .catch((err: unknown) => setErrorSnack(userMessage(err, 'Failed to set cover image.')))
     },
-    [setCollectionCoverImage, refreshCategories],
+    [setCollectionCoverImage, refreshCategories, reloadMyCollectionsShelf],
   )
 
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
