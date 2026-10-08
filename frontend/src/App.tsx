@@ -117,7 +117,6 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce, setTelemetryPage } from './observability'
 import type { FrontendPage, TelemetryNavDirection } from './observability'
-import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -372,9 +371,8 @@ export default function App() {
     refreshCategories,
     refreshUncategorizedImages,
     currentImages,
-    getPathRestriction,
+    liveCategoryPath,
     ancestorProgramIds,
-    getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
@@ -433,7 +431,12 @@ export default function App() {
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
     [categories, selectedImage?.categoryId],
   )
-  const currentCategoryHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
+  // Derive from the live ancestry, not the navigation-time `path` snapshots,
+  // so a background refresh that hides or reparents an ancestor is reflected.
+  const currentCategoryHiddenState = useMemo(
+    () => getCategoryHiddenStateFromPath(liveCategoryPath),
+    [liveCategoryPath],
+  )
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
     [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],
@@ -466,10 +469,9 @@ export default function App() {
     [imageViewerHiddenByCategory],
   )
   const breadcrumbProgramItems = useMemo(() => {
-    const leafProgramIds = path[path.length - 1]?.programIds ?? []
+    const leafProgramIds = liveCategoryPath[liveCategoryPath.length - 1]?.programIds ?? []
     const leafProgramIdSet = new Set(leafProgramIds)
-    const effectiveProgramIds = path.length > 0 ? narrowProgramIds(path) : ancestorProgramIds
-    return effectiveProgramIds
+    return ancestorProgramIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
@@ -477,12 +479,11 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorProgramIds, path, programs])
+  }, [ancestorProgramIds, liveCategoryPath, path.length, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const leafGroupIds = path[path.length - 1]?.groupIds ?? []
+    const leafGroupIds = liveCategoryPath[liveCategoryPath.length - 1]?.groupIds ?? []
     const leafGroupIdSet = new Set(leafGroupIds)
-    const effectiveGroupIds = path.length > 0 ? narrowGroupIds(path) : ancestorGroupIds
-    return effectiveGroupIds
+    return ancestorGroupIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
@@ -490,7 +491,7 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorGroupIds, groups, path])
+  }, [ancestorGroupIds, groups, liveCategoryPath, path.length])
   const bumpChangelogVersion = useCallback(() => {
     setChangelogVersion((version) => version + 1)
   }, [])
@@ -1279,9 +1280,8 @@ export default function App() {
     currentCategories,
     currentUserRole: currentUser?.role,
     ancestorProgramIds,
-    getPathRestriction,
     ancestorGroupIds,
-    getPathGroupRestriction,
+    liveCategoryPath,
     path,
     setPath,
     editNameCategory,
@@ -1406,12 +1406,18 @@ export default function App() {
 
   const handleCategoryTileClick = useCallback(
     (cat: Category) => {
+      // Rebase onto the live ancestry so a reparent since the last
+      // navigation doesn't carry obsolete ancestor ids into `path`/the URL.
+      const nextPath = findCategoryPath(categories, cat.id) ?? [...path, cat]
       runCanvasNavigation(() => {
-        setPath((prev) => [...prev, cat])
-        pushNavState('browse', [...path.map((c) => c.id), cat.id])
+        setPath(nextPath)
+        pushNavState(
+          'browse',
+          nextPath.map((c) => c.id),
+        )
       })
     },
-    [path, pushNavState, runCanvasNavigation],
+    [categories, path, pushNavState, runCanvasNavigation],
   )
 
   const handleManageCategoryNavigate = useCallback(
@@ -2655,14 +2661,12 @@ export default function App() {
                           alignItems: 'center',
                         }}
                       >
-                        {path.length > 0 &&
+                        {liveCategoryPath.length > 0 &&
                           (() => {
-                            const current = path[path.length - 1]
-                            const isDirectlyHidden = current.status === 'hidden'
-                            const ancestorHidden = path
-                              .slice(0, -1)
-                              .some((p) => p.status === 'hidden')
-                            const inheritedHidden = !isDirectlyHidden && ancestorHidden
+                            const current = liveCategoryPath[liveCategoryPath.length - 1]
+                            const isDirectlyHidden = currentCategoryHiddenState.directlyHidden
+                            const inheritedHidden =
+                              !isDirectlyHidden && currentCategoryHiddenState.hiddenByAncestor
                             if (inheritedHidden) {
                               return (
                                 <Button
@@ -2704,16 +2708,17 @@ export default function App() {
                               </Button>
                             )
                           })()}
-                        {path.length < MAX_DEPTH && (
-                          <Button
-                            variant="outlined"
-                            startIcon={<CreateNewFolderIcon />}
-                            onClick={() => setAddCatOpen(true)}
-                            sx={categoryPageHiddenSx}
-                          >
-                            Add Category
-                          </Button>
-                        )}
+                        {(path.length === 0 || liveCategoryPath.length > 0) &&
+                          liveCategoryPath.length < MAX_DEPTH && (
+                            <Button
+                              variant="outlined"
+                              startIcon={<CreateNewFolderIcon />}
+                              onClick={() => setAddCatOpen(true)}
+                              sx={categoryPageHiddenSx}
+                            >
+                              Add Category
+                            </Button>
+                          )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -3044,7 +3049,7 @@ export default function App() {
         categoryStatus={editNameCategory?.status}
         ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
         categoryId={editNameCategory?.id}
-        childCategories={editNameCategory?.children}
+        childCategories={editCategoryContext.freshChildren}
       />
 
       {/* Self-edit profile modal */}

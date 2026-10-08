@@ -97,6 +97,15 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 - The rightmost (current) breadcrumb segment shows the category's total
   descendant sub-category and image count in the same `<N sub-categories · M
 images> / Empty` format used on category tiles.
+- **Given** a background refresh that renames, re-restricts, hides, or
+  reparents the current category or an ancestor, **Then** the grid, inherited
+  program/group chips and narrowing, hidden state, the Hide/Show Category
+  control, the Add Category depth limit, and the Edit Category context
+  (including its descendant-incompatibility warning) follow the leaf's live ancestry (`useBrowseData.liveCategoryPath`,
+  resolved by leaf id), not the navigation-time `path` entries. If the leaf has
+  left the tree (deleted or no longer visible), the scope resolves empty rather
+  than falling back to root. Breadcrumb labels still render the `path` entries
+  until the user navigates.
 
 ### Category visibility (dual gate)
 
@@ -259,6 +268,24 @@ returned by the API (UX only — the backend re-checks).
   dimmed/greyscale like an inactive image row on Manage Images (#1567); the
   **Visibility** switch (shown where `canHide`) PATCHes `hidden` and the
   cover thumbnail always opens the collection view.
+- **Given** a collection filed under a hidden category, **Then** the row
+  renders the same dimmed/greyscale treatment (the hidden-subtree rule
+  already keeps it out of student view); the **Visibility**
+  switch is disabled — mirroring the image table's category-hidden rows —
+  and the name carries no marker icon: `VisibilityOff` is reserved for the
+  collection's own hidden flag (the image/category tile convention) —
+  and in **Bulk Edit** the visibility switch disables when the whole
+  selection is category-hidden or the chosen target category is hidden —
+  a toggle flipped before the switch locked is dropped from the save, so
+  only the refile applies (same rule as `BulkEditImagesModal`).
+- **Given** a collection filed under a hidden category, **Then** its card
+  (Browse tile grid and the collections-page grid alike) desaturates — the
+  same desaturation a curatorially hidden card gets, but **without** the
+  eye-off marker, which is reserved for the collection's own hidden flag —
+  and its detail header greys the action
+  controls while the hide/show control locks to the disabled **Hidden by
+  Category** state the image view and edit dialog share; the sequence
+  filmstrip desaturates too.
 - **Given** a staff user on the manage table, **Then** every API-returned row
   shows and the row's **actions** (⋮) menu follows `permissions` — View
   always, Edit only where `canEdit` or curatorial filing applies,

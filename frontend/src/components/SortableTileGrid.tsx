@@ -24,7 +24,7 @@ import type { ApiImage, TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
 import { DndMonitor, logDrag, recordTileRender } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
-import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import { findLiveCategoryPath, getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import CollectionCard from './CollectionCard'
 import ImageTile from './ImageTile'
@@ -386,9 +386,13 @@ export default function SortableTileGrid({
     [path.length, uncategorizedImages, currentImages],
   )
 
-  const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
-  const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
-  const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
+  // `path` entries are navigation-time snapshots — resolve the leaf's live
+  // ancestry so tile hidden state and restriction narrowing follow
+  // background refreshes, including reparents of the leaf or an ancestor.
+  const livePath = useMemo(() => findLiveCategoryPath(allCategories, path), [allCategories, path])
+  const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(livePath), [livePath])
+  const inheritedProgramIds = useMemo(() => narrowProgramIds(livePath), [livePath])
+  const inheritedGroupIds = useMemo(() => narrowGroupIds(livePath), [livePath])
 
   const parentId = path.length > 0 ? path[path.length - 1].id : null
 
@@ -724,6 +728,7 @@ export default function SortableTileGrid({
           inheritedProgramIds={inheritedProgramIds}
           groups={groups}
           inheritedGroupIds={inheritedGroupIds}
+          categoryHidden={pathHiddenState.hidden}
         />
       )
       if (!collection.permissions.canEdit) return tile
@@ -747,6 +752,7 @@ export default function SortableTileGrid({
       groups,
       inheritedProgramIds,
       inheritedGroupIds,
+      pathHiddenState,
     ],
   )
 

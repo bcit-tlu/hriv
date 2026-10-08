@@ -11,7 +11,6 @@ import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import PublicIcon from '@mui/icons-material/Public'
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import ViewCarouselIcon from '@mui/icons-material/ViewCarousel'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
@@ -36,8 +35,6 @@ export interface CollectionCardProps {
   onOpen: (collection: CollectionSummary) => void
   /** Rendered only when `collection.permissions.canEdit` (UX gate — the API re-checks). */
   onEdit?: (collection: CollectionSummary) => void
-  /** Owners & transfer dialog (#1531) — gated on `permissions.canTransfer`. */
-  onTransfer?: (collection: CollectionSummary) => void
   /**
    * Move/file into a category (#1529). Unlike the other actions this is
    * role-gated by the caller (any admin/instructor may file — it is
@@ -51,6 +48,12 @@ export interface CollectionCardProps {
   groups?: Group[]
   /** Effective group restriction inherited from the filed category. */
   inheritedGroupIds?: number[]
+  /** Filed category (or an ancestor) is hidden — the collection is
+   *  invisible to students regardless of its own `hidden` flag; the card
+   *  desaturates like an own-hidden tile but carries no marker icon —
+   *  the eye-off glyph is reserved for the collection's own hidden flag
+   *  (ImageTile's `categoryHidden` convention). */
+  categoryHidden?: boolean
 }
 
 /**
@@ -170,19 +173,18 @@ export default function CollectionCard({
   collection,
   onOpen,
   onEdit,
-  onTransfer,
   onMove,
   programs,
   inheritedProgramIds = [],
   groups = [],
   inheritedGroupIds = [],
+  categoryHidden = false,
 }: CollectionCardProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const cover = collection.coverThumb
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
-  const showTransfer = Boolean(onTransfer) && collection.permissions.canTransfer
   const showMove = Boolean(onMove)
 
   // Restriction chips mirror the category tile (#1567): the collection's own
@@ -213,8 +215,9 @@ export default function CollectionCard({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
-          // Curatorially hidden tiles desaturate like hidden categories (#1559).
-          filter: collection.hidden ? 'grayscale(100%)' : 'none',
+          // Curatorially hidden tiles desaturate like hidden categories
+          // (#1559) — and so do collections filed under a hidden category.
+          filter: collection.hidden || categoryHidden ? 'grayscale(100%)' : 'none',
         }}
       >
         {cover ? (
@@ -225,7 +228,7 @@ export default function CollectionCard({
             sx={{
               display: 'block',
               width: '100%',
-              height: 160,
+              height: 140,
               objectFit: 'cover',
               objectPosition: 'center',
             }}
@@ -233,7 +236,7 @@ export default function CollectionCard({
         ) : (
           <Box
             sx={{
-              height: 160,
+              height: 140,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -273,7 +276,7 @@ export default function CollectionCard({
               <Typography
                 variant="h6"
                 sx={{
-                  color: collection.hidden ? visColors.inactive : 'primary.main',
+                  color: collection.hidden || categoryHidden ? visColors.inactive : 'primary.main',
                   display: '-webkit-box',
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
@@ -284,6 +287,9 @@ export default function CollectionCard({
                 {collection.name}
               </Typography>
             </Tooltip>
+            {/* The eye-off marker is reserved for the collection's own
+                `hidden` flag — category-hidden desaturation alone conveys
+                the inherited state (ImageTile's convention). */}
             {collection.hidden && (
               <Tooltip title="Visibility: Hidden">
                 <Box
@@ -421,26 +427,6 @@ export default function CollectionCard({
               }}
             >
               <DriveFileMoveIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
-        {showTransfer && (
-          <Tooltip title="Manage owners">
-            <IconButton
-              size="small"
-              sx={{
-                color: 'white',
-                bgcolor: 'rgba(0,0,0,0.25)',
-                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
-              }}
-              aria-label={`Manage owners of ${collection.name}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                onTransfer?.(collection)
-              }}
-            >
-              <SwapHorizIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         )}

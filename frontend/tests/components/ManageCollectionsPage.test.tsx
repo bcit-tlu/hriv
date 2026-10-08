@@ -510,9 +510,81 @@ describe('ManageCollectionsPage', () => {
     renderPage()
     const row = await screen.findByTestId('manage-collection-row-1')
     expect(row.querySelector('td[data-dimmed]')).not.toBeNull()
+    // The eye-off marker belongs to the collection's own hidden flag.
+    expect(within(row).getByRole('img', { name: 'Visibility: Hidden' })).toBeInTheDocument()
     const other = screen.getByTestId('manage-collection-row-2')
     expect(other.querySelector('td[data-dimmed]')).toBeNull()
     expect(screen.getByRole('switch', { name: 'Visibility for Locked' })).toBeDisabled()
+  })
+
+  it('dims a collection hidden by its category and disables its switch', async () => {
+    // Mirrors the Manage Images table's category-hidden rows: dimmed cells
+    // and a locked Visibility switch — even though the collection's own
+    // `hidden` flag is false and the caller may hide it (can_hide: true
+    // isolates the category cause). No marker icon: that glyph is reserved
+    // for the collection's own hidden flag.
+    vi.mocked(fetchCollections).mockResolvedValue([
+      makeApiCollectionSummary({
+        id: 1,
+        name: 'Under hidden cat',
+        hidden: false,
+        category_id: 10,
+        permissions: {
+          can_edit: true,
+          can_delete: true,
+          can_change_scope: true,
+          can_transfer: false,
+          can_hide: true,
+        },
+      }),
+      makeApiCollectionSummary({
+        id: 2,
+        name: 'Plain',
+        hidden: false,
+        category_id: 11,
+      }),
+    ])
+    renderPage({
+      categories: [
+        makeCategory({ id: 10, label: 'Anatomy', status: 'hidden' }),
+        makeCategory({ id: 11, label: 'Histology' }),
+      ],
+    })
+    const row = await screen.findByTestId('manage-collection-row-1')
+    expect(row.querySelector('td[data-dimmed]')).not.toBeNull()
+    expect(within(row).queryByRole('img', { name: 'Hidden by category' })).toBeNull()
+    expect(within(row).queryByRole('img', { name: 'Visibility: Hidden' })).toBeNull()
+    expect(screen.getByRole('switch', { name: 'Visibility for Under hidden cat' })).toBeDisabled()
+    const plain = screen.getByTestId('manage-collection-row-2')
+    expect(plain.querySelector('td[data-dimmed]')).toBeNull()
+  })
+
+  it('disables the bulk visibility switch when the selection is category-hidden', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchCollections).mockResolvedValue([
+      makeApiCollectionSummary({
+        id: 1,
+        name: 'Under hidden cat',
+        hidden: false,
+        category_id: 10,
+        permissions: {
+          can_edit: true,
+          can_delete: true,
+          can_change_scope: true,
+          can_transfer: false,
+          can_hide: true,
+        },
+      }),
+    ])
+    renderPage({
+      categories: [makeCategory({ id: 10, label: 'Anatomy', status: 'hidden' })],
+      currentUser: ADMIN,
+    })
+    await screen.findByTestId('manage-collection-row-1')
+    await user.click(screen.getByRole('checkbox', { name: 'Select Under hidden cat' }))
+    await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+    const bulkDialog = await screen.findByRole('dialog')
+    expect(within(bulkDialog).getByRole('switch', { name: /hidden by category/i })).toBeDisabled()
   })
 
   it('renders Programs, Groups, and Created columns with scope chips (#1567)', async () => {

@@ -8,6 +8,7 @@ import {
 import type { ApiCategoryTree, ApiCollectionSummary, ApiImage, CategoryTreeHeaders } from './api'
 import type { Category, CollectionSummary, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
+import { findCategoryPath } from './treeUtils'
 import { apiCollectionSummaryToSummary } from './collectionUtils'
 import { apiGroupToGroup } from './groupUtils'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -255,6 +256,8 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
   }
   return category
 }
+
+const EMPTY_PATH_NODE: ReturnType<typeof resolvePathNode> = { cats: [], imgs: [], cols: [] }
 
 function arraysReferentiallyEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i])
@@ -703,13 +706,29 @@ export function useBrowseData({
     uncategorizedRefreshAbortRef.current?.abort()
   }, [dragActive])
 
+  // `path` holds navigation-time snapshots; derive everything from the
+  // leaf's live ancestry so a background refresh that renames, re-restricts,
+  // or reparents the leaf or an ancestor is reflected without re-navigating.
+  const pathLeafId = path.length > 0 ? path[path.length - 1].id : null
+  const liveCategoryPath = useMemo(
+    () => (pathLeafId == null ? [] : (findCategoryPath(categories, pathLeafId) ?? [])),
+    [categories, pathLeafId],
+  )
+
   // Resolve the live children/images/collections from the categories state
-  // tree so newly added members appear immediately.
+  // tree so newly added members appear immediately. A leaf that has left the
+  // tree (deleted, or no longer visible) resolves to an empty scope, not root.
   const {
     cats: resolvedCategories,
     imgs: currentImages,
     cols: pathCollections,
-  } = useMemo(() => resolvePathNode(categories, path), [categories, path])
+  } = useMemo(
+    () =>
+      pathLeafId != null && liveCategoryPath.length === 0
+        ? EMPTY_PATH_NODE
+        : resolvePathNode(categories, liveCategoryPath),
+    [categories, liveCategoryPath, pathLeafId],
+  )
 
   // Collections are Browse tiles only when filed in a category.
   const currentCollections = useMemo(
@@ -717,46 +736,11 @@ export function useBrowseData({
     [path.length, collectionsEnabled, pathCollections],
   )
 
-  // Walk the categories tree along the given path segments applying narrowing
-  // (intersection) semantics. `depth` controls how many path segments to
-  // traverse (defaults to all).
-  const getPathRestriction = useCallback(
-    (depth?: number): number[] => {
-      const ancestors: Category[] = []
-      let node = categories
-      const limit = depth ?? path.length
-      for (let i = 0; i < limit; i++) {
-        const found = node.find((c) => c.id === path[i].id)
-        if (!found) break
-        ancestors.push(found)
-        node = found.children
-      }
-      return narrowProgramIds(ancestors)
-    },
-    [categories, path],
-  )
-
-  const ancestorProgramIds = useMemo(() => getPathRestriction(), [getPathRestriction])
-
-  // Group analogue of getPathRestriction: walk the path applying the same
-  // ancestor-narrowing semantics to the (independent) group dimension.
-  const getPathGroupRestriction = useCallback(
-    (depth?: number): number[] => {
-      const ancestors: Category[] = []
-      let node = categories
-      const limit = depth ?? path.length
-      for (let i = 0; i < limit; i++) {
-        const found = node.find((c) => c.id === path[i].id)
-        if (!found) break
-        ancestors.push(found)
-        node = found.children
-      }
-      return narrowGroupIds(ancestors)
-    },
-    [categories, path],
-  )
-
-  const ancestorGroupIds = useMemo(() => getPathGroupRestriction(), [getPathGroupRestriction])
+  // Effective restrictions for the current scope: narrowing (intersection)
+  // over the live ancestry, leaf included. Callers needing ancestors-only
+  // (e.g. editing the breadcrumb leaf) slice `liveCategoryPath` themselves.
+  const ancestorProgramIds = useMemo(() => narrowProgramIds(liveCategoryPath), [liveCategoryPath])
+  const ancestorGroupIds = useMemo(() => narrowGroupIds(liveCategoryPath), [liveCategoryPath])
 
   // Filter out hidden categories for students in browse mode
   const isStudent = currentUser?.role === 'student'
@@ -784,9 +768,8 @@ export function useBrowseData({
     refreshCategories,
     refreshUncategorizedImages,
     currentImages,
-    getPathRestriction,
+    liveCategoryPath,
     ancestorProgramIds,
-    getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
   }
