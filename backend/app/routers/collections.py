@@ -40,7 +40,7 @@ category tree can embed collection summaries without importing this router.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,6 +119,7 @@ async def list_collections(
     owner_program_id: int | None = None,
     orphaned: bool = False,
     uncategorized: bool = False,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """List collections visible to the caller (server-side filtered).
@@ -128,7 +129,8 @@ async def list_collections(
     roles receive 403. ``mine`` / ``owner_user_id`` match
     ``collection_owners`` membership (#1531). ``uncategorized=true`` selects
     the unfiled queue: collections not shown on Browse because their
-    ``category_id`` is null.
+    ``category_id`` is null. ``limit`` is applied after visibility filtering,
+    so inaccessible collections do not consume result slots.
     """
     if type is not None and type not in COLLECTION_TYPES:
         raise HTTPException(
@@ -159,9 +161,10 @@ async def list_collections(
 
     collections = (await db.execute(stmt)).scalars().unique().all()
     ctx = await _ViewerContext.build(db, user)
-    return [
-        collection_summary_out(ctx, c) for c in collections if ctx.can_view(c)
-    ]
+    visible = [c for c in collections if ctx.can_view(c)]
+    if limit is not None:
+        visible = visible[:limit]
+    return [collection_summary_out(ctx, c) for c in visible]
 
 
 @router.get("/{collection_id}", response_model=CollectionOut)

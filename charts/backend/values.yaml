@@ -220,8 +220,8 @@ tasks:
 # ``redis.worker.*`` so each pod class carries an explicit,
 # reviewable connection budget instead of silently inheriting the
 # backend code defaults.
-# ── Collections feature flag (epic #1409) ─────────────────────
-# Rendered as COLLECTIONS_ENABLED on the API pod. Collections are
+# ── Collections feature flags (epic #1409, #1583) ─────────────
+# Rendered as COLLECTIONS_ENABLED and COLLECTIONS_HOME_SHELF on the API pod. Collections are
 # dark-launched so unrelated releases can ship while the epic is still
 # landing: while false, every /api/collections route answers 404 and the
 # frontend (which reads GET /api/features at boot) hides the Collections
@@ -230,6 +230,7 @@ tasks:
 # the flag with the epic's closing issue (#1419). See docs/collections.md.
 collections:
   enabled: false
+  homeShelf: false
 
 api:
   # SQLAlchemy pool sizing for the API process (DB_POOL_SIZE /

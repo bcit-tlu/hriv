@@ -20,8 +20,9 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
    reset); `sequence` shows a filmstrip with Previous/Next, ←/→ keys, and a
    `?item={image_id}` deep-linkable position.
 4. **Browse:** filed collection tiles render beside category/image tiles
-   (fixed 300px width) inside their category scope; the root Browse scope
-   contains categories and images only. Unfiled collections have no Browse
+   (fixed 300px width) inside their category scope; the root tile grid
+   contains categories and images only. The optional, read-only My collections
+   shelf is separate from tile ordering. Unfiled collections have no Browse
    tile and remain available in collection-management views and the
    `uncategorized=true` unfiled queue. The seeded **Italian Cathedrals**
    sequence lives under _Architecture → Italian_. File with the card's

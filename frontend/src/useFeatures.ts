@@ -17,7 +17,11 @@ export function useFeatures(): Features | null {
     let cancelled = false
     fetchFeatures()
       .then((data) => {
-        if (!cancelled) setFeatures({ collections: data.collections === true })
+        if (!cancelled)
+          setFeatures({
+            collections: data.collections === true,
+            collectionsHomeShelf: data.collections === true && data.collections_home_shelf === true,
+          })
       })
       .catch(() => {
         if (!cancelled) setFeatures(DEFAULT_FEATURES)
