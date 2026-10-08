@@ -41,7 +41,7 @@ category tree can embed collection summaries without importing this router.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +65,8 @@ from ..collection_views import (
 from ..database import get_db, settings
 from ..models import (
     COLLECTION_TYPES,
+    STUDENT_MAX_COLLECTIONS_PER_TYPE,
+    STUDENT_SEQUENCE_MAX_IMAGES,
     SYNCHRONIZED_COLLECTION_MAX_IMAGES,
     Category,
     Collection,
@@ -320,6 +322,28 @@ async def _resolve_images(
     return [by_id[iid] for iid in image_ids]
 
 
+def _enforce_student_sequence_cap(
+    user: User,
+    collection_type: str,
+    image_ids: list[int],
+    retained: int,
+    existing_ids: set[int],
+) -> None:
+    """Reject student sequence additions that would exceed the cap (#1583)."""
+    if user.role != "student" or collection_type != "sequence":
+        return
+    if len(image_ids) + retained <= STUDENT_SEQUENCE_MAX_IMAGES:
+        return
+    if any(image_id not in existing_ids for image_id in image_ids):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Students may add at most "
+                f"{STUDENT_SEQUENCE_MAX_IMAGES} images to a sequence collection"
+            ),
+        )
+
+
 def _replace_image_links(
     collection: Collection,
     images: list[Image],
@@ -397,7 +421,6 @@ async def create_collection(
     (``collections.user_id`` audit). ``restricted`` visibility additionally
     needs attach authority over every program/group id.
     """
-    ctx = await _ViewerContext.build(db, user)
     if user.role in {"admin", "instructor"}:
         if body.category_id is None:
             raise HTTPException(
@@ -409,21 +432,53 @@ async def create_collection(
                 status_code=422,
                 detail=f"Invalid category ID: {body.category_id}",
             )
-        affected = collection_scope_keys({body.category_id})
-        if affected:
-            await bump_scopes(db, affected)
     elif body.category_id is not None:
         raise HTTPException(
             status_code=403,
             detail="Only admins and instructors may file collections",
         )
+    if user.role == "student":
+        await db.execute(
+            select(User.id).where(User.id == user.id).with_for_update()
+        )
+        owned_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(Collection)
+                .where(
+                    Collection.type == body.type,
+                    Collection.owners.any(User.id == user.id),
+                )
+            )
+        ).scalar_one()
+        if owned_count >= STUDENT_MAX_COLLECTIONS_PER_TYPE:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Students may own at most "
+                    f"{STUDENT_MAX_COLLECTIONS_PER_TYPE} {body.type} collections"
+                ),
+            )
+    _enforce_student_sequence_cap(
+        user,
+        body.type,
+        body.image_ids,
+        retained=0,
+        existing_ids=set(),
+    )
+    if body.visibility == "restricted":
+        _require_restricted_authority(user)
+    ctx = await _ViewerContext.build(db, user)
     progs: list[Program] = []
     grps: list[Group] = []
     if body.visibility == "restricted":
-        _require_restricted_authority(user)
         progs = await _resolve_programs(db, user, body.program_ids, set())
         grps = await _resolve_groups(db, user, body.group_ids, set())
     images = await _resolve_images(db, ctx, body.type, body.image_ids)
+    if body.category_id is not None:
+        affected = collection_scope_keys({body.category_id})
+        if affected:
+            await bump_scopes(db, affected)
 
     collection = Collection(
         name=body.name,
@@ -776,6 +831,14 @@ async def replace_collection_images(
     """
     ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
     unseen = _unseen_links(ctx, collection)
+    existing_ids = {link.image_id for link in collection.image_links}
+    _enforce_student_sequence_cap(
+        user,
+        collection.type,
+        body.image_ids,
+        retained=len(unseen),
+        existing_ids=existing_ids,
+    )
     images = await _resolve_images(
         db, ctx, collection.type, body.image_ids, retained=len(unseen)
     )

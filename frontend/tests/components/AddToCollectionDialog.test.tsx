@@ -189,6 +189,68 @@ describe('AddToCollectionDialog', () => {
     expect(screen.getByText('Choose a collection for this 2 images.')).toBeInTheDocument()
   })
 
+  it('disables a student sequence row at twenty images and explains the cap', async () => {
+    const user = userEvent.setup()
+    renderDialog(
+      {
+        collections: [
+          makeCollectionSummary({
+            id: 9,
+            name: 'Full sequence',
+            type: 'sequence',
+            imageCount: 20,
+          }),
+        ],
+      },
+      makeAuth('student'),
+    )
+    const row = screen.getByRole('button', { name: 'Add to Full sequence' })
+    expect(row).toHaveAttribute('aria-disabled', 'true')
+    await user.hover(row.parentElement as HTMLElement)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Students can add at most 20 images to a sequence collection.',
+    )
+  })
+
+  it('leaves a sequence row at twenty images enabled for a non-student', () => {
+    renderDialog(
+      {
+        collections: [
+          makeCollectionSummary({
+            id: 9,
+            name: 'Long sequence',
+            type: 'sequence',
+            imageCount: 20,
+          }),
+        ],
+      },
+      makeAuth('instructor'),
+    )
+    expect(screen.getByRole('button', { name: 'Add to Long sequence' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('disables New collection when a student is at both type limits', async () => {
+    const user = userEvent.setup()
+    const collections = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({ id: i + 1, type: 'sequence' }),
+      ),
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({ id: i + 11, type: 'synchronized' }),
+      ),
+    ]
+    renderDialog({ collections }, makeAuth('student'))
+    const button = screen.getByRole('button', { name: 'New collection…' })
+    expect(button).toBeDisabled()
+    await user.hover(button.parentElement as HTMLElement)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      "You've reached the limit of 10 collections of each type.",
+    )
+  })
+
   it('filters by name and shows the no-match copy', async () => {
     const user = userEvent.setup()
     renderDialog()

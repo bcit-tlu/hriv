@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -21,6 +21,7 @@ import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import { userMessage, type ApiImage } from '../api'
+import { AuthContext } from '../authContextValue'
 import { fitsCollectionCapacity } from '../useAddToCollection'
 import type { Collection, ImageItem } from '../types'
 import RenewingThumbnail from './RenewingThumbnail'
@@ -253,6 +254,8 @@ export default function CollectionManageDialog({
   onImageRenewed,
   onError,
 }: CollectionManageDialogProps) {
+  const auth = useContext(AuthContext)
+  const currentUser = auth?.currentUser ?? null
   // Draft member list — seeded from the collection per open session and
   // committed once by Done (#1567). `draftRef` is the synchronous mirror so
   // the stage-add channel (invoked by App while the modal is open) always
@@ -358,7 +361,7 @@ export default function CollectionManageDialog({
 
   /**
    * Search picks arrive here (App routes them when this dialog opened the
-   * modal). Dedupes against the draft and enforces the synchronized cap —
+   * modal). Dedupes against the draft and enforces the caller's image cap —
    * the same checks `addImagesToCollection` applies at persist time (#1567).
    */
   const stageAdd = useCallback<StageAddImages>(
@@ -375,6 +378,7 @@ export default function CollectionManageDialog({
           // reserve their slots so an accepted pick can't 422 on Done.
           prev.length + hiddenRestrictedCount,
           fresh.map((img) => img.id),
+          currentUser?.role,
         )
       ) {
         return { status: 'full' }
@@ -382,7 +386,7 @@ export default function CollectionManageDialog({
       updateDraft([...prev, ...fresh])
       return { status: 'added', addedCount: fresh.length }
     },
-    [collection, hiddenRestrictedCount, updateDraft],
+    [collection, currentUser?.role, hiddenRestrictedCount, updateDraft],
   )
 
   const remove = useCallback(

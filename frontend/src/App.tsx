@@ -66,7 +66,7 @@ import {
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import {
-  SYNCHRONIZED_MAX_IMAGES,
+  collectionFullMessage,
   parseCollectionIdParam,
   parseCollectionItemParam,
 } from './collectionUtils'
@@ -1283,9 +1283,12 @@ export default function App() {
     loadCategories,
     loadUncategorizedImages,
     moveCollectionApi: collectionsEnabled ? collectionsData.move : undefined,
-    addImagesToCollectionApi: collectionsEnabled ? collectionsData.addImages : undefined,
+    addImagesToCollectionApi: collectionsEnabled
+      ? (id, imageIds, role) => collectionsData.addImages(id, imageIds, role)
+      : undefined,
     removeImagesFromCollectionApi: collectionsEnabled ? collectionsData.removeImages : undefined,
     currentCategories,
+    currentUserRole: currentUser?.role,
     ancestorProgramIds,
     ancestorGroupIds,
     liveCategoryPath,
@@ -1837,7 +1840,7 @@ export default function App() {
           return true
         }
         setErrorSnack(
-          `Adding this selection to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+          collectionFullMessage(result.collection.name, result.collection.type, 'selection'),
         )
         return false
       } catch (err) {
@@ -1870,7 +1873,7 @@ export default function App() {
         )
       } else {
         setErrorSnack(
-          `Adding this selection to "${target.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+          collectionFullMessage(target.collection.name, target.collection.type, 'selection'),
         )
       }
       return

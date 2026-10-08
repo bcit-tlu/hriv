@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
@@ -21,11 +21,14 @@ import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
-import { userMessage, type ApiImage } from '../api'
+import { fetchCollections, userMessage, type ApiImage } from '../api'
 import {
+  apiCollectionSummaryToSummary,
   COLLECTION_TYPE_LABELS,
+  COLLECTIONS_AT_CAP_TOOLTIP,
   describeCollectionOwner,
   describeCollectionOwners,
+  studentTypesAtCap,
 } from '../collectionUtils'
 import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -44,6 +47,7 @@ import type {
   Collection,
   CollectionOwner,
   CollectionSummary,
+  CollectionType,
   Group,
   ImageItem,
   Program,
@@ -548,6 +552,29 @@ export default function CollectionsPage({
   // Filing collections into categories is curatorial: any admin/instructor
   // may move any collection (unlike edit/delete, which are owner-scoped).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
+  const [typesAtLimit, setTypesAtLimit] = useState<ReadonlySet<CollectionType>>(() => new Set())
+
+  useEffect(() => {
+    if (currentUser?.role !== 'student') {
+      setTypesAtLimit(new Set())
+      return
+    }
+
+    let cancelled = false
+    void fetchCollections({ mine: true })
+      .then((rows) => {
+        if (!cancelled) {
+          setTypesAtLimit(studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser))
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTypesAtLimit(new Set())
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [collections, currentUser])
 
   const openCreate = () => {
     // Supersede any Edit fetch still in flight so it cannot replace this form.
@@ -766,9 +793,18 @@ export default function CollectionsPage({
                 </Select>
               </FormControl>
             )}
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-              New collection
-            </Button>
+            <Tooltip title={typesAtLimit.size === 2 ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
+              <span>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={openCreate}
+                  disabled={typesAtLimit.size === 2}
+                >
+                  New collection
+                </Button>
+              </span>
+            </Tooltip>
           </Box>
         </Box>
 
@@ -847,6 +883,7 @@ export default function CollectionsPage({
         onClose={() => setEditorOpen(false)}
         collection={editing}
         defaultType={collectionPageType}
+        typesAtLimit={typesAtLimit}
         programs={programs}
         groups={groups}
         onSave={handleSave}

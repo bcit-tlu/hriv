@@ -17,7 +17,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import type { Collection } from '../../src/types'
+import { AuthContext } from '../../src/authContextValue'
+import type { AuthContextValue } from '../../src/authContextValue'
+import type { Collection, Role, User } from '../../src/types'
 import { makeCollection, makeImage } from '../helpers/fixtures'
 import CollectionManageDialog, {
   type CollectionManageDialogProps,
@@ -61,7 +63,22 @@ function manageCollection(overrides: Partial<Collection> = {}): Collection {
   })
 }
 
-function renderDialog(overrides: Partial<CollectionManageDialogProps> = {}) {
+function makeAuth(role: Role): AuthContextValue {
+  const currentUser: User = {
+    id: 7,
+    name: 'Test User',
+    email: 'user@example.com',
+    role,
+    active: true,
+    program_ids: [],
+    program_names: [],
+    group_ids: [],
+    group_names: [],
+  }
+  return { currentUser } as AuthContextValue
+}
+
+function renderDialog(overrides: Partial<CollectionManageDialogProps> = {}, role?: Role) {
   const props: CollectionManageDialogProps = {
     open: true,
     onClose: vi.fn(),
@@ -72,7 +89,18 @@ function renderDialog(overrides: Partial<CollectionManageDialogProps> = {}) {
     onError: vi.fn(),
     ...overrides,
   }
-  return { ...render(<CollectionManageDialog {...props} />), props }
+  const authValue = role ? makeAuth(role) : null
+  const view = render(
+    <AuthContext.Provider value={authValue}>
+      <CollectionManageDialog {...props} />
+    </AuthContext.Provider>,
+  )
+  return {
+    ...view,
+    rerender: (ui: Parameters<typeof view.rerender>[0]) =>
+      view.rerender(<AuthContext.Provider value={authValue}>{ui}</AuthContext.Provider>),
+    props,
+  }
 }
 
 const sortableDrag = (sourceId: string, index: number, initialIndex: number) => ({
@@ -261,6 +289,22 @@ describe('CollectionManageDialog', () => {
     act(() => {
       expect(stageAdd([makeImage({ id: 300 })]).status).toBe('full')
     })
+  })
+
+  it('blocks student sequence staging when twenty images are already present', () => {
+    const sequence = manageCollection({
+      images: Array.from({ length: 20 }, (_, i) =>
+        makeImage({ id: i + 1, name: `Image ${i + 1}` }),
+      ),
+      memberCount: 20,
+    })
+    const { props } = renderDialog({ collection: sequence }, 'student')
+    fireEvent.click(screen.getByRole('button', { name: 'Choose images' }))
+    const stageAdd = props.onAddImages!.mock.calls[0][0] as StageAddImages
+    act(() => {
+      expect(stageAdd([makeImage({ id: 21, name: 'New image' })]).status).toBe('full')
+    })
+    expect(screen.queryByTestId('manage-tile-21')).not.toBeInTheDocument()
   })
 
   it('Done merges membership changes that landed while the dialog was open (#1567)', async () => {

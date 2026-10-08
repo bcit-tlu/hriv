@@ -738,9 +738,9 @@ export function useCollectionsData({
    * every status, even `already`/`full`) is merged into detail/list state.
    */
   const addImages = useCallback(
-    (id: number, imageIds: number[]): Promise<AddToCollectionResult> => {
+    (id: number, imageIds: number[], requestRole = role): Promise<AddToCollectionResult> => {
       const run = async (): Promise<AddToCollectionResult> => {
-        const result = await addImagesToCollection(id, imageIds)
+        const result = await addImagesToCollection(id, imageIds, requestRole)
         mergeUpdated(result.collection)
         return result
       }
@@ -751,7 +751,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [mergeUpdated],
+    [mergeUpdated, role],
   )
 
   /**

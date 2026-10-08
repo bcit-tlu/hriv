@@ -379,7 +379,17 @@ sole-owner lifecycle as students. Program ownership is only reachable via
 - Every id must exist (**422**, detail lists the offenders).
 - No duplicates (**422**, rejected by the schema and again by the router).
 - `synchronized` collections hold at most `SYNCHRONIZED_COLLECTION_MAX_IMAGES`
-  (4) images (**422**); `sequence` has no cap.
+  (4) images (**422**) for every role. Students may create sequence
+  collections with at most `STUDENT_SEQUENCE_MAX_IMAGES` (20) images and may
+  not add a new image to a sequence once the resulting list would exceed that
+  limit (**422**).
+- On a student `PUT …/images`, the submitted ids plus retained unseen members
+  count toward the sequence limit. A replacement that would exceed
+  `STUDENT_SEQUENCE_MAX_IMAGES` (20) is rejected only when it adds a new
+  member, so students can still remove or reorder an already-over-cap
+  collection. Existing over-cap data is not modified retroactively.
+- Student sequence-cap errors return **422** with detail
+  `Students may add at most 20 images to a sequence collection`.
 - Students may only reference images they can open: `active` **and** category
   passing the program AND group dual gate (`get_student_excluded_category_ids`
   with both `{p.id for p in user.programs}` and `{g.id for g in user.groups}`).
@@ -392,6 +402,20 @@ sole-owner lifecycle as students. Program ownership is only reachable via
   in their existing relative order, and still count toward the `synchronized`
   cap (the 422 detail then says how many hidden members are retained). Since
   non-students see every image, this only affects students.
+
+**Student collection count (#1583).** A student may own up to
+`STUDENT_MAX_COLLECTIONS_PER_TYPE` (10) collections of each type. Only
+`POST /api/collections` enforces this cap: the 11th create of one type returns
+**422** with detail `Students may own at most 10 {type} collections`, while
+the other type remains available until its own limit is reached. The count is
+based on user-owner rows (`Collection.owners`): co-owned collections count,
+program-only-owned collections do not, and `collections.user_id` is creator
+audit data only. The cap applies to the caller's role, not the collection
+owner's role; admins, instructors and staff are never capped. It is not
+retroactive and is not enforced by owner-replacement or transfer endpoints.
+On a Collections type page, **New collection** stays available until both
+types are capped; in the create form, a capped type is disabled and the other
+type is selected when the page's default type is capped.
 
 **Viewport (`PUT …/viewport`).** `viewport_state` is overwritten with the
 submitted object — never a partial JSONB merge. The synchronized viewer

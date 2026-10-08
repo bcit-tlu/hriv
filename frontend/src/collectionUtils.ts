@@ -7,6 +7,7 @@ import type {
   CollectionVisibility,
   ImageItem,
   Role,
+  User,
 } from './types'
 
 export const COLLECTION_TYPE_LABELS: Record<CollectionType, string> = {
@@ -22,6 +23,57 @@ export const COLLECTION_VISIBILITY_LABELS: Record<CollectionVisibility, string> 
 
 /** `synchronized` collections show up to this many images side by side (backend 422 above it). */
 export const SYNCHRONIZED_MAX_IMAGES = 4
+
+/** Student caps mirror backend/app/models.py (#1583). */
+export const STUDENT_SEQUENCE_MAX_IMAGES = 20
+export const STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
+export const COLLECTIONS_AT_CAP_TOOLTIP = `You've reached the limit of ${STUDENT_MAX_COLLECTIONS_PER_TYPE} collections of each type.`
+
+export function collectionImageCap(
+  type: CollectionType,
+  role: Role | null | undefined,
+): number | null {
+  if (type === 'synchronized') return SYNCHRONIZED_MAX_IMAGES
+  return role === 'student' ? STUDENT_SEQUENCE_MAX_IMAGES : null
+}
+
+export function collectionFullMessage(
+  name: string,
+  type: CollectionType,
+  scope: 'selection' | 'image',
+): string {
+  const subject = scope === 'selection' ? 'selection' : 'image'
+  if (type === 'synchronized') {
+    return `Adding this ${subject} to "${name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`
+  }
+  return `Adding this ${subject} to "${name}" would exceed the ${STUDENT_SEQUENCE_MAX_IMAGES}-image limit students have for sequence collections.`
+}
+
+export function ownedCollectionCounts(
+  rows: CollectionSummary[],
+  userId: number,
+): Record<CollectionType, number> {
+  const counts: Record<CollectionType, number> = { sequence: 0, synchronized: 0 }
+  for (const row of rows) {
+    if (row.owners.some((owner) => owner.kind === 'user' && owner.userId === userId)) {
+      counts[row.type] += 1
+    }
+  }
+  return counts
+}
+
+export function studentTypesAtCap(
+  rows: CollectionSummary[],
+  user: Pick<User, 'id' | 'role'> | null | undefined,
+): Set<CollectionType> {
+  if (user?.role !== 'student') return new Set()
+  const counts = ownedCollectionCounts(rows, user.id)
+  return new Set(
+    (['sequence', 'synchronized'] as const).filter(
+      (type) => counts[type] >= STUDENT_MAX_COLLECTIONS_PER_TYPE,
+    ),
+  )
+}
 
 export function privateFilingWarning(privateCount = 1, total = 1): string {
   if (total > 1) {

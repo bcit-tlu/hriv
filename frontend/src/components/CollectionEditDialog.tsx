@@ -21,6 +21,7 @@ import { AuthContext } from '../authContextValue'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
+  STUDENT_MAX_COLLECTIONS_PER_TYPE,
   SYNCHRONIZED_MAX_IMAGES,
   apiCollectionToCollection,
   canUseRestrictedVisibility,
@@ -77,6 +78,8 @@ export interface CollectionEditDialogProps {
    * is looking at. Ignored when editing.
    */
   defaultType?: CollectionType
+  /** Collection types at the student's create limit. */
+  typesAtLimit?: ReadonlySet<CollectionType>
   programs?: Program[]
   groups?: Group[]
   /**
@@ -129,6 +132,7 @@ export default function CollectionEditDialog({
   onClose,
   collection = null,
   defaultType = 'sequence',
+  typesAtLimit,
   programs = EMPTY_PROGRAMS,
   groups = EMPTY_GROUPS,
   onSave,
@@ -179,7 +183,14 @@ export default function CollectionEditDialog({
   const seedFrom = (source: Collection | null) => {
     setName(source?.name ?? '')
     setDescription(source?.description ?? '')
-    setType(source?.type ?? defaultType)
+    const initialType =
+      source?.type ??
+      (typesAtLimit?.has(defaultType)
+        ? defaultType === 'sequence'
+          ? 'synchronized'
+          : 'sequence'
+        : defaultType)
+    setType(initialType)
     setVisibility(source?.visibility ?? 'private')
     setCategoryId(source?.categoryId ?? null)
     setHidden(source?.hidden ?? false)
@@ -201,8 +212,14 @@ export default function CollectionEditDialog({
   useEffect(() => {
     if (open && !prevOpen.current) seedFrom(collection)
     prevOpen.current = open
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures defaultType at open time
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures type limits at open time
   }, [open, collection])
+
+  useEffect(() => {
+    if (!open || collection != null || !typesAtLimit?.has(type)) return
+    const otherType = type === 'sequence' ? 'synchronized' : 'sequence'
+    if (!typesAtLimit.has(otherType)) setType(otherType)
+  }, [open, typesAtLimit, type, collection])
 
   // A save that partially succeeded (metadata PATCH ok, chained category move
   // failed) returns a newer record while the dialog stays open (#1567):
@@ -260,12 +277,15 @@ export default function CollectionEditDialog({
 
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
+  const bothTypesAtLimit = typesAtLimit?.has('sequence') && typesAtLimit.has('synchronized')
+  const selectedTypeAtLimit = !isEdit && (typesAtLimit?.has(type) ?? false)
   const canSubmit =
     name.trim().length > 0 &&
     !scopeMissing &&
     (isEdit || !canFile || categoryId != null) &&
     !saving &&
-    !deleting
+    !deleting &&
+    (isEdit || (!bothTypesAtLimit && !selectedTypeAtLimit))
   const sameIds = (current: Set<number>, original: number[]) =>
     current.size === original.length && original.every((id) => current.has(id))
   const isDirty =
@@ -444,12 +464,19 @@ export default function CollectionEditDialog({
                   key={t}
                   value={t}
                   control={<Radio size="small" />}
+                  disabled={typesAtLimit?.has(t)}
                   label={
                     <Box>
                       <Typography variant="body2">{COLLECTION_TYPE_LABELS[t]}</Typography>
                       <Typography variant="caption" color="text.secondary">
                         {TYPE_HELP[t]}
                       </Typography>
+                      {typesAtLimit?.has(t) && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          You've reached the limit of {STUDENT_MAX_COLLECTIONS_PER_TYPE} {t}{' '}
+                          collections.
+                        </Typography>
+                      )}
                     </Box>
                   }
                   sx={{ alignItems: 'flex-start', mb: 0.5 }}

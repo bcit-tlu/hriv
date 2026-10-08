@@ -7,7 +7,7 @@ import {
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
-import { apiCollectionToCollection, SYNCHRONIZED_MAX_IMAGES } from './collectionUtils'
+import { apiCollectionToCollection, collectionFullMessage } from './collectionUtils'
 import type { AddToCollectionResult } from './useAddToCollection'
 import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
 import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
@@ -15,7 +15,7 @@ import { computeMoveRestrictionChange, narrowGroupIds, narrowProgramIds } from '
 import { emitEvent } from './observability'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findCollectionInTree, findImageInTree, findCategoryPath } from './treeUtils'
-import type { Category, Collection, CollectionSummary, ImageItem } from './types'
+import type { Category, Collection, CollectionSummary, ImageItem, Role } from './types'
 
 export interface PendingMoveConfirm {
   categoryId: number
@@ -54,13 +54,14 @@ export interface UseCategoryActionsDeps {
     version: number,
   ) => Promise<Collection>
   /**
-   * Adds member images to a collection with dedupe + synchronized-capacity
+   * Adds member images to a collection with dedupe + role-aware capacity
    * checks (`useCollectionsData.addImages`; #1530). Absent while collections
    * are disabled — the drop-add handler no-ops then.
    */
   addImagesToCollectionApi?: (
     collectionId: number,
     imageIds: number[],
+    role?: Role | null,
   ) => Promise<AddToCollectionResult>
   /**
    * Removes member images from a collection — the undo path for the Browse
@@ -74,6 +75,7 @@ export interface UseCategoryActionsDeps {
     base?: Collection,
   ) => Promise<Collection>
   currentCategories: Category[]
+  currentUserRole?: Role | null
   ancestorProgramIds: number[]
   ancestorGroupIds: number[]
   /** Live ancestry of the breadcrumb leaf (`useBrowseData.liveCategoryPath`). */
@@ -100,6 +102,7 @@ export function useCategoryActions({
   addImagesToCollectionApi,
   removeImagesFromCollectionApi,
   currentCategories,
+  currentUserRole,
   ancestorProgramIds,
   ancestorGroupIds,
   liveCategoryPath,
@@ -689,14 +692,14 @@ export function useCategoryActions({
       // covers the stale-list window before that summary refreshes.
       if (!col || !col.permissions.canEdit) return
       try {
-        const result = await addImagesToCollectionApi(collectionId, [imageId])
+        const result = await addImagesToCollectionApi(collectionId, [imageId], currentUserRole)
         if (result.status === 'already') {
           setInfoSnack?.(`This image is already in "${result.collection.name}".`)
           return
         }
         if (result.status === 'full') {
           setErrorSnack(
-            `Adding this image to "${result.collection.name}" would exceed the ${SYNCHRONIZED_MAX_IMAGES}-image limit for synchronized collections.`,
+            collectionFullMessage(result.collection.name, result.collection.type, 'image'),
           )
           return
         }
@@ -729,6 +732,7 @@ export function useCategoryActions({
       categories,
       uncategorizedImages,
       addImagesToCollectionApi,
+      currentUserRole,
       removeImagesFromCollectionApi,
       loadCategories,
       setInfoSnack,
