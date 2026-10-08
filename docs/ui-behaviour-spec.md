@@ -362,11 +362,16 @@ returned by the API (UX only — the backend re-checks).
   the grid, and a scope containing only collections is not treated as pending
   work.
 - **Given** `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF` are on and the
-  caller has visible owned collections, **Then** Browse home shows a separate,
-  read-only shelf of up to eight most recently updated collections above and
-  outside `SortableTileGrid`. It is hidden for an empty visible result; its
-  **See all** action opens Sequence with `mine=true`. The shelf has no drag,
-  reorder, or drop targets.
+  caller has visible owned collections, **Then** Browse root and category
+  scopes show a fixed bottom-left **My collections** button outside
+  `SortableTileGrid`; no button renders while the owned feed is loading or
+  empty. Opening it shows a bottom drawer with up to eight most recently
+  updated collections, **New collection**, and **See all** (Sequence with
+  `mine=true`). The temporary drawer has a backdrop and closes on navigation;
+  pinning removes the backdrop, keeps Browse interactive, persists per user,
+  and reserves its height below the Browse content. The drawer never renders
+  on image-viewer or collection pages and has no drag, reorder, or drop
+  targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
   edit dialog's category picker refiles the collection — both regardless of

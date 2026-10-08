@@ -81,7 +81,7 @@ export interface Group {
 export interface Features {
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
-  /** My collections shelf at the Browse root (#1583). */
+  /** My collections drawer on Browse (#1583). */
   collectionsHomeShelf: boolean
 }
 

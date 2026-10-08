@@ -34,7 +34,7 @@ one child issue at a time on `main`.
   `collections` tables regardless of the flag (they exist in the schema
   either way).
 - **`GET /api/features`** (`main.py`, unauthenticated, `FeaturesOut`) returns
-  `{"collections": <bool>, "collections_home_shelf": <bool>}`. The shelf
+  `{"collections": <bool>, "collections_home_shelf": <bool>}`. The drawer
   value is effective only when both settings are enabled. It is a UX hint
   only — flags are not secrets and each one is enforced independently by the
   backend.
@@ -119,12 +119,17 @@ category's tile order with images and sub-categories. The Browse root
 tile-order scope contains categories and images only.
 
 Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
-the Browse home shows a read-only **My collections** shelf for the caller's
-up to eight of the caller's most recently updated visible owned collections.
-The shelf is available
-to any role, hidden when no owned collection is visible, and has a **See all**
-action that opens the Sequence page with the owned-collections filter. It is
-not a Browse tile: it has no drag, reorder, or drop targets.
+Browse root and category scopes show a collapsed **My collections** button at
+the bottom-left for any role with a visible owned collection. Opening it shows
+a bottom drawer with up to eight of the caller's most recently updated visible
+owned collections, **New collection**, and a **See all** action that opens the
+Sequence page with the owned-collections filter. The temporary state uses a
+backdrop and closes during collection navigation; the per-user pin preference
+switches it to a persistent state without a backdrop, keeps Browse interactive,
+and adds enough bottom spacing that the drawer does not cover the final tile
+row. The drawer is hidden on image-viewer and collection pages, while the feed
+is loading, and when no owned collection is visible. It is not a Browse tile:
+it has no drag, reorder, or drop targets.
 
 `GET /api/collections` accepts an optional `limit` from 1 to 100. It is
 applied after visibility filtering so inaccessible collections do not consume

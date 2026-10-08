@@ -32,7 +32,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
-import MyCollectionsShelf from './components/MyCollectionsShelf'
+import MyCollectionsDrawer from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
 import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
@@ -43,7 +43,7 @@ import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
 import ManageCollectionsPage from './components/ManageCollectionsPage'
 import AddToCollectionDialog from './components/AddToCollectionDialog'
-import type { CollectionFormValues } from './components/CollectionEditDialog'
+import CollectionEditDialog, { type CollectionFormValues } from './components/CollectionEditDialog'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
@@ -66,9 +66,11 @@ import {
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import {
+  apiCollectionSummaryToSummary,
   collectionFullMessage,
   parseCollectionIdParam,
   parseCollectionItemParam,
+  studentTypesAtCap,
 } from './collectionUtils'
 import type { StageAddImages } from './components/CollectionManageDialog'
 import { useCollectionsData } from './useCollectionsData'
@@ -79,6 +81,7 @@ import {
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
 import { useMyCollectionsShelf } from './useMyCollectionsShelf'
+import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
 import { isAcceptedFile } from './fileUtils'
 import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
@@ -96,6 +99,7 @@ import {
   createGroup,
   updateGroup,
   deleteGroup,
+  fetchCollections,
   userMessage,
 } from './api'
 import type { ApiImage, ApiUser } from './api'
@@ -111,7 +115,7 @@ import {
   useProcessingJobs,
 } from './useProcessingJobs'
 import type { ProcessingJob } from './useProcessingJobs'
-import type { Category, Collection, Group, ImageItem } from './types'
+import type { Category, Collection, CollectionType, Group, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
@@ -135,6 +139,7 @@ import { tileOrderingCoordinator } from './tileOrdering'
 import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
+const EMPTY_COLLECTION_TYPES: ReadonlySet<CollectionType> = new Set()
 
 function listFailedSourceImages() {
   return listSourceImages({ status: 'failed', limit: MAX_REHYDRATED_FAILURES })
@@ -309,6 +314,12 @@ export default function App() {
     selectedImageRef.current = selectedImage
   })
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
+  const [myCollectionsDrawerHeight, setMyCollectionsDrawerHeight] = useState(0)
+  const [myCollectionsCapState, setMyCollectionsCapState] = useState<{
+    userId: number
+    types: ReadonlySet<CollectionType>
+  } | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [fileDropCategoryId, setFileDropCategoryId] = useState<number | null>(null)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
@@ -395,9 +406,50 @@ export default function App() {
     features?.collectionsHomeShelf === true &&
     currentUser != null &&
     page === 'browse' &&
-    path.length === 0 &&
     selectedImage == null
   const myCollectionsShelf = useMyCollectionsShelf(myCollectionsShelfEnabled)
+  const {
+    open: myCollectionsDrawerOpen,
+    setOpen: setMyCollectionsDrawerOpen,
+    pinned: myCollectionsDrawerPinned,
+    setPinned: setMyCollectionsDrawerPinned,
+  } = useMyCollectionsDrawerState()
+  const myCollectionsDrawerVisible =
+    myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
+  const myCollectionsTypesAtLimit =
+    currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
+      ? myCollectionsCapState.types
+      : EMPTY_COLLECTION_TYPES
+
+  useEffect(() => {
+    if (
+      !myCollectionsDrawerVisible ||
+      !myCollectionsDrawerOpen ||
+      currentUser?.role !== 'student'
+    ) {
+      return
+    }
+
+    let cancelled = false
+    void fetchCollections({ mine: true })
+      .then((rows) => {
+        if (!cancelled) {
+          setMyCollectionsCapState({
+            userId: currentUser.id,
+            types: studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser),
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMyCollectionsCapState({ userId: currentUser.id, types: new Set() })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser, myCollectionsDrawerOpen, myCollectionsDrawerVisible])
 
   // #1554: the page's type is the list's type filter — keep them in lockstep.
   useEffect(() => {
@@ -1772,7 +1824,7 @@ export default function App() {
   )
 
   // Filed collections are provided from the category tree through
-  // `useBrowseData`; the root shelf stays outside the sortable tile grid.
+  // `useBrowseData`; the personal drawer stays outside the sortable tile grid.
 
   // The collection Manage dialog's "+" (#1566): records the target so search
   // picks go straight into that collection instead of the picker dialog.
@@ -1990,7 +2042,16 @@ export default function App() {
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >
-        <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+        <Container
+          maxWidth={false}
+          sx={{
+            px: { xs: 2, sm: 3, lg: '72px', xl: '120px' },
+            pb:
+              myCollectionsDrawerVisible && myCollectionsDrawerPinned && myCollectionsDrawerOpen
+                ? `${myCollectionsDrawerHeight}px`
+                : undefined,
+          }}
+        >
           {page === 'guide' && canEditContent ? (
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
@@ -2747,28 +2808,34 @@ export default function App() {
                   })()}
               </Box>
 
-              {page === 'browse' &&
-                path.length === 0 &&
-                selectedImage == null &&
-                myCollectionsShelf !== null && (
-                  <MyCollectionsShelf
-                    collections={myCollectionsShelf}
-                    categories={categories}
-                    programs={programs}
-                    groups={groups}
-                    onOpen={(collection) =>
-                      handleOpenCollection(collection.id, { fromBrowse: true })
-                    }
-                    onSeeAll={() => {
-                      handleCollectionsTypeChange('sequence')
-                      collectionsData.setFilters({
-                        ...collectionsData.filters,
-                        mine: true,
-                        owner: 'any',
-                      })
-                    }}
-                  />
-                )}
+              {myCollectionsDrawerVisible && (
+                <MyCollectionsDrawer
+                  collections={myCollectionsShelf ?? []}
+                  categories={categories}
+                  programs={programs}
+                  groups={groups}
+                  open={myCollectionsDrawerOpen}
+                  pinned={myCollectionsDrawerPinned}
+                  onOpenChange={setMyCollectionsDrawerOpen}
+                  onPinnedChange={setMyCollectionsDrawerPinned}
+                  onOpen={(collection) => {
+                    if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
+                    handleOpenCollection(collection.id, { fromBrowse: true })
+                  }}
+                  onSeeAll={() => {
+                    if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
+                    handleCollectionsTypeChange('sequence')
+                    collectionsData.setFilters({
+                      ...collectionsData.filters,
+                      mine: true,
+                      owner: 'any',
+                    })
+                  }}
+                  onNewCollection={() => setMyCollectionsCreateOpen(true)}
+                  newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
+                  onPinnedHeightChange={setMyCollectionsDrawerHeight}
+                />
+              )}
 
               {/* Tile grid */}
               <SortableTileGrid
@@ -3184,6 +3251,29 @@ export default function App() {
           onToggleVisibility={toggleCategoryVisibility}
           onAdd={handleAddToCollection}
           onCreate={handleCreateCollectionWithImage}
+        />
+      )}
+
+      {collectionsEnabled && currentUser && (
+        <CollectionEditDialog
+          open={myCollectionsCreateOpen}
+          onClose={() => setMyCollectionsCreateOpen(false)}
+          collection={null}
+          defaultType="sequence"
+          typesAtLimit={myCollectionsTypesAtLimit}
+          programs={programs}
+          groups={groups}
+          categories={categories}
+          onAddCategory={addCategoryInline}
+          onEditCategory={editCategoryInline}
+          onToggleVisibility={toggleCategoryVisibility}
+          onSave={async (values) => {
+            const created = await collectionsData.create(values)
+            if (created.categoryId != null) refreshCategories()
+            setMyCollectionsCreateOpen(false)
+            if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
+            handleOpenCollection(created.id, { fromBrowse: true })
+          }}
         />
       )}
 

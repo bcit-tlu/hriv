@@ -48,6 +48,7 @@ export interface CollectionCardProps {
   groups?: Group[]
   /** Effective group restriction inherited from the filed category. */
   inheritedGroupIds?: number[]
+  titleHeadingLevel?: 'h3' | 'h4' | 'h5' | 'h6'
   /** Filed category (or an ancestor) is hidden — the collection is
    *  invisible to students regardless of its own `hidden` flag; the card
    *  desaturates like an own-hidden tile but carries no marker icon —
@@ -178,6 +179,7 @@ export default function CollectionCard({
   inheritedProgramIds = [],
   groups = [],
   inheritedGroupIds = [],
+  titleHeadingLevel = 'h6',
   categoryHidden = false,
 }: CollectionCardProps) {
   const { mode } = useColorMode()
@@ -274,6 +276,7 @@ export default function CollectionCard({
             </Box>
             <Tooltip title={collection.name}>
               <Typography
+                component={titleHeadingLevel}
                 variant="h6"
                 sx={{
                   color: collection.hidden || categoryHidden ? visColors.inactive : 'primary.main',

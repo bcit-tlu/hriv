@@ -1,0 +1,27 @@
+import { Controls, Meta, Primary, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as MyCollectionsDrawerStories from './MyCollectionsDrawer.stories'
+
+<Meta of={MyCollectionsDrawerStories} />
+
+<Title />
+
+<Subtitle>
+  Bottom drawer for up to eight of the most recently updated visible collections owned by the
+  current user.
+</Subtitle>
+
+## When to use
+
+Render the collapsed **My collections** button on Browse when the personal-drawer feature flag is
+enabled and the user has visible owned collections. Opening it provides collection navigation,
+creation, and **See all** without adding personal collections to the sortable Browse grid.
+
+The temporary state uses a backdrop and closes during navigation. Pinning changes it to a persistent
+surface that keeps Browse available and reserves enough bottom space to avoid covering the final
+tile row.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={MyCollectionsDrawerStories.Basic} />

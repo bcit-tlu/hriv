@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
-import MyCollectionsShelf from './MyCollectionsShelf'
 import type { CollectionSummary } from '../types'
+import MyCollectionsDrawer from './MyCollectionsDrawer'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
 
@@ -59,8 +59,8 @@ const collectionExamples: [CollectionSummary, CollectionSummary] = [
   },
 ]
 
-const collections: CollectionSummary[] = Array.from({ length: 8 }, (_, index) => {
-  const collection = index % 2 === 0 ? collectionExamples[0] : collectionExamples[1]
+const eightCollections: CollectionSummary[] = Array.from({ length: 8 }, (_, index) => {
+  const collection = collectionExamples[index % collectionExamples.length]
   return {
     ...collection,
     id: index + 1,
@@ -69,36 +69,67 @@ const collections: CollectionSummary[] = Array.from({ length: 8 }, (_, index) =>
 })
 
 const meta = {
-  title: 'Components/MyCollectionsShelf',
-  component: MyCollectionsShelf,
+  title: 'Components/MyCollectionsDrawer',
+  component: MyCollectionsDrawer,
   args: {
-    collections,
+    collections: collectionExamples,
     categories: [],
     programs: [],
     groups: [],
+    open: false,
+    pinned: false,
+    onOpenChange: fn(),
+    onPinnedChange: fn(),
     onOpen: fn(),
     onSeeAll: fn(),
+    onNewCollection: fn(),
   },
   decorators: [
     (Story) => (
-      <Box sx={{ maxWidth: 1200, p: 2 }}>
+      <Box sx={{ minHeight: 480, p: 2 }}>
         <Story />
       </Box>
     ),
   ],
-} satisfies Meta<typeof MyCollectionsShelf>
+} satisfies Meta<typeof MyCollectionsDrawer>
 
 export default meta
 
 type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
-  parameters: {
-    a11y: { test: 'todo' },
-  },
+  name: 'Closed (Fab)',
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'See all' }))
-    await expect(args.onSeeAll).toHaveBeenCalledOnce()
+    await userEvent.click(canvas.getByRole('button', { name: 'My collections' }))
+    await expect(args.onOpenChange).toHaveBeenCalledWith(true)
+  },
+}
+
+export const OpenUnpinned: Story = {
+  args: {
+    open: true,
+  },
+}
+
+export const OpenPinned: Story = {
+  args: {
+    open: true,
+    pinned: true,
+  },
+}
+
+export const NewCollectionDisabledAtCap: Story = {
+  args: {
+    open: true,
+    newCollectionDisabled: true,
+  },
+}
+
+export const EightCardsOverflowing: Story = {
+  args: {
+    collections: eightCollections,
+    open: true,
+    pinned: true,
   },
 }

@@ -15,7 +15,7 @@ import {
   updateGroup,
   updateProgram,
 } from '../src/api'
-import { makeApiCollectionSummary } from './helpers/fixtures'
+import { makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
 
 const apiMocks = vi.hoisted(() => ({
   fetchUsers: vi.fn(),
@@ -184,6 +184,7 @@ function resetFixtures() {
     canViewPeople: false,
   }
   mockInitialPath = []
+  localStorage.removeItem('hrivpref:my-collections-drawer:pinned:user:anonymous')
   collectionsDataMocks.filters = { type: 'all', mine: false, owner: 'any' }
   visibleJobsMock = []
   processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
@@ -625,6 +626,7 @@ vi.mock('../src/components/CollectionsPage', () => ({
   },
 }))
 const collectionsDataMocks = vi.hoisted(() => ({
+  create: vi.fn(),
   transfer: vi.fn(),
   move: vi.fn(),
   saveOwners: vi.fn(),
@@ -645,7 +647,7 @@ vi.mock('../src/useCollectionsData', () => ({
     detailLoading: false,
     detailError: null,
     loadCollection: vi.fn(),
-    create: vi.fn(),
+    create: collectionsDataMocks.create,
     update: vi.fn(),
     remove: vi.fn(),
     reorderImages: vi.fn(),
@@ -1991,16 +1993,20 @@ describe('App collections deep links (#1414)', () => {
     )
   }
 
-  it('shows the shelf at the Browse root when its flag is enabled', async () => {
+  it('shows the drawer Fab at the Browse root and opens its cards', async () => {
     apiMocks.fetchFeatures.mockResolvedValue({
       collections: true,
       collections_home_shelf: true,
     })
-    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    apiMocks.fetchCollections.mockResolvedValue([
+      makeApiCollectionSummary({ name: 'Sequence overview' }),
+    ])
 
     render(<App />)
 
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
     expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
+    expect(screen.getByText('Sequence overview')).toBeInTheDocument()
     expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
   })
 
@@ -2015,7 +2021,7 @@ describe('App collections deep links (#1414)', () => {
 
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'My collections' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
     collectionsDataMocks.setFilters.mockClear()
     fireEvent.click(screen.getByRole('button', { name: 'See all' }))
 
@@ -2026,7 +2032,7 @@ describe('App collections deep links (#1414)', () => {
     })
   })
 
-  it('does not fetch or show the shelf when its flag is off', async () => {
+  it('does not fetch or show the drawer when its flag is off', async () => {
     apiMocks.fetchFeatures.mockResolvedValue({
       collections: true,
       collections_home_shelf: false,
@@ -2038,23 +2044,68 @@ describe('App collections deep links (#1414)', () => {
       expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
     )
     expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
-    expect(screen.queryByRole('heading', { name: 'My collections' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
   })
 
-  it('does not fetch or show the shelf inside a category', async () => {
+  it('shows the drawer Fab inside a category', async () => {
     apiMocks.fetchFeatures.mockResolvedValue({
       collections: true,
       collections_home_shelf: true,
     })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
     mockInitialPath = [mockCategories[0]]
 
     render(<App />)
 
+    expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
+  })
+
+  it('does not show the drawer when the owned feed is empty', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([])
+
+    render(<App />)
+
     await waitFor(() =>
-      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+      expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 }),
     )
-    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
-    expect(screen.queryByRole('heading', { name: 'My collections' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+  })
+
+  it('creates a collection from the drawer and opens its collection page', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+    collectionsDataMocks.create.mockResolvedValue(
+      makeCollection({ id: 42, name: 'Drawer collection', categoryId: null }),
+    )
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New collection' }))
+    fireEvent.change(await screen.findByLabelText('Collection name'), {
+      target: { value: 'Drawer collection' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(collectionsDataMocks.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Drawer collection', type: 'sequence' }),
+      ),
+    )
+    expect(await screen.findByTestId('collections-page')).toHaveAttribute('data-selected', '42')
   })
 
   it('opens the Collections tab from the shell for a student', async () => {

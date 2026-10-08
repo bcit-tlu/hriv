@@ -41,18 +41,28 @@ describe('useMyCollectionsShelf', () => {
     await waitFor(() => expect(result.current).toEqual([]))
   })
 
-  it('fetches again after being disabled and re-enabled', async () => {
-    fetchCollections.mockResolvedValue([])
+  it('retains previous rows while refetching after being disabled and re-enabled', async () => {
+    const first = makeApiCollectionSummary({ id: 1, name: 'First collection' })
+    const second = makeApiCollectionSummary({ id: 2, name: 'New collection' })
+    let resolveRefetch: ((rows: (typeof first)[]) => void) | undefined
+    fetchCollections.mockResolvedValueOnce([first]).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefetch = resolve
+        }),
+    )
     const { result, rerender } = renderHook(
       ({ enabled }: { enabled: boolean }) => useMyCollectionsShelf(enabled),
       { initialProps: { enabled: true } },
     )
-    await waitFor(() => expect(result.current).toEqual([]))
+    await waitFor(() => expect(result.current).toEqual([apiCollectionSummaryToSummary(first)]))
 
     act(() => rerender({ enabled: false }))
     expect(result.current).toBeNull()
     act(() => rerender({ enabled: true }))
-    expect(result.current).toBeNull()
+    expect(result.current).toEqual([apiCollectionSummaryToSummary(first)])
     await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
+    act(() => resolveRefetch?.([second]))
+    await waitFor(() => expect(result.current).toEqual([apiCollectionSummaryToSummary(second)]))
   })
 })
