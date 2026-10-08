@@ -63,7 +63,13 @@ and owners/transfer management lives on the detail header and manage table, not 
   backend re-checks authority on
   every call. Overlay clicks stop propagation so they never open the card.
 - Set `titleHeadingLevel` when the card appears under a section heading; its default is `h6`.
-- Without a cover the card shows the collections icon on a primary-coloured block.
+- `density="compact"` shrinks the tile (aspect-ratio cover, subtitle title) for the My-collections
+  drawer; `density="minimal"` goes further and drops every metadata row under the title — image
+  count, visibility pill, and scope chips — for the drawer's minimally-invasive look.
+- Without a cover the card shows the collection's type icon (sequence carousel / synchronized
+  columns) at large size on a primary-coloured block — the uncovered category tile's convention.
+  `coverBlank` (the picker's explicit **None**) forces this state even when a thumb is still
+  attached to the record.
 
 ## Examples
 
@@ -86,6 +92,14 @@ and owners/transfer management lives on the detail header and manage table, not 
 ### No cover
 
 <Canvas of={CollectionCardStories.NoCover} />
+
+### Blank cover — picker's None
+
+<Canvas of={CollectionCardStories.BlankCover} />
+
+### Minimal — drawer tile
+
+<Canvas of={CollectionCardStories.Minimal} />
 
 ### Long name
 

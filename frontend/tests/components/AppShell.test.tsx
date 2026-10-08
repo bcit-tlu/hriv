@@ -122,23 +122,26 @@ describe('AppShell', () => {
       expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     })
 
-    it('reports the measured footer height', () => {
-      const onFooterHeightChange = vi.fn()
+    it('reports the footers live on-screen gap', async () => {
+      const onFooterVisibleHeightChange = vi.fn()
+      // Footer top 48px above the viewport bottom → the gap is 48, not
+      // the element's own height.
+      const innerHeight = window.innerHeight
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
         x: 0,
         y: 0,
-        top: 0,
+        top: innerHeight - 48,
         right: 100,
-        bottom: 48,
+        bottom: innerHeight,
         left: 0,
         height: 48,
         width: 100,
         toJSON: () => ({}),
       } as DOMRect)
 
-      render(<AppShell {...makeProps({ onFooterHeightChange })} />)
+      render(<AppShell {...makeProps({ onFooterVisibleHeightChange })} />)
 
-      expect(onFooterHeightChange).toHaveBeenCalledWith(48)
+      await waitFor(() => expect(onFooterVisibleHeightChange).toHaveBeenCalledWith(48))
     })
 
     it('passes the sticky footer setting through to FooterBar', () => {

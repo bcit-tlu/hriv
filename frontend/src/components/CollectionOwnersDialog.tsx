@@ -127,8 +127,8 @@ export default function CollectionOwnersDialog({
   const [roleFilter, setRoleFilter] = useState<RoleFilter>(defaultRole)
   const [searchInput, setSearchInput] = useState('')
   const [q, setQ] = useState('')
-  // Optional program narrowing — applies to the Students search only,
-  // exactly like the group member picker (co-instructors stay global).
+  // Optional program narrowing — the endpoint applies it in every role
+  // scope (unlike the group member picker, where it is Students-only).
   const [programFilterIds, setProgramFilterIds] = useState<number[]>([])
   const [rows, setRows] = useState<ApiUser[]>([])
   const [total, setTotal] = useState(0)
@@ -182,16 +182,15 @@ export default function CollectionOwnersDialog({
 
   // Paged people search — the same endpoint the group-membership picker
   // uses, so instructors see the scoped mini-projection automatically.
-  // Program narrowing applies to the Students search only (group parity);
-  // "Everyone" (admins only) sends no role param. Runs in User mode only.
+  // Program narrowing applies in every role scope here; "Everyone"
+  // (admins only) sends no role param. Runs in User mode only.
   useEffect(() => {
     if (!open || mode !== 'user') return
     let cancelled = false
     setLoading(true) // eslint-disable-line react-hooks/set-state-in-effect -- loading indicator at effect start is standard fetch pattern
     fetchUsersPaged({
       role: roleFilter === 'all' ? undefined : roleFilter,
-      programIds:
-        roleFilter === 'student' && programFilterIds.length > 0 ? programFilterIds : undefined,
+      programIds: programFilterIds.length > 0 ? programFilterIds : undefined,
       q: q || undefined,
       page: page + 1,
       pageSize,
@@ -527,7 +526,7 @@ export default function CollectionOwnersDialog({
                   width={280}
                 />
               </FilterPopoverButton>
-              {roleFilter === 'student' && programs.length > 0 && (
+              {programs.length > 0 && (
                 <FilterPopoverButton
                   label="Program"
                   activeCount={selectedProgramFilters.length}

@@ -192,6 +192,7 @@ function collectionIdentityKey(api: ApiCollectionSummary): string {
     api.image_count,
     api.cover_thumb,
     api.cover_image_id,
+    api.cover_blank,
     api.hidden,
     api.program_ids,
     api.group_ids,

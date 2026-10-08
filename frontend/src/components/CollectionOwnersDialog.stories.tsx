@@ -58,6 +58,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     imageCount: 2,
     coverThumb: null,
     coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
     programIds: [],

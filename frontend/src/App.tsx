@@ -318,7 +318,7 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
   const [myCollectionsDrawerHeight, setMyCollectionsDrawerHeight] = useState(0)
-  const [myCollectionsFooterHeight, setMyCollectionsFooterHeight] = useState(0)
+  const [myCollectionsFooterGap, setMyCollectionsFooterGap] = useState(0)
   const [myCollectionsCapState, setMyCollectionsCapState] = useState<{
     userId: number
     types: ReadonlySet<CollectionType>
@@ -1904,8 +1904,8 @@ export default function App() {
   )
 
   const handleSetCollectionCoverImage = useCallback(
-    (collection: { id: number }, imageId: number | null) => {
-      void setCollectionCoverImage(collection.id, imageId)
+    (collection: { id: number }, imageId: number | null, blank = false) => {
+      void setCollectionCoverImage(collection.id, imageId, blank)
         .then(() => {
           refreshCategories()
           reloadMyCollectionsShelf()
@@ -2161,7 +2161,7 @@ export default function App() {
       backupVersion={backupVersion}
       onReportIssue={() => setReportIssueOpen(true)}
       stickyFooter={myCollectionsShelfEnabled}
-      onFooterHeightChange={setMyCollectionsFooterHeight}
+      onFooterVisibleHeightChange={setMyCollectionsFooterGap}
       notificationSlot={
         currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
           <NotificationMenu
@@ -2994,7 +2994,7 @@ export default function App() {
                   onNewCollection={() => setMyCollectionsCreateOpen(true)}
                   newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
                   onPinnedHeightChange={setMyCollectionsDrawerHeight}
-                  bottomOffset={myCollectionsFooterHeight}
+                  bottomOffset={myCollectionsFooterGap}
                 />
               )}
 
@@ -3152,13 +3152,14 @@ export default function App() {
         <CollectionCoverPickerModal
           open
           onClose={() => setCoverPickerFor(null)}
-          onSave={(imageId) => {
+          onSave={(imageId, blank) => {
             const target = coverPickerFor
             setCoverPickerFor(null)
-            handleSetCollectionCoverImage(target, imageId)
+            handleSetCollectionCoverImage(target, imageId, blank)
           }}
           images={coverPickerFor.images}
           currentImageId={coverPickerFor.coverImageId}
+          currentBlank={coverPickerFor.coverBlank}
         />
       )}
 
