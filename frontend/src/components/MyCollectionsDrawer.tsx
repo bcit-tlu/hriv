@@ -8,6 +8,7 @@ import Button from '@mui/material/Button'
 import Fade from '@mui/material/Fade'
 import IconButton from '@mui/material/IconButton'
 import Slide from '@mui/material/Slide'
+import { alpha } from '@mui/material/styles'
 import Tooltip from '@mui/material/Tooltip'
 import TrapFocus from '@mui/material/Unstable_TrapFocus'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
@@ -103,7 +104,13 @@ export default function MyCollectionsDrawer({
     // trap the old MUI Drawer had — the trigger button sits inside the trap
     // as the first tabbable (it is the sheet's title), and focus returns to
     // it on close. Pinned mode never traps: the sheet is page furniture.
-    <TrapFocus open={!pinned && drawerOpen}>
+    // `isEnabled` defers to any open MUI modal — dialogs and menus launched
+    // from the sheet portal outside this subtree, and the modal's own trap
+    // must win or their inputs would be unfocusable.
+    <TrapFocus
+      open={!pinned && drawerOpen}
+      isEnabled={() => !document.querySelector('.MuiModal-root')}
+    >
       <Box>
         {collections.length > 0 && (
           <Button
@@ -145,7 +152,7 @@ export default function MyCollectionsDrawer({
                 bottom: bottomOffset,
                 // An invisible overlay must never eat clicks, even mid-fade.
                 pointerEvents: drawerOpen ? 'auto' : 'none',
-                bgcolor: 'rgba(0, 0, 0, 0.5)',
+                bgcolor: (theme) => alpha(theme.palette.common.black, 0.5),
                 zIndex: (theme) => theme.zIndex.drawer - 1,
               }}
             />

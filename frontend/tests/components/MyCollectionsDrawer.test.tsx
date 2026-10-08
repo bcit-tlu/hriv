@@ -104,6 +104,37 @@ describe('MyCollectionsDrawer', () => {
     expect(screen.getByTestId('my-collections-backdrop')).toBeInTheDocument()
   })
 
+  it('pulls outside focus back into the temporary sheet', () => {
+    renderDrawer({ open: true })
+
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    try {
+      outside.focus()
+      expect(document.activeElement).not.toBe(outside)
+    } finally {
+      document.body.removeChild(outside)
+    }
+  })
+
+  it('yields focus to a MUI modal layered above the temporary sheet', () => {
+    renderDrawer({ open: true })
+
+    // Dialogs/menus opened from the sheet portal outside the trap's subtree —
+    // while one is open the trap must defer or the modal's inputs go dead.
+    const modal = document.createElement('div')
+    modal.className = 'MuiModal-root'
+    const field = document.createElement('input')
+    modal.appendChild(field)
+    document.body.appendChild(modal)
+    try {
+      field.focus()
+      expect(document.activeElement).toBe(field)
+    } finally {
+      document.body.removeChild(modal)
+    }
+  })
+
   it('renders title-only tiles with no image-count metadata', () => {
     renderDrawer({
       open: true,

@@ -92,53 +92,52 @@ export default function CollectionCoverPickerModal({
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Choose Cover Image</DialogTitle>
       <DialogContent>
-        {images.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+        {images.length === 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ pb: 1 }}>
             No images available in this collection.
           </Typography>
-        ) : (
-          <TableContainer sx={{ maxHeight: 400 }}>
-            <Table size="small" stickyHeader>
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox">
-                    <Box component="span" sx={visuallyHidden}>
-                      Select cover image
-                    </Box>
-                  </TableCell>
-                  <TableCell>Name</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {/* "None" opts out of imagery — the tile renders the
-                    type-logo placeholder like an uncovered category. */}
-                {optionRow('blank', 'None', '— blank card')}
-                {/* "Automatic" clears both states — the tile uses the
-                    first member again. */}
-                {optionRow('auto', 'Automatic', '— uses the first image')}
-                {images.map((image) => (
-                  <TableRow
-                    key={image.id}
-                    hover
-                    selected={choice === image.id}
-                    sx={{ cursor: 'pointer' }}
-                    onClick={() => setChoice(image.id)}
-                  >
-                    <TableCell padding="checkbox">
-                      <Radio
-                        size="small"
-                        checked={choice === image.id}
-                        onChange={() => setChoice(image.id)}
-                        inputProps={{ 'aria-label': `Use ${image.name} as the cover image` }}
-                      />
-                    </TableCell>
-                    <TableCell>{image.name}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
         )}
+        <TableContainer sx={{ maxHeight: 400 }}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell padding="checkbox">
+                  <Box component="span" sx={visuallyHidden}>
+                    Select cover image
+                  </Box>
+                </TableCell>
+                <TableCell>Name</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {/* "None" opts out of imagery — the tile renders the
+                  type-logo placeholder like an uncovered category. */}
+              {optionRow('blank', 'None', '— blank card')}
+              {/* "Automatic" clears both states — the tile uses the
+                  first member again. */}
+              {optionRow('auto', 'Automatic', '— uses the first image')}
+              {images.map((image) => (
+                <TableRow
+                  key={image.id}
+                  hover
+                  selected={choice === image.id}
+                  sx={{ cursor: 'pointer' }}
+                  onClick={() => setChoice(image.id)}
+                >
+                  <TableCell padding="checkbox">
+                    <Radio
+                      size="small"
+                      checked={choice === image.id}
+                      onChange={() => setChoice(image.id)}
+                      inputProps={{ 'aria-label': `Use ${image.name} as the cover image` }}
+                    />
+                  </TableCell>
+                  <TableCell>{image.name}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

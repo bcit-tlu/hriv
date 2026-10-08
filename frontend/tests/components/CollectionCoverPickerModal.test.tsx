@@ -68,6 +68,14 @@ describe('CollectionCoverPickerModal', () => {
     expect(screen.getByText('No images available in this collection.')).toBeInTheDocument()
   })
 
+  it('keeps the state options selectable when the collection is empty', () => {
+    const props = renderPicker({ images: [] })
+    const modal = screen.getByRole('dialog')
+    fireEvent.click(within(modal).getByText('None'))
+    fireEvent.click(within(modal).getByRole('button', { name: 'Save' }))
+    expect(props.onSave).toHaveBeenCalledWith(null, true)
+  })
+
   it('Cancel closes without saving', () => {
     const props = renderPicker()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
