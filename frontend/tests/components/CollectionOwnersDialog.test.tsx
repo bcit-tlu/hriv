@@ -156,14 +156,14 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(screen.getByRole('radio', { name: 'User' })).toBeChecked()
   })
 
-  it('keeps the same minimum section height across the radios', async () => {
+  it('keeps the same fixed section height across the radios', async () => {
     const user = userEvent.setup()
     renderDialog({ collection: CO_OWNED })
 
-    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).minHeight).toBe('528px')
+    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
 
     await user.click(screen.getByRole('radio', { name: 'Program' }))
-    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).minHeight).toBe('528px')
+    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
   })
 
   it('keeps the confirm disabled until something changes', () => {

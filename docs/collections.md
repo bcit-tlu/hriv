@@ -1233,8 +1233,9 @@ the action is the reassignment flow.
 
 **`CollectionOwnersDialog`.** A **User / Program** radio row at the top picks
 which ownership surface the pane below edits. Both panes share a fixed
-minimum height (the User pane's height at the default 25-row page), so
-switching radios never resizes the dialog:
+height (the User pane's height at the default 25-row page); taller filter
+content scrolls inside the pane's table, so switching radios never resizes
+the dialog:
 
 - The **User pane** mirrors the `GroupManagementModal` member table: a
   checkbox table (Name, Email, Program columns) over a debounced, paged

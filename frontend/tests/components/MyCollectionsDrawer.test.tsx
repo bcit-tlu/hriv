@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -162,6 +163,79 @@ describe('MyCollectionsDrawer', () => {
     // jsdom's 768px viewport resolves min(50vh, calc(100vh - 140px)) = 384px.
     const cardRow = screen.getByTestId('my-collections-card-row')
     expect(getComputedStyle(cardRow).maxHeight).toBe('384px')
+  })
+
+  it('shrinks the card-row cap when the measured dock chrome wraps', () => {
+    // Drive the sheet's ResizeObserver with a fake so measured header/footer
+    // heights feed the cap — jsdom's zero-height layout otherwise keeps the
+    // 140px fallback covered by the test above.
+    let resize: ResizeObserverCallback | null = null
+    class FakeResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        resize = cb
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+
+    const props: MyCollectionsDrawerProps = {
+      collections: [makeCollectionSummary()],
+      categories: [],
+      programs: [],
+      groups: [],
+      open: true,
+      pinned: false,
+      onOpenChange: vi.fn(),
+      onPinnedChange: vi.fn(),
+      onOpen: vi.fn(),
+      onNewCollection: vi.fn(),
+    }
+    const { container } = render(
+      <div data-testid="footer-dock">
+        <MyCollectionsDrawer {...props} />
+        <footer />
+      </div>,
+    )
+
+    const cardRow = screen.getByTestId('my-collections-card-row')
+    const content = cardRow.parentElement as HTMLElement
+    const slot = container.querySelector('button[aria-hidden="true"]') as HTMLElement
+    const header = slot.parentElement as HTMLElement
+    const footer = container.querySelector('footer') as HTMLElement
+
+    // A wrapped header (~90px) plus a multi-line admin footer (~400px).
+    const heights = new Map<Element, number>([
+      [content, 500],
+      [header, 90],
+      [slot, 36.5],
+      [footer, 400],
+    ])
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const height = heights.get(this) ?? 0
+        return {
+          bottom: height,
+          height,
+          left: 0,
+          right: 0,
+          top: 0,
+          width: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect
+      })
+    try {
+      act(() => resize?.([], {} as ResizeObserver))
+      // Chrome = 90 + 16 + 400 = 506; min(50vh, calc(100vh - 506px)) = 262px.
+      expect(getComputedStyle(cardRow).maxHeight).toBe('262px')
+    } finally {
+      rectSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('pulls outside focus back into the temporary sheet', () => {
