@@ -116,12 +116,13 @@ export interface AppShellProps {
   backendVersion: string | null
   backupVersion: string | null
   onReportIssue: () => void
+  /** Keep the footer dock (footer plus `footerDockSlot`) stuck to the
+   *  viewport bottom while the page is taller than the viewport. */
   stickyFooter?: boolean
-  /** Live measure of how much of the footer is inside the viewport —
-   *  `max(0, viewportH − footerTop)` — reported on scroll/resize so
-   *  bottom-anchored UI can ride the footer's top edge. A sticky footer
-   *  reports its full height; a footer still below the fold reports 0. */
-  onFooterVisibleHeightChange?: (px: number) => void
+  /** Rendered inside the footer dock, directly above `FooterBar`, so it
+   *  shares the footer's sticky position and moves with it on overscroll
+   *  (the My collections sheet). */
+  footerDockSlot?: ReactNode
   notificationSlot?: ReactNode
   // Children (main content)
   children: ReactNode
@@ -159,41 +160,10 @@ export default function AppShell(props: AppShellProps) {
     backupVersion,
     onReportIssue,
     stickyFooter = false,
-    onFooterVisibleHeightChange,
+    footerDockSlot,
     notificationSlot,
     children,
   } = props
-  const footerRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const footer = footerRef.current
-    if (!footer || !onFooterVisibleHeightChange) return
-
-    // The gap the footer occupies at the viewport's bottom edge — its
-    // height while sticky/pinned at the bottom, 0 while it is still below
-    // the fold. `getBoundingClientRect` reads the visual position, so the
-    // value also tracks rubber-band overscroll.
-    let raf = 0
-    const report = () => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(() =>
-        onFooterVisibleHeightChange(
-          Math.max(0, window.innerHeight - footer.getBoundingClientRect().top),
-        ),
-      )
-    }
-    report()
-    window.addEventListener('scroll', report, { passive: true, capture: true })
-    window.addEventListener('resize', report)
-    const observer = new ResizeObserver(report)
-    observer.observe(footer)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('scroll', report, { capture: true })
-      window.removeEventListener('resize', report)
-      observer.disconnect()
-      onFooterVisibleHeightChange(0)
-    }
-  }, [onFooterVisibleHeightChange])
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
   const [collectionsMenuAnchor, setCollectionsMenuAnchor] = useState<HTMLElement | null>(null)
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
@@ -749,15 +719,28 @@ export default function AppShell(props: AppShellProps) {
       {/* Main content */}
       {children}
 
-      <FooterBar
-        rootRef={footerRef}
-        canManageUsers={canManageUsers}
-        frontendVersion={frontendVersion || undefined}
-        backendVersion={backendVersion ?? undefined}
-        backupVersion={backupVersion ?? undefined}
-        onReportIssue={onReportIssue}
-        sticky={stickyFooter}
-      />
+      {/* Footer dock: the footer and anything docked above it (the My
+        collections sheet) form one in-flow block, so when the dock is
+        sticky they stick together and rubber-band overscroll moves both. */}
+      <Box
+        data-testid="footer-dock"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '0 0 auto',
+          zIndex: (theme) => theme.zIndex.appBar,
+          ...(stickyFooter ? { position: 'sticky', bottom: 0 } : { position: 'relative' }),
+        }}
+      >
+        {footerDockSlot}
+        <FooterBar
+          canManageUsers={canManageUsers}
+          frontendVersion={frontendVersion || undefined}
+          backendVersion={backendVersion ?? undefined}
+          backupVersion={backupVersion ?? undefined}
+          onReportIssue={onReportIssue}
+        />
+      </Box>
     </Box>
   )
 }

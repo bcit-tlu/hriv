@@ -56,6 +56,14 @@ const EMPTY_PROGRAMS: Program[] = []
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200]
 const DEFAULT_PAGE_SIZE = 25
 const SEARCH_DEBOUNCE_MS = 300
+// Fixed height for the mode-switching area so picking a different radio
+// never resizes the dialog. The value is the User-mode section's height at
+// the default 25-row page: ~28px description + ~38px filter bar + the
+// table's 400px max-height (25 rows far exceed the cap) + ~52px
+// pagination ≈ 528px. Each pane is a fixed-height flex column, so taller
+// filter content (an active-filter summary row, a wrapped description) is
+// absorbed by the table's own scroll region instead of growing the dialog.
+const MODE_SECTION_HEIGHT_PX = 528
 
 type OwnerMode = 'program' | 'user'
 type RoleFilter = 'student' | 'instructor' | 'all'
@@ -67,7 +75,7 @@ function sameIds(a: number[], b: number[]): boolean {
 }
 
 /**
- * Owners & transfer (#1531): a Program/User radio row picks which ownership
+ * Owners & transfer (#1531): a User/Program radio row picks which ownership
  * surface to edit. Program mode lists the programs as single-select chips —
  * a filled, deletable chip is the staged owner, and its delete icon reverts
  * it to outlined. User mode mirrors `GroupManagementModal`'s member table
@@ -373,21 +381,29 @@ export default function CollectionOwnersDialog({
           onChange={(e) => setMode(e.target.value as OwnerMode)}
         >
           <FormControlLabel
-            value="program"
-            control={<Radio size="small" />}
-            label="Program"
-            disabled={saving}
-          />
-          <FormControlLabel
             value="user"
             control={<Radio size="small" />}
             label="User"
             disabled={saving}
           />
+          <FormControlLabel
+            value="program"
+            control={<Radio size="small" />}
+            label="Program"
+            disabled={saving}
+          />
         </RadioGroup>
 
         {mode === 'program' ? (
-          <Box sx={{ mt: 1 }}>
+          <Box
+            data-testid="owners-mode-section"
+            sx={{
+              mt: 1,
+              height: MODE_SECTION_HEIGHT_PX,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
               Select a program to own this collection.
             </Typography>
@@ -419,7 +435,15 @@ export default function CollectionOwnersDialog({
             )}
           </Box>
         ) : (
-          <Box sx={{ mt: 1 }}>
+          <Box
+            data-testid="owners-mode-section"
+            sx={{
+              mt: 1,
+              height: MODE_SECTION_HEIGHT_PX,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               Users who may manage this collection together.
             </Typography>
@@ -544,7 +568,11 @@ export default function CollectionOwnersDialog({
               )}
             </FilterBar>
 
-            <TableContainer sx={{ maxHeight: 400 }}>
+            {/* The flex-grow/min-height pair lets this region absorb taller
+              filter content (a summary-chips row) inside the pane's fixed
+              height — its own scrollbar takes the overflow instead of the
+              dialog growing. */}
+            <TableContainer sx={{ flex: '1 1 auto', minHeight: 0, maxHeight: 400 }}>
               <Table stickyHeader size="small">
                 <TableHead
                   sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}

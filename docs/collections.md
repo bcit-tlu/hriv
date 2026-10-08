@@ -122,19 +122,31 @@ Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
 Browse root and category scopes show a collapsed **My collections** button at
 the bottom-left for any role with a visible owned collection. Opening it shows
 a bottom drawer with up to eight of the caller's most recently updated visible
-owned collections, **New collection**, and a **See all** action that opens the
-Sequence page with the owned-collections filter. The **My collections** button
-stays mounted in both states and doubles as the sheet's title — the sheet
-slides up beneath it. Tiles are title-only (`density="minimal"`) to keep the
-drawer minimally invasive. The temporary state uses a backdrop and closes on
-Escape; the per-user pin preference swaps the backdrop for reserved page
-bottom space. The sheet itself is a single `Slide` that stays mounted across
-both modes, so pinning never reloads tiles and unpinning never collapses the
-drawer — the pin is not a close control. The sheet's bottom edge rides the
-footer's live on-screen gap: while the footer is below the fold the sheet
-rests on the viewport bottom, and once the footer scrolls into view the sheet
-attaches to its top edge and moves with it — the drawer never covers the
-footer. Compact cards are 160–180 px wide and scroll horizontally below about
+owned collections, **New collection**, a pin control beside the title, and a
+close button. The **My collections** button
+stays mounted in both states and doubles as the sheet's title: it rests just
+above the footer, attaches to the sheet's title slot as the rising header
+reaches it, and detaches again on the way down. While pinned it becomes an
+outlined, non-clickable title and the pin fills with a light-grey circle.
+Tiles are title-only (`density="minimal"`) with ~110 px-tall media to
+keep the drawer minimally invasive. The temporary state uses a backdrop and
+closes on Escape, backdrop click, the header's close button, or a second
+press of the title button; the per-user pin preference removes the backdrop
+and the close control. The sheet
+is rendered through `AppShell`'s `footerDockSlot`, directly above `FooterBar`
+inside the sticky footer dock, so it is ordinary in-flow content: opening
+animates its height from 0 to its measured natural height, the sheet emerges
+from behind the footer (which paints over its bottom edge), the page grows by
+the sheet's height while pinned, and overscroll moves footer and sheet
+together. One sheet
+stays mounted across both modes, so pinning never reloads tiles and unpinning
+never collapses the drawer — the pin is not a close control. The temporary
+sheet also locks document scrolling (restoring it on close or pin), matching
+the modal behaviour the drawer replaced. The card row is capped against the
+measured header and footer heights, so a wrapped header or multi-line admin
+footer shrinks the row on short viewports rather than hiding the sheet's
+controls above the viewport. Compact cards are
+160–180 px wide and scroll horizontally below about
 1424 px. The drawer is hidden on image-viewer and collection pages, while the
 feed is loading, and when no owned collection is visible. It is not a Browse
 tile: it has no drag, reorder, or drop targets.
@@ -1219,8 +1231,11 @@ manage-table rows, all gated on
 collection — found via the admin-only _No owner (orphaned)_ owner facet —
 the action is the reassignment flow.
 
-**`CollectionOwnersDialog`.** A **Program / User** radio row at the top picks
-which ownership surface the pane below edits:
+**`CollectionOwnersDialog`.** A **User / Program** radio row at the top picks
+which ownership surface the pane below edits. Both panes share a fixed
+height (the User pane's height at the default 25-row page); taller filter
+content scrolls inside the pane's table, so switching radios never resizes
+the dialog:
 
 - The **User pane** mirrors the `GroupManagementModal` member table: a
   checkbox table (Name, Email, Program columns) over a debounced, paged

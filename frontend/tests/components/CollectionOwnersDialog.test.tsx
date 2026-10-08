@@ -145,12 +145,25 @@ describe('CollectionOwnersDialog (#1531)', () => {
     fetchUsersPagedMock.mockResolvedValue({ items: DIRECTORY_USERS, total: 2 })
   })
 
-  it('renders the current owners and a Program/User radio row', () => {
+  it('renders the current owners and a User/Program radio row', () => {
     renderDialog({ collection: CO_OWNED })
     expect(screen.getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
     expect(screen.getByText(/Ada Lovelace, Grace Hopper/)).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'Program' })).toBeInTheDocument()
+    // User first, Program second.
+    expect(
+      screen.getAllByRole('radio').map((radio) => radio.closest('label')?.textContent),
+    ).toEqual(['User', 'Program'])
     expect(screen.getByRole('radio', { name: 'User' })).toBeChecked()
+  })
+
+  it('keeps the same fixed section height across the radios', async () => {
+    const user = userEvent.setup()
+    renderDialog({ collection: CO_OWNED })
+
+    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
+
+    await user.click(screen.getByRole('radio', { name: 'Program' }))
+    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
   })
 
   it('keeps the confirm disabled until something changes', () => {
