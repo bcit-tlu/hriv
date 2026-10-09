@@ -21,7 +21,10 @@ name: dependabot-licenses
 
 on:
   workflow_run:
-    workflows: ['[CI] Test, build & publish']
+    # `workflows:` values are glob patterns, not literal names — `[CI]` would
+    # be a character class matching one char, so the trigger never fires.
+    # Escape the brackets (github/docs#12572, actions/runner#854).
+    workflows: ['\[CI\] Test, build & publish']
     types: [completed]
 
 env:
@@ -67,7 +70,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --depth=1 origin main
+          git fetch origin main
           changed=$(git diff --name-only origin/main...HEAD)
           printf 'Changed files vs main:\n%s\n' "$changed"
 

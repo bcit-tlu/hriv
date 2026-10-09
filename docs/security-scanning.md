@@ -81,7 +81,9 @@ fork PRs); `workflow_run` executes the `main` copy of the workflow in the
 trusted context. The fixup pushes with the release-please GitHub App token so
 the push re-triggers the PR check suite — a `GITHUB_TOKEN` push would be
 swallowed by the anti-recursion guard. The token is minted after regeneration
-completes, so dependency install code never runs while it exists.
+completes, so dependency install code never runs while it exists. One
+subtlety: the `workflow_run` `workflows:` filter is a glob pattern, not a
+literal name, so the `[CI]` prefix is escaped (`\[CI\]`) in the workflow file.
 
 Some majors are deliberately ignored in `dependabot.yml`: all `node` image and
 `@types/node` majors (HRIV follows the even-numbered LTS line, so a move to the
