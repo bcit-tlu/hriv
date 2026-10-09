@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.66.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.65.0...backend-v0.66.0) (2026-10-09)
+
+
+### Features
+
+* **collections:** blank cover option, footer-attached drawer, picker fixes ([#1600](https://github.com/bcit-tlu/hriv/issues/1600)) ([03dc2b8](https://github.com/bcit-tlu/hriv/commit/03dc2b85cede45d76d7595fa1373ef4a0a73c855))
+* **collections:** browse tile parity — edit pencil, cover picker, add flow ([#1596](https://github.com/bcit-tlu/hriv/issues/1596)) ([e6fe114](https://github.com/bcit-tlu/hriv/commit/e6fe11406aa29f24ae0ff3041cffab3bd91009db))
+* **collections:** bulk edit in the manage table ([#1578](https://github.com/bcit-tlu/hriv/issues/1578)) ([#1580](https://github.com/bcit-tlu/hriv/issues/1580)) ([a50d6ff](https://github.com/bcit-tlu/hriv/commit/a50d6ff68f22129945156c699d0c44dc469f5041))
+* **collections:** detail header rework, hidden state, nav menu ([#1559](https://github.com/bcit-tlu/hriv/issues/1559)) ([#1560](https://github.com/bcit-tlu/hriv/issues/1560)) ([ebd803e](https://github.com/bcit-tlu/hriv/commit/ebd803e66f041605556bf9eb1ea41198ff71ed71))
+* **collections:** manage-members dialog, edit-dialog filing + hide, hidden greyscale ([#1567](https://github.com/bcit-tlu/hriv/issues/1567)) ([6577def](https://github.com/bcit-tlu/hriv/commit/6577defa3ace74b2d540eb03e62ba1a51de24be1))
+* **collections:** multi-owner collections via collection_owners M2M ([#1531](https://github.com/bcit-tlu/hriv/issues/1531)) ([6eae182](https://github.com/bcit-tlu/hriv/commit/6eae182a070d581bb9adfbed645f9460e3134b8f))
+* **collections:** My collections home shelf behind COLLECTIONS_HOME_SHELF ([#1591](https://github.com/bcit-tlu/hriv/issues/1591)) ([562c4f2](https://github.com/bcit-tlu/hriv/commit/562c4f207651461ab2709930bdbee8b5ea403884))
+* **collections:** require a category on curator create, open new collections, View Collection button ([#1594](https://github.com/bcit-tlu/hriv/issues/1594)) ([83f7cf1](https://github.com/bcit-tlu/hriv/commit/83f7cf189728ec81aecd1c17c66b655b23a4953e))
+* **collections:** student caps on collection count and sequence size ([#1589](https://github.com/bcit-tlu/hriv/issues/1589)) ([23a3f9c](https://github.com/bcit-tlu/hriv/commit/23a3f9c69f47435d0d8dbc2a3060e551668aad6a))
+* **collections:** unfiled collections leave the Browse home ([#1584](https://github.com/bcit-tlu/hriv/issues/1584)) ([b58ba6a](https://github.com/bcit-tlu/hriv/commit/b58ba6a6701b879be10db6943fe458589927bb6c))
+
 ## [0.65.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.5...backend-v0.65.0) (2026-10-05)
 
 
