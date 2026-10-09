@@ -79,7 +79,7 @@ jobs:
         run: npm ci
 
       - name: Publish Storybook to Chromatic
-        uses: chromaui/action@v18.9.5
+        uses: chromaui/action@v18.10.2
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: frontend
