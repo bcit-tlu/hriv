@@ -1020,11 +1020,15 @@ current image, so switching images never flashes the prior image's collections.
 The server already filters to collections the caller may view, so there is no
 client-side visibility logic. With the flag off the fetch is skipped entirely.
 
-**Display.** `ImageCollectionsList` shows up to three names, then truncates with
-an inline "… and N more" link that expands the rest (reset per image via a
-`key`). The label pluralizes ("Collection" / "Collections") like the
-Program/Group rows. Names are plain text today; linking each to open its
-collection is a future add.
+**Display.** `ImageCollectionsList` lists the collections as **links**. A plain
+left click opens the collection in-app (`onOpenCollection` → `handleOpenCollection`
+→ `?collection={id}`); because each name is a real anchor (`hrefForCollection`
+builds `?collection={id}`), a modifier- or middle-click opens it in a new tab.
+Every link is safe to follow — the list is already visibility-filtered
+server-side, so it only ever contains collections the caller may open. It shows
+up to three names, then truncates with an inline "… and N more" link that expands
+the rest (reset per image via a `key`). The label pluralizes ("Collection" /
+"Collections") like the Program/Group rows.
 
 ### Sequence collection viewer (#1416)
 
