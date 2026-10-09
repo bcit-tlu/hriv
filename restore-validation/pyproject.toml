@@ -15,7 +15,7 @@ opentelemetry-exporter-otlp = "1.36.0"
 psycopg = {version = "3.3.6", extras = ["binary"]}
 
 [tool.poetry.group.dev.dependencies]
-coverage = "7.16.1"
+coverage = "7.16.2"
 
 [tool.poetry.scripts]
 hriv-restore-validation = "hriv_restore_validation.cli:main"

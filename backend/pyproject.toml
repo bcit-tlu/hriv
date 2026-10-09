@@ -30,14 +30,14 @@ opentelemetry-instrumentation-httpx = "^0.64b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.64b0"
 opentelemetry-instrumentation-redis = "^0.64b0"
 alembic = "^1.13.0"
-azure-storage-blob = "12.30.3"
+azure-storage-blob = "12.31.0"
 prometheus-client = ">=0.21,<0.27"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.3.3,<10.0.0"
 pytest-asyncio = ">=0.24,<1.5"
 pytest-cov = ">=7.1.0,<8"
-fakeredis = "2.38.0"
+fakeredis = "2.39.0"
 lupa = "^2.8"
 
 [tool.pytest.ini_options]
