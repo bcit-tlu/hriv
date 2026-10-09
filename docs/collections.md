@@ -671,7 +671,7 @@ stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
 visibility. Create from a Collections page posts `image_ids: []`; create from
 the image view (#1415, below) posts the selected image id(s); create from
-the Browse toolbar's **Add Collection** button (between **Add Category**
+the Browse toolbar's **New collection** button (between **Add Category**
 and **Add Images**, `canEditContent` + the collections flag — the same
 gate as its neighbours) seeds the current Browse category via
 `defaultCategoryId` and posts it as `category_id`. Every role —

@@ -789,7 +789,7 @@ committed on Save) in the edit modals.
   disabled; "Add Category" and "Add Images" buttons are desaturated
   (`grayscale(100%)`).
 - **Given** an editor (`canEditContent`) on a Browse category page with the
-  collections feature enabled, **Then** an "Add Collection" button sits
+  collections feature enabled, **Then** a "New collection" button sits
   between "Add Category" and "Add Images"; clicking it opens
   `CollectionEditDialog` in create mode with the current Browse category
   pre-filed (`defaultCategoryId`).

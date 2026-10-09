@@ -80,7 +80,7 @@ export interface CollectionEditDialogProps {
   defaultType?: CollectionType
   /**
    * Initial category for a new collection — e.g. the Browse scope the
-   * "+ Add Collection" button was clicked from. Ignored when editing (the
+   * "+ New collection" button was clicked from. Ignored when editing (the
    * collection's own `categoryId` wins).
    */
   defaultCategoryId?: number | null

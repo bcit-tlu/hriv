@@ -446,7 +446,7 @@ Italian_, public, instructor-owned). See
     type-logo placeholder like an uncovered category. Reopen, pick
     **Automatic** → **Save** — **Assert:** the cover falls back to the first
     member.
-12. On the Browse toolbar, click **Add Collection** (between **Add Category**
+12. On the Browse toolbar, click **New collection** (between **Add Category**
     and **Add Images**). **Assert:** `CollectionEditDialog` opens in create
     mode with the current category already filed in the **Category** picker;
     create — **Assert:** the new tile lands in this Browse scope.

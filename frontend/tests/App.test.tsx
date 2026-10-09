@@ -1426,6 +1426,15 @@ describe('App breadcrumbs', () => {
     expect(screen.getByRole('button', { name: 'Add Category' })).toBeInTheDocument()
   })
 
+  it('labels the Browse toolbar collection button "New collection"', async () => {
+    mockInitialPath = [{ ...mockCategories[0] }]
+
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: 'New collection' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Collection' })).not.toBeInTheDocument()
+  })
+
   it('rebases child navigation onto the live ancestry after a reparent', async () => {
     const base = { ...mockCategories[0], children: [], programIds: [], groupIds: [] }
     const leaf = { ...base, id: 3, label: 'Leaf', parentId: 2 }
