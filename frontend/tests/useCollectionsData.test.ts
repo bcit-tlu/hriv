@@ -1469,10 +1469,32 @@ describe('useCollectionsData', () => {
       })
       expect(updateCollectionMock).toHaveBeenCalledWith(1, {
         cover_image_id: 12,
+        cover_blank: false,
         version: 3,
       })
       expect(result.current.detail?.coverImageId).toBe(12)
       expect(result.current.collections[0].coverImageId).toBe(12)
+    })
+
+    it('setCoverImage blank=true PATCHes the explicit no-cover state', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, cover_image_id: null, cover_blank: true }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.setCoverImage(1, null, true)
+      })
+      expect(updateCollectionMock).toHaveBeenCalledWith(1, {
+        cover_image_id: null,
+        cover_blank: true,
+        version: 3,
+      })
+      expect(result.current.detail?.coverBlank).toBe(true)
     })
 
     it('setCoverImage null clears the pin and merges a 409 record for retry', async () => {
@@ -1497,6 +1519,7 @@ describe('useCollectionsData', () => {
       })
       expect(updateCollectionMock).toHaveBeenLastCalledWith(1, {
         cover_image_id: null,
+        cover_blank: false,
         version: 4,
       })
       expect(result.current.detail?.coverImageId).toBeNull()

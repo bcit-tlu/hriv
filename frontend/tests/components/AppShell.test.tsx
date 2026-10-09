@@ -122,29 +122,25 @@ describe('AppShell', () => {
       expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     })
 
-    it('reports the measured footer height', () => {
-      const onFooterHeightChange = vi.fn()
-      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-        x: 0,
-        y: 0,
-        top: 0,
-        right: 100,
-        bottom: 48,
-        left: 0,
-        height: 48,
-        width: 100,
-        toJSON: () => ({}),
-      } as DOMRect)
+    it('sticks the footer dock to the viewport bottom only when requested', () => {
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      expect(screen.getByTestId('footer-dock')).not.toHaveStyle({ position: 'sticky' })
 
-      render(<AppShell {...makeProps({ onFooterHeightChange })} />)
-
-      expect(onFooterHeightChange).toHaveBeenCalledWith(48)
+      rerender(<AppShell {...makeProps({ stickyFooter: true })} />)
+      expect(screen.getByTestId('footer-dock')).toHaveStyle({ position: 'sticky', bottom: '0px' })
     })
 
-    it('passes the sticky footer setting through to FooterBar', () => {
-      render(<AppShell {...makeProps({ stickyFooter: true })} />)
+    it('renders the footer dock slot directly above the footer', () => {
+      render(
+        <AppShell {...makeProps({ footerDockSlot: <div data-testid="docked">Docked</div> })} />,
+      )
 
-      expect(screen.getByRole('contentinfo')).toHaveStyle({ position: 'sticky', bottom: '0px' })
+      const dock = screen.getByTestId('footer-dock')
+      const docked = screen.getByTestId('docked')
+      const footer = screen.getByRole('contentinfo')
+      expect(dock).toContainElement(docked)
+      expect(dock).toContainElement(footer)
+      expect(docked.nextElementSibling).toBe(footer)
     })
 
     it('renders version info in footer for admin users', () => {

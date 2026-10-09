@@ -146,10 +146,16 @@ def _summary_fields(
 ) -> dict:
     # Pinned cover: honored only while it still resolves to a member the
     # caller can view; otherwise the tile falls back to the first visible
-    # member and the summary reports ``cover_image_id=None``.
-    cover = next(
-        (img for img in images if img.id == collection.cover_image_id),
-        images[0] if images else None,
+    # member and the summary reports ``cover_image_id=None``. An explicit
+    # ``cover_blank`` suppresses the member cover entirely — the tile
+    # renders its type-logo placeholder.
+    cover = (
+        None
+        if collection.cover_blank
+        else next(
+            (img for img in images if img.id == collection.cover_image_id),
+            images[0] if images else None,
+        )
     )
     return {
         "id": collection.id,
@@ -166,6 +172,9 @@ def _summary_fields(
             if cover is not None and cover.id == collection.cover_image_id
             else None
         ),
+        # ``bool()`` covers the pre-flush ``None`` on a just-created row —
+        # the server_default only lands on INSERT.
+        "cover_blank": bool(collection.cover_blank),
         "version": collection.version,
         "category_id": collection.category_id,
         "sort_order": collection.sort_order,

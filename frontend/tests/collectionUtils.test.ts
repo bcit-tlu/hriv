@@ -168,6 +168,7 @@ describe('collectionUtils mapping', () => {
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
       coverImageId: null,
+      coverBlank: false,
       version: 1,
       categoryId: null,
       sortOrder: 0,
@@ -186,6 +187,14 @@ describe('collectionUtils mapping', () => {
   it('maps a pinned cover_image_id through to coverImageId', () => {
     const summary = apiCollectionSummaryToSummary(makeApiCollectionSummary({ cover_image_id: 42 }))
     expect(summary.coverImageId).toBe(42)
+  })
+
+  it('maps cover_blank through to coverBlank', () => {
+    const summary = apiCollectionSummaryToSummary(
+      makeApiCollectionSummary({ cover_blank: true, cover_thumb: null }),
+    )
+    expect(summary.coverBlank).toBe(true)
+    expect(summary.coverThumb).toBeNull()
   })
 
   it('maps ApiImage → ImageItem field by field', () => {

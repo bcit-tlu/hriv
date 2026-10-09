@@ -145,12 +145,25 @@ describe('CollectionOwnersDialog (#1531)', () => {
     fetchUsersPagedMock.mockResolvedValue({ items: DIRECTORY_USERS, total: 2 })
   })
 
-  it('renders the current owners and a Program/User radio row', () => {
+  it('renders the current owners and a User/Program radio row', () => {
     renderDialog({ collection: CO_OWNED })
     expect(screen.getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
     expect(screen.getByText(/Ada Lovelace, Grace Hopper/)).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: 'Program' })).toBeInTheDocument()
+    // User first, Program second.
+    expect(
+      screen.getAllByRole('radio').map((radio) => radio.closest('label')?.textContent),
+    ).toEqual(['User', 'Program'])
     expect(screen.getByRole('radio', { name: 'User' })).toBeChecked()
+  })
+
+  it('keeps the same fixed section height across the radios', async () => {
+    const user = userEvent.setup()
+    renderDialog({ collection: CO_OWNED })
+
+    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
+
+    await user.click(screen.getByRole('radio', { name: 'Program' }))
+    expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
   })
 
   it('keeps the confirm disabled until something changes', () => {
@@ -212,11 +225,10 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(screen.queryByRole('menuitemradio', { name: 'Everyone' })).not.toBeInTheDocument()
   })
 
-  it('narrows only the student search by the optional program filter', async () => {
+  it('narrows the search by the optional program filter in every scope', async () => {
     const user = userEvent.setup()
     renderDialog({}, makeAuth('instructor', 7, [1]))
     await waitFor(() => expect(fetchUsersPagedMock).toHaveBeenCalled())
-    // Program narrowing is offered only in the Students scope (group parity).
     await user.click(screen.getByRole('button', { name: 'Program' }))
     await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Radiography' }))
     await waitFor(() =>
@@ -224,13 +236,14 @@ describe('CollectionOwnersDialog (#1531)', () => {
         expect.objectContaining({ role: 'student', programIds: [1] }),
       ),
     )
-    // Switching to Instructors hides the button and ignores the filter.
+    // Unlike the group member picker, the filter stays available in every
+    // scope — the endpoint applies program narrowing to instructors too.
     await user.click(screen.getByRole('button', { name: 'Role' }))
     await user.click(await screen.findByRole('menuitemradio', { name: 'Instructors' }))
-    expect(screen.queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Program' })).toBeInTheDocument()
     await waitFor(() =>
       expect(fetchUsersPagedMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ role: 'instructor', programIds: undefined }),
+        expect.objectContaining({ role: 'instructor', programIds: [1] }),
       ),
     )
   })

@@ -18,6 +18,7 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
     programIds: [],
@@ -182,7 +183,24 @@ export const NoCover: Story = {
       imageCount: 0,
       coverThumb: null,
       coverImageId: null,
+      coverBlank: false,
       owners: [],
+    }),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const BlankCover: Story = {
+  name: "Blank cover — picker's None",
+  // `coverBlank` wins over a thumb still on the record: the type logo
+  // stands in, like an uncovered category tile.
+  args: {
+    collection: makeSummary({
+      id: 9,
+      name: 'Explicitly uncovered',
+      coverBlank: true,
     }),
   },
   parameters: {
@@ -194,6 +212,19 @@ export const Compact: Story = {
   args: {
     collection: makeSummary({ name: 'Compact drawer tile' }),
     density: 'compact',
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Minimal: Story = {
+  name: 'Minimal — drawer tile',
+  // The My-collections drawer look: cover + title only, every metadata
+  // row dropped.
+  args: {
+    collection: makeSummary({ name: 'Title-only drawer tile' }),
+    density: 'minimal',
   },
   parameters: {
     a11y: { test: 'todo' },

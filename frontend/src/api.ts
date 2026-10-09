@@ -693,6 +693,8 @@ export interface ApiCollectionSummary {
   cover_thumb: string | null
   /** Pinned cover member; `null` = first-member fallback. */
   cover_image_id: number | null
+  /** Explicit "no cover" pick — the tile renders the type-logo placeholder. */
+  cover_blank: boolean
   version: number
   /** Category the collection is filed into; `null` = unfiled (not on Browse). */
   category_id: number | null
@@ -792,6 +794,8 @@ export function updateCollection(
     hidden?: boolean
     /** Pinned cover member; `null` restores the first-member fallback. */
     cover_image_id?: number | null
+    /** Explicit "no cover" pick — clears any pin when `true`. */
+    cover_blank?: boolean
     version: number
   },
 ): Promise<ApiCollection> {

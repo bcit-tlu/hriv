@@ -36,11 +36,18 @@ const members: ImageItem[] = [
 interface StoryArgs {
   images: ImageItem[]
   currentImageId: number | null
-  onSave: (imageId: number | null) => void
+  currentBlank: boolean
+  onSave: (imageId: number | null, blank: boolean) => void
   onClose: () => void
 }
 
-function CollectionCoverPickerExample({ images, currentImageId, onSave, onClose }: StoryArgs) {
+function CollectionCoverPickerExample({
+  images,
+  currentImageId,
+  currentBlank,
+  onSave,
+  onClose,
+}: StoryArgs) {
   return (
     <CollectionCoverPickerModal
       open
@@ -48,6 +55,7 @@ function CollectionCoverPickerExample({ images, currentImageId, onSave, onClose 
       onSave={onSave}
       images={images}
       currentImageId={currentImageId}
+      currentBlank={currentBlank}
     />
   )
 }
@@ -60,13 +68,14 @@ const meta = {
     docs: {
       description: {
         component:
-          'Radio picker for the collection tile cover — the member list comes from the loaded collection detail (tile summaries carry no images), in member order. Saving pins `cover_image_id`; the "None" option restores the first-member fallback.',
+          'Radio picker for the collection tile cover — the member list comes from the loaded collection detail (tile summaries carry no images), in member order. Saving pins `cover_image_id`; "Automatic" clears it for the first-member fallback, and "None" shows the blank type-logo tile.',
       },
     },
   },
   args: {
     images: members,
     currentImageId: null,
+    currentBlank: false,
     onSave: fn(),
     onClose: fn(),
   },
@@ -81,9 +90,21 @@ export const Basic: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByText('Choose Cover Image')).toBeInTheDocument()
     await expect(body.getByText('Lateral skull')).toBeInTheDocument()
-    // No pin → the "None" row is pre-selected.
+    // No pin, no blank → the "Automatic" row is pre-selected.
+    const autoRow = (await body.findByText('Automatic')).closest('tr')!
+    await expect(within(autoRow).getByRole('radio')).toBeChecked()
+  },
+}
+
+export const BlankCover: Story = {
+  name: 'Blank — type-logo tile',
+  args: { currentBlank: true },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
     const noneRow = (await body.findByText('None')).closest('tr')!
     await expect(within(noneRow).getByRole('radio')).toBeChecked()
+    const autoRow = (await body.findByText('Automatic')).closest('tr')!
+    await expect(within(autoRow).getByRole('radio')).not.toBeChecked()
   },
 }
 
@@ -105,7 +126,7 @@ export const PickAndSave: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await userEvent.click(await body.findByText('Mandible detail'))
     await userEvent.click(body.getByRole('button', { name: 'Save' }))
-    await expect(args.onSave).toHaveBeenCalledWith(13)
+    await expect(args.onSave).toHaveBeenCalledWith(13, false)
   },
 }
 

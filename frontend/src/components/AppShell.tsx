@@ -116,8 +116,13 @@ export interface AppShellProps {
   backendVersion: string | null
   backupVersion: string | null
   onReportIssue: () => void
+  /** Keep the footer dock (footer plus `footerDockSlot`) stuck to the
+   *  viewport bottom while the page is taller than the viewport. */
   stickyFooter?: boolean
-  onFooterHeightChange?: (px: number) => void
+  /** Rendered inside the footer dock, directly above `FooterBar`, so it
+   *  shares the footer's sticky position and moves with it on overscroll
+   *  (the My collections sheet). */
+  footerDockSlot?: ReactNode
   notificationSlot?: ReactNode
   // Children (main content)
   children: ReactNode
@@ -155,26 +160,10 @@ export default function AppShell(props: AppShellProps) {
     backupVersion,
     onReportIssue,
     stickyFooter = false,
-    onFooterHeightChange,
+    footerDockSlot,
     notificationSlot,
     children,
   } = props
-  const footerRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    const footer = footerRef.current
-    if (!footer || !onFooterHeightChange) return
-
-    const reportHeight = () => onFooterHeightChange(footer.getBoundingClientRect().height)
-    reportHeight()
-    if (typeof ResizeObserver === 'undefined') return
-
-    const observer = new ResizeObserver(reportHeight)
-    observer.observe(footer)
-    return () => {
-      observer.disconnect()
-      onFooterHeightChange(0)
-    }
-  }, [onFooterHeightChange])
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
   const [collectionsMenuAnchor, setCollectionsMenuAnchor] = useState<HTMLElement | null>(null)
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
@@ -730,15 +719,28 @@ export default function AppShell(props: AppShellProps) {
       {/* Main content */}
       {children}
 
-      <FooterBar
-        rootRef={footerRef}
-        canManageUsers={canManageUsers}
-        frontendVersion={frontendVersion || undefined}
-        backendVersion={backendVersion ?? undefined}
-        backupVersion={backupVersion ?? undefined}
-        onReportIssue={onReportIssue}
-        sticky={stickyFooter}
-      />
+      {/* Footer dock: the footer and anything docked above it (the My
+        collections sheet) form one in-flow block, so when the dock is
+        sticky they stick together and rubber-band overscroll moves both. */}
+      <Box
+        data-testid="footer-dock"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '0 0 auto',
+          zIndex: (theme) => theme.zIndex.appBar,
+          ...(stickyFooter ? { position: 'sticky', bottom: 0 } : { position: 'relative' }),
+        }}
+      >
+        {footerDockSlot}
+        <FooterBar
+          canManageUsers={canManageUsers}
+          frontendVersion={frontendVersion || undefined}
+          backendVersion={backendVersion ?? undefined}
+          backupVersion={backupVersion ?? undefined}
+          onReportIssue={onReportIssue}
+        />
+      </Box>
     </Box>
   )
 }

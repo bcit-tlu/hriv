@@ -45,7 +45,7 @@ describe('useMyCollectionsDrawerState', () => {
     expect(localStorage.getItem('hrivpref:my-collections-drawer:pinned:user:anonymous')).toBeNull()
   })
 
-  it('closes when unpinned', () => {
+  it('stays open when unpinned — the pin is not a close control', () => {
     const { result } = renderHook(() => useMyCollectionsDrawerState('7'))
 
     act(() => {
@@ -55,7 +55,7 @@ describe('useMyCollectionsDrawerState', () => {
     act(() => result.current.setPinned(false))
 
     expect(result.current.pinned).toBe(false)
-    expect(result.current.open).toBe(false)
+    expect(result.current.open).toBe(true)
   })
 
   it('keeps the pinned preference when collapsed', () => {

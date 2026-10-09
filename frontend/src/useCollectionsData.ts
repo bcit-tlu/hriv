@@ -720,60 +720,64 @@ export function useCollectionsData({
    * versioned writes through `mutationQueue` and merged-on-409 like
    * `setHidden`; `canEdit`-gated like the other content fields.
    */
-  const setCoverImage = useCallback((id: number, imageId: number | null): Promise<Collection> => {
-    const run = async (prior: Collection | null): Promise<Collection> => {
-      let baseline = baselineFor(id, prior)
-      if (!baseline || baseline.id !== id) {
-        baseline = apiCollectionToCollection(await fetchCollection(id))
-      }
-      try {
-        const updated = apiCollectionToCollection(
-          await updateCollection(id, {
-            cover_image_id: imageId,
-            version: baseline.version,
-          }),
-        )
-        setDetail((prev) => (prev?.id === id ? updated : prev))
-        setCollections((prev) => {
-          const rest = prev.filter((c) => c.id !== id)
-          return matchesCollectionFilters(
-            updated,
-            latest.current.filters,
-            latest.current.currentUser,
+  const setCoverImage = useCallback(
+    (id: number, imageId: number | null, blank = false): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        let baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          baseline = apiCollectionToCollection(await fetchCollection(id))
+        }
+        try {
+          const updated = apiCollectionToCollection(
+            await updateCollection(id, {
+              cover_image_id: imageId,
+              cover_blank: blank,
+              version: baseline.version,
+            }),
           )
-            ? [updated, ...rest]
-            : rest
-        })
-        void latest.current.load()
-        return updated
-      } catch (err) {
-        // A 409 carries the authoritative record — merge it so a retry
-        // posts the fresh version instead of failing again.
-        const conflict = collectionConflictCurrent(err)
-        if (conflict) {
-          const current = apiCollectionToCollection(conflict)
-          setDetail((prev) => (prev?.id === id ? current : prev))
+          setDetail((prev) => (prev?.id === id ? updated : prev))
           setCollections((prev) => {
             const rest = prev.filter((c) => c.id !== id)
             return matchesCollectionFilters(
-              current,
+              updated,
               latest.current.filters,
               latest.current.currentUser,
             )
-              ? [current, ...rest]
+              ? [updated, ...rest]
               : rest
           })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so a retry
+          // posts the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            setCollections((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
         }
-        throw err
       }
-    }
-    const queued = mutationQueue.current.then(run, () => run(null))
-    mutationQueue.current = queued.then(
-      (updated) => updated,
-      () => null,
-    )
-    return queued
-  }, [])
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [],
+  )
 
   /**
    * Merge an authoritative collection record into the open detail and the

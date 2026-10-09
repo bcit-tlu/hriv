@@ -99,6 +99,7 @@ def _collection(
     sort_order: int = 0,
     hidden: bool = False,
     cover_image_id: int | None = None,
+    cover_blank: bool = False,
 ) -> SimpleNamespace:
     # ``user_id`` is the creator audit column; ownership is the ``owners``
     # list (``collection_owners`` rows), defaulting to the creator like the
@@ -127,6 +128,7 @@ def _collection(
         sort_order=sort_order,
         hidden=hidden,
         cover_image_id=cover_image_id,
+        cover_blank=cover_blank,
         viewport_state={"1": {"zoom": 1.0}},
         version=3,
         created_at=NOW,
@@ -1290,6 +1292,54 @@ async def test_update_cover_null_restores_first_member_fallback() -> None:
     assert col.cover_image_id is None
     assert out.cover_image_id is None
     assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_update_cover_blank_sets_flag_and_clears_pin() -> None:
+    """The picker's "None" row — an explicit blank wins over any stored
+    pin and reports no thumb even with members present."""
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2)],
+        cover_image_id=2,
+    )
+    out = await update_collection(
+        1, _patch(cover_blank=True), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_blank is True
+    assert col.cover_image_id is None
+    assert out.cover_blank is True
+    assert out.cover_image_id is None
+    assert out.cover_thumb is None
+
+
+async def test_update_cover_blank_false_restores_fallback() -> None:
+    """Un-blanking (the picker's "Automatic" row) returns the tile to the
+    first-member fallback."""
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_blank=True
+    )
+    out = await update_collection(
+        1, _patch(cover_blank=False), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_blank is False
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_update_cover_pin_clears_blank() -> None:
+    """A member pin is mutually exclusive with the blank flag — picking a
+    member from the picker un-blanks the tile."""
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_blank=True
+    )
+    out = await update_collection(
+        1, _patch(cover_image_id=2), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_blank is False
+    assert col.cover_image_id == 2
+    assert out.cover_blank is False
+    assert out.cover_thumb.endswith("/thumbs/2.jpg")
 
 
 async def test_update_cover_nonmember_is_422() -> None:

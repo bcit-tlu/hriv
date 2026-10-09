@@ -471,8 +471,10 @@ Italian_, public, instructor-owned). See
     tile's card-image button). **Assert:** `CollectionCoverPickerModal` radios
     over the collection's visible members; pick a different member and **Save**
     — **Assert:** the tile cover swaps to the picked image. Reopen, pick the
-    leading **None** row → **Save** — **Assert:** the cover falls back to the
-    first member.
+    leading **None** row → **Save** — **Assert:** the tile renders the blank
+    type-logo placeholder like an uncovered category. Reopen, pick
+    **Automatic** → **Save** — **Assert:** the cover falls back to the first
+    member.
 12. On the Browse toolbar, click **Add Collection** (between **Add Category**
     and **Add Images**). **Assert:** `CollectionEditDialog` opens in create
     mode with the current category already filed in the **Category** picker;
@@ -496,19 +498,30 @@ Browse, supports temporary and persistent modes, and stays off other pages.
 2. Open Browse home and a nested category. Confirm a bottom-left
    **My collections** button appears in both places. Open it and confirm the
    bottom drawer shows at most eight collections ordered by most recently
-   updated, plus **New collection**, **See all**, and a pin button. Confirm it
-   has no move, reorder, or drop targets.
+   updated, plus **New collection**, a pin button beside the title, and a
+   close button. Confirm
+   the sheet rises from behind the footer (its bottom edge never shows above
+   the footer), that the button attaches to the sheet's title slot and rides
+   up with it, doubling as the sheet's title, that tiles show only the cover
+   and name (no image count or
+   chips), and that the drawer has no move, reorder, or drop targets.
 3. Leave the drawer unpinned. Confirm it has a backdrop that prevents Browse
-   interaction, and that backdrop click, Escape, and the collapse button each
-   close it.
+   interaction but stops above the footer, and that backdrop click, Escape,
+   the header's close button, and a second press of the **My collections**
+   button each close it.
 4. Open and pin the drawer, then reload Browse. Confirm it returns pinned and
    open, has no backdrop, leaves the visible Browse area clickable, and does
-   not cover the final tile row. Collapse it and confirm the pin preference is
-   retained.
-5. Select a collection and confirm it opens. Reopen the drawer, select
-   **See all**, and confirm the Sequence page is filtered to
-   **My collections**; switch to Synchronized and confirm the filter remains.
-   Reopen Browse, choose **New collection**, create one, and confirm the new
+   not cover the final tile row, and that the **My collections** button is
+   outlined and not clickable. Press the pin again — **Assert:** the drawer
+   stays open and only returns to the temporary (backdrop, filled clickable
+   button, close control) state; it never reloads its tiles on the pin toggle,
+   and the pin icon fills with a light-grey circle while pinned. Re-pin and
+   overscroll past the end of the page — **Assert:** the footer and the
+   drawer move together as one block. Unpin, collapse it via the
+   **My collections** button, and confirm the pin preference is retained.
+5. Select a collection and confirm it opens. Reopen the drawer, close it via
+   the header's close button, then reopen it once more and choose
+   **New collection**; create one, and confirm the new
    collection page opens directly.
 6. Open an image viewer and a collection page. Confirm neither the button nor
    the drawer appears on either page.

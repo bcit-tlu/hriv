@@ -266,7 +266,7 @@ The dialog starts with a **Program / User** choice:
 - **User owners** — a checkbox table of people, the same list used when
   managing groups. Use the **Role** filter to show **Students** or
   **Instructors** (administrators also get **Everyone**), plus **Search**
-  and — for students — **Program** filters to narrow the list. Current
+  and **Program** filters to narrow the list. Current
   owners start checked. Instructors only ever see students and fellow
   instructors; administrator and staff accounts can only be added by an
   administrator. Check the people you want, then click **Change

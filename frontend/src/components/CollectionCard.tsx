@@ -6,7 +6,6 @@ import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import CollectionsIcon from '@mui/icons-material/Collections'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import ImageIcon from '@mui/icons-material/Image'
@@ -58,7 +57,10 @@ export interface CollectionCardProps {
   /** Effective group restriction inherited from the filed category. */
   inheritedGroupIds?: number[]
   titleHeadingLevel?: 'h3' | 'h4' | 'h5' | 'h6'
-  density?: 'default' | 'compact'
+  /** `minimal` keeps the compact tile geometry but drops every metadata
+   *  row under the title (count, visibility, scope chips) — the My
+   *  collections drawer's minimally-invasive look. */
+  density?: 'default' | 'compact' | 'minimal'
   /** Filed category (or an ancestor) is hidden — the collection is
    *  invisible to students regardless of its own `hidden` flag; the card
    *  desaturates like an own-hidden tile but carries no marker icon —
@@ -196,9 +198,19 @@ export default function CollectionCard({
 }: CollectionCardProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const compact = density === 'compact'
+  const compact = density === 'compact' || density === 'minimal'
+  const minimal = density === 'minimal'
+  // `minimal` tiles (the drawer) cap their media at ~110px tall — shorter
+  // than the compact 4:3 aspect — to keep the sheet minimally invasive.
+  const mediaBox = minimal
+    ? { width: '100%', height: 110 }
+    : compact
+      ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' }
+      : undefined
   const titleVariant = compact ? 'subtitle1' : 'h6'
-  const cover = collection.coverThumb
+  // `cover_blank` wins over any thumb the record still carries — an
+  // explicit "None" means the type-logo tile, full stop.
+  const cover = collection.coverBlank ? null : collection.coverThumb
   const imageCountText = `${collection.imageCount} ${collection.imageCount === 1 ? 'image' : 'images'}`
   const showEdit = Boolean(onEdit) && collection.permissions.canEdit
   const showMove = Boolean(onMove)
@@ -242,7 +254,7 @@ export default function CollectionCard({
             image={{ id: collection.id, thumb: cover }}
             renewThumb={renewCoverThumb}
             alt={collection.name}
-            style={compact ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' } : undefined}
+            style={mediaBox}
             sx={{
               display: 'block',
               ...(compact ? {} : { width: '100%', height: 140 }),
@@ -253,9 +265,7 @@ export default function CollectionCard({
         ) : (
           <Box
             sx={{
-              ...(compact
-                ? { width: '100%', aspectRatio: '4 / 3', height: 'auto' }
-                : { height: 140 }),
+              ...(mediaBox ?? { height: 140 }),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -263,7 +273,13 @@ export default function CollectionCard({
               color: 'white',
             }}
           >
-            <CollectionsIcon sx={{ fontSize: compact ? 40 : 64, opacity: 0.85 }} />
+            {/* No cover (empty collection, or the picker's explicit "None"
+                — `cover_blank`): the type logo stands in, like the folder
+                glyph on an uncovered category tile. */}
+            <CollectionTypeIcon
+              type={collection.type}
+              sx={{ fontSize: compact ? 40 : 64, opacity: 0.85 }}
+            />
           </Box>
         )}
         <CardContent
@@ -358,29 +374,33 @@ export default function CollectionCard({
           </Box>
           {/* Owner names were removed from tile metadata (#1567): a
               program-owned collection shows its program as a chip under the
-              type pill; user-owned tiles carry no owner reference. */}
-          <Typography variant="body2" color="text.secondary">
-            {imageCountText}
-          </Typography>
+              type pill; user-owned tiles carry no owner reference. The
+              `minimal` density drops every metadata row — title only. */}
+          {!minimal && (
+            <Typography variant="body2" color="text.secondary">
+              {imageCountText}
+            </Typography>
+          )}
           {/* The visibility row mounts only when a pill renders — a
               restricted collection with scope chips shows no pill
               (#1567), and an empty row would add a phantom gap the
               category tiles don't have. `mt: 0.5` matches CategoryTile's
               chip-row spacing. */}
-          {!(
-            collection.visibility === 'restricted' &&
-            (programChips.length > 0 || groupChips.length > 0)
-          ) && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-              <CollectionVisibilityChip
-                visibility={collection.visibility}
-                hasScopeChips={programChips.length > 0 || groupChips.length > 0}
-              />
-            </Box>
-          )}
+          {!minimal &&
+            !(
+              collection.visibility === 'restricted' &&
+              (programChips.length > 0 || groupChips.length > 0)
+            ) && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                <CollectionVisibilityChip
+                  visibility={collection.visibility}
+                  hasScopeChips={programChips.length > 0 || groupChips.length > 0}
+                />
+              </Box>
+            )}
           {/* Own/inherited scope render as separate rows, matching
               CategoryTile (#1567). */}
-          {programChips.length > 0 && (
+          {!minimal && programChips.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
               {programChips.map((p) => (
                 <Chip
@@ -393,7 +413,7 @@ export default function CollectionCard({
               ))}
             </Box>
           )}
-          {inheritedProgramChips.length > 0 && (
+          {!minimal && inheritedProgramChips.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
               {inheritedProgramChips.map((p) => (
                 <Chip
@@ -407,7 +427,7 @@ export default function CollectionCard({
               ))}
             </Box>
           )}
-          {groupChips.length > 0 && (
+          {!minimal && groupChips.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
               {groupChips.map((g) => (
                 <Chip
@@ -420,7 +440,7 @@ export default function CollectionCard({
               ))}
             </Box>
           )}
-          {inheritedGroupChips.length > 0 && (
+          {!minimal && inheritedGroupChips.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
               {inheritedGroupChips.map((g) => (
                 <Chip

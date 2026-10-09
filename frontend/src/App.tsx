@@ -377,8 +377,6 @@ export default function App() {
       : []
   const [dialogOpen, setDialogOpen] = useState(false)
   const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
-  const [myCollectionsDrawerHeight, setMyCollectionsDrawerHeight] = useState(0)
-  const [myCollectionsFooterHeight, setMyCollectionsFooterHeight] = useState(0)
   const [myCollectionsCapState, setMyCollectionsCapState] = useState<{
     userId: number
     types: ReadonlySet<CollectionType>
@@ -1964,8 +1962,8 @@ export default function App() {
   )
 
   const handleSetCollectionCoverImage = useCallback(
-    (collection: { id: number }, imageId: number | null) => {
-      void setCollectionCoverImage(collection.id, imageId)
+    (collection: { id: number }, imageId: number | null, blank = false) => {
+      void setCollectionCoverImage(collection.id, imageId, blank)
         .then(() => {
           refreshCategories()
           reloadMyCollectionsShelf()
@@ -2221,7 +2219,28 @@ export default function App() {
       backupVersion={backupVersion}
       onReportIssue={() => setReportIssueOpen(true)}
       stickyFooter={myCollectionsShelfEnabled}
-      onFooterHeightChange={setMyCollectionsFooterHeight}
+      footerDockSlot={
+        myCollectionsDrawerVisible ? (
+          <MyCollectionsDrawer
+            collections={myCollectionsShelf ?? []}
+            categories={categories}
+            programs={programs}
+            groups={groups}
+            open={myCollectionsDrawerOpen}
+            pinned={myCollectionsDrawerPinned}
+            onOpenChange={setMyCollectionsDrawerOpen}
+            onPinnedChange={setMyCollectionsDrawerPinned}
+            onOpen={(collection) => {
+              if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
+              handleOpenCollection(collection.id, { fromBrowse: true })
+            }}
+            onEdit={(collection) => void openBrowseCollectionEdit(collection)}
+            onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}
+            onNewCollection={() => setMyCollectionsCreateOpen(true)}
+            newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
+          />
+        ) : null
+      }
       notificationSlot={
         currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
           <NotificationMenu
@@ -2253,10 +2272,6 @@ export default function App() {
           maxWidth={false}
           sx={{
             px: { xs: 2, sm: 3, lg: '72px', xl: '120px' },
-            pb:
-              myCollectionsDrawerVisible && myCollectionsDrawerPinned && myCollectionsDrawerOpen
-                ? `${myCollectionsDrawerHeight}px`
-                : undefined,
           }}
         >
           {page === 'guide' && canEditContent ? (
@@ -3034,38 +3049,6 @@ export default function App() {
                   })()}
               </Box>
 
-              {myCollectionsDrawerVisible && (
-                <MyCollectionsDrawer
-                  collections={myCollectionsShelf ?? []}
-                  categories={categories}
-                  programs={programs}
-                  groups={groups}
-                  open={myCollectionsDrawerOpen}
-                  pinned={myCollectionsDrawerPinned}
-                  onOpenChange={setMyCollectionsDrawerOpen}
-                  onPinnedChange={setMyCollectionsDrawerPinned}
-                  onOpen={(collection) => {
-                    if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
-                    handleOpenCollection(collection.id, { fromBrowse: true })
-                  }}
-                  onEdit={(collection) => void openBrowseCollectionEdit(collection)}
-                  onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}
-                  onSeeAll={() => {
-                    if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
-                    handleCollectionsTypeChange('sequence')
-                    collectionsData.setFilters({
-                      ...collectionsData.filters,
-                      mine: true,
-                      owner: 'any',
-                    })
-                  }}
-                  onNewCollection={() => setMyCollectionsCreateOpen(true)}
-                  newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
-                  onPinnedHeightChange={setMyCollectionsDrawerHeight}
-                  bottomOffset={myCollectionsFooterHeight}
-                />
-              )}
-
               {/* Tile grid */}
               <SortableTileGrid
                 allCategories={categories}
@@ -3220,13 +3203,14 @@ export default function App() {
         <CollectionCoverPickerModal
           open
           onClose={() => setCoverPickerFor(null)}
-          onSave={(imageId) => {
+          onSave={(imageId, blank) => {
             const target = coverPickerFor
             setCoverPickerFor(null)
-            handleSetCollectionCoverImage(target, imageId)
+            handleSetCollectionCoverImage(target, imageId, blank)
           }}
           images={coverPickerFor.images}
           currentImageId={coverPickerFor.coverImageId}
+          currentBlank={coverPickerFor.coverBlank}
         />
       )}
 

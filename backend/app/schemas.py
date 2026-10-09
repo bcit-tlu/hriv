@@ -724,6 +724,9 @@ class CollectionSummaryOut(BaseModel):
     # to an image visible to the caller; ``None`` means the tile uses the
     # first-member fallback.
     cover_image_id: int | None = None
+    # Explicit "no cover" pick: the tile renders the type-logo placeholder
+    # and ``cover_thumb`` is ``None`` even with members present.
+    cover_blank: bool = False
     # Restriction scope rides on summaries too so Browse tiles can render the
     # collection's own program/group chips like category tiles do (#1567).
     # Empty unless ``visibility == "restricted"``.
@@ -843,6 +846,10 @@ class CollectionUpdate(BaseModel):
     # (``null`` restores the first-member fallback). Content field — same
     # authority as ``name``/``description``.
     cover_image_id: int | None = None
+    # Explicit "no cover" pick (the type-logo placeholder). ``true`` clears
+    # any pinned member; a ``cover_image_id`` write clears the flag — the
+    # two states are mutually exclusive.
+    cover_blank: bool | None = None
     version: int
 
     _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)

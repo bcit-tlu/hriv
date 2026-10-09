@@ -46,6 +46,7 @@ const collection: CollectionSummary = {
   imageCount: 9,
   coverThumb: null,
   coverImageId: null,
+  coverBlank: false,
   categoryId: null,
   sortOrder: 0,
   programIds: [],

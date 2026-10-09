@@ -208,9 +208,11 @@ returned by the API (UX only — the backend re-checks).
 - **Given** a card whose `permissions.can_edit` is true, **When** the user
   clicks **Set cover image**, **Then** `CollectionCoverPickerModal` radios
   over the collection's visible members (loaded via `GET
-/api/collections/{id}` — summaries carry none) and **Save** PATCHes
-  `cover_image_id`; the leading **None** row restores the first-member
-  fallback.
+/api/collections/{id}` — summaries carry none) and **Save** PATCHes the
+  cover fields: the leading **None** row sets `cover_blank` (the tile
+  renders the type-logo placeholder like an uncovered category), the
+  **Automatic** row clears both states back to the first-member fallback,
+  and a member row pins `cover_image_id`.
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
@@ -377,15 +379,36 @@ returned by the API (UX only — the backend re-checks).
   scopes show a fixed bottom-left **My collections** button outside
   `SortableTileGrid`; no button renders while the owned feed is loading or
   empty. Opening it shows a bottom drawer with up to eight most recently
-  updated collections, **New collection**, and **See all** (Sequence with
-  `mine=true`). The standard contained button and drawer sit above the
-  always-visible footer. Compact cards are 160–180 px wide (at most 60% of a
-  300 px Browse tile) and scroll horizontally below about 1424 px. The
-  temporary drawer has a backdrop that stops at the footer and closes on
-  navigation; pinning removes the backdrop, keeps Browse interactive, persists
-  per user, and reserves its height below the Browse content. The drawer never
-  renders on image-viewer or collection pages and has no drag, reorder, or drop
-  targets.
+  updated collections, **New collection**, and a close control. The sheet
+  is docked in flow directly above the sticky
+  footer, so it rises out from _behind_ the footer's top border (the footer
+  paints over the sheet's bottom edge, so only the sheet's top shows
+  elevation) and a pinned sheet moves with the footer during rubber-band
+  overscroll. The standard contained button stays mounted while the sheet
+  is open and doubles as its title (`aria-labelledby`): it rests 16 px above
+  the footer, attaches to the sheet's title slot once the rising header
+  reaches it, rides up with the sheet, and detaches again at the same point
+  on the way down. A pin control sits beside the title placeholder — it
+  fills with a light-grey circle while the sheet is pinned — and the
+  temporary header's action cluster ends in a close button. Tiles are
+  title-only (no image count, no chips) with ~110 px-tall media. Compact
+  cards are 160–180 px wide (at most 60% of a 300 px Browse tile) and scroll
+  horizontally below about 1424 px. The card row's height is capped so the
+  dock (header + cards + footer) never outgrows the viewport — the header
+  and footer heights are measured live, so a wrapped header or a multi-line
+  admin footer shrinks the card row instead of pushing the sheet's controls
+  above the top edge. The temporary state has a backdrop that leaves the
+  footer undimmed, locks document scrolling until the sheet closes or pins
+  (the card row still scrolls), and closes on Escape, backdrop click, the
+  header's close button, or a second press of the button; pinning removes
+  the backdrop (and the close control), keeps Browse
+  interactive, persists per user, turns the button into an outlined,
+  non-clickable title, and lets the page grow by the sheet's height so the
+  last Browse row stays reachable. The same sheet stays mounted across both
+  modes — pinning does not reload it — and unpinning leaves the drawer open
+  (the pin is not
+  a close control). The drawer never renders on image-viewer or collection
+  pages and has no drag, reorder, or drop targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
   edit dialog's category picker refiles the collection — both regardless of

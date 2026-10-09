@@ -29,6 +29,7 @@ function makeCollection(images: ImageItem[], memberCount = images.length): Colle
     imageCount: memberCount,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
     version: 1,
