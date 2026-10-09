@@ -21,9 +21,9 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
-import CollectionsIcon from '@mui/icons-material/Collections'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
@@ -1774,7 +1774,7 @@ export default function App() {
 
   // Browse collection editor (#1525 UX): the tile title's edit pencil opens
   // the shared CollectionEditDialog — the same form the Collections pages
-  // use — and "+ Add Collection" opens it in create mode seeded with the
+  // use — and "+ New collection" opens it in create mode seeded with the
   // current Browse category. `editing` carries the full record (summaries
   // omit program/group scope), matching CollectionsPage.openEdit.
   const [collEditorOpen, setCollEditorOpen] = useState(false)
@@ -2961,11 +2961,11 @@ export default function App() {
                         {collectionsEnabled && (
                           <Button
                             variant="outlined"
-                            startIcon={<CollectionsIcon />}
+                            startIcon={<AddIcon />}
                             onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
                           >
-                            Add Collection
+                            New collection
                           </Button>
                         )}
                         <Button
@@ -3102,7 +3102,7 @@ export default function App() {
       />
 
       {/* Collection edit/create dialog opened from Browse — the tile
-          title's edit pencil and the toolbar's "+ Add Collection". Shares
+          title's edit pencil and the toolbar's "+ New collection". Shares
           the Collections pages' form; filing and hide ride the same
           picker/link conventions (#1566). */}
       <CollectionEditDialog
