@@ -2742,7 +2742,9 @@ export default function App() {
                 {selectedImageCollections.length > 0 && (
                   <ImageCollectionsList
                     key={selectedImage.id}
-                    names={selectedImageCollections.map((c) => c.name)}
+                    collections={selectedImageCollections}
+                    hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
+                    onOpenCollection={handleOpenCollection}
                   />
                 )}
                 {selectedImage.note && (

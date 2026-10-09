@@ -14,23 +14,25 @@ import * as ImageCollectionsListStories from './ImageCollectionsList.stories'
 <Title />
 
 <Subtitle>
-  Read-only list of the collections an image belongs to, shown in the image viewer metadata area,
-  truncated to three names with an inline "more" expander.
+  Read-only list of the collections an image belongs to, shown in the image viewer metadata area —
+  each name links to its collection, truncated to three with an inline "more" expander.
 </Subtitle>
 
 ## When to use
 
 Use `ImageCollectionsList` in the image viewer metadata row to tell a viewer which collections the
-current image is part of (#1586). It is purely informational — it does not add or remove membership.
+current image is part of (#1586), and let them jump straight into any of them. It is read-only — it
+does not add or remove membership.
 
-The names passed in are already **visibility-filtered server-side**: the
+The collections passed in are already **visibility-filtered server-side**: the
 `GET /api/images/{id}/collections` endpoint only returns collections the caller may view, so a
-student never sees a private or restricted collection they could not open.
+student never sees a private or restricted collection they could not open — and every link is safe
+to follow.
 
 ## Interactive example
 
-`Basic` exposes the `names` and `limit` controls. With more than `limit` names (default 3), the
-extras collapse behind a "… and N more" link that expands them inline.
+`Basic` exposes the `collections` and `limit` controls. With more than `limit` collections
+(default 3), the extras collapse behind a "… and N more" link that expands them inline.
 
 <Primary />
 
@@ -38,11 +40,14 @@ extras collapse behind a "… and N more" link that expands them inline.
 
 ## Implementation guidance
 
-- Renders nothing when `names` is empty — the caller can mount it unconditionally.
+- Renders nothing when `collections` is empty — the caller can mount it unconditionally.
 - The label pluralizes ("Collection" vs "Collections"), matching the Program/Group metadata rows.
 - Styling matches the viewer metadata area: `body2`, `text.secondary`, inline `component="span"`.
 - In the viewer, pass `key={imageId}` so the expand toggle resets when the user switches images.
-- Names are plain text today; linking each name to open its collection is an easy future addition.
+- Each name is a link. A plain left click routes through `onOpenCollection(id)` for in-app (SPA)
+  navigation; when `hrefForCollection` is supplied, the names are real anchors so modifier- or
+  middle-click opens the collection in a new tab. The component stays presentational — the host
+  (`App.tsx`) supplies both the open handler and the href builder.
 
 ## Examples
 
