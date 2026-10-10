@@ -322,6 +322,35 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 ---
 
+## Test Case 9a: Image View — Collection Membership Row (#1586)
+
+**Purpose:** Verify the image view lists the collections an image belongs to,
+filtered to those the caller may view, and that the endpoint is gated by
+`COLLECTIONS_ENABLED`. Requires `COLLECTIONS_ENABLED=true` (local-dev default).
+
+1. As `instructor@example.ca`, create a public collection containing image 1:
+   `POST /api/collections {"name": "Viewer set A", "type": "sequence", "visibility": "public", "category_id": <a category visible to students>, "image_ids": [1]}`.
+2. As `admin@example.ca`: `GET /api/images/1/collections`.
+   **Assert:** `200` with a `CollectionSummaryOut[]` that includes "Viewer set A".
+3. **UI:** open image 1 in the viewer. **Assert:** the metadata area shows a
+   **Collections:** row listing "Viewer set A". Add image 1 to three or more
+   additional collections and confirm the row shows the first three names then
+   "… and N more", and that the link expands the full list inline.
+4. **Student visibility:** as the instructor, create a second collection on image
+   1 with `visibility=private`. As `student@example.ca`: `GET /api/images/1/collections`.
+   **Assert:** `200`, the private collection is **absent** (students only see
+   collections they may view), and "Viewer set A" is present.
+5. **Image not visible:** as the student, request a hidden/inactive image's
+   collections (an inactive image id, or one under a category hidden from the
+   student): `GET /api/images/{hiddenId}/collections`.
+   **Assert:** `404 Not Found` — indistinguishable from `GET /api/images/{hiddenId}`.
+6. **Flag off:** restart the API with `COLLECTIONS_ENABLED=false`, then
+   `GET /api/images/1/collections` as any role.
+   **Assert:** `404 Not Found` (same as an unknown route); the viewer shows no
+   Collections row and the frontend issues no request for it.
+
+---
+
 ## Test Case 10: Collection Orphaned by Program Deletion → Admin Reassign (API)
 
 **Purpose:** Verify that deleting a program leaves its collections in place as
@@ -530,6 +559,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/images/                                                                                              | Yes           | student                                                                                                                             |
 | POST   | /api/images/                                                                                              | Yes           | instructor                                                                                                                          |
 | GET    | /api/images/{id}                                                                                          | Yes           | student                                                                                                                             |
+| GET    | /api/images/{id}/collections                                                                              | Yes           | student (collections the image is in, visibility-filtered; 404 if the image is not visible; 404 when `COLLECTIONS_ENABLED=false`)   |
 | PATCH  | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                                          |
 | DELETE | /api/images/{id}                                                                                          | Yes           | instructor                                                                                                                          |
 | DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                                                                          |
