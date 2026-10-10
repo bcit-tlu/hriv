@@ -498,8 +498,11 @@ persistent modes, and stays off the Manage, People, Admin, and Guide pages.
    the header's close button, then reopen it once more and choose
    **New collection**; create one, and confirm the new
    collection page opens directly.
-6. Open an image viewer and a collection page. Confirm neither the button nor
-   the drawer appears on either page.
+6. Open an image viewer, a Collections list page, and an open collection
+   detail. Confirm the button and drawer are available on each, and that
+   pressing ←/→ on a sequence detail still steps the sequence while the drawer
+   is collapsed (and does not while it is open). Open Manage, People, and Admin
+   and confirm neither the button nor the drawer appears.
 7. Sign in as a user with no visible owned collections and confirm the button
    and drawer are absent. Disable `COLLECTIONS_HOME_SHELF` and confirm they are
    absent for a user with owned collections. Disable `COLLECTIONS_ENABLED` and

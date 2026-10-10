@@ -67,7 +67,8 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   `scrollTop` with `window.scrollY`. Clipped card content before scrolling is
   not itself a failure if the drawer scroll reveals it. Wait for transitions to
   settle before taking screenshots.
-- The unpinned drawer has `role="dialog"` too. When closing a nested feedback or
+- The unpinned drawer has `role="dialog"` only while it is open — a collapsed
+  sheet carries no role (#1608). When closing a nested feedback or
   edit dialog, wait for that specific dialog to close rather than waiting for
   all dialogs to disappear.
 

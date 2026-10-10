@@ -1033,6 +1033,8 @@ editable targets (inputs, textareas, selects, `[role="textbox"]`,
 contenteditable) are skipped, roving-focus widgets keep their keys while
 focused (tablists like the AppShell nav, trees, radio groups, sliders),
 and the listener yields whenever a dialog, menu, or listbox is open. The
+collapsed My collections drawer carries no `dialog` role, so it does not
+count as an open overlay and never blocks ←/→ (#1608). The
 container itself is focusable
 (`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
 edge-nav cue reveals immediately — switching images never steals focus
