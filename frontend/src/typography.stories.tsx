@@ -7,7 +7,7 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import type { TypographyProps } from '@mui/material/Typography'
-import { ThemeProvider } from '@mui/material/styles'
+import { ThemeProvider, useTheme } from '@mui/material/styles'
 import { ColorModeContext } from './colorModeContext'
 import { buildTheme, type HrivThemeMode } from './theme'
 
@@ -26,10 +26,10 @@ interface TypographyStoryArgs {
   paragraph: boolean
 }
 
+// Typography variants in use across HRIV today (h1–h3 and `button` are not used
+// by the app). If a new variant is adopted, add it here AND to the Scale below
+// so this page stays an accurate reference, not a mirror of MUI's full set.
 const variantOptions: TypographyVariant[] = [
-  'h1',
-  'h2',
-  'h3',
   'h4',
   'h5',
   'h6',
@@ -107,25 +107,32 @@ function VariantRow({
 }: {
   description: string
   label: string
-  variant: TypographyVariant
+  variant: Exclude<TypographyVariant, 'inherit'>
 }) {
+  const theme = useTheme()
+  // Font size / weight read live from the theme so these notes stay accurate.
+  const spec = theme.typography[variant]
+
   return (
     <Box
       sx={{
         display: 'grid',
         gap: 2,
-        gridTemplateColumns: { xs: '1fr', md: '160px minmax(0, 1fr)' },
+        gridTemplateColumns: { xs: '1fr', md: '180px minmax(0, 1fr)' },
         py: 1.5,
       }}
     >
-      <Box>
+      <Stack spacing={0.25}>
         <Typography fontFamily="monospace" variant="body2">
           {label}
+        </Typography>
+        <Typography color="text.secondary" fontFamily="monospace" variant="caption">
+          {String(spec.fontSize)} / {String(spec.fontWeight)}
         </Typography>
         <Typography color="text.secondary" variant="caption">
           {description}
         </Typography>
-      </Box>
+      </Stack>
       <Typography variant={variant}>{sampleSentence}</Typography>
     </Box>
   )
