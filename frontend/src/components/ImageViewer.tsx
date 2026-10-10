@@ -32,12 +32,12 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
   if (!Number.isFinite(homeZoom) || homeZoom <= 0 || homeBounds.width <= 0) return false
 
   const homeCenter = homeBounds.getCenter()
-  const center = viewport.getCenter()
-  const rotation = ((viewport.getRotation() % 360) + 360) % 360
+  const center = viewport.getCenter(false)
+  const rotation = ((viewport.getRotation(false) % 360) + 360) % 360
   const rotationDistance = Math.min(rotation, 360 - rotation)
   const centerTolerance = homeBounds.width * 1e-3
   return (
-    Math.abs(viewport.getZoom() - homeZoom) <= homeZoom * 1e-3 &&
+    Math.abs(viewport.getZoom(false) - homeZoom) <= homeZoom * 1e-3 &&
     Math.abs(center.x - homeCenter.x) <= centerTolerance &&
     Math.abs(center.y - homeCenter.y) <= centerTolerance &&
     rotationDistance <= 1e-3 &&

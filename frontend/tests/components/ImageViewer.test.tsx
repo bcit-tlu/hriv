@@ -46,12 +46,26 @@ interface MockTrackerOptions {
   }) => void
 }
 
+interface MockViewportState {
+  current: {
+    zoom: number
+    center: { x: number; y: number }
+    rotation: number
+  }
+  target: {
+    zoom: number
+    center: { x: number; y: number }
+    rotation: number
+  }
+}
+
 interface MockViewer {
   element: HTMLDivElement
   container: HTMLDivElement
   canvas: HTMLDivElement
   navigator: { element: HTMLDivElement }
   world: { getItemAt: ReturnType<typeof vi.fn> }
+  viewportState: MockViewportState
   viewport: {
     getZoom: ReturnType<typeof vi.fn>
     getCenter: ReturnType<typeof vi.fn>
@@ -164,18 +178,29 @@ vi.mock('openseadragon', () => {
       height: 1,
       getCenter: () => ({ x: 0.5, y: 0.4 }),
     }
+    const viewportState: MockViewportState = {
+      current: { zoom: 2, center: { x: 0.5, y: 0.4 }, rotation: 90 },
+      target: { zoom: 2, center: { x: 0.5, y: 0.4 }, rotation: 90 },
+    }
     const viewer: MockViewer = {
       element: document.createElement('div'),
       container,
       canvas: document.createElement('div'),
       navigator: { element: navigatorElement },
+      viewportState,
       world: {
         getItemAt: vi.fn(() => ({ getContentSize: () => ({ x: 1000, y: 800 }) })),
       },
       viewport: {
-        getZoom: vi.fn(() => 2),
-        getCenter: vi.fn(() => ({ x: 0.5, y: 0.4 })),
-        getRotation: vi.fn(() => 90),
+        getZoom: vi.fn((current = false) =>
+          current ? viewportState.current.zoom : viewportState.target.zoom,
+        ),
+        getCenter: vi.fn((current = false) =>
+          current ? viewportState.current.center : viewportState.target.center,
+        ),
+        getRotation: vi.fn((current = false) =>
+          current ? viewportState.current.rotation : viewportState.target.rotation,
+        ),
         getHomeZoom: vi.fn(() => 2),
         getHomeBounds: vi.fn(() => homeBounds),
         getFlip: vi.fn(() => false),
@@ -335,9 +360,12 @@ const setViewportAtHome = (v: MockViewer) => {
   }
   v.viewport.getHomeZoom.mockReturnValue(2)
   v.viewport.getHomeBounds.mockReturnValue(homeBounds)
-  v.viewport.getZoom.mockReturnValue(2)
-  v.viewport.getCenter.mockReturnValue({ x: 0.5, y: 0.4 })
-  v.viewport.getRotation.mockReturnValue(0)
+  v.viewportState.current.zoom = 2
+  v.viewportState.current.center = { x: 0.5, y: 0.4 }
+  v.viewportState.current.rotation = 0
+  v.viewportState.target.zoom = 2
+  v.viewportState.target.center = { x: 0.5, y: 0.4 }
+  v.viewportState.target.rotation = 0
   v.viewport.getFlip.mockReturnValue(false)
   return homeBounds
 }
@@ -647,6 +675,27 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(observabilityMocks.emitEvent).not.toHaveBeenCalledWith(
       expect.objectContaining({ event: 'ui.toolbar_action', action: 'home' }),
     )
+  })
+
+  it('refits when resizing during an animation toward Home', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    const homeBounds = setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewportState.current.zoom = 1
+    v.viewportState.current.center = { x: 0.7, y: 0.4 }
+    v.viewportState.current.rotation = 45
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).toHaveBeenCalledWith(homeBounds, true)
+    expect(v.viewport.getZoom).toHaveBeenCalledWith(false)
+    expect(v.viewport.getCenter).toHaveBeenCalledWith(false)
+    expect(v.viewport.getRotation).toHaveBeenCalledWith(false)
   })
 
   it('does not refit a zoomed view after resize', () => {
