@@ -462,12 +462,16 @@ Italian_, public, instructor-owned). See
 ## Test Case 13: My Collections Browse Drawer (UI)
 
 **Purpose:** Verify the flag-controlled personal drawer is available throughout
-Browse, supports temporary and persistent modes, and stays off other pages.
+Browse, the image viewer, and the Collections pages, supports temporary and
+persistent modes, and stays off the Manage, People, Admin, and Guide pages.
 
 1. Enable `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF`, then sign in as
    a student, instructor, or admin with at least one visible owned collection.
 2. Open Browse home and a nested category. Confirm a bottom-left
-   **My collections** button appears in both places. Open it and confirm the
+   **My collections** button appears in both places, and that it also appears
+   in the image viewer, on the Collections list pages, and on an open
+   collection detail (#1608). Confirm the Manage, People, and Admin pages do
+   not show it. Open it and confirm the
    bottom drawer shows at most eight collections ordered by most recently
    updated, plus **New collection**, a pin button beside the title, and a
    close button. Confirm
@@ -494,8 +498,11 @@ Browse, supports temporary and persistent modes, and stays off other pages.
    the header's close button, then reopen it once more and choose
    **New collection**; create one, and confirm the new
    collection page opens directly.
-6. Open an image viewer and a collection page. Confirm neither the button nor
-   the drawer appears on either page.
+6. Open an image viewer, a Collections list page, and an open collection
+   detail. Confirm the button and drawer are available on each, and that
+   pressing ←/→ on a sequence detail still steps the sequence while the drawer
+   is collapsed (and does not while it is open). Open Manage, People, and Admin
+   and confirm neither the button nor the drawer appears.
 7. Sign in as a user with no visible owned collections and confirm the button
    and drawer are absent. Disable `COLLECTIONS_HOME_SHELF` and confirm they are
    absent for a user with owned collections. Disable `COLLECTIONS_ENABLED` and

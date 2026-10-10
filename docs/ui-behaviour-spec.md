@@ -376,9 +376,10 @@ returned by the API (UX only — the backend re-checks).
   work.
 - **Given** `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF` are on and the
   caller has visible owned collections, **Then** Browse root and category
-  scopes show a fixed bottom-left **My collections** button outside
-  `SortableTileGrid`; no button renders while the owned feed is loading or
-  empty. Opening it shows a bottom drawer with up to eight most recently
+  scopes, the image viewer, and the Collections pages (type lists and an open
+  collection detail) show a fixed bottom-left **My collections** button
+  outside `SortableTileGrid`; no button renders while the owned feed is
+  loading or empty (#1608). Opening it shows a bottom drawer with up to eight most recently
   updated collections, **New collection**, and a close control. The sheet
   is docked in flow directly above the sticky
   footer, so it rises out from _behind_ the footer's top border (the footer
@@ -407,8 +408,9 @@ returned by the API (UX only — the backend re-checks).
   last Browse row stays reachable. The same sheet stays mounted across both
   modes — pinning does not reload it — and unpinning leaves the drawer open
   (the pin is not
-  a close control). The drawer never renders on image-viewer or collection
-  pages and has no drag, reorder, or drop targets.
+  a close control). The drawer never renders on the Manage,
+  Manage → Collections, People, Admin, or Guide pages and has no drag,
+  reorder, or drop targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
   edit dialog's category picker refiles the collection — both regardless of
