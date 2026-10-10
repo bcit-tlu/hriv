@@ -1,0 +1,28 @@
+import { Canvas, Meta, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as IconStories from './icons.stories'
+
+<Meta of={IconStories} />
+
+<Title />
+
+<Subtitle>
+  The Material Icons used across HRIV, each labeled with its import name — the shared icon set for
+  the application.
+</Subtitle>
+
+## How to use this section
+
+Use `Foundations/Icons` to find an existing icon before adding a new dependency. Icons come from
+[`@mui/icons-material`](https://mui.com/material-ui/material-icons/) and are imported per-path by
+name, e.g.:
+
+```tsx
+import FilterListIcon from '@mui/icons-material/FilterList'
+```
+
+For icon buttons, remember to give an accessible label (e.g. `aria-label` on the `IconButton`),
+since the icon itself is decorative.
+
+## Icons
+
+<Canvas of={IconStories.Default} />
