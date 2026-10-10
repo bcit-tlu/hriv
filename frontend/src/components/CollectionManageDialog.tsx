@@ -568,6 +568,9 @@ export default function CollectionManageDialog({
   // four as a 2×2 grid — so a lone or odd member leaves one empty cell.
   const slotCount = draft.length + (draft.length % 2)
   const [activeImage, setActiveImage] = useState<ImageItem | null>(null)
+  // Rendered width of the dragged slot, so the overlay matches it when the
+  // position map has shrunk on a narrow screen.
+  const [activeWidth, setActiveWidth] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
 
   const toggleSelectMode = useCallback(() => {
@@ -671,6 +674,7 @@ export default function CollectionManageDialog({
     const sourceId = String(event.operation.source?.id)
     if (!sourceId.startsWith(ITEM_PREFIX)) return
     setActiveImage(draftRef.current.find((img) => itemIdFor(img.id) === sourceId) ?? null)
+    setActiveWidth(event.operation.source?.element?.getBoundingClientRect().width ?? null)
   }, [])
 
   const handleDragEnd = useCallback(
@@ -881,7 +885,7 @@ export default function CollectionManageDialog({
                 <Box
                   aria-hidden
                   sx={{
-                    width: SLOT_WIDTH,
+                    width: activeWidth ?? SLOT_WIDTH,
                     pointerEvents: 'none',
                     cursor: 'grabbing',
                     position: 'relative',
