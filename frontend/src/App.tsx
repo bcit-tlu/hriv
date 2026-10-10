@@ -32,10 +32,10 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
+import ImageInfoAccordion from './components/ImageInfoAccordion'
 import SortableTileGrid from './components/SortableTileGrid'
 import MyCollectionsDrawer from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
-import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
@@ -82,10 +82,10 @@ import {
   useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
+import { useImageInfoExpandedPreference } from './useImageInfoExpandedPreference'
 import { useMyCollectionsShelf } from './useMyCollectionsShelf'
 import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
 import { isAcceptedFile } from './fileUtils'
-import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
 import {
   fetchImage as apiFetchImage,
@@ -164,6 +164,7 @@ function getCollapsedCategoryBreadcrumb(
 }
 
 export default function App() {
+  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference()
   const {
     currentUser,
     loading: usersLoading,
@@ -2671,106 +2672,18 @@ export default function App() {
                 />
               </Paper>
 
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control
-                  the view. On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right
-                  corner shows your current viewport.
-                </Typography>
-              </Box>
-
-              {/* Image metadata */}
-              <Box
-                sx={{
-                  mt: 2,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 0,
-                  '& > span': { mr: '2em' },
-                }}
-              >
-                {selectedImage.copyright && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Copyright:</strong> {selectedImage.copyright}
-                  </Typography>
+              <ImageInfoAccordion
+                image={selectedImage}
+                programNames={ancestorProgramIds.map(
+                  (pid) => programs.find((program) => program.id === pid)?.name ?? String(pid),
                 )}
-                {ancestorProgramIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Program
-                      {ancestorProgramIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorProgramIds
-                      .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                      .join(', ')}
-                  </Typography>
+                groupNames={ancestorGroupIds.map(
+                  (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                 )}
-                {ancestorGroupIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Group
-                      {ancestorGroupIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorGroupIds
-                      .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
-                      .join(', ')}
-                  </Typography>
-                )}
-                {selectedImage.note && (
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 1,
-                      mt: 1,
-                      width: '100%',
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      component="div"
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      <strong>Note:&nbsp;</strong>
-                    </Typography>
-                    <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
-                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
-                    </Box>
-                  </Box>
-                )}
-                {selectedImage.createdAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Created:</strong> {new Date(selectedImage.createdAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.updatedAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Modified:</strong> {new Date(selectedImage.updatedAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.width != null && selectedImage.height != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Dimensions:</strong> {selectedImage.width} &times;{' '}
-                    {selectedImage.height}
-                  </Typography>
-                )}
-                {selectedImage.fileSize != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Size:</strong> {formatFileSize(selectedImage.fileSize)}
-                  </Typography>
-                )}
-                {selectedImageMeasurement && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Measurement:</strong>{' '}
-                    {selectedImageMeasurement.scale && selectedImageMeasurement.unit
-                      ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
-                      : selectedImageMeasurement.scale
-                        ? `${selectedImageMeasurement.scale} px`
-                        : (selectedImageMeasurement.unit ?? '')}
-                  </Typography>
-                )}
-              </Box>
+                measurement={selectedImageMeasurement}
+                expanded={imageInfoExpanded}
+                onExpandedChange={setImageInfoExpanded}
+              />
             </>
           ) : (
             /* ---- Browse mode ---- */

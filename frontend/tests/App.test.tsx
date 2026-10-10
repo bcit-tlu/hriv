@@ -1496,6 +1496,7 @@ describe('App breadcrumbs', () => {
 
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
 
     fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
     expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
@@ -1618,6 +1619,42 @@ describe('App failure notifications', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss failed uploads' }))
     expect(processingJobsMock.dismissJob.mock.calls.map(([id]) => id)).toEqual([1, 2, 3, 4, 5])
+  })
+})
+
+describe('App image information accordion', () => {
+  const preferenceKey = 'hrivpref:image-info-expanded:user:1'
+  let storedUser: string | null = null
+
+  beforeEach(() => {
+    resetFixtures()
+    Object.assign(mockImage, { copyright: 'Educational use only' })
+    storedUser = localStorage.getItem('hriv_user')
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.removeItem(preferenceKey)
+  })
+
+  afterEach(() => {
+    Object.assign(mockImage, { copyright: null })
+    localStorage.removeItem(preferenceKey)
+    if (storedUser === null) {
+      localStorage.removeItem('hriv_user')
+    } else {
+      localStorage.setItem('hriv_user', storedUser)
+    }
+  })
+
+  it('renders collapsed and reveals image information when expanded', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const summary = screen.getByRole('button', { name: 'Image information' })
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(summary)
+
+    const copyright = screen.getByText('Copyright:', { exact: true }).parentElement
+    expect(copyright).toHaveTextContent('Copyright: Educational use only')
   })
 })
 

@@ -116,6 +116,17 @@ images> / Empty` format used on category tiles.
 - Profile menu shows the student's own **program** and **group** memberships as
   read-only chips (`useUserProfile.ts` — `useUserProfile.test.ts`).
 
+### Image viewer: image information accordion (`ImageInfoAccordion.test.tsx`, `App.test.tsx`)
+
+- **Given** the regular image viewer page, **Then** a collapsed-by-default
+  **Image information** accordion sits directly below the viewer and its heading
+  contains only that title.
+- **When** expanded, **Then** metadata appears in evenly spaced rows and the
+  viewer usage hint is the final row; rows with no visible fields are omitted.
+- **When** the user expands or collapses the accordion, **Then** that choice is
+  persisted per user under
+  `hrivpref:image-info-expanded:user:${userScope}` in localStorage.
+
 ### Viewer: annotations, overlays, measurement (`CanvasOverlay.test.tsx`, `useCanvasAnnotations.test.ts`, `useOverlayPersistence.test.ts`)
 
 - Students view locked overlays and annotations read-only; edit mode and
