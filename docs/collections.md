@@ -1185,7 +1185,11 @@ and an **Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
 surviving) members shows a fallback alert with the ordered member list and
 per-row **Open image** links; members whose tiles fail mid-session are
-skipped, so the panes slide forward.
+skipped, so the panes slide forward. At `md` and up, each frame in the
+three/four-pane grid has a 200px minimum and the grid rows honor that floor;
+the grid pane area's minimum follows its rows' intrinsic content, so the
+page grows and scrolls when they cannot fit. The two-pane row and its 320px
+pane-area minimum are unchanged.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw

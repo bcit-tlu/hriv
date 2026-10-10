@@ -530,7 +530,7 @@ export default function SynchronizedCollectionViewer({
           display: { md: 'flex' },
           flexDirection: { md: 'column' },
           flex: { md: '1 1 0' },
-          minHeight: { md: 320 },
+          minHeight: { md: gridPanes ? 'auto' : 320 },
         }}
       >
         <Box
@@ -539,7 +539,7 @@ export default function SynchronizedCollectionViewer({
               ? {
                   display: 'grid',
                   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                  gridTemplateRows: { md: 'repeat(2, minmax(0, 1fr))' },
+                  gridTemplateRows: { md: 'repeat(2, minmax(auto, 1fr))' },
                   gap: 2,
                   flex: { md: '1 1 0' },
                 }
@@ -581,6 +581,7 @@ export default function SynchronizedCollectionViewer({
                     flexDirection: { md: 'column' },
                     flex: { md: '1 1 0' },
                     height: { md: '100%' },
+                    ...(gridPanes ? { minHeight: { md: 200 } } : {}),
                   }}
                 >
                   <ImageViewer
