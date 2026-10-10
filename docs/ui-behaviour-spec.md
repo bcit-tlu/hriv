@@ -125,6 +125,8 @@ images> / Empty` format used on category tiles.
   original filename, file type, and (for admins and instructors) uploader appear
   in a row after the existing file details; the viewer usage hint is the final
   row and rows with no visible fields are omitted.
+- The read-only Collections row sits inside the first classification row, after
+  Groups, when the image belongs to visible collections (see [collections.md](collections.md)).
 - **When** the accordion expands, **Then** source information is fetched lazily;
   collapsing and re-expanding the same image version reuses the cached result,
   while a version change fetches fresh information without exposing stale data.

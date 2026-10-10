@@ -771,6 +771,20 @@ export function fetchCollection(id: number): Promise<ApiCollection> {
   return request(`/collections/${id}`)
 }
 
+/**
+ * Collections the given image belongs to that the caller may view (#1586).
+ *
+ * Server-filtered by visibility, so students never receive private/restricted
+ * collections. Returns 404 when the image is hidden/inactive/missing (the same
+ * gate as the image GET) or when the collections feature is dark-launched off.
+ */
+export function fetchImageCollections(
+  imageId: number,
+  init?: RequestInit,
+): Promise<ApiCollectionSummary[]> {
+  return request(`/images/${imageId}/collections`, init)
+}
+
 export function createCollection(body: {
   name: string
   description?: string | null

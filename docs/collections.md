@@ -360,6 +360,19 @@ tokenized at serialization time exactly like `GET /api/images/{id}` (see
 [tile-delivery-boundary.md](tile-delivery-boundary.md)), so the viewer's tile
 token renewal keeps working from collection responses.
 
+`GET /api/images/{id}/collections` (#1586) is a cross-router read served by the
+**images** router (`routers/images.py`), not the collections router. It returns
+the `CollectionSummaryOut[]` the caller may view for the collections an image
+belongs to (the `collection_images` membership join), ordered by name. It reuses
+the image 404 gate of `GET /api/images/{id}` (a hidden/inactive/missing image is
+a 404, not an empty list) and then filters the memberships through the same
+visibility rules as `GET /api/collections`, so a student never learns a
+private/restricted collection exists. Because `CollectionsFeatureMiddleware` only
+guards `/api/collections*`, this `/images` path self-gates on
+`COLLECTIONS_ENABLED` inline (404 when off), and the frontend only calls it when
+`features.collections` is on — so flag-off deployments add no request per image
+view.
+
 ### Write semantics (#1412)
 
 Every mutation re-checks authority server-side; the `permissions` block in
@@ -1002,6 +1015,35 @@ errors stay inside the create dialog as on the collections pages.
 **Permissions are UX gates only.** `can_edit` filtering and the capacity
 check are conveniences; the backend re-validates edit authority, image
 visibility, duplicates and the synchronized cap on every write.
+
+### Collection membership in the image view (#1586)
+
+**Where.** `App.tsx` (metadata row + fetch effect),
+`components/ImageCollectionsList.tsx`, `fetchImageCollections` in `api.ts`.
+
+**What.** A read-only **Collections** row inside the **Image information**
+accordion's first classification row (after Groups) lists the collections the
+current image belongs to, so a viewer can see where else it is used. It is
+informational only — distinct from the single-parent category and from the "Add
+to Collection" write flow above.
+
+**Data.** When an image opens (and `features.collections` is on), `App.tsx`
+calls `GET /api/images/{id}/collections` and stores the result tagged with the
+image id. A stale response for a previously-viewed image is dropped by the
+`cancelled` guard, and the row renders only while the stored result matches the
+current image, so switching images never flashes the prior image's collections.
+The server already filters to collections the caller may view, so there is no
+client-side visibility logic. With the flag off the fetch is skipped entirely.
+
+**Display.** `ImageCollectionsList` lists the collections as **links**. A plain
+left click opens the collection in-app (`onOpenCollection` → `handleOpenCollection`
+→ `?collection={id}`); because each name is a real anchor (`hrefForCollection`
+builds `?collection={id}`), a modifier- or middle-click opens it in a new tab.
+Every link is safe to follow — the list is already visibility-filtered
+server-side, so it only ever contains collections the caller may open. It shows
+up to three names, then truncates with an inline "… and N more" link that expands
+the rest (reset per image via a `key`). The label pluralizes ("Collection" /
+"Collections") like the Program/Group rows.
 
 ### Sequence collection viewer (#1416)
 

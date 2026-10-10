@@ -156,6 +156,34 @@ describe('ImageInfoAccordion', () => {
     expectFieldToContain('Programs:', 'Art, History')
   })
 
+  it('renders collections after groups and keeps the classification row when collections are the only field', () => {
+    const collections = <span data-testid="collections-slot">Collections: Photo archive</span>
+    const { rerender } = render(
+      <ImageInfoAccordion
+        {...makeProps({
+          groupNames: ['Curators'],
+          collections,
+        })}
+      />,
+    )
+
+    const groupLabel = screen.getByText('Group:', { exact: true })
+    const collectionsNode = screen.getByTestId('collections-slot')
+    const classificationRow = collectionsNode.closest('.MuiBox-root')
+    expect(classificationRow).not.toBeNull()
+    expect(classificationRow).toHaveTextContent('Group: CuratorsCollections: Photo archive')
+    expect(
+      groupLabel.compareDocumentPosition(collectionsNode) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    rerender(<ImageInfoAccordion {...makeProps({ collections })} />)
+
+    const collectionsOnlyNode = screen.getByTestId('collections-slot')
+    const collectionsOnlyRow = collectionsOnlyNode.closest('.MuiBox-root')
+    expect(collectionsOnlyRow).not.toBeNull()
+    expect(collectionsOnlyRow).toHaveTextContent('Collections: Photo archive')
+  })
+
   it.each([
     [{ scale: 4, unit: 'mm' }, 'Measurement: 4 px/mm'],
     [{ scale: 4 }, 'Measurement: 4 px'],

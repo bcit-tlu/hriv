@@ -4,6 +4,7 @@ import { expect, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
 import type { ImageInfoAccordionProps } from './ImageInfoAccordion'
 import ImageInfoAccordion from './ImageInfoAccordion'
+import ImageCollectionsList from './ImageCollectionsList'
 
 const IMAGE = {
   id: 1621,
@@ -20,6 +21,7 @@ interface StoryArgs {
   image: ImageInfoAccordionProps['image']
   programNames: string[]
   groupNames: string[]
+  collections?: ImageInfoAccordionProps['collections']
   measurement?: ImageInfoAccordionProps['measurement']
   sourceInfo?: ImageInfoAccordionProps['sourceInfo']
   initialExpanded: boolean
@@ -34,6 +36,7 @@ function ImageInfoAccordionExample(args: StoryArgs) {
         image={args.image}
         programNames={args.programNames}
         groupNames={args.groupNames}
+        collections={args.collections}
         measurement={args.measurement}
         sourceInfo={args.sourceInfo}
         expanded={expanded}
@@ -83,6 +86,15 @@ export const Expanded: Story = {
     image: IMAGE,
     programNames: ['Architecture', 'European Art'],
     groupNames: ['Image Research'],
+    collections: (
+      <ImageCollectionsList
+        collections={[
+          { id: 1621, name: 'Duomo archive' },
+          { id: 1622, name: 'Italian architecture' },
+        ]}
+        onOpenCollection={() => undefined}
+      />
+    ),
     measurement: { scale: 12, unit: 'mm' },
     sourceInfo: {
       originalFilename: 'duomo-archival-scan.tif',

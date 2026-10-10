@@ -15,6 +15,7 @@ from app.routers import images as images_router
 from app.routers.images import (
     list_images,
     get_image,
+    list_image_collections,
     create_image,
     update_image,
     bulk_update_images,
@@ -470,6 +471,154 @@ async def test_get_image_admin_sees_restricted() -> None:
 
     result = await get_image(1, _make_user("admin"), db)
     assert result.name == "test-img"
+
+
+# ── list_image_collections (#1586) ────────────────────────────────────────
+#
+# Direct-call unit tests, so the response_model is not enforced and the DB
+# layer is mocked. The visibility context and serializer are patched at the
+# router boundary (their real behaviour is covered by the collections tests);
+# these assert this endpoint's own wiring: the dark-launch gate, the reused
+# image 404 gate, the membership query, and the can_view filter.
+
+
+def _make_collection(
+    id: int, name: str, visibility: str = "public"
+) -> SimpleNamespace:
+    return SimpleNamespace(id=id, name=name, visibility=visibility)
+
+
+class _FakeViewerCtx:
+    """Stand-in for ``_ViewerContext``: ``can_view`` hides private rows,
+    mirroring the real gate's effect for a student."""
+
+    def can_view(self, collection: SimpleNamespace) -> bool:
+        return collection.visibility != "private"
+
+
+def _patch_collections_layer(
+    monkeypatch: pytest.MonkeyPatch, *, enabled: bool = True
+) -> None:
+    monkeypatch.setattr(images_router.settings, "collections_enabled", enabled)
+    monkeypatch.setattr(
+        images_router,
+        "_ViewerContext",
+        SimpleNamespace(build=AsyncMock(return_value=_FakeViewerCtx())),
+    )
+    # Serialize to a thin object so order/name assertions don't need a full
+    # CollectionSummaryOut; the real serializer is exercised elsewhere.
+    monkeypatch.setattr(
+        images_router,
+        "collection_summary_out",
+        lambda ctx, c: SimpleNamespace(id=c.id, name=c.name),
+    )
+
+
+def _db_returning_collections(
+    img: SimpleNamespace | None, collections: list[SimpleNamespace]
+) -> AsyncMock:
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.all.return_value = collections
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+async def test_list_image_collections_admin_returns_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    # Already name-ordered by the (mocked) query; endpoint passes them through.
+    cols = [
+        _make_collection(1, "Alpha"),
+        _make_collection(2, "Beta"),
+        _make_collection(3, "Gamma"),
+    ]
+    db = _db_returning_collections(_make_image(), cols)
+
+    result = await list_image_collections(1, _make_user("admin"), db=db)
+    assert [c.name for c in result] == ["Alpha", "Beta", "Gamma"]
+
+
+async def test_list_image_collections_student_filters_private(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    cols = [
+        _make_collection(1, "Public one", visibility="public"),
+        _make_collection(2, "Private one", visibility="private"),
+    ]
+    # Uncategorized image is visible to a student (passes the image gate).
+    db = _db_returning_collections(_make_image(category_id=None), cols)
+
+    result = await list_image_collections(1, _make_user("student"), db=db)
+    assert [c.name for c in result] == ["Public one"]
+
+
+async def test_list_image_collections_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_collections(_make_image(), [])
+
+    result = await list_image_collections(1, _make_user("admin"), db=db)
+    assert result == []
+
+
+async def test_list_image_collections_missing_image_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_collections(None, [])
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(999, _make_user("admin"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
+
+
+async def test_list_image_collections_student_inactive_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_collections(_make_image(active=False), [])
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(1, _make_user("student"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
+
+
+async def test_list_image_collections_student_hidden_category_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], groups=[], parent_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+    db.execute = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(1, _make_user("student"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
+
+
+async def test_list_image_collections_flag_off_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Dark-launch guard: 404 even for an admin, before any DB access, so the
+    # endpoint is indistinguishable from an unknown route while collections
+    # are disabled.
+    _patch_collections_layer(monkeypatch, enabled=False)
+    db = _db_returning_collections(_make_image(), [_make_collection(1, "Alpha")])
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(1, _make_user("admin"), db=db)
+    assert exc.value.status_code == 404
+    db.get.assert_not_called()
 
 
 async def test_create_image_success() -> None:

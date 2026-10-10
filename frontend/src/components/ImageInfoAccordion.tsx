@@ -5,7 +5,7 @@ import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
 import type { MeasurementConfig } from './imageViewerUtils'
@@ -18,6 +18,7 @@ export interface ImageInfoAccordionProps {
   >
   programNames: string[]
   groupNames: string[]
+  collections?: ReactNode
   measurement?: MeasurementConfig | null
   sourceInfo?: ImageSourceInfo | null
   expanded: boolean
@@ -28,12 +29,14 @@ export default function ImageInfoAccordion({
   image,
   programNames,
   groupNames,
+  collections,
   measurement,
   sourceInfo,
   expanded,
   onExpandedChange,
 }: ImageInfoAccordionProps) {
-  const hasClassification = image.copyright || programNames.length > 0 || groupNames.length > 0
+  const hasClassification =
+    image.copyright || programNames.length > 0 || groupNames.length > 0 || collections != null
   const hasFileDetails =
     image.createdAt ||
     image.updatedAt ||
@@ -99,6 +102,7 @@ export default function ImageInfoAccordion({
                   <strong>Group{groupNames.length > 1 ? 's' : ''}:</strong> {groupNames.join(', ')}
                 </Typography>
               )}
+              {collections}
             </Box>
           )}
           {image.note && (

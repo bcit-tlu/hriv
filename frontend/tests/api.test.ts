@@ -58,6 +58,7 @@ import {
   type TileOrderResponse,
   fetchCollections,
   fetchCollection,
+  fetchImageCollections,
   createCollection,
   updateCollection,
   deleteCollection,
@@ -1031,6 +1032,20 @@ describe('Collections API', () => {
     const result = await fetchCollection(42)
     expect(mockFetch.mock.calls[0][0]).toBe('/api/collections/42')
     expect(result).toEqual(fixture)
+  })
+
+  it('fetchImageCollections hits /api/images/{id}/collections and returns the array (#1586)', async () => {
+    const rows = [
+      makeApiCollectionSummary({ id: 1, name: 'Alpha' }),
+      makeApiCollectionSummary({ id: 2, name: 'Beta' }),
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(rows))
+    const result = await fetchImageCollections(7)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/images/7/collections')
+    expect(init.method ?? 'GET').toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer jwt')
+    expect(result.map((c) => c.name)).toEqual(['Alpha', 'Beta'])
   })
 
   it('createCollection POSTs the body verbatim (empty image_ids allowed)', async () => {

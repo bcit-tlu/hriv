@@ -15,7 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user, require_role
 from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
-from ..collection_views import image_ids_in_filed_collections
+from ..collection_views import (
+    _ViewerContext,
+    collection_summary_out,
+    image_ids_in_filed_collections,
+)
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
@@ -27,9 +31,10 @@ from ..upload_staging import (
     staging_path_for,
     write_upload_to_staging,
 )
-from ..models import Category, Image, SourceImage, User
+from ..models import Category, Collection, CollectionImage, Image, SourceImage, User
 from ..schemas import (
     MAX_NOTE_LENGTH,
+    CollectionSummaryOut,
     ImageBulkDelete,
     ImageBulkUpdate,
     ImageCreate,
@@ -111,6 +116,40 @@ async def get_image_source_info(
 ) -> ImageSourceInfoOut:
     await _get_visible_image(db, user, image_id)
     return await build_image_source_info(db, image_id, user)
+
+
+@router.get("/{image_id}/collections", response_model=list[CollectionSummaryOut])
+async def list_image_collections(
+    image_id: int,
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Collections the given image belongs to that the caller may view (#1586).
+
+    Self-gated by ``COLLECTIONS_ENABLED``: the ``CollectionsFeatureMiddleware``
+    prefix only covers ``/api/collections``, so this ``/images`` path checks the
+    flag here or it would leak collection names while the feature is dark-launched
+    off. The image is behind the same 404 gate as ``GET /api/images/{id}`` (a
+    hidden/inactive image is indistinguishable from a missing one), then the
+    collection set is filtered through ``_ViewerContext.can_view`` so a student
+    never learns a private/restricted collection exists.
+    """
+    if not settings.collections_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    await _get_visible_image(db, _user, image_id)
+
+    stmt = (
+        select(Collection)
+        .join(CollectionImage, CollectionImage.collection_id == Collection.id)
+        .where(CollectionImage.image_id == image_id)
+        .order_by(Collection.name.asc(), Collection.id.asc())
+    )
+    collections = (await db.execute(stmt)).scalars().unique().all()
+
+    ctx = await _ViewerContext.build(db, _user)
+    visible = [c for c in collections if ctx.can_view(c)]
+    return [collection_summary_out(ctx, c) for c in visible]
 
 
 @router.post("/", response_model=ImageOut, status_code=201)

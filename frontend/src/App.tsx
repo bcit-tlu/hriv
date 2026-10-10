@@ -36,6 +36,7 @@ import ImageInfoAccordion from './components/ImageInfoAccordion'
 import SortableTileGrid from './components/SortableTileGrid'
 import MyCollectionsDrawer from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
+import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
@@ -103,9 +104,11 @@ import {
   updateGroup,
   deleteGroup,
   fetchCollections,
+  fetchImageCollections,
+  ApiError,
   userMessage,
 } from './api'
-import type { ApiImage, ApiUser } from './api'
+import type { ApiCollectionSummary, ApiImage, ApiUser } from './api'
 import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import MoveCollectionDialog from './components/MoveCollectionDialog'
@@ -325,6 +328,63 @@ export default function App() {
   useEffect(() => {
     selectedImageRef.current = selectedImage
   })
+  // #1586: collections the viewed image belongs to, shown in the metadata row.
+  // Server-filtered to those the caller may view. The result is tagged with the
+  // image id it was fetched for; a late response for a previously-viewed image
+  // is dropped by the `cancelled` guard in the effect below.
+  const [imageCollectionsResult, setImageCollectionsResult] = useState<{
+    imageId: number
+    rows: ApiCollectionSummary[]
+  } | null>(null)
+  // Invalidate the stored result the instant the viewed image changes (React's
+  // "adjust state during render" reset pattern). Without this, re-opening an
+  // image whose memberships have since changed would keep showing the old names
+  // whenever every refresh attempt fails — the stale result still matches the
+  // id. Resetting here makes a failed refresh fall back to "no row", not stale
+  // data, and also avoids flashing the previous image's collections.
+  const [collectionsResultImageId, setCollectionsResultImageId] = useState<number | null>(null)
+  if ((selectedImage?.id ?? null) !== collectionsResultImageId) {
+    setCollectionsResultImageId(selectedImage?.id ?? null)
+    setImageCollectionsResult(null)
+  }
+  useEffect(() => {
+    const imageId = selectedImage?.id
+    // Skip entirely when collections are dark-launched off: no point adding a
+    // guaranteed-404 request to every image view on flag-off deployments.
+    if (imageId == null || !collectionsEnabled) return
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const run = () => {
+      void fetchImageCollections(imageId)
+        .then((rows) => {
+          if (!cancelled) setImageCollectionsResult({ imageId, rows })
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          // A 404 is the definitive answer — the image is hidden/inactive/not
+          // viewable — so record an empty result (no row). A transient failure
+          // (network error or 5xx) must NOT be cached as empty, or it would
+          // falsely claim the image is in no collections; retry a couple of
+          // times with backoff, then leave the row hidden without asserting it.
+          if (err instanceof ApiError && err.status === 404) {
+            setImageCollectionsResult({ imageId, rows: [] })
+          } else if (attempts < 2) {
+            attempts += 1
+            retryTimer = setTimeout(run, 1500 * attempts)
+          }
+        })
+    }
+    run()
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [selectedImage?.id, collectionsEnabled])
+  const selectedImageCollections =
+    imageCollectionsResult && imageCollectionsResult.imageId === selectedImage?.id
+      ? imageCollectionsResult.rows
+      : []
   const [dialogOpen, setDialogOpen] = useState(false)
   const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
   const [myCollectionsCapState, setMyCollectionsCapState] = useState<{
@@ -2690,6 +2750,16 @@ export default function App() {
                 )}
                 measurement={selectedImageMeasurement}
                 sourceInfo={imageSourceInfo}
+                collections={
+                  selectedImageCollections.length > 0 ? (
+                    <ImageCollectionsList
+                      key={selectedImage.id}
+                      collections={selectedImageCollections}
+                      hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
+                      onOpenCollection={handleOpenCollection}
+                    />
+                  ) : null
+                }
                 expanded={imageInfoExpanded}
                 onExpandedChange={setImageInfoExpanded}
               />
