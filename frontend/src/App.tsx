@@ -2226,6 +2226,7 @@ export default function App() {
   return (
     <AppShell
       page={page}
+      fillViewport={onViewerPage}
       onTabChange={handleTabChange}
       onHomeClick={handleHomeClick}
       canEditContent={canEditContent}
@@ -2301,6 +2302,13 @@ export default function App() {
         component="main"
         sx={{
           flexGrow: 1,
+          ...(onViewerPage
+            ? {
+                display: { md: 'flex' },
+                flexDirection: { md: 'column' },
+                flex: { md: '1 1 0' },
+              }
+            : {}),
           py: 3,
           pb: myCollectionsDrawerVisible
             ? onViewerPage
@@ -2314,6 +2322,13 @@ export default function App() {
           maxWidth={false}
           sx={{
             px: { xs: 2, sm: 3, lg: '72px', xl: '120px' },
+            ...(onViewerPage
+              ? {
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flex: { md: '1 1 0' },
+                }
+              : {}),
           }}
         >
           {page === 'guide' && canEditContent ? (
@@ -2508,6 +2523,7 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  flexShrink: 0,
                 }}
               >
                 <Box
@@ -2726,9 +2742,21 @@ export default function App() {
                 </Box>
               </Box>
 
-              <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <Paper
+                data-testid="image-viewer-frame"
+                elevation={3}
+                sx={{
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flex: { md: '1 1 0' },
+                  minHeight: { md: 320 },
+                }}
+              >
                 <ImageViewer
                   key={selectedImage.id}
+                  height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}

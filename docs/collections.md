@@ -1072,6 +1072,12 @@ right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
 
+**Viewport fit.** At MUI `md` and up, the regular image viewer and loaded
+sequence/synchronized collection detail fill the window, with only the OSD
+viewer area flexing and a 320px minimum. If fixed content cannot fit around
+that minimum, the page grows and scrolls. Below `md`, the existing 70vh / 60vh
+/ 55vh / 34vh viewer heights and page scrolling are unchanged.
+
 **Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
 overlay the viewport's left and right edges (#1561); like the OSD toolbar's
 `autoHideControls`, they fade in on pointer activity over the viewer frame

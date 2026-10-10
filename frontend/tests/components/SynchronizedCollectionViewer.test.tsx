@@ -637,7 +637,7 @@ describe('SynchronizedCollectionViewer', () => {
     // Every pane gets the shorter grid height and the read-only prop set.
     for (const v of viewers) {
       const props = mockState.lastProps.get(Number(v.getAttribute('data-image-id')))!
-      expect(props.height).toBe('34vh')
+      expect(props.height).toEqual({ xs: '34vh', md: '100%' })
       expect(props.canEditContent).toBe(false)
     }
     // No "Showing N of M" note when every member fits a pane.
@@ -648,8 +648,8 @@ describe('SynchronizedCollectionViewer', () => {
     renderViewer({ collection: syncCollection({ images: images(2) }) })
     const propsA = mockState.lastProps.get(100)!
     const propsB = mockState.lastProps.get(101)!
-    expect(propsA.height).toBe('55vh')
-    expect(propsB.height).toBe('55vh')
+    expect(propsA.height).toEqual({ xs: '55vh', md: '100%' })
+    expect(propsB.height).toEqual({ xs: '55vh', md: '100%' })
   })
 
   it('notes when the member count exceeds the pane cap', () => {

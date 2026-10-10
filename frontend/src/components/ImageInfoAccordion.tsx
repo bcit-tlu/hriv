@@ -67,6 +67,7 @@ export default function ImageInfoAccordion({
       elevation={0}
       variant="outlined"
       sx={{
+        flexShrink: 0,
         mt: 2,
         borderRadius: 2,
         bgcolor: 'background.paper',
@@ -78,6 +79,9 @@ export default function ImageInfoAccordion({
       slotProps={{
         transition: {
           unmountOnExit: false,
+          onEntered: () => {
+            if (accordionRef.current) scrollIntoViewAboveFooter(accordionRef.current)
+          },
         },
       }}
     >

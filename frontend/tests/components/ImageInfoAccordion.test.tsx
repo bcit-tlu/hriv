@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import ImageInfoAccordion, {
   type ImageInfoAccordionProps,
 } from '../../src/components/ImageInfoAccordion'
@@ -93,6 +94,37 @@ describe('ImageInfoAccordion', () => {
     expect(scrollByMock).toHaveBeenCalledWith({ top: 66, behavior: 'smooth' })
     expect(onExpandedChange).toHaveBeenCalledWith(true)
     expect(callOrder).toEqual(['scroll', 'expand'])
+  })
+
+  it('rechecks the scroll after the expansion transition lays out the details', async () => {
+    let isExpanded = false
+
+    function AccordionHarness() {
+      const [expanded, setExpanded] = useState(false)
+      return (
+        <ImageInfoAccordion
+          {...makeProps({
+            expanded,
+            onExpandedChange: (nextExpanded) => {
+              if (typeof nextExpanded === 'boolean') isExpanded = nextExpanded
+              setExpanded(nextExpanded)
+            },
+          })}
+        />
+      )
+    }
+
+    const { container } = render(<AccordionHarness />)
+    const accordion = container.querySelector('.MuiAccordion-root') as HTMLElement
+    vi.spyOn(accordion, 'getBoundingClientRect').mockImplementation(() =>
+      isExpanded ? makeRect(100, 400, 0, 300) : makeRect(100, 200, 0, 300),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
+
+    await waitFor(() => {
+      expect(scrollByMock).toHaveBeenLastCalledWith({ top: 84, behavior: 'smooth' })
+    })
   })
 
   it('does not scroll when the accordion collapses', () => {

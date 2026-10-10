@@ -405,10 +405,12 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
+    fillViewport,
     footerDockSlot,
   }: {
     children: ReactNode
     footerDockSlot?: ReactNode
+    fillViewport?: boolean
     onTabChange: (v: string) => void
     onCollectionsTypeChange: (type: 'sequence' | 'synchronized') => void
     onHomeClick: () => void
@@ -421,7 +423,7 @@ vi.mock('../src/components/AppShell', () => ({
     onReportIssue: () => void
     collectionsEnabled: boolean
   }) => (
-    <div>
+    <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
@@ -2098,6 +2100,7 @@ describe('App collections deep links (#1414)', () => {
     render(<App />)
 
     await screen.findByRole('button', { name: 'My collections' })
+    expect(document.querySelector('[data-fill-viewport="true"]')).not.toBeInTheDocument()
     expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('0px')
     expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('68.5px')
     fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
@@ -2163,6 +2166,7 @@ describe('App collections deep links (#1414)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open image' }))
     expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
     expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
     expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
@@ -2193,6 +2197,7 @@ describe('App collections deep links (#1414)', () => {
     await renderWithCollectionsEnabled()
 
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
     expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
     expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')

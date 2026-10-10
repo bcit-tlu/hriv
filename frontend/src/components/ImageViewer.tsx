@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import type { ResponsiveStyleValue } from '@mui/system'
 import {
   emitEvent,
   emitEventNow,
@@ -28,7 +29,7 @@ interface ImageViewerProps {
   imageId?: number
   /** Id of the image's category; emitted as a structured telemetry field. */
   categoryId?: number
-  height?: string
+  height?: ResponsiveStyleValue<string | number>
   initialViewport?: ViewportState
   onViewportChange?: (state: ViewportState) => void
   measurement?: MeasurementConfig

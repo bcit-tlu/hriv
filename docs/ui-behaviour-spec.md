@@ -137,6 +137,10 @@ images> / Empty` format used on category tiles.
   `<main>` adds 4px of bottom padding, leaving a 16px gap above the button.
   On every other page where the shelf is visible, `<main>` reserves 68.5px of
   bottom padding at all widths.
+- At `md` and up, regular image and loaded collection-detail pages fill the
+  viewport; only the OSD viewer frame flexes, with a 320px minimum. If fixed
+  content needs more space, the page grows and scrolls. Below `md`, the existing
+  70vh / 60vh / 55vh / 34vh viewer heights and page scrolling are unchanged.
 - **When** the accordion expands, **Then** source information is fetched lazily;
   collapsing and re-expanding the same image version reuses the cached result,
   while a version change fetches fresh information without exposing stale data.
