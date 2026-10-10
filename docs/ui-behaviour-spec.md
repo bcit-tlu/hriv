@@ -540,6 +540,13 @@ always read-only (`canEditContent={false}`).
   member id list with the collection `version`; **Cancel** closes without
   saving (a dirty draft asks to discard first). Non-editors never see the
   button.
+- **Given** the collection is synchronized, **When** the Manage dialog
+  opens, **Then** it is narrower (`maxWidth="sm"`) and renders a position
+  map mirroring the viewer — two members side by side, three or four in a
+  2×2 grid with any unfilled cell shown as a dashed **Empty** slot — each
+  slot numbered by pane position (#1614). **When** a member is dropped on
+  another, **Then** the two swap positions and the others stay put; Done
+  commits the slot order as the member id list.
 
 ### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
 

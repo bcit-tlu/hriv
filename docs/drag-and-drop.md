@@ -34,7 +34,11 @@ students adding images to their own unfiled collections.
 > (`ColumnVisibilityDialog`, #1577) is a third dnd surface: plain
 > `useSortable` rows with a drag-handle `IconButton`, Pointer +
 > Keyboard sensors, and `move()` from `@dnd-kit/helpers` computing the
-> committed order — no zones, no near/far halves.
+> committed order — no zones, no near/far halves. For synchronized
+> collections the member manager renders a position map instead (#1614):
+> each slot pairs a `useDraggable` (`cmi-`) with a `useDroppable` (`cms-`)
+> and drag-end swaps the source and target positions — local swap semantics,
+> not `move()`, and still none of the Browse collision machinery.
 
 Read this before changing any collision detection, drop-zone, or activation
 code. The behaviour below thrashed across ~8 PRs because there was no written
