@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -21,6 +22,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import { useTheme } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
@@ -34,7 +36,9 @@ import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import ImageInfoAccordion from './components/ImageInfoAccordion'
 import SortableTileGrid from './components/SortableTileGrid'
-import MyCollectionsDrawer from './components/MyCollectionsDrawer'
+import MyCollectionsDrawer, {
+  MY_COLLECTIONS_TRIGGER_CLEARANCE_PX,
+} from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
 import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
@@ -168,6 +172,8 @@ function getCollapsedCategoryBreadcrumb(
 }
 
 export default function App() {
+  const theme = useTheme()
+  const isLg = useMediaQuery(theme.breakpoints.only('lg'))
   const {
     currentUser,
     loading: usersLoading,
@@ -2295,6 +2301,7 @@ export default function App() {
         sx={{
           flexGrow: 1,
           py: 3,
+          pb: myCollectionsDrawerVisible && !isLg ? `${MY_COLLECTIONS_TRIGGER_CLEARANCE_PX}px` : 3,
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >

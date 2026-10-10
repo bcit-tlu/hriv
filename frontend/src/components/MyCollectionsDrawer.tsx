@@ -8,7 +8,8 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Fade from '@mui/material/Fade'
 import IconButton from '@mui/material/IconButton'
-import { alpha } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import Tooltip from '@mui/material/Tooltip'
 import TrapFocus from '@mui/material/Unstable_TrapFocus'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
@@ -18,7 +19,7 @@ import type { Category, CollectionSummary, Group, Program } from '../types'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import CollectionCard from './CollectionCard'
 
-const DRAWER_TITLE_ID = 'my-collections-drawer-title'
+export const DRAWER_TITLE_ID = 'my-collections-drawer-title'
 
 /** Gap between the resting trigger button and the footer's top edge, and
  *  the header's horizontal padding — both 16px so the attached button lands
@@ -30,6 +31,7 @@ const HEADER_PAD_Y_PX = 12
  *  the live measurement once mounted: MUI medium Button height, offset by
  *  the header padding. */
 const DEFAULT_TITLE_SLOT = { top: HEADER_PAD_Y_PX, height: 36.5 }
+export const MY_COLLECTIONS_TRIGGER_CLEARANCE_PX = TRIGGER_INSET_PX * 2 + DEFAULT_TITLE_SLOT.height
 /** Fallback chrome allowances, replaced by live measurement once mounted:
  *  the sheet header (padding + ~36.5px button row — can wrap to several
  *  lines on narrow viewports), the card row's bottom padding, and the
@@ -87,6 +89,8 @@ export default function MyCollectionsDrawer({
   const [titleSlot, setTitleSlot] = useState(DEFAULT_TITLE_SLOT)
   const [chromePx, setChromePx] = useState(SHEET_CHROME_PX)
   const drawerOpen = open && collections.length > 0
+  const theme = useTheme()
+  const iconOnly = useMediaQuery(theme.breakpoints.only('lg')) && !drawerOpen && !pinned
 
   // The sheet's natural height drives the open/close height animation (the
   // content keeps its layout while hidden, so it is measurable when closed),
@@ -168,6 +172,40 @@ export default function MyCollectionsDrawer({
   }, [drawerOpen, pinned])
 
   if (collections.length === 0) return null
+
+  const trigger = (
+    <Button
+      id={DRAWER_TITLE_ID}
+      variant={pinned ? 'outlined' : 'contained'}
+      startIcon={<CollectionsIcon />}
+      onClick={pinned ? undefined : () => onOpenChange(!drawerOpen)}
+      aria-expanded={drawerOpen}
+      aria-label={iconOnly ? 'My collections' : undefined}
+      aria-disabled={pinned || undefined}
+      tabIndex={pinned ? -1 : undefined}
+      sx={{
+        position: 'absolute',
+        left: TRIGGER_INSET_PX,
+        bottom: `max(${TRIGGER_INSET_PX}px, calc(100% - ${titleSlot.top + titleSlot.height}px))`,
+        zIndex: 3,
+        boxShadow: pinned ? 'none' : 6,
+        pointerEvents: pinned ? 'none' : undefined,
+        bgcolor: pinned ? 'background.paper' : undefined,
+        ...(iconOnly && {
+          minWidth: 0,
+          p: 1,
+          '& .MuiButton-startIcon': { m: 0 },
+        }),
+      }}
+    >
+      <span
+        data-testid="my-collections-trigger-label"
+        style={iconOnly ? { display: 'none' } : undefined}
+      >
+        My collections
+      </span>
+    </Button>
+  )
 
   return (
     // The temporary sheet is aria-modal, so it keeps the Modal-parity focus
@@ -377,26 +415,7 @@ export default function MyCollectionsDrawer({
           title slot the `max()` flips and the button rides up with the
           header, detaching again at the same point on the way down. While
           pinned it reads as an outlined, non-interactive title. */}
-        <Button
-          id={DRAWER_TITLE_ID}
-          variant={pinned ? 'outlined' : 'contained'}
-          startIcon={<CollectionsIcon />}
-          onClick={pinned ? undefined : () => onOpenChange(!drawerOpen)}
-          aria-expanded={drawerOpen}
-          aria-disabled={pinned || undefined}
-          tabIndex={pinned ? -1 : undefined}
-          sx={{
-            position: 'absolute',
-            left: TRIGGER_INSET_PX,
-            bottom: `max(${TRIGGER_INSET_PX}px, calc(100% - ${titleSlot.top + titleSlot.height}px))`,
-            zIndex: 3,
-            boxShadow: pinned ? 'none' : 6,
-            pointerEvents: pinned ? 'none' : undefined,
-            bgcolor: pinned ? 'background.paper' : undefined,
-          }}
-        >
-          My collections
-        </Button>
+        {iconOnly ? <Tooltip title="My collections">{trigger}</Tooltip> : trigger}
       </Box>
     </TrapFocus>
   )

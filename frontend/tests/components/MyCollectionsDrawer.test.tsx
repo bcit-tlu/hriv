@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Dialog from '@mui/material/Dialog'
@@ -9,6 +9,8 @@ import MyCollectionsDrawer, {
   type MyCollectionsDrawerProps,
 } from '../../src/components/MyCollectionsDrawer'
 import { makeCollectionSummary } from '../helpers/fixtures'
+
+const originalMatchMedia = window.matchMedia
 
 function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
   const props: MyCollectionsDrawerProps = {
@@ -26,6 +28,31 @@ function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
   }
   return { ...render(<MyCollectionsDrawer {...props} />), props }
 }
+
+function stubViewportWidth(width: number) {
+  window.matchMedia = vi.fn((query: string) => {
+    const matches =
+      width >= 1200 &&
+      width < 1536 &&
+      query.includes('min-width:1200px') &&
+      query.includes('max-width:1535.95px')
+
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    } as MediaQueryList
+  }) as typeof window.matchMedia
+}
+
+afterEach(() => {
+  window.matchMedia = originalMatchMedia
+})
 
 describe('MyCollectionsDrawer', () => {
   it('renders the trigger as a filled, clickable button while unpinned', () => {
@@ -404,5 +431,43 @@ describe('MyCollectionsDrawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Set Editable collection cover image' }))
     expect(onPickCoverImage).toHaveBeenCalledWith(collection)
+  })
+})
+
+describe('MyCollectionsDrawer responsive trigger', () => {
+  it('uses an icon-only accessible trigger and tooltip at lg while closed', async () => {
+    stubViewportWidth(1366)
+    renderDrawer()
+
+    const trigger = screen.getByRole('button', { name: 'My collections' })
+    expect(trigger).toHaveAttribute('aria-label', 'My collections')
+    expect(screen.getByTestId('my-collections-trigger-label')).toHaveStyle({ display: 'none' })
+
+    fireEvent.mouseOver(trigger)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('My collections')
+  })
+
+  it.each([
+    ['open', { open: true }],
+    ['pinned', { open: true, pinned: true }],
+  ])('keeps the full label at lg when %s', (_state, overrides) => {
+    stubViewportWidth(1366)
+    renderDrawer(overrides)
+
+    const trigger = screen.getByRole('button', { name: 'My collections' })
+    expect(trigger).not.toHaveAttribute('aria-label')
+    expect(screen.getByTestId('my-collections-trigger-label')).not.toHaveStyle({
+      display: 'none',
+    })
+  })
+
+  it.each([1024, 1920])('keeps the full label at %s pixels', (width) => {
+    stubViewportWidth(width)
+    renderDrawer()
+
+    expect(screen.getByRole('button', { name: 'My collections' })).not.toHaveAttribute('aria-label')
+    expect(screen.getByTestId('my-collections-trigger-label')).not.toHaveStyle({
+      display: 'none',
+    })
   })
 })

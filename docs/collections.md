@@ -152,6 +152,9 @@ controls above the viewport. Compact cards are
 1424 px. The drawer is hidden on the Manage, Manage → Collections, People,
 Admin, and Guide pages, while the feed is loading, and when no owned collection
 is visible. It is not a Browse tile: it has no drag, reorder, or drop targets.
+At 1200–1535px, the closed trigger is icon-only with a tooltip; it keeps its
+label when open or pinned and at other widths. Outside `lg`, `<main>` reserves
+68.5px of bottom padding whenever the shelf is visible.
 
 Opening a card from the drawer keeps the caller's origin (#1529, #1608):
 opened from Browse or the image viewer, the detail sits on top of the current

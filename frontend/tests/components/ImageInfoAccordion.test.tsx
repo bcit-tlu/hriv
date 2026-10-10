@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ImageInfoAccordion, {
   type ImageInfoAccordionProps,
 } from '../../src/components/ImageInfoAccordion'
+
+const scrollIntoViewAboveFooterMock = vi.hoisted(() => vi.fn())
+vi.mock('../../src/scrollIntoViewAboveFooter', () => ({
+  scrollIntoViewAboveFooter: scrollIntoViewAboveFooterMock,
+}))
 
 function expectFieldToContain(label: string, value: string) {
   const field = screen.getByText(label, { exact: true }).parentElement
@@ -31,6 +36,32 @@ describe('ImageInfoAccordion', () => {
     fireEvent.click(summary)
 
     expect(props.onExpandedChange).toHaveBeenCalledWith(true)
+  })
+
+  it('scrolls into view after an expansion transition', async () => {
+    scrollIntoViewAboveFooterMock.mockClear()
+    const props = makeProps({ expanded: false })
+    const { rerender } = render(<ImageInfoAccordion {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
+    expect(props.onExpandedChange).toHaveBeenCalledWith(true)
+    rerender(<ImageInfoAccordion {...props} expanded />)
+
+    await waitFor(() => expect(scrollIntoViewAboveFooterMock).toHaveBeenCalledOnce())
+    expect(scrollIntoViewAboveFooterMock).toHaveBeenCalledWith(
+      document.querySelector('.MuiAccordion-root'),
+    )
+  })
+
+  it('does not scroll when initially mounted with persisted expansion', async () => {
+    scrollIntoViewAboveFooterMock.mockClear()
+    render(<ImageInfoAccordion {...makeProps({ expanded: true })} />)
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+
+    expect(scrollIntoViewAboveFooterMock).not.toHaveBeenCalled()
   })
 
   it('shows each populated image information field and the viewer hint', () => {

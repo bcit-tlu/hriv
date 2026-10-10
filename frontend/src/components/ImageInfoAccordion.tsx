@@ -5,9 +5,10 @@ import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import type { Dispatch, ReactNode, SetStateAction } from 'react'
+import { useRef, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
+import { scrollIntoViewAboveFooter } from '../scrollIntoViewAboveFooter'
 import type { MeasurementConfig } from './imageViewerUtils'
 import NoteDisplay from './NoteDisplay'
 
@@ -35,6 +36,7 @@ export default function ImageInfoAccordion({
   expanded,
   onExpandedChange,
 }: ImageInfoAccordionProps) {
+  const accordionRef = useRef<HTMLDivElement>(null)
   const hasClassification =
     image.copyright || programNames.length > 0 || groupNames.length > 0 || collections != null
   const hasFileDetails =
@@ -50,6 +52,7 @@ export default function ImageInfoAccordion({
 
   return (
     <Accordion
+      ref={accordionRef}
       expanded={expanded}
       onChange={(_, nextExpanded) => onExpandedChange(nextExpanded)}
       disableGutters
@@ -64,7 +67,14 @@ export default function ImageInfoAccordion({
           borderRadius: 2,
         },
       }}
-      slotProps={{ transition: { unmountOnExit: false } }}
+      slotProps={{
+        transition: {
+          unmountOnExit: false,
+          onEntered: () => {
+            if (accordionRef.current) scrollIntoViewAboveFooter(accordionRef.current)
+          },
+        },
+      }}
     >
       <AccordionSummary
         expandIcon={<ExpandMoreIcon />}

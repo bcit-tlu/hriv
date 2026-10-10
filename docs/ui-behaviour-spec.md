@@ -127,6 +127,13 @@ images> / Empty` format used on category tiles.
   row and rows with no visible fields are omitted.
 - The read-only Collections row sits inside the first classification row, after
   Groups, when the image belongs to visible collections (see [collections.md](collections.md)).
+- **When** the user expands the accordion, **Then** it scrolls into view above
+  the footer dock and any horizontally overlapping My collections trigger with
+  a 16px gap; reduced-motion preferences use instant scrolling, and persisted
+  expansion on mount does not auto-scroll.
+- At closed **My collections** trigger widths of 1200–1535px, the trigger is
+  icon-only with a tooltip; outside that breakpoint, the visible shelf reserves
+  68.5px of bottom clearance in `<main>`.
 - **When** the accordion expands, **Then** source information is fetched lazily;
   collapsing and re-expanding the same image version reuses the cached result,
   while a version change fetches fresh information without exposing stale data.
