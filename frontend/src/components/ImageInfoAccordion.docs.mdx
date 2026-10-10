@@ -1,0 +1,40 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ImageInfoAccordionStories from './ImageInfoAccordion.stories'
+
+<Meta of={ImageInfoAccordionStories} />
+
+<Title />
+
+<Subtitle>
+  A collapsed-by-default, user-controlled disclosure of image metadata and viewer usage guidance.
+</Subtitle>
+
+## When to use
+
+`App` places the accordion directly below the regular image viewer. Its heading remains concise;
+copyright, programs, groups, notes, dates, dimensions, file size, and measurement details appear
+after the user expands it.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ImageInfoAccordionStories.Basic} />
+
+## Examples
+
+### Expanded metadata
+
+<Canvas of={ImageInfoAccordionStories.Expanded} />
+
+## Stories
+
+<Stories includePrimary={false} />

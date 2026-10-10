@@ -116,6 +116,42 @@ images> / Empty` format used on category tiles.
 - Profile menu shows the student's own **program** and **group** memberships as
   read-only chips (`useUserProfile.ts` — `useUserProfile.test.ts`).
 
+### Image viewer: image information accordion (`ImageInfoAccordion.test.tsx`, `App.test.tsx`)
+
+- **Given** the regular image viewer page, **Then** a collapsed-by-default
+  **Image information** accordion sits directly below the viewer and its heading
+  contains only that title.
+- **When** expanded, **Then** metadata appears in evenly spaced rows and the
+  original filename, file type, and (for admins and instructors) uploader appear
+  in a row after the existing file details; the viewer usage hint is the final
+  row and rows with no visible fields are omitted.
+- The read-only Collections row sits inside the first classification row, after
+  Groups, when the image belongs to visible collections (see [collections.md](collections.md)).
+- **When** the user clicks to expand the accordion, **Then** it predicts the
+  mounted details height and scrolls into view above the footer dock and any
+  horizontally overlapping My collections trigger with a 16px gap before
+  expansion starts; reduced-motion preferences use instant scrolling, and
+  persisted expansion on mount does not auto-scroll.
+- On the regular image viewer and open collection detail, a closed My
+  collections drawer reserves an opaque trigger row in the footer dock and
+  `<main>` adds 4px of bottom padding, leaving a 16px gap above the button.
+  On every other page where the shelf is visible, `<main>` reserves 68.5px of
+  bottom padding at all widths.
+- At `md` and up, regular image and loaded collection-detail pages fill the
+  viewport; only the OSD viewer frame flexes, with a 320px minimum. If fixed
+  content needs more space, the page grows and scrolls. Below `md`, the existing
+  70vh / 60vh / 55vh / 34vh viewer heights and page scrolling are unchanged.
+- An image at Home stays fitted when its viewer frame resizes, including
+  full-screen entry and exit; zoomed, panned, rotated, or flipped views are not
+  refitted.
+- **When** the accordion expands, **Then** source information is fetched lazily;
+  collapsing and re-expanding the same image version reuses the cached result,
+  while a version change fetches fresh information without exposing stale data.
+- **When** the user expands or collapses the accordion, **Then** that choice is
+  persisted per authenticated user id (or `anonymous` before authentication)
+  under `hrivpref:image-info-expanded:user:${currentUser?.id ?? 'anonymous'}`
+  in localStorage.
+
 ### Viewer: annotations, overlays, measurement (`CanvasOverlay.test.tsx`, `useCanvasAnnotations.test.ts`, `useOverlayPersistence.test.ts`)
 
 - Students view locked overlays and annotations read-only; edit mode and

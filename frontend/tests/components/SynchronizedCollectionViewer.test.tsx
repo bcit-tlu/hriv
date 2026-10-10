@@ -170,6 +170,14 @@ function renderViewer(overrides: Partial<SynchronizedCollectionViewerProps> = {}
   return { ...render(<SynchronizedCollectionViewer {...props} />), props }
 }
 
+function emotionRulesFor(element: HTMLElement) {
+  const classes = [...element.classList].filter((className) => className.startsWith('css-'))
+  return [...document.querySelectorAll('style[data-emotion]')]
+    .map((style) => style.textContent ?? '')
+    .filter((rules) => classes.some((className) => rules.includes(`.${className}`)))
+    .join('\n')
+}
+
 /** Wire fakes for the first pair and complete the open + offset-arm cycle. */
 function openPair(
   posA: FakePos = { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
@@ -637,19 +645,34 @@ describe('SynchronizedCollectionViewer', () => {
     // Every pane gets the shorter grid height and the read-only prop set.
     for (const v of viewers) {
       const props = mockState.lastProps.get(Number(v.getAttribute('data-image-id')))!
-      expect(props.height).toBe('34vh')
+      expect(props.height).toEqual({ xs: '34vh', md: '100%' })
       expect(props.canEditContent).toBe(false)
     }
     // No "Showing N of M" note when every member fits a pane.
     expect(screen.queryByText(/^Showing \d+ of \d+$/)).not.toBeInTheDocument()
+    for (const frame of screen.getAllByTestId(/^synchronized-viewer-frame-/)) {
+      const rules = emotionRulesFor(frame)
+      expect(rules).toMatch(/@media \(min-width:900px\)/)
+      expect(rules).toMatch(/min-height:200px/)
+    }
+    const panesArea = screen.getByTestId('synchronized-viewer-frame-100').parentElement!
+      .parentElement!.parentElement!
+    expect(emotionRulesFor(panesArea)).toMatch(/min-height:auto/)
+    expect(emotionRulesFor(panesArea)).not.toMatch(/min-height:320px/)
   })
 
   it('keeps two members in the side-by-side layout', () => {
     renderViewer({ collection: syncCollection({ images: images(2) }) })
     const propsA = mockState.lastProps.get(100)!
     const propsB = mockState.lastProps.get(101)!
-    expect(propsA.height).toBe('55vh')
-    expect(propsB.height).toBe('55vh')
+    expect(propsA.height).toEqual({ xs: '55vh', md: '100%' })
+    expect(propsB.height).toEqual({ xs: '55vh', md: '100%' })
+    for (const frame of screen.getAllByTestId(/^synchronized-viewer-frame-/)) {
+      expect(emotionRulesFor(frame)).not.toMatch(/min-height:200px/)
+    }
+    const panesArea = screen.getByTestId('synchronized-viewer-frame-100').parentElement!
+      .parentElement!.parentElement!
+    expect(emotionRulesFor(panesArea)).toMatch(/min-height:320px/)
   })
 
   it('notes when the member count exceeds the pane cap', () => {

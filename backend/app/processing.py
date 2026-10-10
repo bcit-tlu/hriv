@@ -1609,6 +1609,8 @@ async def promote_source_image_tile_rebuild(
         src.tiles_generated_at = datetime.now(timezone.utc)
 
         if img is not None:
+            if img.file_size is None:
+                img.file_size = _source_image_file_size_bytes(src)
             img.tile_sources = f"/api/tiles/{src.id}/{prepared.dzi_rel}"
             img.thumb = f"/api/tiles/{src.id}/{prepared.thumb_rel}"
             img.width = prepared.image_width

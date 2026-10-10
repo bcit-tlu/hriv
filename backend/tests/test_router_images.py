@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
 
 import app.auth as auth
+from app.models import Category
 from app.routers import images as images_router
 from app.routers.images import (
     list_images,
@@ -107,6 +108,63 @@ def _images_test_app(user_role: str, db: AsyncMock) -> FastAPI:
     app.dependency_overrides[auth.get_current_user] = lambda: _make_user(user_role)
     app.dependency_overrides[images_router.get_db] = override_db
     return app
+
+
+def _make_source(
+    id: int,
+    original_filename: str,
+    image_id: int = 1,
+    status: str = "completed",
+    uploaded_by: int | None = 22,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=id,
+        original_filename=original_filename,
+        image_id=image_id,
+        status=status,
+        uploaded_by=uploaded_by,
+    )
+
+
+async def _request_source_info(
+    role: str,
+    image: SimpleNamespace | None,
+    sources: list[SimpleNamespace],
+    uploader: SimpleNamespace | None = None,
+    category: SimpleNamespace | None = None,
+) -> tuple[httpx.Response, AsyncMock]:
+    db = AsyncMock()
+
+    async def get(model, entity_id):
+        if model is images_router.Image:
+            return image
+        if model is Category:
+            return category
+        if model is images_router.User:
+            return uploader
+        return None
+
+    async def execute(stmt):
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "source_images.status = 'completed'" in sql
+        assert "ORDER BY source_images.id DESC" in sql
+        assert "LIMIT 1" in sql
+        completed = [
+            source
+            for source in sources
+            if source.image_id == image.id and source.status == "completed"
+        ]
+        latest = max(completed, key=lambda source: source.id, default=None)
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = latest
+        return result
+
+    db.get = AsyncMock(side_effect=get)
+    db.execute = AsyncMock(side_effect=execute)
+    transport = httpx.ASGITransport(app=_images_test_app(role, db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/api/images/1/source-info")
+    return response, db
 
 
 async def test_list_images_admin() -> None:
@@ -213,6 +271,119 @@ async def test_get_image_found() -> None:
 
     result = await get_image(1, _make_user(), db)
     assert result.name == "test-img"
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_uploader"),
+    [
+        ("admin", "Uploader Name"),
+        ("instructor", "Uploader Name"),
+        ("staff", None),
+        ("student", None),
+    ],
+)
+async def test_get_image_source_info_role_gates_uploader_name(
+    role: str, expected_uploader: str | None
+) -> None:
+    response, _db = await _request_source_info(
+        role,
+        _make_image(),
+        [_make_source(1, "scan.tif")],
+        SimpleNamespace(name="Uploader Name"),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "original_filename": "scan.tif",
+        "file_type": "TIF",
+        "uploaded_by_name": expected_uploader,
+    }
+
+
+async def test_get_image_source_info_returns_nulls_without_sources() -> None:
+    response, _db = await _request_source_info("admin", _make_image(), [])
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "original_filename": None,
+        "file_type": None,
+        "uploaded_by_name": None,
+    }
+
+
+async def test_get_image_source_info_uses_latest_completed_source() -> None:
+    sources = [
+        _make_source(1, "older.jpeg"),
+        _make_source(2, "pending.tif", status="pending"),
+    ]
+
+    pending_response, _db = await _request_source_info(
+        "admin", _make_image(), sources, SimpleNamespace(name="Uploader Name")
+    )
+    assert pending_response.json()["original_filename"] == "older.jpeg"
+    assert pending_response.json()["file_type"] == "JPEG"
+
+    sources.append(_make_source(3, "newest.tif"))
+    completed_response, _db = await _request_source_info(
+        "admin", _make_image(), sources, SimpleNamespace(name="Uploader Name")
+    )
+    assert completed_response.json()["original_filename"] == "newest.tif"
+    assert completed_response.json()["file_type"] == "TIF"
+
+
+async def test_get_image_source_info_handles_missing_uploader_and_extension() -> None:
+    response, db = await _request_source_info(
+        "admin",
+        _make_image(),
+        [_make_source(1, "original scan", uploaded_by=None)],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "original_filename": "original scan",
+        "file_type": None,
+        "uploaded_by_name": None,
+    }
+    assert db.get.await_count == 1
+
+
+async def test_get_image_source_info_returns_null_name_when_uploader_is_missing() -> None:
+    response, db = await _request_source_info(
+        "admin", _make_image(), [_make_source(1, "scan.tif")]
+    )
+
+    assert response.status_code == 200
+    assert response.json()["uploaded_by_name"] is None
+    assert db.get.await_count == 2
+
+
+@pytest.mark.parametrize(
+    ("image", "category"),
+    [
+        (None, None),
+        (_make_image(active=False), None),
+        (
+            _make_image(category_id=5),
+            SimpleNamespace(
+                id=5,
+                status="active",
+                programs=[SimpleNamespace(id=10)],
+                groups=[],
+                parent_id=None,
+            ),
+        ),
+    ],
+    ids=("missing", "inactive", "category-restricted"),
+)
+async def test_get_image_source_info_hides_unavailable_images(
+    image: SimpleNamespace | None, category: SimpleNamespace | None
+) -> None:
+    response, db = await _request_source_info(
+        "student", image, [_make_source(1, "scan.tif")], category=category
+    )
+
+    assert response.status_code == 404
+    db.execute.assert_not_awaited()
 
 
 async def test_get_image_not_found() -> None:
