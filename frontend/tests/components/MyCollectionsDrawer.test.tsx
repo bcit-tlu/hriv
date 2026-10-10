@@ -76,6 +76,18 @@ describe('MyCollectionsDrawer', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'Sequence overview' })).toBeInTheDocument()
   })
 
+  it('carries no dialog role while closed so page-level arrow keys stay live (#1608)', () => {
+    const { props, rerender } = renderDrawer({ open: false })
+
+    // A closed unpinned sheet is inert furniture — it must not match the
+    // sequence viewer's `[role="dialog"]` overlay check.
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    rerender(<MyCollectionsDrawer {...props} open />)
+    const sheet = screen.getByRole('dialog', { name: 'My collections' })
+    expect(sheet).toHaveAttribute('aria-modal', 'true')
+  })
+
   it('collapses by pressing the title button again', () => {
     const { props } = renderDrawer({ open: true })
 

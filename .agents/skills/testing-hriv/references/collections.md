@@ -54,7 +54,8 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   the UI, then verify the card and its cover after reload. Restore any seed
   thumbnail you change.
 - **Drawer layout:** Use a genuinely overflowing Browse category, not only a
-  short root page. The footer is sticky only on Browse root and category pages.
+  short root page. The footer is sticky wherever the drawer is enabled: Browse
+  root and category pages, the image viewer, and the Collections pages.
   The drawer is docked in flow directly above the footer (`footer-dock`), so in
   both modes measure the footer's bottom against the viewport height and the
   drawer's bottom against the footer's top; on overscroll both move together.
@@ -66,7 +67,8 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   `scrollTop` with `window.scrollY`. Clipped card content before scrolling is
   not itself a failure if the drawer scroll reveals it. Wait for transitions to
   settle before taking screenshots.
-- The unpinned drawer has `role="dialog"` too. When closing a nested feedback or
+- The unpinned drawer has `role="dialog"` only while it is open — a collapsed
+  sheet carries no role (#1608). When closing a nested feedback or
   edit dialog, wait for that specific dialog to close rather than waiting for
   all dialogs to disappear.
 
