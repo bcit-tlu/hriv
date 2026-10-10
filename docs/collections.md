@@ -1099,6 +1099,8 @@ container itself is focusable
 (`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
 edge-nav cue reveals immediately — switching images never steals focus
 back, but opening a different collection focuses it again.
+Full screen persists across ←/→ changes; pressing Esc or leaving the
+collection restores the normal page.
 
 **Thumbnail strip.** `RenewingThumbnail` buttons _above_ the viewer
 (#1564); the

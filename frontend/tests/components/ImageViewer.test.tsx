@@ -56,6 +56,8 @@ interface MockViewer {
   updateOverlay: ReturnType<typeof vi.fn>
   removeOverlay: ReturnType<typeof vi.fn>
   setMouseNavEnabled: ReturnType<typeof vi.fn>
+  isFullPage: ReturnType<typeof vi.fn>
+  setFullPage: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
   destroy: ReturnType<typeof vi.fn>
@@ -171,6 +173,8 @@ vi.mock('openseadragon', () => {
       updateOverlay: vi.fn(),
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
+      isFullPage: vi.fn(() => false),
+      setFullPage: vi.fn(),
       open: vi.fn(() => {
         if (!viewer.preserveOverlays) activeOverlays.clear()
       }),
@@ -236,6 +240,10 @@ const buttonByTooltip = (tooltip: string) => {
 }
 const tracker = () => osdState.trackers[osdState.trackers.length - 1]
 
+function setFullscreenElement(element: Element | null) {
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: element })
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -268,6 +276,7 @@ beforeEach(() => {
   osdState.trackers.length = 0
   osdState.initError = null
   resetTileTokenRenewalCacheForTests()
+  setFullscreenElement(null)
   vi.useRealTimers()
   vi.clearAllMocks()
 })
@@ -348,6 +357,91 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
     expect(v.destroy).toHaveBeenCalled()
     expect(t.destroy).toHaveBeenCalled()
+  })
+
+  it('leaves full-page mode before destroying the viewer', () => {
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    v.isFullPage.mockReturnValue(true)
+
+    unmount()
+
+    expect(v.setFullPage).toHaveBeenCalledWith(false)
+    expect(v.setFullPage.mock.invocationCallOrder[0]).toBeLessThan(
+      v.destroy.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('hands full screen to the keyed replacement viewer without a second toolbar event', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { rerender } = render(<ImageViewer key="first" tileSources="/first.dzi" />)
+    const first = viewer()
+    first.isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+    act(() => first.fire('full-page', { fullPage: true }))
+    const fullScreenActions = () =>
+      observabilityMocks.emitEvent.mock.calls.filter(
+        ([event]) => (event as { action?: string }).action === 'full_screen',
+      ).length
+    expect(fullScreenActions()).toBe(1)
+
+    rerender(<ImageViewer key="second" tileSources="/second.dzi" />)
+    const second = viewer()
+    expect(second.setFullPage).toHaveBeenCalledWith(true)
+    expect(second.element.style.width).toBe('100%')
+    expect(second.element.style.height).toBe('100%')
+    expect(fullScreenActions()).toBe(1)
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('exits full screen after unmount when no viewer claims the handoff', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    viewer().isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    unmount()
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
+  it('restores the replacement viewer when full screen ends after a handoff', () => {
+    const { rerender } = render(<ImageViewer key="first" tileSources="/first.dzi" />)
+    viewer().isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    rerender(<ImageViewer key="second" tileSources="/second.dzi" />)
+    const second = viewer()
+    expect(second.setFullPage).toHaveBeenCalledWith(true)
+    second.isFullPage.mockReturnValue(true)
+
+    setFullscreenElement(null)
+    act(() => document.dispatchEvent(new Event('fullscreenchange')))
+
+    expect(second.setFullPage).toHaveBeenLastCalledWith(false)
+    expect(second.element.style.width).toBe('')
+    expect(second.element.style.height).toBe('')
+  })
+
+  it('does not enter full-page mode without a pending handoff', () => {
+    setFullscreenElement(document.body)
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+
+    expect(viewer().setFullPage).not.toHaveBeenCalled()
   })
 
   it('resets rotation on home and counts only full-page entry', () => {

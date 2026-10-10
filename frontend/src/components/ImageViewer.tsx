@@ -23,6 +23,8 @@ import {
   type OverlayRect,
 } from './imageViewerUtils'
 
+let pendingFullScreenHandoff = false
+
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
@@ -483,6 +485,23 @@ export default function ImageViewer({
     }
 
     const viewer = viewerRef.current
+    const initialViewerWidth = viewer.element.style.width
+    const initialViewerHeight = viewer.element.style.height
+    const claimedHandoff = pendingFullScreenHandoff
+    pendingFullScreenHandoff = false
+    let handleFullscreenChange: (() => void) | null = null
+    if (claimedHandoff && document.fullscreenElement) {
+      viewer.setFullPage(true)
+      viewer.element.style.width = '100%'
+      viewer.element.style.height = '100%'
+      handleFullscreenChange = () => {
+        if (document.fullscreenElement || !viewer.isFullPage()) return
+        viewer.setFullPage(false)
+        viewer.element.style.width = initialViewerWidth
+        viewer.element.style.height = initialViewerHeight
+      }
+      document.addEventListener('fullscreenchange', handleFullscreenChange)
+    }
 
     // --- Measurement label container (lives inside the OSD canvas) ---
     const labelContainer = document.createElement('div')
@@ -1035,6 +1054,22 @@ export default function ImageViewer({
       }
       selectionTracker.destroy()
       onViewerReadyRef.current?.(null)
+      if (handleFullscreenChange) {
+        document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      }
+      if (viewer.isFullPage()) {
+        viewer.setFullPage(false)
+        if (document.fullscreenElement) {
+          pendingFullScreenHandoff = true
+          window.setTimeout(() => {
+            if (!pendingFullScreenHandoff) return
+            pendingFullScreenHandoff = false
+            if (document.fullscreenElement) {
+              void document.exitFullscreen().catch(() => {})
+            }
+          }, 0)
+        }
+      }
       viewer.destroy()
       viewerRef.current = null
     }
