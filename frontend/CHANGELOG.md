@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.68.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.67.0...frontend-v0.68.0) (2026-10-10)
+
+
+### Features
+
+* add a read-only collection field to the image viewer metadata area ([#1603](https://github.com/bcit-tlu/hriv/issues/1603)) ([fb1accd](https://github.com/bcit-tlu/hriv/commit/fb1accda530dfc42ce58b6344a3052dd88e5f2cd))
+* **frontend:** synchronized collection position map in Manage dialog ([#1616](https://github.com/bcit-tlu/hriv/issues/1616)) ([8b7af23](https://github.com/bcit-tlu/hriv/commit/8b7af235c26e39ca8fd64d35cd712781de83da57))
+
+
+### Bug Fixes
+
+* **frontend:** rename Browse "Add Collection" button to "New collection" ([#1607](https://github.com/bcit-tlu/hriv/issues/1607)) ([a442810](https://github.com/bcit-tlu/hriv/commit/a4428104c939f49e751cadc118c8abef4de79077))
+* **frontend:** show My collections drawer in the image viewer and on Collections pages ([#1615](https://github.com/bcit-tlu/hriv/issues/1615)) ([4e0c29e](https://github.com/bcit-tlu/hriv/commit/4e0c29e2c4d958e20bef898875e383baba147bd6))
+* **frontend:** show only current collection rows and revalidate on navigation ([#1620](https://github.com/bcit-tlu/hriv/issues/1620)) ([8e471ef](https://github.com/bcit-tlu/hriv/commit/8e471ef7d4870e2b71164451658a7ed1379e393d))
+
 ## [0.67.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.66.0...frontend-v0.67.0) (2026-10-08)
 
 
