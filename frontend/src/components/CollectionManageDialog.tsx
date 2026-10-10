@@ -880,10 +880,15 @@ export default function CollectionManageDialog({
                   aria-hidden
                   sx={{
                     width: SLOT_WIDTH,
-                    opacity: 0.9,
                     pointerEvents: 'none',
                     cursor: 'grabbing',
                     position: 'relative',
+                    // Opaque card so the caption doesn't blend into the
+                    // caption of the slot underneath.
+                    bgcolor: 'background.paper',
+                    borderRadius: 1,
+                    boxShadow: 6,
+                    pb: 0.5,
                   }}
                 >
                   <PositionTileFace
