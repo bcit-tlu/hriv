@@ -1,0 +1,32 @@
+import { Canvas, Meta, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as ColorStories from './colors.stories'
+
+<Meta of={ColorStories} />
+
+<Title />
+
+<Subtitle>
+  The standard MUI palette for HRIV: brand and status colour channels plus the base text,
+  background, and divider colours — read live from the active theme.
+</Subtitle>
+
+## How to use this section
+
+Use `Foundations/Colors` as the reference for the base colour palette. Every swatch is read
+directly from the active MUI theme (`frontend/src/theme.ts`) via `useTheme()`, so the values
+always match what components actually render — in both light and dark modes (use the Storybook
+theme toolbar to switch).
+
+## What's included
+
+- **Brand channels** — `primary`, `secondary`
+- **Status channels** — `error`, `warning`, `info`, `success`
+- Each channel shows its `main`, `light`, `dark`, and `contrastText` values
+- **Base colours** — `text`, `background`, and `divider`
+
+For HRIV's _custom_ semantic tokens (group chips, visibility states, surface variants) and
+examples of the theme applied to real components, see `Foundations/Theme`.
+
+## Palette
+
+<Canvas of={ColorStories.Default} />
