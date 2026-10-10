@@ -348,6 +348,7 @@ describe('useCollectionsData', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+    delete (document as { visibilityState?: unknown }).visibilityState
   })
 
   it('does not fetch while disabled or logged out', () => {

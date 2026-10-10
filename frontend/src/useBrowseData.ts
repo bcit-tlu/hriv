@@ -521,6 +521,7 @@ export function useBrowseData({
     // aborted read has already claimed a generation), THEN claim ours, so
     // this refresh is guaranteed to hold the newest generation and commit.
     invalidateRef.current?.()
+    lastTreeCheckAt.current = Date.now()
     // Authoritative refresh: claim the newest generation and abort any older
     // read for the same data.
     const gen = ++categoriesReadGen.current
@@ -566,6 +567,7 @@ export function useBrowseData({
                 revision: receivedHeaders.revision,
               }
             }
+            lastTreeCheckAt.current = Date.now()
             return categoriesRef.current
           }
           const newest = categoriesRefreshRef.current
@@ -592,6 +594,7 @@ export function useBrowseData({
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return cats
         }
         // Superseded while the response was in flight: hand back the

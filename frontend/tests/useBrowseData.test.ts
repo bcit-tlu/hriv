@@ -1223,6 +1223,33 @@ describe('useBrowseData', () => {
       })
     })
 
+    it('does not revalidate the path while an authoritative tree refresh is current', async () => {
+      vi.useFakeTimers()
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      mockFetchCategoryTree.mockClear()
+      act(() => {
+        vi.advanceTimersByTime(BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS + 1)
+      })
+
+      await act(async () => {
+        const refresh = result.current.refreshCategories()
+        rerender({
+          ...deps,
+          path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Target' }))],
+        })
+        await refresh
+      })
+
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+      expect(mockFetchCategoryTree.mock.calls[0]?.[0]).toMatchObject({ cache: 'reload' })
+    })
+
     it('suppresses a second category-path refresh inside the throttle window', async () => {
       vi.useFakeTimers()
       const deps = makeDeps({ currentUser: makeUser() })
