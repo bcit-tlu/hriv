@@ -538,3 +538,121 @@ describe('CollectionManageDialog', () => {
     expect(screen.getByText(/2 restricted images not shown/)).toBeInTheDocument()
   })
 })
+
+// ── Synchronized position map (#1614) ────────────────────────────────────
+function syncCollection(count: number, overrides: Partial<Collection> = {}): Collection {
+  return manageCollection({
+    type: 'synchronized',
+    images: Array.from({ length: count }, (_, i) =>
+      makeImage({ id: i + 1, name: `Pane ${i + 1}`, sortOrder: i }),
+    ),
+    ...overrides,
+  })
+}
+
+const positionDrop = (sourceImageId: number, targetImageId: number | null) => ({
+  operation: {
+    source: { id: `cmi-${sourceImageId}` },
+    target: targetImageId == null ? null : { id: `cms-${targetImageId}` },
+    canceled: false,
+  },
+})
+
+/** Image id rendered in each numbered slot; null for an empty slot. */
+const slotOrder = () =>
+  screen.getAllByTestId(/^manage-slot-\d+$/).map((slot) => {
+    const tile = within(slot).queryByTestId(/^manage-tile-\d+$/)
+    return tile ? Number(tile.getAttribute('data-testid')!.replace('manage-tile-', '')) : null
+  })
+
+describe('CollectionManageDialog — synchronized position map (#1614)', () => {
+  it('lays a pair out side by side, matching the viewer', () => {
+    renderDialog({ collection: syncCollection(2) })
+    expect(screen.getByTestId('manage-position-map')).toBeInTheDocument()
+    expect(slotOrder()).toEqual([1, 2])
+    expect(within(screen.getByTestId('manage-slot-1')).getByText('1')).toBeInTheDocument()
+    expect(screen.getByText(/Positions match the synchronized viewer/)).toBeInTheDocument()
+  })
+
+  it('lays three members out as a 2×2 grid with the fourth cell empty', () => {
+    renderDialog({ collection: syncCollection(3) })
+    expect(screen.getByTestId('manage-position-map')).toHaveStyle({ display: 'grid' })
+    expect(slotOrder()).toEqual([1, 2, 3, null])
+    expect(within(screen.getByTestId('manage-slot-4')).getByText('Empty')).toBeInTheDocument()
+  })
+
+  it('fills all four cells of the grid with four members', () => {
+    renderDialog({ collection: syncCollection(4) })
+    expect(slotOrder()).toEqual([1, 2, 3, 4])
+  })
+
+  it('uses a narrower dialog than the sequence manager', () => {
+    renderDialog({ collection: syncCollection(3) })
+    expect(screen.getByRole('dialog')).toHaveClass('MuiDialog-paperWidthSm')
+  })
+
+  it('keeps the wide filmstrip grid for sequence collections', () => {
+    renderDialog()
+    expect(screen.queryByTestId('manage-position-map')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toHaveClass('MuiDialog-paperWidthLg')
+  })
+
+  it('swaps two positions on drop — the other members stay put', () => {
+    const { props } = renderDialog({ collection: syncCollection(4) })
+    act(() => {
+      capturedOnDragEnd!(positionDrop(1, 4))
+    })
+    expect(slotOrder()).toEqual([4, 2, 3, 1])
+    expect(props.onSaveMembers).not.toHaveBeenCalled()
+  })
+
+  it('ignores drops with no target, on itself, or on a non-slot target', () => {
+    renderDialog({ collection: syncCollection(3) })
+    act(() => {
+      capturedOnDragEnd!(positionDrop(2, null))
+      capturedOnDragEnd!(positionDrop(2, 2))
+      capturedOnDragEnd!({
+        operation: { source: { id: 'cmi-2' }, target: { id: 'cmi-3' }, canceled: false },
+      })
+      capturedOnDragEnd!({
+        operation: { source: { id: 'cmi-2' }, target: { id: 'cms-3' }, canceled: true },
+      })
+    })
+    expect(slotOrder()).toEqual([1, 2, 3, null])
+  })
+
+  it('Done commits the swapped positions as the pane order', async () => {
+    const { props } = renderDialog({ collection: syncCollection(3) })
+    act(() => {
+      capturedOnDragEnd!(positionDrop(3, 1))
+    })
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Done' }))
+    expect(props.onSaveMembers).toHaveBeenCalledTimes(1)
+    expect(props.onSaveMembers).toHaveBeenCalledWith([3, 2, 1])
+  })
+
+  it('a removal closes the gap — remaining members shift up a position', () => {
+    renderDialog({ collection: syncCollection(3) })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Pane 1 from collection' }))
+    expect(slotOrder()).toEqual([2, 3])
+  })
+
+  it('a staged addition takes the next empty position', () => {
+    const { props } = renderDialog({ collection: syncCollection(3) })
+    fireEvent.click(screen.getByRole('button', { name: 'Choose images' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      stageAdd([makeImage({ id: 9, name: 'Picked' })])
+    })
+    expect(slotOrder()).toEqual([1, 2, 3, 9])
+  })
+
+  it('labels each slot activator with its position for keyboard users', () => {
+    renderDialog({ collection: syncCollection(2) })
+    expect(screen.getByRole('button', { name: 'Drag to swap position 2, Pane 2' })).toHaveAttribute(
+      'tabindex',
+      '0',
+    )
+  })
+})

@@ -1050,6 +1050,21 @@ the current image's tiles fail mid-session the viewer reports the error via
 the nearest still-available image (preferring the next one). When every
 image has failed, an error alert replaces the viewer.
 
+**Synchronized position map (#1614).** For a synchronized collection the
+Manage dialog swaps the filmstrip grid for a **position map** that mirrors
+`SynchronizedCollectionViewer`'s pane layout: two members sit side by side,
+three or four fill a 2×2 grid (three leave a dashed **Empty** fourth cell).
+Each 200×130 slot carries a numbered position badge (1–4, the viewer's
+pane order) and the member's caption. Slots are local `useDraggable` +
+`useDroppable` pairs (`cmi-` sources, `cms-` targets) in the dialog's own
+`DragDropProvider`; dropping a member on another **swaps** the two
+positions, so the rest of the map never shifts. Removal, Multi-select and
+Choose images work as below (a removal closes the gap; an addition takes
+the next empty position), and Done commits the slot order as the same
+whole-list `PUT …/images`. The dialog uses MUI `maxWidth="sm"` for
+synchronized collections so the two-column map isn't stranded in
+whitespace; sequence collections keep the wide (`lg`) filmstrip grid.
+
 **Manage dialog.** The header's **Manage Images** button (replaces the #1559
 Reorder toggle, #1566) opens `CollectionManageDialog` — a mini-Browse grid
 of filmstrip-size `useSortable` thumbnails (a separate `DragDropProvider`;
