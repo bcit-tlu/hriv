@@ -162,6 +162,9 @@ export default function ImageViewer({
     categoryIdRef.current = categoryId
   }, [categoryId])
   useEffect(() => {
+    fullScreenHandoffKeyRef.current = fullScreenHandoffKey
+  }, [fullScreenHandoffKey])
+  useEffect(() => {
     onTileSourceRenewedRef.current = onTileSourceRenewed
   }, [onTileSourceRenewed])
   useEffect(() => {
@@ -1061,15 +1064,16 @@ export default function ImageViewer({
       if (handleFullscreenChange) {
         document.removeEventListener('fullscreenchange', handleFullscreenChange)
       }
+      const cleanupHandoffKey = fullScreenHandoffKeyRef.current
       if (viewer.isFullPage()) {
         viewer.setFullPage(false)
         if (document.fullscreenElement) {
-          if (handoffKey == null) {
+          if (cleanupHandoffKey == null) {
             void document.exitFullscreen().catch(() => {})
           } else {
-            pendingFullScreenHandoff = handoffKey
+            pendingFullScreenHandoff = cleanupHandoffKey
             window.setTimeout(() => {
-              if (pendingFullScreenHandoff !== handoffKey) return
+              if (pendingFullScreenHandoff !== cleanupHandoffKey) return
               pendingFullScreenHandoff = null
               if (document.fullscreenElement) {
                 void document.exitFullscreen().catch(() => {})

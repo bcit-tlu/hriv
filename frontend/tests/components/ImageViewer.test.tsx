@@ -434,6 +434,49 @@ describe('ImageViewer lifecycle telemetry', () => {
     vi.useRealTimers()
   })
 
+  it('uses the latest sequence key when handing off after a collection change', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { rerender } = render(
+      <ImageViewer
+        key="current"
+        fullScreenHandoffKey="sequence:1"
+        imageId={1}
+        tileSources="/first.dzi"
+      />,
+    )
+    const first = viewer()
+
+    rerender(
+      <ImageViewer
+        key="current"
+        fullScreenHandoffKey="sequence:2"
+        imageId={1}
+        tileSources="/first.dzi"
+      />,
+    )
+    first.isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    rerender(
+      <ImageViewer
+        key="next"
+        fullScreenHandoffKey="sequence:2"
+        imageId={2}
+        tileSources="/second.dzi"
+      />,
+    )
+    expect(viewer().setFullPage).toHaveBeenCalledWith(true)
+
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
   it('does not hand full screen to a different sequence collection', () => {
     vi.useFakeTimers()
     const exitFullscreen = vi.fn().mockResolvedValue(undefined)
