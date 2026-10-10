@@ -406,8 +406,7 @@ export default function App() {
   const myCollectionsShelfEnabled =
     features?.collectionsHomeShelf === true &&
     currentUser != null &&
-    page === 'browse' &&
-    selectedImage == null
+    (page === 'browse' || page === 'collections')
   const { collections: myCollectionsShelf, reload: reloadMyCollectionsShelf } =
     useMyCollectionsShelf(myCollectionsShelfEnabled)
   const {
@@ -2172,7 +2171,7 @@ export default function App() {
             onPinnedChange={setMyCollectionsDrawerPinned}
             onOpen={(collection) => {
               if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
-              handleOpenCollection(collection.id, { fromBrowse: true })
+              handleOpenCollection(collection.id, { fromBrowse: page === 'browse' })
             }}
             onEdit={(collection) => void openBrowseCollectionEdit(collection)}
             onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}

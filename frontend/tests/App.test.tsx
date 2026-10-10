@@ -2069,6 +2069,92 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
   })
 
+  it('keeps the drawer visible in the image viewer (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open image' }))
+    expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'My collections' })).toBeInTheDocument()
+  })
+
+  it('shows the drawer on the Collections list page', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+
+    expect(screen.getByTestId('collections-page')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'My collections' })).toBeInTheDocument()
+  })
+
+  it('shows the drawer on an open collection detail (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    window.history.replaceState(null, '', '/?collection=12')
+
+    await renderWithCollectionsEnabled()
+
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+    expect(screen.getByRole('button', { name: 'My collections' })).toBeInTheDocument()
+  })
+
+  it('hides the drawer on the Manage and Admin pages', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    authState = { ...authState, canManageUsers: true }
+    window.history.replaceState(null, '', '/?page=manage')
+
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalledWith({ mine: true, limit: 8 })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab admin' }))
+    expect(screen.getByTestId('admin-page')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+  })
+
+  it('opens a collection from the drawer on the Collections page without Browse context (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    window.history.replaceState(null, '', '/?page=collections')
+
+    await renderWithCollectionsEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'My collections' }))
+    fireEvent.click(await screen.findByText('Skull comparison'))
+
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '1')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '1' },
+      { collectionFromBrowse: false },
+    )
+  })
+
   it('creates a collection from the drawer and opens its collection page', async () => {
     apiMocks.fetchFeatures.mockResolvedValue({
       collections: true,

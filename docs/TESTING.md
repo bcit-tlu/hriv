@@ -462,12 +462,16 @@ Italian_, public, instructor-owned). See
 ## Test Case 13: My Collections Browse Drawer (UI)
 
 **Purpose:** Verify the flag-controlled personal drawer is available throughout
-Browse, supports temporary and persistent modes, and stays off other pages.
+Browse, the image viewer, and the Collections pages, supports temporary and
+persistent modes, and stays off the Manage, People, Admin, and Guide pages.
 
 1. Enable `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF`, then sign in as
    a student, instructor, or admin with at least one visible owned collection.
 2. Open Browse home and a nested category. Confirm a bottom-left
-   **My collections** button appears in both places. Open it and confirm the
+   **My collections** button appears in both places, and that it also appears
+   in the image viewer, on the Collections list pages, and on an open
+   collection detail (#1608). Confirm the Manage, People, and Admin pages do
+   not show it. Open it and confirm the
    bottom drawer shows at most eight collections ordered by most recently
    updated, plus **New collection**, a pin button beside the title, and a
    close button. Confirm

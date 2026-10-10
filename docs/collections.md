@@ -119,8 +119,10 @@ category's tile order with images and sub-categories. The Browse root
 tile-order scope contains categories and images only.
 
 Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
-Browse root and category scopes show a collapsed **My collections** button at
-the bottom-left for any role with a visible owned collection. Opening it shows
+Browse root and category scopes, the image viewer, and the Collections pages
+(both type lists and an open collection detail) show a collapsed
+**My collections** button at the bottom-left for any role with a visible owned
+collection (#1608). Opening it shows
 a bottom drawer with up to eight of the caller's most recently updated visible
 owned collections, **New collection**, a pin control beside the title, and a
 close button. The **My collections** button
@@ -147,9 +149,14 @@ measured header and footer heights, so a wrapped header or multi-line admin
 footer shrinks the row on short viewports rather than hiding the sheet's
 controls above the viewport. Compact cards are
 160–180 px wide and scroll horizontally below about
-1424 px. The drawer is hidden on image-viewer and collection pages, while the
-feed is loading, and when no owned collection is visible. It is not a Browse
-tile: it has no drag, reorder, or drop targets.
+1424 px. The drawer is hidden on the Manage, Manage → Collections, People,
+Admin, and Guide pages, while the feed is loading, and when no owned collection
+is visible. It is not a Browse tile: it has no drag, reorder, or drop targets.
+
+Opening a card from the drawer keeps the caller's origin (#1529, #1608):
+opened from Browse or the image viewer, the detail sits on top of the current
+Browse scope (`?cat=`) and Close returns there; opened from a Collections
+page, Close returns to the Collections list.
 
 `GET /api/collections` accepts an optional `limit` from 1 to 100. It is
 applied after visibility filtering so inaccessible collections do not consume

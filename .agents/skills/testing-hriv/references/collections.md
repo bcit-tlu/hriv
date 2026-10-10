@@ -54,7 +54,8 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   the UI, then verify the card and its cover after reload. Restore any seed
   thumbnail you change.
 - **Drawer layout:** Use a genuinely overflowing Browse category, not only a
-  short root page. The footer is sticky only on Browse root and category pages.
+  short root page. The footer is sticky wherever the drawer is enabled: Browse
+  root and category pages, the image viewer, and the Collections pages.
   The drawer is docked in flow directly above the footer (`footer-dock`), so in
   both modes measure the footer's bottom against the viewport height and the
   drawer's bottom against the footer's top; on overscroll both move together.

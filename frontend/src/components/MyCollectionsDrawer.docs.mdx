@@ -12,9 +12,10 @@ import * as MyCollectionsDrawerStories from './MyCollectionsDrawer.stories'
 
 ## When to use
 
-Render the standard contained **My collections** button on Browse when the personal-drawer feature
-flag is enabled and the user has visible owned collections. The button sits above the always-visible
-Browse footer. Opening it provides collection navigation and creation without adding
+Render the standard contained **My collections** button on Browse (root and category scopes), in the
+image viewer, and on the Collections pages when the personal-drawer feature flag is enabled and the
+user has visible owned collections. The button sits above the always-visible
+footer. Opening it provides collection navigation and creation without adding
 personal collections to the sortable Browse grid.
 
 The always-mounted trigger button doubles as the sheet's title (`aria-labelledby`) and floats above
