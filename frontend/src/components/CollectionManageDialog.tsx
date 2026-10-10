@@ -88,7 +88,7 @@ const SLOT_PREFIX = 'cms-'
 const slotIdFor = (imageId: number) => `${SLOT_PREFIX}${imageId}`
 const POSITION_ITEM_TYPE = 'collection-manage-position'
 
-/** Position-map slot thumb (#1614) — 200×130, letterboxed like a viewer pane. */
+/** Position-map slot thumb (#1614) — up to 200×130, letterboxed like a viewer pane. */
 const SLOT_WIDTH = 200
 const SLOT_THUMB_HEIGHT = 130
 
@@ -183,8 +183,8 @@ function PositionTileFace({
       <Box
         sx={{
           position: 'relative',
-          width: SLOT_WIDTH,
-          height: SLOT_THUMB_HEIGHT,
+          width: '100%',
+          aspectRatio: `${SLOT_WIDTH} / ${SLOT_THUMB_HEIGHT}`,
           borderRadius: 1,
           overflow: 'hidden',
           bgcolor: 'grey.900',
@@ -269,6 +269,7 @@ function PositionSlotTile({
       ref={dropRef}
       data-testid={`manage-slot-${position}`}
       sx={{
+        minWidth: 0,
         borderRadius: 1.5,
         outline: '2px dashed',
         outlineColor: isDropTarget && !isDragSource ? 'primary.main' : 'transparent',
@@ -282,7 +283,7 @@ function PositionSlotTile({
         onClick={selecting ? toggleSelect : undefined}
         sx={{
           position: 'relative',
-          width: SLOT_WIDTH,
+          width: '100%',
           opacity: isDragSource ? 0.4 : disabled ? 0.6 : 1,
           borderRadius: 1,
           outline: selecting && selected ? '2px solid' : 'none',
@@ -358,12 +359,12 @@ function PositionSlotTile({
     leaves a gap (the 2×2 grid's fourth cell, or the second of a pair). */
 function EmptyPositionSlot({ position }: { position: number }) {
   return (
-    <Box data-testid={`manage-slot-${position}`} aria-hidden>
+    <Box data-testid={`manage-slot-${position}`} aria-hidden sx={{ minWidth: 0 }}>
       <Box
         sx={{
           position: 'relative',
-          width: SLOT_WIDTH,
-          height: SLOT_THUMB_HEIGHT,
+          width: '100%',
+          aspectRatio: `${SLOT_WIDTH} / ${SLOT_THUMB_HEIGHT}`,
           borderRadius: 1,
           border: '2px dashed',
           borderColor: 'divider',
@@ -828,7 +829,8 @@ export default function CollectionManageDialog({
                 data-testid="manage-position-map"
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: `repeat(2, ${SLOT_WIDTH}px)`,
+                  // Shrinks below 200px on narrow screens so both columns stay visible.
+                  gridTemplateColumns: `repeat(2, minmax(0, ${SLOT_WIDTH}px))`,
                   justifyContent: 'center',
                   columnGap: 2,
                   rowGap: 2,
