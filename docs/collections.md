@@ -667,6 +667,13 @@ Loading spinner, a plain error `Alert`
 existing page patterns; the unfiltered empty state's "Create a collection" is
 a link that opens the same create dialog as the **New collection** button.
 
+### List freshness
+
+The list keeps a bounded row cache keyed by its effective API filters and
+exposes only the active key. Type/filter changes, same-type re-picks, returning
+to the Collections list, and browser Back from detail revalidate that key. The
+visible list also polls every 30 seconds; detail views do not.
+
 **Create / edit (`CollectionEditDialog`).** Name (required), description,
 type (radio on create; read-only chip on edit — the API rejects type changes
 with 422), visibility. `restricted` is only offered to admins and instructors

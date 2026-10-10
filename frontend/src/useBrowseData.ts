@@ -15,6 +15,8 @@ import { tileOrderingCoordinator } from './tileOrdering'
 import { recordBrowseTreePoll } from './dndInstrumentation'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
 
+export const BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS = 10_000
+
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
 }
@@ -343,6 +345,8 @@ export function useBrowseData({
     etag: null,
     revision: null,
   })
+  const lastTreeCheckAt = useRef(0)
+  const authoritativeTreeRefreshInFlight = useRef(0)
   // The stored ETag/revision is updated only when a category-tree response is
   // actually committed to React state, so an aborted or out-of-order response
   // can never leave a newer ETag paired with stale displayed data.
@@ -407,6 +411,7 @@ export function useBrowseData({
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return true
         }
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
@@ -426,6 +431,7 @@ export function useBrowseData({
             revision: receivedHeaders.revision,
           }
         }
+        lastTreeCheckAt.current = Date.now()
         return true
       } catch (err) {
         if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) {
@@ -516,6 +522,7 @@ export function useBrowseData({
     // aborted read has already claimed a generation), THEN claim ours, so
     // this refresh is guaranteed to hold the newest generation and commit.
     invalidateRef.current?.()
+    authoritativeTreeRefreshInFlight.current += 1
     // Authoritative refresh: claim the newest generation and abort any older
     // read for the same data.
     const gen = ++categoriesReadGen.current
@@ -561,6 +568,7 @@ export function useBrowseData({
                 revision: receivedHeaders.revision,
               }
             }
+            lastTreeCheckAt.current = Date.now()
             return categoriesRef.current
           }
           const newest = categoriesRefreshRef.current
@@ -587,6 +595,7 @@ export function useBrowseData({
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return cats
         }
         // Superseded while the response was in flight: hand back the
@@ -605,6 +614,8 @@ export function useBrowseData({
           return categoriesRef.current
         }
         throw err
+      } finally {
+        authoritativeTreeRefreshInFlight.current -= 1
       }
     })()
     const record = { gen, promise: run, settled: false }
@@ -715,6 +726,21 @@ export function useBrowseData({
   // leaf's live ancestry so a background refresh that renames, re-restricts,
   // or reparents the leaf or an ancestor is reflected without re-navigating.
   const pathLeafId = path.length > 0 ? path[path.length - 1].id : null
+  const previousPathLeafId = useRef(pathLeafId)
+  useEffect(() => {
+    const previousLeafId = previousPathLeafId.current
+    previousPathLeafId.current = pathLeafId
+    if (previousLeafId === pathLeafId || pathLeafId == null) return
+    if (
+      Date.now() - lastTreeCheckAt.current < BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS ||
+      authoritativeTreeRefreshInFlight.current > 0
+    )
+      return
+    if (tileOrderingCoordinator.hasUnsavedChanges()) return
+    if (dragActive || currentUser == null) return
+    void loadCategories({ silent: true }) // eslint-disable-line react-hooks/set-state-in-effect -- category-navigation revalidation
+  }, [pathLeafId, dragActive, currentUser, loadCategories])
+
   const liveCategoryPath = useMemo(
     () => (pathLeafId == null ? [] : (findCategoryPath(categories, pathLeafId) ?? [])),
     [categories, pathLeafId],

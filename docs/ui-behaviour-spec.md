@@ -199,6 +199,16 @@ returned by the API (UX only — the backend re-checks).
   visibility chip); an empty result shows the empty state (whose
   **Create a collection** link opens the create dialog when no filters are
   active) and a failed request shows a plain error `Alert` with no action.
+- **Given** the user switches to a type not yet cached, **When** its list
+  request is pending, **Then** the previous type's cards are never shown and
+  the list uses its loading spinner.
+- **Given** a type has cached rows, **When** the user returns to it, **Then**
+  those rows appear immediately while that type is revalidated.
+- **Given** the user re-picks the already-active type, **When** the list
+  remains open, **Then** that type is revalidated once.
+- **Given** the user navigates from a collection detail back to the list with
+  browser Back, **When** the list is restored, **Then** its active type is
+  revalidated.
 - **Given** a `CollectionCard`, **Then** the type icon sits left of the
   title (the category folder-icon spot), **Move** and **Set cover image**
   actions sit in a top-right cover overlay (the CategoryTile

@@ -15,13 +15,14 @@ import {
   updateGroup,
   updateProgram,
 } from '../src/api'
-import { makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
+import { makeApiCollection, makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
 
 const apiMocks = vi.hoisted(() => ({
   fetchUsers: vi.fn(),
   fetchVersions: vi.fn(),
   fetchFeatures: vi.fn(),
   fetchCollections: vi.fn(),
+  fetchCollection: vi.fn(),
   fetchFrontendVersion: vi.fn(),
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
@@ -158,6 +159,7 @@ function resetFixtures() {
     collections_home_shelf: false,
   })
   apiMocks.fetchCollections.mockResolvedValue([])
+  apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ type: 'sequence' }))
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
   apiMocks.createProgram.mockResolvedValue({})
   apiMocks.updateProgram.mockResolvedValue({})
@@ -186,6 +188,7 @@ function resetFixtures() {
   mockInitialPath = []
   localStorage.removeItem('hrivpref:my-collections-drawer:pinned:user:anonymous')
   collectionsDataMocks.filters = { type: 'all', mine: false, owner: 'any' }
+  collectionsDataMocks.useRealHook = false
   visibleJobsMock = []
   processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
   // Individual tests push extra programs (Radiology, Histology); restore the
@@ -386,6 +389,7 @@ vi.mock('../src/components/AppShell', () => ({
   default: ({
     children,
     onTabChange,
+    onCollectionsTypeChange,
     onHomeClick,
     onSearchOpen,
     onOpenPrograms,
@@ -400,6 +404,7 @@ vi.mock('../src/components/AppShell', () => ({
     children: ReactNode
     footerDockSlot?: ReactNode
     onTabChange: (v: string) => void
+    onCollectionsTypeChange: (type: 'sequence' | 'synchronized') => void
     onHomeClick: () => void
     onSearchOpen: () => void
     onOpenPrograms: () => void
@@ -435,6 +440,12 @@ vi.mock('../src/components/AppShell', () => ({
       </button>
       <button type="button" onClick={() => onTabChange('collections')}>
         Shell tab collections
+      </button>
+      <button type="button" onClick={() => onCollectionsTypeChange('sequence')}>
+        Shell pick sequence
+      </button>
+      <button type="button" onClick={() => onCollectionsTypeChange('synchronized')}>
+        Shell pick synchronized
       </button>
       <button type="button" onClick={onHomeClick}>
         Shell home
@@ -636,40 +647,54 @@ const collectionsDataMocks = vi.hoisted(() => ({
   setHidden: vi.fn(),
   filters: { type: 'all' as string, mine: false, owner: 'any' as string },
   setFilters: vi.fn(),
+  useRealHook: false,
 }))
-vi.mock('../src/useCollectionsData', () => ({
-  useCollectionsData: () => ({
-    collections: [],
-    loading: false,
-    error: null,
-    filters: collectionsDataMocks.filters,
-    setFilters: collectionsDataMocks.setFilters,
-    ownerOptions: [],
-    reload: vi.fn(),
-    detail: null,
-    detailLoading: false,
-    detailError: null,
-    loadCollection: vi.fn(),
-    create: collectionsDataMocks.create,
-    update: vi.fn(),
-    remove: vi.fn(),
-    reorderImages: vi.fn(),
-    saveViewport: vi.fn(),
-    transfer: collectionsDataMocks.transfer,
-    saveOwners: collectionsDataMocks.saveOwners,
-    move: collectionsDataMocks.move,
-    setHidden: collectionsDataMocks.setHidden,
-    setCoverImage: vi.fn(),
-    // App routes adds/removes through the data hook now (#1566) — delegate
-    // to the same spy so the assertions below still observe the payload.
-    addImages: (id: number, imageIds: number[], role?: string) =>
-      role == null
-        ? addToCollectionMocks.addImagesToCollection(id, imageIds)
-        : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
-    removeImages: vi.fn(),
-    renewCollectionImage: vi.fn(),
-  }),
-}))
+vi.mock('../src/useCollectionsData', async () => {
+  const actual = await vi.importActual<typeof import('../src/useCollectionsData')>(
+    '../src/useCollectionsData',
+  )
+  return {
+    ...actual,
+    useCollectionsData: (options: Parameters<typeof actual.useCollectionsData>[0]) => {
+      const realData = actual.useCollectionsData({
+        ...options,
+        enabled: collectionsDataMocks.useRealHook && options.enabled,
+      })
+      if (collectionsDataMocks.useRealHook) return realData
+      return {
+        collections: [],
+        loading: false,
+        error: null,
+        filters: collectionsDataMocks.filters,
+        setFilters: collectionsDataMocks.setFilters,
+        ownerOptions: [],
+        reload: vi.fn(),
+        detail: null,
+        detailLoading: false,
+        detailError: null,
+        loadCollection: vi.fn(),
+        create: collectionsDataMocks.create,
+        update: vi.fn(),
+        remove: vi.fn(),
+        reorderImages: vi.fn(),
+        saveViewport: vi.fn(),
+        transfer: collectionsDataMocks.transfer,
+        saveOwners: collectionsDataMocks.saveOwners,
+        move: collectionsDataMocks.move,
+        setHidden: collectionsDataMocks.setHidden,
+        setCoverImage: vi.fn(),
+        // App routes adds/removes through the data hook now (#1566) — delegate
+        // to the same spy so the assertions below still observe the payload.
+        addImages: (id: number, imageIds: number[], role?: string) =>
+          role == null
+            ? addToCollectionMocks.addImagesToCollection(id, imageIds)
+            : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
+        removeImages: vi.fn(),
+        renewCollectionImage: vi.fn(),
+      }
+    },
+  }
+})
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
 vi.mock('../src/components/ManageCollectionsPage', () => ({
   default: () => <div data-testid="manage-collections-page" />,
@@ -2265,6 +2290,49 @@ describe('App collections deep links (#1414)', () => {
     window.history.replaceState(null, '', '/?page=collections')
     await renderWithCollectionsEnabled()
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('revalidates when the already-selected Collections type is picked again', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=sequence')
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell pick sequence' }))
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(2))
+    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
+  })
+
+  it('revalidates the list when Back restores it from collection detail', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=sequence')
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5'),
+    )
+    await waitFor(() => expect(apiMocks.fetchCollection).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1)
+
+    window.history.replaceState(null, '', '/?page=collections&type=sequence')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(2))
+    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
+  })
+
+  it('requests only the selected type when navigating Browse to Synchronized', async () => {
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    apiMocks.fetchCollections.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell pick synchronized' }))
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
   })
 
   it('pushes ?collection={id} history when a collection is opened and ?page=collections when closed', async () => {
