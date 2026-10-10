@@ -571,7 +571,7 @@ describe('CollectionManageDialog — synchronized position map (#1614)', () => {
     expect(screen.getByTestId('manage-position-map')).toBeInTheDocument()
     expect(slotOrder()).toEqual([1, 2])
     expect(within(screen.getByTestId('manage-slot-1')).getByText('1')).toBeInTheDocument()
-    expect(screen.getByText(/Positions match the synchronized viewer/)).toBeInTheDocument()
+    expect(screen.getByText(/Drag an image over another to swap positions/)).toBeInTheDocument()
   })
 
   it('lays three members out as a 2×2 grid with the fourth cell empty', () => {

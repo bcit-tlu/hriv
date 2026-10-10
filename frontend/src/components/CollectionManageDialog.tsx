@@ -769,7 +769,9 @@ export default function CollectionManageDialog({
         }}
       >
         Manage Collection Images{collection ? ` — ${collection.name}` : ''}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {/* ml:auto keeps the actions right-aligned when the narrow
+            synchronized dialog wraps them under the title (#1614). */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
           {/* Selection mode toggle (#1567): switches tiles into a multi-pick
               removal set — drag-order is suspended while it's on. Stays
               visible while selecting even if the draft empties, so the mode
@@ -809,9 +811,8 @@ export default function CollectionManageDialog({
               ? 'Click thumbnails to select them, then use the button below to stage the ' +
                 'removal. Choose Multi-select again to go back to reordering.'
               : positional
-                ? 'Positions match the synchronized viewer. Drag an image onto another to swap ' +
-                  'their positions, or use a tile’s corner control to remove it. Changes apply ' +
-                  'when you choose Done.'
+                ? 'Drag an image over another to swap positions. Remove images with the X. ' +
+                  'Changes apply when you choose Done.'
                 : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
                   'from the collection. Changes apply when you choose Done.'}
           </Typography>
