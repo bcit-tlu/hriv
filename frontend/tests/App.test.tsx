@@ -2142,7 +2142,7 @@ describe('App collections deep links (#1414)', () => {
 
     await renderWithCollectionsEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'My collections' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
     fireEvent.click(await screen.findByText('Skull comparison'))
 
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '1')
