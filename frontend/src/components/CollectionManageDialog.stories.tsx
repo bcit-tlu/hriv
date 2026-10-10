@@ -17,12 +17,16 @@ function makeImage(id: number, name: string): ImageItem {
   }
 }
 
-function makeCollection(images: ImageItem[], memberCount = images.length): Collection {
+function makeCollection(
+  images: ImageItem[],
+  memberCount = images.length,
+  type: Collection['type'] = 'sequence',
+): Collection {
   return {
     id: 2,
-    name: 'Fracture healing timeline',
+    name: type === 'synchronized' ? 'Stain comparison' : 'Fracture healing timeline',
     description: null,
-    type: 'sequence',
+    type,
     visibility: 'private',
     hidden: false,
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
@@ -111,5 +115,23 @@ export const RestrictedMembersHidden: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     await expect(await body.findByText(/2 restricted images not shown/)).toBeInTheDocument()
+  },
+}
+
+/** Synchronized collection (#1614) — a narrower dialog with a position map
+    mirroring the viewer's 2×2 grid; the odd fourth cell renders empty. */
+export const Synchronized: Story = {
+  args: {
+    collection: makeCollection(
+      [makeImage(201, 'H&E'), makeImage(202, 'Masson trichrome'), makeImage(203, 'PAS')],
+      3,
+      'synchronized',
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(await body.findByTestId('manage-position-map')).toBeInTheDocument()
+    await expect(body.getAllByTestId(/^manage-slot-/)).toHaveLength(4)
+    await expect(body.getByText('Empty')).toBeInTheDocument()
   },
 }
