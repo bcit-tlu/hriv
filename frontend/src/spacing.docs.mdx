@@ -1,0 +1,27 @@
+import { Canvas, Meta, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as SpacingStories from './spacing.stories'
+
+<Meta of={SpacingStories} />
+
+<Title />
+
+<Subtitle>
+  The 8px spacing scale and responsive breakpoints that drive layout across HRIV — read live from
+  the active theme.
+</Subtitle>
+
+## How to use this section
+
+Use `Foundations/Spacing` as the reference for consistent spacing and responsive layout. Spacing
+values come from `theme.spacing(n)`, an 8px base unit — so a value of `2` resolves to `16px`.
+Prefer these tokens for margins, padding, and gaps instead of hardcoded pixels; in `sx` you can
+pass the unit directly, e.g. `sx={{ p: 2, gap: 1.5 }}`.
+
+## What's included
+
+- **Spacing scale** — steps `0.5`–`8`, each shown as a bar with its `theme.spacing(n)` pixel value
+- **Breakpoints** — `xs` / `sm` / `md` / `lg` / `xl` and their min-widths (`theme.breakpoints`)
+
+## Scale & breakpoints
+
+<Canvas of={SpacingStories.Default} />
