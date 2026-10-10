@@ -370,6 +370,7 @@ export default function SequenceCollectionViewer({
       >
         <ImageViewer
           key={current.id}
+          fullScreenHandoffKey={`sequence:${collectionId}`}
           tileSources={current.tileSources}
           imageId={current.id}
           categoryId={current.categoryId ?? undefined}

@@ -23,7 +23,7 @@ import {
   type OverlayRect,
 } from './imageViewerUtils'
 
-let pendingFullScreenHandoff = false
+let pendingFullScreenHandoff: string | number | null = null
 
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
@@ -31,6 +31,7 @@ interface ImageViewerProps {
   imageId?: number
   /** Id of the image's category; emitted as a structured telemetry field. */
   categoryId?: number
+  fullScreenHandoffKey?: string | number
   height?: ResponsiveStyleValue<string | number>
   initialViewport?: ViewportState
   onViewportChange?: (state: ViewportState) => void
@@ -82,6 +83,7 @@ export default function ImageViewer({
   tileSources,
   imageId,
   categoryId,
+  fullScreenHandoffKey,
   height = '70vh',
   initialViewport,
   onViewportChange,
@@ -122,6 +124,7 @@ export default function ImageViewer({
   const imageIdRef = useRef(imageId)
   const categoryIdRef = useRef(categoryId)
   const tileSourcesRef = useRef(tileSources)
+  const fullScreenHandoffKeyRef = useRef(fullScreenHandoffKey)
   // Which image the open tile sources belong to — lets the prop-change
   // reopen below tell a same-image refresh (re-tokenized URLs, e.g. a
   // save-response refetch) from a different image arriving mid-life (#1567).
@@ -384,6 +387,7 @@ export default function ImageViewer({
   )
 
   useEffect(() => {
+    const handoffKey = fullScreenHandoffKeyRef.current
     if (!containerRef.current) return
 
     const initialTileSources = getCurrentTileSources()
@@ -487,8 +491,8 @@ export default function ImageViewer({
     const viewer = viewerRef.current
     const initialViewerWidth = viewer.element.style.width
     const initialViewerHeight = viewer.element.style.height
-    const claimedHandoff = pendingFullScreenHandoff
-    pendingFullScreenHandoff = false
+    const claimedHandoff = handoffKey != null && pendingFullScreenHandoff === handoffKey
+    if (claimedHandoff) pendingFullScreenHandoff = null
     let handleFullscreenChange: (() => void) | null = null
     if (claimedHandoff && document.fullscreenElement) {
       viewer.setFullPage(true)
@@ -1060,14 +1064,18 @@ export default function ImageViewer({
       if (viewer.isFullPage()) {
         viewer.setFullPage(false)
         if (document.fullscreenElement) {
-          pendingFullScreenHandoff = true
-          window.setTimeout(() => {
-            if (!pendingFullScreenHandoff) return
-            pendingFullScreenHandoff = false
-            if (document.fullscreenElement) {
-              void document.exitFullscreen().catch(() => {})
-            }
-          }, 0)
+          if (handoffKey == null) {
+            void document.exitFullscreen().catch(() => {})
+          } else {
+            pendingFullScreenHandoff = handoffKey
+            window.setTimeout(() => {
+              if (pendingFullScreenHandoff !== handoffKey) return
+              pendingFullScreenHandoff = null
+              if (document.fullscreenElement) {
+                void document.exitFullscreen().catch(() => {})
+              }
+            }, 0)
+          }
         }
       }
       viewer.destroy()

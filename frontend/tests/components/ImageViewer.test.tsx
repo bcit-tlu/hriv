@@ -7,8 +7,23 @@
  * can drive toolbar clicks and selection-rectangle gestures directly.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { cleanup, render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+
+const hadFullscreenElementOwnProperty = Object.prototype.hasOwnProperty.call(
+  document,
+  'fullscreenElement',
+)
+const originalFullscreenElementDescriptor =
+  Object.getOwnPropertyDescriptor(document, 'fullscreenElement') ??
+  Object.getOwnPropertyDescriptor(Document.prototype, 'fullscreenElement')
+const hadExitFullscreenOwnProperty = Object.prototype.hasOwnProperty.call(
+  document,
+  'exitFullscreen',
+)
+const originalExitFullscreenDescriptor =
+  Object.getOwnPropertyDescriptor(document, 'exitFullscreen') ??
+  Object.getOwnPropertyDescriptor(Document.prototype, 'exitFullscreen')
 
 interface MockButton {
   options: {
@@ -281,6 +296,20 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+afterEach(() => {
+  cleanup()
+  if (hadFullscreenElementOwnProperty && originalFullscreenElementDescriptor) {
+    Object.defineProperty(document, 'fullscreenElement', originalFullscreenElementDescriptor)
+  } else {
+    Reflect.deleteProperty(document, 'fullscreenElement')
+  }
+  if (hadExitFullscreenOwnProperty && originalExitFullscreenDescriptor) {
+    Object.defineProperty(document, 'exitFullscreen', originalExitFullscreenDescriptor)
+  } else {
+    Reflect.deleteProperty(document, 'exitFullscreen')
+  }
+})
+
 describe('ImageViewer lifecycle telemetry', () => {
   it('emits view started/ready events and restores the initial viewport and overlays', () => {
     render(
@@ -379,7 +408,9 @@ describe('ImageViewer lifecycle telemetry', () => {
       configurable: true,
       value: exitFullscreen,
     })
-    const { rerender } = render(<ImageViewer key="first" tileSources="/first.dzi" />)
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
     const first = viewer()
     first.isFullPage.mockReturnValue(true)
     setFullscreenElement(document.body)
@@ -390,7 +421,9 @@ describe('ImageViewer lifecycle telemetry', () => {
       ).length
     expect(fullScreenActions()).toBe(1)
 
-    rerender(<ImageViewer key="second" tileSources="/second.dzi" />)
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
     const second = viewer()
     expect(second.setFullPage).toHaveBeenCalledWith(true)
     expect(second.element.style.width).toBe('100%')
@@ -401,6 +434,29 @@ describe('ImageViewer lifecycle telemetry', () => {
     vi.useRealTimers()
   })
 
+  it('does not hand full screen to a different sequence collection', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:2" tileSources="/second.dzi" />,
+    )
+    expect(viewer().setFullPage).not.toHaveBeenCalledWith(true)
+
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
   it('exits full screen after unmount when no viewer claims the handoff', () => {
     vi.useFakeTimers()
     const exitFullscreen = vi.fn().mockResolvedValue(undefined)
@@ -408,7 +464,9 @@ describe('ImageViewer lifecycle telemetry', () => {
       configurable: true,
       value: exitFullscreen,
     })
-    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    const { unmount } = render(
+      <ImageViewer fullScreenHandoffKey="sequence:1" tileSources="/tiles.dzi" />,
+    )
     viewer().isFullPage.mockReturnValue(true)
     setFullscreenElement(document.body)
 
@@ -419,12 +477,33 @@ describe('ImageViewer lifecycle telemetry', () => {
     vi.useRealTimers()
   })
 
+  it('exits full screen immediately when a keyless viewer unmounts', () => {
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    const currentViewer = viewer()
+    currentViewer.isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    unmount()
+
+    expect(currentViewer.setFullPage).toHaveBeenCalledWith(false)
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+  })
+
   it('restores the replacement viewer when full screen ends after a handoff', () => {
-    const { rerender } = render(<ImageViewer key="first" tileSources="/first.dzi" />)
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
     viewer().isFullPage.mockReturnValue(true)
     setFullscreenElement(document.body)
 
-    rerender(<ImageViewer key="second" tileSources="/second.dzi" />)
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
     const second = viewer()
     expect(second.setFullPage).toHaveBeenCalledWith(true)
     second.isFullPage.mockReturnValue(true)
