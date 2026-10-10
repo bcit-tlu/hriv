@@ -1250,6 +1250,46 @@ describe('useBrowseData', () => {
       expect(mockFetchCategoryTree.mock.calls[0]?.[0]).toMatchObject({ cache: 'reload' })
     })
 
+    it('revalidates a changed path after an authoritative refresh fails', async () => {
+      vi.useFakeTimers()
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      mockFetchCategoryTree.mockClear()
+      mockFetchUncategorizedImages.mockClear()
+      act(() => {
+        vi.advanceTimersByTime(BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS + 1)
+      })
+      mockFetchCategoryTree.mockRejectedValueOnce(new Error('refresh failed'))
+      await act(async () => {
+        await expect(result.current.refreshCategories()).rejects.toThrow('refresh failed')
+      })
+
+      mockFetchCategoryTree.mockClear()
+      let resolveTree!: (tree: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveTree = resolve
+          }),
+      )
+      rerender({
+        ...deps,
+        path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Target' }))],
+      })
+
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(mockFetchUncategorizedImages).not.toHaveBeenCalled()
+      await act(async () => {
+        resolveTree([])
+      })
+    })
+
     it('suppresses a second category-path refresh inside the throttle window', async () => {
       vi.useFakeTimers()
       const deps = makeDeps({ currentUser: makeUser() })

@@ -346,6 +346,7 @@ export function useBrowseData({
     revision: null,
   })
   const lastTreeCheckAt = useRef(0)
+  const authoritativeTreeRefreshInFlight = useRef(0)
   // The stored ETag/revision is updated only when a category-tree response is
   // actually committed to React state, so an aborted or out-of-order response
   // can never leave a newer ETag paired with stale displayed data.
@@ -521,7 +522,7 @@ export function useBrowseData({
     // aborted read has already claimed a generation), THEN claim ours, so
     // this refresh is guaranteed to hold the newest generation and commit.
     invalidateRef.current?.()
-    lastTreeCheckAt.current = Date.now()
+    authoritativeTreeRefreshInFlight.current += 1
     // Authoritative refresh: claim the newest generation and abort any older
     // read for the same data.
     const gen = ++categoriesReadGen.current
@@ -613,6 +614,8 @@ export function useBrowseData({
           return categoriesRef.current
         }
         throw err
+      } finally {
+        authoritativeTreeRefreshInFlight.current -= 1
       }
     })()
     const record = { gen, promise: run, settled: false }
@@ -728,7 +731,11 @@ export function useBrowseData({
     const previousLeafId = previousPathLeafId.current
     previousPathLeafId.current = pathLeafId
     if (previousLeafId === pathLeafId || pathLeafId == null) return
-    if (Date.now() - lastTreeCheckAt.current < BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS) return
+    if (
+      Date.now() - lastTreeCheckAt.current < BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS ||
+      authoritativeTreeRefreshInFlight.current > 0
+    )
+      return
     if (tileOrderingCoordinator.hasUnsavedChanges()) return
     if (dragActive || currentUser == null) return
     void loadCategories({ silent: true }) // eslint-disable-line react-hooks/set-state-in-effect -- category-navigation revalidation
