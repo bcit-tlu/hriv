@@ -25,6 +25,26 @@ import {
 
 let pendingFullScreenHandoff: string | number | null = null
 
+const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
+  const { viewport } = viewer
+  const homeZoom = viewport.getHomeZoom()
+  const homeBounds = viewport.getHomeBounds()
+  if (!Number.isFinite(homeZoom) || homeZoom <= 0 || homeBounds.width <= 0) return false
+
+  const homeCenter = homeBounds.getCenter()
+  const center = viewport.getCenter()
+  const rotation = ((viewport.getRotation() % 360) + 360) % 360
+  const rotationDistance = Math.min(rotation, 360 - rotation)
+  const centerTolerance = homeBounds.width * 1e-3
+  return (
+    Math.abs(viewport.getZoom() - homeZoom) <= homeZoom * 1e-3 &&
+    Math.abs(center.x - homeCenter.x) <= centerTolerance &&
+    Math.abs(center.y - homeCenter.y) <= centerTolerance &&
+    rotationDistance <= 1e-3 &&
+    !viewport.getFlip()
+  )
+}
+
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
@@ -136,6 +156,7 @@ export default function ImageViewer({
   const renewalAttemptsRef = useRef(0)
   const renewalGenerationRef = useRef(0)
   const pendingRenewalViewportRef = useRef<ViewportState | null>(null)
+  const homeViewportAtLastSettledStateRef = useRef<boolean | null>(null)
   const onTileSourceRenewedRef = useRef(onTileSourceRenewed)
   const onErrorRef = useRef(onError)
   const onViewerReadyRef = useRef(onViewerReady)
@@ -275,6 +296,7 @@ export default function ImageViewer({
     if (viewportToRestore.rotation) {
       viewer.viewport.setRotation(viewportToRestore.rotation, true)
     }
+    homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
   }, [])
 
   const runTileSourceRenewal = useCallback(async () => {
@@ -390,6 +412,7 @@ export default function ImageViewer({
   )
 
   useEffect(() => {
+    homeViewportAtLastSettledStateRef.current = null
     const handoffKey = fullScreenHandoffKeyRef.current
     if (!containerRef.current) return
 
@@ -494,6 +517,7 @@ export default function ImageViewer({
     const viewer = viewerRef.current
     const initialViewerWidth = viewer.element.style.width
     const initialViewerHeight = viewer.element.style.height
+    let pendingHomeResize: boolean | null = null
     const claimedHandoff = handoffKey != null && pendingFullScreenHandoff === handoffKey
     if (claimedHandoff) pendingFullScreenHandoff = null
     let handleFullscreenChange: (() => void) | null = null
@@ -958,6 +982,7 @@ export default function ImageViewer({
         updateLockIcon()
       }
       updateMagnification()
+      homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
     })
 
     viewer.addHandler('open-failed', (event) => {
@@ -1007,6 +1032,18 @@ export default function ImageViewer({
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
     })
+    viewer.addHandler('resize', () => {
+      pendingHomeResize = homeViewportAtLastSettledStateRef.current
+    })
+    viewer.addHandler('viewport-change', () => {
+      const refitHome = pendingHomeResize
+      pendingHomeResize = null
+      if (refitHome) {
+        viewer.viewport.fitBounds(viewer.viewport.getHomeBounds(), true)
+        emitViewport()
+      }
+      homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
+    })
 
     const pinchRotationTracker = createPinchRotationTracker()
 
@@ -1033,8 +1070,12 @@ export default function ImageViewer({
       viewer.viewport.rotateTo(viewer.viewport.getRotation(true) + rotationDelta, pivot, true)
     })
 
-    // Report viewport changes after animations finish
-    viewer.addHandler('animation-finish', emitViewport)
+    viewer.addHandler('animation-finish', () => {
+      if (pendingHomeResize == null) {
+        homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
+      }
+      emitViewport()
+    })
 
     return () => {
       const dwellMs = viewStartTimeRef.current

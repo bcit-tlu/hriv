@@ -141,6 +141,9 @@ images> / Empty` format used on category tiles.
   viewport; only the OSD viewer frame flexes, with a 320px minimum. If fixed
   content needs more space, the page grows and scrolls. Below `md`, the existing
   70vh / 60vh / 55vh / 34vh viewer heights and page scrolling are unchanged.
+- An image at Home stays fitted when its viewer frame resizes, including
+  full-screen entry and exit; zoomed, panned, rotated, or flipped views are not
+  refitted.
 - **When** the accordion expands, **Then** source information is fetched lazily;
   collapsing and re-expanding the same image version reuses the cached result,
   while a version change fetches fresh information without exposing stale data.

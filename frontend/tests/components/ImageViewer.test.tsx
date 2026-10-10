@@ -56,10 +56,14 @@ interface MockViewer {
     getZoom: ReturnType<typeof vi.fn>
     getCenter: ReturnType<typeof vi.fn>
     getRotation: ReturnType<typeof vi.fn>
+    getHomeZoom: ReturnType<typeof vi.fn>
+    getHomeBounds: ReturnType<typeof vi.fn>
+    getFlip: ReturnType<typeof vi.fn>
     setRotation: ReturnType<typeof vi.fn>
     rotateTo: ReturnType<typeof vi.fn>
     zoomTo: ReturnType<typeof vi.fn>
     panTo: ReturnType<typeof vi.fn>
+    fitBounds: ReturnType<typeof vi.fn>
     pixelFromPoint: ReturnType<typeof vi.fn>
     pointFromPixel: ReturnType<typeof vi.fn>
     viewportToImageZoom: ReturnType<typeof vi.fn>
@@ -153,6 +157,13 @@ vi.mock('openseadragon', () => {
     const navigatorElement = document.createElement('div')
     bottomRightDock.appendChild(navigatorElement)
     const activeOverlays = new Set<HTMLElement>()
+    const homeBounds = {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      getCenter: () => ({ x: 0.5, y: 0.4 }),
+    }
     const viewer: MockViewer = {
       element: document.createElement('div'),
       container,
@@ -165,10 +176,14 @@ vi.mock('openseadragon', () => {
         getZoom: vi.fn(() => 2),
         getCenter: vi.fn(() => ({ x: 0.5, y: 0.4 })),
         getRotation: vi.fn(() => 90),
+        getHomeZoom: vi.fn(() => 2),
+        getHomeBounds: vi.fn(() => homeBounds),
+        getFlip: vi.fn(() => false),
         setRotation: vi.fn(),
         rotateTo: vi.fn(),
         zoomTo: vi.fn(),
         panTo: vi.fn(),
+        fitBounds: vi.fn(),
         pixelFromPoint: vi.fn((p: { x: number; y: number }) => ({ x: p.x * 100, y: p.y * 100 })),
         pointFromPixel: vi.fn((p: { x: number; y: number }) => ({ x: p.x / 100, y: p.y / 100 })),
         viewportToImageZoom: vi.fn((zoom: number) => zoom * 0.001),
@@ -310,6 +325,23 @@ afterEach(() => {
   }
 })
 
+const setViewportAtHome = (v: MockViewer) => {
+  const homeBounds = {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    getCenter: () => ({ x: 0.5, y: 0.4 }),
+  }
+  v.viewport.getHomeZoom.mockReturnValue(2)
+  v.viewport.getHomeBounds.mockReturnValue(homeBounds)
+  v.viewport.getZoom.mockReturnValue(2)
+  v.viewport.getCenter.mockReturnValue({ x: 0.5, y: 0.4 })
+  v.viewport.getRotation.mockReturnValue(0)
+  v.viewport.getFlip.mockReturnValue(false)
+  return homeBounds
+}
+
 describe('ImageViewer lifecycle telemetry', () => {
   it('emits view started/ready events and restores the initial viewport and overlays', () => {
     render(
@@ -341,6 +373,12 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
     expect(viewer().viewport.setRotation).toHaveBeenCalledWith(45, true)
     expect(viewer().addOverlay).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      viewer().fire('resize')
+      viewer().fire('viewport-change')
+    })
+    expect(viewer().viewport.fitBounds).not.toHaveBeenCalled()
   })
 
   it('emits failure telemetry when the image fails to open', () => {
@@ -593,6 +631,105 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(onViewportChange).toHaveBeenCalledWith({ zoom: 2, x: 0.5, y: 0.4, rotation: 90 })
   })
 
+  it('refits the Home view after resize and persists it without home telemetry', () => {
+    const onViewportChange = vi.fn()
+    render(<ImageViewer tileSources="/tiles.dzi" onViewportChange={onViewportChange} />)
+    const v = viewer()
+    const homeBounds = setViewportAtHome(v)
+    act(() => v.fire('open'))
+    onViewportChange.mockClear()
+
+    act(() => v.fire('resize'))
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+    act(() => v.fire('viewport-change'))
+    expect(v.viewport.fitBounds).toHaveBeenCalledWith(homeBounds, true)
+    expect(onViewportChange).toHaveBeenCalledWith({ zoom: 2, x: 0.5, y: 0.4, rotation: 0 })
+    expect(observabilityMocks.emitEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ui.toolbar_action', action: 'home' }),
+    )
+  })
+
+  it('does not refit a zoomed view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewport.getZoom.mockReturnValue(4)
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not refit a rotated view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    v.viewport.getRotation.mockReturnValue(90)
+    act(() => v.fire('open'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not refit a panned view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewport.getCenter.mockReturnValue({ x: 0.7, y: 0.4 })
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not refit a flipped view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewport.getFlip.mockReturnValue(true)
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('refits the Home view after consecutive resizes', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    const homeBounds = setViewportAtHome(v)
+    act(() => v.fire('open'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).toHaveBeenCalledTimes(2)
+    expect(v.viewport.fitBounds).toHaveBeenNthCalledWith(1, homeBounds, true)
+    expect(v.viewport.fitBounds).toHaveBeenNthCalledWith(2, homeBounds, true)
+  })
+
   it('renews tile sources once for a burst of failed tile loads and preserves the viewport', async () => {
     apiMocks.fetchImage.mockResolvedValue({
       id: 7,
@@ -653,6 +790,11 @@ describe('ImageViewer lifecycle telemetry', () => {
       true,
     )
     expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
   })
 
   it('preserves the live viewport across a same-image tile-source refresh (#1567)', () => {
