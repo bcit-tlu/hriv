@@ -24,6 +24,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchCollections: vi.fn(),
   fetchCollection: vi.fn(),
   fetchFrontendVersion: vi.fn(),
+  fetchImageSourceInfo: vi.fn(),
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
   deleteProgram: vi.fn(),
@@ -161,6 +162,11 @@ function resetFixtures() {
   apiMocks.fetchCollections.mockResolvedValue([])
   apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ type: 'sequence' }))
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
+  apiMocks.fetchImageSourceInfo.mockResolvedValue({
+    originalFilename: null,
+    fileType: null,
+    uploadedByName: null,
+  })
   apiMocks.createProgram.mockResolvedValue({})
   apiMocks.updateProgram.mockResolvedValue({})
   apiMocks.deleteProgram.mockResolvedValue(undefined)
@@ -1644,17 +1650,29 @@ describe('App image information accordion', () => {
     }
   })
 
-  it('renders collapsed and reveals image information when expanded', () => {
+  it('renders collapsed and reveals image information when expanded', async () => {
+    apiMocks.fetchImageSourceInfo.mockResolvedValueOnce({
+      originalFilename: 'specimen-scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Image Uploader',
+    })
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
     const summary = screen.getByRole('button', { name: 'Image information' })
     expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
 
     fireEvent.click(summary)
 
     const copyright = screen.getByText('Copyright:', { exact: true }).parentElement
     expect(copyright).toHaveTextContent('Copyright: Educational use only')
+    const originalFile = await screen.findByText('Original file:', { exact: true })
+    expect(originalFile.parentElement).toHaveTextContent('Original file: specimen-scan.tif')
+    const fileType = screen.getByText('File type:', { exact: true })
+    expect(fileType.parentElement).toHaveTextContent('File type: TIF')
+    const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
+    expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
   })
 })
 

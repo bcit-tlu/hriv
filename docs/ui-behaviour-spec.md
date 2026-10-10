@@ -122,7 +122,12 @@ images> / Empty` format used on category tiles.
   **Image information** accordion sits directly below the viewer and its heading
   contains only that title.
 - **When** expanded, **Then** metadata appears in evenly spaced rows and the
-  viewer usage hint is the final row; rows with no visible fields are omitted.
+  original filename, file type, and (for admins and instructors) uploader appear
+  in a row after the existing file details; the viewer usage hint is the final
+  row and rows with no visible fields are omitted.
+- **When** the accordion expands, **Then** source information is fetched lazily;
+  collapsing and re-expanding the same image version reuses the cached result,
+  while a version change fetches fresh information without exposing stale data.
 - **When** the user expands or collapses the accordion, **Then** that choice is
   persisted per user under
   `hrivpref:image-info-expanded:user:${userScope}` in localStorage.

@@ -38,7 +38,9 @@ Frontend hooks/components live under `frontend/src/` (e.g. `useImageActions.ts`,
 The regular viewer's metadata accordion is in
 `frontend/src/components/ImageInfoAccordion.tsx`; its per-user expanded-state
 hook is `frontend/src/useImageInfoExpandedPreference.ts`, integrated by
-`frontend/src/App.tsx`.
+`frontend/src/App.tsx`. Source metadata is fetched by
+`frontend/src/useImageSourceInfo.ts` from `/api/images/{id}/source-info`, with
+the backend query and role gate in `backend/app/image_source_info.py`.
 
 ## Notes
 

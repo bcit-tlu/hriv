@@ -21,6 +21,7 @@ interface StoryArgs {
   programNames: string[]
   groupNames: string[]
   measurement?: ImageInfoAccordionProps['measurement']
+  sourceInfo?: ImageInfoAccordionProps['sourceInfo']
   initialExpanded: boolean
 }
 
@@ -34,6 +35,7 @@ function ImageInfoAccordionExample(args: StoryArgs) {
         programNames={args.programNames}
         groupNames={args.groupNames}
         measurement={args.measurement}
+        sourceInfo={args.sourceInfo}
         expanded={expanded}
         onExpandedChange={setExpanded}
       />
@@ -82,6 +84,11 @@ export const Expanded: Story = {
     programNames: ['Architecture', 'European Art'],
     groupNames: ['Image Research'],
     measurement: { scale: 12, unit: 'mm' },
+    sourceInfo: {
+      originalFilename: 'duomo-archival-scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Mira Patel',
+    },
     initialExpanded: true,
   },
 }

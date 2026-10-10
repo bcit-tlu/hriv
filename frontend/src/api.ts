@@ -1,4 +1,5 @@
 import { getClientSyntheticMode } from './syntheticMode'
+import type { ImageSourceInfo } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -406,6 +407,12 @@ export interface ApiImage {
   updated_at: string
 }
 
+interface ApiImageSourceInfo {
+  original_filename: string | null
+  file_type: string | null
+  uploaded_by_name: string | null
+}
+
 export interface ApiUser {
   id: number
   name: string
@@ -594,6 +601,15 @@ export function tileOrderConflictCurrent(err: unknown): TileOrderResponse | null
 
 export function fetchImage(imageId: number): Promise<ApiImage> {
   return request(`/images/${imageId}`)
+}
+
+export async function fetchImageSourceInfo(imageId: number): Promise<ImageSourceInfo> {
+  const info = await request<ApiImageSourceInfo>(`/images/${imageId}/source-info`)
+  return {
+    originalFilename: info.original_filename,
+    fileType: info.file_type,
+    uploadedByName: info.uploaded_by_name,
+  }
 }
 
 export function fetchImages(categoryId?: number): Promise<ApiImage[]> {

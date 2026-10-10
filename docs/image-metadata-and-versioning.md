@@ -112,6 +112,19 @@ When a source image is replaced (`process_replace_image`):
 All pyramid-related keys are cleared first, then re-populated if the
 replacement file is also pyramidal. Version is bumped unconditionally.
 
+## Source image information
+
+`GET /api/images/{id}/source-info` returns the original filename and its
+uppercase file extension for the latest completed source image. Pending and
+failed sources are ignored. The uploader's name is included only for admin and
+instructor viewers; staff and students receive no uploader name.
+
+Migration `0036_image_file_size_backfill` fills null `Image.file_size` values
+from the latest completed source image when it has a size. It preserves existing
+image sizes and does not fall back to an older completed source when the latest
+one has no size. Any gaps left after the backfill are filled by rebuilding the
+image tiles.
+
 ## Related code
 
 - Backend model: `backend/app/models.py` → `Image.version`

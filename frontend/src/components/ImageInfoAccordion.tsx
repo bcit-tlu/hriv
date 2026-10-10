@@ -5,7 +5,7 @@ import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import type { ImageItem } from '../types'
+import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
 import type { MeasurementConfig } from './imageViewerUtils'
 import NoteDisplay from './NoteDisplay'
@@ -18,6 +18,7 @@ export interface ImageInfoAccordionProps {
   programNames: string[]
   groupNames: string[]
   measurement?: MeasurementConfig | null
+  sourceInfo?: ImageSourceInfo | null
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }
@@ -27,6 +28,7 @@ export default function ImageInfoAccordion({
   programNames,
   groupNames,
   measurement,
+  sourceInfo,
   expanded,
   onExpandedChange,
 }: ImageInfoAccordionProps) {
@@ -37,6 +39,10 @@ export default function ImageInfoAccordion({
     (image.width != null && image.height != null) ||
     image.fileSize != null ||
     measurement
+  const hasSourceInfo =
+    sourceInfo?.originalFilename != null ||
+    sourceInfo?.fileType != null ||
+    sourceInfo?.uploadedByName != null
 
   return (
     <Accordion
@@ -153,6 +159,32 @@ export default function ImageInfoAccordion({
                     : measurement.scale
                       ? `${measurement.scale} px`
                       : (measurement.unit ?? '')}
+                </Typography>
+              )}
+            </Box>
+          )}
+          {hasSourceInfo && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                columnGap: '2em',
+                rowGap: 1.5,
+              }}
+            >
+              {sourceInfo?.originalFilename != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Original file:</strong> {sourceInfo.originalFilename}
+                </Typography>
+              )}
+              {sourceInfo?.fileType != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>File type:</strong> {sourceInfo.fileType}
+                </Typography>
+              )}
+              {sourceInfo?.uploadedByName != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Uploaded by:</strong> {sourceInfo.uploadedByName}
                 </Typography>
               )}
             </Box>

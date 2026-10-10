@@ -42,9 +42,9 @@ The **Home** tab is the image library — the same view your students get
 Click an image tile to open the full-screen viewer. The image is a "deep
 zoom" — you can zoom in to see fine detail without losing quality.
 
-Copyright, programs, groups, notes, dates, dimensions, and other image details
-are under **Image information** just below the viewer. Click to expand it; it
-stays open or closed the way you left it.
+Copyright, programs, groups, notes, dates, dimensions, original file name and
+type, and other image details are under **Image information** just below the
+viewer. Click to expand it; it stays open or closed the way you left it.
 
 ### Viewer toolbar (bottom left)
 

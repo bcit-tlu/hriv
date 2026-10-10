@@ -50,6 +50,11 @@ describe('ImageInfoAccordion', () => {
           programNames: ['Fine Art', 'History'],
           groupNames: ['Curators'],
           measurement: { scale: 4, unit: 'mm' },
+          sourceInfo: {
+            originalFilename: 'duomo-scan.tif',
+            fileType: 'TIF',
+            uploadedByName: 'Mira Patel',
+          },
         })}
       />,
     )
@@ -64,6 +69,9 @@ describe('ImageInfoAccordion', () => {
     expectFieldToContain('Dimensions:', '2400 × 1600')
     expectFieldToContain('Size:', '1.5 KB')
     expectFieldToContain('Measurement:', '4 px/mm')
+    expectFieldToContain('Original file:', 'duomo-scan.tif')
+    expectFieldToContain('File type:', 'TIF')
+    expectFieldToContain('Uploaded by:', 'Mira Patel')
     expect(screen.getByText(/Scroll or tap to zoom, and drag to pan/)).toBeInTheDocument()
   })
 
@@ -98,10 +106,44 @@ describe('ImageInfoAccordion', () => {
       'Dimensions:',
       'Size:',
       'Measurement:',
+      'Original file:',
+      'File type:',
+      'Uploaded by:',
     ]) {
       expect(screen.queryByText(label, { exact: false })).not.toBeInTheDocument()
     }
     expect(screen.getByText(/Scroll or tap to zoom/)).toBeInTheDocument()
+  })
+
+  it('renders partial source information and omits empty source fields', () => {
+    const { rerender } = render(
+      <ImageInfoAccordion
+        {...makeProps({
+          sourceInfo: {
+            originalFilename: 'scan.tif',
+            fileType: null,
+            uploadedByName: null,
+          },
+        })}
+      />,
+    )
+
+    expectFieldToContain('Original file:', 'scan.tif')
+    expect(screen.queryByText('File type:', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('Uploaded by:', { exact: true })).not.toBeInTheDocument()
+
+    rerender(
+      <ImageInfoAccordion
+        {...makeProps({
+          sourceInfo: {
+            originalFilename: null,
+            fileType: null,
+            uploadedByName: null,
+          },
+        })}
+      />,
+    )
+    expect(screen.queryByText('Original file:', { exact: true })).not.toBeInTheDocument()
   })
 
   it('uses singular and plural program labels', () => {

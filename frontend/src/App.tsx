@@ -83,6 +83,7 @@ import {
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
 import { useImageInfoExpandedPreference } from './useImageInfoExpandedPreference'
+import { useImageSourceInfo } from './useImageSourceInfo'
 import { useMyCollectionsShelf } from './useMyCollectionsShelf'
 import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
 import { isAcceptedFile } from './fileUtils'
@@ -313,6 +314,11 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  const imageSourceInfo = useImageSourceInfo(
+    selectedImage?.id ?? null,
+    selectedImage?.version ?? 0,
+    imageInfoExpanded,
+  )
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
     selectedImageRef.current = selectedImage
@@ -2681,6 +2687,7 @@ export default function App() {
                   (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                 )}
                 measurement={selectedImageMeasurement}
+                sourceInfo={imageSourceInfo}
                 expanded={imageInfoExpanded}
                 onExpandedChange={setImageInfoExpanded}
               />

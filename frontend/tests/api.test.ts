@@ -49,6 +49,7 @@ import {
   fetchUncategorizedImages,
   updateImage,
   deleteImage,
+  fetchImageSourceInfo,
   bulkUpdateImages,
   bulkDeleteImages,
   getTileOrder,
@@ -779,6 +780,25 @@ describe('Image API', () => {
     const result = await fetchImage(1)
     expect(mockFetch.mock.calls[0][0]).toBe('/api/images/1')
     expect(result).toEqual(IMAGE_FIXTURE)
+  })
+
+  it('fetchImageSourceInfo maps the source-info response to camel case', async () => {
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({
+        original_filename: 'scan.tif',
+        file_type: 'TIF',
+        uploaded_by_name: 'Image Uploader',
+      }),
+    )
+
+    const result = await fetchImageSourceInfo(1)
+
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/images/1/source-info')
+    expect(result).toEqual({
+      originalFilename: 'scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Image Uploader',
+    })
   })
 
   it('fetchImages without category sends GET to /api/images/', async () => {
