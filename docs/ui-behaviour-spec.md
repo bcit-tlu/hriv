@@ -129,8 +129,9 @@ images> / Empty` format used on category tiles.
   collapsing and re-expanding the same image version reuses the cached result,
   while a version change fetches fresh information without exposing stale data.
 - **When** the user expands or collapses the accordion, **Then** that choice is
-  persisted per user under
-  `hrivpref:image-info-expanded:user:${userScope}` in localStorage.
+  persisted per authenticated user id (or `anonymous` before authentication)
+  under `hrivpref:image-info-expanded:user:${currentUser?.id ?? 'anonymous'}`
+  in localStorage.
 
 ### Viewer: annotations, overlays, measurement (`CanvasOverlay.test.tsx`, `useCanvasAnnotations.test.ts`, `useOverlayPersistence.test.ts`)
 

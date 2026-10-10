@@ -165,7 +165,6 @@ function getCollapsedCategoryBreadcrumb(
 }
 
 export default function App() {
-  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference()
   const {
     currentUser,
     loading: usersLoading,
@@ -175,6 +174,9 @@ export default function App() {
     canEditContent,
     canViewPeople,
   } = useAuth()
+  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference(
+    currentUser?.id ?? null,
+  )
   // Manage > Collections table (#1554): instructors, staff, and admins —
   // everyone except students.
   const canManageCollections = canEditContent || canViewPeople

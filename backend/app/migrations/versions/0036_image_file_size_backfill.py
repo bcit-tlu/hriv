@@ -33,6 +33,15 @@ def upgrade() -> None:
             """
         )
     )
+    op.execute(
+        sa.text(
+            """
+            UPDATE browse_state
+            SET revision = revision + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+            """
+        )
+    )
 
 
 def downgrade() -> None:

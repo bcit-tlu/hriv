@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import type { Dispatch, SetStateAction } from 'react'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
 import type { MeasurementConfig } from './imageViewerUtils'
@@ -20,7 +21,7 @@ export interface ImageInfoAccordionProps {
   measurement?: MeasurementConfig | null
   sourceInfo?: ImageSourceInfo | null
   expanded: boolean
-  onExpandedChange: (expanded: boolean) => void
+  onExpandedChange: Dispatch<SetStateAction<boolean>>
 }
 
 export default function ImageInfoAccordion({

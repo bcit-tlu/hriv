@@ -108,11 +108,32 @@ describe('useImageSourceInfo', () => {
     expect(result.current).toEqual(newerInfo)
   })
 
-  it('returns null when fetching source information fails', async () => {
-    fetchSourceInfo.mockRejectedValue(new Error('request failed'))
-    const { result } = renderHook(() => useImageSourceInfo(1, 1, true))
+  it('retries a failed request after collapse and re-expand', async () => {
+    let rejectRequest: (reason: Error) => void = () => undefined
+    fetchSourceInfo
+      .mockReturnValueOnce(
+        new Promise((_, reject) => {
+          rejectRequest = reject
+        }),
+      )
+      .mockResolvedValueOnce(sourceInfo)
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useImageSourceInfo(1, 1, enabled),
+      { initialProps: { enabled: true } },
+    )
 
     await waitFor(() => expect(fetchSourceInfo).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(result.current).toBeNull())
+    expect(result.current).toBeNull()
+
+    await act(async () => {
+      rejectRequest(new Error('request failed'))
+      await Promise.resolve()
+    })
+    expect(result.current).toBeNull()
+
+    rerender({ enabled: false })
+    rerender({ enabled: true })
+    await waitFor(() => expect(fetchSourceInfo).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current).toEqual(sourceInfo))
   })
 })

@@ -122,8 +122,8 @@ instructor viewers; staff and students receive no uploader name.
 Migration `0036_image_file_size_backfill` fills null `Image.file_size` values
 from the latest completed source image when it has a size. It preserves existing
 image sizes and does not fall back to an older completed source when the latest
-one has no size. Any gaps left after the backfill are filled by rebuilding the
-image tiles.
+one has no size. An admin tile rebuild fills any remaining gaps from the source
+image.
 
 ## Related code
 
