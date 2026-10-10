@@ -376,9 +376,10 @@ returned by the API (UX only — the backend re-checks).
   work.
 - **Given** `COLLECTIONS_ENABLED` and `COLLECTIONS_HOME_SHELF` are on and the
   caller has visible owned collections, **Then** Browse root and category
-  scopes show a fixed bottom-left **My collections** button outside
-  `SortableTileGrid`; no button renders while the owned feed is loading or
-  empty. Opening it shows a bottom drawer with up to eight most recently
+  scopes, the image viewer, and the Collections pages (type lists and an open
+  collection detail) show a fixed bottom-left **My collections** button
+  outside `SortableTileGrid`; no button renders while the owned feed is
+  loading or empty (#1608). Opening it shows a bottom drawer with up to eight most recently
   updated collections, **New collection**, and a close control. The sheet
   is docked in flow directly above the sticky
   footer, so it rises out from _behind_ the footer's top border (the footer
@@ -407,8 +408,9 @@ returned by the API (UX only — the backend re-checks).
   last Browse row stays reachable. The same sheet stays mounted across both
   modes — pinning does not reload it — and unpinning leaves the drawer open
   (the pin is not
-  a close control). The drawer never renders on image-viewer or collection
-  pages and has no drag, reorder, or drop targets.
+  a close control). The drawer never renders on the Manage,
+  Manage → Collections, People, Admin, or Guide pages and has no drag,
+  reorder, or drop targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
   edit dialog's category picker refiles the collection — both regardless of
@@ -528,6 +530,13 @@ always read-only (`canEditContent={false}`).
   member id list with the collection `version`; **Cancel** closes without
   saving (a dirty draft asks to discard first). Non-editors never see the
   button.
+- **Given** the collection is synchronized, **When** the Manage dialog
+  opens, **Then** it is narrower (`maxWidth="sm"`) and renders a position
+  map mirroring the viewer — two members side by side, three or four in a
+  2×2 grid with any unfilled cell shown as a dashed **Empty** slot — each
+  slot numbered by pane position (#1614). **When** a member is dropped on
+  another, **Then** the two swap positions and the others stay put; Done
+  commits the slot order as the member id list.
 
 ### Synchronized collection viewer (`SynchronizedCollectionViewer.test.tsx`, `useCollectionsData.test.ts`, `ImageViewer.test.tsx`)
 
@@ -789,7 +798,7 @@ committed on Save) in the edit modals.
   disabled; "Add Category" and "Add Images" buttons are desaturated
   (`grayscale(100%)`).
 - **Given** an editor (`canEditContent`) on a Browse category page with the
-  collections feature enabled, **Then** an "Add Collection" button sits
+  collections feature enabled, **Then** a "New collection" button sits
   between "Add Category" and "Add Images"; clicking it opens
   `CollectionEditDialog` in create mode with the current Browse category
   pre-filed (`defaultCategoryId`).

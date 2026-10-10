@@ -119,8 +119,10 @@ category's tile order with images and sub-categories. The Browse root
 tile-order scope contains categories and images only.
 
 Separately, when `COLLECTIONS_HOME_SHELF` and `COLLECTIONS_ENABLED` are on,
-Browse root and category scopes show a collapsed **My collections** button at
-the bottom-left for any role with a visible owned collection. Opening it shows
+Browse root and category scopes, the image viewer, and the Collections pages
+(both type lists and an open collection detail) show a collapsed
+**My collections** button at the bottom-left for any role with a visible owned
+collection (#1608). Opening it shows
 a bottom drawer with up to eight of the caller's most recently updated visible
 owned collections, **New collection**, a pin control beside the title, and a
 close button. The **My collections** button
@@ -147,9 +149,14 @@ measured header and footer heights, so a wrapped header or multi-line admin
 footer shrinks the row on short viewports rather than hiding the sheet's
 controls above the viewport. Compact cards are
 160–180 px wide and scroll horizontally below about
-1424 px. The drawer is hidden on image-viewer and collection pages, while the
-feed is loading, and when no owned collection is visible. It is not a Browse
-tile: it has no drag, reorder, or drop targets.
+1424 px. The drawer is hidden on the Manage, Manage → Collections, People,
+Admin, and Guide pages, while the feed is loading, and when no owned collection
+is visible. It is not a Browse tile: it has no drag, reorder, or drop targets.
+
+Opening a card from the drawer keeps the caller's origin (#1529, #1608):
+opened from Browse or the image viewer, the detail sits on top of the current
+Browse scope (`?cat=`) and Close returns there; opened from a Collections
+page, Close returns to the Collections list.
 
 `GET /api/collections` accepts an optional `limit` from 1 to 100. It is
 applied after visibility filtering so inaccessible collections do not consume
@@ -684,7 +691,7 @@ stays enabled so it can be removed. At least one program or group is required
 for `restricted`; `program_ids` / `group_ids` are sent as `[]` for any other
 visibility. Create from a Collections page posts `image_ids: []`; create from
 the image view (#1415, below) posts the selected image id(s); create from
-the Browse toolbar's **Add Collection** button (between **Add Category**
+the Browse toolbar's **New collection** button (between **Add Category**
 and **Add Images**, `canEditContent` + the collections flag — the same
 gate as its neighbours) seeds the current Browse category via
 `defaultCategoryId` and posts it as `category_id`. Every role —
@@ -1067,6 +1074,8 @@ editable targets (inputs, textareas, selects, `[role="textbox"]`,
 contenteditable) are skipped, roving-focus widgets keep their keys while
 focused (tablists like the AppShell nav, trees, radio groups, sliders),
 and the listener yields whenever a dialog, menu, or listbox is open. The
+collapsed My collections drawer carries no `dialog` role, so it does not
+count as an open overlay and never blocks ←/→ (#1608). The
 container itself is focusable
 (`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
 edge-nav cue reveals immediately — switching images never steals focus
@@ -1090,6 +1099,21 @@ the current image's tiles fail mid-session the viewer reports the error via
 `onError`, marks the id failed (dimmed, disabled thumbnail), and skips to
 the nearest still-available image (preferring the next one). When every
 image has failed, an error alert replaces the viewer.
+
+**Synchronized position map (#1614).** For a synchronized collection the
+Manage dialog swaps the filmstrip grid for a **position map** that mirrors
+`SynchronizedCollectionViewer`'s pane layout: two members sit side by side,
+three or four fill a 2×2 grid (three leave a dashed **Empty** fourth cell).
+Each 200×130 slot carries a numbered position badge (1–4, the viewer's
+pane order) and the member's caption. Slots are local `useDraggable` +
+`useDroppable` pairs (`cmi-` sources, `cms-` targets) in the dialog's own
+`DragDropProvider`; dropping a member on another **swaps** the two
+positions, so the rest of the map never shifts. Removal, Multi-select and
+Choose images work as below (a removal closes the gap; an addition takes
+the next empty position), and Done commits the slot order as the same
+whole-list `PUT …/images`. The dialog uses MUI `maxWidth="sm"` for
+synchronized collections so the two-column map isn't stranded in
+whitespace; sequence collections keep the wide (`lg`) filmstrip grid.
 
 **Manage dialog.** The header's **Manage Images** button (replaces the #1559
 Reorder toggle, #1566) opens `CollectionManageDialog` — a mini-Browse grid

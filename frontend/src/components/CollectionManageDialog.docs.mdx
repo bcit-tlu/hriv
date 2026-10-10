@@ -45,6 +45,14 @@ are added to or removed from a collection outside the global search/Browse add g
   reorder (Space/Enter to pick up, arrows to move) always reaches the `KeyboardSensor` (#1567).
   Pointer activation needs 8px of movement (same
   sensor policy as `SortableTileGrid`: 8px pointer distance, 250ms touch delay).
+- **Synchronized position map (#1614).** When `collection.type === 'synchronized'` the grid is
+  replaced by a position map that mirrors `SynchronizedCollectionViewer`: a pair side by side,
+  three or four members as a 2×2 grid (an odd count leaves a dashed **Empty** cell). Each 200×130
+  slot letterboxes the thumb like a viewer pane and carries a numbered badge (its pane position).
+  Slots pair `useDraggable` (`cmi-` id, face as `handleRef` activator) with `useDroppable`
+  (`cms-` id); drag-end **swaps** source and target in the draft instead of running `move()`, so
+  the other positions never shift. The dialog drops to `maxWidth="sm"` for synchronized
+  collections — the map is at most two slots wide.
 - **Selection mode.** The header's **Multi-select** toggle (`aria-pressed`) switches the grid
   into a multi-pick removal mode (#1567): sortables are disabled so a click can never arm a drag,
   each tile face becomes a labelled `role="checkbox"` (click, Space or Enter toggles) with a

@@ -11,7 +11,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
 
 import type { Collection, ImageItem } from '../../src/types'
-import { makeCollection, makeImage } from '../helpers/fixtures'
+import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
+import MyCollectionsDrawer from '../../src/components/MyCollectionsDrawer'
 import SequenceCollectionViewer, {
   type SequenceCollectionViewerProps,
 } from '../../src/components/SequenceCollectionViewer'
@@ -214,6 +215,48 @@ describe('SequenceCollectionViewer', () => {
     } finally {
       dialog.remove()
     }
+  })
+
+  it('steps the sequence beside a collapsed My collections drawer, and yields while it is open (#1608)', () => {
+    // The drawer stays mounted while closed — the sequence viewer's
+    // document-level dialog check must not see its hidden sheet.
+    const { props } = renderViewer({ itemId: 101 })
+    const drawer = render(
+      <MyCollectionsDrawer
+        collections={[makeCollectionSummary()]}
+        categories={[]}
+        programs={[]}
+        groups={[]}
+        open={false}
+        pinned={false}
+        onOpenChange={vi.fn()}
+        onPinnedChange={vi.fn()}
+        onOpen={vi.fn()}
+        onNewCollection={vi.fn()}
+      />,
+    )
+
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(102)
+
+    // Open the temporary sheet — a live dialog owns the page's arrow keys.
+    props.onSelectItem.mockClear()
+    drawer.rerender(
+      <MyCollectionsDrawer
+        collections={[makeCollectionSummary()]}
+        categories={[]}
+        programs={[]}
+        groups={[]}
+        open
+        pinned={false}
+        onOpenChange={vi.fn()}
+        onPinnedChange={vi.fn()}
+        onOpen={vi.fn()}
+        onNewCollection={vi.fn()}
+      />,
+    )
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).not.toHaveBeenCalled()
   })
 
   it('yields arrow keys to a focused tab strip (#1567)', () => {

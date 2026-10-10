@@ -225,11 +225,15 @@ export default function MyCollectionsDrawer({
 
         {/* One sheet for BOTH modes — it stays mounted whether the drawer is
           open or closed, so toggling the pin only swaps the backdrop and the
-          trigger's appearance; tiles and thumbnails never remount. */}
+          trigger's appearance; tiles and thumbnails never remount. The
+          `dialog` role (and `aria-modal`) apply only while the temporary
+          sheet is actually open — a closed sheet must not match other
+          components' "is a dialog open" document queries, e.g. the sequence
+          viewer's arrow-key guard (#1608). */}
         <Box
           component="section"
-          role={pinned ? 'region' : 'dialog'}
-          aria-modal={pinned ? undefined : true}
+          role={pinned ? 'region' : drawerOpen ? 'dialog' : undefined}
+          aria-modal={!pinned && drawerOpen ? true : undefined}
           aria-labelledby={DRAWER_TITLE_ID}
           inert={!drawerOpen}
           sx={{

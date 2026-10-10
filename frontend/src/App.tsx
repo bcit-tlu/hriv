@@ -21,9 +21,9 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
-import CollectionsIcon from '@mui/icons-material/Collections'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
@@ -466,10 +466,28 @@ export default function App() {
   const myCollectionsShelfEnabled =
     features?.collectionsHomeShelf === true &&
     currentUser != null &&
-    page === 'browse' &&
-    selectedImage == null
+    (page === 'browse' || page === 'collections')
   const { collections: myCollectionsShelf, reload: reloadMyCollectionsShelf } =
     useMyCollectionsShelf(myCollectionsShelfEnabled)
+  // Drawer-originated collection opens keep the caller's origin: from Browse
+  // or the image viewer Close returns to the Browse scope; from a
+  // Collections page it returns to the Collections list (#1529, #1608).
+  const myCollectionsOriginFromBrowse = page === 'browse'
+  // The shelf now lives on both Browse and Collections pages, so moving
+  // between them (not just mount, and not arriving from a page where the
+  // hook's own `enabled` flip already refetches) re-primes the owned feed
+  // (#1608).
+  const previousPageRef = useRef(page)
+  useEffect(() => {
+    const previousPage = previousPageRef.current
+    previousPageRef.current = page
+    if (
+      previousPage !== page &&
+      myCollectionsShelfEnabled &&
+      (previousPage === 'browse' || previousPage === 'collections')
+    )
+      reloadMyCollectionsShelf()
+  }, [page, myCollectionsShelfEnabled, reloadMyCollectionsShelf])
   const {
     open: myCollectionsDrawerOpen,
     setOpen: setMyCollectionsDrawerOpen,
@@ -1834,7 +1852,7 @@ export default function App() {
 
   // Browse collection editor (#1525 UX): the tile title's edit pencil opens
   // the shared CollectionEditDialog — the same form the Collections pages
-  // use — and "+ Add Collection" opens it in create mode seeded with the
+  // use — and "+ New collection" opens it in create mode seeded with the
   // current Browse category. `editing` carries the full record (summaries
   // omit program/group scope), matching CollectionsPage.openEdit.
   const [collEditorOpen, setCollEditorOpen] = useState(false)
@@ -2141,9 +2159,10 @@ export default function App() {
     async (values: CollectionFormValues) => {
       const created = await createCollectionWithImages(values, addToCollectionImageIds)
       if (created.categoryId != null) refreshCategories()
+      reloadMyCollectionsShelf()
       reportAddedToCollection(created, addToCollectionImageIds.length)
     },
-    [addToCollectionImageIds, refreshCategories, reportAddedToCollection],
+    [addToCollectionImageIds, refreshCategories, reloadMyCollectionsShelf, reportAddedToCollection],
   )
 
   // "Open image" from the collection detail placeholder → the regular
@@ -2232,7 +2251,7 @@ export default function App() {
             onPinnedChange={setMyCollectionsDrawerPinned}
             onOpen={(collection) => {
               if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
-              handleOpenCollection(collection.id, { fromBrowse: true })
+              handleOpenCollection(collection.id, { fromBrowse: myCollectionsOriginFromBrowse })
             }}
             onEdit={(collection) => void openBrowseCollectionEdit(collection)}
             onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}
@@ -2307,12 +2326,28 @@ export default function App() {
               onCreate={async (values) => {
                 const created = await collectionsData.create(values)
                 if (created.categoryId != null) refreshCategories()
+                reloadMyCollectionsShelf()
                 return created
               }}
-              onUpdate={collectionsData.update}
-              onDelete={collectionsData.remove}
-              onSaveOwners={collectionsData.saveOwners}
-              onTransfer={collectionsData.transfer}
+              onUpdate={async (id, values, version, baseline) => {
+                const updated = await collectionsData.update(id, values, version, baseline)
+                reloadMyCollectionsShelf()
+                return updated
+              }}
+              onDelete={async (id) => {
+                await collectionsData.remove(id)
+                reloadMyCollectionsShelf()
+              }}
+              onSaveOwners={async (id, userIds) => {
+                const updated = await collectionsData.saveOwners(id, userIds)
+                reloadMyCollectionsShelf()
+                return updated
+              }}
+              onTransfer={async (id, programId) => {
+                const updated = await collectionsData.transfer(id, programId)
+                reloadMyCollectionsShelf()
+                return updated
+              }}
               onPickCoverImage={(col) => void openBrowseCoverPicker(col)}
               onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
               onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
@@ -2327,6 +2362,7 @@ export default function App() {
                   // Filed collection tiles live in the category tree, so
                   // refresh it to update the hidden marker.
                   refreshCategories()
+                  reloadMyCollectionsShelf()
                   return updated
                 })
               }
@@ -2357,6 +2393,7 @@ export default function App() {
               onCategoriesChanged={() => {
                 // A bulk refile/delete changes tile membership in the tree.
                 refreshCategories()
+                reloadMyCollectionsShelf()
               }}
               onError={setErrorSnack}
             />
@@ -3031,11 +3068,11 @@ export default function App() {
                         {collectionsEnabled && (
                           <Button
                             variant="outlined"
-                            startIcon={<CollectionsIcon />}
+                            startIcon={<AddIcon />}
                             onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
                           >
-                            Add Collection
+                            New collection
                           </Button>
                         )}
                         <Button
@@ -3172,7 +3209,7 @@ export default function App() {
       />
 
       {/* Collection edit/create dialog opened from Browse — the tile
-          title's edit pencil and the toolbar's "+ Add Collection". Shares
+          title's edit pencil and the toolbar's "+ New collection". Shares
           the Collections pages' form; filing and hide ride the same
           picker/link conventions (#1566). */}
       <CollectionEditDialog
@@ -3531,9 +3568,10 @@ export default function App() {
           onSave={async (values) => {
             const created = await collectionsData.create(values)
             if (created.categoryId != null) refreshCategories()
+            reloadMyCollectionsShelf()
             setMyCollectionsCreateOpen(false)
             if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
-            handleOpenCollection(created.id, { fromBrowse: true })
+            handleOpenCollection(created.id, { fromBrowse: myCollectionsOriginFromBrowse })
           }}
         />
       )}
