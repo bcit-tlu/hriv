@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
 
 import app.auth as auth
+from app.models import Category
 from app.routers import images as images_router
 from app.routers.images import (
     list_images,
@@ -137,7 +138,7 @@ async def _request_source_info(
     async def get(model, entity_id):
         if model is images_router.Image:
             return image
-        if model is images_router.Category:
+        if model is Category:
             return category
         if model is images_router.User:
             return uploader

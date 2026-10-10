@@ -31,7 +31,7 @@ from ..upload_staging import (
     staging_path_for,
     write_upload_to_staging,
 )
-from ..models import Category, Collection, CollectionImage, Image, SourceImage, User
+from ..models import Collection, CollectionImage, Image, SourceImage, User
 from ..schemas import (
     MAX_NOTE_LENGTH,
     CollectionSummaryOut,
