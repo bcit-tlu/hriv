@@ -68,6 +68,14 @@ describe('scrollIntoViewAboveFooter', () => {
     expect(scrollByMock).not.toHaveBeenCalled()
   })
 
+  it('includes the expected expansion height when calculating the scroll delta', () => {
+    const element = addElement(makeRect(300, 350, 0, 100))
+
+    scrollIntoViewAboveFooter(element, { expectedHeightIncrease: 200 })
+
+    expect(scrollByMock).toHaveBeenCalledWith({ top: 66, behavior: 'smooth' })
+  })
+
   it('scrolls an element above the footer dock', () => {
     const element = addElement(makeRect(400, 490, 0, 100))
     addElement(makeRect(450, 500, 0, 100), { 'data-testid': 'footer-dock' })
@@ -99,6 +107,15 @@ describe('scrollIntoViewAboveFooter', () => {
     const element = addElement(makeRect(50, 600, 0, 100))
 
     scrollIntoViewAboveFooter(element)
+
+    expect(scrollByMock).toHaveBeenCalledWith({ top: 34, behavior: 'smooth' })
+    expect(50 - 34).toBe(16)
+  })
+
+  it('caps the predicted expansion scroll so the top stays 16 pixels down', () => {
+    const element = addElement(makeRect(50, 100, 0, 100))
+
+    scrollIntoViewAboveFooter(element, { expectedHeightIncrease: 600 })
 
     expect(scrollByMock).toHaveBeenCalledWith({ top: 34, behavior: 'smooth' })
     expect(50 - 34).toBe(16)

@@ -37,6 +37,7 @@ export default function ImageInfoAccordion({
   onExpandedChange,
 }: ImageInfoAccordionProps) {
   const accordionRef = useRef<HTMLDivElement>(null)
+  const detailsRef = useRef<HTMLDivElement>(null)
   const hasClassification =
     image.copyright || programNames.length > 0 || groupNames.length > 0 || collections != null
   const hasFileDetails =
@@ -54,7 +55,14 @@ export default function ImageInfoAccordion({
     <Accordion
       ref={accordionRef}
       expanded={expanded}
-      onChange={(_, nextExpanded) => onExpandedChange(nextExpanded)}
+      onChange={(_, nextExpanded) => {
+        if (nextExpanded && accordionRef.current) {
+          scrollIntoViewAboveFooter(accordionRef.current, {
+            expectedHeightIncrease: detailsRef.current?.offsetHeight ?? 0,
+          })
+        }
+        onExpandedChange(nextExpanded)
+      }}
       disableGutters
       elevation={0}
       variant="outlined"
@@ -70,9 +78,6 @@ export default function ImageInfoAccordion({
       slotProps={{
         transition: {
           unmountOnExit: false,
-          onEntered: () => {
-            if (accordionRef.current) scrollIntoViewAboveFooter(accordionRef.current)
-          },
         },
       }}
     >
@@ -85,7 +90,7 @@ export default function ImageInfoAccordion({
           Image information
         </Typography>
       </AccordionSummary>
-      <AccordionDetails>
+      <AccordionDetails ref={detailsRef}>
         <Stack spacing={1.5}>
           {hasClassification && (
             <Box

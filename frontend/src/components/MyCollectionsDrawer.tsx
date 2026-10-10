@@ -8,8 +8,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Fade from '@mui/material/Fade'
 import IconButton from '@mui/material/IconButton'
-import { alpha, useTheme } from '@mui/material/styles'
-import useMediaQuery from '@mui/material/useMediaQuery'
+import { alpha } from '@mui/material/styles'
 import Tooltip from '@mui/material/Tooltip'
 import TrapFocus from '@mui/material/Unstable_TrapFocus'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
@@ -32,6 +31,7 @@ const HEADER_PAD_Y_PX = 12
  *  the header padding. */
 const DEFAULT_TITLE_SLOT = { top: HEADER_PAD_Y_PX, height: 36.5 }
 export const MY_COLLECTIONS_TRIGGER_CLEARANCE_PX = TRIGGER_INSET_PX * 2 + DEFAULT_TITLE_SLOT.height
+export const MY_COLLECTIONS_ROW_CONTENT_GAP_PX = TRIGGER_INSET_PX - HEADER_PAD_Y_PX
 /** Fallback chrome allowances, replaced by live measurement once mounted:
  *  the sheet header (padding + ~36.5px button row — can wrap to several
  *  lines on narrow viewports), the card row's bottom padding, and the
@@ -48,6 +48,7 @@ export interface MyCollectionsDrawerProps {
   groups?: Group[]
   open: boolean
   pinned: boolean
+  reserveTriggerRow?: boolean
   onOpenChange: (open: boolean) => void
   onPinnedChange: (pinned: boolean) => void
   onOpen: (collection: CollectionSummary) => void
@@ -61,10 +62,10 @@ export interface MyCollectionsDrawerProps {
  * The My collections sheet. Rendered inside the AppShell footer dock, directly
  * above `FooterBar`, so it is ordinary in-flow content: the dock (sheet +
  * footer) is what sticks to the viewport bottom, and rubber-band overscroll
- * moves both together. Opening animates the sheet's height from 0 to its
- * measured natural height — the sheet's top edge rises out of the footer's top
- * border and the cards are revealed from behind the footer, which paints above
- * the sheet.
+ * moves both together. Opening animates the sheet's height from 0, or its
+ * reserved closed-row height on viewer pages, to its measured natural height —
+ * the sheet's top edge rises out of the footer's top border and the cards are
+ * revealed from behind the footer, which paints above the sheet.
  */
 export default function MyCollectionsDrawer({
   collections,
@@ -73,6 +74,7 @@ export default function MyCollectionsDrawer({
   groups,
   open,
   pinned,
+  reserveTriggerRow = false,
   onOpenChange,
   onPinnedChange,
   onOpen,
@@ -89,8 +91,6 @@ export default function MyCollectionsDrawer({
   const [titleSlot, setTitleSlot] = useState(DEFAULT_TITLE_SLOT)
   const [chromePx, setChromePx] = useState(SHEET_CHROME_PX)
   const drawerOpen = open && collections.length > 0
-  const theme = useTheme()
-  const iconOnly = useMediaQuery(theme.breakpoints.only('lg')) && !drawerOpen && !pinned
 
   // The sheet's natural height drives the open/close height animation (the
   // content keeps its layout while hidden, so it is measurable when closed),
@@ -180,7 +180,6 @@ export default function MyCollectionsDrawer({
       startIcon={<CollectionsIcon />}
       onClick={pinned ? undefined : () => onOpenChange(!drawerOpen)}
       aria-expanded={drawerOpen}
-      aria-label={iconOnly ? 'My collections' : undefined}
       aria-disabled={pinned || undefined}
       tabIndex={pinned ? -1 : undefined}
       sx={{
@@ -191,19 +190,9 @@ export default function MyCollectionsDrawer({
         boxShadow: pinned ? 'none' : 6,
         pointerEvents: pinned ? 'none' : undefined,
         bgcolor: pinned ? 'background.paper' : undefined,
-        ...(iconOnly && {
-          minWidth: 0,
-          p: 1,
-          '& .MuiButton-startIcon': { m: 0 },
-        }),
       }}
     >
-      <span
-        data-testid="my-collections-trigger-label"
-        style={iconOnly ? { display: 'none' } : undefined}
-      >
-        My collections
-      </span>
+      My collections
     </Button>
   )
 
@@ -225,6 +214,7 @@ export default function MyCollectionsDrawer({
       }
     >
       <Box
+        data-testid="my-collections-frame"
         sx={{
           position: 'relative',
           // Animating the height (not a transform) keeps the sheet in flow:
@@ -233,7 +223,12 @@ export default function MyCollectionsDrawer({
           // stays a single sticky block. (A `0fr`/`1fr` grid track is not
           // used because Chrome sizes the container larger than the track
           // mid-interpolation, which opened a gap above the footer.)
-          height: drawerOpen ? (contentHeight ?? 'auto') : 0,
+          height: drawerOpen
+            ? (contentHeight ?? 'auto')
+            : reserveTriggerRow
+              ? titleSlot.top + titleSlot.height + TRIGGER_INSET_PX
+              : 0,
+          bgcolor: !drawerOpen && reserveTriggerRow ? 'background.default' : undefined,
           transition: (theme) =>
             theme.transitions.create('height', {
               duration: theme.transitions.duration.standard,
@@ -415,7 +410,7 @@ export default function MyCollectionsDrawer({
           title slot the `max()` flips and the button rides up with the
           header, detaching again at the same point on the way down. While
           pinned it reads as an outlined, non-interactive title. */}
-        {iconOnly ? <Tooltip title="My collections">{trigger}</Tooltip> : trigger}
+        {trigger}
       </Box>
     </TrapFocus>
   )

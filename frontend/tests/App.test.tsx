@@ -43,28 +43,6 @@ const expectEffectiveOpacity = (element: Element | null, opacity: string) => {
   expect(window.getComputedStyle(element as Element).opacity || '1').toBe(opacity)
 }
 
-function stubViewportMatchMedia(width: number): () => void {
-  const originalMatchMedia = window.matchMedia
-  window.matchMedia = vi.fn((query: string) => ({
-    matches:
-      width >= 1200 &&
-      width < 1536 &&
-      query.includes('min-width:1200px') &&
-      query.includes('max-width:1535.95px'),
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })) as typeof window.matchMedia
-
-  return () => {
-    window.matchMedia = originalMatchMedia
-  }
-}
-
 const mockImage = {
   id: 101,
   name: 'Specimen Image',
@@ -1011,29 +989,6 @@ describe('App breadcrumbs', () => {
     canvasAnnotationsMock.saveCanvasAnnotations.mockResolvedValue(true)
     canvasAnnotationsMock.discardCanvasAnnotations.mockReset()
   })
-
-  it.each([
-    { width: 1024, expectedPadding: '68.5px' },
-    { width: 1366, expectedPadding: '24px' },
-  ])(
-    'reserves collection-trigger clearance at $width pixels when the shelf is visible',
-    async ({ width, expectedPadding }) => {
-      const restoreMatchMedia = stubViewportMatchMedia(width)
-      try {
-        apiMocks.fetchFeatures.mockResolvedValue({
-          collections: true,
-          collections_home_shelf: true,
-        })
-        apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
-        render(<App />)
-
-        await screen.findByRole('button', { name: 'My collections' })
-        expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe(expectedPadding)
-      } finally {
-        restoreMatchMedia()
-      }
-    },
-  )
 
   it('confirms before logging out with a dirty canvas draft', () => {
     canvasAnnotationsMock.canvasDraftDirty = true
@@ -2142,6 +2097,9 @@ describe('App collections deep links (#1414)', () => {
 
     render(<App />)
 
+    await screen.findByRole('button', { name: 'My collections' })
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('0px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('68.5px')
     fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
     // No heading — the always-mounted trigger button doubles as the
     // sheet's accessible name.
@@ -2206,6 +2164,8 @@ describe('App collections deep links (#1414)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open image' }))
     expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
   })
 
   it('shows the drawer on the Collections list page', async () => {
@@ -2234,6 +2194,8 @@ describe('App collections deep links (#1414)', () => {
 
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
     expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
   })
 
   it('hides the drawer on the Manage and Admin pages', async () => {

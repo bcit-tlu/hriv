@@ -2,7 +2,10 @@ import { DRAWER_TITLE_ID } from './components/MyCollectionsDrawer'
 
 const SCROLL_GAP_PX = 16
 
-export function scrollIntoViewAboveFooter(el: HTMLElement): void {
+export function scrollIntoViewAboveFooter(
+  el: HTMLElement,
+  { expectedHeightIncrease = 0 }: { expectedHeightIncrease?: number } = {},
+): void {
   const rect = el.getBoundingClientRect()
   let bottomLimit = window.innerHeight
   const footerDock = document.querySelector<HTMLElement>('[data-testid="footer-dock"]')
@@ -22,7 +25,7 @@ export function scrollIntoViewAboveFooter(el: HTMLElement): void {
     }
   }
 
-  let delta = rect.bottom - (bottomLimit - SCROLL_GAP_PX)
+  let delta = rect.bottom + expectedHeightIncrease - (bottomLimit - SCROLL_GAP_PX)
   if (delta <= 0) return
 
   delta = Math.min(delta, rect.top - SCROLL_GAP_PX)

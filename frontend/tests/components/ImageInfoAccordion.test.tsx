@@ -1,13 +1,52 @@
-import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import ImageInfoAccordion, {
   type ImageInfoAccordionProps,
 } from '../../src/components/ImageInfoAccordion'
 
-const scrollIntoViewAboveFooterMock = vi.hoisted(() => vi.fn())
-vi.mock('../../src/scrollIntoViewAboveFooter', () => ({
-  scrollIntoViewAboveFooter: scrollIntoViewAboveFooterMock,
-}))
+const originalInnerHeight = window.innerHeight
+const originalMatchMedia = window.matchMedia
+const originalScrollBy = window.scrollBy
+const scrollByMock = vi.fn()
+
+function makeRect(top: number, bottom: number, left: number, right: number): DOMRect {
+  return {
+    x: left,
+    y: top,
+    top,
+    right,
+    bottom,
+    left,
+    width: right - left,
+    height: bottom - top,
+    toJSON: () => ({}),
+  }
+}
+
+beforeEach(() => {
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 250 })
+  window.scrollBy = scrollByMock
+  scrollByMock.mockReset()
+  window.matchMedia = vi.fn(() => ({
+    matches: false,
+    media: '(prefers-reduced-motion: reduce)',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as typeof window.matchMedia
+})
+
+afterEach(() => {
+  window.scrollBy = originalScrollBy
+  window.matchMedia = originalMatchMedia
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    value: originalInnerHeight,
+  })
+})
 
 function expectFieldToContain(label: string, value: string) {
   const field = screen.getByText(label, { exact: true }).parentElement
@@ -38,30 +77,42 @@ describe('ImageInfoAccordion', () => {
     expect(props.onExpandedChange).toHaveBeenCalledWith(true)
   })
 
-  it('scrolls into view after an expansion transition', async () => {
-    scrollIntoViewAboveFooterMock.mockClear()
-    const props = makeProps({ expanded: false })
-    const { rerender } = render(<ImageInfoAccordion {...props} />)
+  it('scrolls for the expanded details height before reporting expansion', () => {
+    const callOrder: string[] = []
+    const onExpandedChange = vi.fn(() => callOrder.push('expand'))
+    const props = makeProps({ expanded: false, onExpandedChange })
+    const { container } = render(<ImageInfoAccordion {...props} />)
+    const accordion = container.querySelector('.MuiAccordion-root') as HTMLElement
+    const details = container.querySelector('.MuiAccordionDetails-root') as HTMLElement
+    Object.defineProperty(details, 'offsetHeight', { configurable: true, value: 100 })
+    vi.spyOn(accordion, 'getBoundingClientRect').mockReturnValue(makeRect(100, 200, 0, 300))
+    scrollByMock.mockImplementation(() => callOrder.push('scroll'))
 
     fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
-    expect(props.onExpandedChange).toHaveBeenCalledWith(true)
-    rerender(<ImageInfoAccordion {...props} expanded />)
 
-    await waitFor(() => expect(scrollIntoViewAboveFooterMock).toHaveBeenCalledOnce())
-    expect(scrollIntoViewAboveFooterMock).toHaveBeenCalledWith(
-      document.querySelector('.MuiAccordion-root'),
-    )
+    expect(scrollByMock).toHaveBeenCalledWith({ top: 66, behavior: 'smooth' })
+    expect(onExpandedChange).toHaveBeenCalledWith(true)
+    expect(callOrder).toEqual(['scroll', 'expand'])
+  })
+
+  it('does not scroll when the accordion collapses', () => {
+    const props = makeProps({ expanded: true })
+    render(<ImageInfoAccordion {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
+
+    expect(props.onExpandedChange).toHaveBeenCalledWith(false)
+    expect(scrollByMock).not.toHaveBeenCalled()
   })
 
   it('does not scroll when initially mounted with persisted expansion', async () => {
-    scrollIntoViewAboveFooterMock.mockClear()
     render(<ImageInfoAccordion {...makeProps({ expanded: true })} />)
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 300))
     })
 
-    expect(scrollIntoViewAboveFooterMock).not.toHaveBeenCalled()
+    expect(scrollByMock).not.toHaveBeenCalled()
   })
 
   it('shows each populated image information field and the viewer hint', () => {

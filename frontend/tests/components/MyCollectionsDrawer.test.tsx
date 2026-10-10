@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Dialog from '@mui/material/Dialog'
@@ -9,8 +9,6 @@ import MyCollectionsDrawer, {
   type MyCollectionsDrawerProps,
 } from '../../src/components/MyCollectionsDrawer'
 import { makeCollectionSummary } from '../helpers/fixtures'
-
-const originalMatchMedia = window.matchMedia
 
 function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
   const props: MyCollectionsDrawerProps = {
@@ -28,31 +26,6 @@ function renderDrawer(overrides: Partial<MyCollectionsDrawerProps> = {}) {
   }
   return { ...render(<MyCollectionsDrawer {...props} />), props }
 }
-
-function stubViewportWidth(width: number) {
-  window.matchMedia = vi.fn((query: string) => {
-    const matches =
-      width >= 1200 &&
-      width < 1536 &&
-      query.includes('min-width:1200px') &&
-      query.includes('max-width:1535.95px')
-
-    return {
-      matches,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    } as MediaQueryList
-  }) as typeof window.matchMedia
-}
-
-afterEach(() => {
-  window.matchMedia = originalMatchMedia
-})
 
 describe('MyCollectionsDrawer', () => {
   it('renders the trigger as a filled, clickable button while unpinned', () => {
@@ -434,40 +407,66 @@ describe('MyCollectionsDrawer', () => {
   })
 })
 
-describe('MyCollectionsDrawer responsive trigger', () => {
-  it('uses an icon-only accessible trigger and tooltip at lg while closed', async () => {
-    stubViewportWidth(1366)
-    renderDrawer()
+describe('MyCollectionsDrawer reserved trigger row', () => {
+  it('reserves an opaque title-slot row while closed', () => {
+    renderDrawer({ reserveTriggerRow: true })
 
-    const trigger = screen.getByRole('button', { name: 'My collections' })
-    expect(trigger).toHaveAttribute('aria-label', 'My collections')
-    expect(screen.getByTestId('my-collections-trigger-label')).toHaveStyle({ display: 'none' })
-
-    fireEvent.mouseOver(trigger)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('My collections')
+    const frame = screen.getByTestId('my-collections-frame')
+    expect(getComputedStyle(frame).height).toBe('64.5px')
+    expect(getComputedStyle(frame).backgroundColor).toBe('rgb(255, 255, 255)')
   })
 
-  it.each([
-    ['open', { open: true }],
-    ['pinned', { open: true, pinned: true }],
-  ])('keeps the full label at lg when %s', (_state, overrides) => {
-    stubViewportWidth(1366)
-    renderDrawer(overrides)
-
-    const trigger = screen.getByRole('button', { name: 'My collections' })
-    expect(trigger).not.toHaveAttribute('aria-label')
-    expect(screen.getByTestId('my-collections-trigger-label')).not.toHaveStyle({
-      display: 'none',
-    })
-  })
-
-  it.each([1024, 1920])('keeps the full label at %s pixels', (width) => {
-    stubViewportWidth(width)
+  it('keeps zero height when the closed trigger row is not reserved', () => {
     renderDrawer()
 
-    expect(screen.getByRole('button', { name: 'My collections' })).not.toHaveAttribute('aria-label')
-    expect(screen.getByTestId('my-collections-trigger-label')).not.toHaveStyle({
-      display: 'none',
-    })
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('0px')
+  })
+
+  it('uses the measured content height while open with a reserved row', () => {
+    let resize: ResizeObserverCallback | null = null
+    class FakeResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        resize = cb
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+
+    const { container } = renderDrawer({ open: true, reserveTriggerRow: true })
+    const frame = screen.getByTestId('my-collections-frame')
+    const content = screen.getByTestId('my-collections-card-row').parentElement as HTMLElement
+    const slot = container.querySelector('button[aria-hidden="true"]') as HTMLElement
+    const header = slot.parentElement as HTMLElement
+    const heights = new Map<Element, number>([
+      [content, 480],
+      [slot, 36.5],
+      [header, 60],
+    ])
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const height = heights.get(this) ?? 0
+        return {
+          bottom: height,
+          height,
+          left: 0,
+          right: 0,
+          top: 0,
+          width: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect
+      })
+
+    try {
+      act(() => resize?.([], {} as ResizeObserver))
+      expect(getComputedStyle(frame).height).toBe('480px')
+    } finally {
+      rectSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })

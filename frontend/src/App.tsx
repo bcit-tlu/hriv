@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import useMediaQuery from '@mui/material/useMediaQuery'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import LinearProgress from '@mui/material/LinearProgress'
@@ -22,7 +21,6 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
-import { useTheme } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
@@ -37,6 +35,7 @@ import ImageViewer from './components/ImageViewer'
 import ImageInfoAccordion from './components/ImageInfoAccordion'
 import SortableTileGrid from './components/SortableTileGrid'
 import MyCollectionsDrawer, {
+  MY_COLLECTIONS_ROW_CONTENT_GAP_PX,
   MY_COLLECTIONS_TRIGGER_CLEARANCE_PX,
 } from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
@@ -172,8 +171,6 @@ function getCollapsedCategoryBreadcrumb(
 }
 
 export default function App() {
-  const theme = useTheme()
-  const isLg = useMediaQuery(theme.breakpoints.only('lg'))
   const {
     currentUser,
     loading: usersLoading,
@@ -515,6 +512,9 @@ export default function App() {
   } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
   const myCollectionsDrawerVisible =
     myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
+  const onViewerPage =
+    (page === 'browse' && selectedImage != null) ||
+    (page === 'collections' && selectedCollectionId != null)
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -2264,6 +2264,7 @@ export default function App() {
             groups={groups}
             open={myCollectionsDrawerOpen}
             pinned={myCollectionsDrawerPinned}
+            reserveTriggerRow={onViewerPage}
             onOpenChange={setMyCollectionsDrawerOpen}
             onPinnedChange={setMyCollectionsDrawerPinned}
             onOpen={(collection) => {
@@ -2301,7 +2302,11 @@ export default function App() {
         sx={{
           flexGrow: 1,
           py: 3,
-          pb: myCollectionsDrawerVisible && !isLg ? `${MY_COLLECTIONS_TRIGGER_CLEARANCE_PX}px` : 3,
+          pb: myCollectionsDrawerVisible
+            ? onViewerPage
+              ? `${MY_COLLECTIONS_ROW_CONTENT_GAP_PX}px`
+              : `${MY_COLLECTIONS_TRIGGER_CLEARANCE_PX}px`
+            : 3,
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >
