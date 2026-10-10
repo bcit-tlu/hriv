@@ -208,6 +208,7 @@ export default function App() {
     const t = new URLSearchParams(window.location.search).get('type')
     return t === 'synchronized' ? 'synchronized' : 'sequence'
   })
+  const [collectionsRefreshToken, setCollectionsRefreshToken] = useState(0)
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -461,6 +462,9 @@ export default function App() {
       currentUser != null,
     currentUser,
     selectedCollectionId,
+    type: collectionPageType,
+    refreshToken: collectionsRefreshToken,
+    backgroundRefresh: page === 'collections' && selectedCollectionId == null,
   })
 
   const myCollectionsShelfEnabled =
@@ -530,14 +534,6 @@ export default function App() {
       cancelled = true
     }
   }, [currentUser, myCollectionsDrawerOpen, myCollectionsDrawerVisible])
-
-  // #1554: the page's type is the list's type filter — keep them in lockstep.
-  useEffect(() => {
-    if (collectionsData.filters.type !== collectionPageType) {
-      collectionsData.setFilters({ ...collectionsData.filters, type: collectionPageType })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filters.type is compared, not set
-  }, [collectionPageType, collectionsData.filters, collectionsData.setFilters])
 
   // A collection detail opened via `?collection=` self-corrects the type
   // page so Back returns to the right list. Only a detail matching the
@@ -885,12 +881,15 @@ export default function App() {
       // The collection id lives in the URL (`?collection=`), which the browser
       // has already restored by the time popstate fires. `?item=` (sequence
       // position) and `?type=` (type page, #1554) are restored the same way.
-      setSelectedCollectionId(
-        validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null,
-      )
+      const poppedCollectionId =
+        validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null
+      setSelectedCollectionId(poppedCollectionId)
       if (validPage === 'collections') {
         const poppedType = new URLSearchParams(window.location.search).get('type')
         setCollectionPageType(poppedType === 'synchronized' ? 'synchronized' : 'sequence')
+        if (poppedCollectionId == null) {
+          setCollectionsRefreshToken((n) => n + 1)
+        }
       }
       setSelectedCollectionItemId(
         validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
@@ -1738,6 +1737,7 @@ export default function App() {
   const handleTabChange = useCallback(
     (v: Page) => {
       runCanvasNavigation(() => {
+        if (v === 'collections') setCollectionsRefreshToken((n) => n + 1)
         setPage(v)
         setSelectedCollectionId(null)
         setCollectionFromBrowse(false)
@@ -1765,6 +1765,7 @@ export default function App() {
   const handleCollectionsTypeChange = useCallback(
     (t: CollectionPageType) => {
       runCanvasNavigation(() => {
+        setCollectionsRefreshToken((n) => n + 1)
         setPage('collections')
         setCollectionPageType(t)
         setSelectedCollectionId(null)
@@ -1827,6 +1828,7 @@ export default function App() {
       )
       return
     }
+    setCollectionsRefreshToken((n) => n + 1)
     pushNavState('collections', [], null, { type: collectionPageType })
   }, [collectionFromBrowse, path, pushNavState, collectionPageType])
 
