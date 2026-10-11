@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.66.0...backend-v0.67.0) (2026-10-10)
+
+
+### Features
+
+* add a read-only collection field to the image viewer metadata area ([#1603](https://github.com/bcit-tlu/hriv/issues/1603)) ([fb1accd](https://github.com/bcit-tlu/hriv/commit/fb1accda530dfc42ce58b6344a3052dd88e5f2cd))
+
 ## [0.66.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.65.0...backend-v0.66.0) (2026-10-09)
 
 
