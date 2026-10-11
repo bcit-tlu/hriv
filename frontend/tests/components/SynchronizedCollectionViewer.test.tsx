@@ -111,7 +111,7 @@ const mockState = vi.hoisted(() => ({
 }))
 
 vi.mock('../../src/components/ImageViewer', () => ({
-  default: (props: Record<string, unknown>) => {
+  default: function MockImageViewer(props: Record<string, unknown>) {
     const imageId = props.imageId as number
     mockState.lastProps.set(imageId, props)
     useEffect(() => {
