@@ -152,6 +152,11 @@ controls above the viewport. Compact cards are
 1424 px. The drawer is hidden on the Manage, Manage → Collections, People,
 Admin, and Guide pages, while the feed is loading, and when no owned collection
 is visible. It is not a Browse tile: it has no drag, reorder, or drop targets.
+The full-text trigger remains visible at every width. The regular image viewer
+and open collection detail reserve an opaque row in the footer dock for the
+closed trigger; `<main>` adds 4px of bottom padding so the content stays 16px
+above it. On every other page where the shelf is visible, `<main>` reserves
+68.5px of bottom padding.
 
 Opening a card from the drawer keeps the caller's origin (#1529, #1608):
 opened from Browse or the image viewer, the detail sits on top of the current
@@ -1021,10 +1026,11 @@ visibility, duplicates and the synchronized cap on every write.
 **Where.** `App.tsx` (metadata row + fetch effect),
 `components/ImageCollectionsList.tsx`, `fetchImageCollections` in `api.ts`.
 
-**What.** A read-only **Collections** row in the image-view metadata area (after
-the Program/Group rows) lists the collections the current image belongs to, so a
-viewer can see where else it is used. It is informational only — distinct from
-the single-parent category and from the "Add to Collection" write flow above.
+**What.** A read-only **Collections** row inside the **Image information**
+accordion's first classification row (after Groups) lists the collections the
+current image belongs to, so a viewer can see where else it is used. It is
+informational only — distinct from the single-parent category and from the "Add
+to Collection" write flow above.
 
 **Data.** When an image opens (and `features.collections` is on), `App.tsx`
 calls `GET /api/images/{id}/collections` and stores the result tagged with the
@@ -1066,6 +1072,12 @@ right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
 
+**Viewport fit.** At MUI `md` and up, the regular image viewer and loaded
+sequence/synchronized collection detail fill the window, with only the OSD
+viewer area flexing and a 320px minimum. If fixed content cannot fit around
+that minimum, the page grows and scrolls. Below `md`, the existing 70vh / 60vh
+/ 55vh / 34vh viewer heights and page scrolling are unchanged.
+
 **Navigation.** Lightbox-style **Previous** / **Next** chevron buttons
 overlay the viewport's left and right edges (#1561); like the OSD toolbar's
 `autoHideControls`, they fade in on pointer activity over the viewer frame
@@ -1087,6 +1099,8 @@ container itself is focusable
 (`tabIndex={-1}`) and autofocuses when a collection opens (#1564) so the
 edge-nav cue reveals immediately — switching images never steals focus
 back, but opening a different collection focuses it again.
+Full screen persists across ←/→ changes; pressing Esc or leaving the
+collection restores the normal page.
 
 **Thumbnail strip.** `RenewingThumbnail` buttons _above_ the viewer
 (#1564); the
@@ -1173,7 +1187,11 @@ and an **Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
 surviving) members shows a fallback alert with the ordered member list and
 per-row **Open image** links; members whose tiles fail mid-session are
-skipped, so the panes slide forward.
+skipped, so the panes slide forward. At `md` and up, each frame in the
+three/four-pane grid has a 200px minimum and the grid rows honor that floor;
+the grid pane area's minimum follows its rows' intrinsic content, so the
+page grows and scrolls when they cannot fit. The two-pane row and its 320px
+pane-area minimum are unchanged.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw

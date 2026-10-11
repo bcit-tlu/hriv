@@ -23,6 +23,7 @@ from ..collection_views import (
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
+from ..image_source_info import build_image_source_info
 from ..upload_staging import (
     UploadTooLargeError,
     cleanup_unowned_final,
@@ -38,6 +39,7 @@ from ..schemas import (
     ImageBulkUpdate,
     ImageCreate,
     ImageOut,
+    ImageSourceInfoOut,
     ImageUpdate,
     SourceImageOut,
     normalize_note_value,
@@ -87,19 +89,33 @@ async def get_image(
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
+    return await _get_visible_image(db, _user, image_id)
+
+
+async def _get_visible_image(db: AsyncSession, user: User, image_id: int) -> Image:
     img = await db.get(Image, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
-    if _user.role == "student":
+    if user.role == "student":
         if not img.active:
             raise HTTPException(status_code=404, detail="Image not found")
-        user_program_ids = {p.id for p in _user.programs}
-        user_group_ids = {g.id for g in _user.groups}
+        user_program_ids = {p.id for p in user.programs}
+        user_group_ids = {g.id for g in user.groups}
         if not await is_category_visible_to_student(
             db, img.category_id, user_program_ids, user_group_ids
         ):
             raise HTTPException(status_code=404, detail="Image not found")
     return img
+
+
+@router.get("/{image_id}/source-info", response_model=ImageSourceInfoOut)
+async def get_image_source_info(
+    image_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+) -> ImageSourceInfoOut:
+    await _get_visible_image(db, user, image_id)
+    return await build_image_source_info(db, image_id, user)
 
 
 @router.get("/{image_id}/collections", response_model=list[CollectionSummaryOut])
@@ -121,18 +137,7 @@ async def list_image_collections(
     if not settings.collections_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
 
-    img = await db.get(Image, image_id)
-    if not img:
-        raise HTTPException(status_code=404, detail="Image not found")
-    if _user.role == "student":
-        if not img.active:
-            raise HTTPException(status_code=404, detail="Image not found")
-        user_program_ids = {p.id for p in _user.programs}
-        user_group_ids = {g.id for g in _user.groups}
-        if not await is_category_visible_to_student(
-            db, img.category_id, user_program_ids, user_group_ids
-        ):
-            raise HTTPException(status_code=404, detail="Image not found")
+    await _get_visible_image(db, _user, image_id)
 
     stmt = (
         select(Collection)

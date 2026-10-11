@@ -24,6 +24,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchCollections: vi.fn(),
   fetchCollection: vi.fn(),
   fetchFrontendVersion: vi.fn(),
+  fetchImageSourceInfo: vi.fn(),
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
   deleteProgram: vi.fn(),
@@ -161,6 +162,11 @@ function resetFixtures() {
   apiMocks.fetchCollections.mockResolvedValue([])
   apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ type: 'sequence' }))
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
+  apiMocks.fetchImageSourceInfo.mockResolvedValue({
+    originalFilename: null,
+    fileType: null,
+    uploadedByName: null,
+  })
   apiMocks.createProgram.mockResolvedValue({})
   apiMocks.updateProgram.mockResolvedValue({})
   apiMocks.deleteProgram.mockResolvedValue(undefined)
@@ -399,10 +405,12 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
+    fillViewport,
     footerDockSlot,
   }: {
     children: ReactNode
     footerDockSlot?: ReactNode
+    fillViewport?: boolean
     onTabChange: (v: string) => void
     onCollectionsTypeChange: (type: 'sequence' | 'synchronized') => void
     onHomeClick: () => void
@@ -415,7 +423,7 @@ vi.mock('../src/components/AppShell', () => ({
     onReportIssue: () => void
     collectionsEnabled: boolean
   }) => (
-    <div>
+    <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
@@ -1496,6 +1504,7 @@ describe('App breadcrumbs', () => {
 
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
 
     fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
     expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
@@ -1618,6 +1627,54 @@ describe('App failure notifications', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss failed uploads' }))
     expect(processingJobsMock.dismissJob.mock.calls.map(([id]) => id)).toEqual([1, 2, 3, 4, 5])
+  })
+})
+
+describe('App image information accordion', () => {
+  const preferenceKey = 'hrivpref:image-info-expanded:user:1'
+  let storedUser: string | null = null
+
+  beforeEach(() => {
+    resetFixtures()
+    Object.assign(mockImage, { copyright: 'Educational use only' })
+    storedUser = localStorage.getItem('hriv_user')
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.removeItem(preferenceKey)
+  })
+
+  afterEach(() => {
+    Object.assign(mockImage, { copyright: null })
+    localStorage.removeItem(preferenceKey)
+    if (storedUser === null) {
+      localStorage.removeItem('hriv_user')
+    } else {
+      localStorage.setItem('hriv_user', storedUser)
+    }
+  })
+
+  it('renders collapsed and reveals image information when expanded', async () => {
+    apiMocks.fetchImageSourceInfo.mockResolvedValueOnce({
+      originalFilename: 'specimen-scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Image Uploader',
+    })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const summary = screen.getByRole('button', { name: 'Image information' })
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
+
+    fireEvent.click(summary)
+
+    const copyright = screen.getByText('Copyright:', { exact: true }).parentElement
+    expect(copyright).toHaveTextContent('Copyright: Educational use only')
+    const originalFile = await screen.findByText('Original file:', { exact: true })
+    expect(originalFile.parentElement).toHaveTextContent('Original file: specimen-scan.tif')
+    const fileType = screen.getByText('File type:', { exact: true })
+    expect(fileType.parentElement).toHaveTextContent('File type: TIF')
+    const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
+    expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
   })
 })
 
@@ -2042,6 +2099,10 @@ describe('App collections deep links (#1414)', () => {
 
     render(<App />)
 
+    await screen.findByRole('button', { name: 'My collections' })
+    expect(document.querySelector('[data-fill-viewport="true"]')).not.toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('0px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('68.5px')
     fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
     // No heading — the always-mounted trigger button doubles as the
     // sheet's accessible name.
@@ -2105,7 +2166,10 @@ describe('App collections deep links (#1414)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open image' }))
     expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
   })
 
   it('shows the drawer on the Collections list page', async () => {
@@ -2133,7 +2197,10 @@ describe('App collections deep links (#1414)', () => {
     await renderWithCollectionsEnabled()
 
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
   })
 
   it('hides the drawer on the Manage and Admin pages', async () => {

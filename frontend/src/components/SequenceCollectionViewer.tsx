@@ -293,7 +293,12 @@ export default function SequenceCollectionViewer({
       tabIndex={-1}
       role="region"
       aria-label={`${collection.name} — sequence viewer`}
-      sx={{ '&:focus': { outline: 'none' } }}
+      sx={{
+        display: { md: 'flex' },
+        flexDirection: { md: 'column' },
+        flex: { md: '1 1 0' },
+        '&:focus': { outline: 'none' },
+      }}
     >
       {/* The filmstrip sits above the viewer (#1564). Member management —
           reorder/add/remove — lives in the Manage dialog (#1566), so the
@@ -305,6 +310,7 @@ export default function SequenceCollectionViewer({
           gap: 1,
           mt: 2,
           pb: 1,
+          flexShrink: 0,
           overflowX: 'auto',
           filter: hidden ? 'grayscale(100%)' : 'none',
         }}
@@ -348,7 +354,15 @@ export default function SequenceCollectionViewer({
       <Paper
         elevation={3}
         data-testid="sequence-viewer-frame"
-        sx={{ borderRadius: 2, overflow: 'hidden', position: 'relative' }}
+        sx={{
+          borderRadius: 2,
+          overflow: 'hidden',
+          position: 'relative',
+          display: { md: 'flex' },
+          flexDirection: { md: 'column' },
+          flex: { md: '1 1 0' },
+          minHeight: { md: 320 },
+        }}
         onPointerEnter={showNav}
         onPointerMove={showNav}
         onPointerDown={showNav}
@@ -356,10 +370,11 @@ export default function SequenceCollectionViewer({
       >
         <ImageViewer
           key={current.id}
+          fullScreenHandoffKey={`sequence:${collectionId}`}
           tileSources={current.tileSources}
           imageId={current.id}
           categoryId={current.categoryId ?? undefined}
-          height="60vh"
+          height={{ xs: '60vh', md: '100%' }}
           initialOverlays={lockedOverlays}
           overlaysLocked={lockedOverlays != null}
           canvasAnnotations={canvasAnnotations}
@@ -402,7 +417,7 @@ export default function SequenceCollectionViewer({
       </Paper>
       {/* Caption row mirrors the synchronized pane captions (#1564): the
           member name left, the position readout + Open image right. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexShrink: 0 }}>
         <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
           {current.name}
           {!current.active ? ' (inactive)' : ''}

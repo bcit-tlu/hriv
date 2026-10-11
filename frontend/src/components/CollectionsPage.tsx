@@ -670,6 +670,13 @@ export default function CollectionsPage({
       : []),
   ]
   const selectedOwnerKnown = ownerChoices.some((c) => c.key === ownerValue)
+  const viewerFlexSx = {
+    display: { md: 'flex' },
+    flexDirection: { md: 'column' },
+    flex: { md: '1 1 0' },
+  } as const
+  const hasLoadedViewerDetail =
+    selectedCollectionId != null && detail != null && detailError == null
 
   let body: ReactNode
   if (selectedCollectionId != null) {
@@ -696,21 +703,23 @@ export default function CollectionsPage({
       )
     } else if (detail && detail.type === 'sequence') {
       body = (
-        <Box data-testid="collection-detail">
-          <CollectionDetailHeader
-            collection={detail}
-            programs={programs}
-            groups={groups}
-            categoryPath={detailCategoryPath}
-            onNavigateCategory={onNavigateCategory}
-            canFile={canFileCollections}
-            onEdit={() => void openEdit(detail)}
-            onTransfer={() => setTransferTarget(detail)}
-            onManage={() => setManageOpen(true)}
-            togglingHidden={togglingHidden}
-            onToggleHidden={handleToggleHidden}
-            categoryHidden={detailCategoryHidden}
-          />
+        <Box data-testid="collection-detail" sx={viewerFlexSx}>
+          <Box sx={{ flexShrink: 0 }}>
+            <CollectionDetailHeader
+              collection={detail}
+              programs={programs}
+              groups={groups}
+              categoryPath={detailCategoryPath}
+              onNavigateCategory={onNavigateCategory}
+              canFile={canFileCollections}
+              onEdit={() => void openEdit(detail)}
+              onTransfer={() => setTransferTarget(detail)}
+              onManage={() => setManageOpen(true)}
+              togglingHidden={togglingHidden}
+              onToggleHidden={handleToggleHidden}
+              categoryHidden={detailCategoryHidden}
+            />
+          </Box>
           <SequenceCollectionViewer
             collection={detail}
             itemId={selectedCollectionItemId}
@@ -724,21 +733,23 @@ export default function CollectionsPage({
       )
     } else if (detail && detail.type === 'synchronized') {
       body = (
-        <Box data-testid="collection-detail">
-          <CollectionDetailHeader
-            collection={detail}
-            programs={programs}
-            groups={groups}
-            categoryPath={detailCategoryPath}
-            onNavigateCategory={onNavigateCategory}
-            canFile={canFileCollections}
-            onEdit={() => void openEdit(detail)}
-            onTransfer={() => setTransferTarget(detail)}
-            onManage={() => setManageOpen(true)}
-            togglingHidden={togglingHidden}
-            onToggleHidden={handleToggleHidden}
-            categoryHidden={detailCategoryHidden}
-          />
+        <Box data-testid="collection-detail" sx={viewerFlexSx}>
+          <Box sx={{ flexShrink: 0 }}>
+            <CollectionDetailHeader
+              collection={detail}
+              programs={programs}
+              groups={groups}
+              categoryPath={detailCategoryPath}
+              onNavigateCategory={onNavigateCategory}
+              canFile={canFileCollections}
+              onEdit={() => void openEdit(detail)}
+              onTransfer={() => setTransferTarget(detail)}
+              onManage={() => setManageOpen(true)}
+              togglingHidden={togglingHidden}
+              onToggleHidden={handleToggleHidden}
+              categoryHidden={detailCategoryHidden}
+            />
+          </Box>
           <SynchronizedCollectionViewer
             collection={detail}
             onSaveViewport={(viewportState) => onSaveViewport(detail.id, viewportState)}
@@ -879,7 +890,7 @@ export default function CollectionsPage({
   }
 
   return (
-    <Box data-testid="collections-page">
+    <Box data-testid="collections-page" sx={hasLoadedViewerDetail ? viewerFlexSx : undefined}>
       {editLoadError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setEditLoadError(null)}>
           {editLoadError}

@@ -378,6 +378,7 @@ describe('SequenceCollectionViewer', () => {
     const collection = seqCollection({ images: [makeImage({ id: 1, metadataExtra: meta })] })
     renderViewer({ collection })
     expect(lastViewerProps).not.toBeNull()
+    expect(lastViewerProps!.height).toEqual({ xs: '60vh', md: '100%' })
     expect(lastViewerProps!.canEditContent).toBe(false)
     expect(lastViewerProps!.canvasAnnotations).toEqual(meta.canvas_annotations)
     expect(lastViewerProps!.initialOverlays).toEqual(meta.locked_overlays)

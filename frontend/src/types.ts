@@ -17,6 +17,12 @@ export interface ImageItem {
   fileSize?: number | null
 }
 
+export interface ImageSourceInfo {
+  originalFilename: string | null
+  fileType: string | null
+  uploadedByName: string | null
+}
+
 export interface Category {
   id: number
   label: string

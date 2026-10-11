@@ -31,6 +31,7 @@ All seed users share the password `password`.
 | Capability                               | Admin | Instructor | Staff | Student |
 | ---------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
+| View image uploader name                 | Yes   | Yes        | No    | No      |
 | View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
 | Create collections‖                      | Yes   | Yes        | Yes   | Yes     |
 | Edit co-owned collections‖               | Yes   | Yes        | Yes   | Yes     |

@@ -472,7 +472,14 @@ export default function SynchronizedCollectionViewer({
   const gridPanes = panes.length > 2
 
   return (
-    <Box data-testid="synchronized-collection-viewer">
+    <Box
+      data-testid="synchronized-collection-viewer"
+      sx={{
+        display: { md: 'flex' },
+        flexDirection: { md: 'column' },
+        flex: { md: '1 1 0' },
+      }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -481,6 +488,7 @@ export default function SynchronizedCollectionViewer({
           gap: 1,
           mt: 2,
           mb: 1,
+          flexShrink: 0,
         }}
       >
         {/* Panes start pinned (linked); the per-pane pin in each viewport's
@@ -516,27 +524,71 @@ export default function SynchronizedCollectionViewer({
         )}
       </Box>
 
-      <Box sx={{ position: 'relative' }}>
+      <Box
+        sx={{
+          position: 'relative',
+          display: { md: 'flex' },
+          flexDirection: { md: 'column' },
+          flex: { md: '1 1 0' },
+          minHeight: { md: gridPanes ? 'auto' : 320 },
+        }}
+      >
         <Box
           sx={
             gridPanes
-              ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 2 }
-              : { display: 'flex', gap: 2 }
+              ? {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gridTemplateRows: { md: 'repeat(2, minmax(auto, 1fr))' },
+                  gap: 2,
+                  flex: { md: '1 1 0' },
+                }
+              : {
+                  display: 'flex',
+                  gap: 2,
+                  flex: { md: '1 1 0' },
+                }
           }
         >
           {paneProps.map(({ image, pane }) => {
             const pinned = !unpinnedIds.has(image.id)
             return (
-              <Box key={image.id} sx={gridPanes ? { minWidth: 0 } : { flex: 1, minWidth: 0 }}>
+              <Box
+                key={image.id}
+                sx={
+                  gridPanes
+                    ? {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 0,
+                      }
+                    : {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        flex: '1 1 0',
+                        minWidth: 0,
+                      }
+                }
+              >
                 <Paper
                   elevation={3}
-                  sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden' }}
+                  data-testid={`synchronized-viewer-frame-${image.id}`}
+                  sx={{
+                    position: 'relative',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    display: { md: 'flex' },
+                    flexDirection: { md: 'column' },
+                    flex: { md: '1 1 0' },
+                    height: { md: '100%' },
+                    ...(gridPanes ? { minHeight: { md: 200 } } : {}),
+                  }}
                 >
                   <ImageViewer
                     tileSources={image.tileSources}
                     imageId={image.id}
                     categoryId={image.categoryId ?? undefined}
-                    height={gridPanes ? '34vh' : '55vh'}
+                    height={{ xs: gridPanes ? '34vh' : '55vh', md: '100%' }}
                     initialViewport={pane.initialViewport}
                     initialOverlays={pane.initialOverlays}
                     overlaysLocked={pane.initialOverlays != null}
@@ -580,7 +632,15 @@ export default function SynchronizedCollectionViewer({
                     </IconButton>
                   </Tooltip>
                 </Paper>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    mt: 0.5,
+                    flexShrink: 0,
+                  }}
+                >
                   <Typography
                     variant="body2"
                     color="text.secondary"

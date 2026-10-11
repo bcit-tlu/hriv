@@ -236,6 +236,11 @@ describe('AppShell', () => {
       expect(screen.getByRole('menuitem', { name: 'Sequence' })).not.toHaveClass('Mui-selected')
     })
 
+    it('marks the root when filling the viewport', () => {
+      render(<AppShell {...makeProps({ fillViewport: true })} />)
+      expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
+    })
+
     it('renders Images and Manage tabs when canEditContent', () => {
       render(<AppShell {...makeProps({ canEditContent: true })} />)
       expect(screen.getByRole('tab', { name: 'Images' })).toBeInTheDocument()

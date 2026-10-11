@@ -406,3 +406,67 @@ describe('MyCollectionsDrawer', () => {
     expect(onPickCoverImage).toHaveBeenCalledWith(collection)
   })
 })
+
+describe('MyCollectionsDrawer reserved trigger row', () => {
+  it('reserves an opaque title-slot row while closed', () => {
+    renderDrawer({ reserveTriggerRow: true })
+
+    const frame = screen.getByTestId('my-collections-frame')
+    expect(getComputedStyle(frame).height).toBe('64.5px')
+    expect(getComputedStyle(frame).backgroundColor).toBe('rgb(255, 255, 255)')
+  })
+
+  it('keeps zero height when the closed trigger row is not reserved', () => {
+    renderDrawer()
+
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('0px')
+  })
+
+  it('uses the measured content height while open with a reserved row', () => {
+    let resize: ResizeObserverCallback | null = null
+    class FakeResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        resize = cb
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+
+    const { container } = renderDrawer({ open: true, reserveTriggerRow: true })
+    const frame = screen.getByTestId('my-collections-frame')
+    const content = screen.getByTestId('my-collections-card-row').parentElement as HTMLElement
+    const slot = container.querySelector('button[aria-hidden="true"]') as HTMLElement
+    const header = slot.parentElement as HTMLElement
+    const heights = new Map<Element, number>([
+      [content, 480],
+      [slot, 36.5],
+      [header, 60],
+    ])
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const height = heights.get(this) ?? 0
+        return {
+          bottom: height,
+          height,
+          left: 0,
+          right: 0,
+          top: 0,
+          width: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect
+      })
+
+    try {
+      act(() => resize?.([], {} as ResizeObserver))
+      expect(getComputedStyle(frame).height).toBe('480px')
+    } finally {
+      rectSpy.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+})

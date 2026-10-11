@@ -75,6 +75,8 @@ export type CollectionPageType = 'sequence' | 'synchronized'
 
 export interface AppShellProps {
   page: Page
+  /** Let a viewer page fill the viewport while retaining min-content sizing. */
+  fillViewport?: boolean
   onTabChange: (page: Page) => void
   onHomeClick: () => void
   canEditContent: boolean
@@ -160,6 +162,7 @@ export default function AppShell(props: AppShellProps) {
     backupVersion,
     onReportIssue,
     stickyFooter = false,
+    fillViewport = false,
     footerDockSlot,
     notificationSlot,
     children,
@@ -324,10 +327,16 @@ export default function AppShell(props: AppShellProps) {
 
   return (
     <Box
+      data-fill-viewport={fillViewport ? 'true' : undefined}
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100vh',
+        ...(fillViewport
+          ? {
+              height: { md: '100dvh' },
+              minHeight: { xs: '100vh', md: 'min-content' },
+            }
+          : { minHeight: '100vh' }),
       }}
     >
       {/* App bar */}

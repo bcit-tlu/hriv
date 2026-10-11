@@ -32,10 +32,13 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
+import ImageInfoAccordion from './components/ImageInfoAccordion'
 import SortableTileGrid from './components/SortableTileGrid'
-import MyCollectionsDrawer from './components/MyCollectionsDrawer'
+import MyCollectionsDrawer, {
+  MY_COLLECTIONS_ROW_CONTENT_GAP_PX,
+  MY_COLLECTIONS_TRIGGER_CLEARANCE_PX,
+} from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
-import NoteDisplay from './components/NoteDisplay'
 import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
@@ -83,10 +86,11 @@ import {
   useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
+import { useImageInfoExpandedPreference } from './useImageInfoExpandedPreference'
+import { useImageSourceInfo } from './useImageSourceInfo'
 import { useMyCollectionsShelf } from './useMyCollectionsShelf'
 import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
 import { isAcceptedFile } from './fileUtils'
-import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
 import {
   fetchImage as apiFetchImage,
@@ -176,6 +180,9 @@ export default function App() {
     canEditContent,
     canViewPeople,
   } = useAuth()
+  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference(
+    currentUser?.id ?? null,
+  )
   // Manage > Collections table (#1554): instructors, staff, and admins —
   // everyone except students.
   const canManageCollections = canEditContent || canViewPeople
@@ -315,6 +322,11 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  const imageSourceInfo = useImageSourceInfo(
+    selectedImage?.id ?? null,
+    selectedImage?.version ?? 0,
+    imageInfoExpanded,
+  )
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
     selectedImageRef.current = selectedImage
@@ -500,6 +512,9 @@ export default function App() {
   } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
   const myCollectionsDrawerVisible =
     myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
+  const onViewerPage =
+    (page === 'browse' && selectedImage != null) ||
+    (page === 'collections' && selectedCollectionId != null)
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -2211,6 +2226,7 @@ export default function App() {
   return (
     <AppShell
       page={page}
+      fillViewport={onViewerPage}
       onTabChange={handleTabChange}
       onHomeClick={handleHomeClick}
       canEditContent={canEditContent}
@@ -2249,6 +2265,7 @@ export default function App() {
             groups={groups}
             open={myCollectionsDrawerOpen}
             pinned={myCollectionsDrawerPinned}
+            reserveTriggerRow={onViewerPage}
             onOpenChange={setMyCollectionsDrawerOpen}
             onPinnedChange={setMyCollectionsDrawerPinned}
             onOpen={(collection) => {
@@ -2285,7 +2302,19 @@ export default function App() {
         component="main"
         sx={{
           flexGrow: 1,
+          ...(onViewerPage
+            ? {
+                display: { md: 'flex' },
+                flexDirection: { md: 'column' },
+                flex: { md: '1 1 0' },
+              }
+            : {}),
           py: 3,
+          pb: myCollectionsDrawerVisible
+            ? onViewerPage
+              ? `${MY_COLLECTIONS_ROW_CONTENT_GAP_PX}px`
+              : `${MY_COLLECTIONS_TRIGGER_CLEARANCE_PX}px`
+            : 3,
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >
@@ -2293,6 +2322,13 @@ export default function App() {
           maxWidth={false}
           sx={{
             px: { xs: 2, sm: 3, lg: '72px', xl: '120px' },
+            ...(onViewerPage
+              ? {
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flex: { md: '1 1 0' },
+                }
+              : {}),
           }}
         >
           {page === 'guide' && canEditContent ? (
@@ -2487,6 +2523,7 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  flexShrink: 0,
                 }}
               >
                 <Box
@@ -2705,9 +2742,21 @@ export default function App() {
                 </Box>
               </Box>
 
-              <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <Paper
+                data-testid="image-viewer-frame"
+                elevation={3}
+                sx={{
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flex: { md: '1 1 0' },
+                  minHeight: { md: 320 },
+                }}
+              >
                 <ImageViewer
                   key={selectedImage.id}
+                  height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
@@ -2731,116 +2780,29 @@ export default function App() {
                 />
               </Paper>
 
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control
-                  the view. On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right
-                  corner shows your current viewport.
-                </Typography>
-              </Box>
-
-              {/* Image metadata */}
-              <Box
-                sx={{
-                  mt: 2,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 0,
-                  '& > span': { mr: '2em' },
-                }}
-              >
-                {selectedImage.copyright && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Copyright:</strong> {selectedImage.copyright}
-                  </Typography>
+              <ImageInfoAccordion
+                image={selectedImage}
+                programNames={ancestorProgramIds.map(
+                  (pid) => programs.find((program) => program.id === pid)?.name ?? String(pid),
                 )}
-                {ancestorProgramIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Program
-                      {ancestorProgramIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorProgramIds
-                      .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                      .join(', ')}
-                  </Typography>
+                groupNames={ancestorGroupIds.map(
+                  (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                 )}
-                {ancestorGroupIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Group
-                      {ancestorGroupIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorGroupIds
-                      .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
-                      .join(', ')}
-                  </Typography>
-                )}
-                {/* #1586: collections this image belongs to (key resets the
-                    "more" toggle when the viewer switches images). */}
-                {selectedImageCollections.length > 0 && (
-                  <ImageCollectionsList
-                    key={selectedImage.id}
-                    collections={selectedImageCollections}
-                    hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
-                    onOpenCollection={handleOpenCollection}
-                  />
-                )}
-                {selectedImage.note && (
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 1,
-                      mt: 1,
-                      width: '100%',
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      component="div"
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      <strong>Note:&nbsp;</strong>
-                    </Typography>
-                    <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
-                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
-                    </Box>
-                  </Box>
-                )}
-                {selectedImage.createdAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Created:</strong> {new Date(selectedImage.createdAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.updatedAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Modified:</strong> {new Date(selectedImage.updatedAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.width != null && selectedImage.height != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Dimensions:</strong> {selectedImage.width} &times;{' '}
-                    {selectedImage.height}
-                  </Typography>
-                )}
-                {selectedImage.fileSize != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Size:</strong> {formatFileSize(selectedImage.fileSize)}
-                  </Typography>
-                )}
-                {selectedImageMeasurement && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Measurement:</strong>{' '}
-                    {selectedImageMeasurement.scale && selectedImageMeasurement.unit
-                      ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
-                      : selectedImageMeasurement.scale
-                        ? `${selectedImageMeasurement.scale} px`
-                        : (selectedImageMeasurement.unit ?? '')}
-                  </Typography>
-                )}
-              </Box>
+                measurement={selectedImageMeasurement}
+                sourceInfo={imageSourceInfo}
+                collections={
+                  selectedImageCollections.length > 0 ? (
+                    <ImageCollectionsList
+                      key={selectedImage.id}
+                      collections={selectedImageCollections}
+                      hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
+                      onOpenCollection={handleOpenCollection}
+                    />
+                  ) : null
+                }
+                expanded={imageInfoExpanded}
+                onExpandedChange={setImageInfoExpanded}
+              />
             </>
           ) : (
             /* ---- Browse mode ---- */

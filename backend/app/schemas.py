@@ -483,6 +483,12 @@ class ImageOut(ImageBase):
         return append_tile_token(value)
 
 
+class ImageSourceInfoOut(BaseModel):
+    original_filename: str | None = None
+    file_type: str | None = None
+    uploaded_by_name: str | None = None
+
+
 # ── Source Image ─────────────────────────────────────────
 
 class SourceImageOut(BaseModel):
