@@ -416,7 +416,8 @@ describe('CollectionsPage', () => {
           makeCollectionSummary({ id: 2, name: 'Pelvis set' }),
         ],
       })
-      fireEvent.change(screen.getByTestId('collections-search').querySelector('input')!, {
+      fireEvent.click(screen.getByRole('button', { name: 'Name' }))
+      fireEvent.change(screen.getByLabelText('Filter collections by name'), {
         target: { value: 'skull' },
       })
       // Cards keep only the match; the helper explains the filter scope.
@@ -425,39 +426,44 @@ describe('CollectionsPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
       await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalled())
+      // The Name popover stays open across the view switch — its helper
+      // text explains the graph's highlight-only behaviour.
       expect(
-        screen.getByText('Highlights matches in the graph; nodes are not removed.'),
+        await screen.findByText('Highlights matches in the graph; nodes are not removed.'),
       ).toBeInTheDocument()
     })
   })
 
   describe('filters', () => {
-    it('renders the unified heading and the Type filter chips (#1629)', () => {
+    it('renders the unified heading and the FilterBar popovers', () => {
       renderPage()
       expect(screen.getByRole('heading', { name: 'Collections' })).toBeInTheDocument()
-      // The Sequence/Synchronized sub-pages became filter chips.
-      expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Sequence' })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Synchronized' })).toBeInTheDocument()
+      for (const label of ['Name', 'Type', 'Owner', 'Visibility']) {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+      }
     })
 
-    it('the Type chip group drives the shared filters', () => {
+    it('the Type popover drives the shared filters', async () => {
+      const user = userEvent.setup()
       const onFiltersChange = vi.fn()
       renderPage({ onFiltersChange })
-      fireEvent.click(screen.getByRole('button', { name: 'Synchronized' }))
+      await user.click(screen.getByRole('button', { name: 'Type' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: 'Synchronized' }))
       expect(onFiltersChange).toHaveBeenCalledWith({
         ...DEFAULT_COLLECTION_FILTERS,
         type: 'synchronized',
       })
     })
 
-    it('toggles My collections and resets the owner facet', () => {
+    it('selecting My collections from the Owner popover sets mine and clears the owner facet', async () => {
+      const user = userEvent.setup()
       const onFiltersChange = vi.fn()
       renderPage({
         onFiltersChange,
         filters: { ...DEFAULT_COLLECTION_FILTERS, owner: { kind: 'user', userId: 5, name: 'X' } },
       })
-      fireEvent.click(screen.getByRole('button', { name: 'My collections' }))
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: 'My collections' }))
       expect(onFiltersChange).toHaveBeenCalledWith({
         ...DEFAULT_COLLECTION_FILTERS,
         mine: true,
@@ -473,45 +479,160 @@ describe('CollectionsPage', () => {
         onFiltersChange,
         ownerOptions: [owner, { kind: 'program', programId: 3, name: 'Radiography' }],
       })
-      await user.click(screen.getByLabelText('Owner'))
-      const listbox = await screen.findByRole('listbox')
-      expect(within(listbox).getByText('Anyone')).toBeInTheDocument()
-      expect(within(listbox).getByText('Radiography (program)')).toBeInTheDocument()
-      await user.click(within(listbox).getByText('Ada Lovelace'))
-      expect(onFiltersChange).toHaveBeenCalledWith({ ...DEFAULT_COLLECTION_FILTERS, owner })
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
+      const menu = await screen.findByRole('menu')
+      expect(within(menu).getByText('My collections')).toBeInTheDocument()
+      expect(within(menu).getByText('Radiography (program)')).toBeInTheDocument()
+      await user.click(within(menu).getByRole('menuitemradio', { name: 'Ada Lovelace' }))
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        mine: false,
+        owner,
+      })
     })
 
-    it('offers the orphaned owner filter only to admins', async () => {
+    it('offers the orphaned owner option only to admins', async () => {
       const user = userEvent.setup()
       const { unmount } = renderPage()
-      await user.click(screen.getByLabelText('Owner'))
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
       expect(
-        within(await screen.findByRole('listbox')).getByText('No owner (orphaned)'),
+        within(await screen.findByRole('menu')).getByText('No owner (orphaned)'),
       ).toBeInTheDocument()
       await user.keyboard('{Escape}')
       unmount()
 
       renderPage({ currentUser: INSTRUCTOR })
-      await user.click(screen.getByLabelText('Owner'))
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
       expect(
-        within(await screen.findByRole('listbox')).queryByText('No owner (orphaned)'),
+        within(await screen.findByRole('menu')).queryByText('No owner (orphaned)'),
       ).not.toBeInTheDocument()
     })
 
-    it('shows the owner select to admin, instructor and staff but never to students', () => {
-      for (const currentUser of [ADMIN, INSTRUCTOR, STAFF]) {
-        const { unmount } = renderPage({ currentUser })
-        expect(screen.getByLabelText('Owner')).toBeInTheDocument()
-        unmount()
-      }
-      renderPage({ currentUser: STUDENT })
-      expect(screen.queryByLabelText('Owner')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    it('students get the My collections option but no named owners', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        currentUser: STUDENT,
+        ownerOptions: [{ kind: 'user', userId: 5, name: 'Ada Lovelace' }],
+      })
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
+      const menu = await screen.findByRole('menu')
+      expect(within(menu).getByText('My collections')).toBeInTheDocument()
+      expect(within(menu).queryByText('Ada Lovelace')).not.toBeInTheDocument()
     })
 
-    it('disables the owner select while My collections is active', () => {
-      renderPage({ filters: { ...DEFAULT_COLLECTION_FILTERS, mine: true } })
-      expect(screen.getByLabelText('Owner')).toHaveAttribute('aria-disabled', 'true')
+    it('the Visibility facet narrows the cards client-side', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Pub', visibility: 'public' }),
+          makeCollectionSummary({ id: 2, name: 'Priv', visibility: 'private' }),
+        ],
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(1)
+      expect(screen.getByText('Pub')).toBeInTheDocument()
+      expect(screen.queryByText('Priv')).not.toBeInTheDocument()
+      // Active facet shows a summary chip.
+      expect(screen.getByText('Visibility: Public')).toBeInTheDocument()
+    })
+
+    it('shows "No matching collections" when client facets exclude every row', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
+          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
+        ],
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      await user.keyboard('{Escape}')
+
+      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
+        'No matching collections',
+      )
+      expect(screen.getByTestId('collections-empty')).toHaveTextContent(
+        'No collections match the current filters.',
+      )
+      expect(screen.queryByTestId('collections-grid')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(2)
+      expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
+    })
+
+    it('keeps the table mounted (sort state intact) through a zero-match filter', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
+          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
+        ],
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      const table = await screen.findByTestId('collections-table')
+      const nameTh = within(table).getByText('Name').closest('th')!
+      fireEvent.click(within(table).getByText('Name'))
+      expect(nameTh).toHaveAttribute('aria-sort', 'ascending')
+
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      await user.keyboard('{Escape}')
+
+      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
+        'No matching collections',
+      )
+      expect(screen.getByTestId('collections-table')).not.toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      const restored = await screen.findByTestId('collections-table')
+      expect(restored).toBeVisible()
+      expect(within(restored).getByText('Name').closest('th')).toHaveAttribute(
+        'aria-sort',
+        'ascending',
+      )
+    })
+
+    it('Clear all resets the server filters and the client facets', async () => {
+      const user = userEvent.setup()
+      const onFiltersChange = vi.fn()
+      renderPage({
+        onFiltersChange,
+        filters: { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence', mine: true },
+      })
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      expect(onFiltersChange).toHaveBeenCalledWith(DEFAULT_COLLECTION_FILTERS)
+    })
+
+    it('deleting a summary chip clears only that facet', async () => {
+      const user = userEvent.setup()
+      const onFiltersChange = vi.fn()
+      renderPage({
+        onFiltersChange,
+        filters: { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' },
+      })
+      const chip = (await screen.findByText('Type: Sequence')).closest('.MuiChip-root')!
+      await user.click(within(chip as HTMLElement).getByTestId('CancelIcon'))
+      expect(onFiltersChange).toHaveBeenCalledWith({ ...DEFAULT_COLLECTION_FILTERS, type: 'all' })
+    })
+
+    it('Choose columns is hidden outside table view and toggling a column adds its header', async () => {
+      const user = userEvent.setup()
+      localStorage.setItem('hriv_user', JSON.stringify({ id: ADMIN.id }))
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      // The button always renders (it reserves the FilterBar's height in
+      // every view) but is hidden/unreachable outside table view.
+      const hiddenButton = screen.getByText('Choose columns').closest('button')!
+      expect(hiddenButton).not.toBeVisible()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      await user.click(await screen.findByRole('button', { name: 'Choose columns' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('checkbox', { name: 'ID' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+      expect(await screen.findByText('ID')).toBeInTheDocument()
     })
   })
 

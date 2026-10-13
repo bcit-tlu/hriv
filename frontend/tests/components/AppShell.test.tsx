@@ -210,6 +210,17 @@ describe('AppShell', () => {
       expect(screen.queryByRole('menuitem', { name: 'Synchronized' })).not.toBeInTheDocument()
     })
 
+    it('re-clicking the Collections tab while on the page resets to the list', async () => {
+      // On a collection detail the tab is already selected, so Tabs onChange
+      // cannot fire — the Tab's onClick must forward the re-click itself.
+      const user = userEvent.setup()
+      const onTabChange = vi.fn()
+      render(<AppShell {...makeProps({ page: 'collections', onTabChange })} />)
+
+      await user.click(screen.getByRole('tab', { name: 'Collections' }))
+      expect(onTabChange).toHaveBeenCalledWith('collections')
+    })
+
     it('hides the Collections tab when the deployment flag is off', () => {
       render(<AppShell {...makeProps({ collectionsEnabled: false })} />)
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()

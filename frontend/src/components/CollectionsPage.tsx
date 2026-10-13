@@ -5,13 +5,8 @@ import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
-import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
-import MenuItem from '@mui/material/MenuItem'
-import Select from '@mui/material/Select'
-import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
@@ -22,6 +17,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import HubIcon from '@mui/icons-material/Hub'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import TableRowsIcon from '@mui/icons-material/TableRows'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
@@ -37,6 +33,7 @@ import {
 import {
   apiCollectionSummaryToSummary,
   COLLECTION_TYPE_LABELS,
+  COLLECTION_VISIBILITY_LABELS,
   COLLECTIONS_AT_CAP_TOOLTIP,
   describeCollectionOwner,
   describeCollectionOwners,
@@ -52,22 +49,36 @@ import {
 import CollectionsGraph from '../collectionsGraph/CollectionsGraph'
 import { buildGraphModel } from '../collectionsGraph/buildModel'
 import type { GraphModel } from '../collectionsGraph/types'
-import CollectionsTable from './CollectionsTable'
+import { graphToggleSx } from '../collectionsGraph/toggleStyles'
+import CollectionsTable, {
+  COLLECTIONS_TABLE_COLUMN_OPTIONS,
+  COLLECTIONS_TABLE_COLUMNS,
+  DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
+  type CollectionsTableColumn,
+} from './CollectionsTable'
+import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import FilterBar from './FilterBar'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import {
+  DEFAULT_COLLECTION_FILTERS,
   toCollectionPatch,
   type CollectionListFilters,
   type CollectionOwnerFilter,
 } from '../useCollectionsData'
+import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import type {
   Category,
   Collection,
   CollectionOwner,
   CollectionSummary,
   CollectionType,
+  CollectionVisibility,
   Group,
   ImageItem,
   Program,
@@ -617,8 +628,12 @@ export default function CollectionsPage({
   useEffect(() => {
     onViewChange?.(viewPrefs.view)
   }, [onViewChange, viewPrefs.view])
-  // Search is client-side and intentionally NOT persisted.
+  // Search and the Visibility facet are client-side and intentionally NOT
+  // persisted.
   const [searchQuery, setSearchQuery] = useState('')
+  const [visibilityFilter, setVisibilityFilter] = useState<ReadonlySet<CollectionVisibility>>(
+    () => new Set(),
+  )
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
   const [graphError, setGraphError] = useState<string | null>(null)
 
@@ -716,6 +731,7 @@ export default function CollectionsPage({
 
   useEffect(() => {
     if (currentUser?.role !== 'student') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset stale cap for non-students
       setTypesAtLimit(new Set())
       return
     }
@@ -809,19 +825,48 @@ export default function CollectionsPage({
     }
   }
 
-  const ownerValue = ownerFilterKey(filters.owner)
-  const ownerChoices: { key: string; label: string; value: CollectionOwnerFilter }[] = [
-    { key: 'any', label: 'Anyone', value: 'any' },
-    ...ownerOptions.map((o) => ({
-      key: ownerFilterKey(o),
-      label: describeCollectionOwner(o),
-      value: o as CollectionOwnerFilter,
-    })),
+  // Owner facet options for the FilterBar popover: "My collections" first
+  // (every role), then the known owners for non-students and the
+  // admin-only orphaned state — the same choices the old Select/chips row
+  // exposed (#1629 follow-up).
+  const ownerFacetOptions: {
+    value: string
+    label: string
+    filter: CollectionOwnerFilter | 'mine'
+  }[] = [
+    { value: 'mine', label: 'My collections', filter: 'mine' },
+    ...(showOwnerFilter
+      ? ownerOptions.map((o) => ({
+          value: ownerFilterKey(o),
+          label: describeCollectionOwner(o),
+          filter: o as CollectionOwnerFilter,
+        }))
+      : []),
     ...(isAdmin
-      ? [{ key: 'orphaned', label: 'No owner (orphaned)', value: 'orphaned' as const }]
+      ? [{ value: 'orphaned', label: 'No owner (orphaned)', filter: 'orphaned' as const }]
       : []),
   ]
-  const selectedOwnerKnown = ownerChoices.some((c) => c.key === ownerValue)
+  const ownerSelected = filters.mine
+    ? ['mine']
+    : filters.owner === 'any'
+      ? []
+      : [ownerFilterKey(filters.owner)]
+
+  // Choose Columns (table view) — per-user persisted visibility + order,
+  // the same hook/storage convention as the Manage tables (#1577).
+  const { visibleColumns, toggleColumn, columnOrder, orderedVisibleColumns, setColumnOrder } =
+    useTableColumnPreferences<CollectionsTableColumn>({
+      tableKey: 'collections',
+      allColumns: COLLECTIONS_TABLE_COLUMNS,
+      defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
+    })
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const orderedColumnOptions = useMemo(() => {
+    const byKey = new Map(COLLECTIONS_TABLE_COLUMN_OPTIONS.map((o) => [o.key, o]))
+    return columnOrder
+      .map((key) => byKey.get(key))
+      .filter((o): o is ColumnVisibilityOption<CollectionsTableColumn> => o != null)
+  }, [columnOrder])
   const viewerFlexSx = {
     display: { md: 'flex' },
     flexDirection: { md: 'column' },
@@ -920,20 +965,43 @@ export default function CollectionsPage({
       body = null
     }
   } else {
-    // The shared search field is client-side and never persisted (#1629):
-    // it narrows the cards/table rows, and in the graph only highlights
-    // matches — nodes are never removed.
+    // The Name text and Visibility facet are client-side and never
+    // persisted (#1629): they narrow the cards/table rows, and in the
+    // graph only highlight matches — nodes are never removed.
     const searchQ = searchQuery.trim().toLowerCase()
-    const matchesSearchText = (c: CollectionSummary): boolean =>
-      searchQ === '' ||
-      `${c.name} ${c.description ?? ''} ${describeCollectionOwners(c.owners)}`
-        .toLowerCase()
-        .includes(searchQ)
-    const shownCollections = searchQ ? collections.filter(matchesSearchText) : collections
+    const matchesClientFilters = (c: CollectionSummary): boolean => {
+      if (visibilityFilter.size > 0 && !visibilityFilter.has(c.visibility)) return false
+      return (
+        searchQ === '' ||
+        `${c.name} ${c.description ?? ''} ${describeCollectionOwners(c.owners)}`
+          .toLowerCase()
+          .includes(searchQ)
+      )
+    }
+    const shownCollections =
+      searchQ || visibilityFilter.size > 0 ? collections.filter(matchesClientFilters) : collections
     const searchHelper =
       viewPrefs.view === 'graph'
         ? 'Highlights matches in the graph; nodes are not removed.'
         : 'Filters by name, description and owner.'
+    const hasActiveFilters =
+      filters.type !== 'all' ||
+      filters.mine ||
+      filters.owner !== 'any' ||
+      searchQ !== '' ||
+      visibilityFilter.size > 0
+    const clearAllFilters = () => {
+      onFiltersChange({ ...DEFAULT_COLLECTION_FILTERS })
+      setSearchQuery('')
+      setVisibilityFilter(new Set())
+    }
+    const ownerSummaryLabel = filters.mine
+      ? 'My collections'
+      : filters.owner === 'orphaned'
+        ? 'No owner'
+        : filters.owner === 'any'
+          ? ''
+          : describeCollectionOwner(filters.owner)
 
     body = (
       <>
@@ -944,7 +1012,7 @@ export default function CollectionsPage({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
-            mb: 1,
+            mb: 3,
             flexShrink: 0,
           }}
         >
@@ -953,7 +1021,9 @@ export default function CollectionsPage({
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}>
             {/* View toggle — Cards / Table / Graph (#1629); available to
-                every role and persisted per user. */}
+                every role. The view is intentionally not persisted — the
+                page always loads on Cards while Table/Graph are being
+                evaluated (#1629 follow-up). */}
             <ToggleButtonGroup
               size="small"
               exclusive
@@ -963,19 +1033,20 @@ export default function CollectionsPage({
               }}
               aria-label="Collections view"
               data-testid="collections-view-toggle"
+              sx={graphToggleSx}
             >
               <ToggleButton value="cards" aria-label="Cards view">
-                <Tooltip title="Cards">
+                <Tooltip title="Cards: one tile per collection with its cover image">
                   <ViewModuleIcon fontSize="small" />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton value="table" aria-label="Table view">
-                <Tooltip title="Table">
+                <Tooltip title="Table: sortable rows with choosable columns">
                   <TableRowsIcon fontSize="small" />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton value="graph" aria-label="Graph view">
-                <Tooltip title="Graph">
+                <Tooltip title="Graph: how collections, images and categories connect">
                   <HubIcon fontSize="small" />
                 </Tooltip>
               </ToggleButton>
@@ -995,77 +1066,157 @@ export default function CollectionsPage({
           </Box>
         </Box>
 
-        {/* Shared filter bar (#1629): type chips replace the old
-            Sequence/Synchronized sub-pages; everything feeds all three
-            views. */}
-        <Box
-          data-testid="collection-filters"
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-            gap: 1.5,
-            mb: 3,
-            flexShrink: 0,
-          }}
-        >
-          <Box
-            component="span"
-            role="group"
-            aria-label="Type filter"
-            sx={{ display: 'inline-flex', gap: 0.5, alignItems: 'center' }}
-          >
-            {(['all', 'sequence', 'synchronized'] as const).map((t) => (
-              <Chip
-                key={t}
-                label={t === 'all' ? 'All' : COLLECTION_TYPE_LABELS[t]}
-                clickable
-                color={filters.type === t ? 'primary' : 'default'}
-                variant={filters.type === t ? 'filled' : 'outlined'}
-                onClick={() => onFiltersChange({ ...filters, type: t })}
-                aria-pressed={filters.type === t}
-                data-testid={`type-filter-${t}`}
-              />
-            ))}
-          </Box>
-          <Chip
-            label="My collections"
-            clickable
-            color={filters.mine ? 'primary' : 'default'}
-            variant={filters.mine ? 'filled' : 'outlined'}
-            onClick={() => onFiltersChange({ ...filters, mine: !filters.mine, owner: 'any' })}
-            aria-pressed={filters.mine}
-          />
-          {showOwnerFilter && (
-            <FormControl size="small" sx={{ minWidth: 180 }} disabled={filters.mine}>
-              <InputLabel id="collection-owner-filter-label">Owner</InputLabel>
-              <Select
-                labelId="collection-owner-filter-label"
-                label="Owner"
-                value={selectedOwnerKnown ? ownerValue : 'any'}
-                onChange={(e) => {
-                  const choice = ownerChoices.find((c) => c.key === e.target.value)
-                  onFiltersChange({ ...filters, owner: choice?.value ?? 'any' })
+        {/* Shared filter bar (#1629): the popover facets feed all three
+            views — type/mine/owner stay server-side filters; Name and
+            Visibility narrow client-side. */}
+        <FilterBar
+          clearAction={
+            hasActiveFilters ? (
+              <Button
+                size="small"
+                color="secondary"
+                onClick={clearAllFilters}
+                sx={{
+                  minWidth: 0,
+                  px: 0,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                {ownerChoices.map((c) => (
-                  <MenuItem key={c.key} value={c.key}>
-                    {c.label}
-                  </MenuItem>
+                Clear all
+              </Button>
+            ) : undefined
+          }
+          summary={
+            hasActiveFilters ? (
+              <>
+                {filters.type !== 'all' && (
+                  <Chip
+                    data-testid="filter-chip"
+                    label={`Type: ${COLLECTION_TYPE_LABELS[filters.type]}`}
+                    size="small"
+                    onDelete={() => onFiltersChange({ ...filters, type: 'all' })}
+                  />
+                )}
+                {(filters.mine || filters.owner !== 'any') && (
+                  <Chip
+                    data-testid="filter-chip"
+                    label={`Owner: ${ownerSummaryLabel}`}
+                    size="small"
+                    onDelete={() => onFiltersChange({ ...filters, mine: false, owner: 'any' })}
+                  />
+                )}
+                {searchQ !== '' && (
+                  <Chip
+                    data-testid="filter-chip"
+                    label={`Name: ${searchQuery}`}
+                    size="small"
+                    onDelete={() => setSearchQuery('')}
+                    sx={{
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark'
+                          ? 'rgba(165, 36, 56, 0.22)'
+                          : 'rgba(165, 36, 56, 0.08)',
+                      color: 'secondary.main',
+                      border: '1px solid',
+                      borderColor: 'secondary.main',
+                      '& .MuiChip-deleteIcon': { color: 'secondary.main' },
+                    }}
+                  />
+                )}
+                {[...visibilityFilter].map((v) => (
+                  <Chip
+                    key={`vis:${v}`}
+                    data-testid="filter-chip"
+                    label={`Visibility: ${COLLECTION_VISIBILITY_LABELS[v]}`}
+                    size="small"
+                    onDelete={() =>
+                      setVisibilityFilter((prev) => {
+                        const next = new Set(prev)
+                        next.delete(v)
+                        return next
+                      })
+                    }
+                  />
                 ))}
-              </Select>
-            </FormControl>
-          )}
-          <TextField
-            size="small"
-            label="Search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            helperText={searchHelper}
-            data-testid="collections-search"
-            sx={{ minWidth: 220 }}
-          />
-        </Box>
+              </>
+            ) : undefined
+          }
+          actions={
+            // Always rendered so the bar keeps the same height in every
+            // view — hidden-but-space-reserving outside table view.
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              aria-hidden={viewPrefs.view !== 'table'}
+              tabIndex={viewPrefs.view === 'table' ? undefined : -1}
+              sx={viewPrefs.view === 'table' ? undefined : { visibility: 'hidden' }}
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
+          }
+        >
+          <FilterPopoverButton label="Name" activeCount={searchQ ? 1 : 0}>
+            <FilterTextPanel
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Filter by name, description or owner"
+              ariaLabel="Filter collections by name"
+              helperText={searchHelper}
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton label="Type" activeCount={filters.type === 'all' ? 0 : 1}>
+            <FilterOptionPanel
+              multiple={false}
+              options={(['sequence', 'synchronized'] as const).map((t) => ({
+                value: t,
+                label: COLLECTION_TYPE_LABELS[t],
+              }))}
+              selectedValues={filters.type === 'all' ? [] : [filters.type]}
+              onChange={(values) =>
+                onFiltersChange({
+                  ...filters,
+                  type: (values[0] as CollectionType | undefined) ?? 'all',
+                })
+              }
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton
+            label="Owner"
+            activeCount={filters.mine || filters.owner !== 'any' ? 1 : 0}
+            panelWidth={280}
+          >
+            <FilterOptionPanel
+              multiple={false}
+              options={ownerFacetOptions.map((o) => ({ value: o.value, label: o.label }))}
+              selectedValues={ownerSelected}
+              onChange={(values) => {
+                const choice = ownerFacetOptions.find((o) => o.value === values[0])
+                if (choice == null) {
+                  onFiltersChange({ ...filters, mine: false, owner: 'any' })
+                } else if (choice.filter === 'mine') {
+                  onFiltersChange({ ...filters, mine: true, owner: 'any' })
+                } else {
+                  onFiltersChange({ ...filters, mine: false, owner: choice.filter })
+                }
+              }}
+              searchPlaceholder={ownerFacetOptions.length > 6 ? 'Search owners' : undefined}
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton label="Visibility" activeCount={visibilityFilter.size}>
+            <FilterOptionPanel
+              options={(['private', 'public', 'restricted'] as const).map((v) => ({
+                value: v,
+                label: COLLECTION_VISIBILITY_LABELS[v],
+              }))}
+              selectedValues={[...visibilityFilter]}
+              onChange={(values) => setVisibilityFilter(new Set(values as CollectionVisibility[]))}
+            />
+          </FilterPopoverButton>
+        </FilterBar>
 
         {error ? (
           <Alert severity="error">{error}</Alert>
@@ -1075,17 +1226,17 @@ export default function CollectionsPage({
               <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
                 <CircularProgress aria-label="Loading collections" />
               </Box>
-            ) : collections.length === 0 && viewPrefs.view !== 'graph' ? (
+            ) : shownCollections.length === 0 && viewPrefs.view !== 'graph' ? (
               <Box
                 data-testid="collections-empty"
                 sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
               >
                 <CollectionsIcon sx={{ fontSize: 56, opacity: 0.5 }} />
                 <Typography variant="h6" sx={{ mt: 1 }}>
-                  No collections yet
+                  {hasActiveFilters ? 'No matching collections' : 'No collections yet'}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
-                  {filters.mine || filters.owner !== 'any' || filters.type !== 'all' ? (
+                  {hasActiveFilters ? (
                     'No collections match the current filters.'
                   ) : (
                     <>
@@ -1104,7 +1255,7 @@ export default function CollectionsPage({
                 </Typography>
               </Box>
             ) : null}
-            {viewPrefs.view === 'cards' && collections.length > 0 && (
+            {viewPrefs.view === 'cards' && shownCollections.length > 0 && (
               <Box
                 data-testid="collections-grid"
                 sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
@@ -1132,13 +1283,21 @@ export default function CollectionsPage({
               </Box>
             )}
             {viewPrefs.view === 'table' && collections.length > 0 && (
-              <CollectionsTable
-                collections={shownCollections}
-                categoryPaths={categoryPaths}
-                currentUser={currentUser}
-                onOpenCollection={onOpenCollection}
-                renewCoverThumb={renewCoverThumb}
-              />
+              // Stay mounted (hidden) on a zero-match client filter so the
+              // table's local sort/page state survives; the empty-state
+              // message above covers the hidden rows.
+              <Box sx={{ display: shownCollections.length > 0 ? undefined : 'none' }}>
+                <CollectionsTable
+                  collections={shownCollections}
+                  categoryPaths={categoryPaths}
+                  currentUser={currentUser}
+                  onOpenCollection={onOpenCollection}
+                  renewCoverThumb={renewCoverThumb}
+                  columns={orderedVisibleColumns}
+                  programs={programs}
+                  groups={groups}
+                />
+              </Box>
             )}
             {/* Graph state (positions, zoom, selection) survives view
                 switches and collection round-trips: the canvas stays mounted
@@ -1183,8 +1342,9 @@ export default function CollectionsPage({
                   searchQuery={searchQuery}
                   matchesSearch={(id) => {
                     const c = collections.find((r) => r.id === id)
-                    return c != null && matchesSearchText(c)
+                    return c != null && matchesClientFilters(c)
                   }}
+                  filterActive={visibilityFilter.size > 0}
                   tooltipInfo={graphTooltipInfo}
                   overlay={
                     <>
@@ -1199,6 +1359,7 @@ export default function CollectionsPage({
                         }}
                         aria-label="Graph order"
                         data-testid="graph-order-toggle"
+                        sx={graphToggleSx}
                       >
                         <Tooltip title="Collections">
                           <ToggleButton value={1} aria-label="1st order">
@@ -1224,7 +1385,7 @@ export default function CollectionsPage({
                         onChange={() => setViewPrefs((p) => ({ ...p, sharedOnly: !p.sharedOnly }))}
                         aria-label="Shared only"
                         data-testid="graph-shared-only"
-                        sx={{ bgcolor: 'background.paper' }}
+                        sx={graphToggleSx}
                       >
                         Shared only
                       </ToggleButton>
@@ -1250,6 +1411,17 @@ export default function CollectionsPage({
         </Alert>
       )}
       {body}
+
+      <ColumnVisibilityDialog
+        open={columnDialogOpen}
+        title="Choose columns"
+        columns={orderedColumnOptions}
+        visibleColumns={visibleColumns}
+        minimumVisibleColumns={1}
+        onClose={() => setColumnDialogOpen(false)}
+        onToggleColumn={toggleColumn}
+        onReorderColumns={setColumnOrder}
+      />
 
       <CollectionEditDialog
         open={editorOpen}

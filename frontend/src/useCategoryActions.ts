@@ -88,7 +88,18 @@ export interface UseCategoryActionsDeps {
   setWarningSnack?: React.Dispatch<React.SetStateAction<string | null>>
   /** Surfaces informational notices (e.g. image already a collection member). */
   setInfoSnack?: React.Dispatch<React.SetStateAction<string | null>>
-  setMoveSnack: React.Dispatch<React.SetStateAction<{ message: string; onUndo: () => void } | null>>
+  setMoveSnack: React.Dispatch<
+    React.SetStateAction<{
+      message: string
+      onUndo: () => void
+      /** Optional "View" action — navigates to wherever the moved item landed. */
+      onView?: () => void
+    } | null>
+  >
+  /** Navigate Browse to a category id (null/unknown = root). */
+  navigateToCategory: (categoryId: number | null) => void
+  /** Open a collection's detail page. */
+  openCollection: (id: number) => void
 }
 
 type CategoryStatusUpdate = 'active' | 'hidden'
@@ -113,6 +124,8 @@ export function useCategoryActions({
   setWarningSnack,
   setInfoSnack,
   setMoveSnack,
+  navigateToCategory,
+  openCollection,
 }: UseCategoryActionsDeps) {
   const getAncestorPathForParent = useCallback(
     (parentId: number | null): Category[] => {
@@ -474,6 +487,7 @@ export function useCategoryActions({
         loadUncategorizedImages()
         setMoveSnack({
           message: `Moved \u201c${img.name}\u201d to \u201c${targetName}\u201d`,
+          onView: () => navigateToCategory(categoryId),
           onUndo: async () => {
             try {
               setMoveSnack(null)
@@ -499,6 +513,7 @@ export function useCategoryActions({
       loadUncategorizedImages,
       setMoveSnack,
       setErrorSnack,
+      navigateToCategory,
     ],
   )
 
@@ -527,6 +542,7 @@ export function useCategoryActions({
         await loadCategories()
         setMoveSnack({
           message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
+          onView: () => navigateToCategory(targetCategoryId),
           onUndo: async () => {
             try {
               setMoveSnack(null)
@@ -552,7 +568,7 @@ export function useCategoryActions({
         setErrorSnack(userMessage(err, 'Failed to move category.'))
       }
     },
-    [categories, loadCategories, setMoveSnack, setErrorSnack],
+    [categories, loadCategories, setMoveSnack, setErrorSnack, navigateToCategory],
   )
 
   const handleDropCategoryOnCategory = useCallback(
@@ -614,6 +630,10 @@ export function useCategoryActions({
             newCategoryId === null
               ? `Removed “${collection.name}” from Browse`
               : `Moved “${collection.name}” to “${targetName ?? 'category'}”`,
+          onView:
+            newCategoryId === null
+              ? () => openCollection(collection.id)
+              : () => navigateToCategory(newCategoryId),
           onUndo: async () => {
             try {
               setMoveSnack(null)
@@ -645,7 +665,15 @@ export function useCategoryActions({
       }
       return true
     },
-    [categories, moveCollectionApi, loadCategories, setMoveSnack, setErrorSnack],
+    [
+      categories,
+      moveCollectionApi,
+      loadCategories,
+      setMoveSnack,
+      setErrorSnack,
+      navigateToCategory,
+      openCollection,
+    ],
   )
 
   /** Dialog entry point — the picker keeps the collection's current scope
@@ -710,6 +738,7 @@ export function useCategoryActions({
         await loadCategories()
         setMoveSnack({
           message: `Added “${imgName}” to “${result.collection.name}”.`,
+          onView: () => openCollection(result.collection.id),
           // Undo pins the post-add record's version: a later write to the
           // collection by another editor surfaces as a conflict instead of
           // the undo silently rebasing over it (repo undo convention).
@@ -738,6 +767,7 @@ export function useCategoryActions({
       setInfoSnack,
       setMoveSnack,
       setErrorSnack,
+      openCollection,
     ],
   )
 

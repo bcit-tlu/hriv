@@ -426,6 +426,7 @@ export default function App() {
   const [moveSnack, setMoveSnack] = useState<{
     message: string
     onUndo: () => void
+    onView?: () => void
   } | null>(null)
   const [reorderCount, setReorderCount] = useState(0)
   // Report issue modal state
@@ -1391,6 +1392,11 @@ export default function App() {
 
   const isStudent = currentUser?.role === 'student'
 
+  // Stable refs for the snackbar "View" action: the real callbacks are
+  // declared below this hook call site, so the hook invokes them via refs.
+  const moveSnackNavigateRef = useRef<(categoryPath: Category[]) => void>(() => {})
+  const moveSnackOpenCollectionRef = useRef<(id: number) => void>(() => {})
+
   // Category CRUD, reorder, move, drag-and-drop (extracted to useCategoryActions hook)
   const {
     moveCatOpen,
@@ -1444,6 +1450,11 @@ export default function App() {
     setWarningSnack: setWarnSnack,
     setInfoSnack,
     setMoveSnack,
+    navigateToCategory: (categoryId: number | null) =>
+      moveSnackNavigateRef.current(
+        categoryId == null ? [] : (findCategoryPath(categories, categoryId) ?? []),
+      ),
+    openCollection: (id: number) => moveSnackOpenCollectionRef.current(id),
   })
 
   // Coordinate a single bottom-right reorder snackbar across the browsed
@@ -1858,6 +1869,15 @@ export default function App() {
     },
     [pushNavState, runCanvasNavigation],
   )
+
+  // Keep the move-snackbar refs pointing at the live callbacks.
+  useEffect(() => {
+    moveSnackNavigateRef.current = handleNavigateBrowseFromCollection
+  }, [handleNavigateBrowseFromCollection])
+  useEffect(() => {
+    moveSnackOpenCollectionRef.current = (id: number) =>
+      handleOpenCollection(id, { fromBrowse: false })
+  }, [handleOpenCollection])
 
   // Browse collection editor (#1525 UX): the tile title's edit pencil opens
   // the shared CollectionEditDialog — the same form the Collections pages
@@ -2706,6 +2726,30 @@ export default function App() {
                         </Button>
                       )
                     })()}
+                  {collectionsEnabled && (
+                    <Tooltip
+                      title={
+                        canvasEditActive
+                          ? 'Exit canvas edit mode first'
+                          : 'Add this image to a collection'
+                      }
+                    >
+                      <span>
+                        <Button
+                          variant="outlined"
+                          startIcon={<PlaylistAddIcon />}
+                          onClick={() => {
+                            setAddToCollectionImageIds([selectedImage.id])
+                            setAddToCollectionOpen(true)
+                          }}
+                          disabled={canvasEditActive}
+                          sx={inactiveViewerActionSx}
+                        >
+                          Add to Collection
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  )}
                   {canEditContent && (
                     <Tooltip title={canvasEditActive ? 'Exit canvas edit mode first' : ''}>
                       <span>
@@ -2731,30 +2775,6 @@ export default function App() {
                       Share View
                     </Button>
                   </Tooltip>
-                  {collectionsEnabled && (
-                    <Tooltip
-                      title={
-                        canvasEditActive
-                          ? 'Exit canvas edit mode first'
-                          : 'Add this image to a collection'
-                      }
-                    >
-                      <span>
-                        <Button
-                          variant="outlined"
-                          startIcon={<PlaylistAddIcon />}
-                          onClick={() => {
-                            setAddToCollectionImageIds([selectedImage.id])
-                            setAddToCollectionOpen(true)
-                          }}
-                          disabled={canvasEditActive}
-                          sx={inactiveViewerActionSx}
-                        >
-                          Add to Collection
-                        </Button>
-                      </span>
-                    </Tooltip>
-                  )}
                 </Box>
               </Box>
 
@@ -3034,6 +3054,16 @@ export default function App() {
                               </Button>
                             )
                           })()}
+                        {collectionsEnabled && (
+                          <Button
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={openBrowseCollectionCreate}
+                            sx={categoryPageHiddenSx}
+                          >
+                            New collection
+                          </Button>
+                        )}
                         {(path.length === 0 || liveCategoryPath.length > 0) &&
                           liveCategoryPath.length < MAX_DEPTH && (
                             <Button
@@ -3045,16 +3075,6 @@ export default function App() {
                               Add Category
                             </Button>
                           )}
-                        {collectionsEnabled && (
-                          <Button
-                            variant="outlined"
-                            startIcon={<AddIcon />}
-                            onClick={openBrowseCollectionCreate}
-                            sx={categoryPageHiddenSx}
-                          >
-                            New collection
-                          </Button>
-                        )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -3679,9 +3699,31 @@ export default function App() {
           onClose={() => setMoveSnack(null)}
           variant="filled"
           action={
-            <Button color="inherit" size="small" onClick={moveSnack?.onUndo} aria-label="Undo move">
-              Undo
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {moveSnack?.onView && (
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    moveSnack.onView?.()
+                    setMoveSnack(null)
+                  }}
+                  aria-label="View"
+                >
+                  View
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                color="inherit"
+                size="small"
+                onClick={moveSnack?.onUndo}
+                aria-label="Undo move"
+              >
+                Undo
+              </Button>
+            </Box>
           }
         >
           {moveSnack?.message}

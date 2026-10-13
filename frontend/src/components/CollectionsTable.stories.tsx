@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, within } from 'storybook/test'
-import CollectionsTable from './CollectionsTable'
+import CollectionsTable, { COLLECTIONS_TABLE_COLUMNS } from './CollectionsTable'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import type { Category, CollectionSummary, User } from '../types'
 
@@ -133,6 +133,48 @@ export const Basic: Story = {
     await expect(canvas.getByTestId('collections-table')).toBeInTheDocument()
     await expect(canvas.getByText('Italian › Gothic')).toBeInTheDocument()
     await expect(canvas.getByTestId('collections-table-you-chip')).toBeInTheDocument()
+  },
+}
+
+export const AllColumns: Story = {
+  name: 'All Columns',
+  args: {
+    collections: [
+      makeRow({
+        id: 1,
+        name: 'Skull comparison',
+        type: 'synchronized',
+        visibility: 'restricted',
+        programIds: [3],
+        groupIds: [4],
+        categoryId: 2,
+      }),
+      makeRow({
+        id: 2,
+        name: 'Pelvis landmarks',
+        type: 'sequence',
+        categoryId: 1,
+        imageCount: 6,
+        owners: [{ kind: 'program', programId: 3, name: 'Radiography' }],
+        updatedAt: '2026-08-20T09:00:00Z',
+      }),
+    ],
+    columns: COLLECTIONS_TABLE_COLUMNS,
+    programs: [
+      { id: 3, name: 'Radiography', oidc_group: null, created_at: FIXED_AT, updated_at: FIXED_AT },
+    ],
+    groups: [
+      {
+        id: 4,
+        name: 'Cohort A',
+        description: null,
+        createdByUserId: null,
+        memberIds: [],
+        instructorIds: [],
+        createdAt: FIXED_AT,
+        updatedAt: FIXED_AT,
+      },
+    ],
   },
 }
 
