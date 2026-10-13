@@ -772,6 +772,84 @@ class CollectionOut(CollectionSummaryOut):
     member_count: int = 0
 
 
+class CollectionGraphNodeOut(BaseModel):
+    """One collection node in a graph payload (#1628).
+
+    ``image_count`` is the count of members visible to the *caller* — the
+    same visible-only number ``CollectionSummaryOut.image_count`` reports —
+    so the graph can never disclose how many members are restricted from a
+    student.
+    """
+
+    id: int
+    name: str
+    type: str
+    image_count: int
+    hidden: bool = False
+    category_id: int | None = None
+
+
+class CollectionGraphImageOut(BaseModel):
+    """One image node: every *visible* collection containing it is listed in
+    ``collection_ids`` (edges are implied — no explicit edge list).
+
+    ``category_id`` is always populated (``None`` for uncategorized images)
+    at every order — the client does not have to special-case order 3.
+    """
+
+    id: int
+    name: str
+    collection_ids: list[int]
+    category_id: int | None = None
+
+
+class CollectionGraphCategoryOut(BaseModel):
+    """One category node (#1633). ``image_count`` counts caller-visible
+    images filed directly in the category (not descendants); ``path`` is
+    the label chain from the root for tooltips."""
+
+    id: int
+    label: str
+    path: str
+    image_count: int
+
+
+class CollectionsGraphOut(BaseModel):
+    """Hub-and-spoke graph of all viewable collections (#1628).
+
+    ``collections`` is ordered like ``GET /api/collections`` (``updated_at``
+    desc, ``id`` desc). ``images`` is populated for ``order`` ≥ 2, sorted
+    by id, each ``collection_ids`` ascending. ``categories`` is populated
+    only for ``order=3`` and contains every caller-visible category holding
+    ≥1 caller-visible image — including categories with no collection, so
+    instructors can spot collections still to create.
+    """
+
+    order: int
+    collections: list[CollectionGraphNodeOut]
+    images: list[CollectionGraphImageOut] = []
+    categories: list[CollectionGraphCategoryOut] = []
+
+
+class CollectionGraphOut(BaseModel):
+    """Single-collection perspective graph (#1628).
+
+    ``images`` are the hub collection's caller-visible members in member
+    order; ``collection_ids`` lists every visible collection containing the
+    image (just ``[collection.id]`` at ``order=1``).
+    ``related_collections`` are the other viewable collections sharing at
+    least one visible member (``order`` ≥ 2), sorted by name then id.
+    ``categories`` (``order=3`` only) is limited to the categories of the
+    hub's visible members.
+    """
+
+    order: int
+    collection: CollectionGraphNodeOut
+    images: list[CollectionGraphImageOut] = []
+    related_collections: list[CollectionGraphNodeOut] = []
+    categories: list[CollectionGraphCategoryOut] = []
+
+
 CollectionType = Literal["synchronized", "sequence"]
 CollectionVisibility = Literal["private", "public", "restricted"]
 

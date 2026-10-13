@@ -80,6 +80,10 @@ from ..schemas import (
     CollectionBulkDelete,
     CollectionBulkUpdate,
     CollectionCreate,
+    CollectionGraphCategoryOut,
+    CollectionGraphImageOut,
+    CollectionGraphNodeOut,
+    CollectionGraphOut,
     CollectionImagesUpdate,
     CollectionMove,
     CollectionOut,
@@ -88,6 +92,7 @@ from ..schemas import (
     CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
+    CollectionsGraphOut,
 )
 from ..tile_order import bump_scopes, collection_scope_keys
 
@@ -167,6 +172,145 @@ async def list_collections(
     return [collection_summary_out(ctx, c) for c in visible]
 
 
+# ── Graph endpoints (#1628) ───────────────────────────────────────────────
+# ``/graph`` is registered before ``/{collection_id}`` so the literal segment
+# is never parsed as an int path parameter (which would 422 every request).
+
+
+def _graph_node(ctx: _ViewerContext, collection: Collection) -> CollectionGraphNodeOut:
+    """Node payload for one collection; ``image_count`` counts only members
+    the caller may see (visible-only, like ``collection_summary_out``)."""
+    return CollectionGraphNodeOut(
+        id=collection.id,
+        name=collection.name,
+        type=collection.type,
+        image_count=len(ctx.visible_images(collection)),
+        hidden=bool(collection.hidden),
+        category_id=collection.category_id,
+    )
+
+
+async def _graph_categories(
+    db: AsyncSession,
+    ctx: _ViewerContext,
+    category_ids: set[int] | None = None,
+) -> list[CollectionGraphCategoryOut]:
+    """Category nodes for ``order=3`` (#1633).
+
+    Two queries total: one ``select(Category)`` for labels and the
+    ``›``-joined label path (walked via ``parent_id``), and one grouped
+    count of visible images per category. The count mirrors
+    ``_ViewerContext.can_view_image`` (collection_views.py) without loading
+    image rows: non-students see every image; students need ``active`` and
+    the category outside their excluded set. Only categories with ≥1
+    visible image are returned; *category_ids*, when given, narrows the
+    result to that subset (the ``/{id}/graph`` local view).
+    """
+    categories = (await db.execute(select(Category))).scalars().all()
+    by_id = {c.id: c for c in categories}
+    count_stmt = (
+        select(Image.category_id, func.count())
+        .where(Image.category_id.isnot(None))
+        .group_by(Image.category_id)
+    )
+    if ctx.excluded_category_ids is not None:
+        count_stmt = count_stmt.where(Image.active.is_(True))
+    counts = dict((await db.execute(count_stmt)).all())
+    excluded = ctx.excluded_category_ids or set()
+
+    def _path(category: Category) -> str:
+        labels: list[str] = []
+        node: Category | None = category
+        while node is not None:
+            labels.append(node.label)
+            node = by_id.get(node.parent_id)
+        return " › ".join(reversed(labels))
+
+    nodes: list[CollectionGraphCategoryOut] = []
+    for category_id, count in counts.items():
+        if (
+            count < 1
+            or category_id in excluded
+            or (category_ids is not None and category_id not in category_ids)
+        ):
+            continue
+        category = by_id.get(category_id)
+        if category is None:
+            continue
+        nodes.append(
+            CollectionGraphCategoryOut(
+                id=category_id,
+                label=category.label,
+                path=_path(category),
+                image_count=count,
+            )
+        )
+    return sorted(nodes, key=lambda n: n.id)
+
+
+def _graph_image(
+    image: Image, collection_ids: list[int]
+) -> CollectionGraphImageOut:
+    return CollectionGraphImageOut(
+        id=image.id,
+        name=image.name,
+        collection_ids=collection_ids,
+        category_id=image.category_id,
+    )
+
+
+@router.get("/graph", response_model=CollectionsGraphOut)
+async def collections_graph(
+    user: Annotated[User, Depends(get_current_user)],
+    order: Annotated[int, Query(ge=1, le=3)] = 1,
+    db: AsyncSession = Depends(get_db),
+):
+    """Structural graph for the Collections page.
+
+    Nodes are exactly the collections an unfiltered ``GET /collections``
+    would return. At ``order`` ≥ 2 each caller-visible member image is a
+    node whose ``collection_ids`` list every visible collection containing
+    it — edges are implied. At ``order=3`` every caller-visible category
+    holding ≥1 visible image is a node too, including categories with no
+    collection (isolated nodes). ``image_links`` /
+    ``CollectionImage.image`` are selectin-loaded, so member loading adds
+    two queries total, not per collection.
+    """
+    collections = (
+        (await db.execute(
+            select(Collection).order_by(
+                Collection.updated_at.desc(), Collection.id.desc()
+            )
+        ))
+        .scalars()
+        .unique()
+        .all()
+    )
+    ctx = await _ViewerContext.build(db, user)
+    visible = [c for c in collections if ctx.can_view(c)]
+
+    images: list[CollectionGraphImageOut] = []
+    if order >= 2:
+        by_id: dict[int, Image] = {}
+        members: dict[int, list[int]] = {}
+        for collection in visible:
+            for image in ctx.visible_images(collection):
+                by_id.setdefault(image.id, image)
+                members.setdefault(image.id, []).append(collection.id)
+        images = [
+            _graph_image(by_id[image_id], sorted(collection_ids))
+            for image_id, collection_ids in sorted(members.items())
+        ]
+    return CollectionsGraphOut(
+        order=order,
+        collections=[_graph_node(ctx, c) for c in visible],
+        images=images,
+        categories=(
+            await _graph_categories(db, ctx) if order == 3 else []
+        ),
+    )
+
+
 @router.get("/{collection_id}", response_model=CollectionOut)
 async def get_collection(
     collection_id: int,
@@ -175,6 +319,77 @@ async def get_collection(
 ):
     ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
     return collection_out(ctx, collection)
+
+
+@router.get("/{collection_id}/graph", response_model=CollectionGraphOut)
+async def collection_graph(
+    collection_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    order: Annotated[int, Query(ge=1, le=3)] = 1,
+    db: AsyncSession = Depends(get_db),
+):
+    """Graph from one collection's perspective (the dialog view).
+
+    ``images`` are the hub's caller-visible members in member order. At
+    ``order`` ≥ 2 every visible collection sharing a visible member is added
+    to ``collection_ids`` and to ``related_collections`` (deduplicated,
+    excluding the hub), so the dialog can render them without extra
+    requests; switching perspective fetches that collection's own graph.
+    At ``order=3`` ``categories`` lists the categories of the hub's visible
+    members (this view stays local — uncovered categories are a main-page
+    concern).
+    """
+    ctx, collection = await get_visible_collection_or_404(
+        db, user, collection_id
+    )
+    hub_images = ctx.visible_images(collection)
+    hub_image_ids = {image.id for image in hub_images}
+    members: dict[int, list[int]] = {
+        image.id: [collection.id] for image in hub_images
+    }
+
+    related: list[Collection] = []
+    if order >= 2 and hub_image_ids:
+        others = (
+            (await db.execute(
+                select(Collection)
+                .join(CollectionImage)
+                .where(
+                    CollectionImage.image_id.in_(hub_image_ids),
+                    Collection.id != collection.id,
+                )
+            ))
+            .scalars()
+            .unique()
+            .all()
+        )
+        related = [c for c in others if ctx.can_view(c)]
+        for other in related:
+            for image in ctx.visible_images(other):
+                if image.id in hub_image_ids:
+                    members[image.id].append(other.id)
+
+    return CollectionGraphOut(
+        order=order,
+        collection=_graph_node(ctx, collection),
+        images=[
+            _graph_image(image, sorted(members[image.id]))
+            for image in hub_images
+        ],
+        related_collections=[
+            _graph_node(ctx, c)
+            for c in sorted(related, key=lambda c: (c.name, c.id))
+        ],
+        categories=(
+            await _graph_categories(
+                db,
+                ctx,
+                {i.category_id for i in hub_images if i.category_id is not None},
+            )
+            if order == 3
+            else []
+        ),
+    )
 
 
 # ── Write helpers ─────────────────────────────────────────────────────────

@@ -19,6 +19,8 @@ from app.routers.collections import (
     _ViewerContext,
     bulk_delete_collections,
     bulk_update_collections,
+    collection_graph,
+    collections_graph,
     create_collection,
     delete_collection,
     get_collection,
@@ -2846,3 +2848,353 @@ async def test_bulk_delete_concurrent_move_is_409() -> None:
     assert exc.value.status_code == 409
     db.delete.assert_not_awaited()
     db.commit.assert_not_awaited()
+
+
+# ── graph endpoints (#1628) ───────────────────────────────
+
+
+def _graph_app(monkeypatch: pytest.MonkeyPatch, db: AsyncMock) -> TestClient:
+    """TestClient mounting the collections router with stubbed auth + db.
+
+    ``db`` must be a ``_mock_db``-style session so ``scalars().unique()``
+    chains resolve; the feature flag is forced on unless a test flips it.
+    """
+    from app.auth import get_current_user
+    from app.database import get_db, settings
+
+    test_app = FastAPI()
+    test_app.include_router(collections_router.router)
+
+    async def current_user():
+        return _user("admin")
+
+    async def session():
+        yield db
+
+    test_app.dependency_overrides[get_current_user] = current_user
+    test_app.dependency_overrides[get_db] = session
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    return TestClient(test_app)
+
+
+def test_graph_route_does_not_parse_as_collection_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``GET /collections/graph`` must reach the graph handler, not the
+    ``/{collection_id}`` int path parameter (a 422 would mean the route is
+    registered too late)."""
+    client = _graph_app(monkeypatch, _mock_db([]))
+    response = client.get("/collections/graph")
+    assert response.status_code == 200
+    assert response.json() == {
+        "order": 1,
+        "collections": [],
+        "images": [],
+        "categories": [],
+    }
+
+
+def test_graph_order_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _graph_app(monkeypatch, _mock_db([]))
+    for path in (
+        "/collections/graph?order=0",
+        "/collections/graph?order=4",
+        "/collections/1/graph?order=0",
+        "/collections/1/graph?order=4",
+    ):
+        assert client.get(path).status_code == 422, path
+
+
+def test_graph_flag_off_is_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.database import settings
+
+    client = _graph_app(monkeypatch, _mock_db([]))
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    assert client.get("/collections/graph").status_code == 404
+    assert client.get("/collections/1/graph").status_code == 404
+
+
+async def test_graph_collections_match_list_for_student() -> None:
+    """The student's node set is exactly their unfiltered
+    ``GET /api/collections`` set; another user's private collection appears
+    in neither ``collections`` nor any ``collection_ids``."""
+    shared = _image(2)
+    cols = [
+        _collection(1, "public", user_id=10, images=[_image(1), shared]),
+        _collection(2, "private", user_id=10, images=[shared, _image(3)]),
+        _collection(3, "private", user_id=2, images=[_image(4)]),
+    ]
+    student = _user("student", id=2)
+    listed = await list_collections(student, db=_mock_db(cols))
+    out = await collections_graph(student, order=2, db=_mock_db(cols))
+
+    assert {c.id for c in out.collections} == {c.id for c in listed} == {1, 3}
+    assert all(2 not in node.collection_ids for node in out.images)
+    by_id = {i.id: i for i in out.images}
+    assert by_id[2].collection_ids == [1]  # only the visible public holder
+
+
+async def test_graph_order2_instructor_sees_shared_image_bridges() -> None:
+    shared = _image(2)
+    cols = [
+        _collection(1, "public", user_id=10, images=[_image(1), shared]),
+        _collection(2, "private", user_id=10, images=[shared]),
+    ]
+    out = await collections_graph(
+        _user("instructor", id=7), order=2, db=_mock_db(cols)
+    )
+    assert {c.id for c in out.collections} == {1, 2}
+    by_id = {i.id: i for i in out.images}
+    assert by_id[2].collection_ids == [1, 2]
+    assert by_id[1].collection_ids == [1]
+    # Images sorted by id; collections keep the list's updated_at/id desc order.
+    assert [i.id for i in out.images] == sorted(i.id for i in out.images)
+
+
+async def test_graph_order1_omits_images() -> None:
+    col = _collection(1, "public", user_id=10, images=[_image(1)])
+    out = await collections_graph(_user("admin"), order=1, db=_mock_db([col]))
+    assert out.order == 1
+    assert out.images == []
+    assert out.collections[0].image_count == 1
+
+
+async def test_graph_hidden_category_image_filtered_and_not_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An image whose category is hidden/restricted for the student is
+    absent from ``images`` and ``image_count``; the instructor still sees it
+    and it still counts."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    cols = [
+        _collection(
+            1,
+            "public",
+            user_id=10,
+            images=[_image(1, category_id=20), _image(2, category_id=21)],
+        )
+    ]
+    student_out = await collections_graph(
+        _user("student", id=2), order=2, db=_mock_db(cols)
+    )
+    assert [i.id for i in student_out.images] == [2]
+    assert student_out.collections[0].image_count == 1
+
+    instructor_out = await collections_graph(
+        _user("instructor", id=7), order=2, db=_mock_db(cols)
+    )
+    assert [i.id for i in instructor_out.images] == [1, 2]
+    assert instructor_out.collections[0].image_count == 2
+
+
+async def test_collection_graph_order1_member_order() -> None:
+    col = _collection(1, "public", user_id=10, images=[_image(5), _image(3)])
+    out = await collection_graph(1, _user("admin"), order=1, db=_mock_db(get=col))
+    assert out.collection.id == 1
+    assert [i.id for i in out.images] == [5, 3]  # member order, not id order
+    assert all(i.collection_ids == [1] for i in out.images)
+    assert out.related_collections == []
+
+
+async def test_collection_graph_order2_related_collections() -> None:
+    shared_a, shared_b, only_other = _image(1), _image(2), _image(4)
+    hub = _collection(1, "public", user_id=10, images=[shared_a, shared_b])
+    related = _collection(2, "public", user_id=10, images=[shared_b, only_other])
+    hidden = _collection(3, "private", user_id=10, images=[shared_b])
+    student = _user("student", id=2)
+    out = await collection_graph(
+        1, student, order=2, db=_mock_db(collections=[related, hidden], get=hub)
+    )
+    # The private collection neither bridges the shared image nor appears.
+    assert {c.id for c in out.related_collections} == {2}
+    by_id = {i.id: i for i in out.images}
+    assert by_id[1].collection_ids == [1]
+    assert by_id[2].collection_ids == [1, 2]
+    # order=1 hides the perspective switch entirely
+    out1 = await collection_graph(1, student, order=1, db=_mock_db(get=hub))
+    assert out1.related_collections == []
+    assert all(i.collection_ids == [1] for i in out1.images)
+
+
+async def test_collection_graph_hidden_from_student_is_404() -> None:
+    col = _collection(1, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await collection_graph(1, _user("student", id=2), db=_mock_db(get=col))
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Collection not found"
+
+
+async def test_collection_graph_student_image_count_is_visible_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``image_count`` never leaks the nominal member total."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "public",
+        user_id=10,
+        images=[
+            _image(1, category_id=20),
+            _image(2, category_id=20),
+            _image(3),
+        ],
+    )
+    out = await collection_graph(
+        1, _user("student", id=2), order=1, db=_mock_db(get=col)
+    )
+    assert out.collection.image_count == 1
+    assert [i.id for i in out.images] == [3]
+
+
+# ── graph order=3: category nodes (#1633) ─────────────────
+
+
+def _category(id: int, label: str | None = None, parent_id: int | None = None):
+    return SimpleNamespace(id=id, label=label or f"cat{id}", parent_id=parent_id)
+
+
+def _graph_db(
+    collections: list | None = None,
+    get: object = None,
+    categories: list | None = None,
+    counts: dict[int, int] | None = None,
+) -> AsyncMock:
+    """Mock session for the graph reads, dispatching on the statement:
+    entity selects (``Collection``/``Category``) return their rows and the
+    grouped ``(category_id, count)`` select returns ``counts`` pairs.
+    Executed statements are recorded on ``db._executed`` for inspection."""
+    db = _mock_db(collections, get)
+    db._executed = []
+
+    async def _execute(stmt):
+        db._executed.append(stmt)
+        result = MagicMock()
+        desc = stmt.column_descriptions
+        if desc and desc[0]["name"] == "category_id":
+            result.all.return_value = list((counts or {}).items())
+            return result
+        rows = (
+            {Collection: collections or [], Category: categories or []}.get(
+                desc[0].get("entity"), []
+            )
+            if desc
+            else []
+        )
+        result.scalars.return_value.all.return_value = rows
+        result.scalars.return_value.unique.return_value.all.return_value = rows
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+async def test_graph_order3_category_nodes() -> None:
+    """Every caller-visible category with ≥1 visible image is a node —
+    including one covered by no collection (the isolated-node case) — and
+    categories with no visible images are excluded."""
+    categories = [
+        _category(1, "Hematology"),
+        _category(10, "Slide 23", parent_id=1),
+        _category(11, "Empty", parent_id=1),
+        _category(12, "Uncovered", parent_id=1),
+    ]
+    col = _collection(1, "public", user_id=10, images=[_image(7, category_id=10)])
+    db = _graph_db(
+        collections=[col], categories=categories, counts={10: 4, 12: 2}
+    )
+    out = await collections_graph(_user("admin"), order=3, db=db)
+
+    assert [c.id for c in out.categories] == [10, 12]
+    covered = next(c for c in out.categories if c.id == 10)
+    assert covered.label == "Slide 23"
+    assert covered.path == "Hematology › Slide 23"
+    assert covered.image_count == 4
+    # 12: visible images but no collection → still a node (isolated)
+    uncovered = next(c for c in out.categories if c.id == 12)
+    assert uncovered.image_count == 2
+    # images carry category_id at every order
+    assert out.images[0].category_id == 10
+
+
+async def test_graph_order3_student_excludes_restricted_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A category outside the student's visible set has images yet never
+    appears; the instructor sees it. ``image_count`` is the visible-only
+    per-category count."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={10}),
+    )
+    categories = [_category(10, "Restricted"), _category(12, "Open")]
+    db = _graph_db(categories=categories, counts={10: 4, 12: 2})
+
+    student_out = await collections_graph(_user("student", id=2), order=3, db=db)
+    assert [c.id for c in student_out.categories] == [12]
+    assert student_out.categories[0].image_count == 2
+
+    instructor_out = await collections_graph(
+        _user("instructor", id=7), order=3, db=db
+    )
+    assert [c.id for c in instructor_out.categories] == [10, 12]
+
+
+async def test_graph_order2_categories_empty_but_category_id_present() -> None:
+    col = _collection(1, "public", user_id=10, images=[_image(7, category_id=10)])
+    out = await collections_graph(
+        _user("admin"), order=2, db=_graph_db(collections=[col])
+    )
+    assert out.categories == []
+    assert out.images[0].category_id == 10
+
+
+async def test_collection_graph_order3_is_local() -> None:
+    """``/{id}/graph?order=3`` categories are limited to the hub's member
+    categories — an uncovered category with visible images is a main-page
+    concern and does not appear here."""
+    hub = _collection(
+        1,
+        "public",
+        user_id=10,
+        images=[_image(7, category_id=10), _image(8, category_id=None)],
+    )
+    categories = [_category(10, "Member"), _category(12, "Uncovered")]
+    db = _graph_db(get=hub, categories=categories, counts={10: 3, 12: 9})
+    out = await collection_graph(1, _user("admin"), order=3, db=db)
+
+    assert [c.id for c in out.categories] == [10]
+    assert out.categories[0].image_count == 3
+    assert [i.category_id for i in out.images] == [10, None]
+
+
+async def test_graph_order3_count_filters_active_for_students_only() -> None:
+    """The grouped per-category count mirrors ``can_view_image``: the
+    ``active`` predicate is applied for students but not for non-students
+    (who see inactive images), so instructor counts match their nodes."""
+    categories = [_category(10, "Member")]
+
+    def _count_sql(db: AsyncMock) -> str:
+        stmt = next(
+            s
+            for s in db._executed
+            if s.column_descriptions[0]["name"] == "category_id"
+        )
+        return str(stmt)
+
+    db = _graph_db(categories=categories, counts={10: 3})
+    await collections_graph(_user("admin"), order=3, db=db)
+    assert "active" not in _count_sql(db)
+
+    db = _graph_db(categories=categories, counts={10: 1})
+    await collections_graph(_user("instructor", id=7), order=3, db=db)
+    assert "active" not in _count_sql(db)
+
+    db = _graph_db(categories=categories, counts={10: 1})
+    await collections_graph(_user("student", id=2), order=3, db=db)
+    assert "images.active" in _count_sql(db)
