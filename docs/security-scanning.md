@@ -84,6 +84,10 @@ swallowed by the anti-recursion guard. The token is minted after regeneration
 completes, so dependency install code never runs while it exists. One
 subtlety: the `workflow_run` `workflows:` filter is a glob pattern, not a
 literal name, so the `[CI]` prefix is escaped (`\[CI\]`) in the workflow file.
+A second subtlety: the checkout sets `persist-credentials: false`, because the
+`GITHUB_TOKEN` `http.extraheader` that checkout persists by default would
+otherwise take precedence over the app token embedded in the push URL, and the
+push would be rejected as `github-actions[bot]`.
 
 Some majors are deliberately ignored in `dependabot.yml`: all `node` image and
 `@types/node` majors (HRIV follows the even-numbered LTS line, so a move to the
