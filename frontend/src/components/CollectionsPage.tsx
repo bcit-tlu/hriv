@@ -666,6 +666,9 @@ export default function CollectionsPage({
       ? selectedIdsRaw
       : new Set([...selectedIdsRaw].filter((id) => live.has(id)))
   }, [collections, selectedIdsRaw])
+  // Commit the pruning so a row that leaves the list (server-side filter,
+  // delete) does not come back selected when it reappears.
+  if (selectedIds !== selectedIdsRaw) setSelectedIds(selectedIds)
   const selectedRows = useMemo(
     () => collections.filter((c) => selectedIds.has(c.id)),
     [collections, selectedIds],

@@ -227,10 +227,28 @@ export default function CollectionsTable({
     return getCategoryHiddenStateFromPath([...seg.ancestors, seg.category]).hidden
   }
 
-  const programsLabel = (c: CollectionSummary): string =>
-    c.programIds.map((id) => programs.find((p) => p.id === id)?.name ?? `Program ${id}`).join(', ')
-  const groupsLabel = (c: CollectionSummary): string =>
-    c.groupIds.map((id) => groups.find((g) => g.id === id)?.name ?? `Group ${id}`).join(', ')
+  // Own scope only when restricted, then the filed category's effective
+  // scope (#1567) — shared by the chip cells and their sort keys.
+  const scopeIds = (c: CollectionSummary, kind: 'program' | 'group') => {
+    const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+    const catPath = seg ? [...seg.ancestors, seg.category] : []
+    const own =
+      c.visibility === 'restricted' ? (kind === 'program' ? c.programIds : c.groupIds) : []
+    const inherited = (
+      kind === 'program' ? narrowProgramIds(catPath) : narrowGroupIds(catPath)
+    ).filter((id) => !own.includes(id))
+    return { own, inherited }
+  }
+  const programName = (id: number) => programs.find((p) => p.id === id)?.name ?? `Program ${id}`
+  const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? `Group ${id}`
+  const programsLabel = (c: CollectionSummary): string => {
+    const { own, inherited } = scopeIds(c, 'program')
+    return [...own, ...inherited].map(programName).join(', ')
+  }
+  const groupsLabel = (c: CollectionSummary): string => {
+    const { own, inherited } = scopeIds(c, 'group')
+    return [...own, ...inherited].map(groupName).join(', ')
+  }
 
   const sorted = useMemo(() => {
     const rows = [...collections]
@@ -393,14 +411,9 @@ export default function CollectionsTable({
     const dimmed = c.hidden || categoryHidden
     const dimAttr = dimmed ? { 'data-dimmed': true } : undefined
     const greySx = dimmed ? { filter: 'grayscale(100%)' } : undefined
-    const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
-    const catPath = seg ? [...seg.ancestors, seg.category] : []
-    // Own scope chips only when restricted; the filed category's effective
-    // scope renders at inherited opacity beside them (#1567).
-    const ownProgramIds = c.visibility === 'restricted' ? c.programIds : []
-    const ownGroupIds = c.visibility === 'restricted' ? c.groupIds : []
-    const inheritedPrograms = narrowProgramIds(catPath).filter((id) => !ownProgramIds.includes(id))
-    const inheritedGroups = narrowGroupIds(catPath).filter((id) => !ownGroupIds.includes(id))
+    // Inherited category scope renders at inherited opacity (#1567).
+    const { own: ownProgramIds, inherited: inheritedPrograms } = scopeIds(c, 'program')
+    const { own: ownGroupIds, inherited: inheritedGroups } = scopeIds(c, 'group')
     const chipSx = dimmed ? { bgcolor: visColors.inactiveChipBg, color: '#fff' } : {}
     const scopeChips = (
       ownIds: number[],
@@ -408,10 +421,7 @@ export default function CollectionsTable({
       kind: 'program' | 'group',
     ): ReactNode => {
       if (ownIds.length === 0 && inheritedIds.length === 0) return '—'
-      const label = (id: number) =>
-        kind === 'program'
-          ? (programs.find((p) => p.id === id)?.name ?? `Program ${id}`)
-          : (groups.find((g) => g.id === id)?.name ?? `Group ${id}`)
+      const label = kind === 'program' ? programName : groupName
       const chip = (id: number, inherited: boolean) => (
         <Chip
           key={`${kind}${id}`}

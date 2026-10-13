@@ -416,6 +416,32 @@ describe('CollectionsTable', () => {
       expect(screen.queryByRole('checkbox')).toBeNull()
     })
 
+    it('sorts Programs by the displayed own + inherited scope', () => {
+      render(
+        <CollectionsTable
+          collections={[
+            row({ id: 1, name: 'Zed own', visibility: 'restricted', programIds: [9] }),
+            row({ id: 2, name: 'Inherited only', categoryId: 12 }),
+          ]}
+          categoryPaths={buildCategoryPaths([
+            makeCategory({ id: 12, label: 'Rad', programIds: [5] }),
+          ])}
+          currentUser={ADMIN}
+          onOpenCollection={vi.fn()}
+          programs={[
+            { id: 5, name: 'Anatomy', oidc_group: null, created_at: '', updated_at: '' },
+            { id: 9, name: 'Zoology', oidc_group: null, created_at: '', updated_at: '' },
+          ]}
+          columns={['name', 'programs']}
+        />,
+      )
+      fireEvent.click(screen.getByText('Programs'))
+      expect(screen.getAllByTestId(/collections-table-row-/).map((r) => r.dataset.testid)).toEqual([
+        'collections-table-row-2',
+        'collections-table-row-1',
+      ])
+    })
+
     it('renders own scope chips and inherited category chips', () => {
       render(
         <CollectionsTable

@@ -539,12 +539,17 @@ export default function App() {
   // like the image/collection viewers (#1630 feedback).
   const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
   // Old Manage → Collections links open the Collections page on its Table
-  // view; consumed by the first mount only.
-  const [collectionsInitialView] = useState<CollectionsView | undefined>(() =>
-    new URLSearchParams(window.location.search).get('page') === LEGACY_MANAGE_COLLECTIONS_PAGE
-      ? 'table'
-      : undefined,
+  // view; cleared once the user leaves Collections so later visits open on
+  // Cards as usual.
+  const [collectionsInitialView, setCollectionsInitialView] = useState<CollectionsView | undefined>(
+    () =>
+      new URLSearchParams(window.location.search).get('page') === LEGACY_MANAGE_COLLECTIONS_PAGE
+        ? 'table'
+        : undefined,
   )
+  if (collectionsInitialView != null && page !== 'collections') {
+    setCollectionsInitialView(undefined)
+  }
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('page') !== LEGACY_MANAGE_COLLECTIONS_PAGE) return
@@ -917,6 +922,7 @@ export default function App() {
             : 'browse'
       ) as Page
       setPage(validPage)
+      if (popPage === LEGACY_MANAGE_COLLECTIONS_PAGE) setCollectionsInitialView('table')
       // The collection id lives in the URL (`?collection=`), which the browser
       // has already restored by the time popstate fires. `?item=` (sequence
       // position) and `?type=` (type page, #1554) are restored the same way.

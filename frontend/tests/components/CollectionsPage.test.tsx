@@ -723,6 +723,31 @@ describe('CollectionsPage', () => {
       await waitFor(() => expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull())
     })
 
+    it('drops a selected row that leaves the list so it does not return selected', async () => {
+      const user = userEvent.setup()
+      const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const two = makeCollectionSummary({ id: 2, name: 'Two' })
+      const props = {
+        initialView: 'table' as const,
+        onBulkUpdate: vi.fn(),
+        onBulkDelete: vi.fn(),
+      }
+      const { rerender } = renderPage({ ...props, collections: [one, two] })
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      expect(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' })).toBeInTheDocument()
+      const rerenderWith = (collections: (typeof one)[]) =>
+        rerender(
+          <AuthContext.Provider value={makeAuth(ADMIN)}>
+            <CollectionsPage {...makeProps({ ...props, collections })} />
+          </AuthContext.Provider>,
+        )
+      rerenderWith([two])
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
+      rerenderWith([one, two])
+      expect(screen.getByRole('checkbox', { name: 'Select One' })).not.toBeChecked()
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
+    })
+
     it('opens the edit dialog from the row menu', async () => {
       const user = userEvent.setup()
       const loadCollection = vi.fn().mockResolvedValue(makeCollection({ id: 1, name: 'One' }))
