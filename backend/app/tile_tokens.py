@@ -92,8 +92,7 @@ def validate_tile_token(
     if payload.get("sid") != source_image_id:
         raise TileTokenError(403, "Tile token does not match this image")
     if purpose == THUMB_TOKEN_PURPOSE:
-        last_segment = path.rsplit("/", 1)[-1] if path else None
-        if last_segment != THUMBNAIL_FILENAME:
+        if path != THUMBNAIL_FILENAME:
             raise TileTokenError(
                 403, "Thumbnail token does not grant tile access"
             )

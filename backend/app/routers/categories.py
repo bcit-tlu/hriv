@@ -122,6 +122,36 @@ def _scrub_card_image_id(metadata_: dict | None) -> dict | None:
     return {k: v for k, v in metadata_.items() if k != "card_image_id"}
 
 
+async def _attach_card_fields(
+    db: AsyncSession, cat: Category, user: User,
+) -> Category:
+    """Attach the resolved card pin (and, for students, a scrubbed metadata
+    dict) as private attrs read by ``CategoryOut.extract_program_ids``."""
+    card_image = await _resolve_card_image_db(db, cat.id, cat.metadata_)
+    cat._card_image_id = card_image.id if card_image else None
+    cat._card_thumb = card_image.thumb if card_image else None
+    if user.role == "student":
+        cat._metadata_extra_override = _scrub_card_image_id(cat.metadata_)
+    return cat
+
+
+async def _validate_card_image_pin(
+    db: AsyncSession, category_id: int, metadata_: dict | None,
+) -> None:
+    """422 when ``metadata.card_image_id`` is present and non-null but does
+    not resolve to an image in the category subtree (#1609). ``None``
+    (unpin) is always allowed."""
+    if not isinstance(metadata_, dict):
+        return
+    if metadata_.get("card_image_id") is None:
+        return
+    if await _resolve_card_image_db(db, category_id, metadata_) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="card_image_id must reference an image in this category or its sub-categories",
+        )
+
+
 def _viewer_etag_fragment(
     user: User,
     user_program_ids: set[int] | None,
@@ -484,7 +514,13 @@ async def list_categories(
             stmt = stmt.where(~Category.id.in_(excluded))
     stmt = stmt.order_by(Category.sort_order, Category.label)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    cats = result.scalars().all()
+    # Resolve each row's card pin (and scrub student metadata) so the list
+    # response honours #1609 like the tree does. Bounded: categories with
+    # no pin short-circuit before any DB access.
+    for cat in cats:
+        await _attach_card_fields(db, cat, _user)
+    return cats
 
 
 @router.get("/{category_id}", response_model=CategoryOut)
@@ -505,12 +541,7 @@ async def get_category(
             raise HTTPException(status_code=404, detail="Category not found")
     # Resolve the card-image pin for the tile cover (#1609). Private attrs
     # ride into CategoryOut like ``_category_warnings``.
-    card_image = await _resolve_card_image_db(db, cat.id, cat.metadata_)
-    cat._card_image_id = card_image.id if card_image else None
-    cat._card_thumb = card_image.thumb if card_image else None
-    if _user.role == "student":
-        cat._metadata_extra_override = _scrub_card_image_id(cat.metadata_)
-    return cat
+    return await _attach_card_fields(db, cat, _user)
 
 
 @router.post("/", response_model=CategoryOut, status_code=201)
@@ -543,6 +574,16 @@ async def create_category(
         db, _user, body.group_ids, inherited_group_ids,
     )
 
+    # A brand-new category has no subtree images, so any non-null
+    # card_image_id pin is invalid (#1609). ``None`` is allowed.
+    if isinstance(body.metadata_extra, dict) and body.metadata_extra.get(
+        "card_image_id"
+    ) is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="card_image_id must reference an image in this category or its sub-categories",
+        )
+
     cat = Category(
         label=body.label,
         parent_id=body.parent_id,
@@ -557,6 +598,9 @@ async def create_category(
     await db.commit()
     await db.refresh(cat)
     cat._category_warnings = _intersection_warnings(progs, grps)
+    # New categories have no subtree images, so the pin resolves to null —
+    # attach anyway so the response shape matches the other endpoints.
+    await _attach_card_fields(db, cat, _user)
     return cat
 
 
@@ -643,12 +687,8 @@ async def update_category(
     # unpins and is always allowed; anything else must resolve to an image in
     # this category or its sub-categories.
     new_metadata = update_data.get("metadata_")
-    if isinstance(new_metadata, dict) and new_metadata.get("card_image_id") is not None:
-        if await _resolve_card_image_db(db, category_id, new_metadata) is None:
-            raise HTTPException(
-                status_code=422,
-                detail="card_image_id must reference an image in this category or its sub-categories",
-            )
+    if isinstance(new_metadata, dict):
+        await _validate_card_image_pin(db, category_id, new_metadata)
 
     # Only bump the entity version and the global browse revision when the edit
     # actually changes data. No-op saves from the edit dialog should not stale
@@ -706,6 +746,7 @@ async def update_category(
     cat._category_warnings = _intersection_warnings(
         list(cat.programs), list(cat.groups)
     )
+    await _attach_card_fields(db, cat, _user)
     response = Response(
         content=CategoryOut.model_validate(cat).model_dump_json(),
         media_type="application/json",

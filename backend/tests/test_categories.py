@@ -23,7 +23,7 @@ from app.routers.categories import (
     delete_category,
     get_category_tree,
 )
-from app.schemas import CategoryCreate, CategoryUpdate
+from app.schemas import CategoryCreate, CategoryOut, CategoryUpdate
 
 
 @pytest.fixture(autouse=True)
@@ -1675,3 +1675,121 @@ async def test_update_category_card_image_unpin_allowed() -> None:
     resp = await update_category(1, body, _mock_request(), MagicMock(), db=db)
     data = _json.loads(resp.body)
     assert data["metadata_extra"] == {"card_image_id": None}
+
+
+async def test_list_categories_student_card_scrubbed_and_resolved() -> None:
+    """F3: the list endpoint resolves the cover for students while
+    scrubbing ``card_image_id`` out of ``metadata_extra`` — same contract
+    as the tree."""
+    cat = _make_category(
+        1, "Cat", metadata_={"card_image_id": 10, "note": "x"}
+    )
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+
+    vis_result = MagicMock()
+    vis_result.scalars.return_value.unique.return_value.all.return_value = [
+        cat
+    ]
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [cat]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[vis_result, list_result])
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else cat
+    )
+
+    result = await list_categories(
+        _make_user("student"), parent_id=None, db=db
+    )
+    out = CategoryOut.model_validate(result[0]).model_dump()
+
+    assert out["card_image_id"] == 10
+    assert out["card_thumb"].startswith(f"{CARD_THUMB_URL}?tile_token=")
+    assert _decode_tile_token(out["card_thumb"])["purpose"] == "thumb"
+    assert out["metadata_extra"] == {"note": "x"}
+
+
+async def test_list_categories_admin_keeps_raw_metadata() -> None:
+    """Editors keep ``card_image_id`` in metadata_extra; resolved fields
+    are still populated."""
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 10})
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [cat]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=list_result)
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else cat
+    )
+
+    result = await list_categories(
+        _make_user("admin"), parent_id=None, db=db
+    )
+    out = CategoryOut.model_validate(result[0]).model_dump()
+
+    assert out["metadata_extra"] == {"card_image_id": 10}
+    assert out["card_image_id"] == 10
+    assert _decode_tile_token(out["card_thumb"])["purpose"] == "thumb"
+
+
+async def test_update_category_valid_pin_response_carries_card_fields() -> None:
+    """F4: a valid PATCH response carries the resolved pin and a
+    thumbnail-scoped token — not nulls."""
+    cat = _make_category(1, "Cat")
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+    body = CategoryUpdate(metadata_extra={"card_image_id": 10})
+    db = AsyncMock()
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else cat
+    )
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    resp = await update_category(1, body, _mock_request(), MagicMock(), db=db)
+    data = _json.loads(resp.body)
+
+    assert data["card_image_id"] == 10
+    assert data["card_thumb"].startswith(f"{CARD_THUMB_URL}?tile_token=")
+    payload = _decode_tile_token(data["card_thumb"])
+    assert payload["purpose"] == "thumb"
+    assert payload["sid"] == 10
+
+
+async def test_create_category_non_null_pin_rejected() -> None:
+    """A new category has no subtree images, so any non-null pin is a 422."""
+    body = CategoryCreate(
+        label="Cat", parent_id=None,
+        metadata_={"card_image_id": 10},
+    )
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, _make_user("admin"), db=db)
+    assert exc.value.status_code == 422
+    assert "card_image_id" in exc.value.detail
+
+
+async def test_create_category_null_pin_allowed() -> None:
+    """``None`` unpins and is always allowed on create."""
+    body = CategoryCreate(
+        label="Cat", parent_id=None,
+        metadata_={"card_image_id": None},
+    )
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(body, _make_user("admin"), db=db)
+    assert result._card_image_id is None
+    assert result._card_thumb is None
+    db.add.assert_called_once()

@@ -107,7 +107,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   **independent** restriction dimensions.
 - **`metadata.card_image_id` convention (#1609):** the tile cover pin. Must
   reference an image in the category's own subtree (`PATCH` returns 422
-  otherwise; `null` unpins). There is **no FK** — dangling values (deleted
+  otherwise; `POST` rejects any non-null pin since a new category has no
+  subtree images; `null` unpins). There is **no FK** — dangling values (deleted
   image, image moved out) are tolerated at read time and resolve to
   `card_image_id`/`card_thumb` = `null`/`null` on `CategoryOut`. Resolution
   ignores `active`, hidden status, and program/group gates; `card_thumb` is

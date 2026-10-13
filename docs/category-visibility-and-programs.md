@@ -79,14 +79,19 @@ What students receive:
   but cannot unlock `image.dzi` or `image_files/…` tiles, so students gain a
   thumbnail, never full image access.
 - `card_image_id`: the resolved pin id (null when unresolvable). The raw
-  `card_image_id` key is **scrubbed from `metadata_extra`** in student tree
-  and `GET /api/categories/{id}` responses so the id alone does not disclose
-  an image they cannot list.
+  `card_image_id` key is **scrubbed from `metadata_extra`** in student tree,
+  list (`GET /api/categories/`), and detail (`GET /api/categories/{id}`)
+  responses so the id alone does not disclose an image they cannot list.
 - An unresolvable pin — deleted image, or an image outside the category's
   subtree — yields `null`/`null` and the tile renders the folder icon.
 
-`PATCH /api/categories/{id}` rejects (422) a non-null `card_image_id` that is
-not an int, does not exist, or points outside the category's subtree.
+All four category responses (tree, list, detail, and the `POST`/`PATCH`
+return bodies) resolve the pin through the same helper, so a valid pin is
+never returned as `null`/`null`. `PATCH /api/categories/{id}` rejects (422)
+a non-null `card_image_id` that is not an int, does not exist, or points
+outside the category's subtree; `POST /api/categories/` rejects (422) any
+non-null pin because a brand-new category has no subtree images. `null`
+(unpin) is always allowed.
 
 ## Worked examples
 

@@ -76,8 +76,8 @@ async def tiles_auth(
     )
     if not token:
         raise HTTPException(status_code=401, detail="Missing tile token")
-    # Path after ``/api/tiles/<sid>/`` — thumbnail-scoped tokens are checked
-    # against it (``foo/thumbnail.jpeg`` matches; missing segment does not).
+    # Path after ``/api/tiles/<sid>/`` — thumbnail-scoped tokens must match
+    # ``thumbnail.jpeg`` exactly (missing or nested segments do not).
     rest = urlsplit(x_original_uri).path[len(TILE_URL_PREFIX):]
     tile_path = rest.split("/", 1)[1] if "/" in rest else ""
     try:

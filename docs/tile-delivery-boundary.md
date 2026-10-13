@@ -93,11 +93,15 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   signature/expiry/image-id binding, issued for category card covers whose
   pinned image the viewer may not otherwise see
   ([`docs/category-visibility-and-programs.md`](category-visibility-and-programs.md)).
-  Validation additionally requires the requested path's last `/`-segment to
-  be `thumbnail.jpeg` — checked against the `X-Original-URI` path in
-  `GET /api/tiles-auth` and against the route path in the FastAPI fallback —
-  so a `thumb` token can never unlock `image.dzi` or `image_files/…`. The
-  sidecar needs no change: its auth cache key is already token + image id.
+  Validation additionally requires the requested path to equal
+  `thumbnail.jpeg` exactly (nested `…/thumbnail.jpeg` is a tile path) —
+  checked against the `X-Original-URI` path in `GET /api/tiles-auth` and
+  against the route path in the FastAPI fallback — so a `thumb` token can
+  never unlock `image.dzi` or `image_files/…`. The sidecar's auth-verdict
+  cache key gains a path class (`thumb` vs `tiles`, derived from the
+  request URI) so a cached thumbnail 204 can never be replayed for a tile
+  request; all tile paths still share the `tiles` class, so the
+  per-tile storm still collapses to one verdict.
 
 ### Delivery layers
 
@@ -106,12 +110,16 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
    proxying to the backend Service's `GET /api/tiles-auth` with
    `X-Original-URI` and the token. The validator is a constant-time HMAC
    check. An nginx `proxy_cache` on the internal auth location (key:
-   `$tile_auth_token:$tile_image_id`, TTL ≤ 60 s, cache 204 only) collapses
-   the per-tile subrequest storm to roughly one backend hit per image per
-   minute. Token-only keying is unsafe: tokens are image-scoped, so a cached
-   204 for image A must not bypass the validator's wrong-image 403 for image
-   B; including the image id preserves that check while still sharing one
-   verdict across the image's descriptor, thumbnail, and tile hierarchy.
+   `$tile_auth_token:$tile_image_id:$tile_path_class`, TTL ≤ 60 s, cache
+   204 only) collapses the per-tile subrequest storm to roughly one backend
+   hit per image per minute. Token-only keying is unsafe: tokens are
+   image-scoped, so a cached 204 for image A must not bypass the
+   validator's wrong-image 403 for image B; including the image id
+   preserves that check while still sharing one verdict across the image's
+   descriptor and tile hierarchy. The path class (`thumb` for
+   `/api/tiles/<id>/thumbnail.jpeg`, `tiles` for everything else, #1609)
+   likewise stops a thumbnail-scoped verdict for a `purpose="thumb"` token
+   from being replayed for tile paths.
 2. **FastAPI fallback (dev/compose, sidecar disabled):** the unauthenticated
    `StaticFiles` mount in `main.py` is **removed**, replaced by a router route
    `GET /api/tiles/{source_image_id}/{path:path}` that validates the token and

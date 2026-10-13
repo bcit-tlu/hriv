@@ -286,16 +286,30 @@ pinned image is not otherwise visible, without granting tile access.
    tokenized `card_thumb`, while `metadata_extra` no longer contains
    `card_image_id` (admins/instructors still see the raw pin there).
 4. **Assert (token scope):** the `card_thumb` token (`purpose="thumb"`) loads
-   `…/thumbnail.jpeg` but returns **403** on `…/image.dzi` and
-   `…/image_files/<level>/<col>_<row>.jpeg` for the same image — via both
-   `/api/tiles/{id}/{path}` and `/api/tiles-auth`.
-5. **Assert (fallback):** unpin the image (Clear in the picker) or delete the
+   `…/thumbnail.jpeg` but returns **403** on `…/image.dzi`,
+   `…/image_files/<level>/<col>_<row>.jpeg`, and a **nested**
+   `…/image_files/0/thumbnail.jpeg` (exact-match rule) for the same image —
+   via both `/api/tiles/{id}/{path}` and `/api/tiles-auth`.
+5. **Assert (verdict-cache separation, Kubernetes only):** on a sidecar
+   deployment, request `…/thumbnail.jpeg` with a `thumb` token (204), then
+   `…/image.dzi` with the same token — it must still hit the validator and
+   return **403**, not be replayed from the cached thumbnail verdict. The
+   auth cache key includes a `thumb`/`tiles` path class
+   (`proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"`),
+   while ordinary tile paths still share one cached verdict.
+6. **Assert (list + mutation responses):** `GET /api/categories/` carries
+   `card_image_id`/tokenized `card_thumb` for students with `card_image_id`
+   scrubbed from `metadata_extra` (admins keep the raw pin); a valid
+   `PATCH` response carries the resolved fields rather than nulls.
+7. **Assert (fallback):** unpin the image (Clear in the picker) or delete the
    pinned image — the tile renders the folder icon (`card_image_id` and
    `card_thumb` both `null`).
-6. **Assert (validation):** `PATCH /api/categories/{id}` with a
+8. **Assert (validation):** `PATCH /api/categories/{id}` with a
    `card_image_id` that is not an int, does not exist, or references an image
    outside the category's subtree returns **422**; `null` is accepted.
-7. **Assert (renewal):** an expired `card_thumb` token recovers through
+   `POST /api/categories/` rejects (422) any non-null pin — a new category
+   has no subtree images.
+9. **Assert (renewal):** an expired `card_thumb` token recovers through
    `GET /api/categories/{id}` — never `GET /api/images/{id}` (which 404s for
    students on hidden images).
 

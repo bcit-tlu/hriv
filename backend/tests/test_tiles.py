@@ -558,8 +558,6 @@ async def test_tiles_auth_non_tile_uri_returns_403(auth_app: FastAPI) -> None:
 def test_thumb_token_validates_thumbnail_path() -> None:
     token = issue_thumb_token(42)
     validate_tile_token(token, 42, "thumbnail.jpeg")
-    # Last-segment rule: a nested path ending in thumbnail.jpeg is fine.
-    validate_tile_token(token, 42, "foo/thumbnail.jpeg")
 
 
 @pytest.mark.parametrize(
@@ -569,6 +567,10 @@ def test_thumb_token_validates_thumbnail_path() -> None:
         "image_files/0/0_0.jpeg",
         "thumbnail.jpeg.dzi",
         "image_files/0/thumbnail.jpega",
+        # Exact-match rule: nested paths ending in thumbnail.jpeg are tile
+        # paths, not the thumbnail.
+        "foo/thumbnail.jpeg",
+        "image_files/0/thumbnail.jpeg",
     ],
 )
 def test_thumb_token_rejects_tile_paths_with_403(path: str) -> None:
@@ -649,6 +651,18 @@ async def test_tile_route_thumb_token_rejects_image_files(
     assert resp.status_code == 403
 
 
+async def test_tile_route_thumb_token_rejects_nested_thumbnail(
+    tiles_app: FastAPI,
+) -> None:
+    """A nested ``.../thumbnail.jpeg`` is a tile path — exact match only."""
+    token = issue_thumb_token(42)
+    async with _client(tiles_app) as client:
+        resp = await client.get(
+            f"/api/tiles/42/image_files/0/thumbnail.jpeg?tile_token={token}"
+        )
+    assert resp.status_code == 403
+
+
 async def test_tiles_auth_thumb_token_allows_thumbnail(
     auth_app: FastAPI,
 ) -> None:
@@ -667,7 +681,11 @@ async def test_tiles_auth_thumb_token_allows_thumbnail(
 
 @pytest.mark.parametrize(
     "uri_path",
-    ["/api/tiles/42/image.dzi", "/api/tiles/42/image_files/0/0_0.jpeg"],
+    [
+        "/api/tiles/42/image.dzi",
+        "/api/tiles/42/image_files/0/0_0.jpeg",
+        "/api/tiles/42/image_files/0/thumbnail.jpeg",
+    ],
 )
 async def test_tiles_auth_thumb_token_rejects_tile_paths(
     auth_app: FastAPI, uri_path: str
