@@ -599,8 +599,8 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/groups/{id}/instructors/{user_id}                                                                    | Yes           | instructor †                                                                                                                        |
 | GET    | /api/collections                                                                                          | Yes           | student (`orphaned=true` filter: admin) — all `/api/collections*` routes 404 when `COLLECTIONS_ENABLED=false`                       |
 | GET    | /api/collections/{id}                                                                                     | Yes           | student (404 if not visible)                                                                                                        |
-| GET    | /api/collections/graph                                                                                    | Yes           | student (server-side visibility-filtered; `order=1` or `2`, other values 422)                                                       |
-| GET    | /api/collections/{id}/graph                                                                               | Yes           | student (404 if not visible; `order=1` or `2`, other values 422)                                                                    |
+| GET    | /api/collections/graph                                                                                    | Yes           | student (server-side visibility-filtered; `order=1`, `2` or `3`, other values 422)                                                  |
+| GET    | /api/collections/{id}/graph                                                                               | Yes           | student (404 if not visible; `order=1`, `2` or `3`, other values 422)                                                               |
 | POST   | /api/collections                                                                                          | Yes           | student (all roles; `visibility=restricted`: instructor, with attach authority)                                                     |
 | PATCH  | /api/collections/{id}                                                                                     | Yes           | student (co-owner for content fields — staff included; scope fields need admin / instructor / sole student-or-staff owner)          |
 | DELETE | /api/collections/{id}                                                                                     | Yes           | student (sole user-owner, no program owner — staff follow the same rule / instructor of owning program / admin; 404 if not visible) |
@@ -779,3 +779,12 @@ and collection-page dialog (#1628). Requires `COLLECTIONS_ENABLED=true`.
    appears in `related_collections` (the hub itself never does). As a
    student against a collection they cannot view — **Assert:** 404 (never
    403).
+4. `GET /api/collections/graph?order=3` — **Assert:** `images` entries each
+   carry `category_id`, and `categories` lists every visible category with
+   ≥1 visible image (`id`, `label`, `path`, `image_count`) — including a
+   category with no collection (an isolated node — the cue to create one),
+   while a category with no visible images is absent. As a student —
+   **Assert:** a restricted/hidden category is missing from `categories`
+   though the instructor sees it, and `image_count` counts visible images
+   only. `GET /api/collections/{id}/graph?order=3` — **Assert:**
+   `categories` covers only the hub members' categories.
