@@ -913,6 +913,30 @@ committed on Save) in the edit modals.
 - Category tile titles expose the full category name in a hover tooltip.
 - Image tiles expose the full image name in a hover tooltip.
 
+#### Category card covers (#1609)
+
+- **Given** a category whose card pin resolves to an **inactive** image, an
+  image under a **hidden** sub-category, or an image under a
+  **program/group-restricted** sub-category the viewer lacks, **When** a
+  student browses the tile grid, **Then** the tile still renders the pinned
+  cover thumbnail (a deliberate exception — the backend emits `card_thumb`
+  regardless of visibility; see
+  [`docs/category-visibility-and-programs.md`](category-visibility-and-programs.md)).
+- **Given** a pin that cannot resolve (deleted image, image outside the
+  subtree), **Then** `card_image_id`/`card_thumb` are `null` and the tile
+  renders the folder icon — the client never searches the filtered tree for
+  the pinned image.
+- **Given** an editor opening the card-image picker, **Then** rows whose
+  image is inactive or filed under a hidden/restricted category (or ancestor
+  within the picker walk) carry a `VisibilityOff` icon with the tooltip
+  "Hidden or restricted for some students — they will still see this cover
+  as the tile thumbnail.", and the same sentence appears under the dialog
+  title when any row is flagged.
+- **Given** a rendered cover whose thumbnail token expired, **When** the
+  `<img>` errors, **Then** it renews via `GET /api/categories/{id}` (which
+  returns a fresh `card_thumb`) — never `GET /api/images/{id}`, which 404s
+  for students on hidden images.
+
 #### ManagePage table row desaturation
 
 - **Given** an image row in the ManagePage table, **When** the image is

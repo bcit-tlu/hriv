@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -11,22 +12,43 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import type { Category, ImageItem } from '../types'
 
 interface FlatImage {
   image: ImageItem
   categoryLabel: string
+  /** Inactive image, or filed under a hidden category/ancestor (#1609). */
+  hidden: boolean
+  /** Program- or group-restricted category/ancestor (#1609). */
+  restricted: boolean
 }
 
-function collectImages(cat: Category, parentLabel: string): FlatImage[] {
+const LIMITED_VISIBILITY_NOTE =
+  'Hidden or restricted for some students — they will still see this cover as the tile thumbnail.'
+
+// The walk starts at the picked category, so flags only accumulate over the
+// subtree below it — restrictions on ancestors above it gate the whole tile
+// anyway and need no per-row annotation.
+function collectImages(
+  cat: Category,
+  parentLabel: string,
+  ancestorHidden = false,
+  ancestorRestricted = false,
+): FlatImage[] {
   const label = parentLabel ? `${parentLabel} : ${cat.label}` : cat.label
+  const hiddenHere = ancestorHidden || cat.status === 'hidden'
+  const restrictedHere = ancestorRestricted || cat.programIds.length > 0 || cat.groupIds.length > 0
   const result: FlatImage[] = cat.images.map((img) => ({
     image: img,
     categoryLabel: label,
+    hidden: hiddenHere || !img.active,
+    restricted: restrictedHere,
   }))
   for (const child of cat.children) {
-    result.push(...collectImages(child, label))
+    result.push(...collectImages(child, label, hiddenHere, restrictedHere))
   }
   return result
 }
@@ -49,6 +71,7 @@ export default function CardImagePickerModal({
   const [selectedId, setSelectedId] = useState<number | null>(currentImageId)
 
   const allImages = useMemo(() => collectImages(category, ''), [category])
+  const anyLimited = allImages.some((row) => row.hidden || row.restricted)
 
   const handleSave = () => {
     onSave(selectedId)
@@ -58,6 +81,11 @@ export default function CardImagePickerModal({
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Choose Card Image</DialogTitle>
       <DialogContent>
+        {anyLimited && (
+          <Typography variant="body2" color="text.secondary" sx={{ pb: 1 }}>
+            {LIMITED_VISIBILITY_NOTE}
+          </Typography>
+        )}
         {allImages.length === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
             No images available in this category or its sub-categories.
@@ -73,7 +101,7 @@ export default function CardImagePickerModal({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {allImages.map(({ image, categoryLabel }) => (
+                {allImages.map(({ image, categoryLabel, hidden, restricted }) => (
                   <TableRow
                     key={image.id}
                     hover
@@ -88,7 +116,23 @@ export default function CardImagePickerModal({
                         onChange={() => setSelectedId(image.id)}
                       />
                     </TableCell>
-                    <TableCell>{image.name}</TableCell>
+                    <TableCell>
+                      <Box
+                        component="span"
+                        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                      >
+                        {image.name}
+                        {(hidden || restricted) && (
+                          <Tooltip title={LIMITED_VISIBILITY_NOTE}>
+                            <VisibilityOff
+                              data-testid="limited-visibility-icon"
+                              fontSize="small"
+                              sx={{ color: 'text.secondary' }}
+                            />
+                          </Tooltip>
+                        )}
+                      </Box>
+                    </TableCell>
                     <TableCell>{categoryLabel}</TableCell>
                   </TableRow>
                 ))}

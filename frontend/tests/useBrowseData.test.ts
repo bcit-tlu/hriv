@@ -1389,7 +1389,8 @@ describe('useBrowseData', () => {
         parent_id: null,
         program_ids: [5],
         status: 'hidden',
-        metadata_extra: { card_image_id: 42 },
+        card_image_id: 42,
+        card_thumb: '/api/tiles/42/thumbnail.jpeg?tile_token=x',
         children: [makeApiTree({ id: 2, label: 'Child', parent_id: 1 })],
         images: [makeApiImage(10, { category_id: 1 })],
       })
@@ -1402,6 +1403,7 @@ describe('useBrowseData', () => {
       expect(cat.programIds).toEqual([5])
       expect(cat.status).toBe('hidden')
       expect(cat.cardImageId).toBe(42)
+      expect(cat.cardThumb).toBe('/api/tiles/42/thumbnail.jpeg?tile_token=x')
       expect(cat.children).toHaveLength(1)
       expect(cat.children[0].label).toBe('Child')
       expect(cat.images).toHaveLength(1)
@@ -1416,12 +1418,16 @@ describe('useBrowseData', () => {
       expect(cat.metadataExtra).toBeNull()
     })
 
-    it('handles missing card_image_id in metadata', () => {
+    it('ignores card_image_id inside metadata_extra (#1609)', () => {
+      // The server fields are authoritative: the raw pin is scrubbed from
+      // metadata_extra for students and unresolvable pins come back null
+      // for everyone, so metadata is never a client-side fallback.
       const apiTree = makeApiTree({
-        metadata_extra: { some_other_key: 'value' },
+        metadata_extra: { card_image_id: 42 },
       })
       const cat = apiTreeToCategory(apiTree)
       expect(cat.cardImageId).toBeNull()
+      expect(cat.cardThumb).toBeNull()
     })
 
     it('maps group_ids onto the domain category', () => {

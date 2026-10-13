@@ -61,6 +61,38 @@ entirely (guarded by `if user.role == "student"` in the routers); they always
 see every category and image, including hidden ones. Staff are read-only —
 they get unrestricted browse visibility but none of the editor routes.
 
+### Category card image exemption (#1609)
+
+The category tile "card image" is a **deliberate, narrow exception** to the
+hidden-content rules above — do not "fix" it back into the filtered set. A
+category's cover pin is stored as `metadata.card_image_id` and resolved
+**server-side** (`resolve_card_image` in `routers/categories.py`) against
+**all** images in the category's subtree — regardless of `active`, hidden
+status, or program/group gates — using the same flat result sets the tree
+already loads (no extra queries).
+
+What students receive:
+
+- `card_thumb`: a thumbnail URL tokenized with a **thumbnail-only** tile
+  token (`purpose="thumb"`, restricted to `thumbnail.jpeg` — see
+  [tile-delivery-boundary](tile-delivery-boundary.md)). It renders the cover
+  but cannot unlock `image.dzi` or `image_files/…` tiles, so students gain a
+  thumbnail, never full image access.
+- `card_image_id`: the resolved pin id (null when unresolvable). The raw
+  `card_image_id` key is **scrubbed from `metadata_extra`** in student tree,
+  list (`GET /api/categories/`), and detail (`GET /api/categories/{id}`)
+  responses so the id alone does not disclose an image they cannot list.
+- An unresolvable pin — deleted image, or an image outside the category's
+  subtree — yields `null`/`null` and the tile renders the folder icon.
+
+All four category responses (tree, list, detail, and the `POST`/`PATCH`
+return bodies) resolve the pin through the same helper, so a valid pin is
+never returned as `null`/`null`. `PATCH /api/categories/{id}` rejects (422)
+a non-null `card_image_id` that is not an int, does not exist, or points
+outside the category's subtree; `POST /api/categories/` rejects (422) any
+non-null pin because a brand-new category has no subtree images. `null`
+(unpin) is always allowed.
+
 ## Worked examples
 
 Assume a student in program `P1` and group `G1`.
@@ -139,6 +171,7 @@ The tree endpoint also supports **conditional requests**:
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Dual-gate + cascade enforcement                        | `backend/app/visibility.py`                                                                                                                                                                                                               |
 | Student guards on tree/images                          | `backend/app/routers/categories.py`, `backend/app/routers/images.py`                                                                                                                                                                      |
+| Card-image exemption (#1609)                           | `backend/app/routers/categories.py` (`resolve_card_image`), `backend/app/tile_tokens.py` (thumb purpose), `frontend/src/components/CategoryTile.tsx` (`cardThumb`)                                                                        |
 | Collection visibility + category-gate (tree embed)     | `backend/app/collection_views.py` (`_ViewerContext`), `backend/app/routers/categories.py` (query 3), `backend/app/authz.py` (`can_view_collection`)                                                                                       |
 | Intersection warning                                   | `backend/app/routers/categories.py` (`_intersection_warnings`)                                                                                                                                                                            |
 | Frontend narrowing                                     | `frontend/src/categoryUtils.ts`                                                                                                                                                                                                           |
