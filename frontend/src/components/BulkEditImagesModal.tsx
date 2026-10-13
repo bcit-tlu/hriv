@@ -112,7 +112,9 @@ export default function BulkEditImagesModal({
     if (categoryChanged) data.category_id = categoryId
     if (copyright.trim()) data.copyright = copyright.trim()
     if (note.trim()) data.note = note.trim()
-    if (activeChanged) data.active = active
+    // A locked switch means the destination category governs visibility —
+    // a toggle made before it locked must not leak into the payload.
+    if (activeChanged && !visibilityDisabled) data.active = active
     setSaving(true)
     try {
       await onSave(data)

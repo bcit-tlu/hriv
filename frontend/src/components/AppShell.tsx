@@ -68,10 +68,13 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page = 'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide'
+export type Page =
+  'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin' | 'guide'
 
 export interface AppShellProps {
   page: Page
+  /** Let a viewer page fill the viewport while retaining min-content sizing. */
+  fillViewport?: boolean
   onTabChange: (page: Page) => void
   onHomeClick: () => void
   canEditContent: boolean
@@ -109,6 +112,13 @@ export interface AppShellProps {
   backendVersion: string | null
   backupVersion: string | null
   onReportIssue: () => void
+  /** Keep the footer dock (footer plus `footerDockSlot`) stuck to the
+   *  viewport bottom while the page is taller than the viewport. */
+  stickyFooter?: boolean
+  /** Rendered inside the footer dock, directly above `FooterBar`, so it
+   *  shares the footer's sticky position and moves with it on overscroll
+   *  (the My collections sheet). */
+  footerDockSlot?: ReactNode
   notificationSlot?: ReactNode
   // Children (main content)
   children: ReactNode
@@ -143,6 +153,9 @@ export default function AppShell(props: AppShellProps) {
     backendVersion,
     backupVersion,
     onReportIssue,
+    stickyFooter = false,
+    fillViewport = false,
+    footerDockSlot,
     notificationSlot,
     children,
   } = props
@@ -154,10 +167,12 @@ export default function AppShell(props: AppShellProps) {
   // (Home + Collections when enabled — the whole student layout) stay inline
   // instead of hiding behind a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
+  // Staff see the Manage tab only for the Collections table, so it counts
+  // for them just when the flag is on.
   const navTabCount =
     1 +
     (collectionsEnabled ? 1 : 0) +
-    (canEditContent ? 2 : 0) +
+    (canEditContent ? 2 : collectionsEnabled && canViewPeople ? 1 : 0) +
     (canViewPeople ? 1 : 0) +
     (canManageUsers ? 1 : 0)
   const collapseNav = isCompactViewport && navTabCount > 2
@@ -248,8 +263,10 @@ export default function AppShell(props: AppShellProps) {
         }
       }
 
+      const selected = item.page === page
+
       return (
-        <MenuItem key={item.id} selected={item.page === page} onClick={closeThen(handleClick)}>
+        <MenuItem key={item.id} selected={selected} onClick={closeThen(handleClick)}>
           <ListItemIcon sx={{ minWidth: 36 }}>{iconFor(item.icon)}</ListItemIcon>
           <ListItemText>{item.label}</ListItemText>
         </MenuItem>
@@ -296,10 +313,16 @@ export default function AppShell(props: AppShellProps) {
 
   return (
     <Box
+      data-fill-viewport={fillViewport ? 'true' : undefined}
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100vh',
+        ...(fillViewport
+          ? {
+              height: { md: '100dvh' },
+              minHeight: { xs: '100vh', md: 'min-content' },
+            }
+          : { minHeight: '100vh' }),
       }}
     >
       {/* App bar */}
@@ -336,8 +359,10 @@ export default function AppShell(props: AppShellProps) {
             <Box sx={{ flexGrow: 1 }} />
           ) : (
             <Tabs
-              // 'guide' has no AppBar tab — it is opened via the notification menu.
-              value={page === 'guide' ? false : page}
+              // 'guide'/'manage-collections' have no AppBar tab — the guide
+              // opens via the notification menu; the collections table opens
+              // via the Manage dropdown.
+              value={page === 'guide' || page === 'manage-collections' ? false : page}
               onChange={(_, v: Page) => {
                 if (
                   v === 'browse' ||
@@ -366,9 +391,23 @@ export default function AppShell(props: AppShellProps) {
                   }
                 }}
               />
-              {collectionsEnabled && <Tab label="Collections" value="collections" />}
+              {collectionsEnabled && (
+                // A real tab since #1629 — the Sequence/Synchronized sub-menu
+                // became the page's Type filter facet.
+                <Tab
+                  label="Collections"
+                  value="collections"
+                  onClick={() => {
+                    // Re-click while already on collections (list or an open
+                    // detail) resets to the list — the Home tab pattern.
+                    if (page === 'collections') {
+                      onTabChange('collections')
+                    }
+                  }}
+                />
+              )}
               {canEditContent && <Tab label="Images" value="manage" />}
-              {canEditContent && (
+              {(canEditContent || (collectionsEnabled && canViewPeople)) && (
                 <Tab
                   label="Manage"
                   value={false}
@@ -385,14 +424,27 @@ export default function AppShell(props: AppShellProps) {
               open={Boolean(manageMenuAnchor)}
               onClose={() => setManageMenuAnchor(null)}
             >
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenCategories()
-                }}
-              >
-                Categories
-              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenCategories()
+                  }}
+                >
+                  Categories
+                </MenuItem>
+              )}
+              {collectionsEnabled && (
+                <MenuItem
+                  selected={page === 'manage-collections'}
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onTabChange('manage-collections')
+                  }}
+                >
+                  Collections
+                </MenuItem>
+              )}
               {canManageUsers && (
                 <MenuItem
                   onClick={() => {
@@ -403,22 +455,26 @@ export default function AppShell(props: AppShellProps) {
                   Programs
                 </MenuItem>
               )}
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenGroups()
-                }}
-              >
-                Groups
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenAnnouncement()
-                }}
-              >
-                Announcement
-              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenGroups()
+                  }}
+                >
+                  Groups
+                </MenuItem>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenAnnouncement()
+                  }}
+                >
+                  Announcement
+                </MenuItem>
+              )}
             </Menu>
           )}
           {collapseNav && (
@@ -643,13 +699,28 @@ export default function AppShell(props: AppShellProps) {
       {/* Main content */}
       {children}
 
-      <FooterBar
-        canManageUsers={canManageUsers}
-        frontendVersion={frontendVersion || undefined}
-        backendVersion={backendVersion ?? undefined}
-        backupVersion={backupVersion ?? undefined}
-        onReportIssue={onReportIssue}
-      />
+      {/* Footer dock: the footer and anything docked above it (the My
+        collections sheet) form one in-flow block, so when the dock is
+        sticky they stick together and rubber-band overscroll moves both. */}
+      <Box
+        data-testid="footer-dock"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '0 0 auto',
+          zIndex: (theme) => theme.zIndex.appBar,
+          ...(stickyFooter ? { position: 'sticky', bottom: 0 } : { position: 'relative' }),
+        }}
+      >
+        {footerDockSlot}
+        <FooterBar
+          canManageUsers={canManageUsers}
+          frontendVersion={frontendVersion || undefined}
+          backendVersion={backendVersion ?? undefined}
+          backupVersion={backupVersion ?? undefined}
+          onReportIssue={onReportIssue}
+        />
+      </Box>
     </Box>
   )
 }

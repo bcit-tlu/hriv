@@ -25,6 +25,7 @@ import {
 } from './collectionUtils'
 import type { CollectionFormValues } from './components/CollectionEditDialog'
 import type { Collection, CollectionOwner, CollectionSummary, CollectionType, User } from './types'
+import { useBackgroundRefresh } from './useBackgroundRefresh'
 
 /** Owner facet of the Collections list filter bar. */
 export type CollectionOwnerFilter = 'any' | 'orphaned' | CollectionOwner
@@ -43,6 +44,21 @@ export const DEFAULT_COLLECTION_FILTERS: CollectionListFilters = {
 
 export const COLLECTION_NOT_FOUND_MESSAGE =
   'This collection could not be found. It may have been deleted or you may not have access to it.'
+
+const EMPTY_ROWS = Object.freeze([]) as unknown as CollectionSummary[]
+const MAX_CACHED_COLLECTION_FILTERS = 8
+
+function cacheRows(
+  cache: Record<string, CollectionSummary[]>,
+  key: string,
+  rows: CollectionSummary[],
+): Record<string, CollectionSummary[]> {
+  const next = { ...cache, [key]: rows }
+  while (Object.keys(next).length > MAX_CACHED_COLLECTION_FILTERS) {
+    delete next[Object.keys(next)[0]]
+  }
+  return next
+}
 
 /**
  * Drop owner facets the role cannot use: students have no owner facet at all
@@ -112,6 +128,9 @@ export function toCollectionPatch(
   const patch: Parameters<typeof updateCollection>[1] = { version }
   if (values.name !== baseline.name) patch.name = values.name
   if (values.description !== baseline.description) patch.description = values.description
+  // Curatorial hide rides the same PATCH (#1566) — the dialog's title link
+  // only changes `hidden` for callers the `canHide` gate allows.
+  if (values.hidden !== baseline.hidden) patch.hidden = values.hidden
   const visibilityChanged = values.visibility !== baseline.visibility
   if (visibilityChanged) patch.visibility = values.visibility
   if (
@@ -164,14 +183,32 @@ export interface UseCollectionsDataOptions {
   currentUser: User | null
   /** Collection open in the detail placeholder (from `?collection={id}` or a card). */
   selectedCollectionId: number | null
+  /**
+   * Type-filter seed (#1629): `?type=` deep links and popstate updates feed
+   * the shared Type chip filter through here. The filter state owns `type`
+   * afterwards — `setFilters` can change it freely.
+   */
+  type: CollectionType | 'all'
+  /**
+   * Seed version: popstate can restore the same `type` value twice (or a
+   * `?type=`-less entry while the param is already `all`), so App bumps this
+   * on every popstate to force the seed to re-apply.
+   */
+  typeSeedNonce?: number
+  refreshToken: number
+  backgroundRefresh: boolean
 }
 
 export function useCollectionsData({
   enabled,
   currentUser,
   selectedCollectionId,
+  type,
+  typeSeedNonce = 0,
+  refreshToken,
+  backgroundRefresh,
 }: UseCollectionsDataOptions) {
-  const [collections, setCollections] = useState<CollectionSummary[]>([])
+  const [collectionsByKey, setCollectionsByKey] = useState<Record<string, CollectionSummary[]>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Filters are scoped to the signed-in user so one user's owner selection
@@ -180,13 +217,41 @@ export function useCollectionsData({
   const [filterState, setFilterState] = useState<{
     userId: number | null
     filters: CollectionListFilters
-  }>({ userId, filters: DEFAULT_COLLECTION_FILTERS })
-  const rawFilters =
-    filterState.userId === userId ? filterState.filters : DEFAULT_COLLECTION_FILTERS
+  }>({ userId, filters: { ...DEFAULT_COLLECTION_FILTERS, type } })
+  // Stable fallback so a user switch does not produce a fresh filters object
+  // (and therefore a fresh `load`) on every render.
+  const seededDefaults = useMemo(() => ({ ...DEFAULT_COLLECTION_FILTERS, type }), [type])
+  const rawFilters = filterState.userId === userId ? filterState.filters : seededDefaults
   const setFilters = useCallback(
     (next: CollectionListFilters) => setFilterState({ userId, filters: next }),
     [userId],
   )
+  // The `type` option is a URL-driven seed (#1629): when it changes (deep
+  // link load, popstate restore) it lands in the filter state; afterwards
+  // the Type chips own it through `setFilters`. A user switch resets the
+  // state to the seeded defaults rather than carrying the old user's over.
+  // `typeSeedNonce` re-applies the seed on every popstate even when `type`
+  // itself did not change (e.g. Back to a `?type=`-less collections URL).
+  // Render-phase adjustment (React's "you might not need an effect" pattern):
+  // setState during render is the sanctioned way to react to seed changes.
+  const [seedApplied, setSeedApplied] = useState({ type, nonce: typeSeedNonce, userId })
+  if (
+    seedApplied.userId !== userId ||
+    seedApplied.nonce !== typeSeedNonce ||
+    seedApplied.type !== type
+  ) {
+    setSeedApplied({ type, nonce: typeSeedNonce, userId })
+    // Reuse `seededDefaults` so the rawFilters fallback and the stored
+    // state share one identity — a fresh object here would rebuild `load`
+    // and trigger a redundant second fetch for the new user.
+    if (seedApplied.userId !== userId) {
+      setFilterState({ userId, filters: seededDefaults })
+    } else {
+      setFilterState((prev) =>
+        prev.filters.type === type ? prev : { userId, filters: { ...prev.filters, type } },
+      )
+    }
+  }
   const [ownerOptions, setOwnerOptions] = useState<CollectionOwner[]>([])
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -196,29 +261,45 @@ export function useCollectionsData({
     detailRef.current = detail
   }, [detail])
   const loadSeq = useRef(0)
+  const foregroundLoadInFlight = useRef<number | null>(null)
+  const invalidateRef = useRef<(() => void) | null>(null)
+  const lastForegroundEffectRun = useRef<{
+    enabled: boolean
+    userId: number | null
+    load: typeof load
+    refreshToken: number
+  } | null>(null)
   // The user whose rows are in `collections`; another account starts empty
   // even if its own first load fails.
   const rowsUserId = useRef(userId)
+  const [rowsCacheUserId, setRowsCacheUserId] = useState(userId)
   const role = currentUser?.role ?? null
   const filters = useMemo(
     () => normalizeCollectionFilters(rawFilters, role ? { role } : null),
     [rawFilters, role],
   )
+  const apiFilters = useMemo(
+    () => toCollectionApiFilters(filters, role ? { role } : null),
+    [filters, role],
+  )
+  const currentKey = useMemo(() => JSON.stringify(apiFilters), [apiFilters])
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
+    foregroundLoadInFlight.current = seq
+    invalidateRef.current?.()
     if (rowsUserId.current !== userId) {
       rowsUserId.current = userId
-      setCollections([])
+      setCollectionsByKey({})
+      setRowsCacheUserId(userId)
       setOwnerOptions([])
     }
     setLoading(true)
     setError(null)
     try {
-      const apiFilters = toCollectionApiFilters(filters, role ? { role } : null)
       const rows = (await fetchCollections(apiFilters)).map(apiCollectionSummaryToSummary)
       if (seq !== loadSeq.current) return
-      setCollections(rows)
+      setCollectionsByKey((prev) => cacheRows(prev, currentKey, rows))
       // Owner choices come from the unfiltered-by-owner result so the menu
       // does not collapse to the single owner currently selected.
       if (!filters.mine && filters.owner === 'any') setOwnerOptions(uniqueOwners(rows))
@@ -226,22 +307,84 @@ export function useCollectionsData({
       if (seq !== loadSeq.current) return
       setError(userMessage(err, 'Failed to load collections.'))
     } finally {
-      if (seq === loadSeq.current) setLoading(false)
+      if (seq === loadSeq.current) {
+        foregroundLoadInFlight.current = null
+        setLoading(false)
+      }
     }
-  }, [filters, role, userId])
+  }, [apiFilters, currentKey, filters, userId])
 
   // Mutations read the filters, user and loader in effect when the request
   // completes, not those captured when it started, so a save that outlives a
   // filter change is placed and refreshed against the current view.
-  const latest = useRef({ filters, currentUser, load })
+  const latest = useRef({ filters, currentUser, load, key: currentKey })
   useEffect(() => {
-    latest.current = { filters, currentUser, load }
-  }, [filters, currentUser, load])
+    latest.current = { filters, currentUser, load, key: currentKey }
+  }, [filters, currentUser, load, currentKey])
+
+  const writeCurrentRows = useCallback(
+    (updater: (rows: CollectionSummary[]) => CollectionSummary[]) => {
+      invalidateRef.current?.()
+      const { key } = latest.current
+      setCollectionsByKey((prev) => (key in prev ? { [key]: updater(prev[key]) } : {}))
+    },
+    [],
+  )
+
+  const pollRows = useCallback(async (signal: AbortSignal) => {
+    const { filters: currentFilters, currentUser: user, key } = latest.current
+    if (signal.aborted || foregroundLoadInFlight.current !== null || user == null) return
+    const seq = loadSeq.current
+    try {
+      const currentApiFilters = toCollectionApiFilters(currentFilters, { role: user.role })
+      const rows = (await fetchCollections(currentApiFilters, { signal })).map(
+        apiCollectionSummaryToSummary,
+      )
+      if (
+        signal.aborted ||
+        foregroundLoadInFlight.current !== null ||
+        seq !== loadSeq.current ||
+        latest.current.key !== key
+      ) {
+        return
+      }
+      setCollectionsByKey((prev) => cacheRows(prev, key, rows))
+      if (!currentFilters.mine && currentFilters.owner === 'any') {
+        setOwnerOptions(uniqueOwners(rows))
+      }
+    } catch {
+      // Background failures preserve the rows and foreground error state.
+    }
+  }, [])
+
+  const invalidateBackground = useBackgroundRefresh(
+    pollRows,
+    enabled && currentUser != null && backgroundRefresh,
+  )
+  useEffect(() => {
+    invalidateRef.current = invalidateBackground
+  }, [invalidateBackground])
 
   useEffect(() => {
+    // Replayed effects with identical inputs (for example, StrictMode) must not duplicate list requests.
+    const previous = lastForegroundEffectRun.current
+    lastForegroundEffectRun.current = {
+      enabled,
+      userId: currentUser?.id ?? null,
+      load,
+      refreshToken,
+    }
     if (!enabled || !currentUser) return
-    void load() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on tab/filter change
-  }, [enabled, currentUser, load])
+    if (
+      previous?.enabled === enabled &&
+      previous.userId === (currentUser?.id ?? null) &&
+      previous.load === load &&
+      previous.refreshToken === refreshToken
+    ) {
+      return
+    }
+    void load()
+  }, [enabled, currentUser, load, refreshToken])
 
   // Detail (placeholder view) — refetched whenever the selected id changes.
   useEffect(() => {
@@ -278,34 +421,43 @@ export function useCollectionsData({
     }
   }, [enabled, currentUser, selectedCollectionId])
 
-  const loadCollection = useCallback(
-    async (id: number): Promise<Collection> => apiCollectionToCollection(await fetchCollection(id)),
-    [],
-  )
-
-  const create = useCallback(async (values: CollectionFormValues): Promise<Collection> => {
-    const created = apiCollectionToCollection(
-      await createCollection({
-        name: values.name,
-        description: values.description,
-        type: values.type,
-        visibility: values.visibility,
-        image_ids: [],
-        ...(values.visibility === 'restricted'
-          ? { program_ids: values.programIds, group_ids: values.groupIds }
-          : {}),
-      }),
-    )
-    // Reflect the server's response immediately; the refresh below only
-    // reconciles with other users' changes and must not make a successful
-    // save look like a failure if it happens to fail.
-    const { filters: current, currentUser: user, load: refresh } = latest.current
-    if (matchesCollectionFilters(created, current, user)) {
-      setCollections((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
-    }
-    void refresh()
-    return created
+  const loadCollection = useCallback(async (id: number): Promise<Collection> => {
+    const mapped = apiCollectionToCollection(await fetchCollection(id))
+    // Keep the open detail in sync when the refetch is for the record on
+    // screen — e.g. a category filing mutates the record without going
+    // through `update` (#1567). The version guard keeps a slow refetch from
+    // regressing a newer write that landed in the meantime.
+    setDetail((prev) => (prev && prev.id === id && mapped.version >= prev.version ? mapped : prev))
+    return mapped
   }, [])
+
+  const create = useCallback(
+    async (values: CollectionFormValues): Promise<Collection> => {
+      const created = apiCollectionToCollection(
+        await createCollection({
+          name: values.name,
+          description: values.description,
+          type: values.type,
+          visibility: values.visibility,
+          ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
+          image_ids: [],
+          ...(values.visibility === 'restricted'
+            ? { program_ids: values.programIds, group_ids: values.groupIds }
+            : {}),
+        }),
+      )
+      // Reflect the server's response immediately; the refresh below only
+      // reconciles with other users' changes and must not make a successful
+      // save look like a failure if it happens to fail.
+      const { filters: current, currentUser: user, load: refresh } = latest.current
+      if (matchesCollectionFilters(created, current, user)) {
+        writeCurrentRows((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
+      }
+      void refresh()
+      return created
+    },
+    [writeCurrentRows],
+  )
 
   const update = useCallback(
     async (
@@ -318,22 +470,25 @@ export function useCollectionsData({
       const mapped = apiCollectionToCollection(updated)
       setDetail((prev) => (prev?.id === id ? mapped : prev))
       const { filters: current, currentUser: user, load: refresh } = latest.current
-      setCollections((prev) => {
+      writeCurrentRows((prev) => {
         const rest = prev.filter((c) => c.id !== id)
         return matchesCollectionFilters(mapped, current, user) ? [mapped, ...rest] : rest
       })
       void refresh()
       return mapped
     },
-    [],
+    [writeCurrentRows],
   )
 
-  const remove = useCallback(async (id: number): Promise<void> => {
-    await deleteCollection(id)
-    setCollections((prev) => prev.filter((c) => c.id !== id))
-    setDetail((prev) => (prev?.id === id ? null : prev))
-    void latest.current.load()
-  }, [])
+  const remove = useCallback(
+    async (id: number): Promise<void> => {
+      await deleteCollection(id)
+      writeCurrentRows((prev) => prev.filter((c) => c.id !== id))
+      setDetail((prev) => (prev?.id === id ? null : prev))
+      void latest.current.load()
+    },
+    [writeCurrentRows],
+  )
 
   /**
    * Reorder the open collection's images (#1416 sequence viewer). Applies the
@@ -365,56 +520,59 @@ export function useCollectionsData({
     if (queued == null) return detail
     return queued.version > detail.version ? queued : detail
   }
-  const reorderImages = useCallback((id: number, imageIds: number[]): Promise<Collection> => {
-    const run = async (prior: Collection | null): Promise<Collection> => {
-      const baseline = baselineFor(id, prior)
-      if (!baseline || baseline.id !== id) {
-        throw new Error('The collection is not loaded.')
-      }
-      const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
-      const optimisticImages = [
-        ...imageIds
-          .map((imageId) => byId.get(imageId))
-          .filter((img): img is NonNullable<typeof img> => img != null),
-        ...baseline.images.filter((img) => !imageIds.includes(img.id)),
-      ]
-      // Only paint the optimistic order when this collection is still open —
-      // a queued drop can run after the user opened another collection, and
-      // must not overwrite its detail (the PUT still persists the reorder).
-      setDetail((prev) => (prev?.id === id ? { ...baseline, images: optimisticImages } : prev))
-      try {
-        const updated = apiCollectionToCollection(
-          await replaceCollectionImages(id, {
-            image_ids: imageIds,
-            version: baseline.version,
-          }),
-        )
-        setDetail((prev) => (prev?.id === id ? updated : prev))
-        setCollections((prev) => {
-          const rest = prev.filter((c) => c.id !== id)
-          return matchesCollectionFilters(
-            updated,
-            latest.current.filters,
-            latest.current.currentUser,
+  const reorderImages = useCallback(
+    (id: number, imageIds: number[]): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        const baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          throw new Error('The collection is not loaded.')
+        }
+        const byId = new Map(baseline.images.map((img) => [img.id, img] as const))
+        const optimisticImages = [
+          ...imageIds
+            .map((imageId) => byId.get(imageId))
+            .filter((img): img is NonNullable<typeof img> => img != null),
+          ...baseline.images.filter((img) => !imageIds.includes(img.id)),
+        ]
+        // Only paint the optimistic order when this collection is still open —
+        // a queued drop can run after the user opened another collection, and
+        // must not overwrite its detail (the PUT still persists the reorder).
+        setDetail((prev) => (prev?.id === id ? { ...baseline, images: optimisticImages } : prev))
+        try {
+          const updated = apiCollectionToCollection(
+            await replaceCollectionImages(id, {
+              image_ids: imageIds,
+              version: baseline.version,
+            }),
           )
-            ? [updated, ...rest]
-            : rest
-        })
-        void latest.current.load()
-        return updated
-      } catch (err) {
-        setDetail((prev) => (prev?.id === id ? baseline : prev))
-        throw err
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          writeCurrentRows((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          setDetail((prev) => (prev?.id === id ? baseline : prev))
+          throw err
+        }
       }
-    }
-    const queued = mutationQueue.current.then(run, () => run(null))
-    // The chain never rejects — the next drop always gets a baseline.
-    mutationQueue.current = queued.then(
-      (updated) => updated,
-      () => null,
-    )
-    return queued
-  }, [])
+      const queued = mutationQueue.current.then(run, () => run(null))
+      // The chain never rejects — the next drop always gets a baseline.
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [writeCurrentRows],
+  )
 
   /**
    * Persist the synchronized viewer's saved positions (#1417) via the
@@ -436,7 +594,7 @@ export function useCollectionsData({
           }),
         )
         setDetail((prev) => (prev?.id === id ? updated : prev))
-        setCollections((prev) => {
+        writeCurrentRows((prev) => {
           const rest = prev.filter((c) => c.id !== id)
           return matchesCollectionFilters(
             updated,
@@ -455,7 +613,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [],
+    [writeCurrentRows],
   )
 
   /**
@@ -469,60 +627,63 @@ export function useCollectionsData({
    * leave the visible list (transferred away under `mine`, or assigned out
    * of `orphaned`) — `matchesCollectionFilters` decides list membership.
    */
-  const transfer = useCallback((id: number, programId: number | null): Promise<Collection> => {
-    const run = async (prior: Collection | null): Promise<Collection> => {
-      let baseline = baselineFor(id, prior)
-      if (!baseline || baseline.id !== id) {
-        baseline = apiCollectionToCollection(await fetchCollection(id))
-      }
-      try {
-        const updated = apiCollectionToCollection(
-          await transferCollection(id, {
-            program_id: programId,
-            version: baseline.version,
-          }),
-        )
-        setDetail((prev) => (prev?.id === id ? updated : prev))
-        setCollections((prev) => {
-          const rest = prev.filter((c) => c.id !== id)
-          return matchesCollectionFilters(
-            updated,
-            latest.current.filters,
-            latest.current.currentUser,
+  const transfer = useCallback(
+    (id: number, programId: number | null): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        let baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          baseline = apiCollectionToCollection(await fetchCollection(id))
+        }
+        try {
+          const updated = apiCollectionToCollection(
+            await transferCollection(id, {
+              program_id: programId,
+              version: baseline.version,
+            }),
           )
-            ? [updated, ...rest]
-            : rest
-        })
-        void latest.current.load()
-        return updated
-      } catch (err) {
-        // A 409 carries the authoritative record — merge it so the next
-        // attempt sends the fresh version instead of failing again.
-        const conflict = collectionConflictCurrent(err)
-        if (conflict) {
-          const current = apiCollectionToCollection(conflict)
-          setDetail((prev) => (prev?.id === id ? current : prev))
-          setCollections((prev) => {
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          writeCurrentRows((prev) => {
             const rest = prev.filter((c) => c.id !== id)
             return matchesCollectionFilters(
-              current,
+              updated,
               latest.current.filters,
               latest.current.currentUser,
             )
-              ? [current, ...rest]
+              ? [updated, ...rest]
               : rest
           })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so the next
+          // attempt sends the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            writeCurrentRows((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
         }
-        throw err
       }
-    }
-    const queued = mutationQueue.current.then(run, () => run(null))
-    mutationQueue.current = queued.then(
-      (updated) => updated,
-      () => null,
-    )
-    return queued
-  }, [])
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [writeCurrentRows],
+  )
 
   /**
    * Replace the whole user-owner set (#1531) via `PUT …/owners`. Same queue
@@ -530,58 +691,61 @@ export function useCollectionsData({
    * the same `version`, so a save posted behind a transfer must not send a
    * token the transfer has already consumed.
    */
-  const saveOwners = useCallback((id: number, userIds: number[]): Promise<Collection> => {
-    const run = async (prior: Collection | null): Promise<Collection> => {
-      let baseline = baselineFor(id, prior)
-      if (!baseline || baseline.id !== id) {
-        baseline = apiCollectionToCollection(await fetchCollection(id))
-      }
-      try {
-        const updated = apiCollectionToCollection(
-          await replaceCollectionOwners(id, {
-            user_ids: userIds,
-            version: baseline.version,
-          }),
-        )
-        setDetail((prev) => (prev?.id === id ? updated : prev))
-        setCollections((prev) => {
-          const rest = prev.filter((c) => c.id !== id)
-          return matchesCollectionFilters(
-            updated,
-            latest.current.filters,
-            latest.current.currentUser,
+  const saveOwners = useCallback(
+    (id: number, userIds: number[]): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        let baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          baseline = apiCollectionToCollection(await fetchCollection(id))
+        }
+        try {
+          const updated = apiCollectionToCollection(
+            await replaceCollectionOwners(id, {
+              user_ids: userIds,
+              version: baseline.version,
+            }),
           )
-            ? [updated, ...rest]
-            : rest
-        })
-        void latest.current.load()
-        return updated
-      } catch (err) {
-        const conflict = collectionConflictCurrent(err)
-        if (conflict) {
-          const current = apiCollectionToCollection(conflict)
-          setDetail((prev) => (prev?.id === id ? current : prev))
-          setCollections((prev) => {
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          writeCurrentRows((prev) => {
             const rest = prev.filter((c) => c.id !== id)
             return matchesCollectionFilters(
-              current,
+              updated,
               latest.current.filters,
               latest.current.currentUser,
             )
-              ? [current, ...rest]
+              ? [updated, ...rest]
               : rest
           })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            writeCurrentRows((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
         }
-        throw err
       }
-    }
-    const queued = mutationQueue.current.then(run, () => run(null))
-    mutationQueue.current = queued.then(
-      (updated) => updated,
-      () => null,
-    )
-    return queued
-  }, [])
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [writeCurrentRows],
+  )
 
   /**
    * File a collection into a Browse category (#1527/#1529). Serialized with
@@ -604,7 +768,7 @@ export function useCollectionsData({
             await moveCollection(id, { category_id: categoryId, version: effectiveVersion }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          setCollections((prev) => {
+          writeCurrentRows((prev) => {
             const rest = prev.filter((c) => c.id !== id)
             return matchesCollectionFilters(
               updated,
@@ -622,7 +786,7 @@ export function useCollectionsData({
           if (conflict) {
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
-            setCollections((prev) => {
+            writeCurrentRows((prev) => {
               const rest = prev.filter((c) => c.id !== id)
               return matchesCollectionFilters(
                 current,
@@ -643,7 +807,134 @@ export function useCollectionsData({
       )
       return queued
     },
-    [],
+    [writeCurrentRows],
+  )
+
+  /**
+   * Curatorial hide/show (#1559): PATCHes `hidden` through the same OCC
+   * `version` gate as other writes — queued with reorder/viewport saves and
+   * merged-on-409 like `move`/`transfer` so a toggle posted while a viewer
+   * write is in flight doesn't lose to it. `canHide`-gated (admin /
+   * instructor); owners cannot unhide their own collections server-side.
+   */
+  const setHidden = useCallback(
+    (id: number, hidden: boolean): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        let baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          baseline = apiCollectionToCollection(await fetchCollection(id))
+        }
+        try {
+          const updated = apiCollectionToCollection(
+            await updateCollection(id, { hidden, version: baseline.version }),
+          )
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          writeCurrentRows((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so a retry
+          // posts the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            writeCurrentRows((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
+        }
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [writeCurrentRows],
+  )
+
+  /**
+   * Pin a member image as the tile cover (`null` restores the first-member
+   * fallback) — the tile's cover-picker save. Serialized with the other
+   * versioned writes through `mutationQueue` and merged-on-409 like
+   * `setHidden`; `canEdit`-gated like the other content fields.
+   */
+  const setCoverImage = useCallback(
+    (id: number, imageId: number | null, blank = false): Promise<Collection> => {
+      const run = async (prior: Collection | null): Promise<Collection> => {
+        let baseline = baselineFor(id, prior)
+        if (!baseline || baseline.id !== id) {
+          baseline = apiCollectionToCollection(await fetchCollection(id))
+        }
+        try {
+          const updated = apiCollectionToCollection(
+            await updateCollection(id, {
+              cover_image_id: imageId,
+              cover_blank: blank,
+              version: baseline.version,
+            }),
+          )
+          setDetail((prev) => (prev?.id === id ? updated : prev))
+          writeCurrentRows((prev) => {
+            const rest = prev.filter((c) => c.id !== id)
+            return matchesCollectionFilters(
+              updated,
+              latest.current.filters,
+              latest.current.currentUser,
+            )
+              ? [updated, ...rest]
+              : rest
+          })
+          void latest.current.load()
+          return updated
+        } catch (err) {
+          // A 409 carries the authoritative record — merge it so a retry
+          // posts the fresh version instead of failing again.
+          const conflict = collectionConflictCurrent(err)
+          if (conflict) {
+            const current = apiCollectionToCollection(conflict)
+            setDetail((prev) => (prev?.id === id ? current : prev))
+            writeCurrentRows((prev) => {
+              const rest = prev.filter((c) => c.id !== id)
+              return matchesCollectionFilters(
+                current,
+                latest.current.filters,
+                latest.current.currentUser,
+              )
+                ? [current, ...rest]
+                : rest
+            })
+          }
+          throw err
+        }
+      }
+      const queued = mutationQueue.current.then(run, () => run(null))
+      mutationQueue.current = queued.then(
+        (updated) => updated,
+        () => null,
+      )
+      return queued
+    },
+    [writeCurrentRows],
   )
 
   /**
@@ -652,15 +943,18 @@ export function useCollectionsData({
    * membership, as in `move`). No list reload: the response record is
    * already authoritative for the fields membership changes touch.
    */
-  const mergeUpdated = useCallback((updated: Collection) => {
-    setDetail((prev) => (prev?.id === updated.id ? updated : prev))
-    setCollections((prev) => {
-      const rest = prev.filter((c) => c.id !== updated.id)
-      return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
-        ? [updated, ...rest]
-        : rest
-    })
-  }, [])
+  const mergeUpdated = useCallback(
+    (updated: Collection) => {
+      setDetail((prev) => (prev?.id === updated.id ? updated : prev))
+      writeCurrentRows((prev) => {
+        const rest = prev.filter((c) => c.id !== updated.id)
+        return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
+          ? [updated, ...rest]
+          : rest
+      })
+    },
+    [writeCurrentRows],
+  )
 
   /**
    * Add member images to a collection — the Browse drop-add gesture (#1530).
@@ -670,9 +964,9 @@ export function useCollectionsData({
    * every status, even `already`/`full`) is merged into detail/list state.
    */
   const addImages = useCallback(
-    (id: number, imageIds: number[]): Promise<AddToCollectionResult> => {
+    (id: number, imageIds: number[], requestRole = role): Promise<AddToCollectionResult> => {
       const run = async (): Promise<AddToCollectionResult> => {
-        const result = await addImagesToCollection(id, imageIds)
+        const result = await addImagesToCollection(id, imageIds, requestRole)
         mergeUpdated(result.collection)
         return result
       }
@@ -683,7 +977,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [mergeUpdated],
+    [mergeUpdated, role],
   )
 
   /**
@@ -724,6 +1018,9 @@ export function useCollectionsData({
     )
   }, [])
 
+  const collections =
+    rowsCacheUserId === userId ? (collectionsByKey[currentKey] ?? EMPTY_ROWS) : EMPTY_ROWS
+
   return {
     collections,
     loading,
@@ -744,6 +1041,8 @@ export function useCollectionsData({
     move,
     transfer,
     saveOwners,
+    setHidden,
+    setCoverImage,
     addImages,
     removeImages,
     renewCollectionImage,

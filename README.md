@@ -31,12 +31,14 @@ All seed users share the password `password`.
 | Capability                               | Admin | Instructor | Staff | Student |
 | ---------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
+| View image uploader name                 | Yes   | Yes        | No    | No      |
 | View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections                       | Yes   | Yes        | Yes   | Yes     |
+| Create collections‖                      | Yes   | Yes        | Yes   | Yes     |
 | Edit co-owned collections‖               | Yes   | Yes        | Yes   | Yes     |
 | Delete own collections‖                  | Yes   | Yes        | Yes\* | Yes\*   |
 | Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
 | Manage collection owners‖                | Yes   | Yes\*      | No    | No      |
+| Hide/show collections‖                   | Yes   | Yes        | No    | No      |
 | Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
 | Create/update categories                 | Yes   | Yes        | No    | No      |
 | Delete categories                        | Yes   | Yes        | No    | No      |
@@ -63,7 +65,9 @@ authority. See [docs/groups.md](docs/groups.md).
 † Students are subject to the program/group dual-gate visibility filter.
 
 ¶ Students see collections they co-own, public collections, and restricted
-collections that pass both the program and group gates; images they cannot
+collections that pass both the program and group gates — except
+curatorially hidden ones, which drop out of student view unless the student
+co-owns them; images they cannot
 open are omitted from collection responses. Admins, instructors and staff see
 every collection. Edit/delete/owner-management authority (admin, co-owner, or
 instructor in the owning program) is described in
@@ -71,8 +75,11 @@ instructor in the owning program) is described in
 
 ‖ Collections support multiple user co-owners plus, or instead of, a program
 owner. Every role may create collections (the creator becomes the first user
-owner). Admins and instructors may edit/delete collections they co-own or
-whose owning program they belong to; students and staff share one rule —
+owner). Students may own at most 10 collections of each type and may add at
+most 20 images to a sequence collection; synchronized collections keep the
+four-image cap for every role. Admins and instructors may edit/delete
+collections they co-own or whose owning program they belong to; students and
+staff share one rule —
 they may edit collections they co-own, but may change scope or delete only
 when they are the sole user owner and no program owns the collection (`*`
 on the student delete cell; staff follow the same rule). Staff also see

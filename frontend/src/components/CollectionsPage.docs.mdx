@@ -14,17 +14,23 @@ import * as CollectionsPageStories from './CollectionsPage.stories'
 <Title />
 
 <Subtitle>
-  The Collections tab: filters, responsive card grid, create/edit/delete flows, and the detail view
-  — the sequence viewer for sequence collections and the synchronized viewer for synchronized
-  collections.
+  The unified Collections page — one tab with Cards, Table, and Graph views; a FilterBar of popover
+  facets (Name / Type / Owner / Visibility) replaces the old Sequence/Synchronized sub-pages and the
+  old chip/search row: create/edit/delete flows, and the detail view — the sequence viewer for
+  sequence collections and the synchronized viewer for synchronized collections.
 </Subtitle>
 
 ## When to use
 
-`App` renders `CollectionsPage` when the active page is `collections` (`?page=collections` or
-`?collection={id}`). It is visible to every authenticated role, including students. The component
-is presentational — list/detail data and mutations come from `useCollectionsData` via props, so the
-stories drive it with deterministic fixtures.
+`App` renders `CollectionsPage` when the active page is `collections`
+(`?page=collections`, `?page=collections&type=sequence|synchronized`, or `?collection={id}`).
+The unified page offers three views — Cards, Table, and a Graph powered by the collections
+graph endpoint — switched by the toolbar toggle; the view choice is intentionally not persisted
+(the page always loads on Cards while Table/Graph are evaluated). `?type=` seeds the
+shared Type filter instead of picking a sub-page (#1629). It is
+visible to every authenticated role, including students. The component is presentational —
+list/detail data and mutations come from `useCollectionsData` via props, so the stories drive it
+with deterministic fixtures.
 
 ## Interactive example
 
@@ -34,13 +40,23 @@ stories drive it with deterministic fixtures.
 
 ## Implementation guidance
 
-- **Filters.** Type toggle (All / Synchronized / Sequence), a **My collections** chip, and an
-  **Owner** select. Selecting My collections resets and disables the owner facet. Admins get an
-  extra _No owner (orphaned)_ owner choice; the hook never sends `orphaned` for other roles.
-  Students never see the Owner select, and the hook never sends `owner_user_id` /
-  `owner_program_id` for them. `normalizeCollectionFilters` applies both rules to the hook's
-  filter state, so an owner selection left over from a previous user is dropped rather than
-  hiding the new user's own saves.
+- **Filters.** A shared `FilterBar` (the Manage-page pattern) sits above all three views with
+  popover facets: **Name** (client-side text filter — narrows Cards/Table rows, dims
+  non-matching graph nodes), **Type** (single-select; `?type=` deep links seed it and clearing
+  drops the URL parameter), **Owner** (**My collections** for every role — selecting it clears
+  the owner facet — plus named owners for admin/instructor/staff and _No owner (orphaned)_ for
+  admins; the hook never sends `orphaned` for other roles and never sends
+  `owner_user_id` / `owner_program_id` for students) and **Visibility** (client-side
+  multi-select that narrows rows and dims non-matching graph nodes). While any facet is active
+  the bar shows deletable summary chips and a **Clear all** action.
+  `normalizeCollectionFilters` applies both owner rules to the hook's filter state, so an owner
+  selection left over from a previous user is dropped rather than hiding the new user's own
+  saves.
+- **Table columns.** In Table view the FilterBar's **Choose columns** action opens
+  `ColumnVisibilityDialog` (per-user persisted visibility and order): Cover, ID, Name, Type,
+  Scope, Description, Category, Images, Owner, Programs, Groups, Created, Updated — default
+  visible set is Cover, Name, Type, Category, Images, Owner, Updated. Every column except Cover
+  sorts; ID/Images/Created/Updated open descending.
 - **Grid.** One column on phones, two at `sm`, three at `md`, four at `lg`, each cell a
   `CollectionCard`.
 - **States.** Spinner while the first page loads, a plain error `Alert` (no action), and an
@@ -49,9 +65,26 @@ stories drive it with deterministic fixtures.
 - **Create / edit.** Both use `CollectionEditDialog`. Editing from a card first loads the full
   record (summaries omit the restricted scope); editing from the detail header reuses the loaded
   detail.
-- **Delete.** Confirmation dialog following the existing delete-dialog pattern; a failure keeps
-  the dialog open with the API message. Deleting the currently open collection returns to the list.
-- **Detail.** Header with type/visibility chips; `sequence` collections mount
+- **Student collection count caps.** The **New collection** button stays enabled until
+  both types are capped. Since the visible list is type-filtered, the page fetches all of the
+  student's collection summaries to determine both caps; the create dialog disables capped types
+  and selects the other type when its default type is capped.
+- **Delete.** Lives inside `CollectionEditDialog` only (#1554, the `EditImageModal` pattern):
+  first click arms, second click confirms; a failure keeps the dialog open with the API message.
+  Deleting the currently open collection returns to the list.
+- **Detail.** The header leads with a `CategoryBreadcrumb` of the collection's filed location
+  (category ancestors, or just **Home** at the root) instead of a back link (#1559); each link
+  navigates Browse to that spot via `onNavigateCategory`. The top-right row orders: visibility
+  chip, **Manage** (`canEdit` — opens
+  `CollectionManageDialog` for reorder/add/remove, #1566), **Edit**, and
+  **Hide collection** / **Show collection** (`canHide`, wired to
+  `onToggleHidden`) — or, when the filed category is hidden, a disabled
+  **Hidden by Category** state (the image view / edit dialog convention).
+  Owners management is a pencil beside the owner name
+  (`canTransfer`), and hidden collections show through greyscale alone — no
+  `Hidden` chip (#1567); a hidden filing category desaturates the same
+  controls and the sequence filmstrip. Filing a collection into a category moved into the edit dialog's category
+  picker — the header no longer carries a separate **Move** button (#1566). `sequence` collections mount
   `SequenceCollectionViewer` and `synchronized` collections mount
   `SynchronizedCollectionViewer` (see their own docs pages). A 404 (`detailError`) renders the
   not-found alert with a way back to the list.

@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import MenuIcon from '@mui/icons-material/Menu'
 import Box from '@mui/material/Box'
@@ -319,7 +319,9 @@ export const Basic: Story = {
     await expect(args.onOpen).toHaveBeenCalledTimes(1)
 
     await userEvent.click(documentBody.getByRole('button', { name: 'Close drawer' }))
-    await expect(documentBody.queryByRole('heading', { name: 'Navigation' })).toBeNull()
+    await waitFor(() =>
+      expect(documentBody.queryByRole('heading', { name: 'Navigation' })).toBeNull(),
+    )
     await expect(args.onClose).toHaveBeenCalledTimes(1)
   },
 }

@@ -90,6 +90,10 @@ neither leak collection data nor grow the tree query count.
 `If-None-Match` on subsequent polls and refreshes. When `fetchCategoryTree`
 resolves to `null` (a `304`), `useBrowseData` skips `setCategories`, avoiding a
 grid re-render and a costly tree rebuild in React.
+On non-root category navigation, the frontend silently revalidates the
+category tree only (not uncategorized images), with a 10-second throttle from
+the last successful tree read. Initial mount and root navigation do not add a
+separate navigation check.
 
 ## CORS
 

@@ -9,7 +9,7 @@ from ..authz import ADMIN_PROGRAM_NAME
 from ..browse_state import bump_browse_revision
 from ..database import get_db
 from ..models import Collection, Program, User
-from ..tile_order import bump_scopes, scope_key_for
+from ..tile_order import bump_scopes, collection_scope_keys
 from ..schemas import (
     UserCreate,
     UserUpdate,
@@ -68,9 +68,9 @@ async def _delete_sole_owned_collections(
         and all(o.id in departing_ids for o in c.owners)
     ]
     if dying:
-        await bump_scopes(
-            db, {scope_key_for(c.category_id) for c in dying}
-        )
+        affected_scope_keys = collection_scope_keys(c.category_id for c in dying)
+        if affected_scope_keys:
+            await bump_scopes(db, affected_scope_keys)
         for collection in dying:
             await db.delete(collection)
     return any(c.category_id is not None for c in affected)

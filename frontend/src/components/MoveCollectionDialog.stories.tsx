@@ -41,15 +41,26 @@ const collection: CollectionSummary = {
   description: 'Sequence slides for the second lab.',
   type: 'sequence',
   visibility: 'public',
+  hidden: false,
   owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
   imageCount: 9,
   coverThumb: null,
+  coverImageId: null,
+  coverBlank: false,
   categoryId: null,
   sortOrder: 0,
+  programIds: [],
+  groupIds: [],
   version: 3,
   createdAt: FIXED_AT,
   updatedAt: FIXED_AT,
-  permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
+  permissions: {
+    canEdit: true,
+    canDelete: true,
+    canChangeScope: true,
+    canTransfer: false,
+    canHide: false,
+  },
 }
 
 const meta = {
@@ -85,16 +96,16 @@ export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     await expect(
-      await body.findByText(/Move “Lab 2 — Epithelium set” to a different category/),
+      await body.findByText(/File “Lab 2 — Epithelium set” into a Browse category/),
     ).toBeInTheDocument()
     await userEvent.click(await body.findByRole('combobox'))
     await expect(
-      await body.findByRole('option', { name: /None \(root level\)/ }),
+      await body.findByRole('option', { name: /None\. Access in Manage > Collections\./ }),
     ).toBeInTheDocument()
   },
 }
 
-/** Root-filed collection — "None (root level)" is the preselected destination. */
+/** Unfiled collection — the "None" destination is preselected. */
 export const AtRoot: Story = {
   args: {
     collection: { ...collection, categoryId: null },
@@ -102,6 +113,21 @@ export const AtRoot: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     const picker = await body.findByRole('combobox')
-    await expect(picker).toHaveTextContent(/None \(root level\)/)
+    await expect(picker).toHaveTextContent(/None\. Access in Manage > Collections\./)
+  },
+}
+
+/** Private collection filed into Browse — the visibility warning is shown. */
+export const PrivateFilingWarning: Story = {
+  args: {
+    collection: { ...collection, categoryId: 2, visibility: 'private' },
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(
+      await body.findByText(
+        'This collection is private. Students will not be able to see the images in this collection.',
+      ),
+    ).toBeInTheDocument()
   },
 }

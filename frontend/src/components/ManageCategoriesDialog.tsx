@@ -21,7 +21,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
-import type { Category, CollectionSummary, Group, ImageItem, Program } from '../types'
+import type { Category, Group, ImageItem, Program } from '../types'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { findCategoryPath } from '../treeUtils'
 import { getVisibilityColors } from '../theme'
@@ -152,11 +152,6 @@ interface ManageCategoriesDialogProps {
   onClose: () => void
   categories: Category[]
   uncategorizedImages?: ImageItem[]
-  /**
-   * Root-scope (uncategorized) collections — tile-order members like
-   * images, so root-scope order submissions must carry them (issue #1528).
-   */
-  uncategorizedCollections?: CollectionSummary[]
   onCategoryNavigate?: (categoryId: number) => void
   onAddCategory: (
     label: string,
@@ -191,7 +186,6 @@ export default function ManageCategoriesDialog({
   onClose,
   categories,
   uncategorizedImages = [],
-  uncategorizedCollections = [],
   onCategoryNavigate,
   onAddCategory,
   onDeleteCategory,
@@ -514,7 +508,7 @@ export default function ManageCategoriesDialog({
         ]
 
         const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
-        const collectionsByParent = collectCollectionsByParent(categories, uncategorizedCollections)
+        const collectionsByParent = collectCollectionsByParent(categories)
         const moves = diffParentMoves(newList, options)
         const scopes = interleavedTileOrders(
           newList,
@@ -577,7 +571,6 @@ export default function ManageCategoriesDialog({
       baseOptions,
       categories,
       uncategorizedImages,
-      uncategorizedCollections,
       onReorderTiles,
       onReorderComplete,
       onDragActiveChange,

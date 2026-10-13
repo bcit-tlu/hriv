@@ -2,18 +2,20 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   fetchCategoryTree,
   fetchUncategorizedImages,
-  fetchCollections as apiFetchCollections,
   fetchPrograms as apiFetchPrograms,
   fetchGroups as apiFetchGroups,
 } from './api'
 import type { ApiCategoryTree, ApiCollectionSummary, ApiImage, CategoryTreeHeaders } from './api'
 import type { Category, CollectionSummary, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
+import { findCategoryPath } from './treeUtils'
 import { apiCollectionSummaryToSummary } from './collectionUtils'
 import { apiGroupToGroup } from './groupUtils'
 import { tileOrderingCoordinator } from './tileOrdering'
 import { recordBrowseTreePoll } from './dndInstrumentation'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
+
+export const BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS = 10_000
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
@@ -191,6 +193,11 @@ function collectionIdentityKey(api: ApiCollectionSummary): string {
     api.owners,
     api.image_count,
     api.cover_thumb,
+    api.cover_image_id,
+    api.cover_blank,
+    api.hidden,
+    api.program_ids,
+    api.group_ids,
     api.permissions,
     api.created_at,
     api.updated_at,
@@ -257,6 +264,8 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
   return category
 }
 
+const EMPTY_PATH_NODE: ReturnType<typeof resolvePathNode> = { cats: [], imgs: [], cols: [] }
+
 function arraysReferentiallyEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i])
 }
@@ -265,7 +274,7 @@ export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
   dragActive?: boolean
-  /** Feature flag — root-scope collections only load when on (#1529). */
+  /** Feature flag — filed category-scope collections only appear when on. */
   collectionsEnabled?: boolean
 }
 
@@ -278,7 +287,6 @@ export function useBrowseData({
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
-  const [uncategorizedCollections, setUncategorizedCollections] = useState<CollectionSummary[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const uncategorizedLoaded = useRef(false)
@@ -301,11 +309,9 @@ export function useBrowseData({
   // request for the same data.
   const categoriesReadGen = useRef(0)
   const uncategorizedReadGen = useRef(0)
-  const collectionsReadGen = useRef(0)
   const visibleCategoriesLoadGen = useRef(0)
   const categoriesAbortRef = useRef<AbortController | null>(null)
   const uncategorizedAbortRef = useRef<AbortController | null>(null)
-  const collectionsAbortRef = useRef<AbortController | null>(null)
   // Authoritative refreshes hold their own controllers: only a NEWER refresh
   // may abort an in-flight refresh. Ordinary foreground loads must not — a
   // refresh's resolved value is used for navigation, so an abort must always
@@ -319,7 +325,6 @@ export function useBrowseData({
   // resolve with the freshest data instead of rejecting.
   const categoriesRef = useRef<Category[]>([])
   const uncategorizedRef = useRef<ImageItem[]>([])
-  const uncategorizedCollectionsRef = useRef<CollectionSummary[]>([])
   // Newest in-flight authoritative refresh per data type: a superseded
   // refresh chains onto this so its caller receives the data the winning
   // refresh commits, not a possibly pre-mutation mirror.
@@ -340,6 +345,8 @@ export function useBrowseData({
     etag: null,
     revision: null,
   })
+  const lastTreeCheckAt = useRef(0)
+  const authoritativeTreeRefreshInFlight = useRef(0)
   // The stored ETag/revision is updated only when a category-tree response is
   // actually committed to React state, so an aborted or out-of-order response
   // can never leave a newer ETag paired with stale displayed data.
@@ -350,10 +357,6 @@ export function useBrowseData({
   useEffect(() => {
     uncategorizedRef.current = uncategorizedImages
   }, [uncategorizedImages])
-  useEffect(() => {
-    uncategorizedCollectionsRef.current = uncategorizedCollections
-  }, [uncategorizedCollections])
-
   // Loaders resolve `true` only when fresh data was actually applied, so
   // callers can gate cache invalidation on authoritative data having landed.
   const loadCategories = useCallback(
@@ -408,6 +411,7 @@ export function useBrowseData({
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return true
         }
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
@@ -427,6 +431,7 @@ export function useBrowseData({
             revision: receivedHeaders.revision,
           }
         }
+        lastTreeCheckAt.current = Date.now()
         return true
       } catch (err) {
         if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) {
@@ -486,49 +491,6 @@ export function useBrowseData({
     [],
   )
 
-  // Root-scope collections (#1529): mirrors the uncategorized-images loader,
-  // minus the refresh-chaining — no caller resolves data from the resolved
-  // value, so a gen+abort-guarded read is sufficient. No-op while the
-  // collections flag is off so a flag-off deployment never calls the API.
-  const loadUncategorizedCollections = useCallback(
-    async (opts?: { signal?: AbortSignal }): Promise<boolean> => {
-      const { signal } = opts ?? {}
-      // Flag off: nothing to fetch; reporting "fresh" keeps the poll's
-      // releaseCleanScopes gate correct (collections aren't scope members).
-      if (!collectionsEnabled) {
-        return true
-      }
-      if (signal?.aborted) return false
-      const gen = ++collectionsReadGen.current
-      let effectiveSignal = signal
-      if (!signal) {
-        collectionsAbortRef.current?.abort()
-        const ac = new AbortController()
-        collectionsAbortRef.current = ac
-        effectiveSignal = ac.signal
-      }
-      try {
-        const rows = await apiFetchCollections({ uncategorized: true }, { signal: effectiveSignal })
-        if (effectiveSignal?.aborted || gen !== collectionsReadGen.current) return false
-        const next = rows.map((row) =>
-          stableApiCollectionSummaryToSummary(row, stableCachesRef.current),
-        )
-        if (!arraysReferentiallyEqual(next, uncategorizedCollectionsRef.current)) {
-          setUncategorizedCollections(next)
-          uncategorizedCollectionsRef.current = next
-        }
-        return true
-      } catch (err) {
-        if (effectiveSignal?.aborted || isAbortError(err) || gen !== collectionsReadGen.current) {
-          return false
-        }
-        console.error('Failed to load uncategorized collections', err)
-        return false
-      }
-    },
-    [collectionsEnabled],
-  )
-
   const loadPrograms = useCallback(async () => {
     try {
       const p = await apiFetchPrograms()
@@ -560,6 +522,7 @@ export function useBrowseData({
     // aborted read has already claimed a generation), THEN claim ours, so
     // this refresh is guaranteed to hold the newest generation and commit.
     invalidateRef.current?.()
+    authoritativeTreeRefreshInFlight.current += 1
     // Authoritative refresh: claim the newest generation and abort any older
     // read for the same data.
     const gen = ++categoriesReadGen.current
@@ -605,6 +568,7 @@ export function useBrowseData({
                 revision: receivedHeaders.revision,
               }
             }
+            lastTreeCheckAt.current = Date.now()
             return categoriesRef.current
           }
           const newest = categoriesRefreshRef.current
@@ -631,6 +595,7 @@ export function useBrowseData({
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return cats
         }
         // Superseded while the response was in flight: hand back the
@@ -649,6 +614,8 @@ export function useBrowseData({
           return categoriesRef.current
         }
         throw err
+      } finally {
+        authoritativeTreeRefreshInFlight.current -= 1
       }
     })()
     const record = { gen, promise: run, settled: false }
@@ -727,16 +694,15 @@ export function useBrowseData({
       const marker = tileOrderingCoordinator.marker()
       const categoriesFresh = await loadCategories({ silent: true, signal })
       const imagesFresh = await loadUncategorizedImages({ signal })
-      const collectionsFresh = await loadUncategorizedCollections({ signal })
       // Only when fresh authoritative data actually landed may the
       // coordinator's cached display order be dropped for clean scopes —
       // a failed poll must not make a just-saved order fall back to the
       // stale pre-save tree.
-      if (!signal.aborted && categoriesFresh && imagesFresh && collectionsFresh) {
+      if (!signal.aborted && categoriesFresh && imagesFresh) {
         tileOrderingCoordinator.releaseCleanScopes(marker)
       }
     },
-    [loadCategories, loadUncategorizedImages, loadUncategorizedCollections],
+    [loadCategories, loadUncategorizedImages],
   )
   const invalidateBackground = useBackgroundRefresh(
     backgroundRefresh,
@@ -752,69 +718,60 @@ export function useBrowseData({
     if (!dragActive) return
     categoriesAbortRef.current?.abort()
     uncategorizedAbortRef.current?.abort()
-    collectionsAbortRef.current?.abort()
     categoriesRefreshAbortRef.current?.abort()
     uncategorizedRefreshAbortRef.current?.abort()
   }, [dragActive])
 
+  // `path` holds navigation-time snapshots; derive everything from the
+  // leaf's live ancestry so a background refresh that renames, re-restricts,
+  // or reparents the leaf or an ancestor is reflected without re-navigating.
+  const pathLeafId = path.length > 0 ? path[path.length - 1].id : null
+  const previousPathLeafId = useRef(pathLeafId)
+  useEffect(() => {
+    const previousLeafId = previousPathLeafId.current
+    previousPathLeafId.current = pathLeafId
+    if (previousLeafId === pathLeafId || pathLeafId == null) return
+    if (
+      Date.now() - lastTreeCheckAt.current < BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS ||
+      authoritativeTreeRefreshInFlight.current > 0
+    )
+      return
+    if (tileOrderingCoordinator.hasUnsavedChanges()) return
+    if (dragActive || currentUser == null) return
+    void loadCategories({ silent: true }) // eslint-disable-line react-hooks/set-state-in-effect -- category-navigation revalidation
+  }, [pathLeafId, dragActive, currentUser, loadCategories])
+
+  const liveCategoryPath = useMemo(
+    () => (pathLeafId == null ? [] : (findCategoryPath(categories, pathLeafId) ?? [])),
+    [categories, pathLeafId],
+  )
+
   // Resolve the live children/images/collections from the categories state
-  // tree so newly added members appear immediately.
+  // tree so newly added members appear immediately. A leaf that has left the
+  // tree (deleted, or no longer visible) resolves to an empty scope, not root.
   const {
     cats: resolvedCategories,
     imgs: currentImages,
     cols: pathCollections,
-  } = useMemo(() => resolvePathNode(categories, path), [categories, path])
-
-  // Root scope merges the separately-loaded uncategorized collections; a
-  // nested scope's collections ride the tree embed. Both are gated on the
-  // feature flag so a mid-session flag-off hides collection tiles even if
-  // stale data lingers in state (#1529 kill-switch).
-  const currentCollections = useMemo(
+  } = useMemo(
     () =>
-      !collectionsEnabled ? [] : path.length === 0 ? uncategorizedCollections : pathCollections,
-    [path.length, collectionsEnabled, uncategorizedCollections, pathCollections],
+      pathLeafId != null && liveCategoryPath.length === 0
+        ? EMPTY_PATH_NODE
+        : resolvePathNode(categories, liveCategoryPath),
+    [categories, liveCategoryPath, pathLeafId],
   )
 
-  // Walk the categories tree along the given path segments applying narrowing
-  // (intersection) semantics. `depth` controls how many path segments to
-  // traverse (defaults to all).
-  const getPathRestriction = useCallback(
-    (depth?: number): number[] => {
-      const ancestors: Category[] = []
-      let node = categories
-      const limit = depth ?? path.length
-      for (let i = 0; i < limit; i++) {
-        const found = node.find((c) => c.id === path[i].id)
-        if (!found) break
-        ancestors.push(found)
-        node = found.children
-      }
-      return narrowProgramIds(ancestors)
-    },
-    [categories, path],
+  // Collections are Browse tiles only when filed in a category.
+  const currentCollections = useMemo(
+    () => (collectionsEnabled && path.length > 0 ? pathCollections : []),
+    [path.length, collectionsEnabled, pathCollections],
   )
 
-  const ancestorProgramIds = useMemo(() => getPathRestriction(), [getPathRestriction])
-
-  // Group analogue of getPathRestriction: walk the path applying the same
-  // ancestor-narrowing semantics to the (independent) group dimension.
-  const getPathGroupRestriction = useCallback(
-    (depth?: number): number[] => {
-      const ancestors: Category[] = []
-      let node = categories
-      const limit = depth ?? path.length
-      for (let i = 0; i < limit; i++) {
-        const found = node.find((c) => c.id === path[i].id)
-        if (!found) break
-        ancestors.push(found)
-        node = found.children
-      }
-      return narrowGroupIds(ancestors)
-    },
-    [categories, path],
-  )
-
-  const ancestorGroupIds = useMemo(() => getPathGroupRestriction(), [getPathGroupRestriction])
+  // Effective restrictions for the current scope: narrowing (intersection)
+  // over the live ancestry, leaf included. Callers needing ancestors-only
+  // (e.g. editing the breadcrumb leaf) slice `liveCategoryPath` themselves.
+  const ancestorProgramIds = useMemo(() => narrowProgramIds(liveCategoryPath), [liveCategoryPath])
+  const ancestorGroupIds = useMemo(() => narrowGroupIds(liveCategoryPath), [liveCategoryPath])
 
   // Filter out hidden categories for students in browse mode
   const isStudent = currentUser?.role === 'student'
@@ -831,24 +788,19 @@ export function useBrowseData({
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
-    // Consumers see an empty list while the flag is off even if a stale
-    // fetch result still sits in state (#1529 kill-switch).
-    uncategorizedCollections: collectionsEnabled ? uncategorizedCollections : [],
     currentCollections,
     programs,
     groups,
     setGroups,
     loadCategories,
     loadUncategorizedImages,
-    loadUncategorizedCollections,
     loadPrograms,
     loadGroups,
     refreshCategories,
     refreshUncategorizedImages,
     currentImages,
-    getPathRestriction,
+    liveCategoryPath,
     ancestorProgramIds,
-    getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
   }

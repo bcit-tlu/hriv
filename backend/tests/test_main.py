@@ -618,15 +618,21 @@ def test_synthetic_result_still_requires_credential_during_maintenance(
     assert response.status_code == 401
 
 
-async def test_features_endpoint_reports_collections_flag(monkeypatch) -> None:
+async def test_features_endpoint_reports_effective_collection_flags(monkeypatch) -> None:
     from app.database import settings
     from app.main import features
 
-    monkeypatch.setattr(settings, "collections_enabled", False)
-    assert (await features()).collections is False
-
-    monkeypatch.setattr(settings, "collections_enabled", True)
-    assert (await features()).collections is True
+    for collections_enabled, home_shelf, expected_shelf in (
+        (False, False, False),
+        (False, True, False),
+        (True, False, False),
+        (True, True, True),
+    ):
+        monkeypatch.setattr(settings, "collections_enabled", collections_enabled)
+        monkeypatch.setattr(settings, "collections_home_shelf", home_shelf)
+        result = await features()
+        assert result.collections is collections_enabled
+        assert result.collections_home_shelf is expected_shelf
 
 
 def test_otel_route_details_resolves_included_routes() -> None:

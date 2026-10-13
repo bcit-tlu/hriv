@@ -31,7 +31,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   `tests/test_router_images.py`** — the images router is a separate caller that
   must pass `user_group_ids` (regression fixed in #604). See [groups.md](groups.md).
 
-### Changed collections (model, authorization, read/write API, ownership transfer, Collections tab)
+### Changed collections (model, authorization, read/write API, ownership transfer, Collections pages / manage table)
 
 - backend: `poetry run pytest tests/test_collections_model.py tests/test_router_collections.py tests/test_schemas.py tests/test_authz.py tests/test_visibility.py`
 - Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
@@ -47,15 +47,24 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   locally `docker compose up -d db migrate` then `export
 TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   otherwise it skips.
-- frontend: `npm test -- CollectionsPage CollectionCard CollectionEditDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- frontend: `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog CollectionManageDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- Per-type pages / card overlay / manage table / dialog delete (#1554):
+  `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog navigation AppShell App.test`
+- Unified Collections page — view toggle, Table view, Graph view, view
+  preference, `?type=` filter seed (#1629; graph endpoints #1628/#1633):
+  `npm test -- CollectionsPage CollectionsTable collectionsGraphModel useCollectionsViewPreference useCollectionsData navigation AppShell App.test`
+- Collection Graph View dialog — detail-header button, perspective stack,
+  order toggle, image/collection clicks (#1630; `CollectionGraphDialog.tsx`,
+  `buildCollectionModel.ts`, `fetchCollectionGraph` in `api.ts`):
+  `npm test -- CollectionGraphDialog collectionGraphModel CollectionsGraph CollectionsPage`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`
 - Sequence collection viewer (#1416: `SequenceCollectionViewer.tsx`,
   `?item=` in `useShareableImageState.ts`, `reorderImages` /
   `renewCollectionImage` in `useCollectionsData.ts`, detail mount in
-  `CollectionsPage.tsx`):
-  `npm test -- SequenceCollectionViewer useCollectionsData useShareableImageState CollectionsPage App.test`
+  `CollectionsPage.tsx`; #1566 member manager: `CollectionManageDialog.tsx`):
+  `npm test -- SequenceCollectionViewer CollectionManageDialog useCollectionsData useShareableImageState CollectionsPage App.test`
 - Synchronized collection viewer (#1417: `SynchronizedCollectionViewer.tsx`,
   `onViewerReady` in `ImageViewer.tsx`, `viewportStateFromSaved` in
   `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail
@@ -66,15 +75,20 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   `replaceCollectionOwners` in `api.ts`, detail header + card affordances in
   `CollectionsPage.tsx` / `CollectionCard.tsx`):
   `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
-- Browse tile integration (#1529: collection tiles in `SortableTileGrid.tsx`,
-  `currentCollections`/`uncategorizedCollections` in `useBrowseData.ts`,
-  move handlers in `useCategoryActions.ts`, `MoveCollectionDialog.tsx`,
-  `?collection=&cat=` context in `useShareableImageState.ts` /
-  `useNavigationHistory.ts`, `member_count` in `collection_views.py`; #1530
-  image→collection drop-add: `drop-col-` zone + `onDropImageOnCollection` in
-  `SortableTileGrid.tsx`, `removeImagesFromCollectionApi` undo in
-  `useCategoryActions.ts`):
-  `npm test -- SortableTileGrid useBrowseData useCategoryActions MoveCollectionDialog CollectionsPage CollectionCard CategoryTile useCollectionsData useShareableImageState useNavigationHistory App.test`
+- Browse integration (#1529, #1583): filed collections in
+  `SortableTileGrid.tsx` and nested `currentCollections` from the category
+  tree only; there is no root `uncategorizedCollections` Browse loader.
+  Verify the root grid has no collection tiles, and test the separate
+  flag-controlled My collections drawer and its `{ mine: true, limit: 8 }`
+  request. Nested filed collections still render.
+  Also cover `None. Access in Manage > Collections.` picker labels,
+  unfile snackbar, private-filing warnings, and Manage Categories ordering:
+  `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard MyCollectionsDrawer useMyCollectionsDrawerState useMyCollectionsShelf useFeatures CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
+  Backend placement/tile-order cases:
+  `poetry run pytest tests/test_tile_order.py tests/test_router_collections.py tests/test_router_collections_db.py tests/test_categories.py`.
+  #1530 image→collection drop-add still uses the `drop-col-` zone and
+  `onDropImageOnCollection` in `SortableTileGrid.tsx`; **Add to Collection**
+  remains available to add images to unfiled collections.
 - Storybook (stories + a11y): `npm run test:storybook -- Collection`
 - Collection visibility reuses the category dual gate — if you touched
   `visibility.py` also run the "Changed groups" set above. See

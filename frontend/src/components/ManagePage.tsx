@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -9,7 +10,6 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
@@ -34,7 +34,6 @@ import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
   fetchImages,
@@ -62,6 +61,7 @@ import FailedUploadsDialog from './FailedUploadsDialog'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
+import CategoryBreadcrumb, { buildCategoryPaths } from './CategoryBreadcrumb'
 import CategoryFilterTreePanel from './CategoryFilterTreePanel'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
@@ -83,93 +83,6 @@ import {
   loadStoredTableFilters,
   useTableFilterPreferences,
 } from '../useTableFilterPreferences'
-
-interface CategoryPathSegment {
-  category: Category
-  ancestors: Category[]
-}
-
-function buildCategoryPaths(
-  nodes: Category[],
-  ancestors: Category[] = [],
-): Map<number, CategoryPathSegment> {
-  const map = new Map<number, CategoryPathSegment>()
-  for (const node of nodes) {
-    map.set(node.id, { category: node, ancestors })
-    const childMap = buildCategoryPaths(node.children, [...ancestors, node])
-    for (const [id, seg] of childMap) {
-      map.set(id, seg)
-    }
-  }
-  return map
-}
-
-function CategoryBreadcrumb({
-  categoryId,
-  categoryPaths,
-  onNavigate,
-  hiddenColor,
-}: {
-  categoryId: number | null
-  categoryPaths: Map<number, CategoryPathSegment>
-  onNavigate?: (categoryPath: Category[]) => void
-  hiddenColor?: string
-}) {
-  if (categoryId == null) return <>—</>
-  const seg = categoryPaths.get(categoryId)
-  if (!seg) return <>{categoryId}</>
-
-  const fullPath = [...seg.ancestors, seg.category]
-  const hiddenState = getCategoryHiddenStateFromPath(fullPath)
-
-  return (
-    <Box component="span" sx={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center' }}>
-      {fullPath.map((cat, i) => (
-        <Box component="span" key={cat.id}>
-          {i > 0 && (
-            <Typography component="span" variant="body2" color="text.secondary" sx={{ mx: 0.25 }}>
-              :
-            </Typography>
-          )}
-          <Link
-            component="button"
-            variant="body2"
-            underline="hover"
-            onClick={(e: React.MouseEvent) => {
-              e.stopPropagation()
-              if (onNavigate) {
-                onNavigate(fullPath.slice(0, i + 1))
-              }
-            }}
-            sx={{ verticalAlign: 'baseline' }}
-          >
-            {cat.label}
-          </Link>
-        </Box>
-      ))}
-      {hiddenState.hidden && hiddenColor && (
-        <Tooltip title="Hidden by category">
-          <span
-            role="img"
-            aria-label={
-              hiddenState.hiddenByAncestor && !hiddenState.directlyHidden
-                ? 'Category hidden from students by ancestor'
-                : 'Category hidden from students'
-            }
-            style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}
-          >
-            <VisibilityOffIcon
-              sx={{
-                fontSize: 14,
-                color: hiddenColor,
-              }}
-            />
-          </span>
-        </Tooltip>
-      )}
-    </Box>
-  )
-}
 
 type SortableColumn =
   | 'id'
@@ -423,7 +336,7 @@ export default function ManagePage({
 
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const [failedUploadsOpen, setFailedUploadsOpen] = useState(false)
-  const { visibleColumns, isColumnVisible, setColumnVisible } =
+  const { visibleColumns, setColumnVisible, columnOrder, orderedVisibleColumns, setColumnOrder } =
     useTableColumnPreferences<ManageTableColumn>({
       tableKey: 'manage-images',
       allColumns: MANAGE_ALL_COLUMNS,
@@ -433,6 +346,14 @@ export default function ManagePage({
     () => MANAGE_ALL_COLUMNS.filter((column) => visibleColumns[column]).length,
     [visibleColumns],
   )
+  // Dialog options follow the persisted column order (#1577) so drag
+  // reordering in the chooser matches the rendered table order.
+  const orderedColumnOptions = useMemo(() => {
+    const byKey = new Map(MANAGE_COLUMN_OPTIONS.map((option) => [option.key, option]))
+    return columnOrder
+      .map((key) => byKey.get(key))
+      .filter((option): option is ColumnVisibilityOption<ManageTableColumn> => option != null)
+  }, [columnOrder])
 
   // Pagination state (rows-per-page persists per user via localStorage)
   const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('manage-images')
@@ -1101,6 +1022,176 @@ export default function ManagePage({
     )
   }
 
+  // Per-column render maps (#1577): the FilterBar controls, table headers,
+  // and row cells are rendered in the user's persisted column order via
+  // `orderedVisibleColumns` — visibility filtering happens there, so the
+  // map entries themselves render unconditionally.
+  const sortableHeaderCell = (column: SortableColumn, label: string) => (
+    <TableCell sortDirection={sortColumn === column ? sortDirection : false}>
+      <TableSortLabel
+        active={sortColumn === column}
+        direction={sortColumn === column ? sortDirection : 'asc'}
+        onClick={() => handleSort(column)}
+      >
+        {label}
+      </TableSortLabel>
+    </TableCell>
+  )
+
+  const columnHeaderCells: Record<ManageTableColumn, ReactNode> = {
+    thumbnail: <TableCell sx={{ width: 48, p: 0.5 }} />,
+    id: sortableHeaderCell('id', 'ID'),
+    name: sortableHeaderCell('name', 'Name'),
+    category: sortableHeaderCell('category', 'Category'),
+    copyright: sortableHeaderCell('copyright', 'Copyright'),
+    note: sortableHeaderCell('note', 'Note'),
+    program: sortableHeaderCell('program', 'Program'),
+    group: sortableHeaderCell('group', 'Groups'),
+    active: sortableHeaderCell('active', 'Visibility'),
+    updated_at: sortableHeaderCell('updated_at', 'Modified'),
+    created_at: sortableHeaderCell('created_at', 'Created'),
+    dimensions: sortableHeaderCell('dimensions', 'Dimensions'),
+    file_size: sortableHeaderCell('file_size', 'File Size'),
+    measurement: <TableCell>Measurement</TableCell>,
+    annotations: sortableHeaderCell('annotations', 'Annotations'),
+  }
+
+  const columnFilterControls: Partial<Record<ManageTableColumn, ReactNode>> = {
+    id: (
+      <FilterPopoverButton
+        label="ID"
+        activeCount={getFilterTerms(filters['id'] ?? '').length}
+        panelWidth={160}
+      >
+        <FilterTextPanel
+          value={filters['id'] ?? ''}
+          onChange={(value) => handleFilterChange('id', value)}
+          placeholder="Filter by ID"
+          ariaLabel="ID"
+          helperText="Separate terms with commas"
+          width={160}
+        />
+      </FilterPopoverButton>
+    ),
+    name: (
+      <FilterPopoverButton
+        label="Name"
+        activeCount={getFilterTerms(filters['name'] ?? '').length}
+        panelWidth={260}
+      >
+        <FilterTextPanel
+          value={filters['name'] ?? ''}
+          onChange={(value) => handleFilterChange('name', value)}
+          placeholder="Filter by name"
+          ariaLabel="Name"
+          helperText="Separate terms with commas"
+          width={260}
+        />
+      </FilterPopoverButton>
+    ),
+    category: (
+      <FilterPopoverButton label="Category" activeCount={selectedCategories.size} panelWidth={300}>
+        <CategoryFilterTreePanel
+          categories={categories}
+          selectedIds={selectedCategories}
+          onToggle={(id) => {
+            setSelectedCategories((prev) => {
+              const next = new Set(prev)
+              if (next.has(id)) {
+                next.delete(id)
+              } else {
+                next.add(id)
+              }
+              return next
+            })
+            setCurrentPage(0)
+          }}
+        />
+      </FilterPopoverButton>
+    ),
+    copyright: (
+      <FilterPopoverButton
+        label="Copyright"
+        activeCount={getFilterTerms(filters['copyright'] ?? '').length}
+        panelWidth={260}
+      >
+        <FilterTextPanel
+          value={filters['copyright'] ?? ''}
+          onChange={(value) => handleFilterChange('copyright', value)}
+          placeholder="Filter by copyright"
+          ariaLabel="Copyright"
+          helperText="Separate terms with commas"
+          width={260}
+        />
+      </FilterPopoverButton>
+    ),
+    note: (
+      <FilterPopoverButton
+        label="Note"
+        activeCount={getFilterTerms(filters['note'] ?? '').length}
+        panelWidth={260}
+      >
+        <FilterTextPanel
+          value={filters['note'] ?? ''}
+          onChange={(value) => handleFilterChange('note', value)}
+          placeholder="Filter by note"
+          ariaLabel="Note"
+          helperText="Separate terms with commas"
+          width={260}
+        />
+      </FilterPopoverButton>
+    ),
+    program: (
+      <FilterPopoverButton label="Program" activeCount={selectedPrograms.size} panelWidth={260}>
+        <FilterOptionPanel
+          options={programFilterOptions.map((program) => ({
+            value: String(program.id),
+            label: program.name,
+          }))}
+          selectedValues={selectedProgramValues}
+          onChange={(values) => {
+            setSelectedPrograms(new Set(values.map((value) => Number(value))))
+            setCurrentPage(0)
+          }}
+        />
+      </FilterPopoverButton>
+    ),
+    group: (
+      <FilterPopoverButton label="Group" activeCount={selectedGroups.size} panelWidth={260}>
+        <FilterOptionPanel
+          options={groupFilterOptions.map((group) => ({
+            value: String(group.id),
+            label: group.name,
+          }))}
+          selectedValues={selectedGroupValues}
+          onChange={(values) => {
+            setSelectedGroups(new Set(values.map((value) => Number(value))))
+            setCurrentPage(0)
+          }}
+        />
+      </FilterPopoverButton>
+    ),
+    active: (
+      <FilterPopoverButton
+        label="Visibility"
+        activeCount={selectedVisibility.size}
+        panelWidth={180}
+      >
+        <FilterOptionPanel
+          options={[
+            { label: 'Visible', value: 'active' },
+            { label: 'Hidden', value: 'inactive' },
+          ]}
+          selectedValues={selectedVisibilityValues}
+          onChange={(values) => {
+            setSelectedVisibility(new Set(values as VisibilityFilterValue[]))
+            setCurrentPage(0)
+          }}
+        />
+      </FilterPopoverButton>
+    ),
+  }
+
   return (
     <Box>
       <Box
@@ -1326,155 +1417,17 @@ export default function ManagePage({
           </>
         }
       >
-        {isColumnVisible('id') && (
-          <FilterPopoverButton
-            label="ID"
-            activeCount={getFilterTerms(filters['id'] ?? '').length}
-            panelWidth={160}
-          >
-            <FilterTextPanel
-              value={filters['id'] ?? ''}
-              onChange={(value) => handleFilterChange('id', value)}
-              placeholder="Filter by ID"
-              ariaLabel="ID"
-              helperText="Separate terms with commas"
-              width={160}
-            />
-          </FilterPopoverButton>
+        {orderedVisibleColumns.map(
+          (column) =>
+            columnFilterControls[column] != null && (
+              <Fragment key={column}>{columnFilterControls[column]}</Fragment>
+            ),
         )}
-        {isColumnVisible('name') && (
-          <FilterPopoverButton
-            label="Name"
-            activeCount={getFilterTerms(filters['name'] ?? '').length}
-            panelWidth={260}
-          >
-            <FilterTextPanel
-              value={filters['name'] ?? ''}
-              onChange={(value) => handleFilterChange('name', value)}
-              placeholder="Filter by name"
-              ariaLabel="Name"
-              helperText="Separate terms with commas"
-              width={260}
-            />
-          </FilterPopoverButton>
+        {!orderedVisibleColumns.some((column) => columnFilterControls[column] != null) && (
+          <Typography variant="body2" color="text.secondary">
+            Choose a visible filterable column to add controls here.
+          </Typography>
         )}
-        {isColumnVisible('category') && (
-          <FilterPopoverButton
-            label="Category"
-            activeCount={selectedCategories.size}
-            panelWidth={300}
-          >
-            <CategoryFilterTreePanel
-              categories={categories}
-              selectedIds={selectedCategories}
-              onToggle={(id) => {
-                setSelectedCategories((prev) => {
-                  const next = new Set(prev)
-                  if (next.has(id)) {
-                    next.delete(id)
-                  } else {
-                    next.add(id)
-                  }
-                  return next
-                })
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('copyright') && (
-          <FilterPopoverButton
-            label="Copyright"
-            activeCount={getFilterTerms(filters['copyright'] ?? '').length}
-            panelWidth={260}
-          >
-            <FilterTextPanel
-              value={filters['copyright'] ?? ''}
-              onChange={(value) => handleFilterChange('copyright', value)}
-              placeholder="Filter by copyright"
-              ariaLabel="Copyright"
-              helperText="Separate terms with commas"
-              width={260}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('note') && (
-          <FilterPopoverButton
-            label="Note"
-            activeCount={getFilterTerms(filters['note'] ?? '').length}
-            panelWidth={260}
-          >
-            <FilterTextPanel
-              value={filters['note'] ?? ''}
-              onChange={(value) => handleFilterChange('note', value)}
-              placeholder="Filter by note"
-              ariaLabel="Note"
-              helperText="Separate terms with commas"
-              width={260}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('program') && (
-          <FilterPopoverButton label="Program" activeCount={selectedPrograms.size} panelWidth={260}>
-            <FilterOptionPanel
-              options={programFilterOptions.map((program) => ({
-                value: String(program.id),
-                label: program.name,
-              }))}
-              selectedValues={selectedProgramValues}
-              onChange={(values) => {
-                setSelectedPrograms(new Set(values.map((value) => Number(value))))
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('group') && (
-          <FilterPopoverButton label="Group" activeCount={selectedGroups.size} panelWidth={260}>
-            <FilterOptionPanel
-              options={groupFilterOptions.map((group) => ({
-                value: String(group.id),
-                label: group.name,
-              }))}
-              selectedValues={selectedGroupValues}
-              onChange={(values) => {
-                setSelectedGroups(new Set(values.map((value) => Number(value))))
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('active') && (
-          <FilterPopoverButton
-            label="Visibility"
-            activeCount={selectedVisibility.size}
-            panelWidth={180}
-          >
-            <FilterOptionPanel
-              options={[
-                { label: 'Visible', value: 'active' },
-                { label: 'Hidden', value: 'inactive' },
-              ]}
-              selectedValues={selectedVisibilityValues}
-              onChange={(values) => {
-                setSelectedVisibility(new Set(values as VisibilityFilterValue[]))
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {!isColumnVisible('id') &&
-          !isColumnVisible('name') &&
-          !isColumnVisible('category') &&
-          !isColumnVisible('copyright') &&
-          !isColumnVisible('note') &&
-          !isColumnVisible('program') &&
-          !isColumnVisible('group') &&
-          !isColumnVisible('active') && (
-            <Typography variant="body2" color="text.secondary">
-              Choose a visible filterable column to add controls here.
-            </Typography>
-          )}
       </FilterBar>
 
       {images.length === 0 ? (
@@ -1496,151 +1449,9 @@ export default function ManagePage({
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
-                {isColumnVisible('thumbnail') && <TableCell sx={{ width: 48, p: 0.5 }} />}
-                {isColumnVisible('id') && (
-                  <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'id'}
-                      direction={sortColumn === 'id' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('id')}
-                    >
-                      ID
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('name') && (
-                  <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'name'}
-                      direction={sortColumn === 'name' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('name')}
-                    >
-                      Name
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('category') && (
-                  <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'category'}
-                      direction={sortColumn === 'category' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('category')}
-                    >
-                      Category
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('copyright') && (
-                  <TableCell sortDirection={sortColumn === 'copyright' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'copyright'}
-                      direction={sortColumn === 'copyright' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('copyright')}
-                    >
-                      Copyright
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('note') && (
-                  <TableCell sortDirection={sortColumn === 'note' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'note'}
-                      direction={sortColumn === 'note' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('note')}
-                    >
-                      Note
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('program') && (
-                  <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'program'}
-                      direction={sortColumn === 'program' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('program')}
-                    >
-                      Program
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('group') && (
-                  <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'group'}
-                      direction={sortColumn === 'group' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('group')}
-                    >
-                      Groups
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('active') && (
-                  <TableCell sortDirection={sortColumn === 'active' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'active'}
-                      direction={sortColumn === 'active' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('active')}
-                    >
-                      Visibility
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('updated_at') && (
-                  <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'updated_at'}
-                      direction={sortColumn === 'updated_at' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('updated_at')}
-                    >
-                      Modified
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('created_at') && (
-                  <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'created_at'}
-                      direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('created_at')}
-                    >
-                      Created
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('dimensions') && (
-                  <TableCell sortDirection={sortColumn === 'dimensions' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'dimensions'}
-                      direction={sortColumn === 'dimensions' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('dimensions')}
-                    >
-                      Dimensions
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('file_size') && (
-                  <TableCell sortDirection={sortColumn === 'file_size' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'file_size'}
-                      direction={sortColumn === 'file_size' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('file_size')}
-                    >
-                      File Size
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('measurement') && <TableCell>Measurement</TableCell>}
-                {isColumnVisible('annotations') && (
-                  <TableCell sortDirection={sortColumn === 'annotations' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'annotations'}
-                      direction={sortColumn === 'annotations' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('annotations')}
-                    >
-                      Annotations
-                    </TableSortLabel>
-                  </TableCell>
-                )}
+                {orderedVisibleColumns.map((column) => (
+                  <Fragment key={column}>{columnHeaderCells[column]}</Fragment>
+                ))}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -1649,6 +1460,249 @@ export default function ManagePage({
                 const categoryHidden = isImageCategoryHidden(img)
                 const dimmed = !img.active || categoryHidden
                 const dimAttr = dimmed ? { 'data-dimmed': true } : undefined
+                // Per-column cells keyed like `columnHeaderCells` (#1577);
+                // rendered below in the user's persisted column order.
+                const bodyCells: Record<ManageTableColumn, ReactNode> = {
+                  thumbnail: (
+                    <TableCell
+                      data-interactive="true"
+                      sx={{ p: 0.5 }}
+                      onClick={(e) => {
+                        if (onViewImage) {
+                          e.stopPropagation()
+                          onViewImage(img)
+                        }
+                      }}
+                    >
+                      <RenewingThumbnail
+                        image={img}
+                        alt={img.name}
+                        onImageRenewed={handleImageRenewed}
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          objectFit: 'cover',
+                          borderRadius: 0.5,
+                          display: 'block',
+                          cursor: onViewImage ? 'pointer' : 'default',
+                          ...(!img.active || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
+                        }}
+                      />
+                    </TableCell>
+                  ),
+                  id: <TableCell {...dimAttr}>{img.id}</TableCell>,
+                  name: <TableCell {...dimAttr}>{img.name}</TableCell>,
+                  category: (
+                    <TableCell {...dimAttr}>
+                      <CategoryBreadcrumb
+                        categoryId={img.category_id}
+                        categoryPaths={categoryPaths}
+                        onNavigate={onNavigateCategory}
+                        hiddenColor={visColors.inactive}
+                      />
+                    </TableCell>
+                  ),
+                  copyright: <TableCell {...dimAttr}>{img.copyright ?? '—'}</TableCell>,
+                  note: (
+                    <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
+                      {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
+                    </TableCell>
+                  ),
+                  program: (
+                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const { direct, ancestor } = getInheritedProgramIds(img)
+                        if (direct.length === 0 && ancestor.length === 0) return 'All programs'
+                        const chipClick = (id: number) => {
+                          if (onSearchProgram) {
+                            onSearchProgram(programNameById.get(id) ?? '')
+                          } else {
+                            setSelectedPrograms((prev) => new Set(prev).add(id))
+                            setCurrentPage(0)
+                          }
+                        }
+                        return (
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {direct
+                              .map((pid) => programs.find((p) => p.id === pid))
+                              .filter((p): p is Program => p != null)
+                              .map((p) => (
+                                <Chip
+                                  key={p.id}
+                                  data-testid="program-chip"
+                                  label={p.name}
+                                  size="small"
+                                  onClick={() => chipClick(p.id)}
+                                  {...(img.active
+                                    ? { color: 'primary', sx: { cursor: 'pointer' } }
+                                    : {
+                                        sx: {
+                                          cursor: 'pointer',
+                                          bgcolor: visColors.inactiveChipBg,
+                                          color: '#fff',
+                                        },
+                                      })}
+                                />
+                              ))}
+                            {ancestor
+                              .map((pid) => programs.find((p) => p.id === pid))
+                              .filter((p): p is Program => p != null)
+                              .map((p) => (
+                                <Chip
+                                  key={p.id}
+                                  data-testid="program-chip"
+                                  label={p.name}
+                                  size="small"
+                                  onClick={() => chipClick(p.id)}
+                                  {...(img.active
+                                    ? {
+                                        color: 'primary',
+                                        sx: getInheritedRestrictionSx(true, {
+                                          cursor: 'pointer',
+                                        }),
+                                      }
+                                    : {
+                                        sx: getInheritedRestrictionSx(true, {
+                                          cursor: 'pointer',
+                                          bgcolor: visColors.inactiveChipBg,
+                                          color: '#fff',
+                                        }),
+                                      })}
+                                />
+                              ))}
+                          </Box>
+                        )
+                      })()}
+                    </TableCell>
+                  ),
+                  group: (
+                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const { direct, ancestor } = getInheritedGroupIds(img)
+                        if (direct.length === 0 && ancestor.length === 0) return 'All groups'
+                        const chipClick = (id: number) => {
+                          setSelectedGroups((prev) => new Set(prev).add(id))
+                          setCurrentPage(0)
+                        }
+                        return (
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {direct
+                              .map((gid) => groups.find((g) => g.id === gid))
+                              .filter((g): g is Group => g != null)
+                              .map((g) => (
+                                <Chip
+                                  key={g.id}
+                                  data-testid="group-chip"
+                                  label={g.name}
+                                  size="small"
+                                  color="secondary"
+                                  onClick={() => chipClick(g.id)}
+                                  sx={{
+                                    cursor: 'pointer',
+                                    ...(img.active
+                                      ? {}
+                                      : {
+                                          bgcolor: visColors.inactiveChipBg,
+                                          color: '#fff',
+                                        }),
+                                  }}
+                                />
+                              ))}
+                            {ancestor
+                              .map((gid) => groups.find((g) => g.id === gid))
+                              .filter((g): g is Group => g != null)
+                              .map((g) => (
+                                <Chip
+                                  key={g.id}
+                                  data-testid="group-chip"
+                                  label={g.name}
+                                  size="small"
+                                  color="secondary"
+                                  onClick={() => chipClick(g.id)}
+                                  sx={
+                                    img.active
+                                      ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
+                                      : getInheritedRestrictionSx(true, {
+                                          cursor: 'pointer',
+                                          bgcolor: visColors.inactiveChipBg,
+                                          color: '#fff',
+                                        })
+                                  }
+                                />
+                              ))}
+                          </Box>
+                        )
+                      })()}
+                    </TableCell>
+                  ),
+                  active: (
+                    <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
+                      <Tooltip
+                        title={categoryHidden ? 'Hidden by category' : ''}
+                        disableHoverListener={!categoryHidden}
+                      >
+                        <span>
+                          <Switch
+                            size="small"
+                            checked={img.active}
+                            onChange={() => {
+                              handleToggleActive(img).catch(() => {})
+                            }}
+                            disabled={categoryHidden}
+                          />
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  ),
+                  updated_at: (
+                    <TableCell {...dimAttr}>
+                      {new Date(img.updated_at).toLocaleDateString()}
+                    </TableCell>
+                  ),
+                  created_at: (
+                    <TableCell {...dimAttr}>
+                      {new Date(img.created_at).toLocaleDateString()}
+                    </TableCell>
+                  ),
+                  dimensions: (
+                    <TableCell {...dimAttr}>
+                      {img.width != null && img.height != null
+                        ? `${img.width} × ${img.height}`
+                        : '—'}
+                    </TableCell>
+                  ),
+                  file_size: (
+                    <TableCell {...dimAttr}>
+                      {img.file_size != null ? formatFileSize(img.file_size) : '—'}
+                    </TableCell>
+                  ),
+                  measurement: (
+                    <TableCell {...dimAttr}>
+                      {(() => {
+                        const meta = img.metadata_extra
+                        const scale = meta?.measurement_scale
+                        const unit = meta?.measurement_unit
+                        if (scale == null) return '—'
+                        return unit ? `${scale} px/${unit}` : `${scale} px`
+                      })()}
+                    </TableCell>
+                  ),
+                  annotations: (
+                    <TableCell {...dimAttr}>
+                      {hasCanvasAnnotations(img) ? (
+                        <span
+                          role="img"
+                          aria-label="Has annotations"
+                          style={{ display: 'inline-flex', verticalAlign: 'middle' }}
+                        >
+                          <CheckCircleIcon color="success" sx={{ fontSize: 18 }} />
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  ),
+                }
                 return (
                   <TableRow
                     key={img.id}
@@ -1671,247 +1725,9 @@ export default function ManagePage({
                         onChange={(e) => handleSelectOne(img.id, e.target.checked)}
                       />
                     </TableCell>
-                    {isColumnVisible('thumbnail') && (
-                      <TableCell
-                        data-interactive="true"
-                        sx={{ p: 0.5 }}
-                        onClick={(e) => {
-                          if (onViewImage) {
-                            e.stopPropagation()
-                            onViewImage(img)
-                          }
-                        }}
-                      >
-                        <RenewingThumbnail
-                          image={img}
-                          alt={img.name}
-                          onImageRenewed={handleImageRenewed}
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            objectFit: 'cover',
-                            borderRadius: 0.5,
-                            display: 'block',
-                            cursor: onViewImage ? 'pointer' : 'default',
-                            ...(!img.active || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
-                          }}
-                        />
-                      </TableCell>
-                    )}
-                    {isColumnVisible('id') && <TableCell {...dimAttr}>{img.id}</TableCell>}
-                    {isColumnVisible('name') && <TableCell {...dimAttr}>{img.name}</TableCell>}
-                    {isColumnVisible('category') && (
-                      <TableCell {...dimAttr}>
-                        <CategoryBreadcrumb
-                          categoryId={img.category_id}
-                          categoryPaths={categoryPaths}
-                          onNavigate={onNavigateCategory}
-                          hiddenColor={visColors.inactive}
-                        />
-                      </TableCell>
-                    )}
-                    {isColumnVisible('copyright') && (
-                      <TableCell {...dimAttr}>{img.copyright ?? '—'}</TableCell>
-                    )}
-                    {isColumnVisible('note') && (
-                      <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
-                        {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('program') && (
-                      <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
-                        {(() => {
-                          const { direct, ancestor } = getInheritedProgramIds(img)
-                          if (direct.length === 0 && ancestor.length === 0) return 'All programs'
-                          const chipClick = (id: number) => {
-                            if (onSearchProgram) {
-                              onSearchProgram(programNameById.get(id) ?? '')
-                            } else {
-                              setSelectedPrograms((prev) => new Set(prev).add(id))
-                              setCurrentPage(0)
-                            }
-                          }
-                          return (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                              {direct
-                                .map((pid) => programs.find((p) => p.id === pid))
-                                .filter((p): p is Program => p != null)
-                                .map((p) => (
-                                  <Chip
-                                    key={p.id}
-                                    data-testid="program-chip"
-                                    label={p.name}
-                                    size="small"
-                                    onClick={() => chipClick(p.id)}
-                                    {...(img.active
-                                      ? { color: 'primary', sx: { cursor: 'pointer' } }
-                                      : {
-                                          sx: {
-                                            cursor: 'pointer',
-                                            bgcolor: visColors.inactiveChipBg,
-                                            color: '#fff',
-                                          },
-                                        })}
-                                  />
-                                ))}
-                              {ancestor
-                                .map((pid) => programs.find((p) => p.id === pid))
-                                .filter((p): p is Program => p != null)
-                                .map((p) => (
-                                  <Chip
-                                    key={p.id}
-                                    data-testid="program-chip"
-                                    label={p.name}
-                                    size="small"
-                                    onClick={() => chipClick(p.id)}
-                                    {...(img.active
-                                      ? {
-                                          color: 'primary',
-                                          sx: getInheritedRestrictionSx(true, {
-                                            cursor: 'pointer',
-                                          }),
-                                        }
-                                      : {
-                                          sx: getInheritedRestrictionSx(true, {
-                                            cursor: 'pointer',
-                                            bgcolor: visColors.inactiveChipBg,
-                                            color: '#fff',
-                                          }),
-                                        })}
-                                  />
-                                ))}
-                            </Box>
-                          )
-                        })()}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('group') && (
-                      <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
-                        {(() => {
-                          const { direct, ancestor } = getInheritedGroupIds(img)
-                          if (direct.length === 0 && ancestor.length === 0) return 'All groups'
-                          const chipClick = (id: number) => {
-                            setSelectedGroups((prev) => new Set(prev).add(id))
-                            setCurrentPage(0)
-                          }
-                          return (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                              {direct
-                                .map((gid) => groups.find((g) => g.id === gid))
-                                .filter((g): g is Group => g != null)
-                                .map((g) => (
-                                  <Chip
-                                    key={g.id}
-                                    data-testid="group-chip"
-                                    label={g.name}
-                                    size="small"
-                                    color="secondary"
-                                    onClick={() => chipClick(g.id)}
-                                    sx={{
-                                      cursor: 'pointer',
-                                      ...(img.active
-                                        ? {}
-                                        : {
-                                            bgcolor: visColors.inactiveChipBg,
-                                            color: '#fff',
-                                          }),
-                                    }}
-                                  />
-                                ))}
-                              {ancestor
-                                .map((gid) => groups.find((g) => g.id === gid))
-                                .filter((g): g is Group => g != null)
-                                .map((g) => (
-                                  <Chip
-                                    key={g.id}
-                                    data-testid="group-chip"
-                                    label={g.name}
-                                    size="small"
-                                    color="secondary"
-                                    onClick={() => chipClick(g.id)}
-                                    sx={
-                                      img.active
-                                        ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
-                                        : getInheritedRestrictionSx(true, {
-                                            cursor: 'pointer',
-                                            bgcolor: visColors.inactiveChipBg,
-                                            color: '#fff',
-                                          })
-                                    }
-                                  />
-                                ))}
-                            </Box>
-                          )
-                        })()}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('active') && (
-                      <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
-                        <Tooltip
-                          title={categoryHidden ? 'Hidden by category' : ''}
-                          disableHoverListener={!categoryHidden}
-                        >
-                          <span>
-                            <Switch
-                              size="small"
-                              checked={img.active}
-                              onChange={() => {
-                                handleToggleActive(img).catch(() => {})
-                              }}
-                              disabled={categoryHidden}
-                            />
-                          </span>
-                        </Tooltip>
-                      </TableCell>
-                    )}
-                    {isColumnVisible('updated_at') && (
-                      <TableCell {...dimAttr}>
-                        {new Date(img.updated_at).toLocaleDateString()}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('created_at') && (
-                      <TableCell {...dimAttr}>
-                        {new Date(img.created_at).toLocaleDateString()}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('dimensions') && (
-                      <TableCell {...dimAttr}>
-                        {img.width != null && img.height != null
-                          ? `${img.width} × ${img.height}`
-                          : '—'}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('file_size') && (
-                      <TableCell {...dimAttr}>
-                        {img.file_size != null ? formatFileSize(img.file_size) : '—'}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('measurement') && (
-                      <TableCell {...dimAttr}>
-                        {(() => {
-                          const meta = img.metadata_extra
-                          const scale = meta?.measurement_scale
-                          const unit = meta?.measurement_unit
-                          if (scale == null) return '—'
-                          return unit ? `${scale} px/${unit}` : `${scale} px`
-                        })()}
-                      </TableCell>
-                    )}
-                    {isColumnVisible('annotations') && (
-                      <TableCell {...dimAttr}>
-                        {hasCanvasAnnotations(img) ? (
-                          <span
-                            role="img"
-                            aria-label="Has annotations"
-                            style={{ display: 'inline-flex', verticalAlign: 'middle' }}
-                          >
-                            <CheckCircleIcon color="success" sx={{ fontSize: 18 }} />
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </TableCell>
-                    )}
+                    {orderedVisibleColumns.map((column) => (
+                      <Fragment key={column}>{bodyCells[column]}</Fragment>
+                    ))}
                     <TableCell
                       data-interactive="true"
                       align="right"
@@ -1946,10 +1762,11 @@ export default function ManagePage({
       <ColumnVisibilityDialog
         open={columnDialogOpen}
         title="Choose image table columns"
-        columns={MANAGE_COLUMN_OPTIONS}
+        columns={orderedColumnOptions}
         visibleColumns={visibleColumns}
         onClose={() => setColumnDialogOpen(false)}
         onToggleColumn={handleColumnVisibilityToggle}
+        onReorderColumns={setColumnOrder}
       />
 
       {/* Action menu */}

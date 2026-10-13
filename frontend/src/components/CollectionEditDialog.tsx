@@ -7,22 +7,40 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import Collections from '@mui/icons-material/Collections'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { collectionConflictCurrent, userMessage } from '../api'
 import { AuthContext } from '../authContextValue'
 import {
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
+  STUDENT_MAX_COLLECTIONS_PER_TYPE,
   SYNCHRONIZED_MAX_IMAGES,
   apiCollectionToCollection,
   canUseRestrictedVisibility,
+  privateFilingWarning,
 } from '../collectionUtils'
 import { getAttachableProgramIds } from '../programAttach'
-import type { Collection, CollectionType, CollectionVisibility, Group, Program } from '../types'
+import { getVisibilityColors } from '../theme'
+import { isCategoryHiddenInTree } from '../treeUtils'
+import { useColorMode } from '../useColorMode'
+import CategoryPickerSelect from './CategoryPickerSelect'
+import { CollectionTypeChip } from './CollectionCard'
+import type {
+  Category,
+  Collection,
+  CollectionType,
+  CollectionVisibility,
+  Group,
+  Program,
+} from '../types'
 
 const EMPTY_PROGRAMS: Program[] = []
 const EMPTY_GROUPS: Group[] = []
@@ -35,6 +53,18 @@ export interface CollectionFormValues {
   /** Only populated when `visibility === 'restricted'` (the API 422s otherwise). */
   programIds: number[]
   groupIds: number[]
+  /**
+   * Category filing for edits (#1566): not a PATCH field — the caller turns a
+   * change into `POST …/move`. Always carries the collection's current
+   * category so an unchanged save is a no-op; `null` = unfiled, not on Browse.
+   */
+  categoryId: number | null
+  /**
+   * Curatorial hide (#1566): toggled by the Hide link in the title — the same
+   * form-field pattern EditImageModal/EditCategoryDialog use, so it persists
+   * on Save rather than immediately.
+   */
+  hidden: boolean
 }
 
 export interface CollectionEditDialogProps {
@@ -42,6 +72,20 @@ export interface CollectionEditDialogProps {
   onClose: () => void
   /** Existing collection to edit (type is locked). Omit / null to create a new one. */
   collection?: Collection | null
+  /**
+   * Initial type for a new collection (#1554) — callers pass the type page /
+   * facet the dialog was opened from so a create lands in the list the user
+   * is looking at. Ignored when editing.
+   */
+  defaultType?: CollectionType
+  /**
+   * Initial category for a new collection — e.g. the Browse scope the
+   * "+ New collection" button was clicked from. Ignored when editing (the
+   * collection's own `categoryId` wins).
+   */
+  defaultCategoryId?: number | null
+  /** Collection types at the student's create limit. */
+  typesAtLimit?: ReadonlySet<CollectionType>
   programs?: Program[]
   groups?: Group[]
   /**
@@ -56,6 +100,32 @@ export interface CollectionEditDialogProps {
     version: number | null,
     baseline: Collection | null,
   ) => Promise<void>
+  /**
+   * Delete affordance inside the dialog (#1554) — mirrors EditImageModal's
+   * click-to-confirm button. Callers close the dialog on success; rejections
+   * surface in the dialog's error alert.
+   */
+  onDelete?: () => Promise<void>
+  /**
+   * Browse category tree (#1566): renders the CategoryPickerSelect on edits
+   * when the caller can file collections, and resolves the "Hidden by
+   * Category" state of the title's Hide link.
+   */
+  categories?: Category[]
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
+  onViewCollection?: () => void
 }
 
 const TYPE_HELP: Record<CollectionType, string> = {
@@ -67,24 +137,44 @@ export default function CollectionEditDialog({
   open,
   onClose,
   collection = null,
+  defaultType = 'sequence',
+  defaultCategoryId = null,
+  typesAtLimit,
   programs = EMPTY_PROGRAMS,
   groups = EMPTY_GROUPS,
   onSave,
+  onDelete,
+  categories = [],
+  onAddCategory,
+  onEditCategory,
+  onToggleVisibility,
+  onViewCollection,
 }: CollectionEditDialogProps) {
   const isEdit = collection != null
   const auth = useContext(AuthContext)
   const currentUser = auth?.currentUser ?? null
   const canRestrict = canUseRestrictedVisibility(currentUser?.role)
+  // Filing into a category is curatorial (admin/instructor), matching the
+  // move endpoint's authority — owners of other roles get no picker (#1566).
+  const canFile = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
+  // Metadata writes are owner-scoped (#1567): a curator opening the dialog
+  // only to refile/hide gets the picker and the hide link, not the fields a
+  // PATCH would 403 on.
+  const canEditMeta = !isEdit || (collection?.permissions.canEdit ?? false)
   // Field-level authz (#1531): editing metadata is owner/editor-level, but
   // changing visibility scope requires `can_change_scope`. On create the
   // creator always sets the initial scope.
   const canChangeScope = !isEdit || (collection?.permissions.canChangeScope ?? false)
   const attachableProgramIds = getAttachableProgramIds(currentUser)
 
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [type, setType] = useState<CollectionType>('sequence')
   const [visibility, setVisibility] = useState<CollectionVisibility>('private')
+  const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [hidden, setHidden] = useState(false)
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
   const [version, setVersion] = useState<number | null>(null)
@@ -92,13 +182,25 @@ export default function CollectionEditDialog({
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<Collection | null>(null)
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmView, setConfirmView] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const seedFrom = (source: Collection | null) => {
     setName(source?.name ?? '')
     setDescription(source?.description ?? '')
-    setType(source?.type ?? 'sequence')
+    const initialType =
+      source?.type ??
+      (typesAtLimit?.has(defaultType)
+        ? defaultType === 'sequence'
+          ? 'synchronized'
+          : 'sequence'
+        : defaultType)
+    setType(initialType)
     setVisibility(source?.visibility ?? 'private')
+    setCategoryId(source ? source.categoryId : defaultCategoryId)
+    setHidden(source?.hidden ?? false)
     setSelectedProgramIds(new Set(source?.programIds ?? []))
     setSelectedGroupIds(new Set(source?.groupIds ?? []))
     setVersion(source?.version ?? null)
@@ -106,6 +208,9 @@ export default function CollectionEditDialog({
     setError(null)
     setConflict(null)
     setSaving(false)
+    setConfirmDelete(false)
+    setConfirmView(false)
+    setDeleting(false)
   }
 
   // Populate state from props when dialog opens (false → true transition only),
@@ -114,7 +219,26 @@ export default function CollectionEditDialog({
   useEffect(() => {
     if (open && !prevOpen.current) seedFrom(collection)
     prevOpen.current = open
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seedFrom captures type limits at open time
   }, [open, collection])
+
+  useEffect(() => {
+    if (!open || collection != null || !typesAtLimit?.has(type)) return
+    const otherType = type === 'sequence' ? 'synchronized' : 'sequence'
+    if (!typesAtLimit.has(otherType)) setType(otherType)
+  }, [open, typesAtLimit, type, collection])
+
+  // A save that partially succeeded (metadata PATCH ok, chained category move
+  // failed) returns a newer record while the dialog stays open (#1567):
+  // advance baseline/version to the saved state so a retry diffs against it
+  // instead of replaying a stale-version PATCH. Field values are deliberately
+  // NOT reseeded — the user's in-progress edits (like the category pick) stay.
+  useEffect(() => {
+    if (!open || !collection || !baseline) return
+    if (collection.id !== baseline.id || collection.version <= baseline.version) return
+    setVersion(collection.version)
+    setBaseline(collection)
+  }, [open, collection, baseline])
 
   const handleEntered = useCallback(() => {
     inputRef.current?.focus()
@@ -144,11 +268,13 @@ export default function CollectionEditDialog({
   const currentProgramIds = baseline?.programIds ?? []
   const currentGroupIds = baseline?.groupIds ?? []
   const isProgramDisabled = (programId: number) =>
+    !canEditMeta ||
     !canChangeScope ||
     (attachableProgramIds != null &&
       !attachableProgramIds.includes(programId) &&
       !currentProgramIds.includes(programId))
   const isGroupDisabled = (group: Group) =>
+    !canEditMeta ||
     !canChangeScope ||
     (currentUser?.role === 'instructor' &&
       !group.instructorIds.includes(currentUser.id) &&
@@ -158,7 +284,37 @@ export default function CollectionEditDialog({
 
   const restricted = visibility === 'restricted'
   const scopeMissing = restricted && selectedProgramIds.size === 0 && selectedGroupIds.size === 0
-  const canSubmit = name.trim().length > 0 && !scopeMissing && !saving
+  const bothTypesAtLimit = typesAtLimit?.has('sequence') && typesAtLimit.has('synchronized')
+  const selectedTypeAtLimit = !isEdit && (typesAtLimit?.has(type) ?? false)
+  const canSubmit =
+    name.trim().length > 0 &&
+    !scopeMissing &&
+    (isEdit || !canFile || categoryId != null) &&
+    !saving &&
+    !deleting &&
+    (isEdit || (!bothTypesAtLimit && !selectedTypeAtLimit))
+  const sameIds = (current: Set<number>, original: number[]) =>
+    current.size === original.length && original.every((id) => current.has(id))
+  const isDirty =
+    isEdit &&
+    baseline != null &&
+    (name.trim() !== baseline.name ||
+      (description.trim() || null) !== baseline.description ||
+      visibility !== baseline.visibility ||
+      categoryId !== (baseline.categoryId ?? null) ||
+      hidden !== baseline.hidden ||
+      !sameIds(selectedProgramIds, baseline.programIds) ||
+      !sameIds(selectedGroupIds, baseline.groupIds))
+  // A collection filed inside a hidden category is hidden by ancestry, so its
+  // own hide control is disabled — the EditImageModal convention (#1566).
+  const categoryHidden = isEdit && isCategoryHiddenInTree(categories, categoryId)
+  const showHideControl = isEdit && collection?.permissions.canHide
+
+  const handleViewCollection = () => {
+    if (!onViewCollection) return
+    if (isDirty) setConfirmView(true)
+    else onViewCollection()
+  }
 
   const handleSubmit = async () => {
     const trimmed = name.trim()
@@ -170,6 +326,8 @@ export default function CollectionEditDialog({
       visibility,
       programIds: restricted ? Array.from(selectedProgramIds) : [],
       groupIds: restricted ? Array.from(selectedGroupIds) : [],
+      categoryId,
+      hidden,
     }
     setSaving(true)
     setError(null)
@@ -192,16 +350,149 @@ export default function CollectionEditDialog({
     if (conflict) seedFrom(conflict)
   }
 
+  // Same click-to-confirm delete as EditImageModal: first click arms, second
+  // fires; the caller closes the dialog on success.
+  const handleDelete = async () => {
+    if (!onDelete) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setDeleting(true)
+    try {
+      await onDelete()
+    } catch (err) {
+      setDeleting(false)
+      setConfirmDelete(false)
+      setError(userMessage(err, 'Failed to delete collection.'))
+    }
+  }
+
   return (
     <Dialog
       open={open}
-      onClose={saving ? undefined : onClose}
-      maxWidth="xs"
+      onClose={saving || deleting ? undefined : onClose}
+      // Roomier than xs so the category picker can show long nested labels
+      // (#1566) — same width class as EditImageModal.
+      maxWidth="sm"
       fullWidth
       TransitionProps={{ onEntered: handleEntered }}
     >
-      <DialogTitle>{isEdit ? 'Edit Collection' : 'New Collection'}</DialogTitle>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {isEdit ? (canEditMeta ? 'Edit Collection' : 'File Collection') : 'New Collection'}
+        {/* Curatorial hide/show as a form field (#1566) — the EditImageModal /
+            EditCategoryDialog title-link convention: it toggles local state
+            and persists on Save. "Hidden by Category" mirrors the image
+            modal's disabled state when the filing category is hidden. */}
+        {(showHideControl || (isEdit && onViewCollection)) && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {showHideControl &&
+              (categoryHidden ? (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<VisibilityOff />}
+                  disabled
+                  aria-label="Visibility: Hidden by category"
+                  sx={{
+                    '&.Mui-disabled': { color: visColors.inactive },
+                    filter: 'grayscale(100%)',
+                  }}
+                >
+                  Hidden by Category
+                </Button>
+              ) : hidden ? (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<VisibilityOff />}
+                  onClick={() => setHidden(false)}
+                  aria-label="Visibility: Show collection"
+                  sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+                >
+                  Show Collection
+                </Button>
+              ) : (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<Visibility />}
+                  onClick={() => setHidden(true)}
+                  aria-label="Visibility: Hide collection"
+                  color="primary"
+                >
+                  Hide Collection
+                </Button>
+              ))}
+            {isEdit && onViewCollection && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Collections />}
+                onClick={handleViewCollection}
+                disabled={saving || deleting}
+              >
+                View Collection
+              </Button>
+            )}
+          </Box>
+        )}
+      </DialogTitle>
       <DialogContent>
+        {!canEditMeta && (
+          <Alert severity="info" sx={{ mb: 1 }} data-testid="filing-only-note">
+            You can file or hide this collection; only its owner can edit the details.
+          </Alert>
+        )}
+        {/* Type leads — it's the most consequential option and immutable
+            after creation (#1567). `mb: 2` balances the gap above it so the
+            section sits evenly between the title and the name field. */}
+        <Box sx={{ mt: 1, mb: 3 }}>
+          <Typography variant="subtitle2" component="p" gutterBottom>
+            Type
+          </Typography>
+          {isEdit ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {/* Shared type pill — red outline/text on white + icon (#1567). */}
+              <CollectionTypeChip type={type} />
+              <Typography variant="caption" color="text.secondary">
+                The type cannot be changed after creation.
+              </Typography>
+            </Box>
+          ) : (
+            <RadioGroup
+              aria-label="Collection type"
+              value={type}
+              onChange={(e) => setType(e.target.value as CollectionType)}
+            >
+              {/* Sequence first — the dominant teaching flow (#1567). */}
+              {(['sequence', 'synchronized'] as const).map((t) => (
+                <FormControlLabel
+                  key={t}
+                  value={t}
+                  control={<Radio size="small" />}
+                  disabled={typesAtLimit?.has(t)}
+                  label={
+                    <Box>
+                      <Typography variant="body2">{COLLECTION_TYPE_LABELS[t]}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {TYPE_HELP[t]}
+                      </Typography>
+                      {typesAtLimit?.has(t) && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          You've reached the limit of {STUDENT_MAX_COLLECTIONS_PER_TYPE} {t}{' '}
+                          collections.
+                        </Typography>
+                      )}
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start', mb: 0.5 }}
+                />
+              ))}
+            </RadioGroup>
+          )}
+        </Box>
+
         <TextField
           inputRef={inputRef}
           autoFocus
@@ -210,6 +501,7 @@ export default function CollectionEditDialog({
           fullWidth
           variant="outlined"
           value={name}
+          disabled={!canEditMeta}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -226,51 +518,35 @@ export default function CollectionEditDialog({
           minRows={2}
           variant="outlined"
           value={description}
+          disabled={!canEditMeta}
           onChange={(e) => setDescription(e.target.value)}
         />
 
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle2" component="p" gutterBottom>
-            Type
-          </Typography>
-          {isEdit ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                data-testid="collection-type-chip"
-                label={COLLECTION_TYPE_LABELS[type]}
-                size="small"
-                color="primary"
-                variant="outlined"
-              />
-              <Typography variant="caption" color="text.secondary">
-                The type cannot be changed after creation.
-              </Typography>
-            </Box>
-          ) : (
-            <RadioGroup
-              aria-label="Collection type"
-              value={type}
-              onChange={(e) => setType(e.target.value as CollectionType)}
-            >
-              {(Object.keys(COLLECTION_TYPE_LABELS) as CollectionType[]).map((t) => (
-                <FormControlLabel
-                  key={t}
-                  value={t}
-                  control={<Radio size="small" />}
-                  label={
-                    <Box>
-                      <Typography variant="body2">{COLLECTION_TYPE_LABELS[t]}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {TYPE_HELP[t]}
-                      </Typography>
-                    </Box>
-                  }
-                  sx={{ alignItems: 'flex-start', mb: 0.5 }}
-                />
-              ))}
-            </RadioGroup>
-          )}
-        </Box>
+        {/* Category filing renders below Type (#1567) and only for roles the
+            move endpoint allows (#1566). The picker's inline add/rename/hide
+            affordances match the shared move dialog's. */}
+        {canFile && (
+          <Box sx={{ mt: 2 }}>
+            <CategoryPickerSelect
+              categories={categories}
+              value={categoryId}
+              onChange={setCategoryId}
+              includeRoot={isEdit}
+              rootLabel="None. Access in Manage > Collections."
+              placeholder={isEdit ? undefined : 'Select a category'}
+              onAddCategory={onAddCategory}
+              onEditCategory={onEditCategory}
+              onToggleVisibility={onToggleVisibility}
+              programs={programs}
+              groups={groups}
+            />
+          </Box>
+        )}
+        {canFile && categoryId != null && visibility === 'private' && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {privateFilingWarning()}
+          </Alert>
+        )}
 
         <Box sx={{ mt: 2 }}>
           <Typography variant="subtitle2" component="p" gutterBottom>
@@ -285,20 +561,20 @@ export default function CollectionEditDialog({
               value="private"
               control={<Radio size="small" />}
               label={`${COLLECTION_VISIBILITY_LABELS.private} — only you`}
-              disabled={!canChangeScope}
+              disabled={!canEditMeta || !canChangeScope}
             />
             <FormControlLabel
               value="public"
               control={<Radio size="small" />}
               label={`${COLLECTION_VISIBILITY_LABELS.public} — everyone who can sign in`}
-              disabled={!canChangeScope}
+              disabled={!canEditMeta || !canChangeScope}
             />
             {canRestrict && (
               <FormControlLabel
                 value="restricted"
                 control={<Radio size="small" />}
                 label={`${COLLECTION_VISIBILITY_LABELS.restricted} — specific programs and/or groups`}
-                disabled={!canChangeScope}
+                disabled={!canEditMeta || !canChangeScope}
               />
             )}
           </RadioGroup>
@@ -403,9 +679,66 @@ export default function CollectionEditDialog({
             {error}
           </Alert>
         )}
+
+        {isEdit && onDelete && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Box>
+              <Button
+                color="error"
+                variant={confirmDelete ? 'contained' : 'outlined'}
+                onClick={() => void handleDelete()}
+                disabled={saving || deleting}
+                fullWidth
+              >
+                {confirmDelete ? 'Confirm Delete Collection' : 'Delete Collection'}
+              </Button>
+              {confirmDelete && (
+                <Typography
+                  variant="caption"
+                  color="error"
+                  sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+                >
+                  The images it references are not deleted. This action cannot be undone.
+                </Typography>
+              )}
+            </Box>
+          </>
+        )}
       </DialogContent>
+      {confirmView && (
+        <Box
+          data-testid="unsaved-changes-bar"
+          sx={{
+            px: 3,
+            py: 1.5,
+            bgcolor: 'warning.light',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="body2">
+            You have unsaved changes. Discard and view collection?
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, ml: 2, flexShrink: 0 }}>
+            <Button size="small" onClick={() => setConfirmView(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="warning"
+              onClick={onViewCollection}
+              disabled={saving || deleting}
+            >
+              Discard &amp; View
+            </Button>
+          </Box>
+        </Box>
+      )}
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={onClose} disabled={saving || deleting}>
           Cancel
         </Button>
         <Button onClick={handleSubmit} variant="contained" disabled={!canSubmit}>
