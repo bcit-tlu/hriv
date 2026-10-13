@@ -21,6 +21,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - backend: `poetry run pytest tests/test_visibility.py tests/test_categories.py tests/test_router_images.py`
 - frontend: `npm test -- categoryUtils useBrowseData CategoryPickerSelect treeUtils`
+- Category card cover / thumbnail tokens (#1609): add
+  `poetry run pytest tests/test_tiles.py` (backend) and
+  `npm test -- CategoryTile CardImagePickerModal` (frontend).
 - See [category-visibility-and-programs.md](category-visibility-and-programs.md).
 
 ### Changed groups (membership, ownership, category attach, dual-gate visibility)

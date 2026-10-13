@@ -79,6 +79,14 @@ auth_request_line="$(grep -E '^[[:space:]]*auth_request[[:space:]]' <<<"$nginx_c
 assert_not_contains "$auth_request_line" '$' \
   "auth_request target must be a literal URI — nginx does not expand variables there"
 
+# The verdict cache key must include the path class (#1609): a
+# thumbnail-scoped 204 for a ``purpose="thumb"`` token must never be
+# replayed for tile paths.
+assert_contains "$nginx_conf" 'proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"' \
+  "tiles auth verdict cache key must include the thumb-vs-tiles path class"
+assert_contains "$nginx_conf" 'map $request_uri $tile_path_class_from_uri' \
+  "tiles config should classify requests into thumb vs tiles cache classes"
+
 # Resolve the sidecar image and listen port from the rendered manifest so
 # the harness always runs exactly what the chart deploys.
 nginx_image="$(awk '
@@ -106,6 +114,7 @@ trap cleanup EXIT
 
 mkdir -p "$work/tiles/42/image_files/0" "$work/tiles/7" "$work/stub-logs"
 printf 'dzi-descriptor-42' > "$work/tiles/42/image.dzi"
+printf 'thumbnail-42' > "$work/tiles/42/thumbnail.jpeg"
 printf 'tile-bytes-42' > "$work/tiles/42/image_files/0/0_0.jpeg"
 printf 'dzi-descriptor-7' > "$work/tiles/7/image.dzi"
 printf '%s' "$nginx_conf" > "$work/default.conf"
@@ -126,7 +135,22 @@ map $http_x_original_uri $stub_token {
 map $stub_token $stub_token_image_id {
     ~^valid-([0-9]+)$ $1;
     ~^alt-([0-9]+)$ $1;
+    ~^thumb-([0-9]+)$ $1;
     default "";
+}
+# ``thumb-<id>`` tokens emulate the backend's thumbnail-only purpose
+# (#1609): they validate the thumbnail but nothing else.
+map $stub_token $stub_thumb_only {
+    ~^thumb- 1;
+    default 0;
+}
+map $http_x_original_uri $stub_path_class {
+    ~^/api/tiles/[0-9]+/thumbnail\.jpeg(\?|$) thumb;
+    default tiles;
+}
+map "$stub_thumb_only:$stub_path_class" $stub_thumb_denied {
+    "1:tiles" 1;
+    default 0;
 }
 server {
     listen 127.0.0.1:8000;
@@ -135,6 +159,7 @@ server {
         if ($stub_image_id = "") { return 403; }
         if ($stub_token_image_id = "") { return 401; }
         if ($stub_token_image_id != $stub_image_id) { return 403; }
+        if ($stub_thumb_denied = 1) { return 403; }
         return 204;
     }
 }
@@ -241,12 +266,15 @@ after_wrong="$(hits)"
 # A burst of tile requests for one image collapses to a single validator
 # hit — this is the cache the $request_uri-derived key exists for (PR
 # #1163 bug 2: an empty-key cache would be bypassed on every request).
+# The thumbnail adds exactly one more hit: it lives in its own path class
+# so a thumbnail verdict is never replayed for tile paths (#1609), while
+# every tile path still shares the cached ``tiles`` verdict.
 for path in image.dzi thumbnail.jpeg image_files/0/0_0.jpeg image_files/0/1_0.jpeg image_files/1/0_0.jpeg; do
   curl -s -o /dev/null "$base/api/tiles/42/${path}?tile_token=valid-42"
 done
 after_burst="$(hits)"
-[[ "$after_burst" -eq 6 ]] || \
-  fail "repeated requests for one image+token should reuse the cached verdict (expected 6 hits, got $after_burst)"
+[[ "$after_burst" -eq 7 ]] || \
+  fail "tile paths should reuse the cached verdict with one extra hit for the thumbnail class (expected 7 hits, got $after_burst)"
 expect_status 404 "$base/api/tiles/42/missing.jpeg?tile_token=valid-42" \
   "a missing tile under a valid token should 404, not fail auth"
 
@@ -254,13 +282,26 @@ expect_status 404 "$base/api/tiles/42/missing.jpeg?tile_token=valid-42" \
 # the cache key so image A's verdict never authorizes image B.
 expect_status 200 "${image7}?tile_token=valid-7" "second image should be served once its token validates"
 after_second_image="$(hits)"
-[[ "$after_second_image" -eq 7 ]] || \
-  fail "a different image must trigger a fresh validation (expected 7 hits, got $after_second_image)"
+[[ "$after_second_image" -eq 8 ]] || \
+  fail "a different image must trigger a fresh validation (expected 8 hits, got $after_second_image)"
+
+# A thumbnail-scoped 204 must never be replayed for tile paths (#1609):
+# approve thumbnail.jpeg with a thumb-only token, then request image.dzi
+# with the same token — the request must reach the validator and be
+# denied, not silently served from the cached thumb verdict. Without the
+# path class in the cache key this would return 200.
+expect_status 200 "$base/api/tiles/42/thumbnail.jpeg?tile_token=thumb-42" \
+  "thumb token should serve the thumbnail"
+expect_status 403 "${image42}?tile_token=thumb-42" \
+  "a thumbnail verdict must not authorize tile paths for the same token"
+after_thumb="$(hits)"
+[[ "$after_thumb" -eq 10 ]] || \
+  fail "the tile-path denial must come from a fresh validator hit, not a cached verdict (expected 10 hits, got $after_thumb)"
 
 # A second valid token for the same image misses the cache too — the
 # verdict is keyed per token, not per image.
 expect_status 200 "${image42}?tile_token=alt-42" "a different valid token should be validated independently"
 after_token="$(hits)"
-[[ "$after_token" -eq 8 ]] || \
-  fail "a new token for a cached image must hit the validator (expected 8 hits, got $after_token)"
+[[ "$after_token" -eq 11 ]] || \
+  fail "a new token for a cached image must hit the validator (expected 11 hits, got $after_token)"
 echo "Tiles sidecar runtime regression checks passed."
