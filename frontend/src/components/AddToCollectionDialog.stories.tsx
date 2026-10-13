@@ -56,8 +56,12 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: null,
+    coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
@@ -173,6 +177,46 @@ export const CapReached: Story = {
     await expect(full).toHaveAttribute('aria-disabled', 'true')
     await userEvent.hover(full.parentElement as HTMLElement)
     await expect(await body.findByText(CAP_REACHED_TOOLTIP)).toBeInTheDocument()
+  },
+}
+
+/** Student at both collection-count caps with a sequence at its image cap. */
+export const StudentAtCaps: Story = {
+  args: {
+    role: 'student',
+    collections: [
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeSummary({
+          id: i + 1,
+          name: i === 0 ? 'Full sequence' : `Sequence ${i + 1}`,
+          type: 'sequence',
+          imageCount: i === 0 ? 20 : 2,
+        }),
+      ),
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeSummary({
+          id: i + 11,
+          name: `Synchronized ${i + 1}`,
+          type: 'synchronized',
+          imageCount: 2,
+        }),
+      ),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    const fullSequence = await body.findByRole('button', { name: 'Add to Full sequence' })
+    await expect(fullSequence).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.hover(fullSequence.parentElement as HTMLElement)
+    await expect(
+      await body.findByText('Students can add at most 20 images to a sequence collection.'),
+    ).toBeInTheDocument()
+    const create = await body.findByRole('button', { name: 'New collection…' })
+    await expect(create).toBeDisabled()
+    await userEvent.hover(create.parentElement as HTMLElement)
+    await expect(
+      await body.findByText("You've reached the limit of 10 collections of each type."),
+    ).toBeInTheDocument()
   },
 }
 

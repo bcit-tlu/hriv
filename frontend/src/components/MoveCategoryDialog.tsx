@@ -66,7 +66,7 @@ export default function MoveCategoryDialog({
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {category && (
           <Typography variant="body2" color="text.secondary">
-            Move &ldquo;{category.label}&rdquo; to a new parent category.
+            Move &ldquo;{category.label}&rdquo; to a different category.
           </Typography>
         )}
         <CategoryPickerSelect

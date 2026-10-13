@@ -259,8 +259,7 @@ export function findIncompatibleDescendantsByGroup(
  * Walk the category tree along `path` and return the children/images
  * at the terminal node. `cols` are the collections filed into the terminal
  * category (#1529); the root scope's collections are NOT part of the tree
- * (they load via `GET /collections?uncategorized=true`), so `cols` is `[]`
- * at root and callers merge in `uncategorizedCollections` themselves.
+ * (unfiled collections are not Browse tiles), so `cols` is `[]` at root.
  */
 export function resolvePathNode(
   categories: Category[],

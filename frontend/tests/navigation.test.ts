@@ -4,8 +4,7 @@ import type { NavigationItem } from '../src/navigation'
 
 const ALL_IDS = [
   'home',
-  'collections-sequence',
-  'collections-synchronized',
+  'collections',
   'images',
   'categories',
   'manage-collections',
@@ -53,7 +52,7 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual(['home', 'collections-sequence', 'collections-synchronized'])
+    expect(ids).toEqual(['home', 'collections'])
   })
 
   it('returns type pages + people for staff — plus the manage collections table (#1554)', () => {
@@ -64,16 +63,10 @@ describe('getNavigationItems', () => {
       canViewPeople: true,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual([
-      'home',
-      'collections-sequence',
-      'collections-synchronized',
-      'manage-collections',
-      'people',
-    ])
+    expect(ids).toEqual(['home', 'collections', 'manage-collections', 'people'])
   })
 
-  it('collections type pages are primary items for every role (#1554)', () => {
+  it('the unified collections item is a primary item for every role (#1629)', () => {
     for (const canEditContent of [true, false]) {
       for (const canManageUsers of [true, false]) {
         for (const canViewPeople of [true, false]) {
@@ -83,13 +76,10 @@ describe('getNavigationItems', () => {
             canManageUsers,
             canViewPeople,
           })
-          for (const type of ['sequence', 'synchronized'] as const) {
-            const item = items.find((i) => i.id === `collections-${type}`)
-            expect(item).toBeDefined()
-            expect(item?.section).toBe('primary')
-            expect(item?.page).toBe('collections')
-            expect(item?.collectionType).toBe(type)
-          }
+          const item = items.find((i) => i.id === 'collections')
+          expect(item).toBeDefined()
+          expect(item?.section).toBe('primary')
+          expect(item?.page).toBe('collections')
         }
       }
     }
@@ -201,8 +191,7 @@ describe('getNavigationItems', () => {
     ]
     for (const caps of roles) {
       const ids = getNavigationItems({ ...caps, collectionsEnabled: false }).map((i) => i.id)
-      expect(ids).not.toContain('collections-sequence')
-      expect(ids).not.toContain('collections-synchronized')
+      expect(ids).not.toContain('collections')
       expect(ids).not.toContain('manage-collections')
       expect(ids[0]).toBe('home')
     }

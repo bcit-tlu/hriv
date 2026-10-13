@@ -1,4 +1,5 @@
 import { getClientSyntheticMode } from './syntheticMode'
+import type { ImageSourceInfo } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -406,6 +407,12 @@ export interface ApiImage {
   updated_at: string
 }
 
+interface ApiImageSourceInfo {
+  original_filename: string | null
+  file_type: string | null
+  uploaded_by_name: string | null
+}
+
 export interface ApiUser {
   id: number
   name: string
@@ -596,6 +603,15 @@ export function fetchImage(imageId: number): Promise<ApiImage> {
   return request(`/images/${imageId}`)
 }
 
+export async function fetchImageSourceInfo(imageId: number): Promise<ImageSourceInfo> {
+  const info = await request<ApiImageSourceInfo>(`/images/${imageId}/source-info`)
+  return {
+    originalFilename: info.original_filename,
+    fileType: info.file_type,
+    uploadedByName: info.uploaded_by_name,
+  }
+}
+
 export function fetchImages(categoryId?: number): Promise<ApiImage[]> {
   const qs = categoryId != null ? `?category_id=${categoryId}` : ''
   return request(`/images/${qs}`)
@@ -691,11 +707,19 @@ export interface ApiCollectionSummary {
   owners: ApiCollectionOwner[]
   image_count: number
   cover_thumb: string | null
+  /** Pinned cover member; `null` = first-member fallback. */
+  cover_image_id: number | null
+  /** Explicit "no cover" pick — the tile renders the type-logo placeholder. */
+  cover_blank: boolean
   version: number
-  /** Category the collection is filed into; `null` = uncategorized (Browse root). */
+  /** Category the collection is filed into; `null` = unfiled (not on Browse). */
   category_id: number | null
-  /** Tile-order position inside its category/root scope. */
+  /** Tile-order position inside its filed category scope. */
   sort_order: number
+  /** Restriction scope (empty unless `visibility === 'restricted'`) — carried
+   *  on summaries so tiles can render program/group chips (#1567). */
+  program_ids: number[]
+  group_ids: number[]
   created_at: string
   updated_at: string
   permissions: ApiCollectionPermissions
@@ -704,8 +728,6 @@ export interface ApiCollectionSummary {
 export interface ApiCollection extends ApiCollectionSummary {
   /** Ordered, visible-to-caller members with tokenized `thumb` / `tile_sources`. */
   images: ApiImage[]
-  program_ids: number[]
-  group_ids: number[]
   viewport_state: Record<string, unknown>
   /**
    * Nominal member count including members hidden from the caller
@@ -721,9 +743,10 @@ export interface CollectionFilters {
   mine?: boolean
   owner_user_id?: number
   owner_program_id?: number
+  limit?: number
   /** Admin-only; the API returns 403 for anyone else, so callers must not set it for non-admins. */
   orphaned?: boolean
-  /** Only collections filed at the Browse root (`category_id IS NULL`). */
+  /** Only unfiled collections (`category_id IS NULL`), not shown on Browse. */
   uncategorized?: boolean
 }
 
@@ -737,6 +760,7 @@ export function fetchCollections(
   if (filters.owner_user_id != null) params.set('owner_user_id', String(filters.owner_user_id))
   if (filters.owner_program_id != null)
     params.set('owner_program_id', String(filters.owner_program_id))
+  if (filters.limit != null) params.set('limit', String(filters.limit))
   if (filters.orphaned) params.set('orphaned', 'true')
   if (filters.uncategorized) params.set('uncategorized', 'true')
   const qs = params.toString()
@@ -747,11 +771,106 @@ export function fetchCollection(id: number): Promise<ApiCollection> {
   return request(`/collections/${id}`)
 }
 
+/**
+ * One collection node in a graph payload (#1628). `image_count` is the
+ * visible-only member count — the same number `ApiCollectionSummary`
+ * reports — so restricted members are never disclosed.
+ */
+export interface ApiCollectionGraphNode {
+  id: number
+  name: string
+  type: ApiCollectionType
+  image_count: number
+  hidden: boolean
+  category_id: number | null
+}
+
+/**
+ * One image node: `collection_ids` lists every *visible* collection
+ * containing it (edges are implied). `category_id` is populated at every
+ * order (#1633); `null` for uncategorized images.
+ */
+export interface ApiCollectionGraphImage {
+  id: number
+  name: string
+  collection_ids: number[]
+  category_id: number | null
+}
+
+/**
+ * One category node (#1633). `image_count` counts caller-visible images
+ * filed directly in the category; `path` is the `›`-joined label chain.
+ */
+export interface ApiCollectionGraphCategory {
+  id: number
+  label: string
+  path: string
+  image_count: number
+}
+
+/**
+ * `GET /api/collections/graph` — the hub-and-spoke payload behind the
+ * Collections page graph view (#1629). `images` is populated for
+ * `order` ≥ 2; `categories` only for `order=3` (includes categories whose
+ * images are in no collection — they render as isolated nodes).
+ */
+export interface ApiCollectionsGraph {
+  order: number
+  collections: ApiCollectionGraphNode[]
+  images: ApiCollectionGraphImage[]
+  categories: ApiCollectionGraphCategory[]
+}
+
+export function fetchCollectionsGraph(
+  order: 1 | 2 | 3 = 1,
+  init?: RequestInit,
+): Promise<ApiCollectionsGraph> {
+  return request(`/collections/graph?order=${order}`, init)
+}
+
+/**
+ * `GET /api/collections/{id}/graph` — the single-collection perspective
+ * behind the detail page's Graph View dialog (#1630). `images` are the
+ * hub's caller-visible members in member order; `related_collections`
+ * (order ≥ 2) are the other visible collections sharing ≥1 member;
+ * `categories` (order 3) are the hub members' categories.
+ */
+export interface ApiCollectionGraph {
+  order: number
+  collection: ApiCollectionGraphNode
+  images: ApiCollectionGraphImage[]
+  related_collections: ApiCollectionGraphNode[]
+  categories: ApiCollectionGraphCategory[]
+}
+
+export function fetchCollectionGraph(
+  id: number,
+  order: 1 | 2 | 3 = 1,
+  init?: RequestInit,
+): Promise<ApiCollectionGraph> {
+  return request(`/collections/${id}/graph?order=${order}`, init)
+}
+
+/**
+ * Collections the given image belongs to that the caller may view (#1586).
+ *
+ * Server-filtered by visibility, so students never receive private/restricted
+ * collections. Returns 404 when the image is hidden/inactive/missing (the same
+ * gate as the image GET) or when the collections feature is dark-launched off.
+ */
+export function fetchImageCollections(
+  imageId: number,
+  init?: RequestInit,
+): Promise<ApiCollectionSummary[]> {
+  return request(`/images/${imageId}/collections`, init)
+}
+
 export function createCollection(body: {
   name: string
   description?: string | null
   type: ApiCollectionType
   visibility: ApiCollectionVisibility
+  category_id?: number
   image_ids: number[]
   program_ids?: number[]
   group_ids?: number[]
@@ -769,6 +888,10 @@ export function updateCollection(
     program_ids?: number[]
     group_ids?: number[]
     hidden?: boolean
+    /** Pinned cover member; `null` restores the first-member fallback. */
+    cover_image_id?: number | null
+    /** Explicit "no cover" pick — clears any pin when `true`. */
+    cover_blank?: boolean
     version: number
   },
 ): Promise<ApiCollection> {
@@ -796,7 +919,7 @@ export function saveCollectionViewport(
 
 /**
  * File a collection into a Browse category (#1527): `category_id: null`
- * moves it to the root (uncategorized). Admin/instructor-only — filing is
+ * unfiles it from Browse. Admin/instructor-only — filing is
  * curatorial like moving images/categories, independent of ownership.
  */
 export function moveCollection(
@@ -830,6 +953,31 @@ export function replaceCollectionOwners(
   body: { user_ids: number[]; version: number },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/**
+ * Bulk-update curatorial fields on collections (#1578): `category_id`
+ * refiles every listed collection (`null` = unfile from Browse) and `hidden`
+ * hides/shows for students. Admin/instructor only — filing and hiding are
+ * curatorial, independent of ownership. Scope fields (`visibility`,
+ * `program_ids`, `group_ids`) are not bulk-editable. Returns the updated
+ * summaries in request order; rows that actually change get `version + 1`.
+ */
+export function bulkUpdateCollections(body: {
+  collection_ids: number[]
+  category_id?: number | null
+  hidden?: boolean
+}): Promise<ApiCollectionSummary[]> {
+  return request('/collections/bulk', { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+/**
+ * Bulk-delete collections (#1578). Authority is per-collection (every id
+ * must be viewable and pass the single-delete rule), so owners can use it
+ * at scale; the whole call is atomic — one failure deletes nothing.
+ */
+export function bulkDeleteCollections(body: { collection_ids: number[] }): Promise<void> {
+  return request('/collections/bulk', { method: 'DELETE', body: JSON.stringify(body) })
 }
 
 /**
@@ -2206,6 +2354,7 @@ export interface VersionsResponse {
 /** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
 export interface ApiFeatures {
   collections: boolean
+  collections_home_shelf: boolean
 }
 
 export function fetchFeatures(): Promise<ApiFeatures> {

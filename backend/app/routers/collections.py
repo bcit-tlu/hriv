@@ -28,19 +28,20 @@ no owner rows AND no program owner are orphaned (admin-only until
 reassigned); ``collections.user_id`` is creator audit, not ownership.
 
 Browse placement (epic #1525 / #1527): ``category_id`` files a collection
-into the category tree (``None`` = Browse root). ``POST …/{id}/move`` is
-admin/instructor-only and independent of ownership — filing is curatorial
-like moving images/categories — bumps both affected tile-order scope
-revisions (revision-then-rows lock order) and the browse ETag revision, and
-carries the same ``version`` optimistic-concurrency token as PATCH.
+into the category tree (``None`` = unfiled, not on Browse). ``POST
+…/{id}/move`` is admin/instructor-only and independent of ownership — filing
+is curatorial like moving images/categories — bumps affected category
+tile-order scope revisions (revision-then-rows lock order) and the browse ETag
+revision, and carries the same ``version`` optimistic-concurrency token as
+PATCH.
 Serialization/visibility helpers live in ``app.collection_views`` so the
 category tree can embed collection summaries without importing this router.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select, update as sql_update
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, select, update as sql_update
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,6 +65,8 @@ from ..collection_views import (
 from ..database import get_db, settings
 from ..models import (
     COLLECTION_TYPES,
+    STUDENT_MAX_COLLECTIONS_PER_TYPE,
+    STUDENT_SEQUENCE_MAX_IMAGES,
     SYNCHRONIZED_COLLECTION_MAX_IMAGES,
     Category,
     Collection,
@@ -74,7 +77,13 @@ from ..models import (
     User,
 )
 from ..schemas import (
+    CollectionBulkDelete,
+    CollectionBulkUpdate,
     CollectionCreate,
+    CollectionGraphCategoryOut,
+    CollectionGraphImageOut,
+    CollectionGraphNodeOut,
+    CollectionGraphOut,
     CollectionImagesUpdate,
     CollectionMove,
     CollectionOut,
@@ -83,8 +92,9 @@ from ..schemas import (
     CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
+    CollectionsGraphOut,
 )
-from ..tile_order import bump_scopes, scope_key_for
+from ..tile_order import bump_scopes, collection_scope_keys
 
 def require_collections_enabled() -> None:
     """Router-wide gate for the ``COLLECTIONS_ENABLED`` dark-launch flag.
@@ -114,6 +124,7 @@ async def list_collections(
     owner_program_id: int | None = None,
     orphaned: bool = False,
     uncategorized: bool = False,
+    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """List collections visible to the caller (server-side filtered).
@@ -121,7 +132,10 @@ async def list_collections(
     ``orphaned=true`` (collections with no user-owner rows and no program
     owner — e.g. after a program delete) is an admin-only filter; other
     roles receive 403. ``mine`` / ``owner_user_id`` match
-    ``collection_owners`` membership (#1531).
+    ``collection_owners`` membership (#1531). ``uncategorized=true`` selects
+    the unfiled queue: collections not shown on Browse because their
+    ``category_id`` is null. ``limit`` is applied after visibility filtering,
+    so inaccessible collections do not consume result slots.
     """
     if type is not None and type not in COLLECTION_TYPES:
         raise HTTPException(
@@ -152,9 +166,149 @@ async def list_collections(
 
     collections = (await db.execute(stmt)).scalars().unique().all()
     ctx = await _ViewerContext.build(db, user)
-    return [
-        collection_summary_out(ctx, c) for c in collections if ctx.can_view(c)
-    ]
+    visible = [c for c in collections if ctx.can_view(c)]
+    if limit is not None:
+        visible = visible[:limit]
+    return [collection_summary_out(ctx, c) for c in visible]
+
+
+# ── Graph endpoints (#1628) ───────────────────────────────────────────────
+# ``/graph`` is registered before ``/{collection_id}`` so the literal segment
+# is never parsed as an int path parameter (which would 422 every request).
+
+
+def _graph_node(ctx: _ViewerContext, collection: Collection) -> CollectionGraphNodeOut:
+    """Node payload for one collection; ``image_count`` counts only members
+    the caller may see (visible-only, like ``collection_summary_out``)."""
+    return CollectionGraphNodeOut(
+        id=collection.id,
+        name=collection.name,
+        type=collection.type,
+        image_count=len(ctx.visible_images(collection)),
+        hidden=bool(collection.hidden),
+        category_id=collection.category_id,
+    )
+
+
+async def _graph_categories(
+    db: AsyncSession,
+    ctx: _ViewerContext,
+    category_ids: set[int] | None = None,
+) -> list[CollectionGraphCategoryOut]:
+    """Category nodes for ``order=3`` (#1633).
+
+    Two queries total: one ``select(Category)`` for labels and the
+    ``›``-joined label path (walked via ``parent_id``), and one grouped
+    count of visible images per category. The count mirrors
+    ``_ViewerContext.can_view_image`` (collection_views.py) without loading
+    image rows: non-students see every image; students need ``active`` and
+    the category outside their excluded set. Only categories with ≥1
+    visible image are returned; *category_ids*, when given, narrows the
+    result to that subset (the ``/{id}/graph`` local view).
+    """
+    categories = (await db.execute(select(Category))).scalars().all()
+    by_id = {c.id: c for c in categories}
+    count_stmt = (
+        select(Image.category_id, func.count())
+        .where(Image.category_id.isnot(None))
+        .group_by(Image.category_id)
+    )
+    if ctx.excluded_category_ids is not None:
+        count_stmt = count_stmt.where(Image.active.is_(True))
+    counts = dict((await db.execute(count_stmt)).all())
+    excluded = ctx.excluded_category_ids or set()
+
+    def _path(category: Category) -> str:
+        labels: list[str] = []
+        node: Category | None = category
+        while node is not None:
+            labels.append(node.label)
+            node = by_id.get(node.parent_id)
+        return " › ".join(reversed(labels))
+
+    nodes: list[CollectionGraphCategoryOut] = []
+    for category_id, count in counts.items():
+        if (
+            count < 1
+            or category_id in excluded
+            or (category_ids is not None and category_id not in category_ids)
+        ):
+            continue
+        category = by_id.get(category_id)
+        if category is None:
+            continue
+        nodes.append(
+            CollectionGraphCategoryOut(
+                id=category_id,
+                label=category.label,
+                path=_path(category),
+                image_count=count,
+            )
+        )
+    return sorted(nodes, key=lambda n: n.id)
+
+
+def _graph_image(
+    image: Image, collection_ids: list[int]
+) -> CollectionGraphImageOut:
+    return CollectionGraphImageOut(
+        id=image.id,
+        name=image.name,
+        collection_ids=collection_ids,
+        category_id=image.category_id,
+    )
+
+
+@router.get("/graph", response_model=CollectionsGraphOut)
+async def collections_graph(
+    user: Annotated[User, Depends(get_current_user)],
+    order: Annotated[int, Query(ge=1, le=3)] = 1,
+    db: AsyncSession = Depends(get_db),
+):
+    """Structural graph for the Collections page.
+
+    Nodes are exactly the collections an unfiltered ``GET /collections``
+    would return. At ``order`` ≥ 2 each caller-visible member image is a
+    node whose ``collection_ids`` list every visible collection containing
+    it — edges are implied. At ``order=3`` every caller-visible category
+    holding ≥1 visible image is a node too, including categories with no
+    collection (isolated nodes). ``image_links`` /
+    ``CollectionImage.image`` are selectin-loaded, so member loading adds
+    two queries total, not per collection.
+    """
+    collections = (
+        (await db.execute(
+            select(Collection).order_by(
+                Collection.updated_at.desc(), Collection.id.desc()
+            )
+        ))
+        .scalars()
+        .unique()
+        .all()
+    )
+    ctx = await _ViewerContext.build(db, user)
+    visible = [c for c in collections if ctx.can_view(c)]
+
+    images: list[CollectionGraphImageOut] = []
+    if order >= 2:
+        by_id: dict[int, Image] = {}
+        members: dict[int, list[int]] = {}
+        for collection in visible:
+            for image in ctx.visible_images(collection):
+                by_id.setdefault(image.id, image)
+                members.setdefault(image.id, []).append(collection.id)
+        images = [
+            _graph_image(by_id[image_id], sorted(collection_ids))
+            for image_id, collection_ids in sorted(members.items())
+        ]
+    return CollectionsGraphOut(
+        order=order,
+        collections=[_graph_node(ctx, c) for c in visible],
+        images=images,
+        categories=(
+            await _graph_categories(db, ctx) if order == 3 else []
+        ),
+    )
 
 
 @router.get("/{collection_id}", response_model=CollectionOut)
@@ -165,6 +319,77 @@ async def get_collection(
 ):
     ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
     return collection_out(ctx, collection)
+
+
+@router.get("/{collection_id}/graph", response_model=CollectionGraphOut)
+async def collection_graph(
+    collection_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    order: Annotated[int, Query(ge=1, le=3)] = 1,
+    db: AsyncSession = Depends(get_db),
+):
+    """Graph from one collection's perspective (the dialog view).
+
+    ``images`` are the hub's caller-visible members in member order. At
+    ``order`` ≥ 2 every visible collection sharing a visible member is added
+    to ``collection_ids`` and to ``related_collections`` (deduplicated,
+    excluding the hub), so the dialog can render them without extra
+    requests; switching perspective fetches that collection's own graph.
+    At ``order=3`` ``categories`` lists the categories of the hub's visible
+    members (this view stays local — uncovered categories are a main-page
+    concern).
+    """
+    ctx, collection = await get_visible_collection_or_404(
+        db, user, collection_id
+    )
+    hub_images = ctx.visible_images(collection)
+    hub_image_ids = {image.id for image in hub_images}
+    members: dict[int, list[int]] = {
+        image.id: [collection.id] for image in hub_images
+    }
+
+    related: list[Collection] = []
+    if order >= 2 and hub_image_ids:
+        others = (
+            (await db.execute(
+                select(Collection)
+                .join(CollectionImage)
+                .where(
+                    CollectionImage.image_id.in_(hub_image_ids),
+                    Collection.id != collection.id,
+                )
+            ))
+            .scalars()
+            .unique()
+            .all()
+        )
+        related = [c for c in others if ctx.can_view(c)]
+        for other in related:
+            for image in ctx.visible_images(other):
+                if image.id in hub_image_ids:
+                    members[image.id].append(other.id)
+
+    return CollectionGraphOut(
+        order=order,
+        collection=_graph_node(ctx, collection),
+        images=[
+            _graph_image(image, sorted(members[image.id]))
+            for image in hub_images
+        ],
+        related_collections=[
+            _graph_node(ctx, c)
+            for c in sorted(related, key=lambda c: (c.name, c.id))
+        ],
+        categories=(
+            await _graph_categories(
+                db,
+                ctx,
+                {i.category_id for i in hub_images if i.category_id is not None},
+            )
+            if order == 3
+            else []
+        ),
+    )
 
 
 # ── Write helpers ─────────────────────────────────────────────────────────
@@ -312,6 +537,28 @@ async def _resolve_images(
     return [by_id[iid] for iid in image_ids]
 
 
+def _enforce_student_sequence_cap(
+    user: User,
+    collection_type: str,
+    image_ids: list[int],
+    retained: int,
+    existing_ids: set[int],
+) -> None:
+    """Reject student sequence additions that would exceed the cap (#1583)."""
+    if user.role != "student" or collection_type != "sequence":
+        return
+    if len(image_ids) + retained <= STUDENT_SEQUENCE_MAX_IMAGES:
+        return
+    if any(image_id not in existing_ids for image_id in image_ids):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Students may add at most "
+                f"{STUDENT_SEQUENCE_MAX_IMAGES} images to a sequence collection"
+            ),
+        )
+
+
 def _replace_image_links(
     collection: Collection,
     images: list[Image],
@@ -381,26 +628,79 @@ async def create_collection(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a collection owned by the caller. Any authenticated role may
-    create — the caller becomes the first user owner and is recorded as
-    creator (``collections.user_id`` audit). ``restricted`` visibility
-    additionally needs attach authority over every program/group id, so only
-    admins and instructors may use it.
+    """Create a collection owned by the caller.
+
+    Admins and instructors must file new collections into an existing Browse
+    category. Other authenticated roles may create only unfiled collections.
+    The caller becomes the first user owner and is recorded as creator
+    (``collections.user_id`` audit). ``restricted`` visibility additionally
+    needs attach authority over every program/group id.
     """
+    if user.role in {"admin", "instructor"}:
+        if body.category_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A category is required when creating a collection",
+            )
+        if await db.get(Category, body.category_id) is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid category ID: {body.category_id}",
+            )
+    elif body.category_id is not None:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins and instructors may file collections",
+        )
+    if user.role == "student":
+        await db.execute(
+            select(User.id).where(User.id == user.id).with_for_update()
+        )
+        owned_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(Collection)
+                .where(
+                    Collection.type == body.type,
+                    Collection.owners.any(User.id == user.id),
+                )
+            )
+        ).scalar_one()
+        if owned_count >= STUDENT_MAX_COLLECTIONS_PER_TYPE:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Students may own at most "
+                    f"{STUDENT_MAX_COLLECTIONS_PER_TYPE} {body.type} collections"
+                ),
+            )
+    _enforce_student_sequence_cap(
+        user,
+        body.type,
+        body.image_ids,
+        retained=0,
+        existing_ids=set(),
+    )
+    if body.visibility == "restricted":
+        _require_restricted_authority(user)
     ctx = await _ViewerContext.build(db, user)
     progs: list[Program] = []
     grps: list[Group] = []
     if body.visibility == "restricted":
-        _require_restricted_authority(user)
         progs = await _resolve_programs(db, user, body.program_ids, set())
         grps = await _resolve_groups(db, user, body.group_ids, set())
     images = await _resolve_images(db, ctx, body.type, body.image_ids)
+    if body.category_id is not None:
+        affected = collection_scope_keys({body.category_id})
+        if affected:
+            await bump_scopes(db, affected)
 
     collection = Collection(
         name=body.name,
         description=body.description,
         type=body.type,
         visibility=body.visibility,
+        category_id=body.category_id,
         # user_id is the creator audit column (#1531); ownership is the
         # ``owners`` row added below.
         user_id=user.id,
@@ -413,13 +713,195 @@ async def create_collection(
     collection.groups = grps
     _replace_image_links(collection, images)
     db.add(collection)
-    # New collections start uncategorized: they join the root tile scope, so
-    # invalidate its revision (an in-flight PUT /api/tile-order must not
-    # silently miss the new member once collections join the contract).
-    await bump_scopes(db, {scope_key_for(None)})
+    if body.category_id is not None:
+        await bump_browse_revision(db)
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)
+
+
+# ── Bulk operations (#1578) ───────────────────────────────────────────────
+# Registered before ``/{collection_id}`` so "bulk" is never parsed as an id.
+
+
+async def _select_collections_or_404(
+    db: AsyncSession, collection_ids: list[int]
+) -> list[Collection]:
+    """Load the requested collection rows; 404 when any id is missing."""
+    collections = (
+        await db.execute(
+            select(Collection).where(Collection.id.in_(collection_ids))
+        )
+    ).scalars().all()
+    if len(collections) != len(set(collection_ids)):
+        raise HTTPException(404, "One or more collections not found")
+    return collections
+
+
+async def _lock_and_verify_unchanged(
+    db: AsyncSession,
+    collection_ids: list[int],
+    snapshot: dict[int, int | None],
+) -> list[Collection]:
+    """FOR UPDATE re-read of the bulk target rows, locked after the scope
+    bumps so the scope → row → browse lock order used by ``…/{id}/move``
+    and ``DELETE`` is preserved.
+
+    Between the unlocked read and this lock another transaction may have
+    moved or deleted a row — its real source scope would then be missing
+    from the bumped set, so ``populate_existing`` refreshes the rows under
+    the lock and any drift is a 409 for the caller to retry with fresh
+    state rather than a silently skipped tile-order invalidation.
+    """
+    locked = (
+        await db.execute(
+            select(Collection)
+            .where(Collection.id.in_(collection_ids))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalars().all()
+    if len(locked) != len(snapshot) or any(
+        c.category_id != snapshot[c.id] for c in locked
+    ):
+        raise HTTPException(
+            409,
+            "One or more selected collections changed during the bulk "
+            "operation — refresh and retry",
+        )
+    return locked
+
+
+@router.patch("/bulk", response_model=list[CollectionSummaryOut])
+async def bulk_update_collections(
+    body: CollectionBulkUpdate,
+    user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update curatorial fields for multiple collections (#1578).
+
+    Both fields are curatorial like ``POST …/{id}/move`` and a hidden-only
+    PATCH — ``category_id`` refiles every collection (``null`` = Browse
+    root) and ``hidden`` hides/shows for students — so one role gate
+    covers the call regardless of ownership. Scope fields
+    (``visibility``/``program_ids``/``group_ids``) are deliberately not
+    bulk-editable: scope authority is per-collection (sole owner vs
+    co-owner) and ``restricted`` needs per-collection attach lists.
+
+    Atomic: every id must resolve (404) and ``category_id`` must exist
+    (422) before any write. ``category_id=null`` unfiles the selected
+    collections from Browse. Only filed source/destination scopes are
+    invalidated, and a concurrent move/delete between the read and the row
+    lock is a 409 rather than a missed scope bump. Like
+    ``PATCH /images/bulk`` there is no per-row ``version`` token; the row
+    lock plus ``populate_existing`` makes the loaded ``version`` the
+    committed-latest, so a plain increment cannot collide with a racing
+    write, and a no-op edit advances nothing.
+    """
+    collections = await _select_collections_or_404(db, body.collection_ids)
+    provided = body.model_fields_set
+    category_provided = "category_id" in provided
+    hidden_provided = "hidden" in provided
+    new_category = body.category_id
+
+    if category_provided and new_category is not None:
+        if await db.get(Category, new_category) is None:
+            raise HTTPException(
+                422, f"Invalid category ID: {new_category}"
+            )
+
+    snapshot = {c.id: c.category_id for c in collections}
+    if category_provided:
+        # Speculative sources from the unlocked read; the locked re-read
+        # below turns real-source drift into a 409, so an over-broad bump
+        # is harmless while a missed one is not.
+        moved = [
+            cid for cid, src in snapshot.items() if src != new_category
+        ]
+        if moved:
+            affected = collection_scope_keys(
+                {snapshot[cid] for cid in moved} | {new_category}
+            )
+            if affected:
+                await bump_scopes(db, affected)
+
+    locked = await _lock_and_verify_unchanged(
+        db, body.collection_ids, snapshot
+    )
+
+    changed = [
+        c
+        for c in locked
+        if (category_provided and c.category_id != new_category)
+        or (hidden_provided and c.hidden != body.hidden)
+    ]
+    for c in changed:
+        if category_provided:
+            c.category_id = new_category
+        if hidden_provided:
+            c.hidden = body.hidden
+        # ``populate_existing`` under FOR UPDATE read the committed-latest
+        # version, so this increment cannot duplicate a racing write.
+        c.version += 1
+    if changed:
+        # Both fields are tile-visible: ``category_id`` is scope membership
+        # and ``hidden`` drops the tile for non-owner students.
+        await bump_browse_revision(db)
+    await db.commit()
+    # ``updated_at`` is SQL-generated (onupdate=func.now()) — refresh the
+    # changed rows post-commit like ``update_collection`` so the response
+    # carries the committed modification time.
+    for c in changed:
+        await db.refresh(c)
+    ctx = await _ViewerContext.build(db, user)
+    by_id = {c.id: c for c in collections}
+    return [
+        collection_summary_out(ctx, by_id[cid])
+        for cid in dict.fromkeys(body.collection_ids)
+    ]
+
+
+@router.delete("/bulk", status_code=204)
+async def bulk_delete_collections(
+    body: CollectionBulkDelete,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-delete collections (#1578).
+
+    Unlike ``DELETE /images/bulk`` (curator-only) authority stays
+    per-collection so owners keep the single-delete contract at scale:
+    every id must resolve and be viewable (404 — private ids cannot be
+    probed) and pass ``can_delete_collection`` (403). The call is atomic —
+    one failure deletes nothing — and a concurrent move/delete between the
+    read and the row lock is a 409 rather than a missed scope bump.
+    """
+    collections = await _select_collections_or_404(db, body.collection_ids)
+    ctx = await _ViewerContext.build(db, user)
+    for c in collections:
+        if not ctx.can_view(c):
+            raise HTTPException(404, "Collection not found")
+    for c in collections:
+        if not can_delete_collection(user, c):
+            raise HTTPException(
+                403,
+                "You may not delete one or more of the selected collections",
+            )
+    # Lock order mirrors the single delete: scope revisions first, then the
+    # rows, then the browse revision. The locked re-read guards the
+    # speculative source set against concurrent moves.
+    snapshot = {c.id: c.category_id for c in collections}
+    affected = collection_scope_keys(snapshot.values())
+    if affected:
+        await bump_scopes(db, affected)
+    locked = await _lock_and_verify_unchanged(
+        db, body.collection_ids, snapshot
+    )
+    for c in locked:
+        await db.delete(c)
+    await bump_browse_revision(db)
+    await db.commit()
+    return Response(status_code=204)
 
 
 @router.patch("/{collection_id}", response_model=CollectionOut)
@@ -504,6 +986,22 @@ async def update_collection(
             )
         new_programs, new_groups = [], []
 
+    if "cover_image_id" in fields and body.cover_image_id is not None:
+        # The pinned cover must be a member the caller can actually view —
+        # a cover the picker could not show would silently fall back to the
+        # first member anyway, so naming one is a 422 (mirrors the
+        # invisible-member rule on PUT /images).
+        member_ids = {link.image_id for link in collection.image_links}
+        visible_ids = {img.id for img in ctx.visible_images(collection)}
+        if (
+            body.cover_image_id not in member_ids
+            or body.cover_image_id not in visible_ids
+        ):
+            raise HTTPException(
+                422,
+                "cover_image_id must reference an image in this collection",
+            )
+
     await _bump_version_or_409(db, ctx, collection, body.version)
     if body.name is not None:
         collection.name = body.name
@@ -517,6 +1015,13 @@ async def update_collection(
         collection.programs = new_programs
     if new_groups is not None:
         collection.groups = new_groups
+    if "cover_image_id" in fields:
+        collection.cover_image_id = body.cover_image_id
+        collection.cover_blank = False
+    if "cover_blank" in fields:
+        collection.cover_blank = bool(body.cover_blank)
+        if collection.cover_blank:
+            collection.cover_image_id = None
     # Tile-visible fields (name/visibility/counts rendered on Browse tiles)
     # may have changed — invalidate the category-tree ETag.
     await bump_browse_revision(db)
@@ -540,7 +1045,9 @@ async def delete_collection(
     # collection row, then the browse revision last — matching PATCH, which
     # locks the collection row via its CAS before browse_state. Taking
     # browse_state before the row would deadlock against a concurrent PATCH.
-    await bump_scopes(db, {scope_key_for(collection.category_id)})
+    affected = collection_scope_keys({collection.category_id})
+    if affected:
+        await bump_scopes(db, affected)
     await db.delete(collection)
     await bump_browse_revision(db)
     await db.commit()
@@ -562,11 +1069,28 @@ async def replace_collection_images(
     """
     ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
     unseen = _unseen_links(ctx, collection)
+    existing_ids = {link.image_id for link in collection.image_links}
+    _enforce_student_sequence_cap(
+        user,
+        collection.type,
+        body.image_ids,
+        retained=len(unseen),
+        existing_ids=existing_ids,
+    )
     images = await _resolve_images(
         db, ctx, collection.type, body.image_ids, retained=len(unseen)
     )
     await _bump_version_or_409(db, ctx, collection, body.version)
     _replace_image_links(collection, images, unseen)
+    # A pinned cover that is no longer a member reverts to the first-member
+    # fallback — a retained *unseen* member still counts, so the pin survives
+    # edits by callers who cannot view it.
+    member_ids = {link.image_id for link in collection.image_links}
+    if (
+        collection.cover_image_id is not None
+        and collection.cover_image_id not in member_ids
+    ):
+        collection.cover_image_id = None
     # Member count and cover thumbnail are shown on the Browse tile.
     await bump_browse_revision(db)
     await db.commit()
@@ -601,8 +1125,8 @@ async def move_collection(
     user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
-    """File the collection into a category; ``category_id=null`` moves it to
-    the Browse root (uncategorized), mirroring ``ImageUpdate.category_id``.
+    """File the collection into a category; ``category_id=null`` unfiles it
+    and removes its tile from Browse.
 
     Filing is curatorial — any admin/instructor may move any collection,
     independent of ownership (same authority as moving images/categories),
@@ -629,10 +1153,11 @@ async def move_collection(
             )
     moved = collection.category_id != body.category_id
     if moved:
-        await bump_scopes(
-            db,
-            {scope_key_for(collection.category_id), scope_key_for(body.category_id)},
+        affected = collection_scope_keys(
+            {collection.category_id, body.category_id}
         )
+        if affected:
+            await bump_scopes(db, affected)
     ctx = await _ViewerContext.build(db, user)
     await _bump_version_or_409(db, ctx, collection, body.version)
     if moved:

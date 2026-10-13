@@ -34,26 +34,37 @@ Use the `role` control to compare the admin and instructor pickers.
 
 ## Implementation guidance
 
-- **Two endpoints, one dialog.** `PUT /api/collections/{id}/owners` wholesale-replaces the
-  user-owner set (`user_ids` + `version`); `POST …/transfer` reassigns program ownership
-  (`program_id` + `version`, `null` clears). When both change in one save, owners land
-  first so the collection is never momentarily orphaned.
-- **Programs clear users.** Assigning a program owner clears the `collection_owners` rows
-  server-side, so the user picker disables while a program is selected. Clearing the
-  program back to user ownership requires picking at least one user owner first — the
-  backend orphan-guard 422s otherwise.
-- **Users come from `GET /api/users`.** The picker mirrors `GroupManagementModal`:
-  **Students / Instructors** role tabs drive the debounced `fetchUsersPaged` search
-  (admins get a third **Everyone** mode), and an optional **Filter by program**
-  narrows the Students tab only. Instructors automatically get the minimal
-  projection — students and instructors, with admin/staff/`Admin`-program accounts
-  excluded by the endpoint. Inactive accounts are filtered out — the backend 422s
-  them anyway.
-- **Errors stay in the dialog.** 403 (outside your authority), 409 (stale `version`), and
-  422 (unknown/inactive/orphan targets) surface via `userMessage`; the dialog stays open
-  so a retry sends the conflict-merged fresh version.
-- **Orphaned collections** show an info hint — assigning an owner restores normal
-  management.
+- **Two endpoints, two panes.** A **Program / User** radio row picks the surface.
+  `PUT /api/collections/{id}/owners` wholesale-replaces the user-owner set
+  (`user_ids` + `version`); `POST …/transfer` reassigns program ownership
+  (`program_id` + `version`, `null` clears). Each pane commits only its own
+  endpoint — one save, one call.
+- **Program mode = single-select chips.** The program list renders as outlined
+  chips (instructors see only their own programs, the boundary the backend
+  403s across). Clicking a chip makes it the staged owner — filled variant
+  with a delete icon; the icon reverts it to outlined. Assigning a program
+  clears the `collection_owners` rows server-side, and the pane hints at that
+  while a chip is active.
+- **User mode = the Groups member table.** A checkbox table over a debounced,
+  paged `fetchUsersPaged` list — Checkbox, Name, Email, Program columns — with
+  the role scope moved into a **Role** popover button beside the Search and
+  Program filter buttons (admins get a third **Everyone** option; Program
+  narrows the Students scope only). The checked set _is_ the replacement
+  owner set: current owners come pre-checked in a **CURRENT OWNERS** section
+  (an Owner chip marks them), and **Change Owner(s)** PUTs it. Instructors
+  automatically get the mini user projection — students and instructors only,
+  with admin/staff/`Admin`-program accounts excluded by the endpoint.
+  Inactive accounts are filtered out — the backend 422s them anyway.
+- **Orphan guard lives in the enable rule.** The confirm stays disabled until
+  the pane's staged value differs and the result keeps at least one owner —
+  clearing the program chip needs surviving user owners, and an empty user
+  selection needs an existing program owner.
+- **Errors stay in the dialog.** 403 (outside your authority), 409 (stale
+  `version`), and 422 (unknown/inactive/orphan targets) surface via
+  `userMessage`; the dialog stays open so a retry sends the conflict-merged
+  fresh version.
+- **Orphaned collections** show an info hint — assigning an owner restores
+  normal management.
 
 ## Examples
 

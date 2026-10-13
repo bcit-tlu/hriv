@@ -85,13 +85,22 @@ function ImageTile({
             </Tooltip>
             {!image.active && (
               <Tooltip title="Visibility: Inactive">
-                <span
+                {/* Centre on the title's first line — same 1lh wrapper as
+                    the category/collection tile icons (#1567). */}
+                <Box
+                  component="span"
                   role="img"
                   aria-label="Visibility: Inactive"
-                  style={{ display: 'inline-flex', flexShrink: 0 }}
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    typography: 'h6',
+                    height: '1lh',
+                    flexShrink: 0,
+                  }}
                 >
                   <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                </span>
+                </Box>
               </Tooltip>
             )}
             {onEditDetails && (

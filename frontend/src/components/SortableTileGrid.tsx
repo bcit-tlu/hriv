@@ -24,7 +24,7 @@ import type { ApiImage, TileOrderItemRef } from '../api'
 import type { ReorderDragContext } from '../tileOrdering'
 import { DndMonitor, logDrag, recordTileRender } from '../dndInstrumentation'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
-import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import { findLiveCategoryPath, getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import CollectionCard from './CollectionCard'
 import ImageTile from './ImageTile'
@@ -295,10 +295,8 @@ export interface SortableTileGridProps {
   currentImages: ImageItem[]
   uncategorizedImages: ImageItem[]
   /**
-   * Collections filed into the current scope (#1529): the path node's
-   * `collections` for nested scopes, or the uncategorized list at root —
-   * already scope-merged by the caller. Defaults to none so surfaces that
-   * predate collections keep working.
+   * Collections filed into the current category scope (#1529). Defaults to
+   * none so the root scope and surfaces that predate collections keep working.
    */
   currentCollections?: CollectionSummary[]
   path: Category[]
@@ -316,6 +314,12 @@ export interface SortableTileGridProps {
   onDropFilesOnCategory?: (categoryId: number, files: File[]) => void
 
   onCollectionClick?: (collection: CollectionSummary) => void
+  /** Opens the Edit Collection dialog — the card's `canEdit` gate decides. */
+  onEditCollection?: (collection: CollectionSummary) => void
+  /** Opens the tile cover picker — the card's `canEdit` gate decides, like
+   *  the edit pencil. The parent loads the detail record for the member
+   *  list before rendering the modal. */
+  onPickCollectionCover?: (collection: CollectionSummary) => void
   /** Opens the Move Collection dialog — admin/instructor-only call sites. */
   onMoveCollection?: (collection: CollectionSummary) => void
   /** A `col-` tile dropped on a category's near-half move zone (#1529). */
@@ -371,6 +375,8 @@ export default function SortableTileGrid({
   onDropCategoryOnCategory,
   onDropFilesOnCategory,
   onCollectionClick,
+  onEditCollection,
+  onPickCollectionCover,
   onMoveCollection,
   onDropCollectionOnCategory,
   onDropImageOnCollection,
@@ -388,9 +394,13 @@ export default function SortableTileGrid({
     [path.length, uncategorizedImages, currentImages],
   )
 
-  const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
-  const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
-  const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
+  // `path` entries are navigation-time snapshots — resolve the leaf's live
+  // ancestry so tile hidden state and restriction narrowing follow
+  // background refreshes, including reparents of the leaf or an ancestor.
+  const livePath = useMemo(() => findLiveCategoryPath(allCategories, path), [allCategories, path])
+  const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(livePath), [livePath])
+  const inheritedProgramIds = useMemo(() => narrowProgramIds(livePath), [livePath])
+  const inheritedGroupIds = useMemo(() => narrowGroupIds(livePath), [livePath])
 
   const parentId = path.length > 0 ? path[path.length - 1].id : null
 
@@ -711,7 +721,9 @@ export default function SortableTileGrid({
   // C1 Browse tile params; the SortableTile wrapper provides the fixed 300px
   // width and drag affordance. Move is role-gated by canEditContent — filing
   // is curatorial, not ownership-bound (unlike the card's own permission-
-  // gated edit/delete/transfer buttons, which stay off in Browse).
+  // gated delete/transfer buttons, which stay off in Browse). The title edit
+  // pencil and cover-image picker are ownership/edit actions — the card
+  // gates them on `permissions.canEdit` itself, like the drop zone below.
   // Editable collections also carry the "Add to collection" drop zone
   // (#1530): rendered only for `permissions.canEdit` — adding members is an
   // ownership/edit action, unlike the role-gated curatorial move.
@@ -721,7 +733,14 @@ export default function SortableTileGrid({
         <CollectionCard
           collection={collection}
           onOpen={onCollectionClick ?? (() => {})}
+          onEdit={onEditCollection}
           onMove={canEditContent ? onMoveCollection : undefined}
+          onPickCoverImage={onPickCollectionCover}
+          programs={programs}
+          inheritedProgramIds={inheritedProgramIds}
+          groups={groups}
+          inheritedGroupIds={inheritedGroupIds}
+          categoryHidden={pathHiddenState.hidden}
         />
       )
       if (!collection.permissions.canEdit) return tile
@@ -737,7 +756,18 @@ export default function SortableTileGrid({
         </DroppableCollectionZone>
       )
     },
-    [canEditContent, onCollectionClick, onMoveCollection],
+    [
+      canEditContent,
+      onCollectionClick,
+      onEditCollection,
+      onPickCollectionCover,
+      onMoveCollection,
+      programs,
+      groups,
+      inheritedProgramIds,
+      inheritedGroupIds,
+      pathHiddenState,
+    ],
   )
 
   const sensors = useMemo(

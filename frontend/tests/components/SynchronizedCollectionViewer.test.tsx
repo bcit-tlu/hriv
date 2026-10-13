@@ -111,7 +111,7 @@ const mockState = vi.hoisted(() => ({
 }))
 
 vi.mock('../../src/components/ImageViewer', () => ({
-  default: (props: Record<string, unknown>) => {
+  default: function MockImageViewer(props: Record<string, unknown>) {
     const imageId = props.imageId as number
     mockState.lastProps.set(imageId, props)
     useEffect(() => {
@@ -168,6 +168,14 @@ function renderViewer(overrides: Partial<SynchronizedCollectionViewerProps> = {}
     ...overrides,
   }
   return { ...render(<SynchronizedCollectionViewer {...props} />), props }
+}
+
+function emotionRulesFor(element: HTMLElement) {
+  const classes = [...element.classList].filter((className) => className.startsWith('css-'))
+  return [...document.querySelectorAll('style[data-emotion]')]
+    .map((style) => style.textContent ?? '')
+    .filter((rules) => classes.some((className) => rules.includes(`.${className}`)))
+    .join('\n')
 }
 
 /** Wire fakes for the first pair and complete the open + offset-arm cycle. */
@@ -505,7 +513,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(fakes.get(103)!.viewer.viewport!.setRotation).toHaveBeenLastCalledWith(180, true)
   })
 
-  it('reset without a saved view returns both viewers home', () => {
+  it('restore stays disabled until a view has been saved (#1567)', () => {
     openPair({ zoom: 5, x: 0.8, y: 0.9, rotation: 30 }, { zoom: 3, x: 0.2, y: 0.2, rotation: 60 })
     renderViewer()
     const fakeA = mockState.fakes.get(100)!
@@ -513,12 +521,11 @@ describe('SynchronizedCollectionViewer', () => {
       fakeA.open()
       mockState.fakes.get(101)!.open()
     })
-    fireEvent.click(screen.getByTestId('synchronized-reset'))
-    expect(fakeA.viewport!.goHome).toHaveBeenCalledWith(true)
-    expect(mockState.fakes.get(101)!.viewport!.goHome).toHaveBeenCalledWith(true)
-    // goHome preserves rotation, so Reset must clear it explicitly.
-    expect(fakeA.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
-    expect(mockState.fakes.get(101)!.viewport!.setRotation).toHaveBeenLastCalledWith(0, true)
+    const reset = screen.getByTestId('synchronized-reset')
+    expect(reset).toBeDisabled()
+    fireEvent.click(reset)
+    expect(fakeA.viewport!.goHome).not.toHaveBeenCalled()
+    expect(mockState.fakes.get(101)!.viewport!.goHome).not.toHaveBeenCalled()
   })
 
   it('pins every pane by default; unpinning detaches it from the mirror (#1564)', () => {
@@ -535,11 +542,11 @@ describe('SynchronizedCollectionViewer', () => {
     // Default: both panes pinned (linked).
     expect(pinA).toHaveAttribute('aria-pressed', 'true')
     expect(pinB).toHaveAttribute('aria-pressed', 'true')
-    expect(pinA).toHaveAccessibleName('Unpin Slice 1')
-    // Unpin B — a leader move on A no longer reaches it.
+    expect(pinA).toHaveAccessibleName('Unlink Slice 1')
+    // Unlink B — a leader move on A no longer reaches it.
     fireEvent.click(pinB)
     expect(pinB).toHaveAttribute('aria-pressed', 'false')
-    expect(pinB).toHaveAccessibleName('Pin Slice 2')
+    expect(pinB).toHaveAccessibleName('Link Slice 2')
     fakeB.viewport!.panTo.mockClear()
     act(() => {
       fakeA.viewport!.panTo({ x: 0.9, y: 0.9 })
@@ -638,19 +645,34 @@ describe('SynchronizedCollectionViewer', () => {
     // Every pane gets the shorter grid height and the read-only prop set.
     for (const v of viewers) {
       const props = mockState.lastProps.get(Number(v.getAttribute('data-image-id')))!
-      expect(props.height).toBe('34vh')
+      expect(props.height).toEqual({ xs: '34vh', md: '100%' })
       expect(props.canEditContent).toBe(false)
     }
     // No "Showing N of M" note when every member fits a pane.
     expect(screen.queryByText(/^Showing \d+ of \d+$/)).not.toBeInTheDocument()
+    for (const frame of screen.getAllByTestId(/^synchronized-viewer-frame-/)) {
+      const rules = emotionRulesFor(frame)
+      expect(rules).toMatch(/@media \(min-width:900px\)/)
+      expect(rules).toMatch(/min-height:200px/)
+    }
+    const panesArea = screen.getByTestId('synchronized-viewer-frame-100').parentElement!
+      .parentElement!.parentElement!
+    expect(emotionRulesFor(panesArea)).toMatch(/min-height:auto/)
+    expect(emotionRulesFor(panesArea)).not.toMatch(/min-height:320px/)
   })
 
   it('keeps two members in the side-by-side layout', () => {
     renderViewer({ collection: syncCollection({ images: images(2) }) })
     const propsA = mockState.lastProps.get(100)!
     const propsB = mockState.lastProps.get(101)!
-    expect(propsA.height).toBe('55vh')
-    expect(propsB.height).toBe('55vh')
+    expect(propsA.height).toEqual({ xs: '55vh', md: '100%' })
+    expect(propsB.height).toEqual({ xs: '55vh', md: '100%' })
+    for (const frame of screen.getAllByTestId(/^synchronized-viewer-frame-/)) {
+      expect(emotionRulesFor(frame)).not.toMatch(/min-height:200px/)
+    }
+    const panesArea = screen.getByTestId('synchronized-viewer-frame-100').parentElement!
+      .parentElement!.parentElement!
+    expect(emotionRulesFor(panesArea)).toMatch(/min-height:320px/)
   })
 
   it('notes when the member count exceeds the pane cap', () => {
@@ -666,14 +688,36 @@ describe('SynchronizedCollectionViewer', () => {
     const { props } = renderViewer({ collection })
     expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('link', { name: 'Open image' }))
+    const openButton = screen.getByRole('button', { name: 'Open image' })
+    // Same-tab, in-app navigation (#1624): image icon, and no href/target that
+    // would let a modifier-click open the image in a new tab.
+    expect(openButton.querySelector('[data-testid="ImageIcon"]')).not.toBeNull()
+    expect(openButton.querySelector('[data-testid="OpenInNewIcon"]')).toBeNull()
+    expect(openButton).not.toHaveAttribute('href')
+    expect(openButton).not.toHaveAttribute('target')
+    fireEvent.click(openButton)
     expect(props.onOpenImage).toHaveBeenCalledWith(collection.images[0])
   })
 
   it('shows the fallback without a list for an empty collection', () => {
     renderViewer({ collection: syncCollection({ images: [] }) })
-    expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+    const fallback = screen.getByTestId('synchronized-viewer-fallback')
+    expect(fallback).toHaveTextContent(
+      'This collection has no images. Use "Manage Images" to add some.',
+    )
+    expect(screen.queryByRole('button', { name: 'Open image' })).not.toBeInTheDocument()
+  })
+
+  it('points non-editors at no action for an empty collection', () => {
+    renderViewer({
+      collection: syncCollection({
+        images: [],
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+      }),
+    })
+    const fallback = screen.getByTestId('synchronized-viewer-fallback')
+    expect(fallback).toHaveTextContent('This collection has no images.')
+    expect(fallback).not.toHaveTextContent('Manage Images')
   })
 
   it('says all images are restricted when members exist but none are visible (#1529)', () => {
@@ -681,7 +725,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.getByTestId('synchronized-viewer-fallback')).toHaveTextContent(
       'All images in this collection are currently restricted.',
     )
-    expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open image' })).not.toBeInTheDocument()
   })
 
   it('slides the pair up when a member fails and falls back under two', () => {
@@ -702,7 +746,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
   })
 
-  it('hides Save view from non-editors but keeps Reset view', () => {
+  it('hides Save view from non-editors but keeps Restore view', () => {
     const collection = syncCollection({
       permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
     })
