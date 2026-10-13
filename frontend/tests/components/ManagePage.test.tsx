@@ -357,6 +357,43 @@ describe('ManagePage', () => {
     expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
   }, 30_000)
 
+  it('renders headers and row cells in the persisted column order', async () => {
+    localStorage.setItem(
+      'hrivpref:table-column-order:manage-images:user:1',
+      JSON.stringify([
+        'thumbnail',
+        'updated_at',
+        'name',
+        'category',
+        'group',
+        'active',
+        'id',
+        'copyright',
+        'note',
+        'program',
+        'created_at',
+        'dimensions',
+        'file_size',
+        'measurement',
+        'annotations',
+      ]),
+    )
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const headerNames = screen.getAllByRole('columnheader').map((cell) => cell.textContent ?? '')
+    expect(headerNames.indexOf('Modified')).toBeLessThan(headerNames.indexOf('Name'))
+
+    // Cells stay aligned under their headers — the fixed checkbox/actions
+    // columns occupy the same slots in both arrays.
+    const row = screen.getByText('Blood Smear').closest('tr')!
+    const cellTexts = within(row)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent ?? '')
+    expect(cellTexts.indexOf('Blood Smear')).toBe(headerNames.indexOf('Name'))
+  })
+
   it('shows the filtered result total beside the active chips only when a filter is applied', async () => {
     const user = userEvent.setup()
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)

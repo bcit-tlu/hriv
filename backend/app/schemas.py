@@ -405,8 +405,8 @@ class CategoryTree(CategoryOut):
     children: list["CategoryTree"] = []
     images: list["ImageOut"] = []
     # Collections filed into this category (epic #1525). Present only when the
-    # ``COLLECTIONS_ENABLED`` flag is on; uncategorized collections are not in
-    # the tree — like uncategorized images they are listed separately at root.
+    # ``COLLECTIONS_ENABLED`` flag is on; unfiled collections are not Browse
+    # tiles and are listed separately through the unfiled queue.
     collections: list["CollectionSummaryOut"] = []
 
 
@@ -481,6 +481,12 @@ class ImageOut(ImageBase):
         from .tile_tokens import append_tile_token
 
         return append_tile_token(value)
+
+
+class ImageSourceInfoOut(BaseModel):
+    original_filename: str | None = None
+    file_type: str | None = None
+    uploaded_by_name: str | None = None
 
 
 # ── Source Image ─────────────────────────────────────────
@@ -720,9 +726,21 @@ class CollectionSummaryOut(BaseModel):
     owners: list[CollectionOwnerOut] = []
     image_count: int = 0
     cover_thumb: str | None = None
+    # Pinned cover member (``collections.cover_image_id``) when it resolves
+    # to an image visible to the caller; ``None`` means the tile uses the
+    # first-member fallback.
+    cover_image_id: int | None = None
+    # Explicit "no cover" pick: the tile renders the type-logo placeholder
+    # and ``cover_thumb`` is ``None`` even with members present.
+    cover_blank: bool = False
+    # Restriction scope rides on summaries too so Browse tiles can render the
+    # collection's own program/group chips like category tiles do (#1567).
+    # Empty unless ``visibility == "restricted"``.
+    program_ids: list[int] = []
+    group_ids: list[int] = []
     version: int = 1
     # Browse placement (epic #1525): the category the collection is filed in
-    # (``None`` = uncategorized) and its tile-order position in that scope.
+    # (``None`` = unfiled, not on Browse) and its tile-order position.
     category_id: int | None = None
     sort_order: int = 0
     created_at: datetime
@@ -743,8 +761,6 @@ class CollectionSummaryOut(BaseModel):
 
 class CollectionOut(CollectionSummaryOut):
     images: list[ImageOut] = []
-    program_ids: list[int] = []
-    group_ids: list[int] = []
     viewport_state: dict = {}
     # Nominal member count for unfiltered viewers (non-students), so the
     # detail view can distinguish "empty collection" from "all members are
@@ -754,6 +770,84 @@ class CollectionOut(CollectionSummaryOut):
     # that — without disclosing how many. Detail-only: summaries keep the
     # visible-only ``image_count`` so tiles never reveal hidden membership.
     member_count: int = 0
+
+
+class CollectionGraphNodeOut(BaseModel):
+    """One collection node in a graph payload (#1628).
+
+    ``image_count`` is the count of members visible to the *caller* — the
+    same visible-only number ``CollectionSummaryOut.image_count`` reports —
+    so the graph can never disclose how many members are restricted from a
+    student.
+    """
+
+    id: int
+    name: str
+    type: str
+    image_count: int
+    hidden: bool = False
+    category_id: int | None = None
+
+
+class CollectionGraphImageOut(BaseModel):
+    """One image node: every *visible* collection containing it is listed in
+    ``collection_ids`` (edges are implied — no explicit edge list).
+
+    ``category_id`` is always populated (``None`` for uncategorized images)
+    at every order — the client does not have to special-case order 3.
+    """
+
+    id: int
+    name: str
+    collection_ids: list[int]
+    category_id: int | None = None
+
+
+class CollectionGraphCategoryOut(BaseModel):
+    """One category node (#1633). ``image_count`` counts caller-visible
+    images filed directly in the category (not descendants); ``path`` is
+    the label chain from the root for tooltips."""
+
+    id: int
+    label: str
+    path: str
+    image_count: int
+
+
+class CollectionsGraphOut(BaseModel):
+    """Hub-and-spoke graph of all viewable collections (#1628).
+
+    ``collections`` is ordered like ``GET /api/collections`` (``updated_at``
+    desc, ``id`` desc). ``images`` is populated for ``order`` ≥ 2, sorted
+    by id, each ``collection_ids`` ascending. ``categories`` is populated
+    only for ``order=3`` and contains every caller-visible category holding
+    ≥1 caller-visible image — including categories with no collection, so
+    instructors can spot collections still to create.
+    """
+
+    order: int
+    collections: list[CollectionGraphNodeOut]
+    images: list[CollectionGraphImageOut] = []
+    categories: list[CollectionGraphCategoryOut] = []
+
+
+class CollectionGraphOut(BaseModel):
+    """Single-collection perspective graph (#1628).
+
+    ``images`` are the hub collection's caller-visible members in member
+    order; ``collection_ids`` lists every visible collection containing the
+    image (just ``[collection.id]`` at ``order=1``).
+    ``related_collections`` are the other viewable collections sharing at
+    least one visible member (``order`` ≥ 2), sorted by name then id.
+    ``categories`` (``order=3`` only) is limited to the categories of the
+    hub's visible members.
+    """
+
+    order: int
+    collection: CollectionGraphNodeOut
+    images: list[CollectionGraphImageOut] = []
+    related_collections: list[CollectionGraphNodeOut] = []
+    categories: list[CollectionGraphCategoryOut] = []
 
 
 CollectionType = Literal["synchronized", "sequence"]
@@ -799,6 +893,7 @@ class CollectionCreate(BaseModel):
     description: str | None = None
     type: CollectionType
     visibility: CollectionVisibility = "private"
+    category_id: int | None = None
     image_ids: list[int] = []
     program_ids: list[int] = []
     group_ids: list[int] = []
@@ -831,6 +926,14 @@ class CollectionUpdate(BaseModel):
     program_ids: list[int] | None = None
     group_ids: list[int] | None = None
     hidden: bool | None = None
+    # Pinned tile cover: must reference a member the caller can view
+    # (``null`` restores the first-member fallback). Content field — same
+    # authority as ``name``/``description``.
+    cover_image_id: int | None = None
+    # Explicit "no cover" pick (the type-logo placeholder). ``true`` clears
+    # any pinned member; a ``cover_image_id`` write clears the flag — the
+    # two states are mutually exclusive.
+    cover_blank: bool | None = None
     version: int
 
     _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
@@ -842,10 +945,9 @@ class CollectionUpdate(BaseModel):
 class CollectionMove(BaseModel):
     """POST ``/{id}/move`` body filing a collection into a category.
 
-    ``category_id`` is required but nullable: an explicit ``null`` files the
-    collection at the Browse root (uncategorized), mirroring
-    ``ImageUpdate.category_id`` semantics. ``version`` is the optimistic
-    concurrency token.
+    ``category_id`` is required but nullable: an explicit ``null`` unfiles
+    the collection so it no longer appears on Browse. ``version`` is the
+    optimistic concurrency token.
     """
 
     category_id: int | None
@@ -905,6 +1007,31 @@ class CollectionTransfer(BaseModel):
     version: int
 
 
+class CollectionBulkUpdate(BaseModel):
+    """PATCH ``/collections/bulk`` body (#1578): curatorial fields only.
+
+    ``hidden`` and ``category_id`` are the bulk-editable fields — both are
+    curatorial (admin/instructor) like ``POST …/move`` and a hidden-only
+    PATCH, so a single role gate covers the endpoint. ``category_id: null``
+    unfiles collections from Browse (``CollectionMove`` semantics).
+    Scope fields (``visibility``/``program_ids``/``group_ids``) are
+    deliberately absent: scope authority is per-collection (sole owner vs
+    co-owner, program membership) and ``restricted`` needs per-collection
+    attach lists. No ``version`` token — bulk writes apply like
+    ``PATCH /images/bulk`` and bump ``version`` on actually-changed rows.
+    """
+
+    collection_ids: list[int]
+    category_id: int | None = None
+    hidden: bool | None = None
+
+
+class CollectionBulkDelete(BaseModel):
+    """DELETE ``/collections/bulk`` body (#1578)."""
+
+    collection_ids: list[int]
+
+
 class FeaturesOut(BaseModel):
     """``GET /api/features``: deployment-level feature flags the frontend
     reads at boot to decide which surfaces to render. Flags are not secrets;
@@ -912,6 +1039,7 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+    collections_home_shelf: bool
 
 
 # Rebuild forward refs for nested models (``CategoryTree`` embeds

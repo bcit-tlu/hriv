@@ -136,10 +136,11 @@ export interface UseShareableImageStateDeps {
    */
   collectionFromBrowse?: boolean
   /**
-   * Active Collections type page (#1554) — written as `?type=` next to
-   * `?page=collections` so the link restores the right sub-page.
+   * Active Collections Type filter — written as `?type=` next to
+   * `?page=collections` so the link restores the same filter (#1629).
+   * Omit when the filter is `all`.
    */
-  collectionPageType?: 'sequence' | 'synchronized'
+  collectionTypeFilter?: 'sequence' | 'synchronized'
   setPath: React.Dispatch<React.SetStateAction<Category[]>>
   setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>
   /**
@@ -195,7 +196,7 @@ export function useShareableImageState(
     collectionId = null,
     collectionItemId = null,
     collectionFromBrowse = false,
-    collectionPageType,
+    collectionTypeFilter,
     setPath,
     setSelectedImage,
     enableUrlSync = true,
@@ -300,8 +301,8 @@ export function useShareableImageState(
       if (collectionItemId != null) params.set('item', String(collectionItemId))
     } else if (page !== 'browse') {
       params.set('page', page)
-      if (page === 'collections' && collectionPageType != null) {
-        params.set('type', collectionPageType)
+      if (page === 'collections' && collectionTypeFilter != null) {
+        params.set('type', collectionTypeFilter)
       }
       // The guide page owns a ?doc= sub-param — preserve it so refreshes and
       // shared links keep the current document.
@@ -354,7 +355,7 @@ export function useShareableImageState(
     collectionId,
     collectionItemId,
     collectionFromBrowse,
-    collectionPageType,
+    collectionTypeFilter,
   ])
 
   const handleViewportChange = useCallback((state: ViewportState) => {

@@ -3,16 +3,16 @@
  *
  * ImageViewer is mocked at the component boundary so tests can assert the
  * read-only prop set and drive `onError`/`onTileSourceRenewed` directly.
- * `DragDropProvider` is wrapped (not mocked) to capture `onDragEnd`, so the
- * real @dnd-kit `move()` semantics run against synthetic operations that
- * carry the projected-index fields the helper commits on.
+ * Member reorder/add/remove live in CollectionManageDialog (#1566) — its
+ * test file carries the drag-end coverage this file used to host.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
 
 import type { Collection, ImageItem } from '../../src/types'
-import { makeCollection, makeImage } from '../helpers/fixtures'
+import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
+import MyCollectionsDrawer from '../../src/components/MyCollectionsDrawer'
 import SequenceCollectionViewer, {
   type SequenceCollectionViewerProps,
 } from '../../src/components/SequenceCollectionViewer'
@@ -25,30 +25,6 @@ vi.mock('../../src/components/ImageViewer', () => ({
     return <div data-testid="image-viewer" data-image-id={String(props.imageId)} />
   },
 }))
-
-// ── DragDropProvider wrapper — captures onDragEnd for direct invocation ──
-type SortableMeta = { index?: number; initialIndex?: number; group?: string }
-type DragEndHandler = (event: {
-  operation: {
-    source: ({ id: string | number } & SortableMeta) | null
-    target: ({ id: string | number } & SortableMeta) | null
-    canceled: boolean
-  }
-}) => void | Promise<void>
-
-let capturedOnDragEnd: DragEndHandler | undefined
-
-vi.mock('@dnd-kit/react', async () => {
-  const actual = await vi.importActual<typeof import('@dnd-kit/react')>('@dnd-kit/react')
-  return {
-    ...actual,
-    DragDropProvider: (props: Record<string, unknown>) => {
-      capturedOnDragEnd = props.onDragEnd as DragEndHandler | undefined
-      const ActualProvider = actual.DragDropProvider as React.ComponentType<Record<string, unknown>>
-      return <ActualProvider {...props} />
-    },
-  }
-})
 
 function images(count: number): ImageItem[] {
   return Array.from({ length: count }, (_, i) =>
@@ -70,11 +46,8 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
     itemId: null,
     onSelectItem: vi.fn(),
     onOpenImage: vi.fn(),
-    onReorder: vi.fn().mockResolvedValue(undefined),
     onImageRenewed: vi.fn(),
     onError: vi.fn(),
-    reordering: false,
-    onReorderingChange: vi.fn(),
     ...overrides,
   }
   return { ...render(<SequenceCollectionViewer {...props} />), props }
@@ -82,7 +55,6 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
 
 beforeEach(() => {
   lastViewerProps = null
-  capturedOnDragEnd = undefined
 })
 
 describe('SequenceCollectionViewer', () => {
@@ -119,6 +91,93 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByRole('button', { name: 'Previous image' })).toBeEnabled()
   })
 
+  it('keeps the edge nav hidden until pointer activity, then fades it out (#1561)', () => {
+    vi.useFakeTimers()
+    try {
+      renderViewer()
+      const frame = screen.getByTestId('sequence-viewer-frame')
+      const overlay = screen.getByTestId('sequence-nav-overlay')
+      const next = screen.getByRole('button', { name: 'Next image' })
+      // Autofocus reveals the nav on mount (#1564) — the cue fades on the
+      // same idle clock.
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+      expect(next).toHaveStyle({ pointerEvents: 'none' })
+
+      fireEvent.pointerEnter(frame)
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      expect(next).toHaveStyle({ pointerEvents: 'auto' })
+
+      // Pointer activity keeps the nav alive…
+      act(() => vi.advanceTimersByTime(1500))
+      fireEvent.pointerMove(frame)
+      act(() => vi.advanceTimersByTime(1500))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      // …then it fades back out once the pointer has been idle.
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+      expect(next).toHaveStyle({ pointerEvents: 'none' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hides the edge nav immediately when the pointer leaves the frame', () => {
+    renderViewer()
+    const frame = screen.getByTestId('sequence-viewer-frame')
+    const overlay = screen.getByTestId('sequence-nav-overlay')
+    fireEvent.pointerEnter(frame)
+    expect(overlay).toHaveStyle({ opacity: '1' })
+    fireEvent.pointerLeave(frame)
+    expect(overlay).toHaveStyle({ opacity: '0' })
+  })
+
+  it('reveals the edge nav when a button receives keyboard focus', () => {
+    renderViewer()
+    const overlay = screen.getByTestId('sequence-nav-overlay')
+    const next = screen.getByRole('button', { name: 'Next image' })
+    fireEvent.focus(next)
+    expect(overlay).toHaveStyle({ opacity: '1' })
+    expect(next).toHaveStyle({ pointerEvents: 'auto' })
+  })
+
+  it('keeps the edge nav visible while a button holds focus, fading only after blur (#1561)', () => {
+    vi.useFakeTimers()
+    try {
+      renderViewer()
+      const overlay = screen.getByTestId('sequence-nav-overlay')
+      const next = screen.getByRole('button', { name: 'Next image' })
+      const prev = screen.getByRole('button', { name: 'Previous image' })
+
+      fireEvent.focus(next)
+      // Well past the idle delay — the focused button must stay visible and
+      // interactive for keyboard users.
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+      expect(next).toHaveStyle({ pointerEvents: 'auto' })
+
+      // Focus moving to the other edge button keeps the nav open…
+      fireEvent.blur(next, { relatedTarget: prev })
+      fireEvent.focus(prev)
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+
+      // Pointer activity or leaving the frame can't hide nav while focused…
+      fireEvent.pointerMove(screen.getByTestId('sequence-viewer-frame'))
+      fireEvent.pointerLeave(screen.getByTestId('sequence-viewer-frame'))
+      act(() => vi.advanceTimersByTime(5000))
+      expect(overlay).toHaveStyle({ opacity: '1' })
+
+      // …and only after focus leaves the overlay does the idle fade begin.
+      fireEvent.blur(prev, { relatedTarget: null })
+      act(() => vi.advanceTimersByTime(2000))
+      expect(overlay).toHaveStyle({ opacity: '0' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('navigates with ArrowLeft/ArrowRight from inside the viewer region', () => {
     const { props } = renderViewer({ itemId: 101 })
     const region = screen.getByTestId('sequence-collection-viewer')
@@ -126,6 +185,161 @@ describe('SequenceCollectionViewer', () => {
     expect(props.onSelectItem).toHaveBeenCalledWith(102)
     fireEvent.keyDown(region, { key: 'ArrowLeft' })
     expect(props.onSelectItem).toHaveBeenCalledWith(100)
+  })
+
+  it('navigates with arrows even when focus sits outside the region (#1567)', () => {
+    // After a dialog closes or a nav control is clicked, focus lands on a
+    // header button — the document-level binding must still step the
+    // sequence without the user clicking back into the viewer.
+    const { props } = renderViewer({ itemId: 101 })
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(100)
+  })
+
+  it('yields arrow keys while a dialog or menu is open (#1567)', () => {
+    const { props } = renderViewer({ itemId: 101 })
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inside = document.createElement('button')
+    dialog.appendChild(inside)
+    document.body.appendChild(dialog)
+    try {
+      // Events inside the dialog…
+      fireEvent.keyDown(inside, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+      // …and even on the page while the dialog is mounted.
+      fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+    } finally {
+      dialog.remove()
+    }
+  })
+
+  it('steps the sequence beside a collapsed My collections drawer, and yields while it is open (#1608)', () => {
+    // The drawer stays mounted while closed — the sequence viewer's
+    // document-level dialog check must not see its hidden sheet.
+    const { props } = renderViewer({ itemId: 101 })
+    const drawer = render(
+      <MyCollectionsDrawer
+        collections={[makeCollectionSummary()]}
+        categories={[]}
+        programs={[]}
+        groups={[]}
+        open={false}
+        pinned={false}
+        onOpenChange={vi.fn()}
+        onPinnedChange={vi.fn()}
+        onOpen={vi.fn()}
+        onNewCollection={vi.fn()}
+      />,
+    )
+
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).toHaveBeenCalledWith(102)
+
+    // Open the temporary sheet — a live dialog owns the page's arrow keys.
+    props.onSelectItem.mockClear()
+    drawer.rerender(
+      <MyCollectionsDrawer
+        collections={[makeCollectionSummary()]}
+        categories={[]}
+        programs={[]}
+        groups={[]}
+        open
+        pinned={false}
+        onOpenChange={vi.fn()}
+        onPinnedChange={vi.fn()}
+        onOpen={vi.fn()}
+        onNewCollection={vi.fn()}
+      />,
+    )
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(props.onSelectItem).not.toHaveBeenCalled()
+  })
+
+  it('yields arrow keys to a focused tab strip (#1567)', () => {
+    // MUI Tabs (the AppShell nav) move between tabs on ←/→ — the
+    // document-level binding must not eat a roving-focus widget's keys.
+    const { props } = renderViewer({ itemId: 101 })
+    const tablist = document.createElement('div')
+    tablist.setAttribute('role', 'tablist')
+    const tab = document.createElement('button')
+    tab.setAttribute('role', 'tab')
+    tablist.appendChild(tab)
+    document.body.appendChild(tablist)
+    try {
+      fireEvent.keyDown(tab, { key: 'ArrowRight' })
+      expect(props.onSelectItem).not.toHaveBeenCalled()
+    } finally {
+      tablist.remove()
+    }
+  })
+
+  it('autofocuses the region so arrows step the sequence immediately (#1564)', () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      const { props } = renderViewer({ itemId: 101 })
+      const region = screen.getByTestId('sequence-collection-viewer')
+      // Focus lands on the region on mount — pressing → advances without the
+      // user clicking into the viewer first.
+      expect(region).toHaveFocus()
+      // preventScroll keeps the collection header in view; the focus reveal
+      // of the edge nav is the cue that ←/→ control the viewer.
+      expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
+      expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '1' })
+      fireEvent.keyDown(document.activeElement ?? region, { key: 'ArrowRight' })
+      expect(props.onSelectItem).toHaveBeenCalledWith(102)
+    } finally {
+      focusSpy.mockRestore()
+    }
+  })
+
+  it('does not steal focus when switching images, but refocuses per collection', () => {
+    const first = seqCollection()
+    const second = seqCollection({ id: first.id + 1 })
+    const { rerender, props } = renderViewer()
+    const region = screen.getByTestId('sequence-collection-viewer')
+    expect(region).toHaveFocus()
+    // An item change (same collection) must not re-steal focus…
+    ;(document.activeElement as HTMLElement).blur()
+    rerender(
+      <SequenceCollectionViewer
+        {...{
+          collection: first,
+          itemId: 101,
+          onSelectItem: props.onSelectItem,
+          onOpenImage: props.onOpenImage,
+          onImageRenewed: props.onImageRenewed,
+          onError: props.onError,
+        }}
+      />,
+    )
+    expect(region).not.toHaveFocus()
+    // …but opening a different collection focuses the region again.
+    rerender(
+      <SequenceCollectionViewer
+        {...{
+          collection: second,
+          itemId: null,
+          onSelectItem: props.onSelectItem,
+          onOpenImage: props.onOpenImage,
+          onImageRenewed: props.onImageRenewed,
+          onError: props.onError,
+        }}
+      />,
+    )
+    expect(region).toHaveFocus()
+  })
+
+  it('renders the filmstrip above the viewer (#1564)', () => {
+    renderViewer()
+    const strip = screen.getByTestId('sequence-thumbnail-strip')
+    const frame = screen.getByTestId('sequence-viewer-frame')
+    // compareDocumentPosition: FOLLOWING means the frame comes after the
+    // strip in DOM order — i.e. the strip sits above the image.
+    expect(strip.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('does not treat arrow keys inside editable fields as navigation', () => {
@@ -140,7 +354,14 @@ describe('SequenceCollectionViewer', () => {
   it('opens the current image in the regular ?image= view', () => {
     const collection = seqCollection()
     const { props } = renderViewer({ collection, itemId: 101 })
-    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    const openButton = screen.getByRole('button', { name: 'Open image' })
+    // Same-tab, in-app navigation (#1624): the image icon, not the "open in new"
+    // icon, and no href/target that would open a new tab.
+    expect(openButton.querySelector('[data-testid="ImageIcon"]')).not.toBeNull()
+    expect(openButton.querySelector('[data-testid="OpenInNewIcon"]')).toBeNull()
+    expect(openButton).not.toHaveAttribute('href')
+    expect(openButton).not.toHaveAttribute('target')
+    fireEvent.click(openButton)
     expect(props.onOpenImage).toHaveBeenCalledWith(collection.images[1])
   })
 
@@ -164,6 +385,7 @@ describe('SequenceCollectionViewer', () => {
     const collection = seqCollection({ images: [makeImage({ id: 1, metadataExtra: meta })] })
     renderViewer({ collection })
     expect(lastViewerProps).not.toBeNull()
+    expect(lastViewerProps!.height).toEqual({ xs: '60vh', md: '100%' })
     expect(lastViewerProps!.canEditContent).toBe(false)
     expect(lastViewerProps!.canvasAnnotations).toEqual(meta.canvas_annotations)
     expect(lastViewerProps!.initialOverlays).toEqual(meta.locked_overlays)
@@ -195,8 +417,22 @@ describe('SequenceCollectionViewer', () => {
 
   it('shows the empty state when the collection has no visible images', () => {
     renderViewer({ collection: seqCollection({ images: [] }) })
-    expect(screen.getByTestId('sequence-viewer-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('sequence-viewer-empty')).toHaveTextContent(
+      'This collection has no images. Use "Manage Images" to add some.',
+    )
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
+  })
+
+  it('uses simple empty copy for non-editors', () => {
+    renderViewer({
+      collection: seqCollection({
+        images: [],
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+      }),
+    })
+    expect(screen.getByTestId('sequence-viewer-empty')).toHaveTextContent(
+      'This collection has no images.',
+    )
   })
 
   it('says all images are restricted when members exist but none are visible (#1529)', () => {
@@ -228,69 +464,21 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeDisabled()
   })
 
-  it('resets failures and reorder mode when a different collection opens', () => {
-    const { props, rerender } = renderViewer({ reordering: true })
+  it('resets failures when a different collection opens', () => {
+    const { props, rerender } = renderViewer()
     act(() => {
       ;(lastViewerProps!.onError as (m: string) => void)('gone')
     })
     const next = seqCollection({ id: 77, images: [makeImage({ id: 100, name: 'Slice 1' })] })
-    rerender(
-      <SequenceCollectionViewer {...props} collection={next} itemId={100} reordering={false} />,
-    )
-    // The controlled reorder mode is exited by the collection-change effect
-    // and the shared image id is no longer failed.
-    expect(props.onReorderingChange).toHaveBeenCalledWith(false)
+    rerender(<SequenceCollectionViewer {...props} collection={next} itemId={100} />)
+    // The shared image id is no longer failed under the new collection.
     expect(screen.getByRole('button', { name: 'Go to Slice 1' })).toBeEnabled()
   })
 
-  it('offers reorder mode via the controlled prop and persists a drag reorder', async () => {
-    const collection = seqCollection()
-    const { props } = renderViewer({ collection, reordering: true })
-    expect(capturedOnDragEnd).toBeDefined()
-    // Drag the first item onto the third: move() commits source.index.
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 2, initialIndex: 0, group: 'strip' },
-        target: { id: 'seq-102', index: 2, initialIndex: 2, group: 'strip' },
-        canceled: false,
-      },
+  it('desaturates the filmstrip for a hidden collection (#1566)', () => {
+    renderViewer({ hidden: true })
+    expect(screen.getByTestId('sequence-thumbnail-strip')).toHaveStyle({
+      filter: 'grayscale(100%)',
     })
-    expect(props.onReorder).toHaveBeenCalledWith([101, 102, 100])
-  })
-
-  it('reports a reorder failure through onError', async () => {
-    const err = new Error('stale version')
-    const onReorder = vi.fn().mockRejectedValue(err)
-    const { props } = renderViewer({ onReorder, reordering: true })
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 2, initialIndex: 0, group: 'strip' },
-        target: { id: 'seq-102', index: 2, initialIndex: 2, group: 'strip' },
-        canceled: false,
-      },
-    })
-    await vi.waitFor(() =>
-      expect(props.onError).toHaveBeenCalledWith('Failed to reorder collection images.'),
-    )
-  })
-
-  it('ignores a canceled drag and a drop that changes nothing', () => {
-    const { props } = renderViewer({ reordering: true })
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },
-        target: null,
-        canceled: true,
-      },
-    })
-    // Dropping the item back onto itself leaves the order unchanged.
-    capturedOnDragEnd!({
-      operation: {
-        source: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },
-        target: { id: 'seq-100', index: 0, initialIndex: 0, group: 'strip' },
-        canceled: false,
-      },
-    })
-    expect(props.onReorder).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
-import type { Collection, Group, Program, Role, User } from '../types'
+import type { Category, Collection, CollectionType, Group, Program, Role, User } from '../types'
 import CollectionEditDialog from './CollectionEditDialog'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
@@ -76,6 +76,8 @@ const existing: Collection = {
   owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
   imageCount: 2,
   coverThumb: null,
+  coverImageId: null,
+  coverBlank: false,
   categoryId: null,
   sortOrder: 0,
   version: 3,
@@ -95,14 +97,44 @@ const existing: Collection = {
   memberCount: 0,
 }
 
+const categories: Category[] = [
+  {
+    id: 1,
+    label: 'Histology',
+    parentId: null,
+    children: [],
+    images: [],
+    collections: [],
+    programIds: [],
+    groupIds: [],
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+  },
+]
+
 interface StoryArgs {
   role: Role
   collection: Collection | null
+  defaultType?: CollectionType
+  typesAtLimit?: CollectionType[]
+  categories?: Category[]
   onSave: (...args: unknown[]) => Promise<void>
   onClose: () => void
+  onViewCollection?: () => void
 }
 
-function CollectionEditDialogExample({ role, collection, onSave, onClose }: StoryArgs) {
+function CollectionEditDialogExample({
+  role,
+  collection,
+  defaultType,
+  typesAtLimit,
+  categories: categoryList = [],
+  onSave,
+  onClose,
+  onViewCollection,
+}: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(role)}>
       <CollectionEditDialog
@@ -110,8 +142,12 @@ function CollectionEditDialogExample({ role, collection, onSave, onClose }: Stor
         onClose={onClose}
         onSave={onSave}
         collection={collection}
+        defaultType={defaultType}
+        typesAtLimit={new Set(typesAtLimit)}
+        categories={categoryList}
         programs={programs}
         groups={groups}
+        onViewCollection={onViewCollection}
       />
     </AuthContext.Provider>
   )
@@ -168,6 +204,53 @@ export const Editing: Story = {
     const body = within(canvasElement.ownerDocument.body)
     await expect(body.getByText('Edit Collection')).toBeInTheDocument()
     await expect(body.getByTestId('collection-type-chip')).toHaveTextContent('Synchronized')
+  },
+}
+
+export const InstructorCreateWithCategory: Story = {
+  name: 'Instructor Create With Category',
+  args: { role: 'instructor', categories },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(body.getByRole('combobox', { name: 'Category' })).toBeInTheDocument()
+    await expect(body.getByRole('button', { name: 'Create' })).toBeDisabled()
+  },
+}
+
+export const EditingWithViewCollection: Story = {
+  name: 'Editing With View Collection',
+  args: { collection: existing, onViewCollection: fn() },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement.ownerDocument.body).getByRole('button', { name: 'View Collection' }),
+    ).toBeInTheDocument()
+  },
+}
+
+export const PrivateFilingWarning: Story = {
+  args: {
+    collection: { ...existing, categoryId: 1, visibility: 'private' },
+    categories,
+  },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(
+      await body.findByText(
+        'This collection is private. Students will not be able to see the images in this collection.',
+      ),
+    ).toBeInTheDocument()
+  },
+}
+
+export const TypeAtLimit: Story = {
+  args: { role: 'student', defaultType: 'sequence', typesAtLimit: ['sequence'] },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(body.getByRole('radio', { name: /Synchronized/ })).toBeChecked()
+    await expect(body.getByRole('radio', { name: /Sequence/ })).toBeDisabled()
+    await expect(
+      body.getByText("You've reached the limit of 10 sequence collections."),
+    ).toBeInTheDocument()
   },
 }
 

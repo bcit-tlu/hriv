@@ -69,6 +69,8 @@ function makeCollection(
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: images.length,
     coverThumb: '/hriv-splash2.jpg',
+    coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
     version: 1,
@@ -170,7 +172,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Two read-only OpenSeadragon panes with linked pan/zoom/rotation. A persisted per-image viewport restores the pair around different highlights; editors can save the current alignment, anyone can reset or unlink the views, and a portrait overlay asks users to rotate instead of unmounting the viewers.',
+          'Two to four read-only OpenSeadragon panes with linked pan/zoom/rotation (side-by-side for a pair, 2×2 grid for three or four). A persisted per-image viewport restores the layout around different highlights; editors can save the current alignment, anyone can reset the views or unpin a pane to navigate it independently, and a portrait overlay asks users to rotate instead of unmounting the viewers.',
       },
     },
   },
@@ -190,7 +192,14 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByLabelText('Link views')).toBeChecked()
+    // Panes start linked (#1564; renamed pin→link in #1567): both show
+    // "Unlink …" affordances.
+    await expect(canvas.getAllByRole('button', { name: /^Unlink / })).toHaveLength(2)
+    // Unlinking one swaps its affordance to "Link …" without touching the
+    // other pane.
+    await userEvent.click(canvas.getByRole('button', { name: 'Unlink Skull — frontal' }))
+    await expect(canvas.getByRole('button', { name: 'Link Skull — frontal' })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Unlink Skull — lateral' })).toBeInTheDocument()
     await expect(canvas.getByTestId('synchronized-save')).toBeEnabled()
     await userEvent.click(canvas.getAllByRole('button', { name: /^Open / })[0])
     await expect(args.onOpenImage).toHaveBeenCalledWith(PAIR.images[0])
@@ -202,7 +211,9 @@ export const LargerSet: Story = {
   args: { collection: FOUR },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByText('Showing 2 of 4')).toBeInTheDocument()
+    // All four members render in the 2×2 grid (#1561) — one caption each.
+    await expect(canvas.getAllByRole('button', { name: /^Open / })).toHaveLength(4)
+    await expect(canvas.queryByText(/^Showing \d+ of \d+$/)).not.toBeInTheDocument()
   },
 }
 
