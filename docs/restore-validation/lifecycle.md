@@ -298,8 +298,11 @@ The Flux-owned, versioned `source-state-policy` ConfigMap is digest-only. It has
 `policy_version=1`, `source_state_sha256` (64 lowercase hex), `missing_count` (0..256), and
 `orphan_count` (0..256); chart values expose only `sha256`, `missingCount`, and `orphanCount`.
 The safe chart default is the empty-state digest with zero counts. The currently reviewed
-deployment evidence is digest `958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`
-with counts 39/3. Full path lists MUST NOT be copied into chart or Flux policy values.
+deployment evidence (both environments, reviewed 2026-10-12) is the empty-state digest
+`fa74bc4476a39c432aabe1de9d3be773d898bd5d85ffd816a7ca6a54a39aa891` with counts 0/0. The prior
+acceptance evidence (`958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083`, counts
+39/3, Sep 2026) was superseded after production source-state cleanup. Full path lists MUST NOT
+be copied into chart or Flux policy values.
 
 Selection still applies all bounds, key/type/path validation, sorting, serialization, and hashing
 to the complete backup-emitted state. It persists that canonical state as immutable run evidence,

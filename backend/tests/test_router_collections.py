@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.sql.dml import Update
 
@@ -16,6 +17,10 @@ from app.routers import collections as collections_router
 from app.routers.collections import (
     _unseen_links,
     _ViewerContext,
+    bulk_delete_collections,
+    bulk_update_collections,
+    collection_graph,
+    collections_graph,
     create_collection,
     delete_collection,
     get_collection,
@@ -29,6 +34,8 @@ from app.routers.collections import (
     update_collection,
 )
 from app.schemas import (
+    CollectionBulkDelete,
+    CollectionBulkUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
@@ -92,6 +99,9 @@ def _collection(
     type: str = "sequence",
     category_id: int | None = None,
     sort_order: int = 0,
+    hidden: bool = False,
+    cover_image_id: int | None = None,
+    cover_blank: bool = False,
 ) -> SimpleNamespace:
     # ``user_id`` is the creator audit column; ownership is the ``owners``
     # list (``collection_owners`` rows), defaulting to the creator like the
@@ -118,6 +128,9 @@ def _collection(
         owner_program=owner_program,
         category_id=category_id,
         sort_order=sort_order,
+        hidden=hidden,
+        cover_image_id=cover_image_id,
+        cover_blank=cover_blank,
         viewport_state={"1": {"zoom": 1.0}},
         version=3,
         created_at=NOW,
@@ -163,6 +176,8 @@ def _write_db(
     programs: list | None = None,
     groups: list | None = None,
     users: list | None = None,
+    collection_count: int = 0,
+    categories: list | None = None,
     cas_rowcount: int = 1,
 ) -> AsyncMock:
     """Mock session for the write API.
@@ -174,7 +189,14 @@ def _write_db(
     """
     db = AsyncMock()
     db.add = MagicMock()
-    db.get = AsyncMock(return_value=get)
+    category_by_id = {category.id: category for category in categories or []}
+
+    async def _get(entity, entity_id):
+        if entity is Category:
+            return category_by_id.get(entity_id)
+        return get
+
+    db.get = AsyncMock(side_effect=_get)
     rows_by_entity = {
         Image: images or [],
         Program: programs or [],
@@ -187,6 +209,9 @@ def _write_db(
         if isinstance(stmt, Update):
             result.rowcount = cas_rowcount
             return result
+        if stmt.column_descriptions[0]["name"] == "count":
+            result.scalar_one.return_value = collection_count
+            return result
         entity = stmt.column_descriptions[0]["entity"]
         result.scalars.return_value.all.return_value = rows_by_entity[entity]
         return result
@@ -195,6 +220,8 @@ def _write_db(
         if isinstance(obj, Collection):
             if obj.id is None:
                 obj.id = 1
+            if obj.hidden is None:
+                obj.hidden = False
             if obj.created_at is None:
                 obj.created_at = NOW
             if obj.updated_at is None:
@@ -296,6 +323,19 @@ async def test_list_summary_fields_and_permissions_for_owner() -> None:
     assert summary.permissions.can_delete is True
     assert summary.permissions.can_transfer is False
     assert summary.version == 3
+    # Non-restricted collections carry an empty scope on summaries (#1567).
+    assert summary.program_ids == []
+    assert summary.group_ids == []
+
+
+async def test_list_summary_carries_restriction_scope() -> None:
+    """Summaries expose program/group ids so Browse tiles can render the
+    collection's own restriction chips like category tiles do (#1567)."""
+    col = _collection(1, "restricted", user_id=10, programs=[1, 2], groups=[5])
+    out = await list_collections(_user("admin", id=1), db=_mock_db([col]))
+    summary = out[0]
+    assert summary.program_ids == [1, 2]
+    assert summary.group_ids == [5]
 
 
 async def test_list_co_owned_permissions_for_student_co_owner() -> None:
@@ -398,6 +438,7 @@ async def test_list_applies_query_filters_to_statement() -> None:
         owner_user_id=4,
         owner_program_id=5,
         orphaned=True,
+        limit=2,
     )
     sql = str(db.execute.call_args.args[0])
     assert "collections.type =" in sql
@@ -408,6 +449,51 @@ async def test_list_applies_query_filters_to_statement() -> None:
     assert "NOT" in sql and "EXISTS" in sql
     assert "collections.owner_program_id IS NULL" in sql
     assert "ORDER BY collections.updated_at DESC" in sql
+    assert "LIMIT" not in sql
+
+
+async def test_list_limits_summaries_after_visibility_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collections = [_collection(id=i, visibility="public") for i in range(1, 6)]
+    can_view = MagicMock(side_effect=lambda collection: collection.id != 2)
+    ctx = SimpleNamespace(can_view=can_view)
+    summary_out = MagicMock(side_effect=lambda _ctx, collection: collection.id)
+    monkeypatch.setattr(
+        collections_router._ViewerContext, "build", AsyncMock(return_value=ctx)
+    )
+    monkeypatch.setattr(collections_router, "collection_summary_out", summary_out)
+
+    rows = await list_collections(
+        _user("admin"), db=_mock_db(collections), limit=2
+    )
+
+    assert rows == [1, 3]
+    assert can_view.call_count == len(collections)
+    assert [call.args[1].id for call in summary_out.call_args_list] == [1, 3]
+
+
+def test_list_rejects_out_of_range_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.auth import get_current_user
+    from app.database import get_db, settings
+
+    test_app = FastAPI()
+    test_app.include_router(collections_router.router)
+
+    async def current_user():
+        return _user("admin")
+
+    async def unused_db():
+        yield AsyncMock()
+
+    test_app.dependency_overrides[get_current_user] = current_user
+    test_app.dependency_overrides[get_db] = unused_db
+    monkeypatch.setattr(settings, "collections_enabled", True)
+
+    with TestClient(test_app) as client:
+        for limit in (0, 101):
+            response = client.get(f"/collections?limit={limit}")
+            assert response.status_code == 422
 
 
 async def test_list_student_image_count_omits_hidden_images(
@@ -568,27 +654,125 @@ async def test_get_collection_skips_dangling_links() -> None:
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
 async def test_create_private_collection_any_role_owner_is_caller(role: str) -> None:
-    db = _write_db(images=[_image(1), _image(2)])
-    body = CollectionCreate(name="  Mine ", type="sequence", image_ids=[2, 1])
+    curator = role in {"admin", "instructor"}
+    db = _write_db(
+        images=[_image(1), _image(2)],
+        categories=[Category(id=1, label="C1")] if curator else [],
+    )
+    body = CollectionCreate(
+        name="  Mine ",
+        type="sequence",
+        image_ids=[2, 1],
+        category_id=1 if curator else None,
+    )
     out = await create_collection(body, _user(role, id=42), db=db)
     created = db.add.call_args.args[0]
     assert isinstance(created, Collection)
     assert created.user_id == 42 and created.owner_program_id is None
     assert [o.id for o in created.owners] == [42]
     assert created.name == "Mine"
+    assert created.category_id == body.category_id
     assert created.visibility == "private"
     assert created.version == 1
     assert created.viewport_state == {}
     assert _links(created) == [(2, 0), (1, 1)]
     assert out.version == 1 and out.type == "sequence"
     db.commit.assert_awaited_once()
+    if curator:
+        collections_router.bump_scopes.assert_awaited_once()
+        collections_router.bump_browse_revision.assert_awaited_once()
+    else:
+        collections_router.bump_scopes.assert_not_awaited()
+        collections_router.bump_browse_revision.assert_not_awaited()
+
+
+@pytest.mark.parametrize("role", ["admin", "instructor"])
+async def test_create_curator_requires_category(role: str) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(
+            CollectionCreate(name="C", type="sequence"),
+            _user(role),
+            db=_write_db(),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "A category is required when creating a collection"
+
+
+async def test_create_curator_rejects_unknown_category() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(
+            CollectionCreate(name="C", type="sequence", category_id=9),
+            _user("admin"),
+            db=_write_db(),
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Invalid category ID: 9"
+
+
+@pytest.mark.parametrize("role", ["staff", "student"])
+async def test_create_non_curator_cannot_file_collection(role: str) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(
+            CollectionCreate(name="C", type="sequence", category_id=1),
+            _user(role),
+            db=_write_db(),
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Only admins and instructors may file collections"
+
+
+@pytest.mark.parametrize("role", ["staff", "student"])
+async def test_create_non_curator_collection_is_unfiled(role: str) -> None:
+    db = _write_db()
+    out = await create_collection(
+        CollectionCreate(name="C", type="sequence"),
+        _user(role),
+        db=db,
+    )
+    assert out.category_id is None
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_not_awaited()
+
+
+@pytest.mark.parametrize("collection_type", ("sequence", "synchronized"))
+async def test_create_student_collection_count_cap_per_type(collection_type: str) -> None:
+    body = CollectionCreate(name="Tenth", type=collection_type)
+    db = _write_db(collection_count=9)
+    await create_collection(body, _user("student", id=42), db=db)
+    assert isinstance(db.add.call_args.args[0], Collection)
+    statements = [call.args[0] for call in db.execute.await_args_list]
+    assert statements[0]._for_update_arg is not None
+    assert statements[1].column_descriptions[0]["name"] == "count"
+
+    db = _write_db(collection_count=10)
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(body, _user("student", id=42), db=db)
+    assert exc.value.status_code == 422
+    assert exc.value.detail == f"Students may own at most 10 {collection_type} collections"
+    assert db.add.call_count == 0
+
+
+async def test_create_student_sequence_cap_is_422() -> None:
+    body = CollectionCreate(
+        name="Long sequence", type="sequence", image_ids=list(range(1, 22))
+    )
+    db = _write_db(collection_count=0)
+    with pytest.raises(HTTPException) as exc:
+        await create_collection(body, _user("student", id=42), db=db)
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
+    assert db.add.call_count == 0
 
 
 async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
-    db = _write_db(programs=[_program(1), _program(2)], groups=[_group(5, [99])])
+    db = _write_db(
+        programs=[_program(1), _program(2)],
+        groups=[_group(5, [99])],
+        categories=[Category(id=1, label="C1")],
+    )
     body = CollectionCreate(
         name="R", type="synchronized", visibility="restricted",
-        program_ids=[1, 2], group_ids=[5],
+        program_ids=[1, 2], group_ids=[5], category_id=1,
     )
     out = await create_collection(body, _user("admin"), db=db)
     created = db.add.call_args.args[0]
@@ -598,19 +782,23 @@ async def test_create_restricted_admin_attaches_any_program_and_group() -> None:
 
 
 async def test_create_restricted_instructor_own_program_and_managed_group() -> None:
-    db = _write_db(programs=[_program(1)], groups=[_group(5, [7])])
+    db = _write_db(
+        programs=[_program(1)],
+        groups=[_group(5, [7])],
+        categories=[Category(id=1, label="C1")],
+    )
     body = CollectionCreate(
         name="R", type="sequence", visibility="restricted",
-        program_ids=[1], group_ids=[5],
+        program_ids=[1], group_ids=[5], category_id=1,
     )
     out = await create_collection(body, _user("instructor", id=7, programs=[1]), db=db)
     assert out.program_ids == [1] and out.group_ids == [5]
 
 
 async def test_create_restricted_instructor_foreign_program_is_403() -> None:
-    db = _write_db(programs=[_program(2)])
+    db = _write_db(programs=[_program(2)], categories=[Category(id=1, label="C1")])
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", program_ids=[2],
+        name="R", type="sequence", visibility="restricted", program_ids=[2], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
         await create_collection(body, _user("instructor", id=7, programs=[1]), db=db)
@@ -619,9 +807,9 @@ async def test_create_restricted_instructor_foreign_program_is_403() -> None:
 
 
 async def test_create_restricted_instructor_unmanaged_group_is_403() -> None:
-    db = _write_db(groups=[_group(5, [8])])
+    db = _write_db(groups=[_group(5, [8])], categories=[Category(id=1, label="C1")])
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", group_ids=[5],
+        name="R", type="sequence", visibility="restricted", group_ids=[5], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
         await create_collection(body, _user("instructor", id=7), db=db)
@@ -638,24 +826,42 @@ async def test_create_restricted_staff_and_student_are_403(role: str) -> None:
 
 async def test_create_restricted_unknown_program_or_group_is_422() -> None:
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", program_ids=[1, 9],
+        name="R", type="sequence", visibility="restricted", program_ids=[1, 9], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("admin"), db=_write_db(programs=[_program(1)]))
+        await create_collection(
+            body,
+            _user("admin"),
+            db=_write_db(
+                programs=[_program(1)],
+                categories=[Category(id=1, label="C1")],
+            ),
+        )
     assert exc.value.status_code == 422 and "[9]" in exc.value.detail
 
     body = CollectionCreate(
-        name="R", type="sequence", visibility="restricted", group_ids=[5],
+        name="R", type="sequence", visibility="restricted", group_ids=[5], category_id=1,
     )
     with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("admin"), db=_write_db())
+        await create_collection(
+            body,
+            _user("admin"),
+            db=_write_db(categories=[Category(id=1, label="C1")]),
+        )
     assert exc.value.status_code == 422 and "[5]" in exc.value.detail
 
 
 async def test_create_with_missing_image_id_is_422() -> None:
-    body = CollectionCreate(name="C", type="sequence", image_ids=[1, 7])
+    body = CollectionCreate(name="C", type="sequence", image_ids=[1, 7], category_id=1)
     with pytest.raises(HTTPException) as exc:
-        await create_collection(body, _user("admin"), db=_write_db(images=[_image(1)]))
+        await create_collection(
+            body,
+            _user("admin"),
+            db=_write_db(
+                images=[_image(1)],
+                categories=[Category(id=1, label="C1")],
+            ),
+        )
     assert exc.value.status_code == 422 and "[7]" in exc.value.detail
 
 
@@ -675,8 +881,14 @@ async def test_create_student_invisible_image_is_422(
 
 @pytest.mark.parametrize("role", ["instructor", "staff"])
 async def test_create_non_student_may_add_inactive_image(role: str) -> None:
-    db = _write_db(images=[_image(3, active=False)])
-    body = CollectionCreate(name="C", type="sequence", image_ids=[3])
+    curator = role == "instructor"
+    db = _write_db(
+        images=[_image(3, active=False)],
+        categories=[Category(id=1, label="C1")] if curator else [],
+    )
+    body = CollectionCreate(
+        name="C", type="sequence", image_ids=[3], category_id=1 if curator else None
+    )
     await create_collection(body, _user(role, id=3), db=db)
     assert _links(db.add.call_args.args[0]) == [(3, 0)]
 
@@ -943,6 +1155,288 @@ async def test_update_scope_on_non_restricted_is_422() -> None:
     assert col.version == 3
 
 
+# ── curatorial hide (#1559) ────────────────────────────────
+
+
+async def test_list_hidden_collection_visible_to_owning_student_only() -> None:
+    """A hidden collection drops out of every student's list unless the
+    student is a user-owner — owners keep access."""
+    cols = [
+        _collection(1, "public", user_id=10, hidden=True),
+        _collection(2, "public", user_id=2, hidden=True),
+        _collection(3, "public", user_id=10),
+    ]
+    out = await list_collections(_user("student", id=2), db=_mock_db(cols))
+    assert [c.id for c in out] == [2, 3]
+
+
+async def test_list_non_students_see_hidden_collections() -> None:
+    col = _collection(1, "public", user_id=10, hidden=True)
+    for role in ("admin", "instructor", "staff"):
+        out = await list_collections(_user(role, id=99), db=_mock_db([col]))
+        assert [c.id for c in out] == [1]
+
+
+async def test_get_hidden_collection_is_404_for_nonowner_student() -> None:
+    col = _collection(1, "public", user_id=10, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await get_collection(1, _user("student", id=2), db=_mock_db(get=col))
+    assert exc.value.status_code == 404
+
+
+async def test_get_hidden_collection_visible_to_owning_student() -> None:
+    col = _collection(1, "private", user_id=2, hidden=True)
+    out = await get_collection(1, _user("student", id=2), db=_mock_db(get=col))
+    assert out.hidden is True
+
+
+@pytest.mark.parametrize("role", ["admin", "instructor"])
+async def test_update_hidden_curators_may_hide_any_collection(role: str) -> None:
+    """Hide is curatorial and global — a non-owning instructor may hide a
+    collection via a hidden-only PATCH; the owner-edit gate does not apply."""
+    col = _collection(1, "private", user_id=10)
+    out = await update_collection(
+        1, _patch(hidden=True), _user(role, id=7), db=_write_db(get=col)
+    )
+    assert col.hidden is True
+    assert out.hidden is True
+
+
+async def test_update_hidden_noop_repeat_still_allowed_for_curator() -> None:
+    """A hidden-only PATCH whose value matches the current flag is still a
+    curator action — the gate keys on the field being supplied, not on the
+    value changing (Devin Review on #1560)."""
+    col = _collection(1, "private", user_id=10, hidden=True)
+    out = await update_collection(
+        1, _patch(hidden=True), _user("instructor", id=7), db=_write_db(get=col)
+    )
+    assert out.hidden is True
+
+
+@pytest.mark.parametrize("role", ["student", "staff"])
+async def test_update_hidden_noncurator_owner_is_403(role: str) -> None:
+    """Owners may not hide — the toggle belongs to admins and instructors.
+    Supplying `hidden` at all requires curatorial rights, even a no-op."""
+    col = _collection(1, "private", user_id=2)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True), _user(role, id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_noop_value_from_owner_is_403() -> None:
+    """An owner supplying `hidden` — even the current value — is still a
+    hide/show request and requires curatorial rights."""
+    col = _collection(1, "private", user_id=2, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_owner_cannot_unhide() -> None:
+    col = _collection(1, "private", user_id=2, hidden=True)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=False), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+async def test_update_hidden_mixed_body_still_requires_edit_rights() -> None:
+    """Bundling ``hidden`` with content edits still requires can_edit — the
+    hidden-only carve-out for curators is exact."""
+    col = _collection(1, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(hidden=True, name="x"), _user("instructor", id=7), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "role,expected",
+    [("admin", True), ("instructor", True), ("student", False), ("staff", False)],
+)
+async def test_permissions_can_hide_serializes_by_role(
+    role: str, expected: bool
+) -> None:
+    col = _collection(1, "private", user_id=2)
+    out = await update_collection(
+        1, _patch(name="x"), _user(role, id=2 if role != "admin" else 1), db=_write_db(get=col)
+    )
+    assert out.permissions.can_hide is expected
+
+
+# ── pinned cover ──────────────────────────────────────────
+
+
+async def test_update_cover_pins_member_and_serializes() -> None:
+    col = _collection(1, "private", user_id=2, images=[_image(1), _image(2)])
+    out = await update_collection(
+        1, _patch(cover_image_id=2), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_image_id == 2
+    assert out.cover_image_id == 2
+    assert out.cover_thumb.endswith("/thumbs/2.jpg")
+    assert col.version == 4
+
+
+async def test_update_cover_null_restores_first_member_fallback() -> None:
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_image_id=2
+    )
+    out = await update_collection(
+        1, _patch(cover_image_id=None), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_image_id is None
+    assert out.cover_image_id is None
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_update_cover_blank_sets_flag_and_clears_pin() -> None:
+    """The picker's "None" row — an explicit blank wins over any stored
+    pin and reports no thumb even with members present."""
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2)],
+        cover_image_id=2,
+    )
+    out = await update_collection(
+        1, _patch(cover_blank=True), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_blank is True
+    assert col.cover_image_id is None
+    assert out.cover_blank is True
+    assert out.cover_image_id is None
+    assert out.cover_thumb is None
+
+
+async def test_update_cover_blank_false_restores_fallback() -> None:
+    """Un-blanking (the picker's "Automatic" row) returns the tile to the
+    first-member fallback."""
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_blank=True
+    )
+    out = await update_collection(
+        1, _patch(cover_blank=False), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_blank is False
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_update_cover_pin_clears_blank() -> None:
+    """A member pin is mutually exclusive with the blank flag — picking a
+    member from the picker un-blanks the tile."""
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_blank=True
+    )
+    out = await update_collection(
+        1, _patch(cover_image_id=2), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert col.cover_blank is False
+    assert col.cover_image_id == 2
+    assert out.cover_blank is False
+    assert out.cover_thumb.endswith("/thumbs/2.jpg")
+
+
+async def test_update_cover_nonmember_is_422() -> None:
+    col = _collection(1, "private", user_id=2, images=[_image(1)])
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(cover_image_id=9), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 422
+    assert col.cover_image_id is None and col.version == 3
+
+
+async def test_update_cover_invisible_member_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member hidden from the caller cannot be pinned — the picker never
+    offers it and naming one must not leak its membership."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2, category_id=20)],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await update_collection(
+            1, _patch(cover_image_id=2), _user("student", id=2), db=_write_db(get=col)
+        )
+    assert exc.value.status_code == 422
+    assert col.cover_image_id is None and col.version == 3
+
+
+async def test_summary_cover_falls_back_for_unseen_pinned_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pin on a member the viewer cannot see is reported as no pin, and
+    the thumb falls back to the first visible member."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2, category_id=20)],
+        cover_image_id=2,
+    )
+    out = await update_collection(
+        1, _patch(name="x"), _user("student", id=2), db=_write_db(get=col)
+    )
+    assert out.cover_image_id is None
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_replace_images_clears_cover_on_dropped_member() -> None:
+    col = _collection(
+        1, "private", user_id=2, images=[_image(1), _image(2)], cover_image_id=2
+    )
+    db = _write_db(get=col, images=[_image(1)])
+    out = await replace_collection_images(
+        1, _images_body([1]), _user("student", id=2), db=db
+    )
+    assert col.cover_image_id is None
+    assert out.cover_image_id is None
+    assert out.cover_thumb.endswith("/thumbs/1.jpg")
+
+
+async def test_replace_images_keeps_cover_on_retained_unseen_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pin on a member the editor cannot view survives member edits —
+    the retained unseen link still counts as membership."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "private",
+        user_id=2,
+        images=[_image(1), _image(2, category_id=20)],
+        cover_image_id=2,
+    )
+    db = _write_db(get=col, images=[_image(1), _image(3)])
+    await replace_collection_images(
+        1, _images_body([3, 1]), _user("student", id=2), db=db
+    )
+    assert [link.image_id for link in col.image_links] == [3, 1, 2]
+    assert col.cover_image_id == 2
+
+
 # ── images ────────────────────────────────────────────────
 
 
@@ -1008,11 +1502,82 @@ async def test_replace_images_synchronized_cap_is_422() -> None:
 
 async def test_replace_images_sequence_has_no_cap() -> None:
     col = _collection(1, "private", user_id=2, type="sequence")
-    images = [_image(i) for i in range(1, 7)]
+    images = [_image(i) for i in range(1, 22)]
     await replace_collection_images(
-        1, _images_body([1, 2, 3, 4, 5, 6]), _user("student", id=2), db=_write_db(get=col, images=images)
+        1,
+        _images_body(list(range(1, 22))),
+        _user("instructor", id=2),
+        db=_write_db(get=col, images=images),
     )
-    assert [o for _, o in _links(col)] == [0, 1, 2, 3, 4, 5]
+    assert [o for _, o in _links(col)] == list(range(21))
+
+
+async def test_replace_images_student_sequence_cap_rejects_new_images() -> None:
+    member_images = [_image(i) for i in range(1, 22)]
+    col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
+    db = _write_db(get=col, images=[*member_images, _image(22)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1, _images_body([*range(1, 22), 22]), _user("student", id=2), db=db
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
+    assert col.version == 3
+    assert not any(isinstance(call.args[0], Update) for call in db.execute.await_args_list)
+
+
+async def test_replace_images_over_cap_sequence_allows_removal_and_reorder() -> None:
+    member_images = [_image(i) for i in range(1, 23)]
+    col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
+    db = _write_db(get=col, images=member_images)
+    out = await replace_collection_images(
+        1,
+        _images_body(list(range(22, 2, -1))),
+        _user("student", id=2),
+        db=db,
+    )
+    assert [image_id for image_id, _ in _links(col)] == list(range(22, 2, -1))
+    assert out.version == 4
+
+
+async def test_replace_images_over_cap_sequence_rejects_remove_two_add_one() -> None:
+    member_images = [_image(i) for i in range(1, 23)]
+    col = _collection(1, "private", user_id=2, type="sequence", images=member_images)
+    db = _write_db(get=col, images=[*member_images, _image(23)])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1,
+            _images_body([*range(3, 23), 23]),
+            _user("student", id=2),
+            db=db,
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
+    assert col.version == 3
+
+
+async def test_replace_images_student_sequence_retained_unseen_count_toward_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    hidden = [_image(20, category_id=20), _image(21, category_id=20)]
+    visible = [_image(i) for i in range(1, 19)]
+    new_image = _image(30)
+    col = _collection(1, "private", user_id=2, type="sequence", images=[*hidden, *visible])
+    db = _write_db(get=col, images=[*visible, new_image])
+    with pytest.raises(HTTPException) as exc:
+        await replace_collection_images(
+            1,
+            _images_body([*range(1, 19), 30]),
+            _user("student", id=2),
+            db=db,
+        )
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "Students may add at most 20 images to a sequence collection"
+    assert col.version == 3
 
 
 async def test_replace_images_student_invisible_is_422(
@@ -1792,8 +2357,8 @@ async def test_move_instructor_to_root_via_null(
     out = await move_collection(1, _move(None), _user("instructor", id=5), db=db)
     assert col.category_id is None
     collections_router.bump_scopes.assert_awaited_once()
-    # root scope is keyed 0
-    assert collections_router.bump_scopes.call_args.args[1] == {7, 0}
+    assert collections_router.bump_scopes.call_args.args[1] == {7}
+    collections_router.bump_browse_revision.assert_awaited_once()
     assert out.category_id is None
 
 
@@ -1803,7 +2368,7 @@ async def test_move_uncategorized_into_category() -> None:
     db = _move_db(collection=col, category=cat)
     await move_collection(1, _move(9), _user("admin"), db=db)
     assert col.category_id == 9
-    assert collections_router.bump_scopes.call_args.args[1] == {0, 9}
+    assert collections_router.bump_scopes.call_args.args[1] == {9}
 
 
 async def test_move_same_category_is_noop_without_bumps() -> None:
@@ -1901,6 +2466,19 @@ async def test_delete_lock_order_scopes_then_row_then_browse() -> None:
     assert order == ["scopes", "row", "browse"]
 
 
+async def test_delete_unfiled_collection_skips_scope_bump() -> None:
+    col = _collection(1, "public", user_id=10, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=col)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_collection(1, _user("admin"), db=db)
+
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_awaited_once()
+
+
 async def test_list_uncategorized_filter() -> None:
     cols = [_collection(1, "public", user_id=10)]
     db = _mock_db(cols)
@@ -1928,3 +2506,695 @@ async def test_list_student_hides_collections_in_excluded_categories(
     student = _user("student", id=2, programs=[1], groups=[5])
     out = await list_collections(student, db=_mock_db(cols))
     assert [c.id for c in out] == [2, 3]
+
+
+# ── bulk operations (#1578) ─────────────────────────────
+
+
+def _bulk_db(
+    collections: list | None = None,
+    category: object = None,
+    locked: list | None = None,
+) -> AsyncMock:
+    """Mock session for the bulk endpoints: the first ``execute`` answers
+    the unlocked ``select(Collection)`` load with *collections*; the
+    second is the FOR UPDATE re-read and answers with *locked* (defaults
+    to the same rows — no concurrent drift). ``db.get`` returns *category*
+    for the ``category_id`` validity check."""
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    first = MagicMock()
+    first.scalars.return_value.all.return_value = collections or []
+    second = MagicMock()
+    second.scalars.return_value.all.return_value = (
+        collections if locked is None else locked
+    ) or []
+    pending = [first, second]
+
+    async def _execute(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        return pending.pop(0) if pending else first
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+def test_bulk_endpoints_registered_before_id_routes() -> None:
+    """``/bulk`` must precede ``/{collection_id}`` in the route table for
+    each method or "bulk" would be parsed as an id (422, not a bulk call)."""
+    for method in ("PATCH", "DELETE"):
+        routes = [r for r in collections_router.router.routes if method in r.methods]
+        paths = [r.path for r in routes]
+        assert paths.index("/collections/bulk") < paths.index(
+            "/collections/{collection_id}"
+        )
+
+
+async def test_bulk_update_endpoint_is_admin_instructor_only() -> None:
+    route = next(
+        r
+        for r in collections_router.router.routes
+        if r.path.endswith("/bulk") and "PATCH" in r.methods
+    )
+    gate = next(
+        dep.call
+        for dep in route.dependant.dependencies
+        if dep.call.__name__ == "_check"
+    )
+    for role in ("student", "staff"):
+        with pytest.raises(HTTPException) as exc:
+            await gate(current_user=_user(role))
+        assert exc.value.status_code == 403
+    for role in ("admin", "instructor"):
+        assert (await gate(current_user=_user(role))).role == role
+
+
+async def test_bulk_update_hidden_and_category() -> None:
+    cols = [
+        _collection(1, "public", user_id=10, category_id=None),
+        _collection(2, "public", user_id=10, category_id=3),
+    ]
+    db = _bulk_db(cols, category=SimpleNamespace(id=7))
+    out = await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], category_id=7, hidden=True),
+        _user("instructor", id=9),
+        db=db,
+    )
+    for c in cols:
+        assert c.category_id == 7 and c.hidden is True and c.version == 4
+    collections_router.bump_scopes.assert_awaited_once()
+    # Only filed source and destination scopes are affected.
+    assert collections_router.bump_scopes.call_args.args[1] == {3, 7}
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+    assert [s.id for s in out] == [1, 2]
+    assert all(s.hidden and s.category_id == 7 for s in out)
+
+
+async def test_bulk_update_hidden_only_bumps_browse_not_scopes() -> None:
+    cols = [_collection(1, hidden=False), _collection(2, hidden=False)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    assert all(c.hidden for c in cols)
+    assert all(c.version == 4 for c in cols)
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_update_noop_skips_versions_and_bumps() -> None:
+    """Echoing current values must not advance versions or revisions —
+    mirrors PATCH /images/bulk so a no-op bulk edit stays a no-op."""
+    cols = [
+        _collection(1, category_id=7, hidden=True),
+        _collection(2, category_id=7, hidden=True),
+    ]
+    db = _bulk_db(cols, category=SimpleNamespace(id=7))
+    out = await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], category_id=7, hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_not_awaited()
+    assert [c.version for c in cols] == [3, 3]
+    assert len(out) == 2
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_update_partial_move_bumps_only_moved_sources() -> None:
+    """Only collections actually changing category contribute source scopes."""
+    cols = [
+        _collection(1, category_id=7),
+        _collection(2, category_id=3),
+    ]
+    db = _bulk_db(cols, category=SimpleNamespace(id=7))
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], category_id=7),
+        _user("admin"),
+        db=db,
+    )
+    collections_router.bump_scopes.assert_awaited_once()
+    assert collections_router.bump_scopes.call_args.args[1] == {3, 7}
+    assert cols[0].version == 3 and cols[1].version == 4
+
+
+async def test_bulk_update_unfiles_to_null_without_root_scope_bump() -> None:
+    cols = [_collection(1, category_id=7)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1], category_id=None),
+        _user("admin"),
+        db=db,
+    )
+    assert cols[0].category_id is None
+    assert collections_router.bump_scopes.call_args.args[1] == {7}
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.get.assert_not_awaited()
+
+
+async def test_bulk_update_missing_collection_is_404() -> None:
+    db = _bulk_db([_collection(1)])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 404
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_unknown_category_is_422() -> None:
+    cols = [_collection(1, category_id=3)]
+    db = _bulk_db(cols, category=None)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1], category_id=99),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 422 and "99" in exc.value.detail
+    collections_router.bump_scopes.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_delete_admin_deletes_all() -> None:
+    cols = [
+        _collection(1, "public", user_id=10, category_id=7),
+        _collection(2, "private", user_id=11, category_id=None),
+    ]
+    db = _bulk_db(cols)
+    resp = await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
+    )
+    assert resp.status_code == 204
+    assert db.delete.await_count == 2
+    collections_router.bump_scopes.assert_awaited_once()
+    assert collections_router.bump_scopes.call_args.args[1] == {7}
+    collections_router.bump_browse_revision.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_delete_student_sole_owner() -> None:
+    """A student sole-owner may bulk-delete their own collections — the
+    same can_delete_collection gate as the single DELETE, at scale."""
+    cols = [_collection(1, "private", user_id=5)]
+    db = _bulk_db(cols)
+    resp = await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1]), _user("student", id=5), db=db
+    )
+    assert resp.status_code == 204
+    db.delete.assert_awaited_once_with(cols[0])
+
+
+async def test_bulk_delete_unfiled_collections_skips_scope_bump() -> None:
+    cols = [_collection(1, "private", user_id=10, category_id=None)]
+    db = _bulk_db(cols)
+
+    resp = await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1]), _user("admin"), db=db
+    )
+
+    assert resp.status_code == 204
+    collections_router.bump_scopes.assert_not_awaited()
+    collections_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_bulk_delete_student_forbidden_on_others() -> None:
+    """A viewable-but-not-deletable row in the set fails the whole call."""
+    cols = [
+        _collection(1, "private", user_id=5),
+        _collection(2, "public", user_id=10),
+    ]
+    db = _bulk_db(cols)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1, 2]),
+            _user("student", id=5),
+            db=db,
+        )
+    assert exc.value.status_code == 403
+    db.delete.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_delete_unviewable_is_404_not_403() -> None:
+    """A private collection the caller cannot see answers 404 like the
+    single DELETE — private ids cannot be probed."""
+    cols = [
+        _collection(1, "private", user_id=5),
+        _collection(2, "private", user_id=10),
+    ]
+    db = _bulk_db(cols)
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1, 2]),
+            _user("student", id=5),
+            db=db,
+        )
+    assert exc.value.status_code == 404
+    db.delete.assert_not_awaited()
+
+
+async def test_bulk_delete_missing_is_404() -> None:
+    db = _bulk_db([_collection(1, "public", user_id=5)])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
+        )
+    assert exc.value.status_code == 404
+    db.delete.assert_not_awaited()
+
+
+async def test_bulk_delete_lock_order_scopes_then_rows_then_browse() -> None:
+    order: list[str] = []
+    collections_router.bump_scopes.side_effect = lambda *a, **k: order.append(
+        "scopes"
+    )
+    collections_router.bump_browse_revision.side_effect = (
+        lambda *a, **k: order.append("browse")
+    )
+    cols = [
+        _collection(1, "public", user_id=10, category_id=7),
+        _collection(2, "public", user_id=10, category_id=3),
+    ]
+    db = _bulk_db(cols)
+    db.delete = AsyncMock(side_effect=lambda *a: order.append("row"))
+    await bulk_delete_collections(
+        CollectionBulkDelete(collection_ids=[1, 2]), _user("admin"), db=db
+    )
+    assert order == ["scopes", "row", "row", "browse"]
+
+
+async def test_bulk_update_concurrent_move_is_409() -> None:
+    """A collection refiled between the unlocked read and the row lock
+    leaves its real source scope unbumped — 409 lets the caller retry
+    rather than silently skipping the tile-order invalidation."""
+    cols = [_collection(1, category_id=7)]
+    drifted = _collection(1, category_id=8)
+    db = _bulk_db(cols, category=SimpleNamespace(id=9), locked=[drifted])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1], category_id=9),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 409
+    assert cols[0].category_id == 7  # speculative write never applied
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_missing_at_lock_is_409() -> None:
+    """A row deleted before the FOR UPDATE re-read is drift too."""
+    db = _bulk_db(
+        [_collection(1), _collection(2)],
+        locked=[_collection(1)],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_collections(
+            CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+            _user("admin"),
+            db=db,
+        )
+    assert exc.value.status_code == 409
+    db.commit.assert_not_awaited()
+
+
+async def test_bulk_update_refreshes_changed_rows_for_updated_at() -> None:
+    """``updated_at`` is SQL-generated — only changed rows are refreshed
+    post-commit so summaries carry the committed modification time."""
+    cols = [_collection(1, hidden=False), _collection(2, hidden=True)]
+    db = _bulk_db(cols)
+    await bulk_update_collections(
+        CollectionBulkUpdate(collection_ids=[1, 2], hidden=True),
+        _user("admin"),
+        db=db,
+    )
+    db.refresh.assert_awaited_once_with(cols[0])
+
+
+async def test_bulk_delete_concurrent_move_is_409() -> None:
+    cols = [_collection(1, "public", user_id=10, category_id=7)]
+    drifted = _collection(1, "public", user_id=10, category_id=8)
+    db = _bulk_db(cols, locked=[drifted])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[1]), _user("admin"), db=db
+        )
+    assert exc.value.status_code == 409
+    db.delete.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+# ── graph endpoints (#1628) ───────────────────────────────
+
+
+def _graph_app(monkeypatch: pytest.MonkeyPatch, db: AsyncMock) -> TestClient:
+    """TestClient mounting the collections router with stubbed auth + db.
+
+    ``db`` must be a ``_mock_db``-style session so ``scalars().unique()``
+    chains resolve; the feature flag is forced on unless a test flips it.
+    """
+    from app.auth import get_current_user
+    from app.database import get_db, settings
+
+    test_app = FastAPI()
+    test_app.include_router(collections_router.router)
+
+    async def current_user():
+        return _user("admin")
+
+    async def session():
+        yield db
+
+    test_app.dependency_overrides[get_current_user] = current_user
+    test_app.dependency_overrides[get_db] = session
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    return TestClient(test_app)
+
+
+def test_graph_route_does_not_parse_as_collection_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``GET /collections/graph`` must reach the graph handler, not the
+    ``/{collection_id}`` int path parameter (a 422 would mean the route is
+    registered too late)."""
+    client = _graph_app(monkeypatch, _mock_db([]))
+    response = client.get("/collections/graph")
+    assert response.status_code == 200
+    assert response.json() == {
+        "order": 1,
+        "collections": [],
+        "images": [],
+        "categories": [],
+    }
+
+
+def test_graph_order_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _graph_app(monkeypatch, _mock_db([]))
+    for path in (
+        "/collections/graph?order=0",
+        "/collections/graph?order=4",
+        "/collections/1/graph?order=0",
+        "/collections/1/graph?order=4",
+    ):
+        assert client.get(path).status_code == 422, path
+
+
+def test_graph_flag_off_is_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.database import settings
+
+    client = _graph_app(monkeypatch, _mock_db([]))
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    assert client.get("/collections/graph").status_code == 404
+    assert client.get("/collections/1/graph").status_code == 404
+
+
+async def test_graph_collections_match_list_for_student() -> None:
+    """The student's node set is exactly their unfiltered
+    ``GET /api/collections`` set; another user's private collection appears
+    in neither ``collections`` nor any ``collection_ids``."""
+    shared = _image(2)
+    cols = [
+        _collection(1, "public", user_id=10, images=[_image(1), shared]),
+        _collection(2, "private", user_id=10, images=[shared, _image(3)]),
+        _collection(3, "private", user_id=2, images=[_image(4)]),
+    ]
+    student = _user("student", id=2)
+    listed = await list_collections(student, db=_mock_db(cols))
+    out = await collections_graph(student, order=2, db=_mock_db(cols))
+
+    assert {c.id for c in out.collections} == {c.id for c in listed} == {1, 3}
+    assert all(2 not in node.collection_ids for node in out.images)
+    by_id = {i.id: i for i in out.images}
+    assert by_id[2].collection_ids == [1]  # only the visible public holder
+
+
+async def test_graph_order2_instructor_sees_shared_image_bridges() -> None:
+    shared = _image(2)
+    cols = [
+        _collection(1, "public", user_id=10, images=[_image(1), shared]),
+        _collection(2, "private", user_id=10, images=[shared]),
+    ]
+    out = await collections_graph(
+        _user("instructor", id=7), order=2, db=_mock_db(cols)
+    )
+    assert {c.id for c in out.collections} == {1, 2}
+    by_id = {i.id: i for i in out.images}
+    assert by_id[2].collection_ids == [1, 2]
+    assert by_id[1].collection_ids == [1]
+    # Images sorted by id; collections keep the list's updated_at/id desc order.
+    assert [i.id for i in out.images] == sorted(i.id for i in out.images)
+
+
+async def test_graph_order1_omits_images() -> None:
+    col = _collection(1, "public", user_id=10, images=[_image(1)])
+    out = await collections_graph(_user("admin"), order=1, db=_mock_db([col]))
+    assert out.order == 1
+    assert out.images == []
+    assert out.collections[0].image_count == 1
+
+
+async def test_graph_hidden_category_image_filtered_and_not_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An image whose category is hidden/restricted for the student is
+    absent from ``images`` and ``image_count``; the instructor still sees it
+    and it still counts."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    cols = [
+        _collection(
+            1,
+            "public",
+            user_id=10,
+            images=[_image(1, category_id=20), _image(2, category_id=21)],
+        )
+    ]
+    student_out = await collections_graph(
+        _user("student", id=2), order=2, db=_mock_db(cols)
+    )
+    assert [i.id for i in student_out.images] == [2]
+    assert student_out.collections[0].image_count == 1
+
+    instructor_out = await collections_graph(
+        _user("instructor", id=7), order=2, db=_mock_db(cols)
+    )
+    assert [i.id for i in instructor_out.images] == [1, 2]
+    assert instructor_out.collections[0].image_count == 2
+
+
+async def test_collection_graph_order1_member_order() -> None:
+    col = _collection(1, "public", user_id=10, images=[_image(5), _image(3)])
+    out = await collection_graph(1, _user("admin"), order=1, db=_mock_db(get=col))
+    assert out.collection.id == 1
+    assert [i.id for i in out.images] == [5, 3]  # member order, not id order
+    assert all(i.collection_ids == [1] for i in out.images)
+    assert out.related_collections == []
+
+
+async def test_collection_graph_order2_related_collections() -> None:
+    shared_a, shared_b, only_other = _image(1), _image(2), _image(4)
+    hub = _collection(1, "public", user_id=10, images=[shared_a, shared_b])
+    related = _collection(2, "public", user_id=10, images=[shared_b, only_other])
+    hidden = _collection(3, "private", user_id=10, images=[shared_b])
+    student = _user("student", id=2)
+    out = await collection_graph(
+        1, student, order=2, db=_mock_db(collections=[related, hidden], get=hub)
+    )
+    # The private collection neither bridges the shared image nor appears.
+    assert {c.id for c in out.related_collections} == {2}
+    by_id = {i.id: i for i in out.images}
+    assert by_id[1].collection_ids == [1]
+    assert by_id[2].collection_ids == [1, 2]
+    # order=1 hides the perspective switch entirely
+    out1 = await collection_graph(1, student, order=1, db=_mock_db(get=hub))
+    assert out1.related_collections == []
+    assert all(i.collection_ids == [1] for i in out1.images)
+
+
+async def test_collection_graph_hidden_from_student_is_404() -> None:
+    col = _collection(1, "private", user_id=10)
+    with pytest.raises(HTTPException) as exc:
+        await collection_graph(1, _user("student", id=2), db=_mock_db(get=col))
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Collection not found"
+
+
+async def test_collection_graph_student_image_count_is_visible_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``image_count`` never leaks the nominal member total."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={20}),
+    )
+    col = _collection(
+        1,
+        "public",
+        user_id=10,
+        images=[
+            _image(1, category_id=20),
+            _image(2, category_id=20),
+            _image(3),
+        ],
+    )
+    out = await collection_graph(
+        1, _user("student", id=2), order=1, db=_mock_db(get=col)
+    )
+    assert out.collection.image_count == 1
+    assert [i.id for i in out.images] == [3]
+
+
+# ── graph order=3: category nodes (#1633) ─────────────────
+
+
+def _category(id: int, label: str | None = None, parent_id: int | None = None):
+    return SimpleNamespace(id=id, label=label or f"cat{id}", parent_id=parent_id)
+
+
+def _graph_db(
+    collections: list | None = None,
+    get: object = None,
+    categories: list | None = None,
+    counts: dict[int, int] | None = None,
+) -> AsyncMock:
+    """Mock session for the graph reads, dispatching on the statement:
+    entity selects (``Collection``/``Category``) return their rows and the
+    grouped ``(category_id, count)`` select returns ``counts`` pairs.
+    Executed statements are recorded on ``db._executed`` for inspection."""
+    db = _mock_db(collections, get)
+    db._executed = []
+
+    async def _execute(stmt):
+        db._executed.append(stmt)
+        result = MagicMock()
+        desc = stmt.column_descriptions
+        if desc and desc[0]["name"] == "category_id":
+            result.all.return_value = list((counts or {}).items())
+            return result
+        rows = (
+            {Collection: collections or [], Category: categories or []}.get(
+                desc[0].get("entity"), []
+            )
+            if desc
+            else []
+        )
+        result.scalars.return_value.all.return_value = rows
+        result.scalars.return_value.unique.return_value.all.return_value = rows
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
+
+
+async def test_graph_order3_category_nodes() -> None:
+    """Every caller-visible category with ≥1 visible image is a node —
+    including one covered by no collection (the isolated-node case) — and
+    categories with no visible images are excluded."""
+    categories = [
+        _category(1, "Hematology"),
+        _category(10, "Slide 23", parent_id=1),
+        _category(11, "Empty", parent_id=1),
+        _category(12, "Uncovered", parent_id=1),
+    ]
+    col = _collection(1, "public", user_id=10, images=[_image(7, category_id=10)])
+    db = _graph_db(
+        collections=[col], categories=categories, counts={10: 4, 12: 2}
+    )
+    out = await collections_graph(_user("admin"), order=3, db=db)
+
+    assert [c.id for c in out.categories] == [10, 12]
+    covered = next(c for c in out.categories if c.id == 10)
+    assert covered.label == "Slide 23"
+    assert covered.path == "Hematology › Slide 23"
+    assert covered.image_count == 4
+    # 12: visible images but no collection → still a node (isolated)
+    uncovered = next(c for c in out.categories if c.id == 12)
+    assert uncovered.image_count == 2
+    # images carry category_id at every order
+    assert out.images[0].category_id == 10
+
+
+async def test_graph_order3_student_excludes_restricted_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A category outside the student's visible set has images yet never
+    appears; the instructor sees it. ``image_count`` is the visible-only
+    per-category count."""
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={10}),
+    )
+    categories = [_category(10, "Restricted"), _category(12, "Open")]
+    db = _graph_db(categories=categories, counts={10: 4, 12: 2})
+
+    student_out = await collections_graph(_user("student", id=2), order=3, db=db)
+    assert [c.id for c in student_out.categories] == [12]
+    assert student_out.categories[0].image_count == 2
+
+    instructor_out = await collections_graph(
+        _user("instructor", id=7), order=3, db=db
+    )
+    assert [c.id for c in instructor_out.categories] == [10, 12]
+
+
+async def test_graph_order2_categories_empty_but_category_id_present() -> None:
+    col = _collection(1, "public", user_id=10, images=[_image(7, category_id=10)])
+    out = await collections_graph(
+        _user("admin"), order=2, db=_graph_db(collections=[col])
+    )
+    assert out.categories == []
+    assert out.images[0].category_id == 10
+
+
+async def test_collection_graph_order3_is_local() -> None:
+    """``/{id}/graph?order=3`` categories are limited to the hub's member
+    categories — an uncovered category with visible images is a main-page
+    concern and does not appear here."""
+    hub = _collection(
+        1,
+        "public",
+        user_id=10,
+        images=[_image(7, category_id=10), _image(8, category_id=None)],
+    )
+    categories = [_category(10, "Member"), _category(12, "Uncovered")]
+    db = _graph_db(get=hub, categories=categories, counts={10: 3, 12: 9})
+    out = await collection_graph(1, _user("admin"), order=3, db=db)
+
+    assert [c.id for c in out.categories] == [10]
+    assert out.categories[0].image_count == 3
+    assert [i.category_id for i in out.images] == [10, None]
+
+
+async def test_graph_order3_count_filters_active_for_students_only() -> None:
+    """The grouped per-category count mirrors ``can_view_image``: the
+    ``active`` predicate is applied for students but not for non-students
+    (who see inactive images), so instructor counts match their nodes."""
+    categories = [_category(10, "Member")]
+
+    def _count_sql(db: AsyncMock) -> str:
+        stmt = next(
+            s
+            for s in db._executed
+            if s.column_descriptions[0]["name"] == "category_id"
+        )
+        return str(stmt)
+
+    db = _graph_db(categories=categories, counts={10: 3})
+    await collections_graph(_user("admin"), order=3, db=db)
+    assert "active" not in _count_sql(db)
+
+    db = _graph_db(categories=categories, counts={10: 1})
+    await collections_graph(_user("instructor", id=7), order=3, db=db)
+    assert "active" not in _count_sql(db)
+
+    db = _graph_db(categories=categories, counts={10: 1})
+    await collections_graph(_user("student", id=2), order=3, db=db)
+    assert "images.active" in _count_sql(db)

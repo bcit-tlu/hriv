@@ -1169,10 +1169,13 @@ async def test_run_db_export_success(tmp_path) -> None:
             description=None,
             type="synchronized",
             visibility="restricted",
+            hidden=True,
             user_id=1,
             owner_program_id=None,
             category_id=2,
             sort_order=1,
+            cover_image_id=9_400_005,
+            cover_blank=False,
             viewport_state={"offsets": []},
             version=2,
             owners=[SimpleNamespace(id=1), SimpleNamespace(id=2)],
@@ -1258,6 +1261,7 @@ async def test_run_db_export_success(tmp_path) -> None:
             "description": None,
             "type": "synchronized",
             "visibility": "restricted",
+            "hidden": True,
             "user_id": 1,
             "owner_program_id": None,
             "category_id": 2,
@@ -1266,6 +1270,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             "version": 2,
             "owner_ids": [1, 2],
             "image_ids": [9_400_005],
+            "cover_image_id": 9_400_005,
+            "cover_blank": False,
             "program_ids": [2],
             "group_ids": [],
             "created_at": now.isoformat(),
@@ -1464,11 +1470,14 @@ def _full_dump() -> dict:
                 "name": "Seq",
                 "type": "sequence",
                 "visibility": "public",
+                "hidden": True,
                 "user_id": 1,
                 "owner_ids": [1, 2],
                 "category_id": 2,
                 "sort_order": 4,
                 "image_ids": [2, 1],
+                "cover_image_id": 2,
+                "cover_blank": False,
                 "program_ids": [1],
                 "group_ids": [],
                 "viewport_state": {},
@@ -1480,6 +1489,10 @@ def _full_dump() -> dict:
                 "name": "Orphan",
                 "type": "synchronized",
                 "image_ids": [],
+                # A pinned cover that is not an imported member is dropped;
+                # the blank flag survives independently of members.
+                "cover_image_id": 99,
+                "cover_blank": True,
             },
             {
                 # Legacy dump shape: user_id only → backfills one owner row.
@@ -1564,9 +1577,13 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert set(imported_collections) == {7, 8, 9}
     seq = imported_collections[7]
     assert seq.type == "sequence" and seq.visibility == "public"
+    # Curatorial hide round-trips (#1559) — export carries `hidden`.
+    assert seq.hidden is True
     assert seq.user_id == 1 and seq.version == 3
     assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
+    # Pinned cover round-trips when it names an imported member.
+    assert seq.cover_image_id == 2
     # owner_ids [1, 2] → two owner rows on the collection (#1531).
     assert sorted(o.id for o in seq.owners) == [1, 2]
     orphan = imported_collections[8]
@@ -1574,9 +1591,14 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert orphan.visibility == "private" and orphan.viewport_state == {}
     assert orphan.category_id is None and orphan.sort_order == 0
     assert orphan.image_links == [] and list(orphan.owners) == []
+    assert orphan.cover_image_id is None
+    assert orphan.cover_blank is True
     legacy = imported_collections[9]
-    # Legacy dump: user_id doubles as the sole owner row.
+    # Legacy dump: user_id doubles as the sole owner row, and pre-#1559
+    # dumps carry no `hidden` — the import default is False.
     assert legacy.user_id == 2 and [o.id for o in legacy.owners] == [2]
+    assert legacy.hidden is False
+    assert legacy.cover_blank is False
     executed_sql = [
         str(c.args[0]) for c in mock_session.execute.call_args_list
     ]

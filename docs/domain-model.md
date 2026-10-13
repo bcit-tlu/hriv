@@ -45,17 +45,27 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   deleted.
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
-### Collection _(added in `0030_collections`; multi-owner in `0032`)_
+### Collection _(added in `0030_collections`; multi-owner in `0032`; `hidden` in `0033`; `cover_image_id` in `0034`; `cover_blank` in `0035`)_
 
 - **Purpose:** user- or program-owned grouping of existing images for
   `sequence` or `synchronized` viewing; never duplicates image/category rows.
 - **Key fields:** `name`; `description` (nullable); `type` (`synchronized` /
   `sequence`, CHECK `ck_collections_type`); `visibility` (`private` / `public` /
   `restricted`, CHECK `ck_collections_visibility`, default `private`);
+  `hidden` (boolean, default `false` — curatorial hide/show, #1559; hides
+  the collection from students except its owners, unlike `Image.active`
+  which hides from all students);
   `user_id` (FK to User, **SET NULL** — #1531; creator-audit only, not an
   ownership edge); `owner_program_id` (FK to Program,
   **SET NULL**); `category_id` (FK to Category, **SET NULL** — #1527, files
   the collection into the Browse hierarchy; `NULL` = uncategorized root);
+  `cover_image_id` (FK to Image, **SET NULL** — pinned tile cover picked
+  from the members via `PATCH`; `NULL` = first-member fallback, and the
+  pin clears when the member leaves the collection or the image row is
+  deleted); `cover_blank` (boolean, default `false` — explicit "no
+  cover" pick from the tile cover picker: the tile renders the type-logo
+  placeholder; mutually exclusive with `cover_image_id` — a write to
+  one clears the other);
   `sort_order` (tile-order position inside its scope); `viewport_state`
   (JSONB, default `{}`); `version` (optimistic
   concurrency, starts at 1). User co-ownership lives in `collection_owners`
@@ -72,7 +82,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   collection for which they were the sole owner (co-owned and program-owned
   collections survive); deleting a program orphans collections that have no
   remaining user owners; deleting an image removes it from every
-  collection; deleting a category unfiles its collections (`category_id` →
+  collection and nulls any `cover_image_id` pin pointing at it; deleting a
+  category unfiles its collections (`category_id` →
   `NULL`), the same reparenting rule as images.
 - See [Collections](collections.md).
 

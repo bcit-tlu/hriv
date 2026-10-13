@@ -4,11 +4,13 @@ Grouped-image sets for side-by-side comparison (`synchronized`, max 4
 images) and ordered walkthroughs (`sequence`). `COLLECTIONS_ENABLED=true` in
 local compose; every role gets the **Collections** tab. Full behaviour
 contract: `docs/collections.md`; UI manual scenarios: `docs/TESTING.md`
-Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
+Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarchy).
 
 ### Quick flow
 
-1. **Create:** Collections tab → **New collection** → name, type, visibility
+1. **Create:** Collections tab → **Sequence** or **Synchronized** sub-menu
+   item (each opens the same page locked to a type) → **New collection** →
+   name, type, visibility
    (Restricted offers program/group chips; instructors only see options they
    could attach).
 2. **Fill:** open an image → **Add to Collection** in the viewer action bar
@@ -17,31 +19,91 @@ Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
 3. **View:** click a card. `synchronized` shows linked panes (link toggles +
    reset); `sequence` shows a filmstrip with Previous/Next, ←/→ keys, and a
    `?item={image_id}` deep-linkable position.
-4. **Browse:** collection tiles render beside category/image tiles (fixed
-   300px width), nested inside categories via `category_id`. The seeded
-   **Italian Cathedrals** sequence lives under _Architecture → Italian_.
-   File with the card's **Move** button (admin/instructor) or by dragging
-   the tile onto a category's **Move here** zone; reorder by dragging past
-   any tile's centre; add an image by dropping an `img-` tile on an
-   editable collection tile's near half (**Add to collection** zone).
-5. **Deep links:** `?page=collections`, `?collection={id}`,
+4. **Browse:** filed collection tiles render beside category/image tiles
+   (fixed 300px width) inside their category scope; the root tile grid
+   contains categories and images only. The optional, read-only My collections
+   shelf is separate from tile ordering. Unfiled collections have no Browse
+   tile and remain available in collection-management views and the
+   `uncategorized=true` unfiled queue. The seeded **Italian Cathedrals**
+   sequence lives under _Architecture → Italian_. File with the card's
+   **Move** action (admin/instructor) or by dragging the tile onto a
+   category's **Move here** zone; choose **Not on Browse** to unfile.
+   Reorder by dragging past any tile's centre; add an image by dropping an
+   `img-` tile on an editable, filed collection tile's near half (**Add to
+   collection** zone). **Add to Collection** remains available for unfiled
+   collections.
+5. **Deep links:** `?page=collections&type=sequence|synchronized` (missing
+   `type` → sequence), `?collection={id}`,
    `?collection={id}&item={image_id}` all restore on load and on
    back/forward; a Browse-opened collection also carries `?cat=`/`?item=`
-   for its scope.
-6. **Edit/Delete:** pencil/trash on cards and the detail header, gated by
-   `permissions.can_edit` / `can_delete`.
+   for its scope. **Manage → Collections** (`?page=manage-collections`) is
+   the non-student table view — mirrors Manage → Images; rows offer Edit
+   (where `canEdit`), Owners (where `canTransfer`), Move (admin/instructor);
+   staff see all rows but no Move/Owners/Delete.
+6. **Edit/Delete:** pencil on the card's metadata area, Edit button on the
+   detail header, gated by `permissions.can_edit`. Delete lives inside the
+   edit dialog only (#1554 — **Delete Collection** at the bottom, click to
+   arm then click to confirm), gated by `permissions.can_delete`.
+
+### My collections drawer and cover picker
+
+- **Cover-picker fixtures:** Inspect the two member thumbnails before testing a
+  cover change. Seeded Duomo and Gothic Detail images can share a thumbnail URL,
+  so saving a different selection may have no visible effect. Use distinct
+  thumbnails in disposable local fixtures, make and save the selection through
+  the UI, then verify the card and its cover after reload. Restore any seed
+  thumbnail you change.
+- **Drawer layout:** Use a genuinely overflowing Browse category, not only a
+  short root page. The footer is sticky wherever the drawer is enabled: Browse
+  root and category pages, the image viewer, and the Collections pages.
+  The drawer is docked in flow directly above the footer (`footer-dock`), so in
+  both modes measure the footer's bottom against the viewport height and the
+  drawer's bottom against the footer's top; on overscroll both move together.
+- Drawer tiles are 160–180px wide: about 180px from a viewport width of 1584px,
+  and 160px below about 1424px, where the row scrolls horizontally. A 15px
+  vertical scrollbar reduces the row's available width by about 1.9px per card
+  across eight cards, so record actual viewport and card widths.
+- At short heights, wheel over the drawer body and compare the drawer's
+  `scrollTop` with `window.scrollY`. Clipped card content before scrolling is
+  not itself a failure if the drawer scroll reveals it. Wait for transitions to
+  settle before taking screenshots.
+- The unpinned drawer has `role="dialog"` only while it is open — a collapsed
+  sheet carries no role (#1608). When closing a nested feedback or
+  edit dialog, wait for that specific dialog to close rather than waiting for
+  all dialogs to disappear.
 
 ### Filters
 
-- **All / Synchronized / Sequence** type toggle and **My collections** chip
-  for every role.
-- **Owner** select for admin/instructor/staff (never students). Admins get an
-  extra **No owner (orphaned)** option → `GET /api/collections?orphaned=true`.
-- Selecting **My collections** clears and disables the Owner select.
+- The unified Collections page uses the shared **FilterBar** popover pattern
+  (same as Manage → Collections): popover buttons **Name**, **Type**,
+  **Owner**, **Visibility** above all three views (Cards/Table/Graph), plus
+  deletable summary chips and a **Clear all** action while any facet is
+  active.
+- **Name** popover = client-side text filter (name/description/owner); in
+  the Graph view it dims non-matching nodes without removing them.
+- **Type** popover = single-select Sequence/Synchronized (`?type=` still
+  seeds it).
+- **Owner** popover lists **My collections** for every role;
+  admin/instructor/staff additionally get named owner options (never
+  students). Admins get an extra **No owner (orphaned)** option →
+  `GET /api/collections?orphaned=true`.
+- Selecting **My collections** clears the Owner facet. **Visibility** is a
+  client-side multi-select (Private/Public/Restricted) that narrows rows and
+  dims non-matching graph nodes.
+- The Cards/Table/Graph view toggle is **not persisted** — the page always
+  loads on Cards; only the graph order and Shared-only toggle persist.
+- The Table view exposes **Choose columns** (the shared
+  `ColumnVisibilityDialog`) with 13 columns; the dialog is only reachable in
+  table view.
+- The Graph view keeps its stats caption and controls (order toggle,
+  Shared-only, **Fit graph** button) in a toolbar above the canvas — they
+  no longer overlay the drawing. Clicking the **Collections** app-bar tab
+  while a collection detail is open returns to the list.
 
 ### Owners & transfer (`can_transfer`)
 
-- Entry point: **Owners** on the card — opens `CollectionOwnersDialog`
+- Entry point: **Owners** in the card's cover overlay, the detail header, or
+  a manage-table row — opens `CollectionOwnersDialog`
   (admins + instructors only).
 - A collection has **user owners** (plural, via `PUT /api/collections/{id}/owners`)
   and/or a **program owner** (via `POST /api/collections/{id}/transfer`).
@@ -67,9 +129,14 @@ Test Case 11 (Collections tab) and Test Case 12 (Browse hierarchy).
 ### Useful selectors for scripted checks
 
 - Grid rows: `[data-testid="collection-card"]`; open via
-  `[data-testid="collection-card-action-area"]`.
-- Filter bar: `[data-testid="collection-filters"]`; the Owner Select is the
-  combobox labelled `Owner`.
+  `[data-testid="collection-card-action-area"]`; cover overlay chip
+  `[data-testid="collection-type-chip"]`.
+- Filter bar: popover buttons by accessible name (`Name`, `Type`, `Owner`,
+  `Visibility`); active-facet summary chips `[data-testid="filter-chip"]`;
+  **Clear all** button while any facet is active.
+- Manage table: `[data-testid="manage-collections-table"]`, rows
+  `manage-collection-row-{id}`; filter facets labelled Name / Type /
+  Visibility / Owner / Category.
 - Detail: `[data-testid="collection-detail"]`, visibility chip
   `[data-testid="collection-visibility-chip"]`, restricted scope chips
   `detail-program-chip` / `detail-group-chip`.

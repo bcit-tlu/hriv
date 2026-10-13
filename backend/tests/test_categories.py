@@ -46,6 +46,7 @@ def _make_collection(
     groups: list | None = None,
     sort_order: int = 0,
     type: str = "sequence",
+    hidden: bool = False,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -54,6 +55,7 @@ def _make_collection(
         description=None,
         type=type,
         visibility=visibility,
+        hidden=hidden,
         user_id=user_id,
         owner_program_id=owner_program_id,
         owner=SimpleNamespace(id=user_id, name=f"u{user_id}") if user_id else None,
@@ -64,6 +66,8 @@ def _make_collection(
         ),
         category_id=category_id,
         sort_order=sort_order,
+        cover_image_id=None,
+        cover_blank=False,
         viewport_state={},
         version=1,
         # Multi-owner rows (#1531): user_id is creator-only audit; ``owners``
@@ -1490,6 +1494,6 @@ async def test_delete_category_bumps_parent_and_root_scopes(
     db.commit = AsyncMock()
     await delete_category(5, _make_user(), db=db)
     categories_router.bump_scopes.assert_awaited_once()
-    # Parent scope loses the tile; root gains members reparented by
-    # ON DELETE SET NULL (images and collections in the subtree).
+    # Parent scope loses the tile; root gains images reparented by ON DELETE
+    # SET NULL. Collections become unfiled, not root-scope members.
     assert categories_router.bump_scopes.call_args.args[1] == {2, 0}

@@ -36,15 +36,16 @@ function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryA
     loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
     currentCategories: [],
     ancestorProgramIds: [],
-    getPathRestriction: vi.fn().mockReturnValue([]),
     ancestorGroupIds: [],
-    getPathGroupRestriction: vi.fn().mockReturnValue([]),
+    liveCategoryPath: [],
     path: [],
     setPath: vi.fn(),
     editNameCategory: null,
     setErrorSnack: vi.fn(),
     setWarningSnack: vi.fn(),
     setMoveSnack: vi.fn(),
+    navigateToCategory: vi.fn(),
+    openCollection: vi.fn(),
     ...overrides,
   }
 }
@@ -1007,11 +1008,9 @@ describe('useCategoryActions', () => {
       const moveCollectionApi = vi
         .fn()
         .mockResolvedValue(makeCollection({ id: 7, categoryId: 2, version: 4 }))
-      const loadUncategorizedCollections = vi.fn()
       const deps = makeDeps({
         categories: [catA, catB],
         moveCollectionApi,
-        loadUncategorizedCollections,
       })
       const { result } = renderHook(() => useCategoryActions(deps))
 
@@ -1021,32 +1020,29 @@ describe('useCategoryActions', () => {
 
       expect(moveCollectionApi).toHaveBeenCalledWith(7, 2, 3)
       expect(deps.loadCategories).toHaveBeenCalled()
-      expect(loadUncategorizedCollections).toHaveBeenCalled()
       expect(deps.setMoveSnack).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Epithelia'),
         }),
       )
+      const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0] as {
+        onView?: () => void
+      }
+      snackCall.onView?.()
+      expect(deps.navigateToCategory).toHaveBeenCalledWith(2)
     })
 
-    it('finds root-scope collections in uncategorizedCollections', async () => {
-      const col = makeCollectionSummary({ id: 8, name: 'Root set', categoryId: null, version: 1 })
+    it('does not move an unfiled collection absent from the category tree', async () => {
       const catB = makeCategory({ id: 2, label: 'Target' })
-      const moveCollectionApi = vi
-        .fn()
-        .mockResolvedValue(makeCollection({ id: 8, categoryId: 2, version: 2 }))
-      const deps = makeDeps({
-        categories: [catB],
-        uncategorizedCollections: [col],
-        moveCollectionApi,
-      })
+      const moveCollectionApi = vi.fn()
+      const deps = makeDeps({ categories: [catB], moveCollectionApi })
       const { result } = renderHook(() => useCategoryActions(deps))
 
       await act(async () => {
         await result.current.handleDropCollectionOnCategory(8, 2)
       })
 
-      expect(moveCollectionApi).toHaveBeenCalledWith(8, 2, 1)
+      expect(moveCollectionApi).not.toHaveBeenCalled()
     })
 
     it('no-ops when the collection is already in the target category', async () => {
@@ -1086,6 +1082,7 @@ describe('useCategoryActions', () => {
       expect(moveCollectionApi).toHaveBeenCalledWith(7, null, 3)
       expect(result.current.moveCollectionOpen).toBe(false)
       const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0]
+      expect((snackCall as { message: string }).message).toBe('Removed “Set” from Browse')
       const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo
 
       await act(async () => {
@@ -1094,6 +1091,32 @@ describe('useCategoryActions', () => {
 
       // Undo re-files at the version the move response returned.
       expect(moveCollectionApi).toHaveBeenLastCalledWith(7, 1, 4)
+    })
+
+    it('moveCollectionTo reports success or the failure error so edit-dialog filing can react (#1567)', async () => {
+      const col = makeCollectionSummary({ id: 7, name: 'Set', categoryId: 1, version: 3 })
+      const catA = makeCategory({ id: 1, collections: [col] })
+      const catB = makeCategory({ id: 2 })
+      const failure = new api.ApiError(409, 'stale version')
+      const moveCollectionApi = vi
+        .fn()
+        .mockResolvedValueOnce(makeCollection({ id: 7, categoryId: 2, version: 4 }))
+        .mockRejectedValueOnce(failure)
+      const deps = makeDeps({ categories: [catA, catB], moveCollectionApi })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      let ok: unknown
+      await act(async () => {
+        ok = await result.current.moveCollectionTo(col, 2)
+      })
+      expect(ok).toBe(true)
+
+      await act(async () => {
+        ok = await result.current.moveCollectionTo({ ...col, categoryId: 2 }, 1)
+      })
+      // The caller rethrows this so the edit dialog keeps the real message.
+      expect(ok).toBe(failure)
+      expect(deps.setErrorSnack).toHaveBeenCalled()
     })
 
     it('no-ops without moveCollectionApi (flag off)', async () => {
@@ -1170,12 +1193,10 @@ describe('useCategoryActions', () => {
         .fn()
         .mockResolvedValue({ status: 'added', collection: addedCollection(), addedCount: 1 })
       const removeImagesFromCollectionApi = vi.fn()
-      const loadUncategorizedCollections = vi.fn()
       const deps = makeDeps({
         categories: [cat],
         addImagesToCollectionApi,
         removeImagesFromCollectionApi,
-        loadUncategorizedCollections,
       })
       const { result } = renderHook(() => useCategoryActions(deps))
 
@@ -1183,23 +1204,25 @@ describe('useCategoryActions', () => {
         await result.current.handleDropImageOnCollection(42, 7)
       })
 
-      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42])
+      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42], undefined)
       expect(deps.loadCategories).toHaveBeenCalled()
-      expect(loadUncategorizedCollections).toHaveBeenCalled()
       expect(deps.setMoveSnack).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Epithelia'),
         }),
       )
+      const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0] as {
+        onView?: () => void
+      }
+      snackCall.onView?.()
+      expect(deps.openCollection).toHaveBeenCalledWith(7)
     })
 
-    it('finds root-scope collections in uncategorizedCollections', async () => {
-      const col = makeCollectionSummary({ id: 7, name: 'Root set', categoryId: null })
+    it('does not add images to an unfiled collection absent from the tree', async () => {
       const addImagesToCollectionApi = vi
         .fn()
         .mockResolvedValue({ status: 'added', collection: addedCollection(), addedCount: 1 })
       const deps = makeDeps({
-        uncategorizedCollections: [col],
         addImagesToCollectionApi,
         removeImagesFromCollectionApi: vi.fn(),
       })
@@ -1209,8 +1232,8 @@ describe('useCategoryActions', () => {
         await result.current.handleDropImageOnCollection(42, 7)
       })
 
-      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42])
-      expect(deps.setMoveSnack).toHaveBeenCalled()
+      expect(addImagesToCollectionApi).not.toHaveBeenCalled()
+      expect(deps.setMoveSnack).not.toHaveBeenCalled()
     })
 
     it('undo removes the added member and refreshes', async () => {
@@ -1324,11 +1347,45 @@ describe('useCategoryActions', () => {
       expect(deps.setMoveSnack).not.toHaveBeenCalled()
     })
 
+    it('passes the caller role and names the student sequence cap', async () => {
+      const col = makeCollectionSummary({
+        id: 7,
+        name: 'Sequence set',
+        type: 'sequence',
+        categoryId: 1,
+      })
+      const cat = makeCategory({ id: 1, collections: [col] })
+      const addImagesToCollectionApi = vi.fn().mockResolvedValue({
+        status: 'full',
+        collection: makeCollection({
+          id: 7,
+          name: 'Sequence set',
+          type: 'sequence',
+        }),
+      })
+      const deps = makeDeps({
+        categories: [cat],
+        currentUserRole: 'student',
+        addImagesToCollectionApi,
+        removeImagesFromCollectionApi: vi.fn(),
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropImageOnCollection(42, 7)
+      })
+
+      expect(addImagesToCollectionApi).toHaveBeenCalledWith(7, [42], 'student')
+      expect(deps.setErrorSnack).toHaveBeenCalledWith(
+        expect.stringContaining('20-image limit students have for sequence collections'),
+      )
+    })
+
     it('no-ops for collections the user cannot edit', async () => {
       const col = makeCollectionSummary({
         id: 7,
         categoryId: 1,
-        permissions: { canEdit: false, canDelete: false, canTransfer: false },
+        permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
       })
       const cat = makeCategory({ id: 1, collections: [col] })
       const addImagesToCollectionApi = vi.fn()
@@ -1721,6 +1778,7 @@ describe('useCategoryActions', () => {
         freshLabel: '',
         freshProgramIds: [],
         freshGroupIds: [],
+        freshChildren: [],
       })
     })
 
@@ -1730,13 +1788,70 @@ describe('useCategoryActions', () => {
       const deps = makeDeps({
         categories: [catA, catB],
         path: [catA],
+        liveCategoryPath: [catA],
         editNameCategory: catA,
-        getPathRestriction: vi.fn().mockReturnValue([10]),
       })
       const { result } = renderHook(() => useCategoryActions(deps))
 
       expect(result.current.editCategoryContext.siblingNames).toEqual(['B'])
       expect(result.current.editCategoryContext.freshLabel).toBe('A')
+    })
+
+    it('reads siblings and inherited restrictions from the live ancestry after a reparent (#1587)', () => {
+      const leafSnapshot = makeCategory({ id: 3, label: 'Leaf', programIds: [10] })
+      const oldParent = makeCategory({ id: 1, label: 'Old', programIds: [10, 20] })
+      const liveGrandchild = makeCategory({ id: 5, label: 'Grandchild', programIds: [40] })
+      const liveLeaf = makeCategory({
+        id: 3,
+        label: 'Leaf (renamed)',
+        programIds: [30],
+        children: [liveGrandchild],
+      })
+      const newParent = makeCategory({
+        id: 2,
+        label: 'New',
+        programIds: [30, 40],
+        groupIds: [7],
+        children: [liveLeaf, makeCategory({ id: 4, label: 'Sibling' })],
+      })
+      const deps = makeDeps({
+        categories: [oldParent, newParent],
+        path: [oldParent, leafSnapshot],
+        liveCategoryPath: [newParent, liveLeaf],
+        editNameCategory: leafSnapshot,
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      expect(result.current.editCategoryContext).toEqual({
+        siblingNames: ['Sibling'],
+        inheritedProgramIds: [30, 40],
+        inheritedGroupIds: [7],
+        freshLabel: 'Leaf (renamed)',
+        freshProgramIds: [30],
+        freshGroupIds: [],
+        freshChildren: [liveGrandchild],
+      })
+    })
+
+    it('falls back to the dialog category when the breadcrumb leaf left the tree', () => {
+      const leaf = makeCategory({ id: 3, label: 'Leaf', programIds: [10] })
+      const deps = makeDeps({
+        categories: [makeCategory({ id: 1, label: 'Other' })],
+        path: [leaf],
+        liveCategoryPath: [],
+        editNameCategory: leaf,
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      expect(result.current.editCategoryContext).toEqual({
+        siblingNames: [],
+        inheritedProgramIds: [],
+        inheritedGroupIds: [],
+        freshLabel: 'Leaf',
+        freshProgramIds: [10],
+        freshGroupIds: [],
+        freshChildren: [],
+      })
     })
 
     it('returns sibling info for a child category', () => {

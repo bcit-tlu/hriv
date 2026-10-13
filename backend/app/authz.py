@@ -78,7 +78,7 @@ def can_attach_group_to_category(user, group_instructor_ids: Iterable[int]) -> b
 #             co-owned; staff and students: never.
 
 
-def _is_collection_owner(user, collection) -> bool:
+def is_collection_owner(user, collection) -> bool:
     """True when *user* holds an owner row (sole or shared) on *collection*."""
     return any(owner.id == user.id for owner in collection.owners)
 
@@ -115,7 +115,7 @@ def can_view_collection(
     """
     if user.role in ("admin", "instructor", "staff"):
         return True
-    if _is_collection_owner(user, collection):
+    if is_collection_owner(user, collection):
         return True
     if collection.visibility == "public":
         return True
@@ -138,10 +138,10 @@ def can_edit_collection(user, collection) -> bool:
     if user.role == "admin":
         return True
     if user.role == "instructor":
-        return _is_collection_owner(
+        return is_collection_owner(
             user, collection
         ) or _manages_owner_program(user, collection)
-    return user.role in ("student", "staff") and _is_collection_owner(
+    return user.role in ("student", "staff") and is_collection_owner(
         user, collection
     )
 
@@ -154,7 +154,7 @@ def can_change_collection_scope(user, collection) -> bool:
     if user.role == "admin":
         return True
     if user.role == "instructor":
-        return _is_collection_owner(
+        return is_collection_owner(
             user, collection
         ) or _manages_owner_program(user, collection)
     return user.role in ("student", "staff") and _is_sole_collection_owner(
@@ -179,9 +179,18 @@ def can_transfer_collection(user, collection) -> bool:
         return True
     if user.role != "instructor":
         return False
-    return _is_collection_owner(user, collection) or _manages_owner_program(
+    return is_collection_owner(user, collection) or _manages_owner_program(
         user, collection
     )
+
+
+def can_hide_collection(user, collection) -> bool:
+    """Hide/unhide (#1559): curatorial — admins and instructors may hide
+    any collection, mirroring the global edit authority they hold over
+    images and categories. Owners cannot unhide their own collection: an
+    instructor's hide is a deliberate content decision.
+    """
+    return user.role in ("admin", "instructor")
 
 
 def can_attach_program_to_collection(user, program_id: int) -> bool:

@@ -17,6 +17,12 @@ export interface ImageItem {
   fileSize?: number | null
 }
 
+export interface ImageSourceInfo {
+  originalFilename: string | null
+  fileType: string | null
+  uploadedByName: string | null
+}
+
 export interface Category {
   id: number
   label: string
@@ -81,9 +87,11 @@ export interface Group {
 export interface Features {
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
+  /** My collections drawer on Browse (#1583). */
+  collectionsHomeShelf: boolean
 }
 
-export const DEFAULT_FEATURES: Features = { collections: false }
+export const DEFAULT_FEATURES: Features = { collections: false, collectionsHomeShelf: false }
 
 // ── Collections (docs/collections.md) ─────────────────────
 
@@ -103,6 +111,8 @@ export interface CollectionPermissions {
   /** Whether the caller may change visibility/program/group scope (#1531). */
   canChangeScope: boolean
   canTransfer: boolean
+  /** Curatorial hide/unhide — admins and instructors only (#1559). */
+  canHide: boolean
 }
 
 export interface CollectionSummary {
@@ -111,15 +121,26 @@ export interface CollectionSummary {
   description: string | null
   type: CollectionType
   visibility: CollectionVisibility
+  /** Curatorial hide (#1559): hidden collections are invisible to students
+   * who don't own them; owners keep access. */
+  hidden: boolean
   /** User co-owners plus the optional program owner; empty means orphaned (#1531). */
   owners: CollectionOwner[]
   imageCount: number
   coverThumb: string | null
+  /** Pinned cover member id; `null` = first-member fallback. */
+  coverImageId: number | null
+  /** Explicit "no cover" pick — the tile renders the type-logo placeholder. */
+  coverBlank: boolean
   version: number
-  /** Category the collection is filed into (null = Browse root). */
+  /** Category the collection is filed into (null = unfiled, not on Browse). */
   categoryId: number | null
-  /** Tile-order position inside its category/root scope. */
+  /** Tile-order position inside its filed category scope. */
   sortOrder: number
+  /** Restriction scope (empty unless `visibility === 'restricted'`); carried
+   *  on summaries so tiles can render program/group chips (#1567). */
+  programIds: number[]
+  groupIds: number[]
   createdAt: string
   updatedAt: string
   permissions: CollectionPermissions
@@ -128,8 +149,6 @@ export interface CollectionSummary {
 export interface Collection extends CollectionSummary {
   /** Ordered member images (only those visible to the caller). */
   images: ImageItem[]
-  programIds: number[]
-  groupIds: number[]
   viewportState: Record<string, unknown>
   /** Nominal member count for unfiltered viewers; for students the backend
    * clamps it to `imageCount + 1` when members are hidden, so it signals

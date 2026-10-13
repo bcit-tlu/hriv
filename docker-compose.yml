@@ -107,6 +107,7 @@ services:
       - TILES_DIR=/data/tiles
       - SECURE_COOKIES=false
       - COLLECTIONS_ENABLED=${COLLECTIONS_ENABLED:-true}
+      - COLLECTIONS_HOME_SHELF=${COLLECTIONS_HOME_SHELF:-true}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
     depends_on:

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import AppShell from '../../src/components/AppShell'
 import type { AppShellProps } from '../../src/components/AppShell'
 import { createRef } from 'react'
@@ -119,6 +120,27 @@ describe('AppShell', () => {
       expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     })
 
+    it('sticks the footer dock to the viewport bottom only when requested', () => {
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      expect(screen.getByTestId('footer-dock')).not.toHaveStyle({ position: 'sticky' })
+
+      rerender(<AppShell {...makeProps({ stickyFooter: true })} />)
+      expect(screen.getByTestId('footer-dock')).toHaveStyle({ position: 'sticky', bottom: '0px' })
+    })
+
+    it('renders the footer dock slot directly above the footer', () => {
+      render(
+        <AppShell {...makeProps({ footerDockSlot: <div data-testid="docked">Docked</div> })} />,
+      )
+
+      const dock = screen.getByTestId('footer-dock')
+      const docked = screen.getByTestId('docked')
+      const footer = screen.getByRole('contentinfo')
+      expect(dock).toContainElement(docked)
+      expect(dock).toContainElement(footer)
+      expect(docked.nextElementSibling).toBe(footer)
+    })
+
     it('renders version info in footer for admin users', () => {
       render(
         <AppShell
@@ -170,12 +192,33 @@ describe('AppShell', () => {
         { canEditContent: false, canManageUsers: false, canViewPeople: false },
       ]
       for (const caps of roles) {
-        const onTabChange = vi.fn()
-        const { unmount } = render(<AppShell {...makeProps({ ...caps, onTabChange })} />)
-        fireEvent.click(screen.getByRole('tab', { name: 'Collections' }))
-        expect(onTabChange).toHaveBeenCalledWith('collections')
+        const { unmount } = render(<AppShell {...makeProps({ ...caps })} />)
+        expect(screen.getByRole('tab', { name: 'Collections' })).toBeInTheDocument()
         unmount()
       }
+    })
+
+    it('navigates directly to the unified Collections page (#1629)', async () => {
+      const user = userEvent.setup()
+      const onTabChange = vi.fn()
+      render(<AppShell {...makeProps({ onTabChange })} />)
+
+      await user.click(screen.getByRole('tab', { name: 'Collections' }))
+      expect(onTabChange).toHaveBeenCalledWith('collections')
+      // The Sequence/Synchronized sub-menu is gone — type is a filter chip.
+      expect(screen.queryByRole('menuitem', { name: 'Sequence' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Synchronized' })).not.toBeInTheDocument()
+    })
+
+    it('re-clicking the Collections tab while on the page resets to the list', async () => {
+      // On a collection detail the tab is already selected, so Tabs onChange
+      // cannot fire — the Tab's onClick must forward the re-click itself.
+      const user = userEvent.setup()
+      const onTabChange = vi.fn()
+      render(<AppShell {...makeProps({ page: 'collections', onTabChange })} />)
+
+      await user.click(screen.getByRole('tab', { name: 'Collections' }))
+      expect(onTabChange).toHaveBeenCalledWith('collections')
     })
 
     it('hides the Collections tab when the deployment flag is off', () => {
@@ -192,15 +235,35 @@ describe('AppShell', () => {
       )
     })
 
+    it('marks the root when filling the viewport', () => {
+      render(<AppShell {...makeProps({ fillViewport: true })} />)
+      expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
+    })
+
     it('renders Images and Manage tabs when canEditContent', () => {
       render(<AppShell {...makeProps({ canEditContent: true })} />)
       expect(screen.getByRole('tab', { name: 'Images' })).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Manage' })).toBeInTheDocument()
     })
 
-    it('hides Images and Manage tabs when not canEditContent', () => {
-      render(<AppShell {...makeProps({ canEditContent: false })} />)
+    it('hides Images and Manage tabs for students (neither capability)', () => {
+      render(<AppShell {...makeProps({ canEditContent: false, canViewPeople: false })} />)
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
+    })
+
+    it('shows the Manage tab for staff when collections are enabled (#1554)', () => {
+      render(<AppShell {...makeProps({ canEditContent: false, canViewPeople: true })} />)
+      expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Manage' })).toBeInTheDocument()
+    })
+
+    it('hides the Manage tab for staff when the collections flag is off', () => {
+      render(
+        <AppShell
+          {...makeProps({ canEditContent: false, canViewPeople: true, collectionsEnabled: false })}
+        />,
+      )
       expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
     })
 
@@ -229,7 +292,14 @@ describe('AppShell', () => {
       expect(screen.getByRole('tab', { name: 'People' })).toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
+      // Staff get Manage only for the Collections table (#1554) — every
+      // other item stays admin/instructor-gated.
+      fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
+      expect(screen.getByRole('menuitem', { name: 'Collections' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Categories' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Programs' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Groups' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Announcement' })).not.toBeInTheDocument()
     })
 
     it('calls onHomeClick when Home tab is clicked while already on browse', () => {
@@ -551,9 +621,11 @@ describe('AppShell', () => {
     it('exposes every destination, with Manage flattened, in the menu', () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      // "Collections" appears twice: the primary unified page (#1629) and the
+      // Manage-section all-collections table.
+      expect(screen.getAllByRole('menuitem', { name: 'Collections' })).toHaveLength(2)
       for (const name of [
         'Home',
-        'Collections',
         'Images',
         'Categories',
         'Programs',
@@ -659,11 +731,12 @@ describe('AppShell', () => {
       expect(screen.queryByRole('menuitem', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
-    it('navigates to Collections from the collapsed menu', () => {
+    it('navigates to the Collections page from the collapsed menu', () => {
       const onTabChange = vi.fn()
       render(<AppShell {...makeProps({ onTabChange })} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Collections' }))
+      // The primary-section Collections row precedes the Manage-section one.
+      fireEvent.click(screen.getAllByRole('menuitem', { name: 'Collections' })[0])
       expect(onTabChange).toHaveBeenCalledWith('collections')
     })
 

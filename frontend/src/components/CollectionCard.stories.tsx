@@ -13,15 +13,26 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     description: 'Frontal and lateral views side by side.',
     type: 'synchronized',
     visibility: 'private',
+    hidden: false,
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
+    coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
-    permissions: { canEdit: true, canDelete: true, canChangeScope: true, canTransfer: false },
+    permissions: {
+      canEdit: true,
+      canDelete: true,
+      canChangeScope: true,
+      canTransfer: false,
+      canHide: false,
+    },
     ...overrides,
   }
 }
@@ -34,15 +45,15 @@ const meta = {
     docs: {
       description: {
         component:
-          'Collections-tab card showing the cover thumbnail, name, image count, owner, type chip and visibility chip. Edit/delete icons appear only when the API grants `permissions.canEdit` / `permissions.canDelete`.',
+          'Collections-page card showing the cover thumbnail, name, image count, owner and visibility chip. The type chip, Move and Owners actions sit in a top-right cover overlay (CategoryTile scrim convention, #1554); Edit sits in the metadata area, permission-gated. Delete is not a card action — it lives inside the edit dialog.',
       },
     },
   },
   args: {
     collection: makeSummary(),
+    programs: [],
     onOpen: fn(),
     onEdit: fn(),
-    onDelete: fn(),
   },
   // Padding keeps the card's elevation shadow inside Chromatic's content-cropped snapshot.
   decorators: [
@@ -81,6 +92,7 @@ export const Sequence: Story = {
       name: 'Fracture healing timeline',
       type: 'sequence',
       visibility: 'public',
+      hidden: false,
       imageCount: 6,
       owners: [{ kind: 'program', programId: 3, name: 'Radiography' }],
     }),
@@ -96,12 +108,45 @@ export const Restricted: Story = {
       id: 3,
       name: 'Cohort 2 review set',
       visibility: 'restricted',
+      hidden: false,
       imageCount: 1,
     }),
   },
   parameters: {
     // Restricted chip reuses the group-chip palette — known contrast debt, see #1345.
     a11y: { test: 'todo' },
+  },
+}
+
+export const Curatorial: Story = {
+  args: {
+    collection: makeSummary({
+      id: 7,
+      name: 'Filed into Browse',
+      permissions: {
+        canEdit: true,
+        canDelete: true,
+        canChangeScope: true,
+        canTransfer: true,
+        canHide: false,
+      },
+    }),
+    onMove: fn(),
+    onPickCoverImage: fn(),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    // Overlay actions stop propagation — the card does not open.
+    await userEvent.click(
+      canvas.getByRole('button', { name: 'Move Filed into Browse to a category' }),
+    )
+    await expect(args.onMove).toHaveBeenCalledWith(args.collection)
+    await userEvent.click(canvas.getByRole('button', { name: 'Set Filed into Browse cover image' }))
+    await expect(args.onPickCoverImage).toHaveBeenCalledWith(args.collection)
+    await expect(args.onOpen).not.toHaveBeenCalled()
   },
 }
 
@@ -112,7 +157,14 @@ export const ReadOnly: Story = {
       id: 4,
       name: 'Shared by an instructor',
       visibility: 'public',
-      permissions: { canEdit: false, canDelete: false, canChangeScope: false, canTransfer: false },
+      hidden: false,
+      permissions: {
+        canEdit: false,
+        canDelete: false,
+        canChangeScope: false,
+        canTransfer: false,
+        canHide: false,
+      },
     }),
   },
   play: async ({ canvasElement }) => {
@@ -130,7 +182,63 @@ export const NoCover: Story = {
       name: 'Empty collection',
       imageCount: 0,
       coverThumb: null,
+      coverImageId: null,
+      coverBlank: false,
       owners: [],
+    }),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const BlankCover: Story = {
+  name: "Blank cover — picker's None",
+  // `coverBlank` wins over a thumb still on the record: the type logo
+  // stands in, like an uncovered category tile.
+  args: {
+    collection: makeSummary({
+      id: 9,
+      name: 'Explicitly uncovered',
+      coverBlank: true,
+    }),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Compact: Story = {
+  args: {
+    collection: makeSummary({ name: 'Compact drawer tile' }),
+    density: 'compact',
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Minimal: Story = {
+  name: 'Minimal — drawer tile',
+  // The My-collections drawer look: cover + title only, every metadata
+  // row dropped.
+  args: {
+    collection: makeSummary({ name: 'Title-only drawer tile' }),
+    density: 'minimal',
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Hidden: Story = {
+  // Curatorially hidden card (#1559): desaturated tile plus the eye-off
+  // marker by the name — the same treatment hidden categories/images get.
+  args: {
+    collection: makeSummary({
+      id: 8,
+      name: 'Draft review set',
+      hidden: true,
     }),
   },
   parameters: {

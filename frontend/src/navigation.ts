@@ -1,4 +1,5 @@
-export type NavigationPage = 'browse' | 'collections' | 'manage' | 'people' | 'admin'
+export type NavigationPage =
+  'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin'
 export type NavigationSection = 'primary' | 'manage' | 'account'
 export type NavigationIcon =
   | 'home'
@@ -22,6 +23,8 @@ export interface NavigationItem {
   requiresViewPeople?: boolean
   /** Hidden unless the deployment's `collections` feature flag is on. */
   requiresCollections?: boolean
+  /** Hidden from students: visible to admins, instructors, and staff. */
+  requiresNonStudent?: boolean
 }
 
 const navigationItems: readonly NavigationItem[] = [
@@ -29,6 +32,7 @@ const navigationItems: readonly NavigationItem[] = [
   // Visible to every role (students included) — collections are a browsing
   // feature, not a management one; the API scopes what each caller can see.
   // Dark-launched: only rendered when the deployment enables collections.
+  // One page since #1629 — sequence/synchronized became a type filter chip.
   {
     id: 'collections',
     label: 'Collections',
@@ -51,6 +55,18 @@ const navigationItems: readonly NavigationItem[] = [
     section: 'manage',
     icon: 'categories',
     requiresEditContent: true,
+  },
+  // All-collections manage table (#1554). Staff reach it too — mirroring
+  // their read-level access to the image manage surface — so this gates on
+  // "not a student" rather than `requiresEditContent`.
+  {
+    id: 'manage-collections',
+    label: 'Collections',
+    section: 'manage',
+    icon: 'collections',
+    page: 'manage-collections',
+    requiresCollections: true,
+    requiresNonStudent: true,
   },
   {
     id: 'programs',
@@ -108,6 +124,7 @@ export function getNavigationItems({
       (!item.requiresEditContent || canEditContent) &&
       (!item.requiresManageUsers || canManageUsers) &&
       (!item.requiresViewPeople || canViewPeople) &&
-      (!item.requiresCollections || collectionsEnabled),
+      (!item.requiresCollections || collectionsEnabled) &&
+      (!item.requiresNonStudent || canEditContent || canViewPeople),
   )
 }

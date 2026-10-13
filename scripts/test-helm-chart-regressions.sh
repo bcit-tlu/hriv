@@ -529,6 +529,9 @@ assert_contains "$backend_mode_default_deployment" 'name: COLLECTIONS_ENABLED' \
 backend_default_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_mode_default_deployment")"
 assert_contains "$backend_default_collections_enabled" 'value: "false"' \
   "backend deployment should default collections to disabled"
+backend_default_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_home_shelf" 'value: "false"' \
+  "backend deployment should default COLLECTIONS_HOME_SHELF to false"
 assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
   "backend deployment should render WORKER_MAX_JOBS for the in-process fallback concurrency"
 assert_not_contains "$backend_mode_default_deployment" 'name: WORKER_TOTAL_SLOTS' \
@@ -586,6 +589,7 @@ backend_required_manifest="$(helm template test charts/backend \
   --set tasks.rebuild.parallelism=3 \
   --set tasks.rebuild.pumpCadenceSeconds=120 \
   --set collections.enabled=true \
+  --set collections.homeShelf=true \
   --set redis.enabled=true \
   --set redis.worker.enabled=true \
   --set redis.worker.totalSlots=8 \
@@ -604,6 +608,9 @@ assert_contains "$backend_required_rebuild_enabled" 'value: "true"' \
 backend_required_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_required_api")"
 assert_contains "$backend_required_collections_enabled" 'value: "true"' \
   "backend deployment should render COLLECTIONS_ENABLED=true when collections.enabled is set"
+backend_required_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_required_api")"
+assert_contains "$backend_required_home_shelf" 'value: "true"' \
+  "backend deployment should render COLLECTIONS_HOME_SHELF=true when collections.homeShelf is set"
 assert_contains "$backend_required_api" 'name: REBUILD_PARALLELISM' \
   "backend deployment should render the durable rebuild execution window"
 backend_required_rebuild_parallelism="$(grep -F -A1 'name: REBUILD_PARALLELISM' <<<"$backend_required_api")"
