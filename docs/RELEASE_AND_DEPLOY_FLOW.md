@@ -100,9 +100,13 @@ Full title rules and rationale: [.github/CONTRIBUTING.md](../.github/CONTRIBUTIN
 Both environments in a downstream FluxCD repo (for example, `bcit-tlu/flux-fleet`)
 share the same objects from `apps/base/`: one `OCIRepository` per component
 pointing at `oci://ghcr.io/bcit-tlu/hriv/charts/hriv-<component>`, and a
-`HelmRelease` whose `chartRef` points at that OCIRepository. The chart's
-`appVersion` is the image tag, so chart and image always move together —
-there is no `ImagePolicy`, `ImageUpdateAutomation`, or `image.tag` patch.
+`HelmRelease` whose `chartRef` points at that OCIRepository. For the three
+chart-deployed components the templates use `.Values.image.tag | default
+.Chart.AppVersion`, and the overlays set no `image.tag`, so chart and image
+move together — there is no `ImagePolicy`, `ImageUpdateAutomation`, or
+`image.tag` patch. (`restore-validation` is the exception: its chart runs
+digest-pinned images from its own overlay values, so its chart can advance
+without its images changing.)
 
 ### `latest` (staging)
 
@@ -142,11 +146,16 @@ missed deliveries — it is not the rollout path.
 
 ## Consequences worth knowing
 
-- **Chart edits on `main` reach `latest` via the rc chart, but `stable`
-  waits for a release.** A PR that changes only `charts/<component>/...`
-  produces an rc chart on the next main push, so `latest` picks the
-  template change up right away; `stable`'s semver filter only admits
-  clean `<ver>` charts, so the same change reaches production when the
+- **Chart edits on `main` reach `latest` via the rc chart — when a chart is
+  published.** `ci.yaml` only runs a component's build (and therefore
+  `helm-publish`) when its path filter matches: `frontend` watches
+  `frontend/**` and `charts/frontend/files/**`, `backend` watches
+  `backend/**` only, while `backup` and `restore-validation` watch their
+  whole `charts/<component>/**`. So a PR touching only
+  `charts/frontend/templates/` or `charts/backend/**` publishes no rc chart
+  on its own; the template change ships with the next source change to that
+  component (or a release). `stable`'s semver filter only admits clean
+  `<ver>` charts, so every chart change reaches production when the
   component is next released.
 - **Long-running features ship dark behind a chart flag, not on a branch.**
   Work that spans more than one release (e.g. the collections epic,
