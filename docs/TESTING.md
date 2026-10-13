@@ -763,7 +763,7 @@ and collection-page dialog (#1628). Requires `COLLECTIONS_ENABLED=true`.
    `image_count`, `hidden`, `category_id`, and `images` is empty. Repeat with
    `?order=2` — **Assert:** `images` lists each member image once, with every
    containing collection in `collection_ids` (edges are implied, there is no
-   edge list). `?order=0` and `?order=3` — **Assert:** 422.
+   edge list). `?order=0` and `?order=4` — **Assert:** 422.
 2. As a student, `GET /api/collections/graph?order=2` — **Assert:** the
    `collections` set equals what `GET /api/collections` returns for the same
    account; a private collection owned by someone else appears neither in
