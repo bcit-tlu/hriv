@@ -346,6 +346,17 @@ describe('CollectionsPage', () => {
       expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
     })
 
+    it('reports the current view upward via onViewChange (#1630)', async () => {
+      const onViewChange = vi.fn()
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })], onViewChange })
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('cards'))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('graph'))
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('table'))
+    })
+
     it('refetches the graph when the order toggle changes', async () => {
       renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
       fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))

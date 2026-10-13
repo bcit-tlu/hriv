@@ -255,7 +255,9 @@ export default function CollectionGraphDialog({
             ),
           )}
         </Breadcrumbs>
-        <Box sx={{ position: 'relative', height: '70vh' }}>
+        <Box
+          sx={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '70vh' }}
+        >
           {error && (
             <Alert
               severity="error"

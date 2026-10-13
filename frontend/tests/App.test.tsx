@@ -2481,6 +2481,23 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
   })
 
+  it('fills the viewport on the collections page when the graph view is reported (#1630)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    // Cards/table do not fill.
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeNull()
+
+    act(() => {
+      ;(collectionsPageProps.current?.onViewChange as (v: string) => void)('graph')
+    })
+    expect(document.querySelector('[data-fill-viewport="true"]')).not.toBeNull()
+
+    act(() => {
+      ;(collectionsPageProps.current?.onViewChange as (v: string) => void)('cards')
+    })
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeNull()
+  })
+
   it('restores the selected collection from the URL on back/forward', async () => {
     await renderWithCollectionsEnabled()
     expect(popStateHandler).not.toBeNull()

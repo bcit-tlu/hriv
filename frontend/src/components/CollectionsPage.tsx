@@ -113,6 +113,9 @@ export interface CollectionsPageProps {
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
+  /** Reports the current Cards/Table/Graph view so the shell can fill the
+   *  viewport in graph view (#1630 feedback). */
+  onViewChange?: (view: CollectionsView) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
   onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
@@ -543,6 +546,7 @@ export default function CollectionsPage({
   onReorderImages,
   onCollectionImageRenewed,
   onViewerError,
+  onViewChange,
   onSaveViewport,
   loadCollection,
   onCreate,
@@ -608,6 +612,11 @@ export default function CollectionsPage({
 
   // ── Unified page view state (#1629) ──────────────────────────────
   const [viewPrefs, setViewPrefs] = useCollectionsViewPreference(currentUser?.id ?? null)
+  // The shell fills the viewport for the graph view, so it needs the
+  // current view reported upward (the pref itself is per-user state).
+  useEffect(() => {
+    onViewChange?.(viewPrefs.view)
+  }, [onViewChange, viewPrefs.view])
   // Search is client-side and intentionally NOT persisted.
   const [searchQuery, setSearchQuery] = useState('')
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
@@ -817,9 +826,12 @@ export default function CollectionsPage({
     display: { md: 'flex' },
     flexDirection: { md: 'column' },
     flex: { md: '1 1 0' },
+    minHeight: { md: 0 },
   } as const
   const hasLoadedViewerDetail =
     selectedCollectionId != null && detail != null && detailError == null
+  // The list graph fills the page like the detail viewers (#1630 feedback).
+  const graphViewActive = selectedCollectionId == null && viewPrefs.view === 'graph'
 
   let body: ReactNode
   if (selectedCollectionId != null) {
@@ -933,6 +945,7 @@ export default function CollectionsPage({
             justifyContent: 'space-between',
             gap: 1,
             mb: 1,
+            flexShrink: 0,
           }}
         >
           <Typography variant="h5" component="h1">
@@ -987,7 +1000,14 @@ export default function CollectionsPage({
             views. */}
         <Box
           data-testid="collection-filters"
-          sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 1.5, mb: 3 }}
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            gap: 1.5,
+            mb: 3,
+            flexShrink: 0,
+          }}
         >
           <Box
             component="span"
@@ -1126,18 +1146,36 @@ export default function CollectionsPage({
                 the transform lives for the component's mount (#1627, #1636).
                 Order-3 isolated categories render even with zero
                 collections, so the graph branch bypasses the empty state. */}
-            {viewPrefs.view === 'graph' && graphError && (
-              <Alert severity="error" sx={{ mb: 1 }}>
-                {graphError}
-              </Alert>
-            )}
-            {viewPrefs.view === 'graph' && !graphModel && !graphError && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-                <CircularProgress aria-label="Loading collections graph" />
-              </Box>
-            )}
-            {graphModel && (
-              <Box sx={{ display: viewPrefs.view === 'graph' ? 'block' : 'none' }}>
+            {/* Graph section fills the remaining page height in graph
+                view (#1630 feedback); hidden-but-mounted otherwise so the
+                canvas keeps its positions and transform. */}
+            <Box
+              data-testid="collections-graph-section"
+              sx={{
+                display: viewPrefs.view === 'graph' ? 'flex' : 'none',
+                flexDirection: 'column',
+                flex: '1 1 0',
+                minHeight: 0,
+              }}
+            >
+              {graphError && (
+                <Alert severity="error" sx={{ mb: 1, flexShrink: 0 }}>
+                  {graphError}
+                </Alert>
+              )}
+              {!graphModel && !graphError && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    flex: '1 1 0',
+                  }}
+                >
+                  <CircularProgress aria-label="Loading collections graph" />
+                </Box>
+              )}
+              {graphModel && (
                 <CollectionsGraph
                   model={graphModel}
                   onOpenCollection={onOpenCollection}
@@ -1193,8 +1231,8 @@ export default function CollectionsPage({
                     </>
                   }
                 />
-              </Box>
-            )}
+              )}
+            </Box>
           </>
         )}
       </>
@@ -1202,7 +1240,10 @@ export default function CollectionsPage({
   }
 
   return (
-    <Box data-testid="collections-page" sx={hasLoadedViewerDetail ? viewerFlexSx : undefined}>
+    <Box
+      data-testid="collections-page"
+      sx={hasLoadedViewerDetail || graphViewActive ? viewerFlexSx : undefined}
+    >
       {editLoadError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setEditLoadError(null)}>
           {editLoadError}

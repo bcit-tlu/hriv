@@ -367,7 +367,15 @@ export default function CollectionsGraph({
     <Box
       ref={frameRef}
       data-testid="collections-graph"
-      sx={{ position: 'relative', width: '100%', height: { xs: 420, md: 560 }, minHeight: 320 }}
+      sx={{
+        position: 'relative',
+        width: '100%',
+        // Fill a flex-column parent (page graph, dialog body); on xs /
+        // non-flex parents fall back to a fixed height (#1630 feedback).
+        flex: '1 1 0',
+        height: { xs: 420, md: '100%' },
+        minHeight: 320,
+      }}
     >
       <canvas
         ref={canvasRef}
