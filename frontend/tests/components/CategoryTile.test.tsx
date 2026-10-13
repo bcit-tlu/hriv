@@ -12,11 +12,19 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryTile from '../../src/components/CategoryTile'
+import * as api from '../../src/api'
+import type { ApiCategory } from '../../src/api'
 import type { Group, Program } from '../../src/types'
-import { makeCategory, makeCollectionSummary } from '../helpers/fixtures'
+import { makeCategory, makeCollectionSummary, makeImage } from '../helpers/fixtures'
+
+vi.mock('../../src/api', async () => {
+  const actual = await vi.importActual<typeof api>('../../src/api')
+  return { ...actual, fetchCategory: vi.fn() }
+})
+const mockFetchCategory = vi.mocked(api.fetchCategory)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -482,30 +490,57 @@ describe('CategoryTile', () => {
       expect(screen.getByTestId('FolderIcon')).toBeInTheDocument()
     })
 
-    it('renders the thumbnail when cardImageId matches an image', () => {
+    it('renders the server-resolved cardThumb as the cover', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ cardThumb: '/api/tiles/9/thumbnail.jpeg?tile_token=abc' })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      const img = screen.getByAltText('Test Category')
+      expect(img).toHaveAttribute('src', '/api/tiles/9/thumbnail.jpeg?tile_token=abc')
+      expect(img).toHaveStyle({ height: '140px' })
+    })
+
+    it('renders the folder icon when cardThumb is null even if cardImageId is set', () => {
+      // Unresolvable pins (dangling id, image outside the subtree) come
+      // back with cardThumb null — the tile must not hunt through
+      // category.images for a fallback (#1609).
       render(
         <CategoryTile
           category={makeCategory({
             cardImageId: 5,
-            images: [
-              {
-                id: 5,
-                name: 'Card Img',
-                thumb: '/thumbs/card.jpg',
-                tileSources: '',
-                active: true,
-                sortOrder: 0,
-                version: 1,
-              },
-            ],
+            images: [makeImage({ id: 5 })],
+          })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.getByTestId('FolderIcon')).toBeInTheDocument()
+    })
+
+    it('renews the cover through fetchCategory on image error', async () => {
+      mockFetchCategory.mockResolvedValue({
+        id: 9,
+        card_thumb: '/api/tiles/9/thumbnail.jpeg?tile_token=fresh',
+      } as ApiCategory)
+      render(
+        <CategoryTile
+          category={makeCategory({
+            id: 9,
+            cardThumb: '/api/tiles/9/thumbnail.jpeg?tile_token=stale',
           })}
           onClick={vi.fn()}
           programs={[]}
         />,
       )
       const img = screen.getByAltText('Test Category')
-      expect(img).toHaveAttribute('src', '/thumbs/card.jpg')
-      expect(img).toHaveStyle({ height: '140px' })
+      fireEvent.error(img)
+      await waitFor(() =>
+        expect(img).toHaveAttribute('src', '/api/tiles/9/thumbnail.jpeg?tile_token=fresh'),
+      )
+      expect(mockFetchCategory).toHaveBeenCalledWith(9)
     })
   })
 

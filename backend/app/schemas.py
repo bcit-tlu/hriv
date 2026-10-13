@@ -380,8 +380,31 @@ class CategoryOut(CategoryBase):
     created_at: datetime
     updated_at: datetime
     warnings: list[CategoryWarning] = []
+    # Category tile cover (#1609): resolved server-side from
+    # ``metadata.card_image_id`` — the pinned image id when it resolves to an
+    # image in this category's subtree, plus its thumbnail URL. Resolution
+    # deliberately ignores image/category visibility so the cover still
+    # renders for students; ``card_thumb`` is tokenized with a
+    # thumbnail-only token so it cannot unlock the full tile set.
+    card_image_id: int | None = None
+    card_thumb: str | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+    @field_serializer("card_thumb")
+    def _tokenize_card_thumb(self, value: str | None) -> str | None:
+        """Tokenize the card thumbnail with the thumbnail-only purpose.
+
+        Issued only here, at serialization — after the routers' auth +
+        student-visibility filtering — and never mutates the persisted
+        ``thumb`` column. Non-tile URLs pass through unchanged. See
+        docs/tile-delivery-boundary.md.
+        """
+        if value is None:
+            return None
+        from .tile_tokens import append_thumb_token
+
+        return append_thumb_token(value)
 
     @model_validator(mode="before")
     @classmethod
@@ -397,6 +420,14 @@ class CategoryOut(CategoryBase):
             result["group_ids"] = [g.id for g in data.groups]
             result["metadata_extra"] = data.metadata_
             result["warnings"] = getattr(data, "_category_warnings", [])
+            # Routers attach the resolved card pin (and, for students, a
+            # scrubbed metadata dict without ``card_image_id``) as private
+            # attributes — same pattern as ``_category_warnings``.
+            metadata_override = getattr(data, "_metadata_extra_override", None)
+            if metadata_override is not None:
+                result["metadata_extra"] = metadata_override
+            result["card_image_id"] = getattr(data, "_card_image_id", None)
+            result["card_thumb"] = getattr(data, "_card_thumb", None)
             return result
         return data
 

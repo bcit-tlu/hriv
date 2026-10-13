@@ -56,7 +56,11 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
     status: node.status,
     sortOrder: node.sort_order,
     version: node.version,
-    cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+    // Card cover is resolved server-side (#1609): metadata_extra is not a
+    // fallback — the backend scrubs the pin for students and nulls
+    // unresolvable pins for everyone.
+    cardImageId: node.card_image_id ?? null,
+    cardThumb: node.card_thumb ?? null,
     metadataExtra: meta ?? null,
   }
 }
@@ -123,7 +127,6 @@ function categoryIdentityKey(
   imageKeys: string[],
 ): string {
   const meta = node.metadata_extra as Record<string, unknown> | null
-  const cardImageId = typeof meta?.card_image_id === 'number' ? meta.card_image_id : null
   return stableStringify([
     node.id,
     node.version,
@@ -131,7 +134,8 @@ function categoryIdentityKey(
     node.parent_id,
     node.label,
     node.status,
-    cardImageId,
+    node.card_image_id ?? null,
+    node.card_thumb ?? null,
     meta,
     [...(node.program_ids ?? [])].sort((a, b) => a - b),
     [...(node.group_ids ?? [])].sort((a, b) => a - b),
@@ -249,7 +253,8 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
       status: node.status,
       sortOrder: node.sort_order,
       version: node.version,
-      cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+      cardImageId: node.card_image_id ?? null,
+      cardThumb: node.card_thumb ?? null,
       metadataExtra: meta ?? null,
     }
     caches.categoryByKey.set(key, category)

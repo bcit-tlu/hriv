@@ -16,22 +16,19 @@ import ImageIcon from '@mui/icons-material/Image'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 
 import type { ApiImage } from '../api'
-import type { Category, Group, ImageItem, Program } from '../types'
+import { fetchCategory } from '../api'
+import type { Category, Group, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import CardImagePickerModal from './CardImagePickerModal'
 import RenewingThumbnail from './RenewingThumbnail'
 
-function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
-  for (const img of cat.images) {
-    if (img.id === imageId) return img
-  }
-  for (const child of cat.children) {
-    const found = findImageInCategory(child, imageId)
-    if (found) return found
-  }
-  return null
+/** Card-cover thumbs are keyed by category id, so an expired token is
+ *  renewed via the category record — never ``GET /api/images/{id}``, which
+ *  404s for students on images they cannot see (#1609). */
+function renewCardThumb(id: number): Promise<{ id: number; thumb: string | null }> {
+  return fetchCategory(id).then((c) => ({ id: c.id, thumb: c.card_thumb ?? null }))
 }
 
 /** Count all descendant subcategories recursively. */
@@ -86,7 +83,6 @@ function CategoryTile({
   onMove,
   onSetCardImage,
   onEditName,
-  onImageRenewed,
   programs,
   inheritedProgramIds = [],
   groups = [],
@@ -140,9 +136,10 @@ function CategoryTile({
     .filter((g): g is Group => g != null)
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  const cardImage = category.cardImageId
-    ? findImageInCategory(category, category.cardImageId)
-    : null
+  // The cover comes from the server-resolved ``cardThumb`` (#1609): it is
+  // emitted even when the pinned image is inactive or under a hidden /
+  // restricted subtree, and never grants tile access beyond the thumbnail.
+  const cardThumb = category.cardThumb ?? null
   const tileHidden = parentHidden || category.status === 'hidden'
 
   const isDropTarget = onDropFiles != null
@@ -256,11 +253,11 @@ function CategoryTile({
             filter: tileHidden ? 'grayscale(100%)' : 'none',
           }}
         >
-          {cardImage ? (
+          {cardThumb ? (
             <RenewingThumbnail
-              image={cardImage}
+              image={{ id: category.id, thumb: cardThumb }}
+              renewThumb={renewCardThumb}
               alt={category.label}
-              onImageRenewed={onImageRenewed}
               sx={{
                 display: 'block',
                 width: '100%',
