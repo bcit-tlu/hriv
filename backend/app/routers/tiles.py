@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse
 
 from ..database import settings
 from ..tile_tokens import (
+    TILE_URL_PREFIX,
     TileTokenError,
     source_image_id_from_tile_url,
     validate_tile_token,
@@ -75,8 +76,12 @@ async def tiles_auth(
     )
     if not token:
         raise HTTPException(status_code=401, detail="Missing tile token")
+    # Path after ``/api/tiles/<sid>/`` — thumbnail-scoped tokens must match
+    # ``thumbnail.jpeg`` exactly (missing or nested segments do not).
+    rest = urlsplit(x_original_uri).path[len(TILE_URL_PREFIX):]
+    tile_path = rest.split("/", 1)[1] if "/" in rest else ""
     try:
-        validate_tile_token(token, source_image_id)
+        validate_tile_token(token, source_image_id, tile_path)
     except TileTokenError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     return Response(status_code=204)
@@ -97,7 +102,7 @@ async def serve_tile(
     if not tile_token:
         raise HTTPException(status_code=401, detail="Missing tile token")
     try:
-        validate_tile_token(tile_token, source_image_id)
+        validate_tile_token(tile_token, source_image_id, path)
     except TileTokenError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 

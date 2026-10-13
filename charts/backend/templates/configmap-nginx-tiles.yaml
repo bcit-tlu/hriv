@@ -13,12 +13,16 @@ data:
     # so http-level directives such as proxy_cache_path and map may live
     # here before the server block.
     #
-    # auth_request subrequest cache: keyed on the tile token and
-    # source-image id (never on client identity) and storing only the
-    # allow/deny verdict — no tile bytes are cached. A valid token
-    # authorizes one image for its whole TTL, so caching the 204 briefly
-    # collapses OpenSeadragon's per-tile subrequest storm to ~one
-    # FastAPI hit per image per cache window.
+    # auth_request subrequest cache: keyed on the tile token, the
+    # source-image id, and a path class (``thumb`` vs ``tiles``) — never on
+    # client identity — and storing only the allow/deny verdict; no tile
+    # bytes are cached. A valid token authorizes one image for its whole
+    # TTL, so caching the 204 briefly collapses OpenSeadragon's per-tile
+    # subrequest storm to ~one FastAPI hit per image per cache window. The
+    # path class is in the key because ``purpose="thumb"`` tokens (#1609)
+    # authorize ``thumbnail.jpeg`` only: a thumbnail verdict must never be
+    # replayed for a tile request, while all tile paths still share the
+    # ``tiles`` class so the per-tile storm still collapses.
     proxy_cache_path /var/cache/nginx/tile_auth levels=1 keys_zone=tile_auth:1m max_size=8m inactive=60s use_temp_path=off;
 
     # Requests without a tile token must never hit (or populate) the auth
@@ -34,6 +38,15 @@ data:
     map $request_uri $tile_image_id_from_uri {
         ~^/api/tiles/([0-9]+)/ $1;
         default "";
+    }
+
+    # Split the verdict cache into two classes so a ``thumb``-scoped 204 is
+    # never reused for a tile request (#1609). Matches the backend's
+    # exact-path rule for ``purpose="thumb"`` tokens: only the top-level
+    # ``thumbnail.jpeg`` is thumbnail scope; nested names are tile paths.
+    map $request_uri $tile_path_class_from_uri {
+        ~^/api/tiles/[0-9]+/thumbnail\.jpeg(\?|$) thumb;
+        default tiles;
     }
 
     map $tile_auth_token $tile_auth_no_token {
@@ -56,6 +69,7 @@ data:
             # token bound to a different image.
             set $tile_auth_token $tile_auth_token_from_uri;
             set $tile_image_id $tile_image_id_from_uri;
+            set $tile_path_class $tile_path_class_from_uri;
             auth_request /_tiles_auth;
 
             alias {{ .Values.env.TILES_DIR }}/;
@@ -93,11 +107,15 @@ data:
             proxy_set_header Content-Length "";
             proxy_set_header X-Original-URI $request_uri;
 
-            # Cache the verdict per token + source-image id (ADR: TTL ≤
-            # 60s, cache 204 only). Token-only keying is unsafe because a
-            # token scoped to image A must not authorize image B from cache.
+            # Cache the verdict per token + source-image id + path class
+            # (ADR: TTL ≤ 60s, cache 204 only). Token-only keying is unsafe
+            # because a token scoped to image A must not authorize image B
+            # from cache; the path class likewise stops a thumbnail-scoped
+            # 204 for a ``purpose="thumb"`` token from authorizing tile
+            # paths for up to 30s (#1609). All tile paths share the
+            # ``tiles`` class, so the per-tile storm still collapses.
             proxy_cache tile_auth;
-            proxy_cache_key "$tile_auth_token:$tile_image_id";
+            proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class";
             proxy_cache_valid 204 30s;
             proxy_cache_bypass $tile_auth_no_token;
             proxy_no_cache $tile_auth_no_token;

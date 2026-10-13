@@ -378,6 +378,13 @@ export interface ApiCategory {
   updated_at: string
   /** Non-blocking advisories returned on create/update (e.g. program/group intersection). */
   warnings?: ApiCategoryWarning[]
+  /** Server-resolved card-image pin (#1609): the pinned image id when it
+   *  resolves to an image in this category's subtree, else null. */
+  card_image_id?: number | null
+  /** Tokenized thumbnail URL for the card cover. Emitted with a
+   *  thumbnail-only token so it renders even when the pinned image is not
+   *  otherwise visible to the caller. */
+  card_thumb?: string | null
 }
 
 export interface ApiCategoryTree extends ApiCategory {
@@ -538,6 +545,10 @@ export function updateCategory(
     body: JSON.stringify(body),
     headers,
   })
+}
+
+export function fetchCategory(id: number): Promise<ApiCategory> {
+  return request(`/categories/${id}`)
 }
 
 export function deleteCategory(id: number): Promise<void> {

@@ -27,7 +27,12 @@ frontend-facing behavior described in docs.
   `core.hooksPath` is already customized; the hook runs Prettier on staged
   files before commit.
 - Do not treat frontend filtering as security. Mirrored filtering is UX only;
-  backend routers enforce student visibility.
+  backend routers enforce student visibility. Category card covers are the
+  sanctioned exception (#1609): `CategoryTile` renders the server-emitted
+  `cardThumb` verbatim (thumbnail-only token, renewed via `fetchCategory`,
+  never `GET /api/images/{id}`) and `useBrowseData` maps `card_image_id` /
+  `card_thumb` from server fields — never from `metadata_extra`, which the
+  backend scrubs for students.
 - Do not change drag-and-drop collision logic, drop zones, collision priority,
   or activation constraints without reading `../../../docs/drag-and-drop.md`
   and planning a human feel-test.

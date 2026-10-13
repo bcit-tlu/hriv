@@ -48,6 +48,93 @@ const category: Category = {
   version: 1,
 }
 
+const visibilityCategory: Category = {
+  id: 10,
+  label: 'Root',
+  parentId: null,
+  children: [
+    {
+      id: 11,
+      label: 'Hidden Child',
+      parentId: 10,
+      children: [],
+      images: [
+        {
+          id: 30,
+          name: 'hidden-child-img.jpg',
+          thumb: '/t/30',
+          tileSources: '/tiles/30',
+          active: true,
+          sortOrder: 0,
+          version: 1,
+        },
+      ],
+      programIds: [],
+      groupIds: [],
+      status: 'hidden',
+      sortOrder: 0,
+      version: 1,
+    },
+    {
+      id: 12,
+      label: 'Restricted Child',
+      parentId: 10,
+      children: [
+        {
+          id: 13,
+          label: 'Open Grandchild',
+          parentId: 12,
+          children: [],
+          images: [
+            {
+              id: 40,
+              name: 'inherited-restriction-img.jpg',
+              thumb: '/t/40',
+              tileSources: '/tiles/40',
+              active: true,
+              sortOrder: 0,
+              version: 1,
+            },
+          ],
+          programIds: [],
+          groupIds: [],
+          sortOrder: 0,
+          version: 1,
+        },
+      ],
+      images: [],
+      programIds: [5],
+      groupIds: [],
+      sortOrder: 0,
+      version: 1,
+    },
+  ],
+  images: [
+    {
+      id: 20,
+      name: 'open-img.jpg',
+      thumb: '/t/20',
+      tileSources: '/tiles/20',
+      active: true,
+      sortOrder: 0,
+      version: 1,
+    },
+    {
+      id: 21,
+      name: 'inactive-img.jpg',
+      thumb: '/t/21',
+      tileSources: '/tiles/21',
+      active: false,
+      sortOrder: 0,
+      version: 1,
+    },
+  ],
+  programIds: [],
+  groupIds: [],
+  sortOrder: 0,
+  version: 1,
+}
+
 const emptyCategory: Category = {
   id: 3,
   label: 'Empty',
@@ -127,6 +214,63 @@ describe('CardImagePickerModal', () => {
     await user.click(screen.getByRole('button', { name: 'Clear' }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(onSave).toHaveBeenCalledWith(null)
+  })
+
+  it('flags images that are not student-visible (#1609)', () => {
+    render(
+      <CardImagePickerModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        category={visibilityCategory}
+        currentImageId={null}
+      />,
+    )
+    const icons = screen.getAllByTestId('limited-visibility-icon')
+    // inactive image + hidden child + restricted grandchild (inherited).
+    expect(icons).toHaveLength(3)
+    for (const name of [
+      'inactive-img.jpg',
+      'hidden-child-img.jpg',
+      'inherited-restriction-img.jpg',
+    ]) {
+      const row = screen.getByText(name).closest('tr')!
+      expect(row.querySelector('[data-testid="limited-visibility-icon"]')).not.toBeNull()
+    }
+    // The helper sentence appears once when any row is flagged.
+    expect(screen.getByText(/Hidden or restricted for some students/)).toBeInTheDocument()
+  })
+
+  it('does not flag unrestricted active images', () => {
+    render(
+      <CardImagePickerModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        category={visibilityCategory}
+        currentImageId={null}
+      />,
+    )
+    const openRow = screen.getByText('open-img.jpg').closest('tr')!
+    expect(openRow.querySelector('[data-testid="limited-visibility-icon"]')).toBeNull()
+  })
+
+  it('shows the limited-visibility tooltip on the flag icon', async () => {
+    const user = userEvent.setup()
+    render(
+      <CardImagePickerModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        category={visibilityCategory}
+        currentImageId={null}
+      />,
+    )
+    await user.hover(screen.getAllByTestId('limited-visibility-icon')[0])
+    const tooltips = await screen.findAllByText(
+      /they will still see this cover as the tile thumbnail/,
+    )
+    expect(tooltips.length).toBeGreaterThan(0)
   })
 
   it('cancel calls onClose', async () => {

@@ -37,6 +37,10 @@ export interface Category {
   sortOrder: number
   version: number
   cardImageId?: number | null
+  /** Server-resolved cover thumbnail (#1609): tokenized with a
+   *  thumbnail-only tile token, so it renders for students even when the
+   *  pinned image is inactive or hidden from them. Null → folder icon. */
+  cardThumb?: string | null
   metadataExtra?: Record<string, unknown> | null
 }
 
