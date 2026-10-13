@@ -14,7 +14,7 @@ import Typography from '@mui/material/Typography'
 import { alpha } from '@mui/material/styles'
 import LinkIcon from '@mui/icons-material/Link'
 import LinkOffIcon from '@mui/icons-material/LinkOff'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import ImageIcon from '@mui/icons-material/Image'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import ScreenRotationIcon from '@mui/icons-material/ScreenRotation'
@@ -437,15 +437,7 @@ export default function SynchronizedCollectionViewer({
                 key={img.id}
                 divider
                 secondaryAction={
-                  <Button
-                    size="small"
-                    endIcon={<OpenInNewIcon />}
-                    href={`?image=${img.id}`}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      onOpenImage(img)
-                    }}
-                  >
+                  <Button size="small" endIcon={<ImageIcon />} onClick={() => onOpenImage(img)}>
                     Open image
                   </Button>
                 }
@@ -653,7 +645,7 @@ export default function SynchronizedCollectionViewer({
                   <Button
                     size="small"
                     variant="text"
-                    endIcon={<OpenInNewIcon />}
+                    endIcon={<ImageIcon />}
                     onClick={() => onOpenImage(image)}
                     aria-label={`Open ${image.name}`}
                   >

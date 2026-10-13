@@ -688,7 +688,14 @@ describe('SynchronizedCollectionViewer', () => {
     const { props } = renderViewer({ collection })
     expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('link', { name: 'Open image' }))
+    const openButton = screen.getByRole('button', { name: 'Open image' })
+    // Same-tab, in-app navigation (#1624): image icon, and no href/target that
+    // would let a modifier-click open the image in a new tab.
+    expect(openButton.querySelector('[data-testid="ImageIcon"]')).not.toBeNull()
+    expect(openButton.querySelector('[data-testid="OpenInNewIcon"]')).toBeNull()
+    expect(openButton).not.toHaveAttribute('href')
+    expect(openButton).not.toHaveAttribute('target')
+    fireEvent.click(openButton)
     expect(props.onOpenImage).toHaveBeenCalledWith(collection.images[0])
   })
 
@@ -698,7 +705,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(fallback).toHaveTextContent(
       'This collection has no images. Use "Manage Images" to add some.',
     )
-    expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open image' })).not.toBeInTheDocument()
   })
 
   it('points non-editors at no action for an empty collection', () => {
@@ -718,7 +725,7 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.getByTestId('synchronized-viewer-fallback')).toHaveTextContent(
       'All images in this collection are currently restricted.',
     )
-    expect(screen.queryByRole('link', { name: 'Open image' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open image' })).not.toBeInTheDocument()
   })
 
   it('slides the pair up when a member fails and falls back under two', () => {

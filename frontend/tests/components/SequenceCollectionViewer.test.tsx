@@ -354,7 +354,14 @@ describe('SequenceCollectionViewer', () => {
   it('opens the current image in the regular ?image= view', () => {
     const collection = seqCollection()
     const { props } = renderViewer({ collection, itemId: 101 })
-    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    const openButton = screen.getByRole('button', { name: 'Open image' })
+    // Same-tab, in-app navigation (#1624): the image icon, not the "open in new"
+    // icon, and no href/target that would open a new tab.
+    expect(openButton.querySelector('[data-testid="ImageIcon"]')).not.toBeNull()
+    expect(openButton.querySelector('[data-testid="OpenInNewIcon"]')).toBeNull()
+    expect(openButton).not.toHaveAttribute('href')
+    expect(openButton).not.toHaveAttribute('target')
+    fireEvent.click(openButton)
     expect(props.onOpenImage).toHaveBeenCalledWith(collection.images[1])
   })
 
