@@ -60,6 +60,9 @@ export interface GraphModel {
     categories: number
     /** Order-3 categories with no connected image ("without a collection"). */
     unconnectedCategories: number
+    /** Related collections — only set by the single-collection perspective
+     *  model (#1630). */
+    relatedCollections?: number
     order: number
   }
 }

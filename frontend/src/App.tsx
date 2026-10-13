@@ -46,6 +46,7 @@ import AppShell from './components/AppShell'
 import type { Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
+import type { CollectionsView } from './useCollectionsViewPreference'
 import ManageCollectionsPage from './components/ManageCollectionsPage'
 import AddToCollectionDialog from './components/AddToCollectionDialog'
 import CollectionEditDialog, { type CollectionFormValues } from './components/CollectionEditDialog'
@@ -517,9 +518,12 @@ export default function App() {
   } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
   const myCollectionsDrawerVisible =
     myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
+  // Reported upward by CollectionsPage — the list graph fills the viewport
+  // like the image/collection viewers (#1630 feedback).
+  const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
   const onViewerPage =
     (page === 'browse' && selectedImage != null) ||
-    (page === 'collections' && selectedCollectionId != null)
+    (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -2190,12 +2194,13 @@ export default function App() {
   // "Open image" from the collections graph (#1629): the graph only carries
   // image ids, so fetch the record first, then take the same `?image={id}`
   // viewer path as the collection detail. The epoch ref guards the async
-  // hop (#1636 review): navigating anywhere (or clicking another node)
-  // before the fetch lands must not be overwritten by the stale result.
+  // hop (#1636 review): navigating anywhere, clicking another node, or
+  // switching the collection detail before the fetch lands must not be
+  // overwritten by the stale result (#1638 review).
   const graphImageEpoch = useRef(0)
   useEffect(() => {
     graphImageEpoch.current += 1
-  }, [page])
+  }, [page, selectedCollectionId])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
       const epoch = ++graphImageEpoch.current
@@ -2369,6 +2374,7 @@ export default function App() {
               onReorderImages={collectionsData.reorderImages}
               onCollectionImageRenewed={collectionsData.renewCollectionImage}
               onViewerError={setErrorSnack}
+              onViewChange={setCollectionsListView}
               onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
               onCreate={async (values) => {

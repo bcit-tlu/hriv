@@ -829,6 +829,29 @@ export function fetchCollectionsGraph(
 }
 
 /**
+ * `GET /api/collections/{id}/graph` — the single-collection perspective
+ * behind the detail page's Graph View dialog (#1630). `images` are the
+ * hub's caller-visible members in member order; `related_collections`
+ * (order ≥ 2) are the other visible collections sharing ≥1 member;
+ * `categories` (order 3) are the hub members' categories.
+ */
+export interface ApiCollectionGraph {
+  order: number
+  collection: ApiCollectionGraphNode
+  images: ApiCollectionGraphImage[]
+  related_collections: ApiCollectionGraphNode[]
+  categories: ApiCollectionGraphCategory[]
+}
+
+export function fetchCollectionGraph(
+  id: number,
+  order: 1 | 2 | 3 = 1,
+  init?: RequestInit,
+): Promise<ApiCollectionGraph> {
+  return request(`/collections/${id}/graph?order=${order}`, init)
+}
+
+/**
  * Collections the given image belongs to that the caller may view (#1586).
  *
  * Server-filtered by visibility, so students never receive private/restricted

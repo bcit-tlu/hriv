@@ -61,6 +61,15 @@ const allIds = new Set(collections.map((c) => c.id))
 const meta = {
   title: 'Components/CollectionsGraph',
   component: CollectionsGraph,
+  decorators: [
+    // The frame flexes to fill a column parent (#1630); give stories a
+    // fixed-height column so Chromatic snapshots keep a stable size.
+    (Story) => (
+      <div style={{ display: 'flex', flexDirection: 'column', height: 560 }}>
+        <Story />
+      </div>
+    ),
+  ],
   parameters: {
     layout: 'fullscreen',
     chromatic: { pauseAnimationAtEnd: true, diffThreshold: 0.3 },

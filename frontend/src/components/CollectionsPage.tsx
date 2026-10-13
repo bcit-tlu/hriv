@@ -75,6 +75,7 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import CollectionGraphDialog from './CollectionGraphDialog'
 import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
@@ -112,6 +113,9 @@ export interface CollectionsPageProps {
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
+  /** Reports the current Cards/Table/Graph view so the shell can fill the
+   *  viewport in graph view (#1630 feedback). */
+  onViewChange?: (view: CollectionsView) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
   onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
@@ -211,6 +215,7 @@ function CollectionDetailHeader({
   onEdit,
   onTransfer,
   onManage,
+  onOpenGraph,
   togglingHidden,
   onToggleHidden,
   canFile,
@@ -228,6 +233,8 @@ function CollectionDetailHeader({
   onTransfer?: () => void
   /** Opens the member Manage dialog (#1566) — replaces the Reorder toggle. */
   onManage?: () => void
+  /** Opens the Graph View dialog (#1630) — read-only, shown to everyone. */
+  onOpenGraph?: () => void
   togglingHidden?: boolean
   onToggleHidden?: () => void
   /** The filed category (or an ancestor) is hidden — the collection is
@@ -422,6 +429,20 @@ function CollectionDetailHeader({
                 {collection.hidden ? 'Show collection' : 'Hide collection'}
               </Button>
             ))}
+          {/* Graph View sits between Hide and Manage (#1630): a read-only
+              structural view every viewer gets, no permission gate. */}
+          {onOpenGraph && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<HubIcon />}
+              onClick={onOpenGraph}
+              data-testid="collection-graph-open"
+              sx={hiddenSx}
+            >
+              Graph View
+            </Button>
+          )}
           {/* Manage opens the member dialog (reorder/add/remove, #1566) — it
               replaces the old sequence-only Reorder toggle and applies to
               both collection types. */}
@@ -525,6 +546,7 @@ export default function CollectionsPage({
   onReorderImages,
   onCollectionImageRenewed,
   onViewerError,
+  onViewChange,
   onSaveViewport,
   loadCollection,
   onCreate,
@@ -552,7 +574,16 @@ export default function CollectionsPage({
   // Member-management dialog (#1566) — reorder/add/remove live here now that
   // the sequence viewer's inline reorder mode is gone.
   const [manageOpen, setManageOpen] = useState(false)
+  const [graphDialogOpen, setGraphDialogOpen] = useState(false)
   const editRequestRef = useRef(0)
+  // Render-phase adjustment: close the graph dialog when the detail
+  // collection changes or closes, so Back → Forward cannot resurrect it
+  // without another click (#1638 review).
+  const [graphDialogFor, setGraphDialogFor] = useState<number | null>(null)
+  if (graphDialogFor !== (detail?.id ?? null)) {
+    setGraphDialogFor(detail?.id ?? null)
+    if (graphDialogOpen) setGraphDialogOpen(false)
+  }
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
   const detailCategoryPath = useMemo(() => {
@@ -581,6 +612,11 @@ export default function CollectionsPage({
 
   // ── Unified page view state (#1629) ──────────────────────────────
   const [viewPrefs, setViewPrefs] = useCollectionsViewPreference(currentUser?.id ?? null)
+  // The shell fills the viewport for the graph view, so it needs the
+  // current view reported upward (the pref itself is per-user state).
+  useEffect(() => {
+    onViewChange?.(viewPrefs.view)
+  }, [onViewChange, viewPrefs.view])
   // Search is client-side and intentionally NOT persisted.
   const [searchQuery, setSearchQuery] = useState('')
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
@@ -790,9 +826,12 @@ export default function CollectionsPage({
     display: { md: 'flex' },
     flexDirection: { md: 'column' },
     flex: { md: '1 1 0' },
+    minHeight: { md: 0 },
   } as const
   const hasLoadedViewerDetail =
     selectedCollectionId != null && detail != null && detailError == null
+  // The list graph fills the page like the detail viewers (#1630 feedback).
+  const graphViewActive = selectedCollectionId == null && viewPrefs.view === 'graph'
 
   let body: ReactNode
   if (selectedCollectionId != null) {
@@ -831,6 +870,7 @@ export default function CollectionsPage({
               onEdit={() => void openEdit(detail)}
               onTransfer={() => setTransferTarget(detail)}
               onManage={() => setManageOpen(true)}
+              onOpenGraph={() => setGraphDialogOpen(true)}
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
@@ -861,6 +901,7 @@ export default function CollectionsPage({
               onEdit={() => void openEdit(detail)}
               onTransfer={() => setTransferTarget(detail)}
               onManage={() => setManageOpen(true)}
+              onOpenGraph={() => setGraphDialogOpen(true)}
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
@@ -904,6 +945,7 @@ export default function CollectionsPage({
             justifyContent: 'space-between',
             gap: 1,
             mb: 1,
+            flexShrink: 0,
           }}
         >
           <Typography variant="h5" component="h1">
@@ -958,7 +1000,14 @@ export default function CollectionsPage({
             views. */}
         <Box
           data-testid="collection-filters"
-          sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 1.5, mb: 3 }}
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            gap: 1.5,
+            mb: 3,
+            flexShrink: 0,
+          }}
         >
           <Box
             component="span"
@@ -1097,18 +1146,36 @@ export default function CollectionsPage({
                 the transform lives for the component's mount (#1627, #1636).
                 Order-3 isolated categories render even with zero
                 collections, so the graph branch bypasses the empty state. */}
-            {viewPrefs.view === 'graph' && graphError && (
-              <Alert severity="error" sx={{ mb: 1 }}>
-                {graphError}
-              </Alert>
-            )}
-            {viewPrefs.view === 'graph' && !graphModel && !graphError && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-                <CircularProgress aria-label="Loading collections graph" />
-              </Box>
-            )}
-            {graphModel && (
-              <Box sx={{ display: viewPrefs.view === 'graph' ? 'block' : 'none' }}>
+            {/* Graph section fills the remaining page height in graph
+                view (#1630 feedback); hidden-but-mounted otherwise so the
+                canvas keeps its positions and transform. */}
+            <Box
+              data-testid="collections-graph-section"
+              sx={{
+                display: viewPrefs.view === 'graph' ? 'flex' : 'none',
+                flexDirection: 'column',
+                flex: '1 1 0',
+                minHeight: 0,
+              }}
+            >
+              {graphError && (
+                <Alert severity="error" sx={{ mb: 1, flexShrink: 0 }}>
+                  {graphError}
+                </Alert>
+              )}
+              {!graphModel && !graphError && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    flex: '1 1 0',
+                  }}
+                >
+                  <CircularProgress aria-label="Loading collections graph" />
+                </Box>
+              )}
+              {graphModel && (
                 <CollectionsGraph
                   model={graphModel}
                   onOpenCollection={onOpenCollection}
@@ -1164,8 +1231,8 @@ export default function CollectionsPage({
                     </>
                   }
                 />
-              </Box>
-            )}
+              )}
+            </Box>
           </>
         )}
       </>
@@ -1173,7 +1240,10 @@ export default function CollectionsPage({
   }
 
   return (
-    <Box data-testid="collections-page" sx={hasLoadedViewerDetail ? viewerFlexSx : undefined}>
+    <Box
+      data-testid="collections-page"
+      sx={hasLoadedViewerDetail || graphViewActive ? viewerFlexSx : undefined}
+    >
       {editLoadError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setEditLoadError(null)}>
           {editLoadError}
@@ -1222,6 +1292,21 @@ export default function CollectionsPage({
         }
         onImageRenewed={(image) => detail && onCollectionImageRenewed(detail.id, image)}
         onError={onViewerError}
+      />
+
+      {/* Graph View dialog (#1630) — local perspective graph; its stack is
+          dialog-local so the page URL never changes while navigating. */}
+      <CollectionGraphDialog
+        open={graphDialogOpen && detail != null}
+        collectionId={detail?.id ?? 0}
+        collectionName={detail?.name ?? ''}
+        categoryPaths={categoryPaths}
+        onClose={() => setGraphDialogOpen(false)}
+        onOpenImage={onOpenImageById ?? (() => undefined)}
+        onOpenCollection={(id) => {
+          setGraphDialogOpen(false)
+          onOpenCollection(id)
+        }}
       />
 
       <CollectionOwnersDialog

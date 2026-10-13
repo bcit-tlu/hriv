@@ -68,6 +68,15 @@ vi.mock('../../src/collectionsGraph/CollectionsGraph', () => ({
   },
 }))
 
+// The Graph View dialog mounts the canvas graph — stub it like above (#1630).
+const collectionGraphDialogProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/CollectionGraphDialog', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionGraphDialogProps.current = props
+    return props.open ? <div data-testid="collection-graph-dialog" /> : null
+  },
+}))
+
 const ADMIN: User = {
   id: 1,
   name: 'Admin',
@@ -164,6 +173,7 @@ describe('CollectionsPage', () => {
     synchronizedViewerProps.current = null
     manageDialogProps.current = null
     collectionsGraphProps.current = null
+    collectionGraphDialogProps.current = null
   })
 
   describe('list states', () => {
@@ -334,6 +344,17 @@ describe('CollectionsPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
       expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+    })
+
+    it('reports the current view upward via onViewChange (#1630)', async () => {
+      const onViewChange = vi.fn()
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })], onViewChange })
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('cards'))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('graph'))
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('table'))
     })
 
     it('refetches the graph when the order toggle changes', async () => {
@@ -1146,6 +1167,61 @@ describe('CollectionsPage', () => {
           permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       })
+      expect(screen.queryByRole('button', { name: 'Manage Images' })).not.toBeInTheDocument()
+    })
+
+    it('renders Graph View between Hide and Manage for every viewer (#1630)', async () => {
+      const detail = makeCollection({
+        id: 9,
+        type: 'sequence',
+        permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+      })
+      renderPage({ selectedCollectionId: 9, detail })
+      const hide = screen.getByTestId('collection-hide-toggle')
+      const graph = screen.getByTestId('collection-graph-open')
+      const manage = screen.getByRole('button', { name: 'Manage Images' })
+      expect(hide.compareDocumentPosition(graph) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(graph.compareDocumentPosition(manage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      fireEvent.click(graph)
+      expect(await screen.findByTestId('collection-graph-dialog')).toBeInTheDocument()
+      expect(collectionGraphDialogProps.current?.collectionId).toBe(9)
+    })
+
+    it('closes the graph dialog when the detail collection changes (#1638)', async () => {
+      const detail9 = makeCollection({ id: 9, type: 'sequence' })
+      const detail5 = makeCollection({ id: 5, type: 'sequence' })
+      const { rerender } = renderPage({ selectedCollectionId: 9, detail: detail9 })
+      fireEvent.click(screen.getByTestId('collection-graph-open'))
+      expect(await screen.findByTestId('collection-graph-dialog')).toBeInTheDocument()
+
+      const rerenderWith = (overrides: Partial<CollectionsPageProps>) => {
+        const props = makeProps(overrides)
+        rerender(
+          <AuthContext.Provider value={makeAuth(props.currentUser ?? ADMIN)}>
+            <CollectionsPage {...props} />
+          </AuthContext.Provider>,
+        )
+      }
+      rerenderWith({ selectedCollectionId: 5, detail: detail5 })
+      expect(screen.queryByTestId('collection-graph-dialog')).not.toBeInTheDocument()
+
+      // Coming back does not resurrect it without another click.
+      rerenderWith({ selectedCollectionId: 9, detail: detail9 })
+      expect(screen.queryByTestId('collection-graph-dialog')).not.toBeInTheDocument()
+    })
+
+    it('shows Graph View to a student even with no manage/hide rights (#1630)', () => {
+      renderPage({
+        currentUser: STUDENT,
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          type: 'synchronized',
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+        }),
+      })
+      expect(screen.getByTestId('collection-graph-open')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Manage Images' })).not.toBeInTheDocument()
     })
 
