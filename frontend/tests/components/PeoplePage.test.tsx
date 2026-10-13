@@ -320,6 +320,68 @@ describe('PeoplePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
   })
 
+  it('renders headers and row cells in the persisted column order', async () => {
+    localStorage.setItem(
+      'hrivpref:table-column-order:people:user:1',
+      JSON.stringify([
+        'email',
+        'name',
+        'role',
+        'active',
+        'program',
+        'group',
+        'last_access',
+        'id',
+        'created_at',
+      ]),
+    )
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const headerNames = screen.getAllByRole('columnheader').map((cell) => cell.textContent ?? '')
+    expect(headerNames.indexOf('Email')).toBeLessThan(headerNames.indexOf('Name'))
+
+    const row = screen.getByText('Admin User').closest('tr')!
+    const cellTexts = within(row)
+      .getAllByRole('cell')
+      .map((cell) => cell.textContent ?? '')
+    expect(cellTexts.indexOf('admin@example.ca')).toBeLessThan(cellTexts.indexOf('Admin User'))
+  })
+
+  it('lists column chooser options in the persisted column order', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      'hrivpref:table-column-order:people:user:1',
+      JSON.stringify([
+        'group',
+        'program',
+        'id',
+        'name',
+        'email',
+        'role',
+        'active',
+        'last_access',
+        'created_at',
+      ]),
+    )
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose people table columns' })
+    const checkboxNames = within(dialog)
+      .getAllByRole('checkbox')
+      .map((checkbox) => checkbox.closest('label')?.textContent?.trim() ?? '')
+    expect(checkboxNames.slice(0, 2)).toEqual(['Groups', 'Program'])
+    expect(checkboxNames.indexOf('ID')).toBeLessThan(checkboxNames.indexOf('Name'))
+  })
+
   it('opens bulk role dialog and calls API', async () => {
     const user = userEvent.setup()
     vi.mocked(bulkUpdateUserRole).mockResolvedValue(USERS)

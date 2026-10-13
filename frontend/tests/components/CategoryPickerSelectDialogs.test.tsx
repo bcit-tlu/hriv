@@ -23,6 +23,24 @@ afterEach(() => {
 })
 
 describe('CategoryPickerSelect — add category dialog', () => {
+  it('uses a custom root label in the collapsed value and root option', async () => {
+    const user = userEvent.setup()
+    render(
+      <CategoryPickerSelect
+        categories={[]}
+        value={null}
+        onChange={vi.fn()}
+        rootLabel="None. Access in Manage > Collections."
+      />,
+    )
+
+    expect(screen.getByRole('combobox')).toHaveTextContent('None. Access in Manage > Collections.')
+    await user.click(screen.getByRole('combobox'))
+    expect(
+      screen.getByRole('option', { name: 'None. Access in Manage > Collections.' }),
+    ).toBeInTheDocument()
+  })
+
   it('adds a child under a category and selects the newly created id', async () => {
     const user = userEvent.setup()
     const onAddCategory = vi.fn().mockResolvedValue(99)
@@ -82,6 +100,56 @@ describe('CategoryPickerSelect — add category dialog', () => {
 
     await waitFor(() => expect(onAddCategory).toHaveBeenCalledWith('Top level', null, [], []))
     // No numeric id returned: the selection must not change.
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('adds a top-level category when the root option is hidden and no categories exist', async () => {
+    const user = userEvent.setup()
+    const onAddCategory = vi.fn().mockResolvedValue(99)
+    const onChange = vi.fn()
+    render(
+      <CategoryPickerSelect
+        categories={[]}
+        value={null}
+        onChange={onChange}
+        includeRoot={false}
+        placeholder="Select a category"
+        onAddCategory={onAddCategory}
+      />,
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.queryByText('No other categories available')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: 'New top-level category' }))
+    expect(screen.getByLabelText('Category name')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Category name'), 'New category')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(onAddCategory).toHaveBeenCalledWith('New category', null, [], []))
+    expect(onChange).toHaveBeenCalledWith(99)
+  })
+
+  it('does not change the selection when the top-level category dialog is cancelled', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <CategoryPickerSelect
+        categories={[]}
+        value={null}
+        onChange={onChange}
+        includeRoot={false}
+        placeholder="Select a category"
+        onAddCategory={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'New top-level category' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'New Category' })).not.toBeInTheDocument(),
+    )
+
     expect(onChange).not.toHaveBeenCalled()
   })
 })

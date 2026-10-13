@@ -6,12 +6,21 @@ import {
   apiCollectionToCollection,
   apiImageToItem,
   canUseRestrictedVisibility,
+  collectionFullMessage,
+  collectionImageCap,
   describeCollectionOwner,
   describeCollectionOwners,
+  ownedCollectionCounts,
   parseCollectionIdParam,
   parseCollectionItemParam,
+  privateFilingWarning,
+  studentTypesAtCap,
 } from '../src/collectionUtils'
-import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
+import {
+  makeApiCollection,
+  makeApiCollectionSummary,
+  makeCollectionSummary,
+} from './helpers/fixtures'
 
 const API_IMAGE: ApiImage = {
   id: 11,
@@ -32,7 +41,86 @@ const API_IMAGE: ApiImage = {
   updated_at: '2026-01-03T00:00:00Z',
 }
 
+describe('collection capacity helpers', () => {
+  it('returns role-aware image caps while keeping synchronized capped for everyone', () => {
+    expect(collectionImageCap('synchronized', null)).toBe(4)
+    expect(collectionImageCap('sequence', 'student')).toBe(20)
+    expect(collectionImageCap('sequence', 'instructor')).toBeNull()
+  })
+
+  it('formats capacity messages by collection type and add scope', () => {
+    expect(collectionFullMessage('Lab set', 'synchronized', 'selection')).toBe(
+      'Adding this selection to "Lab set" would exceed the 4-image limit for synchronized collections.',
+    )
+    expect(collectionFullMessage('Lab set', 'synchronized', 'image')).toBe(
+      'Adding this image to "Lab set" would exceed the 4-image limit for synchronized collections.',
+    )
+    expect(collectionFullMessage('Lab set', 'sequence', 'selection')).toBe(
+      'Adding this selection to "Lab set" would exceed the 20-image limit students have for sequence collections.',
+    )
+  })
+
+  it('counts only collection rows with the matching user owner', () => {
+    const rows = [
+      makeCollectionSummary({
+        id: 1,
+        type: 'sequence',
+        owners: [
+          { kind: 'user', userId: 7, name: 'Student' },
+          { kind: 'user', userId: 8, name: 'Co-owner' },
+        ],
+      }),
+      makeCollectionSummary({
+        id: 2,
+        type: 'sequence',
+        owners: [{ kind: 'program', programId: 3, name: 'Program' }],
+      }),
+      makeCollectionSummary({
+        id: 3,
+        type: 'synchronized',
+        owners: [{ kind: 'user', userId: 7, name: 'Student' }],
+      }),
+    ]
+    expect(ownedCollectionCounts(rows, 7)).toEqual({ sequence: 1, synchronized: 1 })
+  })
+
+  it('reports capped collection types only for students', () => {
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({
+          id: i + 1,
+          type: 'sequence',
+          owners: [{ kind: 'user', userId: 7, name: 'Student' }],
+        }),
+      ),
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeCollectionSummary({
+          id: i + 11,
+          type: 'synchronized',
+          owners: [{ kind: 'user', userId: 7, name: 'Student' }],
+        }),
+      ),
+    ]
+    expect(studentTypesAtCap(rows, { id: 7, role: 'student' })).toEqual(
+      new Set(['sequence', 'synchronized']),
+    )
+    expect(studentTypesAtCap(rows, { id: 7, role: 'instructor' })).toEqual(new Set())
+  })
+})
+
 describe('collectionUtils mapping', () => {
+  it('warns about a single private collection filed on Browse', () => {
+    expect(privateFilingWarning()).toBe(
+      'This collection is private. Students will not be able to see the images in this collection.',
+    )
+  })
+
+  it('counts private collections in the bulk filing warning', () => {
+    expect(privateFilingWarning(2, 3)).toBe(
+      '2 of the 3 selected collections are private. Students will not be able to see the images in these collections.',
+    )
+  })
+
   it('maps a user owner and a program owner (#1531)', () => {
     expect(apiCollectionOwnerToOwner({ user_id: 7, name: 'Ada' })).toEqual({
       kind: 'user',
@@ -79,6 +167,8 @@ describe('collectionUtils mapping', () => {
       owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
       imageCount: 2,
       coverThumb: '/thumbs/skull.jpg?token=abc',
+      coverImageId: null,
+      coverBlank: false,
       version: 1,
       categoryId: null,
       sortOrder: 0,
@@ -92,6 +182,19 @@ describe('collectionUtils mapping', () => {
         canHide: false,
       },
     })
+  })
+
+  it('maps a pinned cover_image_id through to coverImageId', () => {
+    const summary = apiCollectionSummaryToSummary(makeApiCollectionSummary({ cover_image_id: 42 }))
+    expect(summary.coverImageId).toBe(42)
+  })
+
+  it('maps cover_blank through to coverBlank', () => {
+    const summary = apiCollectionSummaryToSummary(
+      makeApiCollectionSummary({ cover_blank: true, cover_thumb: null }),
+    )
+    expect(summary.coverBlank).toBe(true)
+    expect(summary.coverThumb).toBeNull()
   })
 
   it('maps ApiImage → ImageItem field by field', () => {

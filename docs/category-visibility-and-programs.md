@@ -151,11 +151,14 @@ Across the frontend, restriction and visibility affordances follow two separate
 emphasis rules:
 
 - Breadcrumb/header chips show the **effective** program/group restriction for
-  the current category or image, computed with full-path narrowing. A restriction
-  ID in that effective set renders at full strength when it is attached directly
-  to the current category/path segment, or at **0.6 opacity** when it is only
-  inherited from an ancestor. Ancestor IDs narrowed away by the current category
-  do not render in the breadcrumb/header chips.
+  the current category or image, computed with full-path narrowing. The path is
+  resolved against the live category tree (not the navigation-time `path`
+  snapshot), so background refreshes — including a reparented current
+  category — keep the chips current. A restriction ID in that effective set
+  renders at full strength when it is attached directly to the current
+  category/path segment, or at **0.6 opacity** when it is only inherited from
+  an ancestor. Ancestor IDs narrowed away by the current category do not
+  render in the breadcrumb/header chips.
 - Other surfaces that need restriction provenance, such as browse tile chips,
   ManagePage restriction chips, inherited-only category dialog chips, and
   category restriction lock icons, may show direct vs inherited restrictions

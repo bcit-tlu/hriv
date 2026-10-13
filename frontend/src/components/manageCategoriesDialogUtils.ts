@@ -128,23 +128,9 @@ export function collectCategorySortOrders(cats: Category[]): Map<number, number>
   return map
 }
 
-/**
- * Collect collections per ordering scope from the category tree plus the
- * root (uncategorized) list (epic #1525). Collections are tile-order
- * members like images: filed collections ride on `Category.collections`,
- * root collections come from `GET /api/collections?uncategorized=true`.
- */
-export function collectCollectionsByParent(
-  cats: Category[],
-  uncategorized: CollectionSummary[],
-): Map<string, CollectionSummary[]> {
+/** Collect collections per category ordering scope from the category tree. */
+export function collectCollectionsByParent(cats: Category[]): Map<string, CollectionSummary[]> {
   const map = new Map<string, CollectionSummary[]>()
-  if (uncategorized.length > 0) {
-    map.set(
-      'null',
-      [...uncategorized].sort((a, b) => a.sortOrder - b.sortOrder),
-    )
-  }
   function walk(nodes: Category[]) {
     for (const node of nodes) {
       if (node.collections.length > 0) {

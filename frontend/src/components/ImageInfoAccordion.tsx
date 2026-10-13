@@ -1,0 +1,225 @@
+import Accordion from '@mui/material/Accordion'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import Box from '@mui/material/Box'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { useRef, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import type { ImageItem, ImageSourceInfo } from '../types'
+import { formatFileSize } from '../formatUtils'
+import { scrollIntoViewAboveFooter } from '../scrollIntoViewAboveFooter'
+import type { MeasurementConfig } from './imageViewerUtils'
+import NoteDisplay from './NoteDisplay'
+
+export interface ImageInfoAccordionProps {
+  image: Pick<
+    ImageItem,
+    'id' | 'copyright' | 'note' | 'createdAt' | 'updatedAt' | 'width' | 'height' | 'fileSize'
+  >
+  programNames: string[]
+  groupNames: string[]
+  collections?: ReactNode
+  measurement?: MeasurementConfig | null
+  sourceInfo?: ImageSourceInfo | null
+  expanded: boolean
+  onExpandedChange: Dispatch<SetStateAction<boolean>>
+}
+
+export default function ImageInfoAccordion({
+  image,
+  programNames,
+  groupNames,
+  collections,
+  measurement,
+  sourceInfo,
+  expanded,
+  onExpandedChange,
+}: ImageInfoAccordionProps) {
+  const accordionRef = useRef<HTMLDivElement>(null)
+  const detailsRef = useRef<HTMLDivElement>(null)
+  const hasClassification =
+    image.copyright || programNames.length > 0 || groupNames.length > 0 || collections != null
+  const hasFileDetails =
+    image.createdAt ||
+    image.updatedAt ||
+    (image.width != null && image.height != null) ||
+    image.fileSize != null ||
+    measurement
+  const hasSourceInfo =
+    sourceInfo?.originalFilename != null ||
+    sourceInfo?.fileType != null ||
+    sourceInfo?.uploadedByName != null
+
+  return (
+    <Accordion
+      ref={accordionRef}
+      expanded={expanded}
+      onChange={(_, nextExpanded) => {
+        if (nextExpanded && accordionRef.current) {
+          scrollIntoViewAboveFooter(accordionRef.current, {
+            expectedHeightIncrease: detailsRef.current?.offsetHeight ?? 0,
+          })
+        }
+        onExpandedChange(nextExpanded)
+      }}
+      disableGutters
+      elevation={0}
+      variant="outlined"
+      sx={{
+        flexShrink: 0,
+        mt: 2,
+        borderRadius: 2,
+        bgcolor: 'background.paper',
+        '&::before': { display: 'none' },
+        '&.MuiAccordion-root:first-of-type, &.MuiAccordion-root:last-of-type': {
+          borderRadius: 2,
+        },
+      }}
+      slotProps={{
+        transition: {
+          unmountOnExit: false,
+          onEntered: () => {
+            if (accordionRef.current) scrollIntoViewAboveFooter(accordionRef.current)
+          },
+        },
+      }}
+    >
+      <AccordionSummary
+        expandIcon={<ExpandMoreIcon />}
+        id="image-info-header"
+        aria-controls="image-info-content"
+      >
+        <Typography component="span" variant="subtitle2">
+          Image information
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails ref={detailsRef}>
+        <Stack spacing={1.5}>
+          {hasClassification && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                columnGap: '2em',
+                rowGap: 1.5,
+              }}
+            >
+              {image.copyright && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Copyright:</strong> {image.copyright}
+                </Typography>
+              )}
+              {programNames.length > 0 && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Program{programNames.length > 1 ? 's' : ''}:</strong>{' '}
+                  {programNames.join(', ')}
+                </Typography>
+              )}
+              {groupNames.length > 0 && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Group{groupNames.length > 1 ? 's' : ''}:</strong> {groupNames.join(', ')}
+                </Typography>
+              )}
+              {collections}
+            </Box>
+          )}
+          {image.note && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 1,
+                width: '100%',
+              }}
+            >
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                component="div"
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                <strong>Note:&nbsp;</strong>
+              </Typography>
+              <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
+                <NoteDisplay key={image.id} note={image.note} />
+              </Box>
+            </Box>
+          )}
+          {hasFileDetails && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                columnGap: '2em',
+                rowGap: 1.5,
+              }}
+            >
+              {image.createdAt && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Created:</strong> {new Date(image.createdAt).toLocaleString()}
+                </Typography>
+              )}
+              {image.updatedAt && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Modified:</strong> {new Date(image.updatedAt).toLocaleString()}
+                </Typography>
+              )}
+              {image.width != null && image.height != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Dimensions:</strong> {image.width} &times; {image.height}
+                </Typography>
+              )}
+              {image.fileSize != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Size:</strong> {formatFileSize(image.fileSize)}
+                </Typography>
+              )}
+              {measurement && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Measurement:</strong>{' '}
+                  {measurement.scale && measurement.unit
+                    ? `${measurement.scale} px/${measurement.unit}`
+                    : measurement.scale
+                      ? `${measurement.scale} px`
+                      : (measurement.unit ?? '')}
+                </Typography>
+              )}
+            </Box>
+          )}
+          {hasSourceInfo && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                columnGap: '2em',
+                rowGap: 1.5,
+              }}
+            >
+              {sourceInfo?.originalFilename != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Original file:</strong> {sourceInfo.originalFilename}
+                </Typography>
+              )}
+              {sourceInfo?.fileType != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>File type:</strong> {sourceInfo.fileType}
+                </Typography>
+              )}
+              {sourceInfo?.uploadedByName != null && (
+                <Typography variant="body2" color="text.secondary" component="span">
+                  <strong>Uploaded by:</strong> {sourceInfo.uploadedByName}
+                </Typography>
+              )}
+            </Box>
+          )}
+          <Typography variant="body2" color="text.secondary">
+            Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control the
+            view. On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right corner
+            shows your current viewport.
+          </Typography>
+        </Stack>
+      </AccordionDetails>
+    </Accordion>
+  )
+}

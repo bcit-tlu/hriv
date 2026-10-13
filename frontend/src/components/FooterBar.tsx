@@ -90,6 +90,10 @@ export default function FooterBar({
         borderTop: 1,
         borderColor: 'divider',
         flex: '0 0 auto',
+        // Paints over the My collections sheet docked above it, so the
+        // sheet's bottom shadow never shows across the footer.
+        position: 'relative',
+        zIndex: 2,
       }}
     >
       <Typography variant="caption" color="text.secondary">

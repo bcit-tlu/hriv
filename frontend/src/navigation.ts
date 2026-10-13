@@ -18,8 +18,6 @@ export interface NavigationItem {
   section: NavigationSection
   icon: NavigationIcon
   page?: NavigationPage
-  /** For `page: 'collections'` items — which type sub-page the item opens. */
-  collectionType?: 'sequence' | 'synchronized'
   requiresEditContent?: boolean
   requiresManageUsers?: boolean
   requiresViewPeople?: boolean
@@ -34,22 +32,13 @@ const navigationItems: readonly NavigationItem[] = [
   // Visible to every role (students included) — collections are a browsing
   // feature, not a management one; the API scopes what each caller can see.
   // Dark-launched: only rendered when the deployment enables collections.
+  // One page since #1629 — sequence/synchronized became a type filter chip.
   {
-    id: 'collections-sequence',
-    label: 'Sequence collections',
+    id: 'collections',
+    label: 'Collections',
     section: 'primary',
     icon: 'collections',
     page: 'collections',
-    collectionType: 'sequence',
-    requiresCollections: true,
-  },
-  {
-    id: 'collections-synchronized',
-    label: 'Synchronized collections',
-    section: 'primary',
-    icon: 'collections',
-    page: 'collections',
-    collectionType: 'synchronized',
     requiresCollections: true,
   },
   {

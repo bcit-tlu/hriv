@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useBrowseData, apiTreeToCategory } from '../src/useBrowseData'
+import {
+  BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS,
+  useBrowseData,
+  apiTreeToCategory,
+} from '../src/useBrowseData'
 import { browseTreeStats } from '../src/dndInstrumentation'
 import type { UseBrowseDataDeps } from '../src/useBrowseData'
 import type { Category, User } from '../src/types'
@@ -132,6 +136,7 @@ describe('useBrowseData', () => {
     mockHasUnsavedChanges.mockReturnValue(false)
   })
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -723,7 +728,7 @@ describe('useBrowseData', () => {
     })
   })
 
-  describe('getPathRestriction', () => {
+  describe('ancestorProgramIds', () => {
     it('returns empty when no path segments have programs', async () => {
       mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 1, label: 'Root' })])
 
@@ -765,34 +770,157 @@ describe('useBrowseData', () => {
       expect(result.current.ancestorProgramIds).toEqual([10, 20])
     })
 
-    it('supports depth parameter for partial restriction', async () => {
-      const child = makeApiTree({
-        id: 2,
-        label: 'Child',
-        parent_id: 1,
-        program_ids: [10],
-      })
-      const root = makeApiTree({
-        id: 1,
-        label: 'Root',
-        children: [child],
-        program_ids: [10, 20, 30],
-      })
+    it('exposes the live ancestry of the path leaf', async () => {
+      const child = makeApiTree({ id: 2, label: 'Child', parent_id: 1, program_ids: [10] })
+      const root = makeApiTree({ id: 1, label: 'Root', children: [child], program_ids: [10, 20] })
       mockFetchCategoryTree.mockResolvedValue([root])
-
-      const rootCat = apiTreeToCategory(root)
-      const childCat = apiTreeToCategory(child)
 
       const deps = makeDeps({
         currentUser: makeUser(),
-        path: [rootCat, childCat],
+        path: [apiTreeToCategory(root), apiTreeToCategory(child)],
       })
       const { result } = renderHook(() => useBrowseData(deps))
 
       await triggerInitialLoad(result)
 
-      // Only first ancestor: [10, 20, 30]
-      expect(result.current.getPathRestriction(1)).toEqual([10, 20, 30])
+      expect(result.current.liveCategoryPath.map((c) => c.id)).toEqual([1, 2])
+      expect(result.current.liveCategoryPath[0].programIds).toEqual([10, 20])
+    })
+  })
+
+  // `path` holds navigation-time snapshots; a background refresh that
+  // reshapes the tree must not strand the derived scope (#1587).
+  describe('live path resolution after a tree refresh (#1587)', () => {
+    const snapshotPath = (): Category[] => [
+      apiTreeToCategory(makeApiTree({ id: 1, label: 'Parent', program_ids: [10, 20] })),
+      apiTreeToCategory(makeApiTree({ id: 2, label: 'Child', parent_id: 1 })),
+    ]
+
+    it('follows a reparented leaf to its new parent', async () => {
+      const child = makeApiTree({
+        id: 2,
+        label: 'Child',
+        parent_id: 3,
+        program_ids: [30],
+        group_ids: [7],
+        children: [makeApiTree({ id: 4, label: 'Grandchild', parent_id: 2 })],
+        images: [makeApiImage(40, { category_id: 2 })],
+      })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'Parent', program_ids: [10, 20] }),
+        makeApiTree({
+          id: 3,
+          label: 'New Parent',
+          program_ids: [30, 40],
+          group_ids: [7, 8],
+          children: [child],
+        }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath.map((c) => c.id)).toEqual([3, 2])
+      expect(result.current.currentCategories.map((c) => c.id)).toEqual([4])
+      expect(result.current.currentImages.map((i) => i.id)).toEqual([40])
+      // [30,40] ∩ [30] — the former parent's [10,20] no longer applies.
+      expect(result.current.ancestorProgramIds).toEqual([30])
+      expect(result.current.ancestorGroupIds).toEqual([7])
+    })
+
+    it('follows a reparented ancestor', async () => {
+      const child = makeApiTree({ id: 2, label: 'Child', parent_id: 1 })
+      const parent = makeApiTree({
+        id: 1,
+        label: 'Parent',
+        parent_id: 5,
+        program_ids: [10, 20],
+        children: [child],
+      })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 5, label: 'Top', program_ids: [20], children: [parent] }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath.map((c) => c.id)).toEqual([5, 1, 2])
+      expect(result.current.ancestorProgramIds).toEqual([20])
+    })
+
+    it('reads live restrictions rather than the snapshot after an edit', async () => {
+      const child = makeApiTree({ id: 2, label: 'Child', parent_id: 1 })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'Parent', program_ids: [99], children: [child] }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.ancestorProgramIds).toEqual([99])
+    })
+
+    it('resolves an empty scope (not root) when the leaf left the tree', async () => {
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'Parent', program_ids: [10, 20] }),
+        makeApiTree({ id: 9, label: 'Other' }),
+      ])
+      mockFetchUncategorizedImages.mockResolvedValue([makeApiImage(50)])
+
+      const deps = makeDeps({ currentUser: makeUser(), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath).toEqual([])
+      expect(result.current.currentCategories).toEqual([])
+      expect(result.current.currentImages).toEqual([])
+      expect(result.current.ancestorProgramIds).toEqual([])
+      expect(result.current.ancestorGroupIds).toEqual([])
+    })
+
+    it('keeps filtering hidden children for students under a reparented leaf', async () => {
+      const child = makeApiTree({
+        id: 2,
+        label: 'Child',
+        parent_id: 3,
+        children: [
+          makeApiTree({ id: 4, label: 'Visible', parent_id: 2 }),
+          makeApiTree({ id: 6, label: 'Hidden', parent_id: 2, status: 'hidden' }),
+        ],
+      })
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 3, label: 'New Parent', children: [child] }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser({ role: 'student' }), path: snapshotPath() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.currentCategories.map((c) => c.label)).toEqual(['Visible'])
+    })
+
+    it('keeps the root scope unchanged for an empty path', async () => {
+      mockFetchCategoryTree.mockResolvedValue([
+        makeApiTree({ id: 1, label: 'A', program_ids: [10] }),
+        makeApiTree({ id: 2, label: 'B' }),
+      ])
+
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+
+      await triggerInitialLoad(result)
+
+      expect(result.current.liveCategoryPath).toEqual([])
+      expect(result.current.currentCategories.map((c) => c.id)).toEqual([1, 2])
+      expect(result.current.ancestorProgramIds).toEqual([])
     })
   })
 
@@ -1058,6 +1186,159 @@ describe('useBrowseData', () => {
     })
   })
 
+  describe('category navigation revalidation', () => {
+    it('silently refreshes only the tree when the category path changes', async () => {
+      vi.useFakeTimers()
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      expect(result.current.categoriesLoading).toBe(false)
+      mockFetchCategoryTree.mockClear()
+      mockFetchUncategorizedImages.mockClear()
+
+      let resolveTree!: (tree: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveTree = resolve
+          }),
+      )
+      act(() => {
+        vi.advanceTimersByTime(BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS + 1)
+      })
+      rerender({
+        ...deps,
+        path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Target' }))],
+      })
+
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(mockFetchUncategorizedImages).not.toHaveBeenCalled()
+      await act(async () => {
+        resolveTree([makeApiTree({ id: 2, label: 'Target' })])
+      })
+    })
+
+    it('does not revalidate the path while an authoritative tree refresh is current', async () => {
+      vi.useFakeTimers()
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      mockFetchCategoryTree.mockClear()
+      act(() => {
+        vi.advanceTimersByTime(BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS + 1)
+      })
+
+      await act(async () => {
+        const refresh = result.current.refreshCategories()
+        rerender({
+          ...deps,
+          path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Target' }))],
+        })
+        await refresh
+      })
+
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+      expect(mockFetchCategoryTree.mock.calls[0]?.[0]).toMatchObject({ cache: 'reload' })
+    })
+
+    it('revalidates a changed path after an authoritative refresh fails', async () => {
+      vi.useFakeTimers()
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
+      mockFetchCategoryTree.mockClear()
+      mockFetchUncategorizedImages.mockClear()
+      act(() => {
+        vi.advanceTimersByTime(BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS + 1)
+      })
+      mockFetchCategoryTree.mockRejectedValueOnce(new Error('refresh failed'))
+      await act(async () => {
+        await expect(result.current.refreshCategories()).rejects.toThrow('refresh failed')
+      })
+
+      mockFetchCategoryTree.mockClear()
+      let resolveTree!: (tree: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveTree = resolve
+          }),
+      )
+      rerender({
+        ...deps,
+        path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Target' }))],
+      })
+
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(mockFetchUncategorizedImages).not.toHaveBeenCalled()
+      await act(async () => {
+        resolveTree([])
+      })
+    })
+
+    it('suppresses a second category-path refresh inside the throttle window', async () => {
+      vi.useFakeTimers()
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      rerender({
+        ...deps,
+        path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'First' }))],
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+
+      rerender({
+        ...deps,
+        path: [apiTreeToCategory(makeApiTree({ id: 3, label: 'Second' }))],
+      })
+      expect(mockFetchCategoryTree).toHaveBeenCalledTimes(1)
+    })
+
+    it('does nothing on initial mount or when returning to the root', () => {
+      const deps = makeDeps({
+        currentUser: makeUser(),
+        path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Initial' }))],
+      })
+      const { rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      rerender({ ...deps, path: [] })
+      expect(mockFetchCategoryTree).not.toHaveBeenCalled()
+    })
+
+    it('skips category navigation refresh while tile ordering has unsaved changes', () => {
+      mockHasUnsavedChanges.mockReturnValue(true)
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
+        initialProps: deps,
+      })
+      rerender({
+        ...deps,
+        path: [apiTreeToCategory(makeApiTree({ id: 2, label: 'Target' }))],
+      })
+      expect(mockFetchCategoryTree).not.toHaveBeenCalled()
+      expect(mockFetchUncategorizedImages).not.toHaveBeenCalled()
+    })
+  })
+
   describe('pending-order protection (issue #980)', () => {
     it('background polling skips reads while reorder state is unsaved', async () => {
       const deps = makeDeps({ currentUser: makeUser() })
@@ -1154,7 +1435,7 @@ describe('useBrowseData', () => {
     })
   })
 
-  describe('getPathGroupRestriction', () => {
+  describe('ancestorGroupIds', () => {
     it('narrows group ids through the ancestor path independently of programs', async () => {
       const child = makeApiTree({
         id: 2,
@@ -1180,8 +1461,6 @@ describe('useBrowseData', () => {
 
       // narrowGroupIds intersects: [10,20,30] ∩ [10,20] = [10,20]
       expect(result.current.ancestorGroupIds).toEqual([10, 20])
-      // depth=1 returns only the root's groups
-      expect(result.current.getPathGroupRestriction(1)).toEqual([10, 20, 30])
     })
 
     it('loads groups via loadGroups', async () => {
@@ -1289,7 +1568,7 @@ describe('useBrowseData', () => {
   })
 })
 
-describe('collections (#1529)', () => {
+describe('collections in Browse', () => {
   beforeEach(() => {
     mockFetchCategoryTree.mockReset()
     mockFetchUncategorizedImages.mockReset()
@@ -1304,41 +1583,25 @@ describe('collections (#1529)', () => {
     mockHasUnsavedChanges.mockReturnValue(false)
   })
 
-  it('fetches root-scope collections via uncategorized when the flag is on', async () => {
-    mockFetchCollections.mockResolvedValue([
-      makeApiCollectionSummary({ id: 5, name: 'Root set', category_id: null, sort_order: 1 }),
-    ])
-    const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: true })
-    const { result } = renderHook(() => useBrowseData(deps))
+  it.each(['admin', 'instructor', 'staff', 'student'] as const)(
+    'does not fetch or show unfiled collections at root for %s',
+    async (role) => {
+      const deps = makeDeps({
+        currentUser: makeUser({ role }),
+        collectionsEnabled: true,
+      })
+      const { result } = renderHook(() => useBrowseData(deps))
 
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
+      await act(async () => {
+        await result.current.loadCategories()
+      })
 
-    expect(mockFetchCollections).toHaveBeenCalledWith(
-      { uncategorized: true },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    )
-    expect(result.current.uncategorizedCollections).toHaveLength(1)
-    expect(result.current.currentCollections[0]?.id).toBe(5)
-  })
+      expect(mockFetchCollections).not.toHaveBeenCalled()
+      expect(result.current.currentCollections).toEqual([])
+    },
+  )
 
-  it('does not fetch when the flag is off and reports empty collections', async () => {
-    const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: false })
-    const { result } = renderHook(() => useBrowseData(deps))
-
-    let applied: boolean | undefined
-    await act(async () => {
-      applied = await result.current.loadUncategorizedCollections()
-    })
-
-    expect(mockFetchCollections).not.toHaveBeenCalled()
-    expect(applied).toBe(true)
-    expect(result.current.uncategorizedCollections).toEqual([])
-    expect(result.current.currentCollections).toEqual([])
-  })
-
-  it('resolves a nested scope collections list from the tree embed', async () => {
+  it('resolves filed collection tiles from the category tree', async () => {
     mockFetchCategoryTree.mockResolvedValue([
       makeApiTree({
         id: 1,
@@ -1358,48 +1621,31 @@ describe('collections (#1529)', () => {
     rerender({ ...deps, path: [cat] })
 
     expect(result.current.currentCollections.map((c) => c.id)).toEqual([9])
-    // Root-scope fetch never ran for the nested view.
     expect(mockFetchCollections).not.toHaveBeenCalled()
   })
 
-  it('hides loaded collections when the flag turns off mid-session', async () => {
-    mockFetchCollections.mockResolvedValue([makeApiCollectionSummary({ id: 5 })])
+  it('hides filed collection tiles when the flag is off', async () => {
+    mockFetchCategoryTree.mockResolvedValue([
+      makeApiTree({
+        id: 1,
+        label: 'Cat A',
+        collections: [makeApiCollectionSummary({ id: 9, name: 'Filed set', category_id: 1 })],
+      }),
+    ])
     const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: true })
     const { result, rerender } = renderHook((d: UseBrowseDataDeps) => useBrowseData(d), {
       initialProps: deps,
     })
     await act(async () => {
-      await result.current.loadUncategorizedCollections()
+      await result.current.loadCategories()
     })
+    const cat = result.current.categories[0]
+    rerender({ ...deps, path: [cat] })
     expect(result.current.currentCollections).toHaveLength(1)
 
-    rerender({ ...deps, collectionsEnabled: false })
+    rerender({ ...deps, path: [cat], collectionsEnabled: false })
 
+    expect(mockFetchCollections).not.toHaveBeenCalled()
     expect(result.current.currentCollections).toEqual([])
-    expect(result.current.uncategorizedCollections).toEqual([])
-  })
-
-  it('reuses the same CollectionSummary object across reloads when unchanged', async () => {
-    mockFetchCollections.mockResolvedValue([makeApiCollectionSummary({ id: 5, name: 'Set' })])
-    const deps = makeDeps({ currentUser: makeUser(), collectionsEnabled: true })
-    const { result } = renderHook(() => useBrowseData(deps))
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
-    const first = result.current.uncategorizedCollections[0]
-
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
-    expect(result.current.uncategorizedCollections[0]).toBe(first)
-
-    mockFetchCollections.mockResolvedValue([
-      makeApiCollectionSummary({ id: 5, name: 'Set renamed' }),
-    ])
-    await act(async () => {
-      await result.current.loadUncategorizedCollections()
-    })
-    expect(result.current.uncategorizedCollections[0]).not.toBe(first)
-    expect(result.current.uncategorizedCollections[0].name).toBe('Set renamed')
   })
 })

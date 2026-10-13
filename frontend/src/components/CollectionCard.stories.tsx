@@ -17,8 +17,12 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
+    coverImageId: null,
+    coverBlank: false,
     categoryId: null,
     sortOrder: 0,
+    programIds: [],
+    groupIds: [],
     version: 1,
     createdAt: FIXED_AT,
     updatedAt: FIXED_AT,
@@ -47,6 +51,7 @@ const meta = {
   },
   args: {
     collection: makeSummary(),
+    programs: [],
     onOpen: fn(),
     onEdit: fn(),
   },
@@ -126,8 +131,8 @@ export const Curatorial: Story = {
         canHide: false,
       },
     }),
-    onTransfer: fn(),
     onMove: fn(),
+    onPickCoverImage: fn(),
   },
   parameters: {
     a11y: { test: 'todo' },
@@ -139,11 +144,8 @@ export const Curatorial: Story = {
       canvas.getByRole('button', { name: 'Move Filed into Browse to a category' }),
     )
     await expect(args.onMove).toHaveBeenCalledWith(args.collection)
-    await expect(args.onOpen).not.toHaveBeenCalled()
-    await userEvent.click(
-      canvas.getByRole('button', { name: 'Manage owners of Filed into Browse' }),
-    )
-    await expect(args.onTransfer).toHaveBeenCalledWith(args.collection)
+    await userEvent.click(canvas.getByRole('button', { name: 'Set Filed into Browse cover image' }))
+    await expect(args.onPickCoverImage).toHaveBeenCalledWith(args.collection)
     await expect(args.onOpen).not.toHaveBeenCalled()
   },
 }
@@ -180,8 +182,49 @@ export const NoCover: Story = {
       name: 'Empty collection',
       imageCount: 0,
       coverThumb: null,
+      coverImageId: null,
+      coverBlank: false,
       owners: [],
     }),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const BlankCover: Story = {
+  name: "Blank cover — picker's None",
+  // `coverBlank` wins over a thumb still on the record: the type logo
+  // stands in, like an uncovered category tile.
+  args: {
+    collection: makeSummary({
+      id: 9,
+      name: 'Explicitly uncovered',
+      coverBlank: true,
+    }),
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Compact: Story = {
+  args: {
+    collection: makeSummary({ name: 'Compact drawer tile' }),
+    density: 'compact',
+  },
+  parameters: {
+    a11y: { test: 'todo' },
+  },
+}
+
+export const Minimal: Story = {
+  name: 'Minimal — drawer tile',
+  // The My-collections drawer look: cover + title only, every metadata
+  // row dropped.
+  args: {
+    collection: makeSummary({ name: 'Title-only drawer tile' }),
+    density: 'minimal',
   },
   parameters: {
     a11y: { test: 'todo' },

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { createElement, StrictMode } from 'react'
 import { ApiError } from '../src/api'
 import type { User } from '../src/types'
 import {
@@ -94,6 +95,9 @@ function renderData(
         enabled: true,
         currentUser: user,
         selectedCollectionId: null,
+        type: 'all',
+        refreshToken: 0,
+        backgroundRefresh: false,
         ...options,
         ...props,
       }),
@@ -342,6 +346,10 @@ describe('useCollectionsData', () => {
     vi.clearAllMocks()
     fetchCollectionsMock.mockResolvedValue([])
   })
+  afterEach(() => {
+    vi.useRealTimers()
+    delete (document as { visibilityState?: unknown }).visibilityState
+  })
 
   it('does not fetch while disabled or logged out', () => {
     renderData({ enabled: false })
@@ -368,12 +376,39 @@ describe('useCollectionsData', () => {
     expect(fetchCollectionsMock).toHaveBeenCalledWith({})
   })
 
-  it('refetches with role-aware API filters when filters change', async () => {
-    const { result } = renderData({}, makeUser({ role: 'student' }))
+  it('does not duplicate the initial list request when StrictMode replays effects', async () => {
+    const currentUser = makeUser()
+    renderHook(
+      () =>
+        useCollectionsData({
+          enabled: true,
+          currentUser,
+          selectedCollectionId: null,
+          type: 'synchronized',
+          refreshToken: 0,
+          backgroundRefresh: false,
+        }),
+      { wrapper: ({ children }) => createElement(StrictMode, null, children) },
+    )
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
-    act(() => result.current.setFilters({ type: 'sequence', mine: false, owner: 'orphaned' }))
+  })
+
+  it('does not refetch when auth refreshes the same user object', async () => {
+    const currentUser = makeUser()
+    const { rerender } = renderData({}, currentUser)
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+    rerender({ currentUser: { ...currentUser } })
+    expect(fetchCollectionsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches with role-aware API filters when filters change', async () => {
+    const { result } = renderData({ type: 'sequence' }, makeUser({ role: 'student' }))
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+    // `type` lives in the filter state since #1629 — setFilters may change
+    // it freely; `orphaned` still drops for students.
+    act(() => result.current.setFilters({ type: 'synchronized', mine: true, owner: 'orphaned' }))
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
-    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'synchronized', mine: true })
   })
 
   it('drops a stale owner facet when the current user becomes a student', async () => {
@@ -448,7 +483,7 @@ describe('useCollectionsData', () => {
   })
 
   it('refreshes with the filters in effect when a save finishes, not those at its start', async () => {
-    const { result } = renderData()
+    const { result, rerender } = renderData()
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
 
     let resolveCreate!: (value: ReturnType<typeof makeApiCollection>) => void
@@ -461,7 +496,7 @@ describe('useCollectionsData', () => {
     act(() => {
       created = result.current.create(VALUES)
     })
-    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' }))
+    act(() => rerender({ type: 'sequence' }))
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
     expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
 
@@ -476,7 +511,7 @@ describe('useCollectionsData', () => {
   })
 
   it('places a finished save against the current filters, not those at its start', async () => {
-    const { result } = renderData()
+    const { result, rerender } = renderData()
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
 
     let resolveCreate!: (value: ReturnType<typeof makeApiCollection>) => void
@@ -493,7 +528,7 @@ describe('useCollectionsData', () => {
     fetchCollectionsMock.mockResolvedValueOnce([
       makeApiCollectionSummary({ id: 5, type: 'sequence' }),
     ])
-    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' }))
+    act(() => rerender({ type: 'sequence' }))
     await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([5]))
 
     // A failed background refresh leaves the optimistic placement in charge.
@@ -545,12 +580,234 @@ describe('useCollectionsData', () => {
         }),
     )
     fetchCollectionsMock.mockResolvedValueOnce([makeApiCollectionSummary({ id: 2 })])
-    const { result } = renderData()
-    act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' }))
+    const { result, rerender } = renderData()
+    act(() => rerender({ type: 'sequence' }))
     await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([2]))
     act(() => resolveFirst([makeApiCollectionSummary({ id: 1 })]))
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.collections.map((c) => c.id)).toEqual([2])
+  })
+
+  it('hides rows from the previous type while the new type loads', async () => {
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, type: 'sequence' }),
+    ])
+    let resolveSynchronized!: (rows: ReturnType<typeof makeApiCollectionSummary>[]) => void
+    fetchCollectionsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSynchronized = resolve
+        }),
+    )
+    const { result, rerender } = renderData({ type: 'sequence' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
+
+    rerender({ type: 'synchronized' })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.loading).toBe(true)
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'synchronized' })
+
+    await act(async () => {
+      resolveSynchronized([makeApiCollectionSummary({ id: 2, type: 'synchronized' })])
+    })
+    expect(result.current.collections.map((c) => c.id)).toEqual([2])
+  })
+
+  it('keeps a first-visit load empty when create completes before it resolves', async () => {
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, type: 'sequence' }),
+    ])
+    let resolveSynchronized!: (rows: ReturnType<typeof makeApiCollectionSummary>[]) => void
+    fetchCollectionsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSynchronized = resolve
+        }),
+    )
+    const { result, rerender } = renderData({ type: 'sequence' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
+
+    rerender({ type: 'synchronized' })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.loading).toBe(true)
+
+    createCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 42, type: 'synchronized' }))
+    let resolveRefresh!: (rows: ReturnType<typeof makeApiCollectionSummary>[]) => void
+    fetchCollectionsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+    await act(async () => {
+      await result.current.create({ ...VALUES, type: 'synchronized' })
+    })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => {
+      resolveSynchronized([makeApiCollectionSummary({ id: 99, type: 'synchronized' })])
+    })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => {
+      resolveRefresh([makeApiCollectionSummary({ id: 42, type: 'synchronized' })])
+    })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([42]))
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('shows cached rows immediately when revisiting a key, then its refreshed rows', async () => {
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, type: 'sequence' }),
+    ])
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 2, type: 'synchronized' }),
+    ])
+    let resolveSequence!: (rows: ReturnType<typeof makeApiCollectionSummary>[]) => void
+    fetchCollectionsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSequence = resolve
+        }),
+    )
+    const { result, rerender } = renderData({ type: 'sequence' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
+
+    rerender({ type: 'synchronized' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([2]))
+
+    rerender({ type: 'sequence' })
+    expect(result.current.collections.map((c) => c.id)).toEqual([1])
+    expect(fetchCollectionsMock).toHaveBeenCalledTimes(3)
+    await act(async () => {
+      resolveSequence([makeApiCollectionSummary({ id: 3, type: 'sequence' })])
+    })
+    expect(result.current.collections.map((c) => c.id)).toEqual([3])
+  })
+
+  it('refetches exactly once when refreshToken changes without filter changes', async () => {
+    const { rerender } = renderData({ type: 'sequence', refreshToken: 0 })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+
+    rerender({ refreshToken: 1 })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence' })
+  })
+
+  it('polls every 30 seconds without loading and keeps rows after a silent failure', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    fetchCollectionsMock.mockResolvedValueOnce([makeApiCollectionSummary({ id: 1 })])
+    const { result } = renderData({ backgroundRefresh: true })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.collections.map((c) => c.id)).toEqual([1])
+
+    fetchCollectionsMock.mockRejectedValueOnce(new Error('poll failed'))
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(fetchCollectionsMock).toHaveBeenCalledTimes(2)
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({}, { signal: expect.any(AbortSignal) })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBeNull()
+    expect(result.current.collections.map((c) => c.id)).toEqual([1])
+  })
+
+  it('discards a poll response that resolves after a local remove', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    fetchCollectionsMock.mockResolvedValueOnce([makeApiCollectionSummary({ id: 1 })])
+    let resolvePoll!: (rows: ReturnType<typeof makeApiCollectionSummary>[]) => void
+    fetchCollectionsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePoll = resolve
+        }),
+    )
+    fetchCollectionsMock.mockResolvedValueOnce([])
+    deleteCollectionMock.mockResolvedValueOnce(undefined)
+    const { result } = renderData({ backgroundRefresh: true })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+      await Promise.resolve()
+    })
+    const pollSignal = fetchCollectionsMock.mock.calls[1][1]?.signal
+
+    await act(async () => {
+      await result.current.remove(1)
+    })
+    expect(pollSignal?.aborted).toBe(true)
+    expect(result.current.collections).toEqual([])
+
+    await act(async () => {
+      resolvePoll([makeApiCollectionSummary({ id: 1 })])
+    })
+    expect(result.current.collections).toEqual([])
+  })
+
+  it('drops cached rows for other keys after a local write', async () => {
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, type: 'sequence' }),
+    ])
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 2, type: 'synchronized' }),
+    ])
+    fetchCollectionsMock.mockResolvedValueOnce([
+      makeApiCollectionSummary({ id: 1, type: 'sequence' }),
+    ])
+    fetchCollectionsMock.mockResolvedValueOnce([])
+    let resolveSynchronized!: (rows: ReturnType<typeof makeApiCollectionSummary>[]) => void
+    fetchCollectionsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSynchronized = resolve
+        }),
+    )
+    deleteCollectionMock.mockResolvedValueOnce(undefined)
+    const { result, rerender } = renderData({ type: 'sequence' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
+    rerender({ type: 'synchronized' })
+    await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([2]))
+    rerender({ type: 'sequence' })
+    await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(3))
+    await act(async () => {
+      await result.current.remove(1)
+    })
+    expect(result.current.collections).toEqual([])
+
+    rerender({ type: 'synchronized' })
+    expect(result.current.collections).toEqual([])
+    expect(result.current.loading).toBe(true)
+    await act(async () => {
+      resolveSynchronized([makeApiCollectionSummary({ id: 3, type: 'synchronized' })])
+    })
+    expect(result.current.collections.map((c) => c.id)).toEqual([3])
+  })
+
+  it('does not poll when backgroundRefresh is false', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    const { result } = renderData({ backgroundRefresh: false })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000)
+      await Promise.resolve()
+    })
+    expect(fetchCollectionsMock).toHaveBeenCalledTimes(1)
+    expect(result.current.loading).toBe(false)
   })
 
   describe('detail', () => {
@@ -607,6 +864,57 @@ describe('useCollectionsData', () => {
       expect(loaded).toMatchObject({ id: 5, programIds: [2] })
       expect(result.current.detail).toBeNull()
     })
+
+    it('loadCollection refreshes the open detail when ids match (#1567)', async () => {
+      // The detail view loads id 9…
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 9, name: 'Before' }))
+      const { result } = renderData({ selectedCollectionId: 9 })
+      await waitFor(() => expect(result.current.detail?.name).toBe('Before'))
+
+      // …then a category filing refetches the same record — the open detail
+      // picks up the moved state instead of going stale.
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Before', category_id: 20, version: 6 }),
+      )
+      let loaded: Awaited<ReturnType<typeof result.current.loadCollection>> | undefined
+      await act(async () => {
+        loaded = await result.current.loadCollection(9)
+      })
+      expect(loaded?.categoryId).toBe(20)
+      await waitFor(() => expect(result.current.detail?.categoryId).toBe(20))
+      expect(result.current.detail?.version).toBe(6)
+    })
+
+    it('loadCollection does not regress the open detail to an older version (#1567)', async () => {
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Current', version: 6 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 9 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(6))
+
+      // A refetch started before another write landed resolves last with
+      // stale data — the detail must keep the newer record.
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 9, name: 'Stale', version: 5 }),
+      )
+      await act(async () => {
+        await result.current.loadCollection(9)
+      })
+      expect(result.current.detail?.version).toBe(6)
+      expect(result.current.detail?.name).toBe('Current')
+    })
+
+    it('loadCollection leaves a different open detail alone', async () => {
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 7, name: 'Open' }))
+      const { result } = renderData({ selectedCollectionId: 7 })
+      await waitFor(() => expect(result.current.detail?.id).toBe(7))
+
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 9, name: 'Other' }))
+      await act(async () => {
+        await result.current.loadCollection(9)
+      })
+      expect(result.current.detail?.id).toBe(7)
+    })
   })
 
   describe('mutations', () => {
@@ -623,6 +931,7 @@ describe('useCollectionsData', () => {
         created = await result.current.create({
           ...VALUES,
           visibility: 'restricted',
+          categoryId: 10,
           programIds: [1],
           groupIds: [10],
         })
@@ -632,6 +941,7 @@ describe('useCollectionsData', () => {
         description: 'Frontal vs lateral',
         type: 'sequence',
         visibility: 'restricted',
+        category_id: 10,
         image_ids: [],
         program_ids: [1],
         group_ids: [10],
@@ -644,9 +954,9 @@ describe('useCollectionsData', () => {
 
     it('create does not prepend a row hidden by the active filters', async () => {
       createCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 42, type: 'sequence' }))
-      const { result } = renderData()
+      const { result, rerender } = renderData()
       await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
-      act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'synchronized' }))
+      act(() => rerender({ type: 'synchronized' }))
       await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
       await act(async () => {
         await result.current.create({ ...VALUES, type: 'sequence' })
@@ -1400,6 +1710,77 @@ describe('useCollectionsData', () => {
       expect(updateCollectionMock).toHaveBeenLastCalledWith(1, { hidden: true, version: 4 })
       expect(result.current.detail?.hidden).toBe(true)
     })
+
+    it('setCoverImage PATCHes the pinned member with the detail version', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, cover_image_id: 12 }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.setCoverImage(1, 12)
+      })
+      expect(updateCollectionMock).toHaveBeenCalledWith(1, {
+        cover_image_id: 12,
+        cover_blank: false,
+        version: 3,
+      })
+      expect(result.current.detail?.coverImageId).toBe(12)
+      expect(result.current.collections[0].coverImageId).toBe(12)
+    })
+
+    it('setCoverImage blank=true PATCHes the explicit no-cover state', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 3 }))
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 4, cover_image_id: null, cover_blank: true }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.setCoverImage(1, null, true)
+      })
+      expect(updateCollectionMock).toHaveBeenCalledWith(1, {
+        cover_image_id: null,
+        cover_blank: true,
+        version: 3,
+      })
+      expect(result.current.detail?.coverBlank).toBe(true)
+    })
+
+    it('setCoverImage null clears the pin and merges a 409 record for retry', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      fetchCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 3, cover_image_id: 12 }),
+      )
+      updateCollectionMock
+        .mockRejectedValueOnce(new ApiError(409, 'Stale', makeApiCollection({ id: 1, version: 4 })))
+        .mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5, cover_image_id: null }))
+      const { result } = renderData({ selectedCollectionId: 1 })
+      await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      fetchCollectionsMock.mockImplementation(() => new Promise(() => {}))
+
+      await act(async () => {
+        await expect(result.current.setCoverImage(1, null)).rejects.toBeInstanceOf(ApiError)
+      })
+      expect(result.current.detail?.version).toBe(4)
+
+      await act(async () => {
+        await result.current.setCoverImage(1, null)
+      })
+      expect(updateCollectionMock).toHaveBeenLastCalledWith(1, {
+        cover_image_id: null,
+        cover_blank: false,
+        version: 4,
+      })
+      expect(result.current.detail?.coverImageId).toBeNull()
+    })
   })
 
   describe('move (#1529)', () => {
@@ -1549,6 +1930,27 @@ describe('useCollectionsData', () => {
       expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
       // The fetched record still replaces the stale summary row.
       expect(result.current.collections[0]).toMatchObject({ id: 1, version: 3 })
+    })
+
+    it('applies the student sequence capacity in addImages', async () => {
+      fetchCollectionMock.mockResolvedValue(
+        makeApiCollection({
+          id: 1,
+          type: 'sequence',
+          version: 3,
+          images: Array.from({ length: 20 }, (_, i) => ({ id: i + 1 }) as never),
+        }),
+      )
+      const { result } = renderData({}, makeUser({ role: 'student' }))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      let status: string | undefined
+      await act(async () => {
+        status = (await result.current.addImages(1, [21])).status
+      })
+
+      expect(status).toBe('full')
+      expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
     })
 
     it('removeImages PUTs the list minus removed ids (drop-add undo)', async () => {

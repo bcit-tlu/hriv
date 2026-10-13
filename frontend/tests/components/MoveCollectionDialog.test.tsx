@@ -10,10 +10,12 @@ vi.mock('../../src/components/CategoryPickerSelect', () => ({
     value,
     onChange,
     label,
+    rootLabel = 'None (root level)',
   }: {
     value: number | null
     onChange: (v: number | null) => void
     label: string
+    rootLabel?: string
   }) => (
     <select
       data-testid="category-picker"
@@ -22,7 +24,7 @@ vi.mock('../../src/components/CategoryPickerSelect', () => ({
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
     >
-      <option value="">Top level</option>
+      <option value="">{rootLabel}</option>
       <option value="10">Category 10</option>
     </select>
   ),
@@ -44,7 +46,11 @@ describe('MoveCollectionDialog', () => {
       />,
     )
     expect(screen.getByText('Move Collection')).toBeInTheDocument()
-    expect(screen.getByText(/Epithelia/)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "File “Epithelia” into a Browse category. Collections that aren't filed don't appear on Browse.",
+      ),
+    ).toBeInTheDocument()
   })
 
   it('preselects the collection current category on open', () => {
@@ -79,7 +85,7 @@ describe('MoveCollectionDialog', () => {
     expect(onMove).toHaveBeenCalledWith(10)
   })
 
-  it('sends null when the root destination is chosen', async () => {
+  it('sends null when the unfiled destination is chosen', async () => {
     const user = userEvent.setup()
     const onMove = vi.fn()
     render(
@@ -96,6 +102,54 @@ describe('MoveCollectionDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Move' }))
 
     expect(onMove).toHaveBeenCalledWith(null)
+  })
+
+  it('labels the null destination None. Access in Manage > Collections.', () => {
+    render(
+      <MoveCollectionDialog
+        open
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        collection={collection}
+        categories={[]}
+      />,
+    )
+
+    expect(
+      screen.getByRole('option', { name: 'None. Access in Manage > Collections.' }),
+    ).toBeInTheDocument()
+  })
+
+  it('warns when filing a private collection and hides the warning when unfiled', async () => {
+    const user = userEvent.setup()
+    render(
+      <MoveCollectionDialog
+        open
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        collection={{ ...collection, visibility: 'private' }}
+        categories={[]}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This collection is private. Students will not be able to see the images in this collection.',
+    )
+
+    await user.selectOptions(screen.getByTestId('category-picker'), '')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not warn when filing a public collection', () => {
+    render(
+      <MoveCollectionDialog
+        open
+        onClose={vi.fn()}
+        onMove={vi.fn()}
+        collection={{ ...collection, visibility: 'public' }}
+        categories={[]}
+      />,
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('cancel calls onClose', async () => {
@@ -148,6 +202,6 @@ describe('MoveCollectionDialog', () => {
       />,
     )
     expect(screen.getByText('Move Collection')).toBeInTheDocument()
-    expect(screen.queryByText(/Move “/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/File “/)).not.toBeInTheDocument()
   })
 })

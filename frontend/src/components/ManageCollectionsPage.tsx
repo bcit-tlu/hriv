@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
+import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -18,11 +25,15 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { visuallyHidden } from '@mui/utils'
 import AddIcon from '@mui/icons-material/Add'
-import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import {
+  bulkDeleteCollections,
+  bulkUpdateCollections,
   createCollection,
   deleteCollection,
   fetchCollection,
@@ -40,9 +51,14 @@ import {
   describeCollectionOwner,
   describeCollectionOwners,
 } from '../collectionUtils'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { getCategoryHiddenStateFromPath } from '../treeUtils'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getVisibilityColors } from '../theme'
+import { tileOrderingCoordinator } from '../tileOrdering'
 import { useColorMode } from '../useColorMode'
 import { toCollectionPatch } from '../useCollectionsData'
+import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { ROWS_PER_PAGE_OPTIONS, useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import {
   getFilterTerms,
@@ -68,10 +84,12 @@ import type {
 } from '../types'
 import CategoryBreadcrumb, { buildCategoryPaths } from './CategoryBreadcrumb'
 import CategoryFilterTreePanel from './CategoryFilterTreePanel'
+import BulkEditCollectionsDialog from './BulkEditCollectionsDialog'
 import CollectionEditDialog from './CollectionEditDialog'
 import type { CollectionFormValues } from './CollectionEditDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
-import { CollectionVisibilityChip } from './CollectionCard'
+import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
@@ -81,6 +99,71 @@ import RenewingThumbnail from './RenewingThumbnail'
 type SortableColumn =
   'id' | 'name' | 'type' | 'visibility' | 'owners' | 'images' | 'category' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
+
+/** Hideable columns — the Actions column always renders (#1567), same as
+ *  ManagePage. `scope` is the Private/Public/Restricted chip; `visibility`
+ *  is the show/hide switch (the Manage Images 'Visibility' column). */
+type ManageCollectionColumn =
+  | 'cover'
+  | 'id'
+  | 'name'
+  | 'type'
+  | 'scope'
+  | 'owners'
+  | 'images'
+  | 'programs'
+  | 'groups'
+  | 'category'
+  | 'visibility'
+  | 'created_at'
+  | 'updated_at'
+
+const MANAGE_COLLECTION_COLUMNS: readonly ManageCollectionColumn[] = [
+  'cover',
+  'id',
+  'name',
+  'type',
+  'scope',
+  'owners',
+  'images',
+  'programs',
+  'groups',
+  'category',
+  'visibility',
+  'created_at',
+  'updated_at',
+]
+
+const MANAGE_COLLECTION_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageCollectionColumn>[] =
+  [
+    { key: 'cover', label: 'Cover' },
+    { key: 'id', label: 'ID' },
+    { key: 'name', label: 'Name' },
+    { key: 'type', label: 'Type' },
+    { key: 'scope', label: 'Scope' },
+    { key: 'owners', label: 'Owners' },
+    { key: 'images', label: 'Images' },
+    { key: 'programs', label: 'Programs' },
+    { key: 'groups', label: 'Groups' },
+    { key: 'category', label: 'Category' },
+    { key: 'visibility', label: 'Visibility' },
+    { key: 'created_at', label: 'Created' },
+    { key: 'updated_at', label: 'Modified' },
+  ]
+
+/** Lean default set mirroring ManagePage's six (thumbnail, name, category,
+ *  group, visibility, modified) so the table sizes to content and wraps
+ *  rather than overflowing into horizontal scroll; everything else is
+ *  opt-in via Choose columns (#1567). */
+const DEFAULT_VISIBLE_COLLECTION_COLUMNS: readonly ManageCollectionColumn[] = [
+  'cover',
+  'name',
+  'type',
+  'category',
+  'groups',
+  'visibility',
+  'updated_at',
+]
 
 interface ManageCollectionsStoredFilters {
   text?: Record<string, string>
@@ -129,13 +212,36 @@ export interface ManageCollectionsPageProps {
    */
   onNavigateCategory?: (categoryPath: Category[]) => void
   /**
-   * Open the shared MoveCollectionDialog (admin/instructor filing, #1529);
-   * the page refetches once `categories` refreshes, so no completion signal
-   * is needed. Omit to hide the affordance.
+   * Category filing saved straight from the Edit dialog's picker (#1566) —
+   * routes through the shared move path (POST …/move + snackbar + undo).
+   * Superseded the row-level Move affordance.
    */
-  onMoveCollection?: (collection: CollectionSummary) => void
+  onMoveCollectionToCategory?: (
+    collection: CollectionSummary,
+    categoryId: number | null,
+  ) => Promise<unknown>
+  /** Edit dialog category picker's inline affordances (#1566). */
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
+  onToggleCategoryVisibility?: (categoryId: number) => Promise<void>
   /** Open the collection detail view (`?collection={id}`) — read-only rows. */
   onOpenCollection: (id: number) => void
+  /**
+   * Notify the parent after a bulk write changed tile membership —
+   * refreshes the category tree/uncategorized list like ManagePage's
+   * `onCategoriesChanged` (#1578).
+   */
+  onCategoriesChanged?: () => void
   /** Route mutation failures to the page-level snackbar. */
   onError?: (message: string) => void
   /**
@@ -161,15 +267,21 @@ export default function ManageCollectionsPage({
   groups,
   currentUser,
   onNavigateCategory,
-  onMoveCollection,
+  onMoveCollectionToCategory,
+  onAddCategory,
+  onEditCategory,
+  onToggleCategoryVisibility,
   onOpenCollection,
+  onCategoriesChanged,
   onError,
   loadCollections = fetchCollections,
 }: ManageCollectionsPageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  // Filing is curatorial (admin/instructor) — wider than per-collection
+  // canEdit: an instructor may refile a colleague's collection, and the edit
+  // dialog's category picker is the filing path now (#1566/#1567).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
-  const showMove = canFileCollections && onMoveCollection != null
 
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -178,6 +290,11 @@ export default function ManageCollectionsPage({
 
   const [sortColumn, setSortColumn] = useState<SortableColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+
+  // Row selection for bulk edit (#1578) — ManagePage's idiom: a checkbox
+  // column, page-scoped select-all, and a "Bulk Edit (N selected)" button.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
 
   const storedFilters = useMemo(
     () => loadStoredTableFilters<ManageCollectionsStoredFilters>('manage-collections'),
@@ -217,6 +334,19 @@ export default function ManageCollectionsPage({
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
 
+  // A collection filed under a hidden category is invisible to students
+  // regardless of its own `hidden` flag — dim it like the image table's
+  // category-hidden rows (ManagePage's `isImageCategoryHidden` convention).
+  const isCollectionCategoryHidden = useCallback(
+    (c: CollectionSummary): boolean => {
+      if (c.categoryId == null) return false
+      const seg = categoryPaths.get(c.categoryId)
+      if (!seg) return false
+      return getCategoryHiddenStateFromPath([...seg.ancestors, seg.category]).hidden
+    },
+    [categoryPaths],
+  )
+
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
     setLoading(true)
@@ -226,6 +356,15 @@ export default function ManageCollectionsPage({
       const rows = (await loadCollections({})).map(apiCollectionSummaryToSummary)
       if (seq !== loadSeq.current) return
       setCollections(rows)
+      // Reconcile the bulk selection against the fresh rows — a collection
+      // deleted through its own edit dialog (or hidden by a concurrent
+      // change) must drop out so a later bulk call cannot 404 on a stale
+      // id (#1578).
+      const liveIds = new Set(rows.map((r) => r.id))
+      setSelected((prev) => {
+        if ([...prev].every((id) => liveIds.has(id))) return prev
+        return new Set([...prev].filter((id) => liveIds.has(id)))
+      })
       setError(null)
     } catch (err) {
       if (seq !== loadSeq.current) return
@@ -353,6 +492,31 @@ export default function ManageCollectionsPage({
     return sorted
   }, [filteredCollections, sortColumn, sortDirection, categoryPaths])
 
+  // Choose Columns — per-user persisted visibility, same hook + storage
+  // convention as ManagePage's `manage-images` table (#1567).
+  const {
+    visibleColumns,
+    isColumnVisible,
+    toggleColumn,
+    columnOrder,
+    orderedVisibleColumns,
+    setColumnOrder,
+  } = useTableColumnPreferences<ManageCollectionColumn>({
+    tableKey: 'manage-collections',
+    allColumns: MANAGE_COLLECTION_COLUMNS,
+    defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTION_COLUMNS,
+  })
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  // Dialog options follow the persisted column order (#1577) so drag
+  // reordering in the chooser matches the rendered table order.
+  const orderedColumnOptions = useMemo(() => {
+    const byKey = new Map(MANAGE_COLLECTION_COLUMN_OPTIONS.map((option) => [option.key, option]))
+    return columnOrder
+      .map((key) => byKey.get(key))
+      .filter((option): option is ColumnVisibilityOption<ManageCollectionColumn> => option != null)
+  }, [columnOrder])
+  const visibleColumnCount = MANAGE_COLLECTION_COLUMNS.filter((col) => isColumnVisible(col)).length
+
   const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('manage-collections')
   const [currentPage, setCurrentPage] = useState(0)
   const maxPage = Math.max(0, Math.ceil(sortedCollections.length / rowsPerPage) - 1)
@@ -365,6 +529,86 @@ export default function ManageCollectionsPage({
     currentPage * rowsPerPage,
     currentPage * rowsPerPage + rowsPerPage,
   )
+
+  // Curators may bulk refile/hide any row; everyone else can only select
+  // rows they could delete singly (sole-owner students/staff). The column
+  // only renders when the current user could select anything at all.
+  const rowSelectable = useCallback(
+    (c: CollectionSummary) => canFileCollections || c.permissions.canDelete,
+    [canFileCollections],
+  )
+  const selectionEnabled = canFileCollections || collections.some((c) => c.permissions.canDelete)
+  const selectableInView = useMemo(
+    () => pageCollections.filter(rowSelectable),
+    [pageCollections, rowSelectable],
+  )
+  const selectedInView = useMemo(
+    () => selectableInView.filter((c) => selected.has(c.id)).length,
+    [selectableInView, selected],
+  )
+  const selectedRows = useMemo(
+    () => collections.filter((c) => selected.has(c.id)),
+    [collections, selected],
+  )
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const c of selectableInView) {
+        if (checked) next.add(c.id)
+        else next.delete(c.id)
+      }
+      return next
+    })
+  }
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  // Bulk handlers (#1578) — same shape as ManagePage's: the API applies the
+  // diff atomically; a category move also invalidates every affected
+  // tile-order scope so a cached revision can't falsely 409 a reorder.
+  const handleBulkSave = async (data: { category_id?: number | null; hidden?: boolean }) => {
+    try {
+      await bulkUpdateCollections({ collection_ids: [...selected], ...data })
+      if (data.category_id !== undefined) {
+        const affected = new Set<number | null>()
+        for (const c of collections) {
+          if (selected.has(c.id) && (c.categoryId ?? null) !== data.category_id) {
+            affected.add(c.categoryId ?? null)
+            affected.add(data.category_id)
+          }
+        }
+        for (const scope of affected) tileOrderingCoordinator.invalidateRevision(scope)
+      }
+      setBulkEditOpen(false)
+      setSelected(new Set())
+      await load()
+      onCategoriesChanged?.()
+    } catch (err) {
+      console.error('Failed to bulk update collections', err)
+      throw err
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    try {
+      await bulkDeleteCollections({ collection_ids: [...selected] })
+      setBulkEditOpen(false)
+      setSelected(new Set())
+      await load()
+      onCategoriesChanged?.()
+    } catch (err) {
+      console.error('Failed to bulk delete collections', err)
+      throw err
+    }
+  }
 
   const handleSort = (column: SortableColumn) => {
     if (sortColumn === column) {
@@ -394,6 +638,9 @@ export default function ManageCollectionsPage({
   const [editing, setEditing] = useState<Collection | null>(null)
   const [ownersTarget, setOwnersTarget] = useState<CollectionSummary | null>(null)
   const editRequestRef = useRef(0)
+  // Single kebab menu per row — the ManagePage pattern (#1567).
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [menuCollection, setMenuCollection] = useState<CollectionSummary | null>(null)
 
   const openEdit = async (summary: CollectionSummary) => {
     const request = ++editRequestRef.current
@@ -413,21 +660,50 @@ export default function ManageCollectionsPage({
     version: number | null,
     baseline: Collection | null,
   ) => {
-    if (editing && version != null) {
-      await updateCollection(editing.id, toCollectionPatch(values, baseline, version))
-    } else {
-      await createCollection({
-        name: values.name,
-        description: values.description,
-        type: values.type,
-        visibility: values.visibility,
-        image_ids: [],
-        ...(values.visibility === 'restricted'
-          ? { program_ids: values.programIds, group_ids: values.groupIds }
-          : {}),
-      })
+    try {
+      if (editing && version != null) {
+        // PATCH only real field diffs (#1567 review): a version-only body is
+        // a content write the backend 403s for filing-only curators (and a
+        // no-op bump for everyone else). A hidden-only diff still PATCHes —
+        // hide is curatorial, not owner-scoped.
+        const patch = toCollectionPatch(values, baseline, version)
+        const updated = Object.keys(patch).some((k) => k !== 'version')
+          ? apiCollectionToCollection(await updateCollection(editing.id, patch))
+          : editing
+        // Advance the record the dialog is seeded from (#1567): if the
+        // chained move below fails, the editor stays open with
+        // baseline/version already at the saved state — a retry diffs clean
+        // instead of replaying a stale-version PATCH.
+        setEditing(updated)
+        // Category filing is a move, not a PATCH (#1566) — apply it after the
+        // metadata save so the move posts the just-refreshed version. A failed
+        // move must not read as a successful save: the move op already showed
+        // its error snackbar, so rethrow the API error — the dialog stays open
+        // with the real message (and its 409 conflict-reload path) (#1567).
+        if (values.categoryId !== (baseline?.categoryId ?? null)) {
+          const moved = await onMoveCollectionToCategory?.(updated, values.categoryId)
+          if (moved instanceof Error) throw moved
+        }
+      } else {
+        const created = await createCollection({
+          name: values.name,
+          description: values.description,
+          type: values.type,
+          visibility: values.visibility,
+          ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
+          image_ids: [],
+          ...(values.visibility === 'restricted'
+            ? { program_ids: values.programIds, group_ids: values.groupIds }
+            : {}),
+        })
+        if (values.categoryId != null) onCategoriesChanged?.()
+        onOpenCollection(created.id)
+      }
+    } finally {
+      // Refresh even when the save/move chain throws — a partial success
+      // (metadata saved, move failed) still changed the row.
+      void load()
     }
-    void load()
   }
 
   // Delete lives inside the edit dialog only (#1554) — EditImageModal's
@@ -453,10 +729,35 @@ export default function ManageCollectionsPage({
   }
 
   const handleRowClick = (c: CollectionSummary) => {
-    // Mirror ManagePage: row click opens the editor; read-only rows (staff,
-    // co-owner-less instructors) open the collection view instead.
-    if (c.permissions.canEdit) void openEdit(c)
+    // Mirror ManagePage: row click opens the editor — for owners, and for
+    // curators who can file but not edit (the dialog's category picker is
+    // the filing affordance, #1567). Other read-only rows open the view.
+    if (c.permissions.canEdit || canFileCollections) void openEdit(c)
     else onOpenCollection(c.id)
+  }
+
+  // Row Visibility switch (#1567): curatorial hide/show, same PATCH path
+  // the detail header's Hide link uses — refetch keeps OCC versions fresh.
+  const [togglingId, setTogglingId] = useState<number | null>(null)
+  const toggleRowHidden = async (c: CollectionSummary) => {
+    setTogglingId(c.id)
+    try {
+      await updateCollection(c.id, { hidden: !c.hidden, version: c.version })
+    } catch (err) {
+      onError?.(userMessage(err, 'Failed to update collection.'))
+    } finally {
+      setTogglingId(null)
+      void load()
+    }
+  }
+
+  const handleMenuOpen = (e: React.MouseEvent<HTMLElement>, c: CollectionSummary) => {
+    setMenuAnchor(e.currentTarget)
+    setMenuCollection(c)
+  }
+  const handleMenuClose = () => {
+    setMenuAnchor(null)
+    setMenuCollection(null)
   }
 
   const renewCoverThumb = useCallback(
@@ -477,6 +778,45 @@ export default function ManageCollectionsPage({
     label: getCategoryLabel(categoryPaths, id) || `Category ${id}`,
   }))
 
+  // Per-column header cells keyed like the column options (#1577): the
+  // TableHead renders `orderedVisibleColumns.map(c => columnHeaderCells[c])`
+  // so headers follow the user's persisted order; visibility filtering
+  // happens in `orderedVisibleColumns`, not here.
+  const sortableHeaderCell = (sortKey: SortableColumn, label: string) => (
+    <TableCell sortDirection={sortColumn === sortKey ? sortDirection : false}>
+      <TableSortLabel
+        active={sortColumn === sortKey}
+        direction={sortColumn === sortKey ? sortDirection : 'asc'}
+        onClick={() => handleSort(sortKey)}
+      >
+        {label}
+      </TableSortLabel>
+    </TableCell>
+  )
+
+  const columnHeaderCells: Record<ManageCollectionColumn, ReactNode> = {
+    cover: (
+      <TableCell sx={{ width: 48, p: 0.5 }}>
+        <Box component="span" sx={visuallyHidden}>
+          Cover
+        </Box>
+      </TableCell>
+    ),
+    id: sortableHeaderCell('id', 'ID'),
+    name: sortableHeaderCell('name', 'Name'),
+    type: sortableHeaderCell('type', 'Type'),
+    // Scope sorts by the underlying visibility field (#1567).
+    scope: sortableHeaderCell('visibility', 'Scope'),
+    owners: sortableHeaderCell('owners', 'Owners'),
+    images: sortableHeaderCell('images', 'Images'),
+    programs: <TableCell>Programs</TableCell>,
+    groups: <TableCell>Groups</TableCell>,
+    category: sortableHeaderCell('category', 'Category'),
+    visibility: <TableCell>Visibility</TableCell>,
+    created_at: <TableCell>Created</TableCell>,
+    updated_at: sortableHeaderCell('updated_at', 'Modified'),
+  }
+
   return (
     <Box data-testid="manage-collections-page">
       <Box
@@ -492,19 +832,31 @@ export default function ManageCollectionsPage({
         <Typography variant="h5" component="h1">
           Collections
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            // Cancel any in-flight openEdit fetch so it can't replace the
-            // create form when it resolves.
-            editRequestRef.current++
-            setEditing(null)
-            setEditorOpen(true)
-          }}
-        >
-          New collection
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
+          {selected.size > 0 && (
+            <Button
+              variant="contained"
+              color="secondary"
+              size="small"
+              onClick={() => setBulkEditOpen(true)}
+            >
+              Bulk Edit ({selected.size} selected)
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              // Cancel any in-flight openEdit fetch so it can't replace the
+              // create form when it resolves.
+              editRequestRef.current++
+              setEditing(null)
+              setEditorOpen(true)
+            }}
+          >
+            New collection
+          </Button>
+        </Box>
       </Box>
 
       <FilterBar
@@ -619,6 +971,16 @@ export default function ManageCollectionsPage({
             </>
           ) : undefined
         }
+        actions={
+          <Button
+            size="small"
+            startIcon={<ViewColumnIcon fontSize="small" />}
+            aria-label="Choose columns"
+            onClick={() => setColumnDialogOpen(true)}
+          >
+            Choose columns
+          </Button>
+        }
       >
         <FilterPopoverButton
           label="Name"
@@ -700,102 +1062,71 @@ export default function ManageCollectionsPage({
       <TableContainer component={Paper} variant="outlined">
         <Table size="small" data-testid="manage-collections-table">
           <TableHead
-            sx={{ '& th': { bgcolor: (theme) => filterSurfaceBg(theme), fontWeight: 600 } }}
+            sx={{
+              // Same selector + sizing contract as ManagePage's table head.
+              '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) },
+              '& th': { fontWeight: 600 },
+            }}
           >
             <TableRow>
-              <TableCell sx={{ width: 48, p: 0.5 }}>
-                <Box component="span" sx={visuallyHidden}>
-                  Cover
-                </Box>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'id'}
-                  direction={sortColumn === 'id' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('id')}
-                >
-                  ID
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'name'}
-                  direction={sortColumn === 'name' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('name')}
-                >
-                  Name
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'type' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'type'}
-                  direction={sortColumn === 'type' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('type')}
-                >
-                  Type
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'visibility' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'visibility'}
-                  direction={sortColumn === 'visibility' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('visibility')}
-                >
-                  Visibility
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'owners' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'owners'}
-                  direction={sortColumn === 'owners' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('owners')}
-                >
-                  Owners
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'images' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'images'}
-                  direction={sortColumn === 'images' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('images')}
-                >
-                  Images
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'category'}
-                  direction={sortColumn === 'category' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('category')}
-                >
-                  Category
-                </TableSortLabel>
-              </TableCell>
-              <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortColumn === 'updated_at'}
-                  direction={sortColumn === 'updated_at' ? sortDirection : 'asc'}
-                  onClick={() => handleSort('updated_at')}
-                >
-                  Modified
-                </TableSortLabel>
-              </TableCell>
+              {selectionEnabled && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedInView > 0 && selectedInView < selectableInView.length}
+                    checked={
+                      selectableInView.length > 0 && selectedInView === selectableInView.length
+                    }
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    slotProps={{
+                      input: { 'aria-label': 'Select all collections on this page' },
+                    }}
+                  />
+                </TableCell>
+              )}
+              {orderedVisibleColumns.map((column) => (
+                <Fragment key={column}>{columnHeaderCells[column]}</Fragment>
+              ))}
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {pageCollections.map((c) => {
-              const rowCanEdit = c.permissions.canEdit
-              const rowCanTransfer = c.permissions.canTransfer
-              return (
-                <TableRow
-                  key={c.id}
-                  hover
-                  data-testid={`manage-collection-row-${c.id}`}
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => handleRowClick(c)}
-                >
-                  <TableCell data-interactive="true" sx={{ p: 0.5 }}>
+              // Hidden rows dim like ManagePage's inactive images (#1567) —
+              // and so do rows hidden by their category subtree.
+              const categoryHidden = isCollectionCategoryHidden(c)
+              const dimAttr = c.hidden || categoryHidden ? { 'data-dimmed': true } : undefined
+              const catPath = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+              const catCategories = catPath ? [...catPath.ancestors, catPath.category] : []
+              // Own scope chips only when restricted; the filed category's
+              // effective scope renders dimmed beneath them (#1567).
+              const ownProgramIds = c.visibility === 'restricted' ? c.programIds : []
+              const ownGroupIds = c.visibility === 'restricted' ? c.groupIds : []
+              const ownProgramSet = new Set(ownProgramIds)
+              const ownGroupSet = new Set(ownGroupIds)
+              const inheritedPrograms = narrowProgramIds(catCategories).filter(
+                (id) => !ownProgramSet.has(id),
+              )
+              const inheritedGroups = narrowGroupIds(catCategories).filter(
+                (id) => !ownGroupSet.has(id),
+              )
+              const chipSx =
+                c.hidden || categoryHidden
+                  ? { bgcolor: visColors.inactiveChipBg, color: '#fff' }
+                  : {}
+              // Per-column cells keyed like `columnHeaderCells` (#1577);
+              // rendered below in the user's persisted column order.
+              const bodyCells: Record<ManageCollectionColumn, ReactNode> = {
+                cover: (
+                  <TableCell
+                    data-interactive="true"
+                    sx={{ p: 0.5 }}
+                    onClick={(e) => {
+                      // Thumbnail navigates to the collection — the Manage
+                      // Images table's cover contract (#1567).
+                      e.stopPropagation()
+                      onOpenCollection(c.id)
+                    }}
+                  >
                     {c.coverThumb ? (
                       <RenewingThumbnail
                         image={{ id: c.id, thumb: c.coverThumb }}
@@ -807,17 +1138,24 @@ export default function ManageCollectionsPage({
                           objectFit: 'cover',
                           borderRadius: 0.5,
                           display: 'block',
+                          cursor: 'pointer',
+                          ...(c.hidden || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
                         }}
                       />
                     ) : null}
                   </TableCell>
-                  <TableCell>{c.id}</TableCell>
-                  <TableCell>
+                ),
+                id: <TableCell {...dimAttr}>{c.id}</TableCell>,
+                name: (
+                  <TableCell {...dimAttr}>
                     <Box
                       component="span"
                       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
                     >
                       {c.name}
+                      {/* The eye-off marker is reserved for the collection's
+                          own hidden flag — category-hidden rows convey the
+                          inherited state through dimming + the locked switch. */}
                       {c.hidden && (
                         <Tooltip title="Visibility: Hidden">
                           <span
@@ -831,13 +1169,89 @@ export default function ManageCollectionsPage({
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell>{COLLECTION_TYPE_LABELS[c.type]}</TableCell>
-                  <TableCell>
-                    <CollectionVisibilityChip visibility={c.visibility} />
+                ),
+                type: (
+                  <TableCell {...dimAttr}>
+                    {/* Shared type pill — same red-outlined icon chip as
+                        the tile overlay and detail header (#1567). */}
+                    <CollectionTypeChip
+                      type={c.type}
+                      sx={c.hidden || categoryHidden ? { filter: 'grayscale(100%)' } : undefined}
+                    />
                   </TableCell>
-                  <TableCell>{describeCollectionOwners(c.owners)}</TableCell>
-                  <TableCell>{c.imageCount}</TableCell>
-                  <TableCell>
+                ),
+                scope: (
+                  <TableCell {...dimAttr}>
+                    <CollectionVisibilityChip
+                      visibility={c.visibility}
+                      hasScopeChips={c.programIds.length + c.groupIds.length > 0}
+                    />
+                  </TableCell>
+                ),
+                owners: <TableCell {...dimAttr}>{describeCollectionOwners(c.owners)}</TableCell>,
+                images: <TableCell {...dimAttr}>{c.imageCount}</TableCell>,
+                programs: (
+                  <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                    {ownProgramIds.length === 0 && inheritedPrograms.length === 0 ? (
+                      '—'
+                    ) : (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {ownProgramIds.map((pid) => (
+                          <Chip
+                            key={`p${pid}`}
+                            data-testid="program-chip"
+                            label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                            size="small"
+                            color="primary"
+                            sx={chipSx}
+                          />
+                        ))}
+                        {inheritedPrograms.map((pid) => (
+                          <Chip
+                            key={`p${pid}`}
+                            data-testid="program-chip"
+                            label={programs.find((p) => p.id === pid)?.name ?? `Program ${pid}`}
+                            size="small"
+                            color="primary"
+                            sx={getInheritedRestrictionSx(true, chipSx)}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  </TableCell>
+                ),
+                groups: (
+                  <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                    {ownGroupIds.length === 0 && inheritedGroups.length === 0 ? (
+                      '—'
+                    ) : (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {ownGroupIds.map((gid) => (
+                          <Chip
+                            key={`g${gid}`}
+                            data-testid="group-chip"
+                            label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                            size="small"
+                            color="secondary"
+                            sx={chipSx}
+                          />
+                        ))}
+                        {inheritedGroups.map((gid) => (
+                          <Chip
+                            key={`g${gid}`}
+                            data-testid="group-chip"
+                            label={groups.find((g) => g.id === gid)?.name ?? `Group ${gid}`}
+                            size="small"
+                            color="secondary"
+                            sx={getInheritedRestrictionSx(true, chipSx)}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  </TableCell>
+                ),
+                category: (
+                  <TableCell {...dimAttr}>
                     <CategoryBreadcrumb
                       categoryId={c.categoryId}
                       categoryPaths={categoryPaths}
@@ -845,53 +1259,96 @@ export default function ManageCollectionsPage({
                       hiddenColor={visColors.inactive}
                     />
                   </TableCell>
-                  <TableCell>{new Date(c.updatedAt).toLocaleDateString()}</TableCell>
+                ),
+                visibility: (
+                  <TableCell data-interactive="true" onClick={(e) => e.stopPropagation()}>
+                    <Tooltip
+                      title={
+                        categoryHidden
+                          ? 'Hidden by category'
+                          : c.permissions.canHide
+                            ? ''
+                            : 'Only admins and instructors can hide collections'
+                      }
+                      disableHoverListener={!categoryHidden && c.permissions.canHide}
+                    >
+                      <span>
+                        <Switch
+                          size="small"
+                          checked={!c.hidden}
+                          disabled={categoryHidden || !c.permissions.canHide || togglingId === c.id}
+                          onChange={() => void toggleRowHidden(c)}
+                          slotProps={{
+                            input: { 'aria-label': `Visibility for ${c.name}` },
+                          }}
+                        />
+                      </span>
+                    </Tooltip>
+                  </TableCell>
+                ),
+                created_at: (
+                  <TableCell {...dimAttr}>{new Date(c.createdAt).toLocaleDateString()}</TableCell>
+                ),
+                updated_at: (
+                  <TableCell {...dimAttr}>{new Date(c.updatedAt).toLocaleDateString()}</TableCell>
+                ),
+              }
+              return (
+                <TableRow
+                  key={c.id}
+                  hover
+                  selected={selected.has(c.id)}
+                  data-testid={`manage-collection-row-${c.id}`}
+                  sx={{
+                    cursor: 'pointer',
+                    '& td[data-dimmed]': { color: visColors.inactive },
+                    '& td[data-dimmed] a, & td[data-dimmed] button': { color: 'inherit' },
+                  }}
+                  onClick={() => handleRowClick(c)}
+                >
+                  {selectionEnabled && (
+                    <TableCell
+                      data-interactive="true"
+                      padding="checkbox"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selected.has(c.id)}
+                        disabled={!rowSelectable(c)}
+                        onChange={(e) => handleSelectOne(c.id, e.target.checked)}
+                        slotProps={{
+                          input: { 'aria-label': `Select ${c.name}` },
+                        }}
+                      />
+                    </TableCell>
+                  )}
+                  {orderedVisibleColumns.map((column) => (
+                    <Fragment key={column}>{bodyCells[column]}</Fragment>
+                  ))}
+
                   <TableCell
                     align="right"
                     data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
-                    sx={{ whiteSpace: 'nowrap' }}
                   >
-                    {rowCanEdit && (
-                      <Tooltip title="Edit collection">
-                        <IconButton
-                          size="small"
-                          aria-label={`Edit ${c.name}`}
-                          onClick={() => void openEdit(c)}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {rowCanTransfer && (
-                      <Tooltip title="Manage owners">
-                        <IconButton
-                          size="small"
-                          aria-label={`Manage owners of ${c.name}`}
-                          onClick={() => setOwnersTarget(c)}
-                        >
-                          <SwapHorizIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {showMove && (
-                      <Tooltip title="Move to category">
-                        <IconButton
-                          size="small"
-                          aria-label={`Move ${c.name} to a category`}
-                          onClick={() => onMoveCollection?.(c)}
-                        >
-                          <DriveFileMoveIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
+                    <IconButton
+                      size="small"
+                      aria-label={`Actions for ${c.name}`}
+                      onClick={(e) => handleMenuOpen(e, c)}
+                    >
+                      <MoreVertIcon fontSize="small" />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               )
             })}
             {pageCollections.length === 0 && !loading && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                <TableCell
+                  colSpan={visibleColumnCount + (selectionEnabled ? 2 : 1)}
+                  align="center"
+                  sx={{ py: 4, color: 'text.secondary' }}
+                >
                   {hasActiveFilters
                     ? 'No collections match the current filters.'
                     : 'No collections yet.'}
@@ -900,25 +1357,106 @@ export default function ManageCollectionsPage({
             )}
             {loading && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
+                <TableCell
+                  colSpan={visibleColumnCount + (selectionEnabled ? 2 : 1)}
+                  align="center"
+                  sx={{ py: 4 }}
+                >
                   <CircularProgress size={24} aria-label="Loading collections" />
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+        {/* Pagination inside the TableContainer — ManagePage's structure,
+            so the container width contract is identical (#1567). */}
+        <TablePagination
+          component="div"
+          count={sortedCollections.length}
+          page={Math.min(currentPage, maxPage)}
+          onPageChange={(_e, p) => setCurrentPage(p)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10))
+            setCurrentPage(0)
+          }}
+          rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+        />
       </TableContainer>
-      <TablePagination
-        component="div"
-        count={sortedCollections.length}
-        page={Math.min(currentPage, maxPage)}
-        onPageChange={(_e, p) => setCurrentPage(p)}
-        rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={(e) => {
-          setRowsPerPage(parseInt(e.target.value, 10))
-          setCurrentPage(0)
-        }}
-        rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+
+      {/* Row action menu — one kebab per row, ManagePage-style (#1567).
+          Items are gated on the target row's permissions, so the menu keeps
+          a snapshot of the collection it was opened for. */}
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={handleMenuClose}>
+        <MenuItem
+          onClick={() => {
+            if (menuCollection) onOpenCollection(menuCollection.id)
+            handleMenuClose()
+          }}
+        >
+          <ListItemIcon>
+            <VisibilityIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>View</ListItemText>
+        </MenuItem>
+        {(menuCollection?.permissions.canEdit || canFileCollections) && (
+          <MenuItem
+            onClick={() => {
+              if (menuCollection) void openEdit(menuCollection)
+              handleMenuClose()
+            }}
+          >
+            <ListItemIcon>
+              <EditIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Edit</ListItemText>
+          </MenuItem>
+        )}
+        {menuCollection?.permissions.canTransfer && (
+          <MenuItem
+            onClick={() => {
+              if (menuCollection) setOwnersTarget(menuCollection)
+              handleMenuClose()
+            }}
+          >
+            <ListItemIcon>
+              <SwapHorizIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Manage owners</ListItemText>
+          </MenuItem>
+        )}
+      </Menu>
+
+      <ColumnVisibilityDialog
+        open={columnDialogOpen}
+        title="Choose collection table columns"
+        columns={orderedColumnOptions}
+        visibleColumns={visibleColumns}
+        onClose={() => setColumnDialogOpen(false)}
+        onToggleColumn={toggleColumn}
+        onReorderColumns={setColumnOrder}
+      />
+
+      {/* Bulk edit (#1578) — curator fields when admin/instructor; delete
+          requires single-delete authority on every selected row. */}
+      <BulkEditCollectionsDialog
+        open={bulkEditOpen}
+        onClose={() => setBulkEditOpen(false)}
+        onSave={handleBulkSave}
+        onDelete={handleBulkDelete}
+        categories={categories}
+        selectedCount={selected.size}
+        privateSelectedCount={selectedRows.filter((c) => c.visibility === 'private').length}
+        canCurate={canFileCollections}
+        canDeleteAll={selectedRows.length > 0 && selectedRows.every((c) => c.permissions.canDelete)}
+        allCategoryHidden={
+          selectedRows.length > 0 && selectedRows.every(isCollectionCategoryHidden)
+        }
+        programs={programs}
+        groups={groups}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
       />
 
       <CollectionEditDialog
@@ -930,6 +1468,18 @@ export default function ManageCollectionsPage({
         groups={groups}
         onSave={handleSave}
         onDelete={editing?.permissions.canDelete ? deleteFromDialog : undefined}
+        categories={categories}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
+        onViewCollection={
+          editing
+            ? () => {
+                setEditorOpen(false)
+                onOpenCollection(editing.id)
+              }
+            : undefined
+        }
       />
 
       <CollectionOwnersDialog
