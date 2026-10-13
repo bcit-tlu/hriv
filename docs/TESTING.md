@@ -269,6 +269,38 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 ---
 
+## Test Case 6a: Category Card Image — Student Cover Exemption (#1609)
+
+**Purpose:** Verify the category tile cover renders for students even when the
+pinned image is not otherwise visible, without granting tile access.
+
+1. As `instructor@example.ca`, open a category's card-image picker (image icon
+   on the tile) and pin an **inactive** image, then an image inside a
+   **hidden** sub-category, then an image inside a **program-restricted**
+   sub-category the student is not in. **Assert:** rows that are inactive or
+   under hidden/restricted categories show a visibility-off icon whose tooltip
+   explains students will still see the cover.
+2. As `student@example.ca`, reload Browse. **Assert:** the category tile shows
+   the pinned cover thumbnail in all three cases.
+3. **Assert (API):** the student tree node carries `card_image_id` and a
+   tokenized `card_thumb`, while `metadata_extra` no longer contains
+   `card_image_id` (admins/instructors still see the raw pin there).
+4. **Assert (token scope):** the `card_thumb` token (`purpose="thumb"`) loads
+   `…/thumbnail.jpeg` but returns **403** on `…/image.dzi` and
+   `…/image_files/<level>/<col>_<row>.jpeg` for the same image — via both
+   `/api/tiles/{id}/{path}` and `/api/tiles-auth`.
+5. **Assert (fallback):** unpin the image (Clear in the picker) or delete the
+   pinned image — the tile renders the folder icon (`card_image_id` and
+   `card_thumb` both `null`).
+6. **Assert (validation):** `PATCH /api/categories/{id}` with a
+   `card_image_id` that is not an int, does not exist, or references an image
+   outside the category's subtree returns **422**; `null` is accepted.
+7. **Assert (renewal):** an expired `card_thumb` token recovers through
+   `GET /api/categories/{id}` — never `GET /api/images/{id}` (which 404s for
+   students on hidden images).
+
+---
+
 ## Test Case 7: User Management (Admin Only)
 
 **Purpose:** Verify admin can add, deactivate/reactivate, and delete users.
@@ -567,8 +599,8 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/images/bulk                                                                                          | Yes           | instructor                                                                                                                          |
 | GET    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                                          |
 | PUT    | /api/tile-order                                                                                           | Yes           | instructor                                                                                                                          |
-| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped, from tokenized `tile_sources`/`thumb` URLs)                                                         |
-| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token                                                                                                                    |
+| GET    | /api/tiles/{source_image_id}/{path}                                                                       | Yes           | valid tile token (image-scoped `purpose="tile"`, or `purpose="thumb"` for `thumbnail.jpeg` only — from `card_thumb` URLs, #1609)    |
+| GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token (`thumb` purpose additionally path-restricted)                                                                     |
 | GET    | /api/users/                                                                                               | Yes           | staff ¶                                                                                                                             |
 | POST   | /api/users/                                                                                               | Yes           | admin                                                                                                                               |
 | GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                               |

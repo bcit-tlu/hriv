@@ -35,6 +35,12 @@ changes.
   last instructor cannot be removed, and attached groups cannot be deleted.
 - Frontend category narrowing uses intersection semantics; children must never
   widen ancestor restrictions.
+- Category card covers are the one sanctioned exception: `card_thumb` is
+  resolved server-side (`resolve_card_image` in `routers/categories.py`)
+  regardless of `active`/hidden/program/group gates and carries a
+  thumbnail-only tile token (`purpose="thumb"` in `tile_tokens.py`); the raw
+  `card_image_id` is scrubbed from student `metadata_extra`. Do not route it
+  back through the filtered tree or issue it a full `tile` token (#1609).
 
 ## Validation
 

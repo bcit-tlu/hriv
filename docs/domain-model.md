@@ -105,6 +105,15 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `parent`; `images`; `programs` (M2M via `category_programs`, eager `selectin`);
   `groups` (M2M via `category_groups`, eager `selectin`). Programs and groups are
   **independent** restriction dimensions.
+- **`metadata.card_image_id` convention (#1609):** the tile cover pin. Must
+  reference an image in the category's own subtree (`PATCH` returns 422
+  otherwise; `null` unpins). There is **no FK** — dangling values (deleted
+  image, image moved out) are tolerated at read time and resolve to
+  `card_image_id`/`card_thumb` = `null`/`null` on `CategoryOut`. Resolution
+  ignores `active`, hidden status, and program/group gates; `card_thumb` is
+  tokenized with a thumbnail-only tile token and the raw key is scrubbed from
+  student `metadata_extra` (see
+  [category-visibility-and-programs](category-visibility-and-programs.md)).
 - **Deletion:** `CASCADE` to children, `category_programs`, and `category_groups`;
   images get `category_id = NULL` (`SET NULL`).
 

@@ -1,6 +1,9 @@
 # ADR: Authorized Tile-Delivery Boundary
 
 - **Status:** Accepted (2026-08-31)
+- **Amendment (#1609):** a second token purpose `thumb` was added for
+  category card covers — path-restricted to `thumbnail.jpeg` (see the
+  Token section).
 - **Issues:** [#1069](https://github.com/bcit-tlu/hriv/issues/1069) (design),
   [#1064](https://github.com/bcit-tlu/hriv/issues/1064) (enforcement),
   [#1079](https://github.com/bcit-tlu/hriv/issues/1079) (route audit — see
@@ -86,6 +89,15 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
   TTL window is explicitly out of scope (acceptable: visibility changes take
   effect within minutes, matching the pre-existing exposure of already-fetched
   content).
+- **Amendment (#1609) — `purpose="thumb"`:** a thumbnail-only variant, same
+  signature/expiry/image-id binding, issued for category card covers whose
+  pinned image the viewer may not otherwise see
+  ([`docs/category-visibility-and-programs.md`](category-visibility-and-programs.md)).
+  Validation additionally requires the requested path's last `/`-segment to
+  be `thumbnail.jpeg` — checked against the `X-Original-URI` path in
+  `GET /api/tiles-auth` and against the route path in the FastAPI fallback —
+  so a `thumb` token can never unlock `image.dzi` or `image_files/…`. The
+  sidecar needs no change: its auth cache key is already token + image id.
 
 ### Delivery layers
 

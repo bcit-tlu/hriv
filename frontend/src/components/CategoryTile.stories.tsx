@@ -104,10 +104,7 @@ function inheritedIdsForRestriction(
 }
 
 function makeStoryCategory(args: CategoryTileStoryArgs): Category {
-  const baseImages = Array.from({ length: args.imageCount }, (_, index) => makeImage(index + 1))
-  const images = args.cardImage
-    ? [makeImage(100, 'Selected card image'), ...baseImages]
-    : baseImages
+  const images = Array.from({ length: args.imageCount }, (_, index) => makeImage(index + 1))
 
   return makeCategory({
     label: args.label,
@@ -116,7 +113,10 @@ function makeStoryCategory(args: CategoryTileStoryArgs): Category {
       makeCategory({ id: index + 2, label: `Child ${index + 1}` }),
     ),
     images,
+    // The cover is server-resolved (#1609): stories render it from
+    // `cardThumb`, a deterministic literal URL (no live tile token).
     cardImageId: args.cardImage ? 100 : null,
+    cardThumb: args.cardImage ? '/hriv-splash2.jpg' : null,
     programIds: idsForRestriction(args.programRestriction),
     groupIds: idsForRestriction(args.groupRestriction).map((id) => id + 20),
   })
