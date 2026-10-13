@@ -2347,6 +2347,15 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
   })
 
+  it('returns to the Collections list when the tab is clicked from a detail', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
   it('opens the Collections list from ?page=collections', async () => {
     window.history.replaceState(null, '', '/?page=collections')
     await renderWithCollectionsEnabled()

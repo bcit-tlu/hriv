@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import Collapse from '@mui/material/Collapse'
 import FitScreenIcon from '@mui/icons-material/FitScreen'
@@ -43,6 +43,9 @@ export interface CollectionsGraphProps {
   searchQuery?: string
   /** Page-level matcher for the shared search filter. */
   matchesSearch?: (collectionId: number) => boolean
+  /** Other client filters are narrowing the set even when the search text
+   *  is empty (the Visibility facet) — dims non-matches the same way. */
+  filterActive?: boolean
   tooltipInfo?: GraphTooltipInfo
   /** Show the collapsible legend overlay (default true). */
   legend?: boolean
@@ -57,6 +60,10 @@ export interface CollectionsGraphProps {
   labelFor?: (n: GraphNode) => string
   /** Replace the computed stats caption (the dialog counts differ, #1630). */
   statsCaption?: string
+  /** Refit the view after a model rebuild (order/node-set change). The page
+   *  graph deliberately keeps the transform (#1636); the collection dialog
+   *  passes this so an order change cannot leave the hub off-canvas. */
+  fitOnRebuild?: boolean
 }
 
 interface TooltipState {
@@ -84,6 +91,7 @@ export default function CollectionsGraph({
   onOpenImage,
   searchQuery = '',
   matchesSearch,
+  filterActive = false,
   tooltipInfo,
   legend = true,
   overlay,
@@ -91,11 +99,15 @@ export default function CollectionsGraph({
   labelThresholds,
   labelFor,
   statsCaption,
+  fitOnRebuild = false,
 }: CollectionsGraphProps) {
   const { mode } = useColorMode()
   const palette = useMemo(() => paletteFrom(mode, getThemePalette(mode)), [mode])
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameRef = useRef<HTMLDivElement | null>(null)
+  // Canvas wrapper — the ResizeObserver and tooltip clamp measure the
+  // drawing area, not the outer frame (the toolbar row sits above it).
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<GraphRenderer | null>(null)
   const zoomRef = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
   const transformRef = useRef<ZoomTransform | null>(null)
@@ -108,7 +120,7 @@ export default function CollectionsGraph({
 
   // search dimming: non-matching collections dim in the graph (#1629);
   // nothing is removed from the model.
-  const searchActive = searchQuery.trim().length > 0
+  const searchActive = searchQuery.trim().length > 0 || filterActive
   const searchSets = useMemo(() => {
     const dim = new Set<GraphNode>()
     const match = new Set<GraphNode>()
@@ -207,7 +219,16 @@ export default function CollectionsGraph({
       if (prevModel == null || graphSpineKey(prevModel) !== graphSpineKey(model)) {
         preTick(gs.sim)
       }
-      applyTransform(canvas, zb, currentTransform)
+      if (fitOnRebuild) {
+        // Dialog callers opt in: a rebuilt layout can drift the kept
+        // transform off-canvas, so refit (animated like the Fit button)
+        // and count it for tests.
+        fitView(canvas, zb, transformRef, model, false)
+        fitCountRef.current += 1
+        frameRef.current?.setAttribute('data-fit-count', String(fitCountRef.current))
+      } else {
+        applyTransform(canvas, zb, currentTransform)
+      }
     }
     if (!simulate) gs.sim.stop()
 
@@ -267,8 +288,8 @@ export default function CollectionsGraph({
       if (!nd || nd.kind === 'hub') {
         setTooltip(null)
       } else {
-        const fw = frameRef.current?.clientWidth ?? 0
-        const fh = frameRef.current?.clientHeight ?? 0
+        const fw = canvasWrapRef.current?.clientWidth ?? 0
+        const fh = canvasWrapRef.current?.clientHeight ?? 0
         setTooltip({
           node: nd,
           x: clampTooltip(e.offsetX + 14, fw - 292),
@@ -330,15 +351,15 @@ export default function CollectionsGraph({
 
   // ResizeObserver resizes + redraws — never refits (#1627).
   useEffect(() => {
-    const frame = frameRef.current
+    const wrap = canvasWrapRef.current
     const canvas = canvasRef.current
-    if (!frame || !canvas || typeof ResizeObserver === 'undefined') return
+    if (!wrap || !canvas || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
       rendererRef.current?.resize()
       const t = transformRef.current
       if (t) rendererRef.current?.requestDraw(drawState(t))
     })
-    ro.observe(frame)
+    ro.observe(wrap)
     return () => ro.disconnect()
   }, [drawState])
 
@@ -368,7 +389,8 @@ export default function CollectionsGraph({
       ref={frameRef}
       data-testid="collections-graph"
       sx={{
-        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
         width: '100%',
         // Fill a flex-column parent (page graph, dialog body) at md+; a
         // zero flex basis on xs would collapse the fixed 420px fallback
@@ -378,125 +400,126 @@ export default function CollectionsGraph({
         minHeight: 320,
       }}
     >
-      <canvas
-        ref={canvasRef}
-        data-testid="collections-graph-canvas"
-        style={{ width: '100%', height: '100%', display: 'block', cursor: 'grab' }}
-      />
-
-      {/* Top-right overlay: Fit + page-supplied controls (order toggle,
-          Shared only). */}
+      {/* Toolbar row above the canvas — the stats caption on the left and
+          the page-supplied controls + Fit on the right. Nothing overlays
+          the drawing area any more (#1627 feel-test feedback). */}
       <Box
         sx={{
-          position: 'absolute',
-          top: 8,
-          right: 8,
           display: 'flex',
+          flexWrap: 'wrap',
           gap: 1,
           alignItems: 'center',
+          justifyContent: 'space-between',
+          mb: 0.5,
+          flexShrink: 0,
         }}
       >
-        {overlay}
-        <Tooltip title="Fit graph">
-          <IconButton
+        <Typography variant="caption" color="text.secondary" data-testid="graph-stats">
+          {statsLine}
+        </Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+          {overlay}
+          <Button
+            variant="outlined"
             size="small"
+            startIcon={<FitScreenIcon />}
             onClick={fit}
-            aria-label="Fit graph"
             data-testid="graph-fit"
-            sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
           >
-            <FitScreenIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+            Fit graph
+          </Button>
+        </Box>
       </Box>
 
-      {legend && !empty && (
-        <Paper
-          variant="outlined"
-          data-testid="graph-legend"
-          sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.5, maxWidth: 200 }}
-        >
-          <Box
-            sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
-            onClick={() => setLegendOpen((o) => !o)}
+      <Box ref={canvasWrapRef} sx={{ position: 'relative', flex: '1 1 0', minHeight: 0 }}>
+        <canvas
+          ref={canvasRef}
+          data-testid="collections-graph-canvas"
+          style={{ width: '100%', height: '100%', display: 'block', cursor: 'grab' }}
+        />
+
+        {legend && !empty && (
+          <Paper
+            variant="outlined"
+            data-testid="graph-legend"
+            sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.5, maxWidth: 200 }}
           >
-            <Typography variant="caption" sx={{ fontWeight: 600, flexGrow: 1 }}>
-              Legend
-            </Typography>
-            <IconButton size="small" aria-label={legendOpen ? 'Collapse legend' : 'Expand legend'}>
-              {legendOpen ? (
-                <ExpandLessIcon fontSize="small" />
-              ) : (
-                <ExpandMoreIcon fontSize="small" />
-              )}
-            </IconButton>
+            <Box
+              sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+              onClick={() => setLegendOpen((o) => !o)}
+            >
+              <Typography variant="caption" sx={{ fontWeight: 600, flexGrow: 1 }}>
+                Legend
+              </Typography>
+              <IconButton
+                size="small"
+                aria-label={legendOpen ? 'Collapse legend' : 'Expand legend'}
+              >
+                {legendOpen ? (
+                  <ExpandLessIcon fontSize="small" />
+                ) : (
+                  <ExpandMoreIcon fontSize="small" />
+                )}
+              </IconButton>
+            </Box>
+            <Collapse in={legendOpen}>
+              <LegendRow swatch={<Swatch fill={palette.hub} />} label="collections hub" />
+              <LegendRow
+                swatch={<Swatch fill={palette.collection} />}
+                label="collection (√ images)"
+              />
+              <LegendRow
+                swatch={<Swatch fill={palette.collection} ring={palette.syncRing} />}
+                label="synchronized collection"
+              />
+              <LegendRow swatch={<Swatch fill={palette.image} />} label="image" />
+              <LegendRow
+                swatch={<Swatch fill={palette.imageShared} stroke={palette.imageSharedStroke} />}
+                label="shared image (2+ collections)"
+              />
+              <LegendRow
+                swatch={<Swatch fill={palette.categoryFill} stroke={palette.category} />}
+                label="category (order 3)"
+              />
+            </Collapse>
+          </Paper>
+        )}
+
+        {empty && (
+          <Box
+            data-testid="collections-graph-empty"
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'text.secondary',
+            }}
+          >
+            <Typography variant="body2">No collections match the current filters.</Typography>
           </Box>
-          <Collapse in={legendOpen}>
-            <LegendRow swatch={<Swatch fill={palette.hub} />} label="collections hub" />
-            <LegendRow
-              swatch={<Swatch fill={palette.collection} />}
-              label="collection (√ images)"
-            />
-            <LegendRow
-              swatch={<Swatch fill={palette.collection} ring={palette.syncRing} />}
-              label="synchronized collection"
-            />
-            <LegendRow swatch={<Swatch fill={palette.image} />} label="image" />
-            <LegendRow
-              swatch={<Swatch fill={palette.imageShared} stroke={palette.imageSharedStroke} />}
-              label="shared image (2+ collections)"
-            />
-            <LegendRow
-              swatch={<Swatch fill={palette.categoryFill} stroke={palette.category} />}
-              label="category (order 3)"
-            />
-          </Collapse>
-        </Paper>
-      )}
+        )}
 
-      {empty && (
-        <Box
-          data-testid="collections-graph-empty"
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'text.secondary',
-          }}
-        >
-          <Typography variant="body2">No collections match the current filters.</Typography>
-        </Box>
-      )}
-
-      {tooltip && (
-        <Paper
-          data-testid="graph-tooltip"
-          elevation={4}
-          sx={{
-            position: 'absolute',
-            left: tooltip.x,
-            top: tooltip.y,
-            px: 1.5,
-            py: 1,
-            maxWidth: 280,
-            pointerEvents: 'none',
-            zIndex: 2,
-          }}
-        >
-          <TooltipBody node={tooltip.node} model={model} info={tooltipInfo} order={s.order} />
-        </Paper>
-      )}
-
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        data-testid="graph-stats"
-        sx={{ position: 'absolute', left: 8, top: 8 }}
-      >
-        {statsLine}
-      </Typography>
+        {tooltip && (
+          <Paper
+            data-testid="graph-tooltip"
+            elevation={4}
+            sx={{
+              position: 'absolute',
+              left: tooltip.x,
+              top: tooltip.y,
+              px: 1.5,
+              py: 1,
+              maxWidth: 280,
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <TooltipBody node={tooltip.node} model={model} info={tooltipInfo} order={s.order} />
+          </Paper>
+        )}
+      </Box>
     </Box>
   )
 }

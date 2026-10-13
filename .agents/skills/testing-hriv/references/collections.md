@@ -74,12 +74,31 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
 
 ### Filters
 
-- The collection **type is the page** (nav sub-menu), not a filter; the
-  header row holds **My collections** chip
-  for every role.
-- **Owner** select for admin/instructor/staff (never students). Admins get an
-  extra **No owner (orphaned)** option → `GET /api/collections?orphaned=true`.
-- Selecting **My collections** clears and disables the Owner select.
+- The unified Collections page uses the shared **FilterBar** popover pattern
+  (same as Manage → Collections): popover buttons **Name**, **Type**,
+  **Owner**, **Visibility** above all three views (Cards/Table/Graph), plus
+  deletable summary chips and a **Clear all** action while any facet is
+  active.
+- **Name** popover = client-side text filter (name/description/owner); in
+  the Graph view it dims non-matching nodes without removing them.
+- **Type** popover = single-select Sequence/Synchronized (`?type=` still
+  seeds it).
+- **Owner** popover lists **My collections** for every role;
+  admin/instructor/staff additionally get named owner options (never
+  students). Admins get an extra **No owner (orphaned)** option →
+  `GET /api/collections?orphaned=true`.
+- Selecting **My collections** clears the Owner facet. **Visibility** is a
+  client-side multi-select (Private/Public/Restricted) that narrows rows and
+  dims non-matching graph nodes.
+- The Cards/Table/Graph view toggle is **not persisted** — the page always
+  loads on Cards; only the graph order and Shared-only toggle persist.
+- The Table view exposes **Choose columns** (the shared
+  `ColumnVisibilityDialog`) with 13 columns; the dialog is only reachable in
+  table view.
+- The Graph view keeps its stats caption and controls (order toggle,
+  Shared-only, **Fit graph** button) in a toolbar above the canvas — they
+  no longer overlay the drawing. Clicking the **Collections** app-bar tab
+  while a collection detail is open returns to the list.
 
 ### Owners & transfer (`can_transfer`)
 
@@ -112,8 +131,9 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
 - Grid rows: `[data-testid="collection-card"]`; open via
   `[data-testid="collection-card-action-area"]`; cover overlay chip
   `[data-testid="collection-type-chip"]`.
-- Filter bar: `[data-testid="collection-filters"]`; the Owner Select is the
-  combobox labelled `Owner`.
+- Filter bar: popover buttons by accessible name (`Name`, `Type`, `Owner`,
+  `Visibility`); active-facet summary chips `[data-testid="filter-chip"]`;
+  **Clear all** button while any facet is active.
 - Manage table: `[data-testid="manage-collections-table"]`, rows
   `manage-collection-row-{id}`; filter facets labelled Name / Type /
   Visibility / Owner / Category.

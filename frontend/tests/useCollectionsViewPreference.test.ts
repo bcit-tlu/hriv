@@ -24,7 +24,7 @@ describe('useCollectionsViewPreference', () => {
     expect(result.current[0]).toEqual(DEFAULT_COLLECTIONS_VIEW_PREFS)
   })
 
-  it('loads the stored preference', () => {
+  it('restores order/sharedOnly but always loads on cards (view is not persisted)', () => {
     localStorage.setItem(
       storageKeyFor(1),
       JSON.stringify({ view: 'graph', order: 3, sharedOnly: true }),
@@ -32,7 +32,7 @@ describe('useCollectionsViewPreference', () => {
 
     const { result } = renderHook(() => useCollectionsViewPreference(1))
 
-    expect(result.current[0]).toEqual({ view: 'graph', order: 3, sharedOnly: true })
+    expect(result.current[0]).toEqual({ view: 'cards', order: 3, sharedOnly: true })
   })
 
   it('falls back field-by-field when the stored value is invalid', () => {
@@ -62,8 +62,8 @@ describe('useCollectionsViewPreference', () => {
     })
 
     expect(result.current[0].view).toBe('graph')
+    // The view stays in-session only — storage carries order/sharedOnly.
     expect(JSON.parse(localStorage.getItem(storageKeyFor(1)) ?? '{}')).toEqual({
-      view: 'graph',
       order: 2,
       sharedOnly: false,
     })
@@ -84,9 +84,9 @@ describe('useCollectionsViewPreference', () => {
       { initialProps: { userId: 1 } },
     )
 
-    expect(result.current[0].view).toBe('table')
+    expect(result.current[0].view).toBe('cards')
     rerender({ userId: 2 })
-    expect(result.current[0]).toEqual({ view: 'graph', order: 3, sharedOnly: true })
+    expect(result.current[0]).toEqual({ view: 'cards', order: 3, sharedOnly: true })
     // Signed out: anonymous scope, defaults — and writing does not touch user 2.
     rerender({ userId: null })
     expect(result.current[0]).toEqual(DEFAULT_COLLECTIONS_VIEW_PREFS)
@@ -94,7 +94,7 @@ describe('useCollectionsViewPreference', () => {
       result.current[1]({ view: 'table', order: 2, sharedOnly: false })
     })
     rerender({ userId: 2 })
-    expect(result.current[0].view).toBe('graph')
+    expect(result.current[0]).toEqual({ view: 'cards', order: 3, sharedOnly: true })
   })
 
   it('ignores storage when persistence is disabled', () => {

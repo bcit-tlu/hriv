@@ -393,8 +393,18 @@ export default function AppShell(props: AppShellProps) {
               />
               {collectionsEnabled && (
                 // A real tab since #1629 — the Sequence/Synchronized sub-menu
-                // became the page's Type filter chips.
-                <Tab label="Collections" value="collections" />
+                // became the page's Type filter facet.
+                <Tab
+                  label="Collections"
+                  value="collections"
+                  onClick={() => {
+                    // Re-click while already on collections (list or an open
+                    // detail) resets to the list — the Home tab pattern.
+                    if (page === 'collections') {
+                      onTabChange('collections')
+                    }
+                  }}
+                />
               )}
               {canEditContent && <Tab label="Images" value="manage" />}
               {(canEditContent || (collectionsEnabled && canViewPeople)) && (

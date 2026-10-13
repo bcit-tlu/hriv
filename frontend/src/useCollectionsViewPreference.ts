@@ -19,10 +19,6 @@ export const DEFAULT_COLLECTIONS_VIEW_PREFS: CollectionsViewPrefs = {
   sharedOnly: false,
 }
 
-function isCollectionsView(value: unknown): value is CollectionsView {
-  return value === 'cards' || value === 'table' || value === 'graph'
-}
-
 function isCollectionsGraphOrder(value: unknown): value is CollectionsGraphOrder {
   return value === 1 || value === 2 || value === 3
 }
@@ -38,7 +34,9 @@ function loadStoredPrefs(storageKey: string, enablePersistence: boolean): Collec
     }
     const record = parsed as Record<string, unknown>
     return {
-      view: isCollectionsView(record.view) ? record.view : 'cards',
+      // The view is intentionally not restored — the page always opens on
+      // Cards while Table/Graph are being evaluated (#1629 follow-up).
+      view: 'cards',
       order: isCollectionsGraphOrder(record.order) ? record.order : 1,
       sharedOnly: typeof record.sharedOnly === 'boolean' ? record.sharedOnly : false,
     }
@@ -49,7 +47,11 @@ function loadStoredPrefs(storageKey: string, enablePersistence: boolean): Collec
 
 function storePrefs(storageKey: string, prefs: CollectionsViewPrefs): void {
   try {
-    localStorage.setItem(storageKey, JSON.stringify(prefs))
+    // `view` stays out of storage — see the load note above.
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ order: prefs.order, sharedOnly: prefs.sharedOnly }),
+    )
   } catch {
     // Ignore localStorage write failures and fall back to in-memory state.
   }
@@ -59,7 +61,10 @@ function storePrefs(storageKey: string, prefs: CollectionsViewPrefs): void {
  * Persisted Collections-page view preferences (#1629), modelled on
  * `useImageInfoExpandedPreference`: scoped to the signed-in user so one
  * account's view choice never carries over to the next on the same tab.
- * `enablePersistence` lets tests/stories opt out of localStorage.
+ * `enablePersistence` lets tests/stories opt out of localStorage. The view
+ * is intentionally not persisted while Table/Graph are being evaluated —
+ * the page always loads on Cards (#1629 follow-up); in-session view state
+ * still works because the page remounts on tab switches.
  */
 export function useCollectionsViewPreference(
   userId: number | string | null,

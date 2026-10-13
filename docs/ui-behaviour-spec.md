@@ -259,6 +259,35 @@ returned by the API (UX only — the backend re-checks).
   renders the type-logo placeholder like an uncovered category), the
   **Automatic** row clears both states back to the first-member fallback,
   and a member row pins `cover_image_id`.
+- **Given** the unified Collections page, **Then** a shared `FilterBar` sits
+  above the Cards/Table/Graph views with popover facets: **Name** (client-side
+  text over name/description/owner — narrows rows, dims non-matching graph
+  nodes), **Type** (single-select; `?type=` still seeds it), **Owner**
+  (**My collections**, named owners for non-students, _No owner (orphaned)_
+  for admins) and **Visibility** (multi-select Private/Public/Restricted,
+  client-side, also dims non-matching graph nodes). A **Clear all** action
+  and deletable summary chips appear while any facet is active.
+- **Given** the user is on the Collections page (list or an open collection
+  detail), **When** they click the already-selected **Collections** tab,
+  **Then** the detail closes and the list re-renders — `onTabChange` is
+  re-invoked because `Tabs onChange` cannot fire on an unchanged value.
+- **Given** the Table view, **Then** the FilterBar shows **Choose columns**
+  (table view only) opening the shared `ColumnVisibilityDialog`: 13 columns
+  (Cover, ID, Name, Type, Scope, Description, Category, Images, Owner,
+  Programs, Groups, Created, Updated) with per-user persisted visibility and
+  order; default visible set is Cover, Name, Type, Category, Images, Owner,
+  Updated. Every column except Cover sorts; ID/Images/Created/Updated open
+  descending.
+- **Given** the Cards/Table/Graph toggle, **Then** the view choice is held in
+  memory only — the page always loads on Cards (order and Shared-only still
+  persist per user).
+- **Given** the Graph view, **Then** the stats caption, order toggle,
+  Shared-only toggle and an outlined **Fit graph** button sit in a toolbar
+  row above the canvas (no control overlays the drawing area); legend, empty
+  state and tooltip stay inside the canvas.
+- **Given** the Graph View dialog, **When** the user switches the order,
+  **Then** the rebuilt model refits the view (animated); the page-level graph
+  keeps its transform on model rebuilds.
 - **Given** the list, **When** the user toggles
   **My collections** or picks an **Owner**, **Then** the list re-fetches with
   `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting

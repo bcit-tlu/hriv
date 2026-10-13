@@ -39,7 +39,9 @@ viewer on both collection types (#1630). Data comes from
   refetches; the page URL and detail view never change. The "Open collection" action (visible
   once navigated) closes the dialog and routes through the page's `onOpenCollection`.
 - The canvas remounts per perspective (`key={currentId}`) so each collection fits once; order
-  toggles reuse the component so `prev` carries node positions and the zoom transform survives.
+  toggles reuse the component so `prev` carries node positions and the zoom transform survives —
+  the dialog passes `fitOnRebuild` so an order change refits (animated) after the rebuild, since
+  the kept transform can otherwise leave the regrown layout out of frame.
 - Image clicks close the dialog and call the page's `onOpenImageById` — the same
   fetch-then-open path the page graph uses (#1629).
 - Image labels show earlier in the dialog (`labelThresholds.image: 1` vs the page's 2.5) and

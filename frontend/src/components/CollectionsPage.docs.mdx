@@ -14,10 +14,10 @@ import * as CollectionsPageStories from './CollectionsPage.stories'
 <Title />
 
 <Subtitle>
-  The unified Collections page — one tab with Cards, Table, and Graph views; a Type chip filter
-  replaces the old Sequence/Synchronized sub-pages: header filters and search, create/edit/delete
-  flows, and the detail view — the sequence viewer for sequence collections and the synchronized
-  viewer for synchronized collections.
+  The unified Collections page — one tab with Cards, Table, and Graph views; a FilterBar of popover
+  facets (Name / Type / Owner / Visibility) replaces the old Sequence/Synchronized sub-pages and the
+  old chip/search row: create/edit/delete flows, and the detail view — the sequence viewer for
+  sequence collections and the synchronized viewer for synchronized collections.
 </Subtitle>
 
 ## When to use
@@ -25,7 +25,8 @@ import * as CollectionsPageStories from './CollectionsPage.stories'
 `App` renders `CollectionsPage` when the active page is `collections`
 (`?page=collections`, `?page=collections&type=sequence|synchronized`, or `?collection={id}`).
 The unified page offers three views — Cards, Table, and a Graph powered by the collections
-graph endpoint — switched by the toolbar toggle and persisted per user. `?type=` seeds the
+graph endpoint — switched by the toolbar toggle; the view choice is intentionally not persisted
+(the page always loads on Cards while Table/Graph are evaluated). `?type=` seeds the
 shared Type filter instead of picking a sub-page (#1629). It is
 visible to every authenticated role, including students. The component is presentational —
 list/detail data and mutations come from `useCollectionsData` via props, so the stories drive it
@@ -39,16 +40,23 @@ with deterministic fixtures.
 
 ## Implementation guidance
 
-- **Filters.** Type became a shared filter chip group (#1629) — **All / Sequence / Synchronized**
-  live in the header row left of **New collection** alongside a **My collections** chip and an
-  **Owner** select, and apply to every view. `?type=` deep links seed the chip; **All** clears the
-  URL parameter. Selecting My
-  collections resets and disables the owner facet. Admins get an extra _No owner (orphaned)_
-  owner choice; the hook never sends `orphaned` for other roles. Students never see the Owner
-  select, and the hook never sends `owner_user_id` / `owner_program_id` for them.
-  `normalizeCollectionFilters` applies both rules to the hook's filter state, so an owner
+- **Filters.** A shared `FilterBar` (the Manage-page pattern) sits above all three views with
+  popover facets: **Name** (client-side text filter — narrows Cards/Table rows, dims
+  non-matching graph nodes), **Type** (single-select; `?type=` deep links seed it and clearing
+  drops the URL parameter), **Owner** (**My collections** for every role — selecting it clears
+  the owner facet — plus named owners for admin/instructor/staff and _No owner (orphaned)_ for
+  admins; the hook never sends `orphaned` for other roles and never sends
+  `owner_user_id` / `owner_program_id` for students) and **Visibility** (client-side
+  multi-select that narrows rows and dims non-matching graph nodes). While any facet is active
+  the bar shows deletable summary chips and a **Clear all** action.
+  `normalizeCollectionFilters` applies both owner rules to the hook's filter state, so an owner
   selection left over from a previous user is dropped rather than hiding the new user's own
   saves.
+- **Table columns.** In Table view the FilterBar's **Choose columns** action opens
+  `ColumnVisibilityDialog` (per-user persisted visibility and order): Cover, ID, Name, Type,
+  Scope, Description, Category, Images, Owner, Programs, Groups, Created, Updated — default
+  visible set is Cover, Name, Type, Category, Images, Owner, Updated. Every column except Cover
+  sorts; ID/Images/Created/Updated open descending.
 - **Grid.** One column on phones, two at `sm`, three at `md`, four at `lg`, each cell a
   `CollectionCard`.
 - **States.** Spinner while the first page loads, a plain error `Alert` (no action), and an

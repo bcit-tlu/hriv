@@ -286,6 +286,9 @@ export default function CollectionGraphDialog({
               labelThresholds={{ image: 1 }}
               statsCaption={statsCaption}
               simulate={simulate}
+              // An order change rebuilds the model on kept positions — refit
+              // so the hub can't drift out of the kept transform's frame.
+              fitOnRebuild
               overlay={
                 <ToggleButtonGroup
                   size="small"

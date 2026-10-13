@@ -138,4 +138,99 @@ describe('CollectionsTable', () => {
     rerender(ui(rows(3)))
     expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(3)
   })
+
+  it('renders only the requested columns, in order', () => {
+    const { container } = render(
+      <CollectionsTable
+        collections={[row({ id: 1 })]}
+        categoryPaths={buildCategoryPaths([])}
+        currentUser={USER}
+        onOpenCollection={vi.fn()}
+        columns={['name', 'id']}
+      />,
+    )
+    const headers = container.querySelectorAll('th')
+    expect([...headers].map((h) => h.textContent)).toEqual(['Name', 'ID'])
+    // No cover/type/owner cells either.
+    expect(screen.queryByText('Type')).not.toBeInTheDocument()
+  })
+
+  it('renders the scope chip, description, programs/groups and created columns', () => {
+    render(
+      <CollectionsTable
+        collections={[
+          row({
+            id: 1,
+            name: 'Scoped',
+            visibility: 'restricted',
+            programIds: [3],
+            groupIds: [4],
+            description: 'A long description',
+            createdAt: '2026-01-01T00:00:00Z',
+          }),
+        ]}
+        categoryPaths={buildCategoryPaths([])}
+        currentUser={USER}
+        onOpenCollection={vi.fn()}
+        columns={['name', 'scope', 'description', 'programs', 'groups', 'created']}
+        programs={[
+          {
+            id: 3,
+            name: 'Radiography',
+            oidc_group: null,
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ]}
+        groups={[
+          {
+            id: 4,
+            name: 'Cohort A',
+            description: null,
+            createdByUserId: null,
+            memberIds: [],
+            instructorIds: [],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+        ]}
+      />,
+    )
+    // The scope pill still labels a scoped restricted collection (the table
+    // renders no program/group chips beside it).
+    expect(screen.getByTestId('collection-visibility-chip')).toHaveTextContent('Restricted')
+    expect(screen.getByText('A long description')).toBeInTheDocument()
+    expect(screen.getByText('Radiography')).toBeInTheDocument()
+    expect(screen.getByText('Cohort A')).toBeInTheDocument()
+    expect(screen.getByText('Created')).toBeInTheDocument()
+  })
+
+  it('sorts by ID descending on first click', () => {
+    render(
+      <CollectionsTable
+        collections={[
+          row({ id: 1, name: 'A' }),
+          row({ id: 9, name: 'B' }),
+          row({ id: 5, name: 'C' }),
+        ]}
+        categoryPaths={buildCategoryPaths([])}
+        currentUser={USER}
+        onOpenCollection={vi.fn()}
+        columns={['id', 'name']}
+      />,
+    )
+    const names = () => screen.getAllByTestId(/collections-table-row-/).map((r) => r.dataset.testid)
+    fireEvent.click(screen.getByText('ID'))
+    expect(names()).toEqual([
+      'collections-table-row-9',
+      'collections-table-row-5',
+      'collections-table-row-1',
+    ])
+    fireEvent.click(screen.getByText('ID'))
+    expect(names()).toEqual([
+      'collections-table-row-1',
+      'collections-table-row-5',
+      'collections-table-row-9',
+    ])
+  })
 })

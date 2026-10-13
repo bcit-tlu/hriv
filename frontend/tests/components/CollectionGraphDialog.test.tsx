@@ -138,6 +138,22 @@ describe('CollectionGraphDialog', () => {
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(1, 3))
   })
 
+  it('refits the graph when the order toggle rebuilds the model', async () => {
+    const fetchGraph = vi
+      .fn<FetchGraph>()
+      .mockResolvedValueOnce(PAYLOAD1)
+      .mockResolvedValue(PAYLOAD2)
+    renderDialog(fetchGraph)
+    const frame = await screen.findByTestId('collections-graph')
+    await waitFor(() => expect(frame).toHaveAttribute('data-fit-count', '1'))
+
+    fireEvent.click(await screen.findByRole('button', { name: '2nd order' }))
+    await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(1, 2))
+    // fitOnRebuild: the rebuilt model refits instead of keeping the old
+    // transform (the hub could drift off-canvas otherwise).
+    await waitFor(() => expect(frame).toHaveAttribute('data-fit-count', '2'))
+  })
+
   async function toPelvisPerspective(fetchGraph: FetchGraph) {
     renderDialog(fetchGraph)
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(1, 1))
