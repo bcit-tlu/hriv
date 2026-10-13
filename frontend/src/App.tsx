@@ -2190,12 +2190,13 @@ export default function App() {
   // "Open image" from the collections graph (#1629): the graph only carries
   // image ids, so fetch the record first, then take the same `?image={id}`
   // viewer path as the collection detail. The epoch ref guards the async
-  // hop (#1636 review): navigating anywhere (or clicking another node)
-  // before the fetch lands must not be overwritten by the stale result.
+  // hop (#1636 review): navigating anywhere, clicking another node, or
+  // switching the collection detail before the fetch lands must not be
+  // overwritten by the stale result (#1638 review).
   const graphImageEpoch = useRef(0)
   useEffect(() => {
     graphImageEpoch.current += 1
-  }, [page])
+  }, [page, selectedCollectionId])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
       const epoch = ++graphImageEpoch.current

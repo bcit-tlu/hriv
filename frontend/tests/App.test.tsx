@@ -14,6 +14,7 @@ import {
   fetchVersions,
   updateGroup,
   updateProgram,
+  type ApiImage,
 } from '../src/api'
 import { makeApiCollection, makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
 
@@ -28,6 +29,7 @@ const apiMocks = vi.hoisted(() => ({
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
   deleteProgram: vi.fn(),
+  fetchImage: vi.fn(),
   createGroup: vi.fn(),
   updateGroup: vi.fn(),
   deleteGroup: vi.fn(),
@@ -2435,6 +2437,48 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
     expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
     expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1], 101)
+  })
+
+  it('ignores a graph image fetch that resolves after the collection changed (#1638)', async () => {
+    let resolveImage: (img: ApiImage) => void = () => {}
+    apiMocks.fetchImage.mockReturnValue(
+      new Promise<ApiImage>((res) => {
+        resolveImage = res
+      }),
+    )
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+
+    const onOpenImageById = collectionsPageProps.current?.onOpenImageById as (id: number) => void
+    act(() => onOpenImageById(10))
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(10))
+
+    // Switching the collection detail before the fetch lands must
+    // invalidate the stale result (#1638 review).
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    await act(async () => {
+      resolveImage({
+        id: 10,
+        name: 'Graph image',
+        thumb: '/t.jpg',
+        tile_sources: '/t.dzi',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: 1,
+        height: 1,
+        file_size: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      })
+    })
+
+    expect(screen.queryByText(/Image Viewer/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
   })
 
   it('restores the selected collection from the URL on back/forward', async () => {

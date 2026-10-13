@@ -209,7 +209,7 @@ export default function CollectionGraphDialog({
         >
           {current.name} — graph
         </Typography>
-        {currentId !== collectionId && (
+        {currentId !== collectionId && !gonePerspective && (
           <Button
             size="small"
             data-testid="collection-graph-open-collection"

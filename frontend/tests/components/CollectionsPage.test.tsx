@@ -1177,6 +1177,29 @@ describe('CollectionsPage', () => {
       expect(collectionGraphDialogProps.current?.collectionId).toBe(9)
     })
 
+    it('closes the graph dialog when the detail collection changes (#1638)', async () => {
+      const detail9 = makeCollection({ id: 9, type: 'sequence' })
+      const detail5 = makeCollection({ id: 5, type: 'sequence' })
+      const { rerender } = renderPage({ selectedCollectionId: 9, detail: detail9 })
+      fireEvent.click(screen.getByTestId('collection-graph-open'))
+      expect(await screen.findByTestId('collection-graph-dialog')).toBeInTheDocument()
+
+      const rerenderWith = (overrides: Partial<CollectionsPageProps>) => {
+        const props = makeProps(overrides)
+        rerender(
+          <AuthContext.Provider value={makeAuth(props.currentUser ?? ADMIN)}>
+            <CollectionsPage {...props} />
+          </AuthContext.Provider>,
+        )
+      }
+      rerenderWith({ selectedCollectionId: 5, detail: detail5 })
+      expect(screen.queryByTestId('collection-graph-dialog')).not.toBeInTheDocument()
+
+      // Coming back does not resurrect it without another click.
+      rerenderWith({ selectedCollectionId: 9, detail: detail9 })
+      expect(screen.queryByTestId('collection-graph-dialog')).not.toBeInTheDocument()
+    })
+
     it('shows Graph View to a student even with no manage/hide rights (#1630)', () => {
       renderPage({
         currentUser: STUDENT,

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import CollectionGraphDialog from '../src/components/CollectionGraphDialog'
-import { GraphRenderer } from '../src/collectionsGraph/renderer'
-import type { GraphModel, GraphNode } from '../src/collectionsGraph/types'
-import { ApiError, type ApiCollectionGraph } from '../src/api'
+import CollectionGraphDialog from '../../src/components/CollectionGraphDialog'
+import { GraphRenderer } from '../../src/collectionsGraph/renderer'
+import type { GraphModel, GraphNode } from '../../src/collectionsGraph/types'
+import { ApiError, type ApiCollectionGraph } from '../../src/api'
 
 // jsdom canvas: a 2D context that swallows every call.
 const ctxStub = new Proxy({} as CanvasRenderingContext2D, {
@@ -235,6 +235,8 @@ describe('CollectionGraphDialog', () => {
     await toPelvisPerspective(fetchGraph)
 
     expect(await screen.findByText('This collection is no longer available.')).toBeInTheDocument()
+    // A 404 perspective must not offer "Open collection" (#1638 review).
+    expect(screen.queryByTestId('collection-graph-open-collection')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(1, 2))
     expect(await screen.findByText('Skull atlas — graph')).toBeInTheDocument()

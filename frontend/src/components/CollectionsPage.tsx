@@ -572,6 +572,14 @@ export default function CollectionsPage({
   const [manageOpen, setManageOpen] = useState(false)
   const [graphDialogOpen, setGraphDialogOpen] = useState(false)
   const editRequestRef = useRef(0)
+  // Render-phase adjustment: close the graph dialog when the detail
+  // collection changes or closes, so Back → Forward cannot resurrect it
+  // without another click (#1638 review).
+  const [graphDialogFor, setGraphDialogFor] = useState<number | null>(null)
+  if (graphDialogFor !== (detail?.id ?? null)) {
+    setGraphDialogFor(detail?.id ?? null)
+    if (graphDialogOpen) setGraphDialogOpen(false)
+  }
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
   const detailCategoryPath = useMemo(() => {
