@@ -262,7 +262,8 @@ async def collection_graph(
     ``images`` are the hub's caller-visible members in member order. At
     ``order=2`` every visible collection sharing a visible member is added
     to ``collection_ids`` and to ``related_collections`` (deduplicated,
-    excluding the hub), so the dialog can switch perspective client-side.
+    excluding the hub), so the dialog can render them without extra
+    requests; switching perspective fetches that collection's own graph.
     """
     ctx, collection = await get_visible_collection_or_404(
         db, user, collection_id

@@ -381,7 +381,8 @@ collection, plus `images` = the hub's caller-visible members in member
 order (each `collection_ids` is `[id]` at `order=1`), plus
 `related_collections` — at `order=2`, the other viewable collections
 sharing ≥1 visible member, deduplicated, excluding the hub, sorted by name
-then id, so the dialog can switch perspective without another round trip.
+then id, so the dialog can render the related nodes without extra requests
+(switching perspective to a related collection fetches _its_ `/graph`).
 Missing or non-viewable collections are **404**, never 403.
 
 `/api/collections/graph` is registered **before**
