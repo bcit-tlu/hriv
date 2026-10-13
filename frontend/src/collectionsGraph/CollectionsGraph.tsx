@@ -492,10 +492,12 @@ export default function CollectionsGraph({
                   label="Synchronized collection"
                 />
               )}
-              {model.stats.order >= 2 && (
+              {/* The dialog graph draws member-image spokes at every
+                  order, so its image rows are not order-gated. */}
+              {(legendVariant === 'collection' || model.stats.order >= 2) && (
                 <LegendRow swatch={<Swatch fill={palette.image} />} label="Image" />
               )}
-              {model.stats.order >= 2 && (
+              {(legendVariant === 'collection' || model.stats.order >= 2) && (
                 <LegendRow
                   swatch={<Swatch fill={palette.imageShared} stroke={palette.imageSharedStroke} />}
                   label="Shared image (in 2+ collections)"

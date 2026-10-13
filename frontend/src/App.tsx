@@ -3699,7 +3699,7 @@ export default function App() {
           onClose={() => setMoveSnack(null)}
           variant="filled"
           action={
-            <>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               {moveSnack?.onView && (
                 <Button
                   variant="outlined"
@@ -3723,7 +3723,7 @@ export default function App() {
               >
                 Undo
               </Button>
-            </>
+            </Box>
           }
         >
           {moveSnack?.message}

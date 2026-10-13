@@ -148,6 +148,10 @@ describe('CollectionGraphDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
     expect(await screen.findByText('This collection (centre)')).toBeInTheDocument()
+    // Member images are the spokes at every order, so the image rows show
+    // even at 1st; related-collection rows wait for 2nd.
+    expect(screen.getByText('Image')).toBeInTheDocument()
+    expect(screen.getByText('Shared image (in 2+ collections)')).toBeInTheDocument()
     expect(screen.queryByText('Related collection — size reflects image count')).toBeNull()
     expect(screen.queryByText('Synchronized collection')).toBeNull()
 

@@ -47,7 +47,8 @@ viewer on both collection types (#1630). Data comes from
 - Image labels show earlier in the dialog (`labelThresholds.image: 1` vs the page's 2.5) and
   drop the hub collection's name prefix via `labelFor`.
 - The dialog passes `legendVariant="collection"`: the legend labels the hub "This collection
-  (centre)" and lists "Related collection — size reflects image count" only at order ≥ 2.
+  (centre)", always shows the Image/Shared image rows (member images are the spokes at every
+  order), and lists "Related collection — size reflects image count" only at order ≥ 2.
 - `fetchGraph` is injectable so stories/tests stub the API without MSW.
 
 <Stories />
