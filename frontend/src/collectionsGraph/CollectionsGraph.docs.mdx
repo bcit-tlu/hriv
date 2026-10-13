@@ -1,0 +1,49 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionsGraphStories from './CollectionsGraph.stories'
+
+<Meta of={CollectionsGraphStories} />
+
+<Title />
+
+<Subtitle>
+  Canvas hub-and-spoke graph for the unified Collections page: a "Collections" hub, collection nodes
+  sized by visible image count, member-image dots at 2nd order, and hollow category nodes —
+  including isolated "no collection yet" categories — at 3rd order.
+</Subtitle>
+
+## When to use
+
+`CollectionsGraph` renders the Graph view of `CollectionsPage` (`?page=collections` with the
+view toggle on Graph). It consumes a `GraphModel` built by `buildGraphModel` from
+`GET /api/collections/graph?order=`; the page intersects the payload with the filtered list ids,
+so Type / Mine / Owner filters reach the graph while search only highlights matches. The
+collection-page graph dialog (#1630) reuses this component with a different model builder.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionsGraphStories.Basic} />
+
+## Implementation guidance
+
+- Physics and rendering port the locked prototype design (#1627): soft links, firm collisions,
+  charge on hub/collections/categories only, rAF-coalesced batched canvas drawing, viewport
+  culling, label cap, and a lazily rebuilt hit-test quadtree.
+- The view fits once after synchronous pre-ticks per model build; resize and view switches
+  redraw without refitting — Fit is explicit.
+- `sharedOnly` hides single-collection images from drawing and hit testing but keeps them in
+  the simulation; category nodes are never hidden.
+- Node clicks: collections call `onOpenCollection`, images call `onOpenImage(imageId)` — the
+  page fetches the record and takes the normal `?image={id}` viewer path; hub and category
+  clicks are inert.
+
+<Stories />

@@ -395,7 +395,6 @@ vi.mock('../src/components/AppShell', () => ({
   default: ({
     children,
     onTabChange,
-    onCollectionsTypeChange,
     onHomeClick,
     onSearchOpen,
     onOpenPrograms,
@@ -412,7 +411,6 @@ vi.mock('../src/components/AppShell', () => ({
     footerDockSlot?: ReactNode
     fillViewport?: boolean
     onTabChange: (v: string) => void
-    onCollectionsTypeChange: (type: 'sequence' | 'synchronized') => void
     onHomeClick: () => void
     onSearchOpen: () => void
     onOpenPrograms: () => void
@@ -448,12 +446,6 @@ vi.mock('../src/components/AppShell', () => ({
       </button>
       <button type="button" onClick={() => onTabChange('collections')}>
         Shell tab collections
-      </button>
-      <button type="button" onClick={() => onCollectionsTypeChange('sequence')}>
-        Shell pick sequence
-      </button>
-      <button type="button" onClick={() => onCollectionsTypeChange('synchronized')}>
-        Shell pick synchronized
       </button>
       <button type="button" onClick={onHomeClick}>
         Shell home
@@ -2359,14 +2351,14 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
   })
 
-  it('revalidates when the already-selected Collections type is picked again', async () => {
+  it('seeds the Type filter from ?type=sequence and revalidates on tab re-click (#1629)', async () => {
     window.history.replaceState(null, '', '/?page=collections&type=sequence')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
     await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Shell pick sequence' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
     await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(2))
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
   })
@@ -2392,13 +2384,26 @@ describe('App collections deep links (#1414)', () => {
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
   })
 
-  it('requests only the selected type when navigating Browse to Synchronized', async () => {
+  it('requests only the selected type for the ?type=synchronized deep link (#1629)', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=synchronized')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
+  })
+
+  it('applies ?type= restored by Back as the Type filter (#1629)', async () => {
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalled())
     apiMocks.fetchCollections.mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Shell pick synchronized' }))
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    window.history.replaceState(null, '', '/?page=collections&type=synchronized')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalled())
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
   })
 
@@ -2419,9 +2424,8 @@ describe('App collections deep links (#1414)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
-    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, {
-      type: 'sequence',
-    })
+    // No `type` param while the Type filter is 'all' (#1629).
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, undefined)
   })
 
   it('opens a member image in the normal ?image= view from the collection detail', async () => {

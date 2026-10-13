@@ -205,7 +205,8 @@ const filedDetail: Collection = {
 
 interface StoryArgs {
   role: Role
-  collectionPageType?: 'sequence' | 'synchronized'
+  /** Seed for the shared Type filter (was the sub-page before #1629). */
+  typeFilter?: 'all' | 'sequence' | 'synchronized'
   categories?: Category[]
   collections: CollectionSummary[]
   loading: boolean
@@ -220,7 +221,7 @@ interface StoryArgs {
 
 function CollectionsPageExample(args: StoryArgs) {
   const [filters, setFilters] = useState<CollectionListFilters>({
-    type: args.collectionPageType ?? 'sequence',
+    type: args.typeFilter ?? 'all',
     mine: false,
     owner: 'any',
   })
@@ -231,7 +232,6 @@ function CollectionsPageExample(args: StoryArgs) {
     <AuthContext.Provider value={makeAuth(user)}>
       <Box sx={{ p: 3 }}>
         <CollectionsPage
-          collectionPageType={args.collectionPageType ?? 'sequence'}
           currentUser={user}
           programs={programs}
           groups={[]}
@@ -283,7 +283,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'A typed Collections page (Sequence or Synchronized, chosen by the nav sub-menu): header filters (My collections chip + Owner select, hidden for students), responsive card grid, create button, and the detail view — the sequence viewer for sequence collections (#1416) and the synchronized viewer for synchronized collections (#1417).',
+          'The unified Collections page (#1629): one list with Cards / Table / Graph views (ToggleButtonGroup, top right), a shared filter bar (Type chips + My collections chip + Owner select, hidden for students, + client-side search), create button, and the detail view — the sequence viewer for sequence collections (#1416) and the synchronized viewer for synchronized collections (#1417).',
       },
     },
   },
@@ -320,10 +320,10 @@ export const Basic: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    // The Sequence page shows only the two sequence-typed fixtures.
-    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(2)
+    // The unified page shows every fixture until a Type chip narrows it.
+    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(4)
     await userEvent.click(canvas.getAllByTestId('collection-card-action-area')[0])
-    await expect(args.onOpenCollection).toHaveBeenCalledWith(2)
+    await expect(args.onOpenCollection).toHaveBeenCalledWith(1)
   },
 }
 
@@ -339,8 +339,9 @@ export const Filtered: Story = {
       'true',
     )
     await expect(canvas.getByLabelText('Owner')).toHaveAttribute('aria-disabled', 'true')
-    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(1)
-    await expect(canvas.getByRole('button', { name: /^Edit / })).toBeInTheDocument()
+    // Both fixtures owned by Ada remain — ids 1 and 4.
+    await expect(canvas.getAllByTestId('collection-card')).toHaveLength(2)
+    await expect(canvas.getAllByRole('button', { name: /^Edit / })).not.toHaveLength(0)
   },
 }
 
@@ -361,7 +362,7 @@ export const LoadError: Story = {
 }
 
 export const Detail: Story = {
-  args: { collectionPageType: 'synchronized', selectedCollectionId: 1, detail },
+  args: { selectedCollectionId: 1, detail },
   parameters: {
     a11y: { test: 'todo' },
     // The synchronized detail mounts real OpenSeadragon viewers whose tile
@@ -384,7 +385,6 @@ export const DetailFiled: Story = {
   // image count as its trailing item) on the left and the action buttons on
   // the right; the type/visibility pills sit above the description.
   args: {
-    collectionPageType: 'sequence',
     categories: browseTree,
     selectedCollectionId: 5,
     detail: filedDetail,
@@ -400,7 +400,6 @@ export const DetailHidden: Story = {
   // Curator view of a hidden collection (#1559): the controls desaturate
   // (no Hidden chip, #1567) and the action reads "Show collection".
   args: {
-    collectionPageType: 'sequence',
     selectedCollectionId: 5,
     detail: { ...filedDetail, hidden: true },
   },

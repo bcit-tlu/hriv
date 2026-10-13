@@ -22,8 +22,10 @@ import * as CollectionsPageStories from './CollectionsPage.stories'
 ## When to use
 
 `App` renders `CollectionsPage` when the active page is `collections`
-(`?page=collections&type=sequence|synchronized` or `?collection={id}`). The `collectionPageType`
-prop locks the list to one type; a missing or invalid `type=` defaults to `sequence`. It is
+(`?page=collections`, `?page=collections&type=sequence|synchronized`, or `?collection={id}`).
+The unified page offers three views — Cards, Table, and a Graph powered by the collections
+graph endpoint — switched by the toolbar toggle and persisted per user. `?type=` seeds the
+shared Type filter instead of picking a sub-page (#1629). It is
 visible to every authenticated role, including students. The component is presentational —
 list/detail data and mutations come from `useCollectionsData` via props, so the stories drive it
 with deterministic fixtures.

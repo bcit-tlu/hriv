@@ -772,6 +772,63 @@ export function fetchCollection(id: number): Promise<ApiCollection> {
 }
 
 /**
+ * One collection node in a graph payload (#1628). `image_count` is the
+ * visible-only member count — the same number `ApiCollectionSummary`
+ * reports — so restricted members are never disclosed.
+ */
+export interface ApiCollectionGraphNode {
+  id: number
+  name: string
+  type: ApiCollectionType
+  image_count: number
+  hidden: boolean
+  category_id: number | null
+}
+
+/**
+ * One image node: `collection_ids` lists every *visible* collection
+ * containing it (edges are implied). `category_id` is populated at every
+ * order (#1633); `null` for uncategorized images.
+ */
+export interface ApiCollectionGraphImage {
+  id: number
+  name: string
+  collection_ids: number[]
+  category_id: number | null
+}
+
+/**
+ * One category node (#1633). `image_count` counts caller-visible images
+ * filed directly in the category; `path` is the `›`-joined label chain.
+ */
+export interface ApiCollectionGraphCategory {
+  id: number
+  label: string
+  path: string
+  image_count: number
+}
+
+/**
+ * `GET /api/collections/graph` — the hub-and-spoke payload behind the
+ * Collections page graph view (#1629). `images` is populated for
+ * `order` ≥ 2; `categories` only for `order=3` (includes categories whose
+ * images are in no collection — they render as isolated nodes).
+ */
+export interface ApiCollectionsGraph {
+  order: number
+  collections: ApiCollectionGraphNode[]
+  images: ApiCollectionGraphImage[]
+  categories: ApiCollectionGraphCategory[]
+}
+
+export function fetchCollectionsGraph(
+  order: 1 | 2 | 3 = 1,
+  init?: RequestInit,
+): Promise<ApiCollectionsGraph> {
+  return request(`/collections/graph?order=${order}`, init)
+}
+
+/**
  * Collections the given image belongs to that the caller may view (#1586).
  *
  * Server-filtered by visibility, so students never receive private/restricted

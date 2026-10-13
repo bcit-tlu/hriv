@@ -631,19 +631,23 @@ followed by `PUT …/owners` or `POST …/transfer`.
 
 ## Frontend behaviour
 
-### Collections pages, CRUD and deep links (#1414, per-type split #1554)
+### Collections pages, CRUD and deep links (#1414, per-type split #1554, unified #1629)
 
 **Where.** `frontend/src/api.ts` (`ApiCollection*` wire shapes,
 `fetchCollections` / `fetchCollection` / `createCollection` /
 `updateCollection` / `deleteCollection` / `replaceCollectionImages` /
 `saveCollectionViewport`, `collectionConflictCurrent`), `types.ts`
 (`Collection`, `CollectionSummary`, `CollectionType`, `CollectionVisibility`,
-`CollectionOwner`, `CollectionPermissions`, `CollectionPageType`),
+`CollectionOwner`, `CollectionPermissions`),
 `collectionUtils.ts` (mapping,
 labels, `canUseRestrictedVisibility`, `parseCollectionIdParam`),
 `useCollectionsData.ts` (list/detail state + mutations),
+`useCollectionsViewPreference.ts` (persisted view/order/shared-only),
 `components/CollectionsPage.tsx`, `CollectionCard.tsx`,
-`CollectionEditDialog.tsx`, `components/ManageCollectionsPage.tsx`,
+`CollectionsTable.tsx`, `CollectionEditDialog.tsx`,
+`collectionsGraph/` (`buildModel.ts`, `simulation.ts`, `renderer.ts`,
+`CollectionsGraph.tsx` — the Graph view, #1629),
+`components/ManageCollectionsPage.tsx`,
 plus `navigation.ts`, `AppShell.tsx`,
 `useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
 Everything in this section is conditional on the deployment flag
@@ -651,22 +655,61 @@ Everything in this section is conditional on the deployment flag
 
 **Navigation.** The **Collections** tab is shown to every authenticated role
 (students included) in both the desktop app bar and the compact/mobile
-drawer. In the app bar it is a menu trigger only (#1559) — clicking it opens
-the sub-menu without navigating, the same `Tab` → `Menu` pattern as
-**Manage**, with **Sequence** and **Synchronized** entries; the tab carries
-`value="collections"` so Tabs' onChange ignores it (it is not a real page
-tab) while the tab still highlights on collections pages. Each menu item
-opens the same `CollectionsPage` locked to one type via
-`?page=collections&type=`;
-a missing or invalid `type` defaults to `sequence`. A `collectionPageType`
-state in `App` keeps the list filter, the URL param and the detail view in
-sync — opening a collection whose type differs from the current page type
-updates the page, so detail back-navigation always returns to the matching
-typed list. `App` only mounts
+drawer. Since #1629 it is a real page tab (`value="collections"`, handled by
+the shared `Tabs onChange`) that opens one unified `CollectionsPage`; the
+old Sequence/Synchronized sub-menu is gone and `?page=collections&type=`
+now seeds the shared **Type** filter instead of picking a sub-page (a
+missing or invalid `type` means `all`, and `pushNavState` writes `type`
+only while the filter is specific). The seed lands in the list's filter
+state on first load and on popstate; afterwards the Type chips own it, so
+a user's chip choice is never clobbered by a stale param. `App` only mounts
 `useCollectionsData` while a collections page is active, so browsing images
 never hits `/api/collections`. Non-students additionally get
 **Manage → Collections** (`?page=manage-collections`) — see
 [Manage Collections table](#manage-collections-table-1554) below.
+
+**Views (#1629).** A right-aligned `ToggleButtonGroup` next to **New
+collection** switches between three views, persisted per user via
+`useCollectionsViewPreference`
+(`hrivpref:collections-view:user:<id>` → `{ view, order, sharedOnly }`,
+defaults `{ cards, 1, false }`; invalid stored values fall back to
+defaults):
+
+- **Cards** — the existing `CollectionCard` grid.
+- **Table** — `components/CollectionsTable.tsx`: a dense sortable, paged
+  table (cover via `RenewingThumbnail`, name link, type chip, category
+  breadcrumb or "Unfiled", image count, owner with a "You" chip, relative
+  Updated; default sort Updated descending; `useRowsPerPagePreference('collections')`).
+  Row click opens the collection; no bulk actions or edit controls.
+- **Graph** — `src/collectionsGraph/` (`buildModel.ts`, `simulation.ts`,
+  `renderer.ts`, `CollectionsGraph.tsx`): a canvas hub-and-spoke graph
+  driven by `GET /api/collections/graph?order=` (see
+  [Graph endpoints](#graph-endpoints-1628)). The list's server-side
+  filters reach the graph by intersecting payload collections with the
+  currently listed ids; search only highlights. Overlay controls set the
+  order (**1st · 2nd · 3rd** — collections, +images, +categories) and a
+  **Shared only** toggle (disabled at 1st order; hides single-collection
+  images from drawing and hit testing, not from the simulation). The stats
+  caption reads "N collections · M images · S shared" plus "· C categories
+  (U without a collection)" at 3rd order, where U counts category nodes
+  with no image edge — the isolated "not yet transitioned" nodes. Physics,
+  rendering and interaction port the locked prototype design (#1627):
+  collection radius ∝ √image count, synchronized collections get an inner
+  ring, shared images are accent-filled, fit runs once after synchronous
+  pre-ticks per model build (resize and view switches redraw without
+  refitting; the Fit button refits explicitly), drag uses pointer-space
+  subjects and only reheats after real movement, and zoom (0.1–24×) yields
+  to drag over a node. Graph state survives view switches and collection
+  round-trips because positions live on the model and the transform rides
+  on `model.view`. Collection clicks open the collection; image clicks
+  fetch the record (`GET /api/images/{id}`) and take the normal `?image=`
+  viewer path; hub and category clicks are inert.
+
+**Search.** The shared search field is client-side and never persisted: it
+narrows Cards/Table rows by name, description and owner
+("Filters by name, description and owner."), and on the Graph it dims
+non-matching collections without removing nodes ("Highlights matches in the
+graph; nodes are not removed.").
 
 **List.** `GET /api/collections?type=` rendered as a fixed-width flex-wrap
 card grid (300px tiles, `gap: 2` — the same parameters as the Browse tile
@@ -704,8 +747,9 @@ to the first-member fallback, and a member row pins `cover_image_id`.
 Everywhere the type renders
 as a pill (detail header, edit dialog, manage table) it is the shared
 `CollectionTypeChip`: red (primary) outline and text on a white fill with
-the type's icon (#1567). Filters — type is the page,
-not a facet (#1554): a **My collections** chip (`mine=true`;
+the type's icon (#1567). Filters — since #1629 the shared filter bar leads
+with a **Type** chip group (All / Sequence / Synchronized — the sub-pages
+of #1554 became this facet): a **My collections** chip (`mine=true`;
 clears and disables the owner facet) and — for admin, instructor and staff
 only — an **Owner** select built from the owners in the loaded list, both
 in the header row left of **New collection**
@@ -1458,19 +1502,27 @@ the shared group-chip palette.
 - `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
   gating for `restricted`, `?collection=` parsing.
 - `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
-  Collections sub-menu (Sequence / Synchronized) for every role (desktop +
-  compact drawer), Manage → Collections for non-students, and hidden for
+  unified Collections tab for every role (desktop + compact drawer),
+  Manage → Collections for non-students, and hidden for
   every role when `collectionsEnabled` is false.
-- Per-type pages + manage table (#1554): `CollectionsPage.test.tsx`
-  (locked `collectionPageType`, header filters, edit-dialog delete flow),
+- Unified page + manage table (#1554, #1629): `CollectionsPage.test.tsx`
+  (Type chip group, shared filter bar + client-side search, view toggle,
+  graph fetch/order/Shared-only wiring, edit-dialog delete flow),
+  `CollectionsTable.test.tsx` (sort, paging, You chip, row click),
+  `collectionsGraphModel.test.ts` (payload→model mapping, visible-id
+  filtering, trimmed `collection_ids`, shared detection, `sharedOnly`
+  hidden flags, order-3 isolated categories, deterministic positions),
+  `useCollectionsViewPreference.test.ts` (defaults, invalid-value
+  fallback, user-scoped persistence),
   `CollectionCard.test.tsx` (title-row type icon, Move/Owners overlay,
   non-propagating actions, no delete affordance),
   `CollectionEditDialog.test.tsx` (delete arm/confirm/failure, category
   picker save + hide link, #1566),
   `ManageCollectionsPage.test.tsx` (unfiltered fetch, facets/sort, row
   actions on `permissions`, no row Move, breadcrumb navigation,
-  categories-change refetch), `App.test.tsx` (`collectionPageType` state,
-  `?type=` emit/parse, detail→type sync, `manage-collections` gate).
+  categories-change refetch), `App.test.tsx` (`?type=` filter seed on
+  load and popstate, `type` emitted only when specific,
+  `manage-collections` gate).
 - Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
   default / env parsing), `test_router_collections.py` (router-wide
   `require_collections_enabled` dependency, 404 when off), `test_main.py`
@@ -1480,11 +1532,12 @@ the shared group-chip palette.
 - `frontend/tests/useShareableImageState.test.ts`,
   `useNavigationHistory.test.ts`, `App.test.tsx` — `?collection={id}` and
   `?collection={id}&item={image_id}` parse/emit precedence, `?type=` on
-  collections-page URLs (default `sequence`), history entries,
+  collections-page URLs (seeds the Type filter; absent means `all`),
+  history entries,
   deep-link restore on load and back/forward, `?item=` alone ignored.
 - Header + hidden-state rework (#1559, #1564): `AppShell.test.tsx` (Collections
-  tab opens the menu without `onTabChange`; menu items navigate; active
-  type MenuItem selected), `CollectionsPage.test.tsx` (`Home`/category
+  is a real tab navigating via `onTabChange`; drawer Collections items),
+  `CollectionsPage.test.tsx` (`Home`/category
   breadcrumb navigation, name + `(N images)` count as the breadcrumb's
   trailing item, actions share the breadcrumb row, type/visibility pills
   above the description, Manage Images button wiring for editable detail,

@@ -50,6 +50,9 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - frontend: `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog CollectionManageDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
 - Per-type pages / card overlay / manage table / dialog delete (#1554):
   `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog navigation AppShell App.test`
+- Unified Collections page — view toggle, Table view, Graph view, view
+  preference, `?type=` filter seed (#1629; graph endpoints #1628/#1633):
+  `npm test -- CollectionsPage CollectionsTable collectionsGraphModel useCollectionsViewPreference useCollectionsData navigation AppShell App.test`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`
