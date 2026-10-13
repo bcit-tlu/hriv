@@ -146,8 +146,12 @@ describe('CollectionGraphDialog', () => {
     // resolving alone does not mean React re-rendered the canvas.
     await screen.findByText(/1 related collection/)
     spyFind((n) => n.kind === 'collection' && n.id === 5)
-    fireEvent.click(screen.getByTestId('collections-graph-canvas'))
-    await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(5, 2))
+    // Retry: the caption can render a tick before the canvas's click
+    // listener is wired to the rebuilt model (CI is slower than jsdom).
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+      expect(fetchGraph).toHaveBeenCalledWith(5, 2)
+    })
   }
 
   it('pushes a related collection onto the stack and refetches', async () => {
@@ -178,9 +182,10 @@ describe('CollectionGraphDialog', () => {
     fireEvent.click(await screen.findByRole('button', { name: '2nd order' }))
     await screen.findByText(/1 related collection/)
     spyFind((n) => n.kind === 'collection' && n.id === 5)
-    fireEvent.click(screen.getByTestId('collections-graph-canvas'))
-
-    await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(5, 2))
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+      expect(fetchGraph).toHaveBeenCalledWith(5, 2)
+    })
     // The perspective crumb/title update synchronously, but the old hub's
     // model must not remain mounted under the new key while fetching.
     expect(screen.getByText('Pelvis set — graph')).toBeInTheDocument()
@@ -214,10 +219,12 @@ describe('CollectionGraphDialog', () => {
     await waitFor(() => expect(fetchGraph).toHaveBeenCalled())
 
     spyFind((n) => n.kind === 'image' && n.id === 10)
-    fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+      expect(props.onOpenImage).toHaveBeenCalledWith(10)
+    })
 
     expect(props.onClose).toHaveBeenCalled()
-    expect(props.onOpenImage).toHaveBeenCalledWith(10)
   })
 
   it('404 shows "no longer available" with a Back action when navigated', async () => {
@@ -244,8 +251,10 @@ describe('CollectionGraphDialog', () => {
     fireEvent.click(await screen.findByRole('button', { name: '2nd order' }))
     await screen.findByText(/1 related collection/)
     spyFind((n) => n.kind === 'collection' && n.id === 5)
-    fireEvent.click(screen.getByTestId('collections-graph-canvas'))
-    await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(5, 2))
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+      expect(fetchGraph).toHaveBeenCalledWith(5, 2)
+    })
 
     fireEvent.click(await screen.findByTestId('collection-graph-open-collection'))
     expect(props.onClose).toHaveBeenCalled()
