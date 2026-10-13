@@ -8,8 +8,12 @@ Flux deployment manifests for hriv have moved to the dedicated fleet repository:
 
 The fleet repo is the single source of truth for what runs on our Kubernetes clusters. It manages deployments for all applications in the org, including hriv.
 
-- **Manifests:** `flux-fleet/apps/hriv/` (base, latest, stable overlays)
-- **Cluster entrypoints:** `flux-fleet/clusters/cluster01/` (stable), `cluster03/` (latest)
+- **Manifests:** `flux-fleet/apps/base/` (shared objects) + `flux-fleet/apps/overlays/{latest,stable}/hriv/` (environment overlays)
+- **Cluster entrypoints:** `flux-fleet/clusters/cluster03/` (latest), `cluster04/` (stable)
+
+Rollout is triggered by this repo's GitHub webhook (`package` event on chart
+publish) reaching the Flux receivers — see
+[`docs/RELEASE_AND_DEPLOY_FLOW.md`](../docs/RELEASE_AND_DEPLOY_FLOW.md).
 
 ## Helm Charts
 
