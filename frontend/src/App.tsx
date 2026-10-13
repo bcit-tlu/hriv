@@ -43,9 +43,10 @@ import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
-import type { CollectionPageType, Page } from './components/AppShell'
+import type { Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
+import type { CollectionsView } from './useCollectionsViewPreference'
 import ManageCollectionsPage from './components/ManageCollectionsPage'
 import AddToCollectionDialog from './components/AddToCollectionDialog'
 import CollectionEditDialog, { type CollectionFormValues } from './components/CollectionEditDialog'
@@ -73,6 +74,7 @@ import {
 import UploadImageModal from './components/UploadImageModal'
 import {
   apiCollectionSummaryToSummary,
+  apiImageToItem,
   collectionFullMessage,
   parseCollectionIdParam,
   parseCollectionItemParam,
@@ -209,12 +211,15 @@ export default function App() {
     if (parseCollectionIdParam(window.location.search) == null) return false
     return new URLSearchParams(window.location.search).get('cat') != null
   })
-  // Which Collections type page is active (#1554) — `?type=` deep links
-  // restore it; bare `?page=collections` defaults to sequence.
-  const [collectionPageType, setCollectionPageType] = useState<CollectionPageType>(() => {
+  // `?type=` deep links / popstate seed the Collections page's Type filter
+  // (#1629 — one unified page; the filter state owns it after the seed).
+  // The nonce re-applies the seed on every collections popstate, even when
+  // the popped `?type=` value equals the current one or is absent.
+  const [collectionTypeParam, setCollectionTypeParam] = useState<CollectionType | 'all'>(() => {
     const t = new URLSearchParams(window.location.search).get('type')
-    return t === 'synchronized' ? 'synchronized' : 'sequence'
+    return t === 'sequence' || t === 'synchronized' ? t : 'all'
   })
+  const [collectionTypeSeedNonce, setCollectionTypeSeedNonce] = useState(0)
   const [collectionsRefreshToken, setCollectionsRefreshToken] = useState(0)
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
@@ -421,6 +426,7 @@ export default function App() {
   const [moveSnack, setMoveSnack] = useState<{
     message: string
     onUndo: () => void
+    onView?: () => void
   } | null>(null)
   const [reorderCount, setReorderCount] = useState(0)
   // Report issue modal state
@@ -474,7 +480,8 @@ export default function App() {
       currentUser != null,
     currentUser,
     selectedCollectionId,
-    type: collectionPageType,
+    type: collectionTypeParam,
+    typeSeedNonce: collectionTypeSeedNonce,
     refreshToken: collectionsRefreshToken,
     backgroundRefresh: page === 'collections' && selectedCollectionId == null,
   })
@@ -512,9 +519,12 @@ export default function App() {
   } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
   const myCollectionsDrawerVisible =
     myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
+  // Reported upward by CollectionsPage — the list graph fills the viewport
+  // like the image/collection viewers (#1630 feedback).
+  const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
   const onViewerPage =
     (page === 'browse' && selectedImage != null) ||
-    (page === 'collections' && selectedCollectionId != null)
+    (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
   const myCollectionsTypesAtLimit =
     currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
       ? myCollectionsCapState.types
@@ -550,22 +560,8 @@ export default function App() {
     }
   }, [currentUser, myCollectionsDrawerOpen, myCollectionsDrawerVisible])
 
-  // A collection detail opened via `?collection=` self-corrects the type
-  // page so Back returns to the right list. Only a detail matching the
-  // *current* selection may drive this — a stale detail left over from a
-  // previous selection must not override explicit type-page navigation.
-  useEffect(() => {
-    const t = collectionsData.detail?.type
-    if (
-      selectedCollectionId != null &&
-      collectionsData.detail?.id === selectedCollectionId &&
-      t != null &&
-      t !== collectionPageType
-    ) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- detail-driven sync, guarded by selection + inequality
-      setCollectionPageType(t)
-    }
-  }, [collectionsData.detail, collectionPageType, selectedCollectionId])
+  // One Collections page since #1629: the old detail-driven type-page sync
+  // is gone — a detail no longer needs to switch the list's type filter.
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -792,7 +788,8 @@ export default function App() {
     collectionId: selectedCollectionId,
     collectionItemId: selectedCollectionItemId,
     collectionFromBrowse,
-    collectionPageType,
+    collectionTypeFilter:
+      collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
     setPath,
     setSelectedImage,
   })
@@ -901,7 +898,10 @@ export default function App() {
       setSelectedCollectionId(poppedCollectionId)
       if (validPage === 'collections') {
         const poppedType = new URLSearchParams(window.location.search).get('type')
-        setCollectionPageType(poppedType === 'synchronized' ? 'synchronized' : 'sequence')
+        setCollectionTypeParam(
+          poppedType === 'sequence' || poppedType === 'synchronized' ? poppedType : 'all',
+        )
+        setCollectionTypeSeedNonce((n) => n + 1)
         if (poppedCollectionId == null) {
           setCollectionsRefreshToken((n) => n + 1)
         }
@@ -1392,6 +1392,11 @@ export default function App() {
 
   const isStudent = currentUser?.role === 'student'
 
+  // Stable refs for the snackbar "View" action: the real callbacks are
+  // declared below this hook call site, so the hook invokes them via refs.
+  const moveSnackNavigateRef = useRef<(categoryPath: Category[]) => void>(() => {})
+  const moveSnackOpenCollectionRef = useRef<(id: number) => void>(() => {})
+
   // Category CRUD, reorder, move, drag-and-drop (extracted to useCategoryActions hook)
   const {
     moveCatOpen,
@@ -1445,6 +1450,11 @@ export default function App() {
     setWarningSnack: setWarnSnack,
     setInfoSnack,
     setMoveSnack,
+    navigateToCategory: (categoryId: number | null) =>
+      moveSnackNavigateRef.current(
+        categoryId == null ? [] : (findCategoryPath(categories, categoryId) ?? []),
+      ),
+    openCollection: (id: number) => moveSnackOpenCollectionRef.current(id),
   })
 
   // Coordinate a single bottom-right reorder snackbar across the browsed
@@ -1758,7 +1768,13 @@ export default function App() {
         setCollectionFromBrowse(false)
         clearImage()
         setPath([])
-        pushNavState(v, [], null, v === 'collections' ? { type: collectionPageType } : undefined)
+        // `?type=` rides along only while a type filter is active (#1629);
+        // the URL-sync effect keeps it in step with the filter afterwards.
+        const typeParam =
+          v === 'collections' && collectionsData.filters.type !== 'all'
+            ? { type: collectionsData.filters.type }
+            : undefined
+        pushNavState(v, [], null, typeParam)
         if (v === 'browse') {
           loadCategories()
           loadUncategorizedImages()
@@ -1771,26 +1787,8 @@ export default function App() {
       loadCategories,
       loadUncategorizedImages,
       runCanvasNavigation,
-      collectionPageType,
+      collectionsData.filters.type,
     ],
-  )
-
-  // Collections tab sub-menu (#1554): Sequence/Synchronized pickers. Same
-  // navigation reset as a tab change plus the `type` dimension.
-  const handleCollectionsTypeChange = useCallback(
-    (t: CollectionPageType) => {
-      runCanvasNavigation(() => {
-        setCollectionsRefreshToken((n) => n + 1)
-        setPage('collections')
-        setCollectionPageType(t)
-        setSelectedCollectionId(null)
-        setCollectionFromBrowse(false)
-        clearImage()
-        setPath([])
-        pushNavState('collections', [], null, { type: t })
-      })
-    },
-    [clearImage, pushNavState, runCanvasNavigation],
   )
 
   // Called only when already on browse (AppShell gates the click);
@@ -1844,8 +1842,13 @@ export default function App() {
       return
     }
     setCollectionsRefreshToken((n) => n + 1)
-    pushNavState('collections', [], null, { type: collectionPageType })
-  }, [collectionFromBrowse, path, pushNavState, collectionPageType])
+    pushNavState(
+      'collections',
+      [],
+      null,
+      collectionsData.filters.type === 'all' ? undefined : { type: collectionsData.filters.type },
+    )
+  }, [collectionFromBrowse, path, pushNavState, collectionsData.filters.type])
 
   // Detail-header breadcrumb (#1559): jump from the open collection to its
   // filed Browse scope (or the root for `Home`). Clears the detail like
@@ -1866,6 +1869,15 @@ export default function App() {
     },
     [pushNavState, runCanvasNavigation],
   )
+
+  // Keep the move-snackbar refs pointing at the live callbacks.
+  useEffect(() => {
+    moveSnackNavigateRef.current = handleNavigateBrowseFromCollection
+  }, [handleNavigateBrowseFromCollection])
+  useEffect(() => {
+    moveSnackOpenCollectionRef.current = (id: number) =>
+      handleOpenCollection(id, { fromBrowse: false })
+  }, [handleOpenCollection])
 
   // Browse collection editor (#1525 UX): the tile title's edit pencil opens
   // the shared CollectionEditDialog — the same form the Collections pages
@@ -2199,6 +2211,31 @@ export default function App() {
     [categories, pushNavState, runCanvasNavigation],
   )
 
+  // "Open image" from the collections graph (#1629): the graph only carries
+  // image ids, so fetch the record first, then take the same `?image={id}`
+  // viewer path as the collection detail. The epoch ref guards the async
+  // hop (#1636 review): navigating anywhere, clicking another node, or
+  // switching the collection detail before the fetch lands must not be
+  // overwritten by the stale result (#1638 review).
+  const graphImageEpoch = useRef(0)
+  useEffect(() => {
+    graphImageEpoch.current += 1
+  }, [page, selectedCollectionId])
+  const handleOpenGraphImage = useCallback(
+    (imageId: number) => {
+      const epoch = ++graphImageEpoch.current
+      void apiFetchImage(imageId)
+        .then((api) => {
+          if (epoch === graphImageEpoch.current) handleOpenCollectionImage(apiImageToItem(api))
+        })
+        .catch((err) => {
+          if (epoch === graphImageEpoch.current)
+            setErrorSnack(userMessage(err, 'Failed to load the image.'))
+        })
+    },
+    [handleOpenCollectionImage],
+  )
+
   // Show loading spinner while users are loading
   if (usersLoading) {
     return (
@@ -2233,8 +2270,6 @@ export default function App() {
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
-      collectionType={collectionPageType}
-      onCollectionsTypeChange={handleCollectionsTypeChange}
       currentUser={currentUser}
       announcement={announcement}
       annMessage={annMessage}
@@ -2337,7 +2372,6 @@ export default function App() {
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
-              collectionPageType={collectionPageType}
               currentUser={currentUser}
               programs={programs}
               groups={groups}
@@ -2354,11 +2388,13 @@ export default function App() {
               onOpenCollection={handleOpenCollection}
               onCloseCollection={handleCloseCollection}
               onOpenImage={handleOpenCollectionImage}
+              onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
               onCollectionImageRenewed={collectionsData.renewCollectionImage}
               onViewerError={setErrorSnack}
+              onViewChange={setCollectionsListView}
               onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}
               onCreate={async (values) => {
@@ -2690,6 +2726,30 @@ export default function App() {
                         </Button>
                       )
                     })()}
+                  {collectionsEnabled && (
+                    <Tooltip
+                      title={
+                        canvasEditActive
+                          ? 'Exit canvas edit mode first'
+                          : 'Add this image to a collection'
+                      }
+                    >
+                      <span>
+                        <Button
+                          variant="outlined"
+                          startIcon={<PlaylistAddIcon />}
+                          onClick={() => {
+                            setAddToCollectionImageIds([selectedImage.id])
+                            setAddToCollectionOpen(true)
+                          }}
+                          disabled={canvasEditActive}
+                          sx={inactiveViewerActionSx}
+                        >
+                          Add to Collection
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  )}
                   {canEditContent && (
                     <Tooltip title={canvasEditActive ? 'Exit canvas edit mode first' : ''}>
                       <span>
@@ -2715,30 +2775,6 @@ export default function App() {
                       Share View
                     </Button>
                   </Tooltip>
-                  {collectionsEnabled && (
-                    <Tooltip
-                      title={
-                        canvasEditActive
-                          ? 'Exit canvas edit mode first'
-                          : 'Add this image to a collection'
-                      }
-                    >
-                      <span>
-                        <Button
-                          variant="outlined"
-                          startIcon={<PlaylistAddIcon />}
-                          onClick={() => {
-                            setAddToCollectionImageIds([selectedImage.id])
-                            setAddToCollectionOpen(true)
-                          }}
-                          disabled={canvasEditActive}
-                          sx={inactiveViewerActionSx}
-                        >
-                          Add to Collection
-                        </Button>
-                      </span>
-                    </Tooltip>
-                  )}
                 </Box>
               </Box>
 
@@ -3018,6 +3054,16 @@ export default function App() {
                               </Button>
                             )
                           })()}
+                        {collectionsEnabled && (
+                          <Button
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={openBrowseCollectionCreate}
+                            sx={categoryPageHiddenSx}
+                          >
+                            New collection
+                          </Button>
+                        )}
                         {(path.length === 0 || liveCategoryPath.length > 0) &&
                           liveCategoryPath.length < MAX_DEPTH && (
                             <Button
@@ -3029,16 +3075,6 @@ export default function App() {
                               Add Category
                             </Button>
                           )}
-                        {collectionsEnabled && (
-                          <Button
-                            variant="outlined"
-                            startIcon={<AddIcon />}
-                            onClick={openBrowseCollectionCreate}
-                            sx={categoryPageHiddenSx}
-                          >
-                            New collection
-                          </Button>
-                        )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -3663,9 +3699,31 @@ export default function App() {
           onClose={() => setMoveSnack(null)}
           variant="filled"
           action={
-            <Button color="inherit" size="small" onClick={moveSnack?.onUndo} aria-label="Undo move">
-              Undo
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {moveSnack?.onView && (
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    moveSnack.onView?.()
+                    setMoveSnack(null)
+                  }}
+                  aria-label="View"
+                >
+                  View
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                color="inherit"
+                size="small"
+                onClick={moveSnack?.onUndo}
+                aria-label="Undo move"
+              >
+                Undo
+              </Button>
+            </Box>
           }
         >
           {moveSnack?.message}

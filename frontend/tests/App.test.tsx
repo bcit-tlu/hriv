@@ -14,6 +14,7 @@ import {
   fetchVersions,
   updateGroup,
   updateProgram,
+  type ApiImage,
 } from '../src/api'
 import { makeApiCollection, makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
 
@@ -28,6 +29,7 @@ const apiMocks = vi.hoisted(() => ({
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
   deleteProgram: vi.fn(),
+  fetchImage: vi.fn(),
   createGroup: vi.fn(),
   updateGroup: vi.fn(),
   deleteGroup: vi.fn(),
@@ -395,7 +397,6 @@ vi.mock('../src/components/AppShell', () => ({
   default: ({
     children,
     onTabChange,
-    onCollectionsTypeChange,
     onHomeClick,
     onSearchOpen,
     onOpenPrograms,
@@ -412,7 +413,6 @@ vi.mock('../src/components/AppShell', () => ({
     footerDockSlot?: ReactNode
     fillViewport?: boolean
     onTabChange: (v: string) => void
-    onCollectionsTypeChange: (type: 'sequence' | 'synchronized') => void
     onHomeClick: () => void
     onSearchOpen: () => void
     onOpenPrograms: () => void
@@ -448,12 +448,6 @@ vi.mock('../src/components/AppShell', () => ({
       </button>
       <button type="button" onClick={() => onTabChange('collections')}>
         Shell tab collections
-      </button>
-      <button type="button" onClick={() => onCollectionsTypeChange('sequence')}>
-        Shell pick sequence
-      </button>
-      <button type="button" onClick={() => onCollectionsTypeChange('synchronized')}>
-        Shell pick synchronized
       </button>
       <button type="button" onClick={onHomeClick}>
         Shell home
@@ -2353,20 +2347,29 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
   })
 
+  it('returns to the Collections list when the tab is clicked from a detail', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
   it('opens the Collections list from ?page=collections', async () => {
     window.history.replaceState(null, '', '/?page=collections')
     await renderWithCollectionsEnabled()
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
   })
 
-  it('revalidates when the already-selected Collections type is picked again', async () => {
+  it('seeds the Type filter from ?type=sequence and revalidates on tab re-click (#1629)', async () => {
     window.history.replaceState(null, '', '/?page=collections&type=sequence')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
     await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Shell pick sequence' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
     await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(2))
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
   })
@@ -2392,13 +2395,26 @@ describe('App collections deep links (#1414)', () => {
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
   })
 
-  it('requests only the selected type when navigating Browse to Synchronized', async () => {
+  it('requests only the selected type for the ?type=synchronized deep link (#1629)', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=synchronized')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
+  })
+
+  it('applies ?type= restored by Back as the Type filter (#1629)', async () => {
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalled())
     apiMocks.fetchCollections.mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Shell pick synchronized' }))
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    window.history.replaceState(null, '', '/?page=collections&type=synchronized')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalled())
     expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
   })
 
@@ -2419,9 +2435,8 @@ describe('App collections deep links (#1414)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
-    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, {
-      type: 'sequence',
-    })
+    // No `type` param while the Type filter is 'all' (#1629).
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, undefined)
   })
 
   it('opens a member image in the normal ?image= view from the collection detail', async () => {
@@ -2431,6 +2446,65 @@ describe('App collections deep links (#1414)', () => {
     expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
     expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
     expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1], 101)
+  })
+
+  it('ignores a graph image fetch that resolves after the collection changed (#1638)', async () => {
+    let resolveImage: (img: ApiImage) => void = () => {}
+    apiMocks.fetchImage.mockReturnValue(
+      new Promise<ApiImage>((res) => {
+        resolveImage = res
+      }),
+    )
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+
+    const onOpenImageById = collectionsPageProps.current?.onOpenImageById as (id: number) => void
+    act(() => onOpenImageById(10))
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(10))
+
+    // Switching the collection detail before the fetch lands must
+    // invalidate the stale result (#1638 review).
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    await act(async () => {
+      resolveImage({
+        id: 10,
+        name: 'Graph image',
+        thumb: '/t.jpg',
+        tile_sources: '/t.dzi',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: 1,
+        height: 1,
+        file_size: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      })
+    })
+
+    expect(screen.queryByText(/Image Viewer/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+  })
+
+  it('fills the viewport on the collections page when the graph view is reported (#1630)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    // Cards/table do not fill.
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeNull()
+
+    act(() => {
+      ;(collectionsPageProps.current?.onViewChange as (v: string) => void)('graph')
+    })
+    expect(document.querySelector('[data-fill-viewport="true"]')).not.toBeNull()
+
+    act(() => {
+      ;(collectionsPageProps.current?.onViewChange as (v: string) => void)('cards')
+    })
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeNull()
   })
 
   it('restores the selected collection from the URL on back/forward', async () => {

@@ -71,8 +71,6 @@ import {
 export type Page =
   'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin' | 'guide'
 
-export type CollectionPageType = 'sequence' | 'synchronized'
-
 export interface AppShellProps {
   page: Page
   /** Let a viewer page fill the viewport while retaining min-content sizing. */
@@ -84,10 +82,6 @@ export interface AppShellProps {
   canViewPeople: boolean
   /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
   collectionsEnabled: boolean
-  /** Active Collections type page — labels the Sequence/Synchronized menu items. */
-  collectionType: CollectionPageType
-  /** Collections tab sub-menu selection (Sequence / Synchronized). */
-  onCollectionsTypeChange: (type: CollectionPageType) => void
   currentUser: {
     name: string
     email: string
@@ -139,8 +133,6 @@ export default function AppShell(props: AppShellProps) {
     canManageUsers,
     canViewPeople,
     collectionsEnabled,
-    collectionType,
-    onCollectionsTypeChange,
     currentUser,
     announcement,
     annMessage,
@@ -168,7 +160,6 @@ export default function AppShell(props: AppShellProps) {
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
-  const [collectionsMenuAnchor, setCollectionsMenuAnchor] = useState<HTMLElement | null>(null)
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
   const theme = useTheme()
   // Collapse the nav tabs into a hamburger menu when the viewport is too
@@ -201,7 +192,6 @@ export default function AppShell(props: AppShellProps) {
     if (collapseNav) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale anchor after viewport collapse
       setManageMenuAnchor(null)
-      setCollectionsMenuAnchor(null)
     } else {
       setNavDrawerOpen(false)
     }
@@ -258,8 +248,6 @@ export default function AppShell(props: AppShellProps) {
           } else {
             onTabChange('browse')
           }
-        } else if (item.collectionType != null) {
-          onCollectionsTypeChange(item.collectionType)
         } else if (item.id === 'images') {
           onTabChange('manage')
         } else if (item.id === 'categories') {
@@ -275,9 +263,7 @@ export default function AppShell(props: AppShellProps) {
         }
       }
 
-      const selected =
-        item.page === page &&
-        (item.collectionType == null || item.collectionType === collectionType)
+      const selected = item.page === page
 
       return (
         <MenuItem key={item.id} selected={selected} onClick={closeThen(handleClick)}>
@@ -378,7 +364,13 @@ export default function AppShell(props: AppShellProps) {
               // via the Manage dropdown.
               value={page === 'guide' || page === 'manage-collections' ? false : page}
               onChange={(_, v: Page) => {
-                if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
+                if (
+                  v === 'browse' ||
+                  v === 'collections' ||
+                  v === 'manage' ||
+                  v === 'people' ||
+                  v === 'admin'
+                ) {
                   onTabChange(v)
                 }
               }}
@@ -400,13 +392,18 @@ export default function AppShell(props: AppShellProps) {
                 }}
               />
               {collectionsEnabled && (
+                // A real tab since #1629 — the Sequence/Synchronized sub-menu
+                // became the page's Type filter facet.
                 <Tab
                   label="Collections"
-                  // Menu trigger only, like Manage — Tabs onChange ignores
-                  // 'collections' (not a real page tab); navigation happens
-                  // when a Sequence/Synchronized menu item is chosen (#1559).
                   value="collections"
-                  onClick={(e) => setCollectionsMenuAnchor(e.currentTarget)}
+                  onClick={() => {
+                    // Re-click while already on collections (list or an open
+                    // detail) resets to the list — the Home tab pattern.
+                    if (page === 'collections') {
+                      onTabChange('collections')
+                    }
+                  }}
                 />
               )}
               {canEditContent && <Tab label="Images" value="manage" />}
@@ -420,32 +417,6 @@ export default function AppShell(props: AppShellProps) {
               {canViewPeople && <Tab label="People" value="people" />}
               {canManageUsers && <Tab label="Admin" value="admin" />}
             </Tabs>
-          )}
-          {!collapseNav && (
-            <Menu
-              anchorEl={collectionsMenuAnchor}
-              open={Boolean(collectionsMenuAnchor)}
-              onClose={() => setCollectionsMenuAnchor(null)}
-            >
-              <MenuItem
-                selected={page === 'collections' && collectionType === 'sequence'}
-                onClick={() => {
-                  setCollectionsMenuAnchor(null)
-                  onCollectionsTypeChange('sequence')
-                }}
-              >
-                Sequence
-              </MenuItem>
-              <MenuItem
-                selected={page === 'collections' && collectionType === 'synchronized'}
-                onClick={() => {
-                  setCollectionsMenuAnchor(null)
-                  onCollectionsTypeChange('synchronized')
-                }}
-              >
-                Synchronized
-              </MenuItem>
-            </Menu>
           )}
           {!collapseNav && (
             <Menu

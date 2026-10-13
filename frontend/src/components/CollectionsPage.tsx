@@ -5,26 +5,35 @@ import Breadcrumbs from '@mui/material/Breadcrumbs'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
-import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
-import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
-import MenuItem from '@mui/material/MenuItem'
-import Select from '@mui/material/Select'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
+import HubIcon from '@mui/icons-material/Hub'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
+import TableRowsIcon from '@mui/icons-material/TableRows'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import ViewModuleIcon from '@mui/icons-material/ViewModule'
 import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
-import { fetchCollections, userMessage, type ApiImage } from '../api'
+import {
+  fetchCollection,
+  fetchCollections,
+  fetchCollectionsGraph,
+  userMessage,
+  type ApiCollectionsGraph,
+  type ApiImage,
+} from '../api'
 import {
   apiCollectionSummaryToSummary,
   COLLECTION_TYPE_LABELS,
+  COLLECTION_VISIBILITY_LABELS,
   COLLECTIONS_AT_CAP_TOOLTIP,
   describeCollectionOwner,
   describeCollectionOwners,
@@ -32,22 +41,44 @@ import {
 } from '../collectionUtils'
 import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
-import type { CollectionPageType } from './AppShell'
+import {
+  useCollectionsViewPreference,
+  type CollectionsGraphOrder,
+  type CollectionsView,
+} from '../useCollectionsViewPreference'
+import CollectionsGraph from '../collectionsGraph/CollectionsGraph'
+import { buildGraphModel } from '../collectionsGraph/buildModel'
+import type { GraphModel } from '../collectionsGraph/types'
+import { graphToggleSx } from '../collectionsGraph/toggleStyles'
+import CollectionsTable, {
+  COLLECTIONS_TABLE_COLUMN_OPTIONS,
+  COLLECTIONS_TABLE_COLUMNS,
+  DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
+  type CollectionsTableColumn,
+} from './CollectionsTable'
+import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import FilterBar from './FilterBar'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import {
+  DEFAULT_COLLECTION_FILTERS,
   toCollectionPatch,
   type CollectionListFilters,
   type CollectionOwnerFilter,
 } from '../useCollectionsData'
+import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import type {
   Category,
   Collection,
   CollectionOwner,
   CollectionSummary,
   CollectionType,
+  CollectionVisibility,
   Group,
   ImageItem,
   Program,
@@ -55,14 +86,13 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import CollectionGraphDialog from './CollectionGraphDialog'
 import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 
 export interface CollectionsPageProps {
-  /** Which type page is rendered — headings, empty state, type chip context. */
-  collectionPageType: CollectionPageType
   currentUser: User | null
   programs: Program[]
   groups: Group[]
@@ -81,6 +111,9 @@ export interface CollectionsPageProps {
   onOpenCollection: (id: number) => void
   onCloseCollection: () => void
   onOpenImage: (image: ImageItem) => void
+  /** Graph-view image clicks carry only an id (#1629) — the caller fetches
+   *  the record and takes the normal `?image={id}` viewer path. */
+  onOpenImageById?: (imageId: number) => void
   /** Sequence viewer state (`?item=` position) and mutations (#1416). */
   selectedCollectionItemId: number | null
   onSelectCollectionItem: (imageId: number) => void
@@ -91,6 +124,9 @@ export interface CollectionsPageProps {
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
+  /** Reports the current Cards/Table/Graph view so the shell can fill the
+   *  viewport in graph view (#1630 feedback). */
+  onViewChange?: (view: CollectionsView) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
   onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
@@ -190,6 +226,7 @@ function CollectionDetailHeader({
   onEdit,
   onTransfer,
   onManage,
+  onOpenGraph,
   togglingHidden,
   onToggleHidden,
   canFile,
@@ -207,6 +244,8 @@ function CollectionDetailHeader({
   onTransfer?: () => void
   /** Opens the member Manage dialog (#1566) — replaces the Reorder toggle. */
   onManage?: () => void
+  /** Opens the Graph View dialog (#1630) — read-only, shown to everyone. */
+  onOpenGraph?: () => void
   togglingHidden?: boolean
   onToggleHidden?: () => void
   /** The filed category (or an ancestor) is hidden — the collection is
@@ -401,6 +440,20 @@ function CollectionDetailHeader({
                 {collection.hidden ? 'Show collection' : 'Hide collection'}
               </Button>
             ))}
+          {/* Graph View sits between Hide and Manage (#1630): a read-only
+              structural view every viewer gets, no permission gate. */}
+          {onOpenGraph && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<HubIcon />}
+              onClick={onOpenGraph}
+              data-testid="collection-graph-open"
+              sx={hiddenSx}
+            >
+              Graph View
+            </Button>
+          )}
           {/* Manage opens the member dialog (reorder/add/remove, #1566) — it
               replaces the old sequence-only Reorder toggle and applies to
               both collection types. */}
@@ -504,6 +557,7 @@ export default function CollectionsPage({
   onReorderImages,
   onCollectionImageRenewed,
   onViewerError,
+  onViewChange,
   onSaveViewport,
   loadCollection,
   onCreate,
@@ -521,7 +575,7 @@ export default function CollectionsPage({
   onToggleCategoryVisibility,
   onNavigateCategory,
   onToggleHidden,
-  collectionPageType,
+  onOpenImageById,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
@@ -531,7 +585,16 @@ export default function CollectionsPage({
   // Member-management dialog (#1566) — reorder/add/remove live here now that
   // the sequence viewer's inline reorder mode is gone.
   const [manageOpen, setManageOpen] = useState(false)
+  const [graphDialogOpen, setGraphDialogOpen] = useState(false)
   const editRequestRef = useRef(0)
+  // Render-phase adjustment: close the graph dialog when the detail
+  // collection changes or closes, so Back → Forward cannot resurrect it
+  // without another click (#1638 review).
+  const [graphDialogFor, setGraphDialogFor] = useState<number | null>(null)
+  if (graphDialogFor !== (detail?.id ?? null)) {
+    setGraphDialogFor(detail?.id ?? null)
+    if (graphDialogOpen) setGraphDialogOpen(false)
+  }
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
   const detailCategoryPath = useMemo(() => {
@@ -557,6 +620,110 @@ export default function CollectionsPage({
 
   const isAdmin = currentUser?.role === 'admin'
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
+
+  // ── Unified page view state (#1629) ──────────────────────────────
+  const [viewPrefs, setViewPrefs] = useCollectionsViewPreference(currentUser?.id ?? null)
+  // The shell fills the viewport for the graph view, so it needs the
+  // current view reported upward (the pref itself is per-user state).
+  useEffect(() => {
+    onViewChange?.(viewPrefs.view)
+  }, [onViewChange, viewPrefs.view])
+  // Search and the Visibility facet are client-side and intentionally NOT
+  // persisted.
+  const [searchQuery, setSearchQuery] = useState('')
+  const [visibilityFilter, setVisibilityFilter] = useState<ReadonlySet<CollectionVisibility>>(
+    () => new Set(),
+  )
+  const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
+  const [graphError, setGraphError] = useState<string | null>(null)
+
+  // The graph payload fetches lazily the first time Graph is selected,
+  // then refetches only when the order or the listed collections change —
+  // switching view alone never invalidates the model, so positions and
+  // zoom survive Cards → Graph → Cards round-trips (#1636 review). Once a
+  // payload exists it keeps refreshing while hidden so the kept-alive
+  // canvas reflects filter edits made from cards/table.
+  const graphLoaded = graphPayload != null
+  const fetchedGraph = useRef<{ order: number; collections: typeof collections } | null>(null)
+  useEffect(() => {
+    if (selectedCollectionId != null) return
+    if (viewPrefs.view !== 'graph' && !graphLoaded) return
+    const f = fetchedGraph.current
+    if (f != null && f.order === viewPrefs.order && f.collections === collections) return
+    fetchedGraph.current = { order: viewPrefs.order, collections }
+    let cancelled = false
+    fetchCollectionsGraph(viewPrefs.order)
+      .then((payload) => {
+        if (!cancelled) {
+          setGraphPayload(payload)
+          setGraphError(null)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          fetchedGraph.current = null
+          setGraphError(userMessage(err, 'Failed to load the collections graph.'))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [viewPrefs.view, viewPrefs.order, collections, graphLoaded, selectedCollectionId])
+
+  const renewCoverThumb = useMemo(
+    () => (id: number) => fetchCollection(id).then((c) => ({ id: c.id, thumb: c.cover_thumb })),
+    [],
+  )
+
+  // List rows already carry the server-side filters (type / mine / owner) —
+  // intersecting the payload with their ids is how those filters reach the
+  // graph; search only highlights (#1629). The previous model seeds each
+  // rebuild so settled positions survive refetches and Shared-only toggles
+  // (#1636) — stored in render-phase-adjusted state (same sanctioned
+  // "you might not need an effect" pattern as the type seed).
+  const [graphState, setGraphState] = useState<{
+    payload: ApiCollectionsGraph | null
+    collections: typeof collections
+    sharedOnly: boolean
+    model: GraphModel | null
+  }>({ payload: null, collections, sharedOnly: viewPrefs.sharedOnly, model: null })
+  if (
+    graphState.payload !== graphPayload ||
+    graphState.collections !== collections ||
+    graphState.sharedOnly !== viewPrefs.sharedOnly
+  ) {
+    setGraphState({
+      payload: graphPayload,
+      collections,
+      sharedOnly: viewPrefs.sharedOnly,
+      model: graphPayload
+        ? buildGraphModel(
+            graphPayload,
+            new Set(collections.map((c) => c.id)),
+            viewPrefs.sharedOnly,
+            graphState.model ?? undefined,
+          )
+        : null,
+    })
+  }
+  const graphModel = graphState.model
+
+  const graphTooltipInfo = useMemo(() => {
+    const byId = new Map(collections.map((c) => [c.id, c]))
+    return {
+      categoryLabel: (categoryId: number | null) => {
+        if (categoryId == null) return ''
+        const seg = categoryPaths.get(categoryId)
+        return seg ? [...seg.ancestors, seg.category].map((c) => c.label).join(' › ') : ''
+      },
+      ownerLabel: (id: number) => {
+        const c = byId.get(id)
+        return c ? describeCollectionOwners(c.owners) : undefined
+      },
+      collectionName: (id: number) =>
+        byId.get(id)?.name ?? graphPayload?.collections.find((c) => c.id === id)?.name,
+    }
+  }, [collections, categoryPaths, graphPayload])
   // Filing collections into categories is curatorial: any admin/instructor
   // may move any collection (unlike edit/delete, which are owner-scoped).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
@@ -564,6 +731,7 @@ export default function CollectionsPage({
 
   useEffect(() => {
     if (currentUser?.role !== 'student') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset stale cap for non-students
       setTypesAtLimit(new Set())
       return
     }
@@ -657,26 +825,58 @@ export default function CollectionsPage({
     }
   }
 
-  const ownerValue = ownerFilterKey(filters.owner)
-  const ownerChoices: { key: string; label: string; value: CollectionOwnerFilter }[] = [
-    { key: 'any', label: 'Anyone', value: 'any' },
-    ...ownerOptions.map((o) => ({
-      key: ownerFilterKey(o),
-      label: describeCollectionOwner(o),
-      value: o as CollectionOwnerFilter,
-    })),
+  // Owner facet options for the FilterBar popover: "My collections" first
+  // (every role), then the known owners for non-students and the
+  // admin-only orphaned state — the same choices the old Select/chips row
+  // exposed (#1629 follow-up).
+  const ownerFacetOptions: {
+    value: string
+    label: string
+    filter: CollectionOwnerFilter | 'mine'
+  }[] = [
+    { value: 'mine', label: 'My collections', filter: 'mine' },
+    ...(showOwnerFilter
+      ? ownerOptions.map((o) => ({
+          value: ownerFilterKey(o),
+          label: describeCollectionOwner(o),
+          filter: o as CollectionOwnerFilter,
+        }))
+      : []),
     ...(isAdmin
-      ? [{ key: 'orphaned', label: 'No owner (orphaned)', value: 'orphaned' as const }]
+      ? [{ value: 'orphaned', label: 'No owner (orphaned)', filter: 'orphaned' as const }]
       : []),
   ]
-  const selectedOwnerKnown = ownerChoices.some((c) => c.key === ownerValue)
+  const ownerSelected = filters.mine
+    ? ['mine']
+    : filters.owner === 'any'
+      ? []
+      : [ownerFilterKey(filters.owner)]
+
+  // Choose Columns (table view) — per-user persisted visibility + order,
+  // the same hook/storage convention as the Manage tables (#1577).
+  const { visibleColumns, toggleColumn, columnOrder, orderedVisibleColumns, setColumnOrder } =
+    useTableColumnPreferences<CollectionsTableColumn>({
+      tableKey: 'collections',
+      allColumns: COLLECTIONS_TABLE_COLUMNS,
+      defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
+    })
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const orderedColumnOptions = useMemo(() => {
+    const byKey = new Map(COLLECTIONS_TABLE_COLUMN_OPTIONS.map((o) => [o.key, o]))
+    return columnOrder
+      .map((key) => byKey.get(key))
+      .filter((o): o is ColumnVisibilityOption<CollectionsTableColumn> => o != null)
+  }, [columnOrder])
   const viewerFlexSx = {
     display: { md: 'flex' },
     flexDirection: { md: 'column' },
     flex: { md: '1 1 0' },
+    minHeight: { md: 0 },
   } as const
   const hasLoadedViewerDetail =
     selectedCollectionId != null && detail != null && detailError == null
+  // The list graph fills the page like the detail viewers (#1630 feedback).
+  const graphViewActive = selectedCollectionId == null && viewPrefs.view === 'graph'
 
   let body: ReactNode
   if (selectedCollectionId != null) {
@@ -715,6 +915,7 @@ export default function CollectionsPage({
               onEdit={() => void openEdit(detail)}
               onTransfer={() => setTransferTarget(detail)}
               onManage={() => setManageOpen(true)}
+              onOpenGraph={() => setGraphDialogOpen(true)}
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
@@ -745,6 +946,7 @@ export default function CollectionsPage({
               onEdit={() => void openEdit(detail)}
               onTransfer={() => setTransferTarget(detail)}
               onManage={() => setManageOpen(true)}
+              onOpenGraph={() => setGraphDialogOpen(true)}
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
@@ -763,6 +965,44 @@ export default function CollectionsPage({
       body = null
     }
   } else {
+    // The Name text and Visibility facet are client-side and never
+    // persisted (#1629): they narrow the cards/table rows, and in the
+    // graph only highlight matches — nodes are never removed.
+    const searchQ = searchQuery.trim().toLowerCase()
+    const matchesClientFilters = (c: CollectionSummary): boolean => {
+      if (visibilityFilter.size > 0 && !visibilityFilter.has(c.visibility)) return false
+      return (
+        searchQ === '' ||
+        `${c.name} ${c.description ?? ''} ${describeCollectionOwners(c.owners)}`
+          .toLowerCase()
+          .includes(searchQ)
+      )
+    }
+    const shownCollections =
+      searchQ || visibilityFilter.size > 0 ? collections.filter(matchesClientFilters) : collections
+    const searchHelper =
+      viewPrefs.view === 'graph'
+        ? 'Highlights matches in the graph; nodes are not removed.'
+        : 'Filters by name, description and owner.'
+    const hasActiveFilters =
+      filters.type !== 'all' ||
+      filters.mine ||
+      filters.owner !== 'any' ||
+      searchQ !== '' ||
+      visibilityFilter.size > 0
+    const clearAllFilters = () => {
+      onFiltersChange({ ...DEFAULT_COLLECTION_FILTERS })
+      setSearchQuery('')
+      setVisibilityFilter(new Set())
+    }
+    const ownerSummaryLabel = filters.mine
+      ? 'My collections'
+      : filters.owner === 'orphaned'
+        ? 'No owner'
+        : filters.owner === 'any'
+          ? ''
+          : describeCollectionOwner(filters.owner)
+
     body = (
       <>
         <Box
@@ -773,45 +1013,44 @@ export default function CollectionsPage({
             justifyContent: 'space-between',
             gap: 1,
             mb: 3,
+            flexShrink: 0,
           }}
         >
           <Typography variant="h5" component="h1">
-            {COLLECTION_TYPE_LABELS[collectionPageType]} collections
+            Collections
           </Typography>
-          {/* Type is the page, not a filter (#1554): the remaining filters
-              live in the header row, left of New collection. */}
-          <Box
-            data-testid="collection-filters"
-            sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}
-          >
-            <Chip
-              label="My collections"
-              clickable
-              color={filters.mine ? 'primary' : 'default'}
-              variant={filters.mine ? 'filled' : 'outlined'}
-              onClick={() => onFiltersChange({ ...filters, mine: !filters.mine, owner: 'any' })}
-              aria-pressed={filters.mine}
-            />
-            {showOwnerFilter && (
-              <FormControl size="small" sx={{ minWidth: 180 }} disabled={filters.mine}>
-                <InputLabel id="collection-owner-filter-label">Owner</InputLabel>
-                <Select
-                  labelId="collection-owner-filter-label"
-                  label="Owner"
-                  value={selectedOwnerKnown ? ownerValue : 'any'}
-                  onChange={(e) => {
-                    const choice = ownerChoices.find((c) => c.key === e.target.value)
-                    onFiltersChange({ ...filters, owner: choice?.value ?? 'any' })
-                  }}
-                >
-                  {ownerChoices.map((c) => (
-                    <MenuItem key={c.key} value={c.key}>
-                      {c.label}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}>
+            {/* View toggle — Cards / Table / Graph (#1629); available to
+                every role. The view is intentionally not persisted — the
+                page always loads on Cards while Table/Graph are being
+                evaluated (#1629 follow-up). */}
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={viewPrefs.view}
+              onChange={(_, v: CollectionsView | null) => {
+                if (v) setViewPrefs((p) => ({ ...p, view: v }))
+              }}
+              aria-label="Collections view"
+              data-testid="collections-view-toggle"
+              sx={graphToggleSx}
+            >
+              <ToggleButton value="cards" aria-label="Cards view">
+                <Tooltip title="Cards: one tile per collection with its cover image">
+                  <ViewModuleIcon fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+              <ToggleButton value="table" aria-label="Table view">
+                <Tooltip title="Table: sortable rows with choosable columns">
+                  <TableRowsIcon fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+              <ToggleButton value="graph" aria-label="Graph view">
+                <Tooltip title="Graph: how collections, images and categories connect">
+                  <HubIcon fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+            </ToggleButtonGroup>
             <Tooltip title={typesAtLimit.size === 2 ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
               <span>
                 <Button
@@ -827,70 +1066,345 @@ export default function CollectionsPage({
           </Box>
         </Box>
 
+        {/* Shared filter bar (#1629): the popover facets feed all three
+            views — type/mine/owner stay server-side filters; Name and
+            Visibility narrow client-side. */}
+        <FilterBar
+          clearAction={
+            hasActiveFilters ? (
+              <Button
+                size="small"
+                color="secondary"
+                onClick={clearAllFilters}
+                sx={{
+                  minWidth: 0,
+                  px: 0,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Clear all
+              </Button>
+            ) : undefined
+          }
+          summary={
+            hasActiveFilters ? (
+              <>
+                {filters.type !== 'all' && (
+                  <Chip
+                    data-testid="filter-chip"
+                    label={`Type: ${COLLECTION_TYPE_LABELS[filters.type]}`}
+                    size="small"
+                    onDelete={() => onFiltersChange({ ...filters, type: 'all' })}
+                  />
+                )}
+                {(filters.mine || filters.owner !== 'any') && (
+                  <Chip
+                    data-testid="filter-chip"
+                    label={`Owner: ${ownerSummaryLabel}`}
+                    size="small"
+                    onDelete={() => onFiltersChange({ ...filters, mine: false, owner: 'any' })}
+                  />
+                )}
+                {searchQ !== '' && (
+                  <Chip
+                    data-testid="filter-chip"
+                    label={`Name: ${searchQuery}`}
+                    size="small"
+                    onDelete={() => setSearchQuery('')}
+                    sx={{
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark'
+                          ? 'rgba(165, 36, 56, 0.22)'
+                          : 'rgba(165, 36, 56, 0.08)',
+                      color: 'secondary.main',
+                      border: '1px solid',
+                      borderColor: 'secondary.main',
+                      '& .MuiChip-deleteIcon': { color: 'secondary.main' },
+                    }}
+                  />
+                )}
+                {[...visibilityFilter].map((v) => (
+                  <Chip
+                    key={`vis:${v}`}
+                    data-testid="filter-chip"
+                    label={`Visibility: ${COLLECTION_VISIBILITY_LABELS[v]}`}
+                    size="small"
+                    onDelete={() =>
+                      setVisibilityFilter((prev) => {
+                        const next = new Set(prev)
+                        next.delete(v)
+                        return next
+                      })
+                    }
+                  />
+                ))}
+              </>
+            ) : undefined
+          }
+          actions={
+            // Always rendered so the bar keeps the same height in every
+            // view — hidden-but-space-reserving outside table view.
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              aria-hidden={viewPrefs.view !== 'table'}
+              tabIndex={viewPrefs.view === 'table' ? undefined : -1}
+              sx={viewPrefs.view === 'table' ? undefined : { visibility: 'hidden' }}
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
+          }
+        >
+          <FilterPopoverButton label="Name" activeCount={searchQ ? 1 : 0}>
+            <FilterTextPanel
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Filter by name, description or owner"
+              ariaLabel="Filter collections by name"
+              helperText={searchHelper}
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton label="Type" activeCount={filters.type === 'all' ? 0 : 1}>
+            <FilterOptionPanel
+              multiple={false}
+              options={(['sequence', 'synchronized'] as const).map((t) => ({
+                value: t,
+                label: COLLECTION_TYPE_LABELS[t],
+              }))}
+              selectedValues={filters.type === 'all' ? [] : [filters.type]}
+              onChange={(values) =>
+                onFiltersChange({
+                  ...filters,
+                  type: (values[0] as CollectionType | undefined) ?? 'all',
+                })
+              }
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton
+            label="Owner"
+            activeCount={filters.mine || filters.owner !== 'any' ? 1 : 0}
+            panelWidth={280}
+          >
+            <FilterOptionPanel
+              multiple={false}
+              options={ownerFacetOptions.map((o) => ({ value: o.value, label: o.label }))}
+              selectedValues={ownerSelected}
+              onChange={(values) => {
+                const choice = ownerFacetOptions.find((o) => o.value === values[0])
+                if (choice == null) {
+                  onFiltersChange({ ...filters, mine: false, owner: 'any' })
+                } else if (choice.filter === 'mine') {
+                  onFiltersChange({ ...filters, mine: true, owner: 'any' })
+                } else {
+                  onFiltersChange({ ...filters, mine: false, owner: choice.filter })
+                }
+              }}
+              searchPlaceholder={ownerFacetOptions.length > 6 ? 'Search owners' : undefined}
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton label="Visibility" activeCount={visibilityFilter.size}>
+            <FilterOptionPanel
+              options={(['private', 'public', 'restricted'] as const).map((v) => ({
+                value: v,
+                label: COLLECTION_VISIBILITY_LABELS[v],
+              }))}
+              selectedValues={[...visibilityFilter]}
+              onChange={(values) => setVisibilityFilter(new Set(values as CollectionVisibility[]))}
+            />
+          </FilterPopoverButton>
+        </FilterBar>
+
         {error ? (
           <Alert severity="error">{error}</Alert>
-        ) : loading && collections.length === 0 ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-            <CircularProgress aria-label="Loading collections" />
-          </Box>
-        ) : collections.length === 0 ? (
-          <Box
-            data-testid="collections-empty"
-            sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
-          >
-            <CollectionsIcon sx={{ fontSize: 56, opacity: 0.5 }} />
-            <Typography variant="h6" sx={{ mt: 1 }}>
-              No collections yet
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {filters.mine || filters.owner !== 'any' ? (
-                'No collections match the current filters.'
-              ) : (
-                <>
-                  <Link
-                    component="button"
-                    variant="body2"
-                    underline="hover"
-                    onClick={openCreate}
-                    sx={{ verticalAlign: 'baseline' }}
-                  >
-                    Create a collection
-                  </Link>{' '}
-                  to group images for side-by-side comparison or a guided sequence.
-                </>
-              )}
-            </Typography>
-          </Box>
         ) : (
-          <Box data-testid="collections-grid" sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-            {collections.map((c) => {
-              const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
-              const catPath = seg ? [...seg.ancestors, seg.category] : []
-              return (
-                <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
-                  <CollectionCard
-                    collection={c}
-                    onOpen={(col) => onOpenCollection(col.id)}
-                    onEdit={(col) => void openEdit(col)}
-                    onPickCoverImage={onPickCoverImage}
-                    onMove={canFileCollections ? onMoveCollection : undefined}
-                    programs={programs}
-                    inheritedProgramIds={narrowProgramIds(catPath)}
-                    groups={groups}
-                    inheritedGroupIds={narrowGroupIds(catPath)}
-                    categoryHidden={getCategoryHiddenStateFromPath(catPath).hidden}
-                  />
+          <>
+            {loading && collections.length === 0 && viewPrefs.view !== 'graph' ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+                <CircularProgress aria-label="Loading collections" />
+              </Box>
+            ) : shownCollections.length === 0 && viewPrefs.view !== 'graph' ? (
+              <Box
+                data-testid="collections-empty"
+                sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
+              >
+                <CollectionsIcon sx={{ fontSize: 56, opacity: 0.5 }} />
+                <Typography variant="h6" sx={{ mt: 1 }}>
+                  {hasActiveFilters ? 'No matching collections' : 'No collections yet'}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  {hasActiveFilters ? (
+                    'No collections match the current filters.'
+                  ) : (
+                    <>
+                      <Link
+                        component="button"
+                        variant="body2"
+                        underline="hover"
+                        onClick={openCreate}
+                        sx={{ verticalAlign: 'baseline' }}
+                      >
+                        Create a collection
+                      </Link>{' '}
+                      to group images for side-by-side comparison or a guided sequence.
+                    </>
+                  )}
+                </Typography>
+              </Box>
+            ) : null}
+            {viewPrefs.view === 'cards' && shownCollections.length > 0 && (
+              <Box
+                data-testid="collections-grid"
+                sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
+              >
+                {shownCollections.map((c) => {
+                  const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+                  const catPath = seg ? [...seg.ancestors, seg.category] : []
+                  return (
+                    <Box key={c.id} sx={{ width: 300, maxWidth: '100%' }}>
+                      <CollectionCard
+                        collection={c}
+                        onOpen={(col) => onOpenCollection(col.id)}
+                        onEdit={(col) => void openEdit(col)}
+                        onPickCoverImage={onPickCoverImage}
+                        onMove={canFileCollections ? onMoveCollection : undefined}
+                        programs={programs}
+                        inheritedProgramIds={narrowProgramIds(catPath)}
+                        groups={groups}
+                        inheritedGroupIds={narrowGroupIds(catPath)}
+                        categoryHidden={getCategoryHiddenStateFromPath(catPath).hidden}
+                      />
+                    </Box>
+                  )
+                })}
+              </Box>
+            )}
+            {viewPrefs.view === 'table' && collections.length > 0 && (
+              // Stay mounted (hidden) on a zero-match client filter so the
+              // table's local sort/page state survives; the empty-state
+              // message above covers the hidden rows.
+              <Box sx={{ display: shownCollections.length > 0 ? undefined : 'none' }}>
+                <CollectionsTable
+                  collections={shownCollections}
+                  categoryPaths={categoryPaths}
+                  currentUser={currentUser}
+                  onOpenCollection={onOpenCollection}
+                  renewCoverThumb={renewCoverThumb}
+                  columns={orderedVisibleColumns}
+                  programs={programs}
+                  groups={groups}
+                />
+              </Box>
+            )}
+            {/* Graph state (positions, zoom, selection) survives view
+                switches and collection round-trips: the canvas stays mounted
+                (hidden) once a model exists; positions ride on the model and
+                the transform lives for the component's mount (#1627, #1636).
+                Order-3 isolated categories render even with zero
+                collections, so the graph branch bypasses the empty state. */}
+            {/* Graph section fills the remaining page height in graph
+                view (#1630 feedback); hidden-but-mounted otherwise so the
+                canvas keeps its positions and transform. */}
+            <Box
+              data-testid="collections-graph-section"
+              sx={{
+                display: viewPrefs.view === 'graph' ? 'flex' : 'none',
+                flexDirection: 'column',
+                flex: '1 1 0',
+                minHeight: 0,
+              }}
+            >
+              {graphError && (
+                <Alert severity="error" sx={{ mb: 1, flexShrink: 0 }}>
+                  {graphError}
+                </Alert>
+              )}
+              {!graphModel && !graphError && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    flex: '1 1 0',
+                  }}
+                >
+                  <CircularProgress aria-label="Loading collections graph" />
                 </Box>
-              )
-            })}
-          </Box>
+              )}
+              {graphModel && (
+                <CollectionsGraph
+                  model={graphModel}
+                  onOpenCollection={onOpenCollection}
+                  onOpenImage={onOpenImageById}
+                  searchQuery={searchQuery}
+                  matchesSearch={(id) => {
+                    const c = collections.find((r) => r.id === id)
+                    return c != null && matchesClientFilters(c)
+                  }}
+                  filterActive={visibilityFilter.size > 0}
+                  tooltipInfo={graphTooltipInfo}
+                  overlay={
+                    <>
+                      {/* Order toggle — 1st / 2nd / 3rd (#1627); Shared only
+                          needs 2nd order. */}
+                      <ToggleButtonGroup
+                        size="small"
+                        exclusive
+                        value={viewPrefs.order}
+                        onChange={(_, v: CollectionsGraphOrder | null) => {
+                          if (v) setViewPrefs((p) => ({ ...p, order: v }))
+                        }}
+                        aria-label="Graph order"
+                        data-testid="graph-order-toggle"
+                        sx={graphToggleSx}
+                      >
+                        <Tooltip title="Collections">
+                          <ToggleButton value={1} aria-label="1st order">
+                            1st
+                          </ToggleButton>
+                        </Tooltip>
+                        <Tooltip title="+ images">
+                          <ToggleButton value={2} aria-label="2nd order">
+                            2nd
+                          </ToggleButton>
+                        </Tooltip>
+                        <Tooltip title="+ categories">
+                          <ToggleButton value={3} aria-label="3rd order">
+                            3rd
+                          </ToggleButton>
+                        </Tooltip>
+                      </ToggleButtonGroup>
+                      <ToggleButton
+                        size="small"
+                        value="sharedOnly"
+                        selected={viewPrefs.sharedOnly}
+                        disabled={viewPrefs.order === 1}
+                        onChange={() => setViewPrefs((p) => ({ ...p, sharedOnly: !p.sharedOnly }))}
+                        aria-label="Shared only"
+                        data-testid="graph-shared-only"
+                        sx={graphToggleSx}
+                      >
+                        Shared only
+                      </ToggleButton>
+                    </>
+                  }
+                />
+              )}
+            </Box>
+          </>
         )}
       </>
     )
   }
 
   return (
-    <Box data-testid="collections-page" sx={hasLoadedViewerDetail ? viewerFlexSx : undefined}>
+    <Box
+      data-testid="collections-page"
+      sx={hasLoadedViewerDetail || graphViewActive ? viewerFlexSx : undefined}
+    >
       {editLoadError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setEditLoadError(null)}>
           {editLoadError}
@@ -898,11 +1412,22 @@ export default function CollectionsPage({
       )}
       {body}
 
+      <ColumnVisibilityDialog
+        open={columnDialogOpen}
+        title="Choose columns"
+        columns={orderedColumnOptions}
+        visibleColumns={visibleColumns}
+        minimumVisibleColumns={1}
+        onClose={() => setColumnDialogOpen(false)}
+        onToggleColumn={toggleColumn}
+        onReorderColumns={setColumnOrder}
+      />
+
       <CollectionEditDialog
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
         collection={editing}
-        defaultType={collectionPageType}
+        defaultType={filters.type === 'all' ? 'sequence' : filters.type}
         typesAtLimit={typesAtLimit}
         programs={programs}
         groups={groups}
@@ -939,6 +1464,21 @@ export default function CollectionsPage({
         }
         onImageRenewed={(image) => detail && onCollectionImageRenewed(detail.id, image)}
         onError={onViewerError}
+      />
+
+      {/* Graph View dialog (#1630) — local perspective graph; its stack is
+          dialog-local so the page URL never changes while navigating. */}
+      <CollectionGraphDialog
+        open={graphDialogOpen && detail != null}
+        collectionId={detail?.id ?? 0}
+        collectionName={detail?.name ?? ''}
+        categoryPaths={categoryPaths}
+        onClose={() => setGraphDialogOpen(false)}
+        onOpenImage={onOpenImageById ?? (() => undefined)}
+        onOpenCollection={(id) => {
+          setGraphDialogOpen(false)
+          onOpenCollection(id)
+        }}
       />
 
       <CollectionOwnersDialog

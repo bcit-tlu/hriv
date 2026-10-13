@@ -404,9 +404,11 @@ describe('useCollectionsData', () => {
   it('refetches with role-aware API filters when filters change', async () => {
     const { result } = renderData({ type: 'sequence' }, makeUser({ role: 'student' }))
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
+    // `type` lives in the filter state since #1629 — setFilters may change
+    // it freely; `orphaned` still drops for students.
     act(() => result.current.setFilters({ type: 'synchronized', mine: true, owner: 'orphaned' }))
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
-    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'sequence', mine: true })
+    expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'synchronized', mine: true })
   })
 
   it('drops a stale owner facet when the current user becomes a student', async () => {

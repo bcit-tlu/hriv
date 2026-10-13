@@ -183,7 +183,18 @@ export interface UseCollectionsDataOptions {
   currentUser: User | null
   /** Collection open in the detail placeholder (from `?collection={id}` or a card). */
   selectedCollectionId: number | null
+  /**
+   * Type-filter seed (#1629): `?type=` deep links and popstate updates feed
+   * the shared Type chip filter through here. The filter state owns `type`
+   * afterwards — `setFilters` can change it freely.
+   */
   type: CollectionType | 'all'
+  /**
+   * Seed version: popstate can restore the same `type` value twice (or a
+   * `?type=`-less entry while the param is already `all`), so App bumps this
+   * on every popstate to force the seed to re-apply.
+   */
+  typeSeedNonce?: number
   refreshToken: number
   backgroundRefresh: boolean
 }
@@ -193,6 +204,7 @@ export function useCollectionsData({
   currentUser,
   selectedCollectionId,
   type,
+  typeSeedNonce = 0,
   refreshToken,
   backgroundRefresh,
 }: UseCollectionsDataOptions) {
@@ -205,13 +217,41 @@ export function useCollectionsData({
   const [filterState, setFilterState] = useState<{
     userId: number | null
     filters: CollectionListFilters
-  }>({ userId, filters: DEFAULT_COLLECTION_FILTERS })
-  const rawFilters =
-    filterState.userId === userId ? filterState.filters : DEFAULT_COLLECTION_FILTERS
+  }>({ userId, filters: { ...DEFAULT_COLLECTION_FILTERS, type } })
+  // Stable fallback so a user switch does not produce a fresh filters object
+  // (and therefore a fresh `load`) on every render.
+  const seededDefaults = useMemo(() => ({ ...DEFAULT_COLLECTION_FILTERS, type }), [type])
+  const rawFilters = filterState.userId === userId ? filterState.filters : seededDefaults
   const setFilters = useCallback(
-    (next: CollectionListFilters) => setFilterState({ userId, filters: { ...next, type } }),
-    [type, userId],
+    (next: CollectionListFilters) => setFilterState({ userId, filters: next }),
+    [userId],
   )
+  // The `type` option is a URL-driven seed (#1629): when it changes (deep
+  // link load, popstate restore) it lands in the filter state; afterwards
+  // the Type chips own it through `setFilters`. A user switch resets the
+  // state to the seeded defaults rather than carrying the old user's over.
+  // `typeSeedNonce` re-applies the seed on every popstate even when `type`
+  // itself did not change (e.g. Back to a `?type=`-less collections URL).
+  // Render-phase adjustment (React's "you might not need an effect" pattern):
+  // setState during render is the sanctioned way to react to seed changes.
+  const [seedApplied, setSeedApplied] = useState({ type, nonce: typeSeedNonce, userId })
+  if (
+    seedApplied.userId !== userId ||
+    seedApplied.nonce !== typeSeedNonce ||
+    seedApplied.type !== type
+  ) {
+    setSeedApplied({ type, nonce: typeSeedNonce, userId })
+    // Reuse `seededDefaults` so the rawFilters fallback and the stored
+    // state share one identity — a fresh object here would rebuild `load`
+    // and trigger a redundant second fetch for the new user.
+    if (seedApplied.userId !== userId) {
+      setFilterState({ userId, filters: seededDefaults })
+    } else {
+      setFilterState((prev) =>
+        prev.filters.type === type ? prev : { userId, filters: { ...prev.filters, type } },
+      )
+    }
+  }
   const [ownerOptions, setOwnerOptions] = useState<CollectionOwner[]>([])
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -235,8 +275,8 @@ export function useCollectionsData({
   const [rowsCacheUserId, setRowsCacheUserId] = useState(userId)
   const role = currentUser?.role ?? null
   const filters = useMemo(
-    () => normalizeCollectionFilters({ ...rawFilters, type }, role ? { role } : null),
-    [rawFilters, role, type],
+    () => normalizeCollectionFilters(rawFilters, role ? { role } : null),
+    [rawFilters, role],
   )
   const apiFilters = useMemo(
     () => toCollectionApiFilters(filters, role ? { role } : null),

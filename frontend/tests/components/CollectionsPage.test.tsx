@@ -5,7 +5,7 @@ import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionsPage from '../../src/components/CollectionsPage'
 import type { CollectionsPageProps } from '../../src/components/CollectionsPage'
-import { ApiError, fetchCollections } from '../../src/api'
+import { ApiError, fetchCollections, fetchCollectionsGraph } from '../../src/api'
 import { DEFAULT_COLLECTION_FILTERS } from '../../src/useCollectionsData'
 import type { User } from '../../src/types'
 import {
@@ -22,11 +22,13 @@ vi.mock('../../src/api', async (importOriginal) => {
     ...actual,
     fetchCollection: vi.fn(),
     fetchCollections: vi.fn(),
+    fetchCollectionsGraph: vi.fn(),
     fetchImage: vi.fn(),
     fetchUsersPaged: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   }
 })
 const fetchCollectionsMock = vi.mocked(fetchCollections)
+const fetchCollectionsGraphMock = vi.mocked(fetchCollectionsGraph)
 
 // Sequence and synchronized details mount the real OpenSeadragon viewer,
 // which jsdom cannot run; stub both components and record their props so
@@ -53,6 +55,25 @@ vi.mock('../../src/components/CollectionManageDialog', () => ({
   default: (props: Record<string, unknown>) => {
     manageDialogProps.current = props
     return props.open ? <div data-testid="collection-manage" /> : null
+  },
+}))
+
+// The canvas graph (d3 + canvas 2D) cannot run under jsdom; stub it and
+// render the overlay so the order toggle stays exercisable (#1629).
+const collectionsGraphProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/collectionsGraph/CollectionsGraph', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionsGraphProps.current = props
+    return <div data-testid="collections-graph">{props.overlay as React.ReactNode}</div>
+  },
+}))
+
+// The Graph View dialog mounts the canvas graph — stub it like above (#1630).
+const collectionGraphDialogProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/components/CollectionGraphDialog', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionGraphDialogProps.current = props
+    return props.open ? <div data-testid="collection-graph-dialog" /> : null
   },
 }))
 
@@ -92,7 +113,6 @@ function makeAuth(user: User): AuthContextValue {
 
 function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPageProps {
   return {
-    collectionPageType: 'sequence',
     currentUser: ADMIN,
     programs: [],
     groups: [],
@@ -141,10 +161,19 @@ function renderPage(overrides: Partial<CollectionsPageProps> = {}) {
 describe('CollectionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     fetchCollectionsMock.mockResolvedValue([])
+    fetchCollectionsGraphMock.mockResolvedValue({
+      order: 1,
+      collections: [],
+      images: [],
+      categories: [],
+    })
     sequenceViewerProps.current = null
     synchronizedViewerProps.current = null
     manageDialogProps.current = null
+    collectionsGraphProps.current = null
+    collectionGraphDialogProps.current = null
   })
 
   describe('list states', () => {
@@ -175,7 +204,7 @@ describe('CollectionsPage', () => {
       renderPage({
         currentUser: STUDENT,
         collections,
-        collectionPageType: 'sequence',
+        filters: { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' },
       })
       await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledWith({ mine: true }))
       const button = screen.getByRole('button', { name: 'New collection' })
@@ -212,7 +241,6 @@ describe('CollectionsPage', () => {
             owners: [{ kind: 'user', userId: STUDENT.id, name: STUDENT.name }],
           }),
         ),
-        collectionPageType: 'sequence',
       })
       const button = screen.getByRole('button', { name: 'New collection' })
       await waitFor(() => expect(button).toBeDisabled())
@@ -233,7 +261,6 @@ describe('CollectionsPage', () => {
       renderPage({
         currentUser: INSTRUCTOR,
         collections,
-        collectionPageType: 'sequence',
       })
       expect(screen.getByRole('button', { name: 'New collection' })).toBeEnabled()
       expect(fetchCollectionsMock).not.toHaveBeenCalled()
@@ -301,24 +328,142 @@ describe('CollectionsPage', () => {
     })
   })
 
-  describe('filters', () => {
-    it('renders the type page heading and has no in-page type toggle (#1554)', () => {
-      const { unmount } = renderPage({ collectionPageType: 'sequence' })
-      expect(screen.getByRole('heading', { name: 'Sequence collections' })).toBeInTheDocument()
-      // Type is the page (nav sub-menu), not a filter — the toggle is gone.
-      expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument()
-      unmount()
-      renderPage({ collectionPageType: 'synchronized' })
-      expect(screen.getByRole('heading', { name: 'Synchronized collections' })).toBeInTheDocument()
+  describe('views (#1629)', () => {
+    it('switches between Cards, Table and Graph via the view toggle', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+
+      expect(screen.getByTestId('collections-grid')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      expect(await screen.findByTestId('collections-table')).toBeInTheDocument()
+      expect(screen.queryByTestId('collections-grid')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(1))
+      expect(await screen.findByTestId('collections-graph')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
     })
 
-    it('toggles My collections and resets the owner facet', () => {
+    it('reports the current view upward via onViewChange (#1630)', async () => {
+      const onViewChange = vi.fn()
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })], onViewChange })
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('cards'))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('graph'))
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      await waitFor(() => expect(onViewChange).toHaveBeenCalledWith('table'))
+    })
+
+    it('refetches the graph when the order toggle changes', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(1))
+
+      fireEvent.click(screen.getByRole('button', { name: '2nd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(2))
+      fireEvent.click(screen.getByRole('button', { name: '3rd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(3))
+    })
+
+    it('disables Shared only at first order', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(1))
+      expect(screen.getByRole('button', { name: 'Shared only' })).toBeDisabled()
+    })
+
+    it('does not refetch the graph on view round-trips (#1636)', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders the graph with zero collections at 3rd order (#1636)', async () => {
+      fetchCollectionsGraphMock.mockResolvedValue({
+        order: 3,
+        collections: [],
+        images: [],
+        categories: [{ id: 9, label: 'Anatomy', path: 'Anatomy', image_count: 3 }],
+      })
+      renderPage({ collections: [] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      fireEvent.click(await screen.findByRole('button', { name: '3rd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(3))
+
+      // Isolated categories still have a graph — the collection empty
+      // state must not hide it.
+      expect(await screen.findByTestId('collections-graph')).toBeInTheDocument()
+      expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
+      const m = collectionsGraphProps.current?.model as { stats: { categories: number } }
+      expect(m.stats.categories).toBe(1)
+    })
+
+    it('search narrows cards/table rows but only highlights graph nodes', async () => {
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Skull atlas' }),
+          makeCollectionSummary({ id: 2, name: 'Pelvis set' }),
+        ],
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Name' }))
+      fireEvent.change(screen.getByLabelText('Filter collections by name'), {
+        target: { value: 'skull' },
+      })
+      // Cards keep only the match; the helper explains the filter scope.
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(1)
+      expect(screen.getByText('Filters by name, description and owner.')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalled())
+      // The Name popover stays open across the view switch — its helper
+      // text explains the graph's highlight-only behaviour.
+      expect(
+        await screen.findByText('Highlights matches in the graph; nodes are not removed.'),
+      ).toBeInTheDocument()
+    })
+  })
+
+  describe('filters', () => {
+    it('renders the unified heading and the FilterBar popovers', () => {
+      renderPage()
+      expect(screen.getByRole('heading', { name: 'Collections' })).toBeInTheDocument()
+      for (const label of ['Name', 'Type', 'Owner', 'Visibility']) {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+      }
+    })
+
+    it('the Type popover drives the shared filters', async () => {
+      const user = userEvent.setup()
+      const onFiltersChange = vi.fn()
+      renderPage({ onFiltersChange })
+      await user.click(screen.getByRole('button', { name: 'Type' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: 'Synchronized' }))
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        type: 'synchronized',
+      })
+    })
+
+    it('selecting My collections from the Owner popover sets mine and clears the owner facet', async () => {
+      const user = userEvent.setup()
       const onFiltersChange = vi.fn()
       renderPage({
         onFiltersChange,
         filters: { ...DEFAULT_COLLECTION_FILTERS, owner: { kind: 'user', userId: 5, name: 'X' } },
       })
-      fireEvent.click(screen.getByRole('button', { name: 'My collections' }))
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
+      await user.click(await screen.findByRole('menuitemradio', { name: 'My collections' }))
       expect(onFiltersChange).toHaveBeenCalledWith({
         ...DEFAULT_COLLECTION_FILTERS,
         mine: true,
@@ -334,45 +479,160 @@ describe('CollectionsPage', () => {
         onFiltersChange,
         ownerOptions: [owner, { kind: 'program', programId: 3, name: 'Radiography' }],
       })
-      await user.click(screen.getByLabelText('Owner'))
-      const listbox = await screen.findByRole('listbox')
-      expect(within(listbox).getByText('Anyone')).toBeInTheDocument()
-      expect(within(listbox).getByText('Radiography (program)')).toBeInTheDocument()
-      await user.click(within(listbox).getByText('Ada Lovelace'))
-      expect(onFiltersChange).toHaveBeenCalledWith({ ...DEFAULT_COLLECTION_FILTERS, owner })
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
+      const menu = await screen.findByRole('menu')
+      expect(within(menu).getByText('My collections')).toBeInTheDocument()
+      expect(within(menu).getByText('Radiography (program)')).toBeInTheDocument()
+      await user.click(within(menu).getByRole('menuitemradio', { name: 'Ada Lovelace' }))
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        mine: false,
+        owner,
+      })
     })
 
-    it('offers the orphaned owner filter only to admins', async () => {
+    it('offers the orphaned owner option only to admins', async () => {
       const user = userEvent.setup()
       const { unmount } = renderPage()
-      await user.click(screen.getByLabelText('Owner'))
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
       expect(
-        within(await screen.findByRole('listbox')).getByText('No owner (orphaned)'),
+        within(await screen.findByRole('menu')).getByText('No owner (orphaned)'),
       ).toBeInTheDocument()
       await user.keyboard('{Escape}')
       unmount()
 
       renderPage({ currentUser: INSTRUCTOR })
-      await user.click(screen.getByLabelText('Owner'))
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
       expect(
-        within(await screen.findByRole('listbox')).queryByText('No owner (orphaned)'),
+        within(await screen.findByRole('menu')).queryByText('No owner (orphaned)'),
       ).not.toBeInTheDocument()
     })
 
-    it('shows the owner select to admin, instructor and staff but never to students', () => {
-      for (const currentUser of [ADMIN, INSTRUCTOR, STAFF]) {
-        const { unmount } = renderPage({ currentUser })
-        expect(screen.getByLabelText('Owner')).toBeInTheDocument()
-        unmount()
-      }
-      renderPage({ currentUser: STUDENT })
-      expect(screen.queryByLabelText('Owner')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    it('students get the My collections option but no named owners', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        currentUser: STUDENT,
+        ownerOptions: [{ kind: 'user', userId: 5, name: 'Ada Lovelace' }],
+      })
+      await user.click(screen.getByRole('button', { name: 'Owner' }))
+      const menu = await screen.findByRole('menu')
+      expect(within(menu).getByText('My collections')).toBeInTheDocument()
+      expect(within(menu).queryByText('Ada Lovelace')).not.toBeInTheDocument()
     })
 
-    it('disables the owner select while My collections is active', () => {
-      renderPage({ filters: { ...DEFAULT_COLLECTION_FILTERS, mine: true } })
-      expect(screen.getByLabelText('Owner')).toHaveAttribute('aria-disabled', 'true')
+    it('the Visibility facet narrows the cards client-side', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Pub', visibility: 'public' }),
+          makeCollectionSummary({ id: 2, name: 'Priv', visibility: 'private' }),
+        ],
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(1)
+      expect(screen.getByText('Pub')).toBeInTheDocument()
+      expect(screen.queryByText('Priv')).not.toBeInTheDocument()
+      // Active facet shows a summary chip.
+      expect(screen.getByText('Visibility: Public')).toBeInTheDocument()
+    })
+
+    it('shows "No matching collections" when client facets exclude every row', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
+          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
+        ],
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      await user.keyboard('{Escape}')
+
+      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
+        'No matching collections',
+      )
+      expect(screen.getByTestId('collections-empty')).toHaveTextContent(
+        'No collections match the current filters.',
+      )
+      expect(screen.queryByTestId('collections-grid')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(2)
+      expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
+    })
+
+    it('keeps the table mounted (sort state intact) through a zero-match filter', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
+          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
+        ],
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      const table = await screen.findByTestId('collections-table')
+      const nameTh = within(table).getByText('Name').closest('th')!
+      fireEvent.click(within(table).getByText('Name'))
+      expect(nameTh).toHaveAttribute('aria-sort', 'ascending')
+
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      await user.keyboard('{Escape}')
+
+      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
+        'No matching collections',
+      )
+      expect(screen.getByTestId('collections-table')).not.toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      const restored = await screen.findByTestId('collections-table')
+      expect(restored).toBeVisible()
+      expect(within(restored).getByText('Name').closest('th')).toHaveAttribute(
+        'aria-sort',
+        'ascending',
+      )
+    })
+
+    it('Clear all resets the server filters and the client facets', async () => {
+      const user = userEvent.setup()
+      const onFiltersChange = vi.fn()
+      renderPage({
+        onFiltersChange,
+        filters: { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence', mine: true },
+      })
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      expect(onFiltersChange).toHaveBeenCalledWith(DEFAULT_COLLECTION_FILTERS)
+    })
+
+    it('deleting a summary chip clears only that facet', async () => {
+      const user = userEvent.setup()
+      const onFiltersChange = vi.fn()
+      renderPage({
+        onFiltersChange,
+        filters: { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' },
+      })
+      const chip = (await screen.findByText('Type: Sequence')).closest('.MuiChip-root')!
+      await user.click(within(chip as HTMLElement).getByTestId('CancelIcon'))
+      expect(onFiltersChange).toHaveBeenCalledWith({ ...DEFAULT_COLLECTION_FILTERS, type: 'all' })
+    })
+
+    it('Choose columns is hidden outside table view and toggling a column adds its header', async () => {
+      const user = userEvent.setup()
+      localStorage.setItem('hriv_user', JSON.stringify({ id: ADMIN.id }))
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      // The button always renders (it reserves the FilterBar's height in
+      // every view) but is hidden/unreachable outside table view.
+      const hiddenButton = screen.getByText('Choose columns').closest('button')!
+      expect(hiddenButton).not.toBeVisible()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      await user.click(await screen.findByRole('button', { name: 'Choose columns' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('checkbox', { name: 'ID' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+      expect(await screen.findByText('ID')).toBeInTheDocument()
     })
   })
 
@@ -1028,6 +1288,61 @@ describe('CollectionsPage', () => {
           permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
         }),
       })
+      expect(screen.queryByRole('button', { name: 'Manage Images' })).not.toBeInTheDocument()
+    })
+
+    it('renders Graph View between Hide and Manage for every viewer (#1630)', async () => {
+      const detail = makeCollection({
+        id: 9,
+        type: 'sequence',
+        permissions: { canEdit: true, canDelete: true, canTransfer: true, canHide: true },
+      })
+      renderPage({ selectedCollectionId: 9, detail })
+      const hide = screen.getByTestId('collection-hide-toggle')
+      const graph = screen.getByTestId('collection-graph-open')
+      const manage = screen.getByRole('button', { name: 'Manage Images' })
+      expect(hide.compareDocumentPosition(graph) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(graph.compareDocumentPosition(manage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+      fireEvent.click(graph)
+      expect(await screen.findByTestId('collection-graph-dialog')).toBeInTheDocument()
+      expect(collectionGraphDialogProps.current?.collectionId).toBe(9)
+    })
+
+    it('closes the graph dialog when the detail collection changes (#1638)', async () => {
+      const detail9 = makeCollection({ id: 9, type: 'sequence' })
+      const detail5 = makeCollection({ id: 5, type: 'sequence' })
+      const { rerender } = renderPage({ selectedCollectionId: 9, detail: detail9 })
+      fireEvent.click(screen.getByTestId('collection-graph-open'))
+      expect(await screen.findByTestId('collection-graph-dialog')).toBeInTheDocument()
+
+      const rerenderWith = (overrides: Partial<CollectionsPageProps>) => {
+        const props = makeProps(overrides)
+        rerender(
+          <AuthContext.Provider value={makeAuth(props.currentUser ?? ADMIN)}>
+            <CollectionsPage {...props} />
+          </AuthContext.Provider>,
+        )
+      }
+      rerenderWith({ selectedCollectionId: 5, detail: detail5 })
+      expect(screen.queryByTestId('collection-graph-dialog')).not.toBeInTheDocument()
+
+      // Coming back does not resurrect it without another click.
+      rerenderWith({ selectedCollectionId: 9, detail: detail9 })
+      expect(screen.queryByTestId('collection-graph-dialog')).not.toBeInTheDocument()
+    })
+
+    it('shows Graph View to a student even with no manage/hide rights (#1630)', () => {
+      renderPage({
+        currentUser: STUDENT,
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          type: 'synchronized',
+          permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
+        }),
+      })
+      expect(screen.getByTestId('collection-graph-open')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Manage Images' })).not.toBeInTheDocument()
     })
 

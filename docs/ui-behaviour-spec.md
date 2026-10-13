@@ -259,14 +259,45 @@ returned by the API (UX only — the backend re-checks).
   renders the type-logo placeholder like an uncovered category), the
   **Automatic** row clears both states back to the first-member fallback,
   and a member row pins `cover_image_id`.
-- **Given** the list, **When** the user toggles
-  **My collections** or picks an **Owner**, **Then** the list re-fetches with
-  `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
-  **My collections** resets and disables the owner select.
-- **Given** a student, **Then** the **Owner** select is not rendered at all
-  (only **My collections** remains) and `owner_user_id` /
-  `owner_program_id` are never sent; admin, instructor and staff keep it.
-- **Given** an admin, **Then** the owner select also offers _No owner
+- **Given** the unified Collections page, **Then** a shared `FilterBar` sits
+  above the Cards/Table/Graph views with popover facets: **Name** (client-side
+  text over name/description/owner — narrows rows, dims non-matching graph
+  nodes), **Type** (single-select; `?type=` still seeds it), **Owner**
+  (**My collections**, named owners for non-students, _No owner (orphaned)_
+  for admins) and **Visibility** (multi-select Private/Public/Restricted,
+  client-side, also dims non-matching graph nodes). A **Clear all** action
+  and deletable summary chips appear while any facet is active.
+- **Given** the user is on the Collections page (list or an open collection
+  detail), **When** they click the already-selected **Collections** tab,
+  **Then** the detail closes and the list re-renders — `onTabChange` is
+  re-invoked because `Tabs onChange` cannot fire on an unchanged value.
+- **Given** the Table view, **Then** the FilterBar shows **Choose columns**
+  (table view only) opening the shared `ColumnVisibilityDialog`: 13 columns
+  (Cover, ID, Name, Type, Scope, Description, Category, Images, Owner,
+  Programs, Groups, Created, Updated) with per-user persisted visibility and
+  order; default visible set is Cover, Name, Type, Category, Images, Owner,
+  Updated. Every column except Cover sorts; ID/Images/Created/Updated open
+  descending.
+- **Given** the Cards/Table/Graph toggle, **Then** the view choice is held in
+  memory only — the page always loads on Cards (order and Shared-only still
+  persist per user).
+- **Given** the Graph view, **Then** the stats caption, order toggle,
+  Shared-only toggle and an outlined **Fit graph** button sit in a toolbar
+  row above the canvas (no control overlays the drawing area); legend, empty
+  state and tooltip stay inside the canvas.
+- **Given** the Graph View dialog, **When** the user switches the order,
+  **Then** the rebuilt model refits the view (animated); the page-level graph
+  keeps its transform on model rebuilds.
+- **Given** the list, **When** the user picks
+  **My collections** or a named owner in the **Owner** popover, **Then** the
+  list re-fetches with `mine=true` / `owner_user_id=` or `owner_program_id=`;
+  the facet is single-select, so selecting **My collections** clears any owner
+  choice (nothing is disabled).
+- **Given** a student, **Then** the **Owner** popover contains only
+  **My collections** — no named-owner options — and `owner_user_id` /
+  `owner_program_id` are never sent; admin, instructor and staff get the
+  named-owner options.
+- **Given** an admin, **Then** the Owner popover also offers _No owner
   (orphaned)_ (`orphaned=true`); **Given** any other role, **Then** that option
   is absent and `orphaned` is never sent.
 - **Given** the user clicks **New collection**, **When** they enter a name,
@@ -634,8 +665,9 @@ lists collections the API marks `permissions.can_edit` (UX gate — the backend
 re-checks).
 
 - **Given** the collections flag is on and an image is open, **When** the
-  viewer action bar renders, **Then** an **Add to Collection** button follows
-  **Share View** for every role. It is absent when the flag is off, disabled
+  viewer action bar renders, **Then** an **Add to Collection** button sits
+  between the Hide/Show Image control and **Edit Details** (with **Share
+  View** last) for every role. It is absent when the flag is off, disabled
   with the "Exit canvas edit mode first" tooltip while canvas edit mode is
   active, and desaturated (`grayscale(100%)`) when the image is inactive or
   hidden by category — the same rules as **Edit Details** / **Share View**.
@@ -845,7 +877,8 @@ committed on Save) in the edit modals.
   (`grayscale(100%)`).
 - **Given** an editor (`canEditContent`) on a Browse category page with the
   collections feature enabled, **Then** a "New collection" button sits
-  between "Add Category" and "Add Images"; clicking it opens
+  between the Hide/Show Category control and "Add Category" (with "Add
+  Images" last); clicking it opens
   `CollectionEditDialog` in create mode with the current Browse category
   pre-filed (`defaultCategoryId`).
 - **EditCategoryDialog** visibility button uses local state; the actual
