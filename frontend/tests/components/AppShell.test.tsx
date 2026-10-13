@@ -18,8 +18,6 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     canManageUsers: true,
     canViewPeople: true,
     collectionsEnabled: true,
-    collectionType: 'sequence',
-    onCollectionsTypeChange: vi.fn(),
     currentUser: {
       name: 'Test User',
       email: 'test@example.com',
@@ -122,6 +120,27 @@ describe('AppShell', () => {
       expect(screen.getByText('Send Feedback')).toBeInTheDocument()
     })
 
+    it('sticks the footer dock to the viewport bottom only when requested', () => {
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      expect(screen.getByTestId('footer-dock')).not.toHaveStyle({ position: 'sticky' })
+
+      rerender(<AppShell {...makeProps({ stickyFooter: true })} />)
+      expect(screen.getByTestId('footer-dock')).toHaveStyle({ position: 'sticky', bottom: '0px' })
+    })
+
+    it('renders the footer dock slot directly above the footer', () => {
+      render(
+        <AppShell {...makeProps({ footerDockSlot: <div data-testid="docked">Docked</div> })} />,
+      )
+
+      const dock = screen.getByTestId('footer-dock')
+      const docked = screen.getByTestId('docked')
+      const footer = screen.getByRole('contentinfo')
+      expect(dock).toContainElement(docked)
+      expect(dock).toContainElement(footer)
+      expect(docked.nextElementSibling).toBe(footer)
+    })
+
     it('renders version info in footer for admin users', () => {
       render(
         <AppShell
@@ -179,20 +198,27 @@ describe('AppShell', () => {
       }
     })
 
-    it('opens the Collections menu without navigating; menu items navigate (#1559)', async () => {
+    it('navigates directly to the unified Collections page (#1629)', async () => {
       const user = userEvent.setup()
       const onTabChange = vi.fn()
-      const onCollectionsTypeChange = vi.fn()
-      render(<AppShell {...makeProps({ onTabChange, onCollectionsTypeChange })} />)
+      render(<AppShell {...makeProps({ onTabChange })} />)
 
       await user.click(screen.getByRole('tab', { name: 'Collections' }))
-      expect(onTabChange).not.toHaveBeenCalled()
-      expect(screen.getByRole('menuitem', { name: 'Sequence' })).toBeInTheDocument()
-      expect(screen.getByRole('menuitem', { name: 'Synchronized' })).toBeInTheDocument()
+      expect(onTabChange).toHaveBeenCalledWith('collections')
+      // The Sequence/Synchronized sub-menu is gone — type is a filter chip.
+      expect(screen.queryByRole('menuitem', { name: 'Sequence' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Synchronized' })).not.toBeInTheDocument()
+    })
 
-      await user.click(screen.getByRole('menuitem', { name: 'Synchronized' }))
-      expect(onCollectionsTypeChange).toHaveBeenCalledWith('synchronized')
-      expect(onTabChange).not.toHaveBeenCalled()
+    it('re-clicking the Collections tab while on the page resets to the list', async () => {
+      // On a collection detail the tab is already selected, so Tabs onChange
+      // cannot fire — the Tab's onClick must forward the re-click itself.
+      const user = userEvent.setup()
+      const onTabChange = vi.fn()
+      render(<AppShell {...makeProps({ page: 'collections', onTabChange })} />)
+
+      await user.click(screen.getByRole('tab', { name: 'Collections' }))
+      expect(onTabChange).toHaveBeenCalledWith('collections')
     })
 
     it('hides the Collections tab when the deployment flag is off', () => {
@@ -201,18 +227,17 @@ describe('AppShell', () => {
       expect(screen.queryByRole('tab', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
-    it('marks the matching Collections menu item selected on the collections page', async () => {
-      const user = userEvent.setup()
-      render(<AppShell {...makeProps({ page: 'collections', collectionType: 'synchronized' })} />)
-      // The tab is selected like any active page tab even though it only
-      // opens the menu.
+    it('marks the Collections tab selected on the collections page', () => {
+      render(<AppShell {...makeProps({ page: 'collections' })} />)
       expect(screen.getByRole('tab', { name: 'Collections' })).toHaveAttribute(
         'aria-selected',
         'true',
       )
-      await user.click(screen.getByRole('tab', { name: 'Collections' }))
-      expect(screen.getByRole('menuitem', { name: 'Synchronized' })).toHaveClass('Mui-selected')
-      expect(screen.getByRole('menuitem', { name: 'Sequence' })).not.toHaveClass('Mui-selected')
+    })
+
+    it('marks the root when filling the viewport', () => {
+      render(<AppShell {...makeProps({ fillViewport: true })} />)
+      expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
     })
 
     it('renders Images and Manage tabs when canEditContent', () => {
@@ -596,9 +621,11 @@ describe('AppShell', () => {
     it('exposes every destination, with Manage flattened, in the menu', () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      // "Collections" appears twice: the primary unified page (#1629) and the
+      // Manage-section all-collections table.
+      expect(screen.getAllByRole('menuitem', { name: 'Collections' })).toHaveLength(2)
       for (const name of [
         'Home',
-        'Collections',
         'Images',
         'Categories',
         'Programs',
@@ -704,12 +731,13 @@ describe('AppShell', () => {
       expect(screen.queryByRole('menuitem', { name: 'Collections' })).not.toBeInTheDocument()
     })
 
-    it('navigates to a Collections type page from the collapsed menu', () => {
-      const onCollectionsTypeChange = vi.fn()
-      render(<AppShell {...makeProps({ onCollectionsTypeChange })} />)
+    it('navigates to the Collections page from the collapsed menu', () => {
+      const onTabChange = vi.fn()
+      render(<AppShell {...makeProps({ onTabChange })} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Synchronized collections' }))
-      expect(onCollectionsTypeChange).toHaveBeenCalledWith('synchronized')
+      // The primary-section Collections row precedes the Manage-section one.
+      fireEvent.click(screen.getAllByRole('menuitem', { name: 'Collections' })[0])
+      expect(onTabChange).toHaveBeenCalledWith('collections')
     })
 
     it('closes the drawer when the close button is clicked', async () => {

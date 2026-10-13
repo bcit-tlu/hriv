@@ -51,9 +51,13 @@ function makeApiSummary(overrides: Partial<ApiCollectionSummary> = {}): ApiColle
     owners: [{ user_id: 7, name: 'Ada Lovelace' }],
     image_count: 2,
     cover_thumb: '/hriv-splash2.jpg',
+    cover_image_id: null,
+    cover_blank: false,
     version: 1,
     category_id: 2,
     sort_order: 0,
+    program_ids: [],
+    group_ids: [],
     created_at: FIXED_AT,
     updated_at: FIXED_AT,
     permissions: {
@@ -98,6 +102,8 @@ const rows: ApiCollectionSummary[] = [
     ],
     category_id: 3,
     cover_thumb: null,
+    cover_image_id: null,
+    cover_blank: false,
     permissions: {
       can_edit: true,
       can_delete: false,
@@ -160,7 +166,6 @@ interface StoryArgs {
   loading: boolean
   error: boolean
   onOpenCollection: (id: number) => void
-  onMoveCollection: (collection: unknown) => void
   onError: (message: string) => void
 }
 
@@ -175,7 +180,6 @@ function ManageCollectionsPageExample(args: StoryArgs) {
           groups={[]}
           currentUser={user}
           onOpenCollection={args.onOpenCollection}
-          onMoveCollection={args.onMoveCollection}
           onError={args.onError}
           loadCollections={async () => {
             if (args.error) throw new Error('boom')
@@ -198,7 +202,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Manage → Collections: the all-collections table for non-students (#1554), mirroring Manage → Images — stored filter facets, sortable columns, client-side pagination, browse-location category breadcrumbs, and row actions gated on API permissions (Edit / Owners / Move). Delete lives inside the edit dialog.',
+          'Manage → Collections: the all-collections table for non-students (#1554), mirroring Manage → Images — stored filter facets, sortable columns, client-side pagination, browse-location category breadcrumbs, and row actions gated on API permissions (Edit / Owners). Delete lives inside the edit dialog; filing moved into the edit dialog’s category picker (#1566).',
       },
     },
   },
@@ -207,7 +211,7 @@ const meta = {
       control: 'inline-radio',
       options: ['admin', 'instructor', 'staff'],
       description:
-        'Signed-in role — staff see every row the API returns but only permission-backed actions (no Move).',
+        'Signed-in role — staff see every row the API returns but only permission-backed actions.',
     },
   },
   args: {
@@ -216,7 +220,7 @@ const meta = {
     loading: false,
     error: false,
     onOpenCollection: fn(),
-    onMoveCollection: fn(),
+
     onError: fn(),
   },
 } satisfies Meta<typeof ManageCollectionsPageExample>
@@ -226,13 +230,9 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
-  play: async ({ args, canvasElement }) => {
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     const table = await canvas.findByTestId('manage-collections-table')
-    // Read-only rows open the collection view on click; editable rows fetch
-    // the full record first (not deterministic in the sandbox).
-    await userEvent.click(within(table).getByText('Fracture healing timeline'))
-    await expect(args.onOpenCollection).toHaveBeenCalledWith(2)
     // Sort by Name — Fracture… now precedes Skull…
     await userEvent.click(within(table).getByRole('button', { name: 'Name' }))
     const order = within(table)
@@ -245,10 +245,15 @@ export const Basic: Story = {
 export const StaffView: Story = {
   name: 'Staff View',
   args: { role: 'staff' },
-  play: async ({ canvasElement }) => {
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     const table = await canvas.findByTestId('manage-collections-table')
-    // Staff keep the permission-backed actions but never get Move (#1554).
+    // Read-only rows open the collection view on click (staff cannot file
+    // — the admin path opens the edit dialog instead, #1567).
+    await userEvent.click(within(table).getByText('Fracture healing timeline'))
+    await expect(args.onOpenCollection).toHaveBeenCalledWith(2)
+    // No row carries a Move action — filing lives in the edit dialog's
+    // category picker now (#1566).
     await expect(within(table).queryByRole('button', { name: /^Move / })).not.toBeInTheDocument()
   },
 }

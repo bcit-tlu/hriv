@@ -1,0 +1,54 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionGraphDialogStories from './CollectionGraphDialog.stories'
+
+<Meta of={CollectionGraphDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Read-only hub-and-spoke graph of a single collection, opened from the detail header's "Graph View"
+  button: the collection is the hub, its member images are the spokes; 2nd order adds related
+  collections (click to move the perspective), 3rd order adds member categories.
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` renders `CollectionGraphDialog` from the collection detail header — the
+outlined "Graph View" button between "Hide collection" and "Manage Images", available to every
+viewer on both collection types (#1630). Data comes from
+`GET /api/collections/{id}/graph?order=` via `fetchCollectionGraph`; the model is built by
+`buildCollectionGraphModel` and drawn by the shared `CollectionsGraph` canvas.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionGraphDialogStories.Basic} />
+
+## Implementation guidance
+
+- The perspective stack is dialog-local: clicking a related collection pushes a breadcrumb and
+  refetches; the page URL and detail view never change. The "Open collection" action (visible
+  once navigated) closes the dialog and routes through the page's `onOpenCollection`.
+- The canvas remounts per perspective (`key={currentId}`) so each collection fits once; order
+  toggles reuse the component so `prev` carries node positions and the zoom transform survives —
+  the dialog passes `fitOnRebuild` so an order change refits (animated) after the rebuild, since
+  the kept transform can otherwise leave the regrown layout out of frame.
+- Image clicks close the dialog and call the page's `onOpenImageById` — the same
+  fetch-then-open path the page graph uses (#1629).
+- Image labels show earlier in the dialog (`labelThresholds.image: 1` vs the page's 2.5) and
+  drop the hub collection's name prefix via `labelFor`.
+- The dialog passes `legendVariant="collection"`: the legend labels the hub "This collection
+  (centre)", always shows the Image/Shared image rows (member images are the spokes at every
+  order), and lists "Related collection — size reflects image count" only at order ≥ 2.
+- `fetchGraph` is injectable so stories/tests stub the API without MSW.
+
+<Stories />

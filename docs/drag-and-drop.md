@@ -10,6 +10,36 @@ that accepts `img-` sources only. `drop-cat-<id>` remains the only move zone,
 and a `col-` source dropped there files the collection into that category
 (`onDropCollectionOnCategory`) instead of reordering.
 
+### Collection placement on Browse (#1583)
+
+Unfiled collections (`category_id IS NULL`) are not Browse tiles, so the root
+grid contains categories and images only. Collection drag sources, reorder,
+category filing, and image-to-collection drop-add are available only for
+collections filed into a category. Curators who want a collection featured
+near the top of Browse can file it into a root-level category such as
+**Featured**; choosing **None. Access in Manage > Collections.** removes it from Browse.
+
+The **Add to Collection** dialog remains available for adding images to
+collections. The former root-tile drag-add path is no longer available to
+students adding images to their own unfiled collections.
+
+> **Scope.** This contract is Browse-grid-specific. The collection member
+> manager (`CollectionManageDialog`, #1566) runs its own `DragDropProvider`
+> with plain `useSortable` member tiles (`cmi-` sources only) — none of the
+> near/far-half machinery applies there, though the same sensor policy and
+> the human feel-test gate below still do. The dialog renders drags through
+> a `DragOverlay` replica (the source tile dims in place); removal lives on
+> the per-tile corner control and the Select-mode bulk action — there is no
+> drop-to-delete target (#1567). The **Choose columns** dialog
+> (`ColumnVisibilityDialog`, #1577) is a third dnd surface: plain
+> `useSortable` rows with a drag-handle `IconButton`, Pointer +
+> Keyboard sensors, and `move()` from `@dnd-kit/helpers` computing the
+> committed order — no zones, no near/far halves. For synchronized
+> collections the member manager renders a position map instead (#1614):
+> each slot pairs a `useDraggable` (`cmi-`) with a `useDroppable` (`cms-`)
+> and drag-end swaps the source and target positions — local swap semantics,
+> not `move()`, and still none of the Browse collision machinery.
+
 Read this before changing any collision detection, drop-zone, or activation
 code. The behaviour below thrashed across ~8 PRs because there was no written
 contract; treat the rules here as the contract, and change the doc in the same

@@ -259,6 +259,8 @@ spec:
             {{- end }}
             - name: COLLECTIONS_ENABLED
               value: {{ .Values.collections.enabled | quote }}
+            - name: COLLECTIONS_HOME_SHELF
+              value: {{ .Values.collections.homeShelf | quote }}
             - name: TASK_EXECUTION_MODE
               value: {{ .Values.tasks.executionMode | quote }}
             - name: REBUILD_PARALLEL_ENABLED

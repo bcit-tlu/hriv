@@ -144,6 +144,19 @@ def _permissions_for(user: User, collection: Collection) -> CollectionPermission
 def _summary_fields(
     ctx: _ViewerContext, collection: Collection, images: list[Image]
 ) -> dict:
+    # Pinned cover: honored only while it still resolves to a member the
+    # caller can view; otherwise the tile falls back to the first visible
+    # member and the summary reports ``cover_image_id=None``. An explicit
+    # ``cover_blank`` suppresses the member cover entirely — the tile
+    # renders its type-logo placeholder.
+    cover = (
+        None
+        if collection.cover_blank
+        else next(
+            (img for img in images if img.id == collection.cover_image_id),
+            images[0] if images else None,
+        )
+    )
     return {
         "id": collection.id,
         "name": collection.name,
@@ -153,10 +166,23 @@ def _summary_fields(
         "hidden": collection.hidden,
         "owners": _owners_out(collection),
         "image_count": len(images),
-        "cover_thumb": images[0].thumb if images else None,
+        "cover_thumb": cover.thumb if cover is not None else None,
+        "cover_image_id": (
+            collection.cover_image_id
+            if cover is not None and cover.id == collection.cover_image_id
+            else None
+        ),
+        # ``bool()`` covers the pre-flush ``None`` on a just-created row —
+        # the server_default only lands on INSERT.
+        "cover_blank": bool(collection.cover_blank),
         "version": collection.version,
         "category_id": collection.category_id,
         "sort_order": collection.sort_order,
+        # Restriction scope on summaries so Browse tiles can show program/
+        # group chips like category tiles (#1567) — ids only, matching the
+        # category summary convention.
+        "program_ids": [p.id for p in collection.programs],
+        "group_ids": [g.id for g in collection.groups],
         "created_at": collection.created_at,
         "updated_at": collection.updated_at,
         "permissions": _permissions_for(ctx.user, collection),
@@ -176,8 +202,6 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
     return CollectionOut(
         **_summary_fields(ctx, collection, images),
         images=[ImageOut.model_validate(img) for img in images],
-        program_ids=[p.id for p in collection.programs],
-        group_ids=[g.id for g in collection.groups],
         viewport_state=dict(collection.viewport_state or {}),
         # Nominal membership for unfiltered viewers (non-students). For
         # students the true total would disclose how many images are

@@ -74,6 +74,13 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture
+def mock_bump_scopes(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    bump = AsyncMock()
+    monkeypatch.setattr(users_router, "bump_scopes", bump)
+    return bump
+
+
 def test_user_to_out_with_programs() -> None:
     prog = _make_program(1, "Biology")
     user = _make_user(programs=[prog])
@@ -876,7 +883,9 @@ async def test_update_user_non_name_change_skips_browse_bump() -> None:
     users_router.bump_browse_revision.assert_not_awaited()
 
 
-async def test_delete_user_owning_filed_collection_bumps() -> None:
+async def test_delete_user_owning_filed_collection_bumps(
+    mock_bump_scopes: AsyncMock,
+) -> None:
     """A sole-owned filed collection dies with the user (#1531) — it
     disappears from the tree, so the ETag must advance."""
     admin = _make_user(id=99, role="admin")
@@ -890,6 +899,7 @@ async def test_delete_user_owning_filed_collection_bumps() -> None:
 
     await delete_user(1, admin, db)
     users_router.bump_browse_revision.assert_awaited_once()
+    mock_bump_scopes.assert_awaited_once_with(db, {7})
     deleted = [c.args[0] for c in db.delete.await_args_list]
     assert col in deleted and user in deleted
 
@@ -917,7 +927,9 @@ async def test_delete_user_co_owned_collection_survives() -> None:
     assert user in deleted
 
 
-async def test_delete_user_unfiled_sole_owned_dies_without_bump() -> None:
+async def test_delete_user_unfiled_sole_owned_dies_without_bump(
+    mock_bump_scopes: AsyncMock,
+) -> None:
     """An unfiled sole-owned collection still dies, but no Browse tile is
     affected so the ETag stays put."""
     admin = _make_user(id=99, role="admin")
@@ -930,9 +942,30 @@ async def test_delete_user_unfiled_sole_owned_dies_without_bump() -> None:
     db.commit = AsyncMock()
 
     await delete_user(1, admin, db)
+    mock_bump_scopes.assert_not_awaited()
     users_router.bump_browse_revision.assert_not_awaited()
     deleted = [c.args[0] for c in db.delete.await_args_list]
     assert col in deleted and user in deleted
+
+
+async def test_delete_user_mixed_filed_and_unfiled_sole_owned_bumps_filed_scope(
+    mock_bump_scopes: AsyncMock,
+) -> None:
+    admin = _make_user(id=99, role="admin")
+    user = _make_user(id=1)
+    filed = _collection_for_delete([1], category_id=7)
+    unfiled = _collection_for_delete([1], category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(side_effect=_execute_for_delete([user], [filed, unfiled]))
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_user(1, admin, db)
+    mock_bump_scopes.assert_awaited_once_with(db, {7})
+    users_router.bump_browse_revision.assert_awaited_once()
+    deleted = [c.args[0] for c in db.delete.await_args_list]
+    assert filed in deleted and unfiled in deleted and user in deleted
 
 
 async def test_delete_user_without_filed_collections_skips_bump() -> None:

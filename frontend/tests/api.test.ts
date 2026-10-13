@@ -49,6 +49,7 @@ import {
   fetchUncategorizedImages,
   updateImage,
   deleteImage,
+  fetchImageSourceInfo,
   bulkUpdateImages,
   bulkDeleteImages,
   getTileOrder,
@@ -57,6 +58,7 @@ import {
   type TileOrderResponse,
   fetchCollections,
   fetchCollection,
+  fetchImageCollections,
   createCollection,
   updateCollection,
   deleteCollection,
@@ -781,6 +783,25 @@ describe('Image API', () => {
     expect(result).toEqual(IMAGE_FIXTURE)
   })
 
+  it('fetchImageSourceInfo maps the source-info response to camel case', async () => {
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({
+        original_filename: 'scan.tif',
+        file_type: 'TIF',
+        uploaded_by_name: 'Image Uploader',
+      }),
+    )
+
+    const result = await fetchImageSourceInfo(1)
+
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/images/1/source-info')
+    expect(result).toEqual({
+      originalFilename: 'scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Image Uploader',
+    })
+  })
+
   it('fetchImages without category sends GET to /api/images/', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse([IMAGE_FIXTURE]))
     await fetchImages()
@@ -976,13 +997,14 @@ describe('Collections API', () => {
     expect(result).toHaveLength(1)
   })
 
-  it('fetchCollections serialises every filter as a query param', async () => {
+  it('fetchCollections keeps the unfiled-queue filter as a query param', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse([]))
     await fetchCollections({
       type: 'sequence',
       mine: true,
       owner_user_id: 7,
       owner_program_id: 3,
+      limit: 5,
       orphaned: true,
       uncategorized: true,
     })
@@ -992,6 +1014,7 @@ describe('Collections API', () => {
     expect(qs.get('mine')).toBe('true')
     expect(qs.get('owner_user_id')).toBe('7')
     expect(qs.get('owner_program_id')).toBe('3')
+    expect(qs.get('limit')).toBe('5')
     expect(qs.get('orphaned')).toBe('true')
     expect(qs.get('uncategorized')).toBe('true')
   })
@@ -1009,6 +1032,20 @@ describe('Collections API', () => {
     const result = await fetchCollection(42)
     expect(mockFetch.mock.calls[0][0]).toBe('/api/collections/42')
     expect(result).toEqual(fixture)
+  })
+
+  it('fetchImageCollections hits /api/images/{id}/collections and returns the array (#1586)', async () => {
+    const rows = [
+      makeApiCollectionSummary({ id: 1, name: 'Alpha' }),
+      makeApiCollectionSummary({ id: 2, name: 'Beta' }),
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(rows))
+    const result = await fetchImageCollections(7)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/images/7/collections')
+    expect(init.method ?? 'GET').toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer jwt')
+    expect(result.map((c) => c.name)).toEqual(['Alpha', 'Beta'])
   })
 
   it('createCollection POSTs the body verbatim (empty image_ids allowed)', async () => {
