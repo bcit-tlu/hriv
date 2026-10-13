@@ -3,9 +3,9 @@
 Collections gather a handful of images into a named set — for example, the
 four views of one specimen, or a sequence that tells a story over time.
 
-Open the **Collections** tab in the app bar and pick **Sequence** or
-**Synchronized** from the menu — each page lists only collections of that
-type. Everyone who is signed in,
+Open the **Collections** tab in the app bar to see every collection you can
+view, both types together; use the **Type** filter to show only
+**Sequence** or **Synchronized** collections. Everyone who is signed in,
 including students, can see the tab; admins, instructors, staff and students
 can all create their own collections (staff see every collection and, like
 students, edit the ones they own or co-own). (If
@@ -210,12 +210,16 @@ collection, and owners can't hide or unhide their own collections.
 
 ## Find a collection
 
-Pick the type first — **Collections → Sequence** or **Collections →
-Synchronized** in the app bar — then use the filters in the header row:
+Use the filter bar above the collections — it applies to the Cards, Table
+and Graph views alike:
 
-- **My collections** – just the collections you co-own.
-- **Owner** – collections co-owned by a particular person, or owned by a
-  program (not shown to students).
+- **Name** – matches name, description or owner.
+- **Type** – **Sequence** or **Synchronized** only.
+- **Owner** – **My collections** (just the ones you co-own), or collections
+  co-owned by a particular person or owned by a program (named owners are
+  not shown to students).
+- **Visibility** – private, public or restricted.
+- **Category** – collections filed in a category or anywhere beneath it.
 
 Each card shows the cover image, how many images it holds, a type icon
 beside the name (carousel for a sequence, columns for a synchronized

@@ -22,29 +22,27 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface                                            | Student | Staff | Instructor | Admin |
-| -------------------------------------------------- | ------- | ----- | ---------- | ----- |
-| Home                                               | ✓       | ✓     | ✓          | ✓     |
-| Collections tab (Sequence / Synchronized sub-menu) | ✓       | ✓     | ✓          | ✓     |
-| Images tab                                         | —       | —     | ✓          | ✓     |
-| Manage dropdown                                    | —       | —     | ✓          | ✓     |
-| Manage → Categories                                | —       | —     | ✓          | ✓     |
-| Manage → Programs                                  | —       | —     | —          | ✓     |
-| Manage → Groups                                    | —       | —     | ✓          | ✓     |
-| Manage → Announcement                              | —       | —     | ✓          | ✓     |
-| People tab                                         | —       | ✓     | —          | ✓     |
-| Admin tab                                          | —       | —     | —          | ✓     |
+| Surface               | Student | Staff | Instructor | Admin |
+| --------------------- | ------- | ----- | ---------- | ----- |
+| Home                  | ✓       | ✓     | ✓          | ✓     |
+| Collections tab       | ✓       | ✓     | ✓          | ✓     |
+| Images tab            | —       | —     | ✓          | ✓     |
+| Manage dropdown       | —       | —     | ✓          | ✓     |
+| Manage → Categories   | —       | —     | ✓          | ✓     |
+| Manage → Programs     | —       | —     | —          | ✓     |
+| Manage → Groups       | —       | —     | ✓          | ✓     |
+| Manage → Announcement | —       | —     | ✓          | ✓     |
+| People tab            | —       | ✓     | —          | ✓     |
+| Admin tab             | —       | —     | —          | ✓     |
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
-- **Given** the Collections tab, **When** clicked, **Then** it opens a
-  sub-menu (same `Tab` → `Menu` pattern as Manage) offering **Sequence** and
-  **Synchronized** _without_ navigating — the tab's `value` is filtered out
-  of Tabs' onChange so it is a menu trigger only (#1559); each menu item
-  opens `?page=collections&type=` and a missing/invalid `type`
-  defaults to Sequence. On a collections page the tab stays highlighted and
-  the matching menu item renders `selected`. The compact drawer shows both
-  items flattened in.
+- **Given** the Collections tab, **When** clicked, **Then** it opens the
+  unified Collections page (#1629) — a real page tab, no sub-menu; the
+  compact drawer shows one **Collections** item. `?page=collections&type=`
+  seeds the shared **Type** filter (a missing/invalid `type` means all
+  types). Clicking the tab while already on the page clears an open
+  collection and refreshes the list.
 - **Given** a staff user or a student, **Then** no Manage surface renders
   (every Manage item is edit-content-only; the all-collections table lives
   in the Collections tab's Table view).
@@ -226,7 +224,7 @@ edit/delete controls are gated by `permissions.can_edit` / `can_delete`
 returned by the API (UX only — the backend re-checks).
 
 - **Given** a user picks **Sequence** or **Synchronized** in the Collections
-  sub-menu (`?page=collections&type=`), **When**
+  page's **Type** filter (or deep-links `?page=collections&type=`), **When**
   `GET /api/collections?type=` resolves, **Then** a fixed-width flex-wrap card grid
   (300px tiles, matching the Browse tile grid) renders one
   `CollectionCard` per summary of that type (cover, name, image count, owners,
