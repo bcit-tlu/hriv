@@ -25,10 +25,14 @@ released semver (`synthetic-monitoring-pin.yaml`) that must be bumped when a
  │                                   │
  │  ci.yaml  ──►  GHCR: image        │   helm-publish.yaml  (runs ONLY on release)
  │                  sha-<full>       │                │
- │                  <ver>-rc.<ts>.<short>             │
- │                                   │                ▼
- │  release-please.yaml ──► chore    │       GHCR: hriv-<component>-<ver>.tgz
- │    release PR (if feat:/fix:)     │       (one chart artifact per release)
+ │                  <ver>-rc.<ts>.g<short>            │
+ │             ──►  GHCR: chart      │                │
+ │                  hriv-<component>-│                ▼
+ │                  <ver>-rc.<ts>.   │       GHCR: hriv-<component>-<ver>.tgz
+ │                  g<short>.tgz     │       (one release chart artifact
+ │                                   │        per release)
+ │  release-please.yaml ──► chore    │
+ │    release PR (if feat:/fix:)     │
  │                                   │
  └───────────────────────────────────┘
                     │
@@ -47,15 +51,17 @@ released semver (`synthetic-monitoring-pin.yaml`) that must be bumped when a
 | --------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | PR opened / synced against `main` | PR title                         | `pr-title-lint.yaml` (humans only; bot-authored PRs skipped)                                                                                                            | —                                                          |
 | PR opened / synced against `main` | component path change            | `ci.yaml` builds but does **not** push                                                                                                                                  | —                                                          |
-| Push to `main`                    | commits since last component tag | `ci.yaml` computes next `<ver>` from `git log` conventional-commit analysis (`feat:` → minor, `!:`/`BREAKING CHANGE:` → major, else patch), builds per-component images | image: `sha-<fullsha>` + `<ver>-rc.<ts>.<short>`           |
+| Push to `main`                    | commits since last component tag | `ci.yaml` computes next `<ver>` from `git log` conventional-commit analysis (`feat:` → minor, `!:`/`BREAKING CHANGE:` → major, else patch), builds per-component images | image: `sha-<fullsha>` + `<ver>-rc.<ts>.g<short>`          |
+| Push to `main`                    | component path change            | `ci.yaml` `helm-publish` job packages `charts/<component>` and pushes to OCI (cosign-signed)                                                                            | chart: `hriv-<component>:<ver>-rc.<ts>.g<short>`           |
 | Push to `main`                    | commits since last component tag | `release-please.yaml` opens/updates one chore release PR per component whose path has a release-triggering commit                                                       | —                                                          |
 | Merge of a release PR             |                                  | `release-please.yaml` cuts a GitHub Release with tag `<component>-v<ver>`, then `dispatch-publish` job workflow-dispatches the two release workflows below              | release created                                            |
 | Release published (via dispatch)  | release tag                      | `release-retag.yaml` waits for the `sha-<fullsha>` image of the release commit, then aliases it                                                                         | image: `<ver>`, `latest` (retag — same digest, no rebuild) |
-| Release published (via dispatch)  | release tag                      | `helm-publish.yaml` packages `charts/<component>/` and pushes to OCI                                                                                                    | chart: `hriv-<component>-<ver>.tgz`                        |
+| Release published (via dispatch)  | release tag                      | `helm-publish.yaml` packages `charts/<component>/` and pushes to OCI                                                                                                    | chart: `hriv-<component>:<ver>.tgz`                        |
 
-**The chart is published only on release.** Main pushes never produce a
-chart artifact. This is the single biggest asymmetry in the system and
-matters for the flux-fleet flow below.
+**Charts are published on every main push _and_ on release.** Main pushes
+produce rc charts (`<ver>-rc.<ts>.g<short>`, cosign-signed); releases produce
+the clean `<ver>` chart. Which one an environment follows is decided by the
+OCIRepository semver filter on the flux-fleet side, described below.
 
 `ci.yaml` uses path filters to run each component's quality gate only when its
 source or directly coupled build configuration changes. Workflow changes run
@@ -69,14 +75,15 @@ corresponding reusable OCI build is skipped as well.
 
 ## Tag and version formats
 
-| Thing                      | Format                                                 | Example                            | Notes                                                                                                                                         |
-| -------------------------- | ------------------------------------------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image rc tag               | `<ver>-rc.<14-digit UTC ts>.<7-char sha>`              | `1.1.18-rc.20260414194220.b286051` | Valid SemVer prerelease. Timestamp exists for deterministic Flux `ImagePolicy` ordering (numerical).                                          |
-| Image release tag          | `<ver>`, `latest`                                      | `1.1.18`, `latest`                 | Produced by digest-retag, not rebuild.                                                                                                        |
-| Image immutable pointer    | `sha-<40-char sha>`                                    | `sha-b286051...`                   | Always published; survives across every retag.                                                                                                |
-| Git release tag            | `<component>-v<ver>`                                   | `frontend-v1.1.18`                 | Cut by release-please.                                                                                                                        |
-| Chart artifact             | `ghcr.io/<owner>/<repo>/charts/hriv-<component>:<ver>` | `...charts/hriv-frontend:1.1.18`   | OCI chart, one per release.                                                                                                                   |
-| Display version (rendered) | `<ver>-rc.<short>` _or_ `<ver>`                        | `1.1.18-rc.b286051` / `1.1.18`     | Helm chart's `displayVersion` helper strips the timestamp from the image tag at deploy time. See `charts/<component>/templates/_helpers.tpl`. |
+| Thing                      | Format                                                 | Example                                              | Notes                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Image rc tag               | `<ver>-rc.<14-digit UTC ts>.g<7-char sha>`             | `1.1.18-rc.20260414194220.gb286051`                  | Valid SemVer prerelease. Timestamp gives chronological ordering; `g<sha>` marks the build commit.                                             |
+| Image release tag          | `<ver>`, `latest`                                      | `1.1.18`, `latest`                                   | Produced by digest-retag, not rebuild.                                                                                                        |
+| Image immutable pointer    | `sha-<40-char sha>`                                    | `sha-b286051...`                                     | Always published; survives across every retag.                                                                                                |
+| Git release tag            | `<component>-v<ver>`                                   | `frontend-v1.1.18`                                   | Cut by release-please.                                                                                                                        |
+| Chart artifact (rc)        | `...charts/hriv-<component>:<ver>-rc.<ts>.g<short>`    | `...hriv-frontend:1.1.18-rc.20260414194220.gb286051` | OCI chart pushed by `ci.yaml` on each main push that changed the component (cosign-signed).                                                   |
+| Chart artifact (release)   | `ghcr.io/<owner>/<repo>/charts/hriv-<component>:<ver>` | `...charts/hriv-frontend:1.1.18`                     | OCI chart pushed by `helm-publish.yaml` on release.                                                                                           |
+| Display version (rendered) | `<ver>-rc.<short>` _or_ `<ver>`                        | `1.1.18-rc.gb286051` / `1.1.18`                      | Helm chart's `displayVersion` helper strips the timestamp from the image tag at deploy time. See `charts/<component>/templates/_helpers.tpl`. |
 
 ## Title → release-please
 
@@ -90,54 +97,57 @@ Full title rules and rationale: [.github/CONTRIBUTING.md](../.github/CONTRIBUTIN
 
 ## flux-fleet side
 
-Both environments in a downstream FluxCD repo (for example, `bcit-tlu/flux-fleet`) share the same
-`OCIRepository`, `HelmRelease`, and chart (from `apps/hriv/base/`). They
-differ only in the `ImagePolicy` regex and the `image.tag` value the
-`ImageUpdateAutomation` writes into the env's `patch-<component>.yaml`.
+Both environments in a downstream FluxCD repo (for example, `bcit-tlu/flux-fleet`)
+share the same objects from `apps/base/`: one `OCIRepository` per component
+pointing at `oci://ghcr.io/bcit-tlu/hriv/charts/hriv-<component>`, and a
+`HelmRelease` whose `chartRef` points at that OCIRepository. The chart's
+`appVersion` is the image tag, so chart and image always move together —
+there is no `ImagePolicy`, `ImageUpdateAutomation`, or `image.tag` patch.
 
 ### `latest` (staging)
 
 ```
-OCIRepository            semver >=0.0.0
-  url ghcr.io/…/charts/hriv-frontend
+GitHub webhook (push + package) ──► Receiver (components/notifications-hriv)
+                                          │  package/published fires seconds
+                                          ▼  after `helm push`
+OCIRepository            semver ">= 0.0.x-0", semverFilter "^.*-rc.*$"
+  url ghcr.io/…/charts/hriv-frontend      (patched in clusters/cluster03/latest)
                 │
-                ▼  (polls every 5m; picks highest released chart)
+                ▼  source-controller pulls the new rc chart
 HelmRelease
   chartRef → OCIRepository
-  values.image.tag ← patch-frontend.yaml (set by ImageUpdateAutomation)
-                │
-                ▲  (rewrites image.tag whenever ImagePolicy
-                │   points at a newer rc timestamp)
-ImageUpdateAutomation (apps/hriv/latest)
-                │
-                └── ImagePolicy.hriv-frontend-latest
-                       filter ^(\d+\.\d+\.\d+)-rc\.(\d{14})\.[a-f0-9]+$
-                       extract $ts
-                       policy numerical desc
+  appVersion = image tag ⇒ rc chart + rc image roll out together
 ```
 
-**Net effect:** every main push ⇒ new rc image rolls out to `latest`
-within one reconcile cycle, **but chart changes on `main` do not reach
-`latest` until a release is cut.** The `latest` env always runs the
-most recently released _chart_ with the most recent rc _image_.
+**Net effect:** every main push ⇒ a new rc chart rolls out to `latest`
+seconds after the CI `helm-publish` job finishes — chart and image together.
 
 ### `stable` (production)
 
-Same picture as `latest`, but `ImagePolicy.hriv-frontend-stable` matches
-only clean `<ver>` tags (regex `^\d+\.\d+\.\d+$`, semver ordering), so
-`image.tag` tracks the highest released version. `stable` runs the most
-recently released chart with the most recently released image — both
-change only on release.
+Same objects, but the base `semver: ">= 0.0.x"` admits only clean release
+versions, so `stable` tracks the most recently released chart (and its
+matching image) and moves only on release.
+
+### Triggering: webhook vs polling
+
+A GitHub webhook on this repo fires to both `flux.latest.ltc.bcit.ca` and
+`flux.ltc.bcit.ca`. The Flux `Receiver` (defined in
+`flux-fleet/components/notifications-hriv`) authorises `push` and `package`
+events. The `package`/`published` event for the chart package arrives
+seconds after `helm push` and makes source-controller pull the new chart
+immediately. The `push` event also reaches the receiver but lands several
+minutes before the chart exists, so it is effectively a no-op for chart
+rollout. `OCIRepository.spec.interval: 48h` remains as a catch-all for
+missed deliveries — it is not the rollout path.
 
 ## Consequences worth knowing
 
-- **Chart edits on `main` are invisible to `latest`.** If a PR changes
-  only `charts/<component>/...` (e.g. adding an env var to a Deployment
-  template), nothing in `latest` changes until the next release of that
-  component is cut. The app image rc still builds and rolls out, but
-  against the previously-released chart. Any new template logic the rc
-  image relies on is simply missing in `latest` until a release happens.
-  This is the asymmetry called out above.
+- **Chart edits on `main` reach `latest` via the rc chart, but `stable`
+  waits for a release.** A PR that changes only `charts/<component>/...`
+  produces an rc chart on the next main push, so `latest` picks the
+  template change up right away; `stable`'s semver filter only admits
+  clean `<ver>` charts, so the same change reaches production when the
+  component is next released.
 - **Long-running features ship dark behind a chart flag, not on a branch.**
   Work that spans more than one release (e.g. the collections epic,
   `collections.enabled` → `COLLECTIONS_ENABLED`, see
@@ -177,12 +187,12 @@ change only on release.
 
 ## Where to look when something breaks
 
-| Symptom                                                                 | First place to look                                                                                    |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| No release PR opened after merging a `feat:`/`fix:`                     | release-please logs on the main-push workflow; check that the component path was touched               |
-| `release-please` workflow failing with "Stale `release-as`"             | `release-please-config.json` — remove the `release-as` field for the named package                     |
-| `latest` env not picking up a new main push                             | `ImagePolicy.hriv-<component>-latest` status; verify a tag matching the rc regex was actually pushed   |
-| `latest` env running stale chart logic                                  | no release has been cut since the chart edit; cut one                                                  |
-| Image retag didn't happen after release                                 | `release-retag.yaml` run for the release; it waits up to 30 min for the rc image, then times out       |
-| Chart artifact missing for a release                                    | `helm-publish.yaml` run for the release tag; parse step rejects malformed tags                         |
-| `validation-select` fails `COMPONENT_INCOHERENT` after a backup release | flux-fleet `images.backupChild` pin — likely older than the deployed backup writer; bump both overlays |
+| Symptom                                                                 | First place to look                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No release PR opened after merging a `feat:`/`fix:`                     | release-please logs on the main-push workflow; check that the component path was touched                                                                                                                                                                                             |
+| `release-please` workflow failing with "Stale `release-as`"             | `release-please-config.json` — remove the `release-as` field for the named package                                                                                                                                                                                                   |
+| `latest` env not picking up a new main push                             | GitHub repo Settings → Webhooks → Recent Deliveries (`package`/`published` for `hriv/charts/hriv-<component>` should be HTTP 200); `kubectl -n hriv get ocirepository` revision vs GHCR; notification-controller logs; fallback `flux reconcile source oci hriv-<component> -n hriv` |
+| `stable` env running stale chart logic                                  | no release has been cut since the chart edit; cut one                                                                                                                                                                                                                                |
+| Image retag didn't happen after release                                 | `release-retag.yaml` run for the release; it waits up to 30 min for the rc image, then times out                                                                                                                                                                                     |
+| Chart artifact missing for a release                                    | `helm-publish.yaml` run for the release tag; parse step rejects malformed tags                                                                                                                                                                                                       |
+| `validation-select` fails `COMPONENT_INCOHERENT` after a backup release | flux-fleet `images.backupChild` pin — likely older than the deployed backup writer; bump both overlays                                                                                                                                                                               |
