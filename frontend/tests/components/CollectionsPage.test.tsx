@@ -537,6 +537,32 @@ describe('CollectionsPage', () => {
       expect(screen.getByText('Visibility: Public')).toBeInTheDocument()
     })
 
+    it('shows "No matching collections" when client facets exclude every row', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
+          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
+        ],
+      })
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      await user.keyboard('{Escape}')
+
+      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
+        'No matching collections',
+      )
+      expect(screen.getByTestId('collections-empty')).toHaveTextContent(
+        'No collections match the current filters.',
+      )
+      expect(screen.queryByTestId('collections-grid')).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(2)
+      expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
+    })
+
     it('Clear all resets the server filters and the client facets', async () => {
       const user = userEvent.setup()
       const onFiltersChange = vi.fn()

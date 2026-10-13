@@ -1221,17 +1221,17 @@ export default function CollectionsPage({
               <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
                 <CircularProgress aria-label="Loading collections" />
               </Box>
-            ) : collections.length === 0 && viewPrefs.view !== 'graph' ? (
+            ) : shownCollections.length === 0 && viewPrefs.view !== 'graph' ? (
               <Box
                 data-testid="collections-empty"
                 sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
               >
                 <CollectionsIcon sx={{ fontSize: 56, opacity: 0.5 }} />
                 <Typography variant="h6" sx={{ mt: 1 }}>
-                  No collections yet
+                  {hasActiveFilters ? 'No matching collections' : 'No collections yet'}
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
-                  {filters.mine || filters.owner !== 'any' || filters.type !== 'all' ? (
+                  {hasActiveFilters ? (
                     'No collections match the current filters.'
                   ) : (
                     <>
@@ -1250,7 +1250,7 @@ export default function CollectionsPage({
                 </Typography>
               </Box>
             ) : null}
-            {viewPrefs.view === 'cards' && collections.length > 0 && (
+            {viewPrefs.view === 'cards' && shownCollections.length > 0 && (
               <Box
                 data-testid="collections-grid"
                 sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
@@ -1277,7 +1277,7 @@ export default function CollectionsPage({
                 })}
               </Box>
             )}
-            {viewPrefs.view === 'table' && collections.length > 0 && (
+            {viewPrefs.view === 'table' && shownCollections.length > 0 && (
               <CollectionsTable
                 collections={shownCollections}
                 categoryPaths={categoryPaths}

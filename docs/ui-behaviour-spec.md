@@ -288,14 +288,16 @@ returned by the API (UX only — the backend re-checks).
 - **Given** the Graph View dialog, **When** the user switches the order,
   **Then** the rebuilt model refits the view (animated); the page-level graph
   keeps its transform on model rebuilds.
-- **Given** the list, **When** the user toggles
-  **My collections** or picks an **Owner**, **Then** the list re-fetches with
-  `mine=true` / `owner_user_id=` or `owner_program_id=`; selecting
-  **My collections** resets and disables the owner select.
-- **Given** a student, **Then** the **Owner** select is not rendered at all
-  (only **My collections** remains) and `owner_user_id` /
-  `owner_program_id` are never sent; admin, instructor and staff keep it.
-- **Given** an admin, **Then** the owner select also offers _No owner
+- **Given** the list, **When** the user picks
+  **My collections** or a named owner in the **Owner** popover, **Then** the
+  list re-fetches with `mine=true` / `owner_user_id=` or `owner_program_id=`;
+  the facet is single-select, so selecting **My collections** clears any owner
+  choice (nothing is disabled).
+- **Given** a student, **Then** the **Owner** popover contains only
+  **My collections** — no named-owner options — and `owner_user_id` /
+  `owner_program_id` are never sent; admin, instructor and staff get the
+  named-owner options.
+- **Given** an admin, **Then** the Owner popover also offers _No owner
   (orphaned)_ (`orphaned=true`); **Given** any other role, **Then** that option
   is absent and `orphaned` is never sent.
 - **Given** the user clicks **New collection**, **When** they enter a name,
