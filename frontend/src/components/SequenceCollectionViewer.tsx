@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography'
 import { alpha, type Theme } from '@mui/material/styles'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import ImageIcon from '@mui/icons-material/Image'
 
 import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
@@ -434,7 +434,7 @@ export default function SequenceCollectionViewer({
         <Button
           size="small"
           variant="text"
-          endIcon={<OpenInNewIcon />}
+          endIcon={<ImageIcon />}
           onClick={() => onOpenImage(current)}
           sx={{ flexShrink: 0 }}
         >
