@@ -1277,17 +1277,22 @@ export default function CollectionsPage({
                 })}
               </Box>
             )}
-            {viewPrefs.view === 'table' && shownCollections.length > 0 && (
-              <CollectionsTable
-                collections={shownCollections}
-                categoryPaths={categoryPaths}
-                currentUser={currentUser}
-                onOpenCollection={onOpenCollection}
-                renewCoverThumb={renewCoverThumb}
-                columns={orderedVisibleColumns}
-                programs={programs}
-                groups={groups}
-              />
+            {viewPrefs.view === 'table' && collections.length > 0 && (
+              // Stay mounted (hidden) on a zero-match client filter so the
+              // table's local sort/page state survives; the empty-state
+              // message above covers the hidden rows.
+              <Box sx={{ display: shownCollections.length > 0 ? undefined : 'none' }}>
+                <CollectionsTable
+                  collections={shownCollections}
+                  categoryPaths={categoryPaths}
+                  currentUser={currentUser}
+                  onOpenCollection={onOpenCollection}
+                  renewCoverThumb={renewCoverThumb}
+                  columns={orderedVisibleColumns}
+                  programs={programs}
+                  groups={groups}
+                />
+              </Box>
             )}
             {/* Graph state (positions, zoom, selection) survives view
                 switches and collection round-trips: the canvas stays mounted

@@ -563,6 +563,38 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
     })
 
+    it('keeps the table mounted (sort state intact) through a zero-match filter', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
+          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
+        ],
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      const table = await screen.findByTestId('collections-table')
+      const nameTh = within(table).getByText('Name').closest('th')!
+      fireEvent.click(within(table).getByText('Name'))
+      expect(nameTh).toHaveAttribute('aria-sort', 'ascending')
+
+      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
+      await user.keyboard('{Escape}')
+
+      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
+        'No matching collections',
+      )
+      expect(screen.getByTestId('collections-table')).not.toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      const restored = await screen.findByTestId('collections-table')
+      expect(restored).toBeVisible()
+      expect(within(restored).getByText('Name').closest('th')).toHaveAttribute(
+        'aria-sort',
+        'ascending',
+      )
+    })
+
     it('Clear all resets the server filters and the client facets', async () => {
       const user = userEvent.setup()
       const onFiltersChange = vi.fn()
