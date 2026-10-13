@@ -441,7 +441,7 @@ export default function CollectionEditDialog({
       <DialogContent>
         {!canEditMeta && (
           <Alert severity="info" sx={{ mb: 1 }} data-testid="filing-only-note">
-            You can file or hide this collection; only its owner can edit the details.
+            You can categorize or hide this collection; only its owner can edit the details.
           </Alert>
         )}
         {/* Type leads — it's the most consequential option and immutable

@@ -65,9 +65,9 @@ export function paletteFrom(
     categoryFill: p.background.paper,
     selectionRing: p.text.primary,
     label: alpha(p.text.primary, 0.85),
-    edgeNormal: alpha(p.text.primary, 0.25),
+    edgeNormal: alpha(p.text.primary, 0.45),
     edgeDim: alpha(p.text.primary, 0.06),
-    edgeImgNormal: alpha(p.text.primary, 0.12),
+    edgeImgNormal: alpha(p.text.primary, 0.35),
     edgeImgDim: alpha(p.text.primary, 0.05),
     edgeFocus: alpha(p.primary.dark, 0.85),
   }
