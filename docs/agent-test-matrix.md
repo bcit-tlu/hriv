@@ -47,9 +47,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   locally `docker compose up -d db migrate` then `export
 TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   otherwise it skips.
-- frontend: `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog CollectionManageDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- frontend: `npm test -- CollectionsPage CollectionsTable CollectionCard CollectionEditDialog CollectionManageDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
 - Per-type pages / card overlay / manage table / dialog delete (#1554):
-  `npm test -- CollectionsPage ManageCollectionsPage CollectionCard CollectionEditDialog navigation AppShell App.test`
+  `npm test -- CollectionsPage CollectionsTable CollectionCard CollectionEditDialog navigation AppShell App.test`
 - Unified Collections page — view toggle, Table view, Graph view, view
   preference, `?type=` filter seed (#1629; graph endpoints #1628/#1633):
   `npm test -- CollectionsPage CollectionsTable collectionsGraphModel useCollectionsViewPreference useCollectionsData navigation AppShell App.test`
@@ -81,7 +81,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
   Verify the root grid has no collection tiles, and test the separate
   flag-controlled My collections drawer and its `{ mine: true, limit: 8 }`
   request. Nested filed collections still render.
-  Also cover `None. Access in Manage > Collections.` picker labels,
+  Also cover `None. Access in Collections.` picker labels,
   unfile snackbar, private-filing warnings, and Manage Categories ordering:
   `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard MyCollectionsDrawer useMyCollectionsDrawerState useMyCollectionsShelf useFeatures CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
   Backend placement/tile-order cases:

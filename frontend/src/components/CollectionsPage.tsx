@@ -54,8 +54,11 @@ import CollectionsTable, {
   COLLECTIONS_TABLE_COLUMN_OPTIONS,
   COLLECTIONS_TABLE_COLUMNS,
   DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
+  DEFAULT_VISIBLE_CURATOR_COLLECTIONS_TABLE_COLUMNS,
   type CollectionsTableColumn,
 } from './CollectionsTable'
+import BulkEditCollectionsDialog from './BulkEditCollectionsDialog'
+import CategoryFilterTreePanel from './CategoryFilterTreePanel'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
@@ -200,7 +203,19 @@ export interface CollectionsPageProps {
    * Rejects with an ApiError; the page surfaces the message via
    * `onViewerError` and re-disables the link while in flight.
    */
-  onToggleHidden: (collection: Collection) => Promise<unknown>
+  onToggleHidden: (collection: CollectionSummary) => Promise<unknown>
+  /**
+   * Table-view bulk edit (#1578): refile and/or hide the selected rows in
+   * one atomic call. Rejects with an ApiError; the dialog shows it.
+   */
+  onBulkUpdate?: (
+    ids: number[],
+    data: { category_id?: number | null; hidden?: boolean },
+  ) => Promise<void>
+  /** Table-view bulk delete (#1578) — every row must be `canDelete`. */
+  onBulkDelete?: (ids: number[]) => Promise<void>
+  /** View to open on mount instead of Cards (old `?page=manage-collections` links). */
+  initialView?: CollectionsView
 }
 
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
@@ -576,6 +591,9 @@ export default function CollectionsPage({
   onNavigateCategory,
   onToggleHidden,
   onOpenImageById,
+  onBulkUpdate,
+  onBulkDelete,
+  initialView,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
@@ -622,7 +640,9 @@ export default function CollectionsPage({
   const showOwnerFilter = currentUser != null && currentUser.role !== 'student'
 
   // ── Unified page view state (#1629) ──────────────────────────────
-  const [viewPrefs, setViewPrefs] = useCollectionsViewPreference(currentUser?.id ?? null)
+  const [viewPrefs, setViewPrefs] = useCollectionsViewPreference(currentUser?.id ?? null, {
+    initialView,
+  })
   // The shell fills the viewport for the graph view, so it needs the
   // current view reported upward (the pref itself is per-user state).
   useEffect(() => {
@@ -634,6 +654,23 @@ export default function CollectionsPage({
   const [visibilityFilter, setVisibilityFilter] = useState<ReadonlySet<CollectionVisibility>>(
     () => new Set(),
   )
+  // Category facet — client-side and ancestor-aware like the Images table:
+  // a parent matches collections filed anywhere beneath it.
+  const [categoryFilter, setCategoryFilter] = useState<ReadonlySet<number>>(() => new Set())
+  // Table-view bulk selection (#1578), reconciled against the live rows so a
+  // collection deleted elsewhere can't linger in a later bulk call.
+  const [selectedIdsRaw, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set())
+  const selectedIds = useMemo(() => {
+    const live = new Set(collections.map((c) => c.id))
+    return [...selectedIdsRaw].every((id) => live.has(id))
+      ? selectedIdsRaw
+      : new Set([...selectedIdsRaw].filter((id) => live.has(id)))
+  }, [collections, selectedIdsRaw])
+  const selectedRows = useMemo(
+    () => collections.filter((c) => selectedIds.has(c.id)),
+    [collections, selectedIds],
+  )
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
   const [graphError, setGraphError] = useState<string | null>(null)
 
@@ -854,19 +891,33 @@ export default function CollectionsPage({
 
   // Choose Columns (table view) — per-user persisted visibility + order,
   // the same hook/storage convention as the Manage tables (#1577).
-  const { visibleColumns, toggleColumn, columnOrder, orderedVisibleColumns, setColumnOrder } =
-    useTableColumnPreferences<CollectionsTableColumn>({
-      tableKey: 'collections',
-      allColumns: COLLECTIONS_TABLE_COLUMNS,
-      defaultVisibleColumns: DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
-    })
+  // Curators get the Visibility (hide) switch by default; students never
+  // see hidden collections, so the column is not offered to them at all.
+  const isStudent = currentUser?.role === 'student'
+  const {
+    visibleColumns,
+    toggleColumn,
+    columnOrder,
+    orderedVisibleColumns: storedVisibleColumns,
+    setColumnOrder,
+  } = useTableColumnPreferences<CollectionsTableColumn>({
+    tableKey: 'collections',
+    allColumns: COLLECTIONS_TABLE_COLUMNS,
+    defaultVisibleColumns: canFileCollections
+      ? DEFAULT_VISIBLE_CURATOR_COLLECTIONS_TABLE_COLUMNS
+      : DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS,
+  })
+  const orderedVisibleColumns = isStudent
+    ? storedVisibleColumns.filter((c) => c !== 'visibility')
+    : storedVisibleColumns
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const orderedColumnOptions = useMemo(() => {
     const byKey = new Map(COLLECTIONS_TABLE_COLUMN_OPTIONS.map((o) => [o.key, o]))
     return columnOrder
+      .filter((key) => !isStudent || key !== 'visibility')
       .map((key) => byKey.get(key))
       .filter((o): o is ColumnVisibilityOption<CollectionsTableColumn> => o != null)
-  }, [columnOrder])
+  }, [columnOrder, isStudent])
   const viewerFlexSx = {
     display: { md: 'flex' },
     flexDirection: { md: 'column' },
@@ -971,6 +1022,13 @@ export default function CollectionsPage({
     const searchQ = searchQuery.trim().toLowerCase()
     const matchesClientFilters = (c: CollectionSummary): boolean => {
       if (visibilityFilter.size > 0 && !visibilityFilter.has(c.visibility)) return false
+      if (categoryFilter.size > 0) {
+        const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+        if (!seg) return false
+        if (![seg.category, ...seg.ancestors].some((cat) => categoryFilter.has(cat.id))) {
+          return false
+        }
+      }
       return (
         searchQ === '' ||
         `${c.name} ${c.description ?? ''} ${describeCollectionOwners(c.owners)}`
@@ -979,7 +1037,9 @@ export default function CollectionsPage({
       )
     }
     const shownCollections =
-      searchQ || visibilityFilter.size > 0 ? collections.filter(matchesClientFilters) : collections
+      searchQ || visibilityFilter.size > 0 || categoryFilter.size > 0
+        ? collections.filter(matchesClientFilters)
+        : collections
     const searchHelper =
       viewPrefs.view === 'graph'
         ? 'Highlights matches in the graph; nodes are not removed.'
@@ -989,11 +1049,13 @@ export default function CollectionsPage({
       filters.mine ||
       filters.owner !== 'any' ||
       searchQ !== '' ||
-      visibilityFilter.size > 0
+      visibilityFilter.size > 0 ||
+      categoryFilter.size > 0
     const clearAllFilters = () => {
       onFiltersChange({ ...DEFAULT_COLLECTION_FILTERS })
       setSearchQuery('')
       setVisibilityFilter(new Set())
+      setCategoryFilter(new Set())
     }
     const ownerSummaryLabel = filters.mine
       ? 'My collections'
@@ -1051,6 +1113,16 @@ export default function CollectionsPage({
                 </Tooltip>
               </ToggleButton>
             </ToggleButtonGroup>
+            {viewPrefs.view === 'table' && selectedIds.size > 0 && (
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                onClick={() => setBulkEditOpen(true)}
+              >
+                Bulk Edit ({selectedIds.size} selected)
+              </Button>
+            )}
             <Tooltip title={typesAtLimit.size === 2 ? COLLECTIONS_AT_CAP_TOOLTIP : ''}>
               <span>
                 <Button
@@ -1125,6 +1197,27 @@ export default function CollectionsPage({
                     }}
                   />
                 )}
+                {[...categoryFilter].map((id) => {
+                  const seg = categoryPaths.get(id)
+                  const label = seg
+                    ? [...seg.ancestors, seg.category].map((cat) => cat.label).join(':')
+                    : `Category ${id}`
+                  return (
+                    <Chip
+                      key={`category:${id}`}
+                      data-testid="filter-chip"
+                      label={`Category: ${label}`}
+                      size="small"
+                      onDelete={() =>
+                        setCategoryFilter((prev) => {
+                          const next = new Set(prev)
+                          next.delete(id)
+                          return next
+                        })
+                      }
+                    />
+                  )
+                })}
                 {[...visibilityFilter].map((v) => (
                   <Chip
                     key={`vis:${v}`}
@@ -1216,6 +1309,22 @@ export default function CollectionsPage({
               onChange={(values) => setVisibilityFilter(new Set(values as CollectionVisibility[]))}
             />
           </FilterPopoverButton>
+          <FilterPopoverButton label="Category" activeCount={categoryFilter.size} panelWidth={300}>
+            <Box sx={{ maxHeight: 320, overflow: 'auto' }}>
+              <CategoryFilterTreePanel
+                categories={categories}
+                selectedIds={categoryFilter}
+                onToggle={(id) =>
+                  setCategoryFilter((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(id)) next.delete(id)
+                    else next.add(id)
+                    return next
+                  })
+                }
+              />
+            </Box>
+          </FilterPopoverButton>
         </FilterBar>
 
         {error ? (
@@ -1296,6 +1405,13 @@ export default function CollectionsPage({
                   columns={orderedVisibleColumns}
                   programs={programs}
                   groups={groups}
+                  onNavigateCategory={onNavigateCategory}
+                  onEdit={(c) => void openEdit(c)}
+                  onManageOwners={setTransferTarget}
+                  onToggleHidden={onToggleHidden}
+                  onError={onViewerError}
+                  selected={selectedIds}
+                  onSelectedChange={onBulkUpdate || onBulkDelete ? setSelectedIds : undefined}
                 />
               </Box>
             )}
@@ -1344,7 +1460,7 @@ export default function CollectionsPage({
                     const c = collections.find((r) => r.id === id)
                     return c != null && matchesClientFilters(c)
                   }}
-                  filterActive={visibilityFilter.size > 0}
+                  filterActive={visibilityFilter.size > 0 || categoryFilter.size > 0}
                   tooltipInfo={graphTooltipInfo}
                   overlay={
                     <>
@@ -1479,6 +1595,44 @@ export default function CollectionsPage({
           setGraphDialogOpen(false)
           onOpenCollection(id)
         }}
+      />
+
+      {/* Bulk edit (#1578) — curator fields for admin/instructor; delete
+          requires single-delete authority on every selected row. */}
+      <BulkEditCollectionsDialog
+        open={bulkEditOpen}
+        onClose={() => setBulkEditOpen(false)}
+        onSave={async (data) => {
+          if (!onBulkUpdate) return
+          await onBulkUpdate([...selectedIds], data)
+          setBulkEditOpen(false)
+          setSelectedIds(new Set())
+        }}
+        onDelete={async () => {
+          if (!onBulkDelete) return
+          await onBulkDelete([...selectedIds])
+          setBulkEditOpen(false)
+          setSelectedIds(new Set())
+        }}
+        categories={categories}
+        selectedCount={selectedIds.size}
+        privateSelectedCount={selectedRows.filter((c) => c.visibility === 'private').length}
+        canCurate={canFileCollections}
+        canDeleteAll={selectedRows.length > 0 && selectedRows.every((c) => c.permissions.canDelete)}
+        allCategoryHidden={
+          selectedRows.length > 0 &&
+          selectedRows.every((c) => {
+            const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
+            return (
+              seg != null && getCategoryHiddenStateFromPath([...seg.ancestors, seg.category]).hidden
+            )
+          })
+        }
+        programs={programs}
+        groups={groups}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleCategoryVisibility}
       />
 
       <CollectionOwnersDialog

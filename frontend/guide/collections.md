@@ -175,7 +175,7 @@ root-level category such as **Featured**.
   images and categories in the same folder; the order is shared for every
   viewer.
 - Admins and instructors can **file** a collection into a category or choose
-  **None. Access in Manage > Collections.** to unfile it, using the card's **Move** action (the
+  **None. Access in Collections.** to unfile it, using the card's **Move** action (the
   folder icon in the cover's top-right corner), the **Category** picker in
   the collection's edit dialog, or by dragging a filed tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not
@@ -200,7 +200,7 @@ collection:
 - disappears from students' lists, Browse tiles, and search results —
   **except for its owners**, who keep full access to their own work;
 - stays visible to admins, instructors and staff, shown desaturated with an
-  eye-off marker on cards and in the Manage → Collections table (the page
+  eye-off marker on cards and in the Collections table (the page
   itself greys its controls — no separate marker);
 - keeps its place in the category structure and tile order — nothing moves.
 
@@ -255,7 +255,7 @@ picks up their changes so you can re-apply yours.
 
 If a collection shows an owners affordance (the **Owners** action in the
 card's cover overlay, the transfer icon beside the "Managed by" line on the
-collection page, or **Manage owners** in its Manage → Collections row
+collection page, or **Manage owners** in its Collections table row
 menu),
 you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
@@ -292,27 +292,30 @@ with the **Owner** filter's _No owner (orphaned)_ option and assign owners
 with **Owners**.
 :::
 
-## Manage → Collections (instructors, staff, admins)
+## Collections table
 
-The **Manage → Collections** table lists every collection you can see —
-both types together — in sortable columns with filter facets for name,
-type, visibility, owner, and category. The **Category** column links into
+Switch the **Collections** tab to its **Table** view to list every
+collection you can see — both types together — in sortable columns. The
+filter bar above (name, type, owner, visibility, and category) applies to
+every view. (This replaces the old **Manage → Collections** page.) The **Category** column links into
 Browse at that location; the **Programs** and **Groups** columns show each
 collection's restriction scope (including scope inherited from its filed
-category, shown dimmed), and **Created**/**Modified** show dates. The
-**Visibility** switch hides or shows a collection to students where you
-have that permission — hidden rows render greyscale, just like the Manage
-Images table. Clicking a row's thumbnail opens the collection itself.
+category, shown dimmed), and **Created**/**Updated** show how long ago, with
+the exact date on hover. Admins and instructors also get a **Visibility**
+switch that hides or shows a collection to students. Hidden rows, and rows
+filed under a hidden category, render greyscale, just like the Manage
+Images table. Clicking a row opens the collection itself.
 
 Use **Choose columns** to show or hide columns — the choice is remembered
 between sessions, as on the Manage Images table. Like that table, only a
-compact set shows by default (cover, name, type, category, groups,
-visibility, modified); opt the rest in as you need them. Rows offer actions
-through a single **actions** (⋮) menu where you have permission: **View**,
-**Edit**, and **Manage owners** — filing lives in the edit dialog's
-Category picker, and delete stays inside the edit dialog. Clicking a row
-you can edit opens the editor; clicking a read-only row opens the
-collection itself.
+compact set shows by default (cover, name, type, category, images, owner,
+updated, plus visibility for admins and instructors); opt the rest in as
+you need them. Rows offer actions through a single **actions** (⋮) menu
+where you have permission: **View**, **Edit**, and **Manage owners**.
+Categorizing lives in the edit dialog's Category picker, and delete stays
+inside the edit dialog. Tick rows to **Bulk Edit** them: admins and
+instructors can categorize or hide any selection; anyone can delete
+collections they could delete one by one.
 
 ## Share a link
 

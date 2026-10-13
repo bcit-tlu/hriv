@@ -252,10 +252,10 @@ describe('AppShell', () => {
       expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
     })
 
-    it('shows the Manage tab for staff when collections are enabled (#1554)', () => {
+    it('hides the Manage tab for staff now the collections table lives on Collections', () => {
       render(<AppShell {...makeProps({ canEditContent: false, canViewPeople: true })} />)
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: 'Manage' })).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
     })
 
     it('hides the Manage tab for staff when the collections flag is off', () => {
@@ -292,12 +292,8 @@ describe('AppShell', () => {
       expect(screen.getByRole('tab', { name: 'People' })).toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
-      // Staff get Manage only for the Collections table (#1554) — every
-      // other item stays admin/instructor-gated.
-      fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
-      expect(screen.getByRole('menuitem', { name: 'Collections' })).toBeInTheDocument()
-      expect(screen.queryByRole('menuitem', { name: 'Categories' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('menuitem', { name: 'Programs' })).not.toBeInTheDocument()
+      // Every Manage item is admin/instructor-gated, so staff get no Manage tab.
+      expect(screen.queryByRole('tab', { name: 'Manage' })).not.toBeInTheDocument()
       expect(screen.queryByRole('menuitem', { name: 'Groups' })).not.toBeInTheDocument()
       expect(screen.queryByRole('menuitem', { name: 'Announcement' })).not.toBeInTheDocument()
     })
@@ -621,9 +617,9 @@ describe('AppShell', () => {
     it('exposes every destination, with Manage flattened, in the menu', () => {
       render(<AppShell {...makeProps()} />)
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
-      // "Collections" appears twice: the primary unified page (#1629) and the
-      // Manage-section all-collections table.
-      expect(screen.getAllByRole('menuitem', { name: 'Collections' })).toHaveLength(2)
+      // "Collections" appears once: the unified page (#1629) also hosts the
+      // all-collections table.
+      expect(screen.getAllByRole('menuitem', { name: 'Collections' })).toHaveLength(1)
       for (const name of [
         'Home',
         'Images',

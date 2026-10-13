@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import CollectionsTable from '../src/components/CollectionsTable'
 import { buildCategoryPaths } from '../src/components/CategoryBreadcrumb'
 import { makeCategory, makeCollectionSummary } from './helpers/fixtures'
@@ -51,9 +51,10 @@ describe('CollectionsTable', () => {
     ])
     expect(screen.getByText('Skull comparison')).toBeInTheDocument()
     expect(screen.getByText('Pelvis set')).toBeInTheDocument()
-    // Category breadcrumb without the root, 'Unfiled' when categoryId is null.
-    expect(screen.getByText('Italian › Gothic')).toBeInTheDocument()
-    expect(screen.getByText('Unfiled')).toBeInTheDocument()
+    // Category breadcrumb segments as links, '—' when categoryId is null.
+    expect(screen.getByRole('button', { name: 'Italian' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gothic' })).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 
   it('opens the collection from the name link and from row click', () => {
@@ -232,5 +233,213 @@ describe('CollectionsTable', () => {
       'collections-table-row-5',
       'collections-table-row-9',
     ])
+  })
+
+  describe('merged Manage features', () => {
+    const CATS = buildCategoryPaths([
+      makeCategory({ id: 10, label: 'Anatomy', status: 'hidden' }),
+      makeCategory({ id: 11, label: 'Histology' }),
+    ])
+    const ADMIN: User = { ...USER, id: 1, role: 'admin' }
+    const STAFF: User = { ...USER, id: 4, role: 'staff' }
+    const perms = (over: Partial<CollectionSummary['permissions']> = {}) => ({
+      canEdit: false,
+      canDelete: false,
+      canChangeScope: false,
+      canTransfer: false,
+      canHide: false,
+      ...over,
+    })
+
+    it('dims own-hidden rows with the eye-off marker and category-hidden rows without it', () => {
+      render(
+        <CollectionsTable
+          collections={[
+            row({ id: 1, name: 'Own hidden', hidden: true, categoryId: 11 }),
+            row({ id: 2, name: 'Cat hidden', categoryId: 10 }),
+            row({ id: 3, name: 'Plain', categoryId: 11 }),
+          ]}
+          categoryPaths={CATS}
+          currentUser={ADMIN}
+          onOpenCollection={vi.fn()}
+          columns={['name', 'type', 'category']}
+        />,
+      )
+      const own = screen.getByTestId('collections-table-row-1')
+      expect(own.querySelector('td[data-dimmed]')).not.toBeNull()
+      expect(within(own).getByRole('img', { name: 'Visibility: Hidden' })).toBeInTheDocument()
+      const cat = screen.getByTestId('collections-table-row-2')
+      expect(cat.querySelector('td[data-dimmed]')).not.toBeNull()
+      expect(within(cat).queryByRole('img', { name: 'Visibility: Hidden' })).toBeNull()
+      expect(
+        screen.getByTestId('collections-table-row-3').querySelector('td[data-dimmed]'),
+      ).toBeNull()
+    })
+
+    it('toggles hidden through the Visibility switch, locked by category or canHide', async () => {
+      const onToggleHidden = vi.fn().mockResolvedValue(undefined)
+      render(
+        <CollectionsTable
+          collections={[
+            row({ id: 1, name: 'Hideable', categoryId: 11, permissions: perms({ canHide: true }) }),
+            row({
+              id: 2,
+              name: 'Cat hidden',
+              categoryId: 10,
+              permissions: perms({ canHide: true }),
+            }),
+            row({ id: 3, name: 'No perm', categoryId: 11, permissions: perms() }),
+          ]}
+          categoryPaths={CATS}
+          currentUser={ADMIN}
+          onOpenCollection={vi.fn()}
+          onToggleHidden={onToggleHidden}
+          columns={['name', 'visibility']}
+        />,
+      )
+      expect(screen.getByRole('switch', { name: 'Visibility for Cat hidden' })).toBeDisabled()
+      expect(screen.getByRole('switch', { name: 'Visibility for No perm' })).toBeDisabled()
+      fireEvent.click(screen.getByRole('switch', { name: 'Visibility for Hideable' }))
+      await waitFor(() =>
+        expect(onToggleHidden).toHaveBeenCalledWith(expect.objectContaining({ id: 1 })),
+      )
+    })
+
+    it('reports a failed toggle through onError', async () => {
+      const onError = vi.fn()
+      render(
+        <CollectionsTable
+          collections={[row({ id: 1, name: 'Hideable', permissions: perms({ canHide: true }) })]}
+          categoryPaths={CATS}
+          currentUser={ADMIN}
+          onOpenCollection={vi.fn()}
+          onToggleHidden={vi.fn().mockRejectedValue(new Error('nope'))}
+          onError={onError}
+          columns={['name', 'visibility']}
+        />,
+      )
+      fireEvent.click(screen.getByRole('switch', { name: 'Visibility for Hideable' }))
+      await waitFor(() => expect(onError).toHaveBeenCalled())
+    })
+
+    it('gates row-menu Edit and Manage owners on permissions; row click opens', () => {
+      const onEdit = vi.fn()
+      const onManageOwners = vi.fn()
+      const onOpen = vi.fn()
+      const { rerender } = render(
+        <CollectionsTable
+          collections={[
+            row({ id: 1, name: 'Owned', permissions: perms({ canEdit: true, canTransfer: true }) }),
+            row({ id: 2, name: 'Read only', permissions: perms() }),
+          ]}
+          categoryPaths={CATS}
+          currentUser={STAFF}
+          onOpenCollection={onOpen}
+          onEdit={onEdit}
+          onManageOwners={onManageOwners}
+          columns={['name']}
+        />,
+      )
+      fireEvent.click(screen.getByTestId('collections-table-row-2'))
+      expect(onOpen).toHaveBeenCalledWith(2)
+      expect(onEdit).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Read only' }))
+      expect(screen.getByRole('menuitem', { name: 'View' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull()
+      expect(screen.queryByRole('menuitem', { name: 'Manage owners' })).toBeNull()
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Owned' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Manage owners' }))
+      expect(onManageOwners).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
+
+      // Curators can categorize any row, so Edit shows even without canEdit.
+      rerender(
+        <CollectionsTable
+          collections={[row({ id: 2, name: 'Read only', permissions: perms() })]}
+          categoryPaths={CATS}
+          currentUser={USER}
+          onOpenCollection={onOpen}
+          onEdit={onEdit}
+          columns={['name']}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for Read only' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }))
+      expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }))
+    })
+
+    it('limits non-curator selection to deletable rows and selects the page', () => {
+      const onSelectedChange = vi.fn()
+      render(
+        <CollectionsTable
+          collections={[
+            row({ id: 1, name: 'Mine', permissions: perms({ canDelete: true }) }),
+            row({ id: 2, name: 'Theirs', permissions: perms() }),
+          ]}
+          categoryPaths={CATS}
+          currentUser={STAFF}
+          onOpenCollection={vi.fn()}
+          selected={new Set()}
+          onSelectedChange={onSelectedChange}
+          columns={['name']}
+        />,
+      )
+      expect(screen.getByRole('checkbox', { name: 'Select Mine' })).toBeEnabled()
+      expect(screen.getByRole('checkbox', { name: 'Select Theirs' })).toBeDisabled()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select all collections on this page' }))
+      expect(onSelectedChange).toHaveBeenCalledWith(new Set([1]))
+    })
+
+    it('shows no selection column when nothing is selectable or selection is unwired', () => {
+      const { rerender } = render(
+        <CollectionsTable
+          collections={[row({ id: 2, name: 'Theirs', permissions: perms() })]}
+          categoryPaths={CATS}
+          currentUser={STAFF}
+          onOpenCollection={vi.fn()}
+          onSelectedChange={vi.fn()}
+          columns={['name']}
+        />,
+      )
+      expect(screen.queryByRole('checkbox')).toBeNull()
+      rerender(
+        <CollectionsTable
+          collections={[row({ id: 2, name: 'Theirs', permissions: perms() })]}
+          categoryPaths={CATS}
+          currentUser={ADMIN}
+          onOpenCollection={vi.fn()}
+          columns={['name']}
+        />,
+      )
+      expect(screen.queryByRole('checkbox')).toBeNull()
+    })
+
+    it('renders own scope chips and inherited category chips', () => {
+      render(
+        <CollectionsTable
+          collections={[
+            row({
+              id: 1,
+              name: 'Scoped',
+              visibility: 'restricted',
+              programIds: [3],
+              categoryId: 12,
+            }),
+          ]}
+          categoryPaths={buildCategoryPaths([
+            makeCategory({ id: 12, label: 'Rad', programIds: [5] }),
+          ])}
+          currentUser={ADMIN}
+          onOpenCollection={vi.fn()}
+          columns={['name', 'programs']}
+        />,
+      )
+      expect(screen.getAllByTestId('program-chip').map((c) => c.textContent)).toEqual([
+        'Program 3',
+        'Program 5',
+      ])
+    })
   })
 })

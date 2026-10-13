@@ -62,15 +62,16 @@ label?.closest('button')?.click()
   metadata area, no Delete on the card — **Delete Collection** lives inside
   the edit dialog (click to arm, click to confirm).
 
-### Manage → Collections
+### Collections table (formerly Manage → Collections)
 
-- Non-students only (`?page=manage-collections`; staff see it as their only
-  Manage item). All-collections table mirroring Manage → Images: filter
-  facets (Name / Type / Visibility / Owner / Category tree), sortable
-  columns, pagination, Category column = Browse breadcrumb links.
-- Row click: editable rows open the edit dialog; read-only rows open the
-  collection detail. Actions: Edit (`canEdit`), Owners (`canTransfer`),
-  Move (admin/instructor); Delete inside the edit dialog.
+- Lives in the Collections tab's **Table** view for every role; the Manage
+  menu has no Collections item and staff get no Manage tab.
+  `?page=manage-collections` opens Collections on Table. Shared filter bar
+  (Name / Type / Owner / Visibility / Category tree), sortable columns,
+  pagination, Category column = Browse breadcrumb links.
+- Row click opens the collection detail. Row menu: View, Edit (`canEdit` or
+  admin/instructor), Manage owners (`canTransfer`); Delete inside the edit
+  dialog. Curators get the Visibility switch and bulk-edit selection.
 
 ### Images Tab
 

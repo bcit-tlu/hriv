@@ -100,7 +100,7 @@ export const Basic: Story = {
     ).toBeInTheDocument()
     await userEvent.click(await body.findByRole('combobox'))
     await expect(
-      await body.findByRole('option', { name: /None\. Access in Manage > Collections\./ }),
+      await body.findByRole('option', { name: /None\. Access in Collections\./ }),
     ).toBeInTheDocument()
   },
 }
@@ -113,7 +113,7 @@ export const AtRoot: Story = {
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body)
     const picker = await body.findByRole('combobox')
-    await expect(picker).toHaveTextContent(/None\. Access in Manage > Collections\./)
+    await expect(picker).toHaveTextContent(/None\. Access in Collections\./)
   },
 }
 

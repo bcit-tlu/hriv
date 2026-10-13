@@ -27,9 +27,8 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | Home                                               | ✓       | ✓     | ✓          | ✓     |
 | Collections tab (Sequence / Synchronized sub-menu) | ✓       | ✓     | ✓          | ✓     |
 | Images tab                                         | —       | —     | ✓          | ✓     |
-| Manage dropdown                                    | —       | ✓     | ✓          | ✓     |
+| Manage dropdown                                    | —       | —     | ✓          | ✓     |
 | Manage → Categories                                | —       | —     | ✓          | ✓     |
-| Manage → Collections                               | —       | ✓     | ✓          | ✓     |
 | Manage → Programs                                  | —       | —     | —          | ✓     |
 | Manage → Groups                                    | —       | —     | ✓          | ✓     |
 | Manage → Announcement                              | —       | —     | ✓          | ✓     |
@@ -46,12 +45,11 @@ Three capability flags in `AuthContext.tsx` drive all gating:
   defaults to Sequence. On a collections page the tab stays highlighted and
   the matching menu item renders `selected`. The compact drawer shows both
   items flattened in.
-- **Given** a staff user, **Then** the Manage dropdown renders with only the
-  **Collections** item (Categories/Groups/Announcement stay
-  edit-content-only); **Given** a student, **Then** no Manage surface at all.
+- **Given** a staff user or a student, **Then** no Manage surface renders
+  (every Manage item is edit-content-only; the all-collections table lives
+  in the Collections tab's Table view).
 - **Given** the deployment has `COLLECTIONS_ENABLED=false` (`GET /api/features`
-  → `collections: false`), **Then** the Collections tab/drawer entry and the
-  Manage → Collections item are absent
+  → `collections: false`), **Then** the Collections tab/drawer entry is absent
   for every role and `?collection=` / `?page=collections` /
   `?page=manage-collections` open Home instead
   (see [collections.md](collections.md)).
@@ -220,7 +218,7 @@ images> / Empty` format used on category tiles.
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
-### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `ManageCollectionsPage.test.tsx`, `App.test.tsx`)
+### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `CollectionsTable.test.tsx`, `App.test.tsx`)
 
 See [collections.md](collections.md#frontend-behaviour) for the full contract.
 All roles, including students, can list, open, and create collections;
@@ -337,19 +335,19 @@ returned by the API (UX only — the backend re-checks).
   **Owners** action appears in its card overlay, a pencil beside the detail
   header's owner name, and its manage-table row; **Given**
   it is false, **Then** none of the affordances render.
-- **Given** a non-student opens **Manage → Collections**
-  (`?page=manage-collections`), **Then** a table of every API-visible
-  collection renders (cover, ID, name, type, scope pill, owners, image
-  count, programs, groups, category breadcrumb, visibility switch,
-  created, modified, actions) with stored filter facets, sortable columns,
-  per-user persisted column visibility and ordering via **Choose columns** —
-  the default
-  set mirrors Manage Images' lean subset (cover, name, type, category,
-  groups, visibility, modified) so the table sizes to content and wraps
-  rather than scrolling — and
-  pagination (#1554, #1567); **Given** a student deep-links the
-  page, **Then** the table renders nothing (role gate) and telemetry reports
-  browse.
+- **Given** any user opens the Collections tab's **Table** view, **Then** a
+  table of every API-visible collection renders (cover, ID, name, type,
+  scope pill, description, category breadcrumb, image count, owner with a
+  "You" chip, programs, groups, visibility switch, created, updated,
+  actions) filtered by the shared filter bar, with sortable columns,
+  per-user persisted column visibility and ordering via **Choose columns**
+  — default cover, name, type, category, images, owner, updated, plus
+  visibility for admins/instructors; students are never offered the
+  visibility column — and pagination (#1554, #1567). Hidden and
+  category-hidden rows dim; row click opens the collection; Edit and
+  Manage owners sit in the row menu. **Given** an old
+  `?page=manage-collections` link, **Then** the Collections page opens on
+  Table and the URL becomes `?page=collections`.
 - **Given** a curatorially hidden collection row, **Then** its cells render
   dimmed/greyscale like an inactive image row on Manage Images (#1567); the
   **Visibility** switch (shown where `canHide`) PATCHes `hidden` and the
@@ -432,7 +430,7 @@ returned by the API (UX only — the backend re-checks).
   (#1566).
 - **Given** a curatorially hidden collection, **Then** non-students see it
   everywhere with the desaturated card treatment and a `VisibilityOff`
-  marker (card name, Manage → Collections Name cell); students see it only if they own it — for everyone else it is
+  marker (card name, Collections table Name cell); students see it only if they own it — for everyone else it is
   absent from lists/Browse/search and `GET` answers **404**.
 
 #### Collections in the Browse tile grid (#1529)
@@ -486,7 +484,7 @@ returned by the API (UX only — the backend re-checks).
   modes — pinning does not reload it — and unpinning leaves the drawer open
   (the pin is not
   a close control). The drawer never renders on the Manage,
-  Manage → Collections, People, Admin, or Guide pages and has no drag,
+  People, Admin, or Guide pages and has no drag,
   reorder, or drop targets.
 - **Given** an admin or instructor, **Then** collection tiles offer **Move**
   (`MoveCollectionDialog` or drag onto a category tile's move zone) and the
@@ -522,7 +520,7 @@ returned by the API (UX only — the backend re-checks).
   includes private selections. Public collections and an unfiled destination
   show no warning.
 - **Given** a collection filing picker, **Then** its null option reads
-  **None. Access in Manage > Collections.** in Move, Edit, and Bulk Edit;
+  **None. Access in Collections.** in Move, Edit, and Bulk Edit;
   the shared picker default remains **None (root level)**. The Move dialog says:
   “File “<name>” into a Browse category. Collections that aren't filed don't
   appear on Browse.”

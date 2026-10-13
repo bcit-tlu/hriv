@@ -21,7 +21,7 @@ import * as CategoryBreadcrumbStories from './CategoryBreadcrumb.stories'
 
 ## When to use
 
-`ManagePage` renders it in the Category column for images; `ManageCollectionsPage` renders the same
+`ManagePage` renders it in the Category column for images; `CollectionsTable` renders the same
 breadcrumb for each collection's filed category (#1554 — extracted from `ManagePage` so both tables
 share the markup). Pass the flat category tree through `buildCategoryPaths` once per tree change and
 hand the resulting map to each row.

@@ -45,8 +45,8 @@ one child issue at a time on `main`.
   is `false`, `getNavigationItems` drops the Collections item
   (`requiresCollections`), `AppShell` omits the desktop tab and drawer entry,
   `useCollectionsData` never fetches, and `App.tsx` falls back from
-  `?collection={id}` / `?page=collections` / `?page=manage-collections` to
-  browse (`effectivePage` reports
+  `?collection={id}` / `?page=collections` / the retired
+  `?page=manage-collections` to browse (`effectivePage` reports
   `browse` to telemetry). When `true`, behaviour is exactly as described in
   the sections below.
 - **Deployment.** Helm value `collections.enabled` (default `false`) renders
@@ -149,7 +149,7 @@ measured header and footer heights, so a wrapped header or multi-line admin
 footer shrinks the row on short viewports rather than hiding the sheet's
 controls above the viewport. Compact cards are
 160–180 px wide and scroll horizontally below about
-1424 px. The drawer is hidden on the Manage, Manage → Collections, People,
+1424 px. The drawer is hidden on the Manage, People,
 Admin, and Guide pages, while the feed is loading, and when no owned collection
 is visible. It is not a Browse tile: it has no drag, reorder, or drop targets.
 The full-text trigger remains visible at every width. The regular image viewer
@@ -181,7 +181,7 @@ reorder clients get a 409 and the tree ETag invalidates. `visibility` still
 gates _who sees_ a filed tile; placement only gates _where_ it sits.
 
 To feature a collection at the top of Browse, curators can file it into a
-root-level category such as **Featured**. Choosing **None. Access in Manage > Collections.** unfiles
+root-level category such as **Featured**. Choosing **None. Access in Collections.** unfiles
 it. Filing a private collection shows a warning that its Browse tile is
 visible only to its owners and to staff, instructors and admins — not to
 other students.
@@ -648,7 +648,6 @@ itself is intentionally not persisted; the page always loads on Cards),
 `CollectionsTable.tsx`, `CollectionEditDialog.tsx`,
 `collectionsGraph/` (`buildModel.ts`, `simulation.ts`, `renderer.ts`,
 `CollectionsGraph.tsx` — the Graph view, #1629),
-`components/ManageCollectionsPage.tsx`,
 plus `navigation.ts`, `AppShell.tsx`,
 `useShareableImageState.ts`, `useNavigationHistory.ts` and `App.tsx`.
 Everything in this section is conditional on the deployment flag
@@ -670,9 +669,11 @@ re-invokes `onTabChange('collections')`, which clears the open detail,
 bumps the list's refresh token and pushes a fresh nav state — the same
 re-click contract as the Home tab. `App` only mounts
 `useCollectionsData` while a collections page is active, so browsing images
-never hits `/api/collections`. Non-students additionally get
-**Manage → Collections** (`?page=manage-collections`) — see
-[Manage Collections table](#manage-collections-table-1554) below.
+never hits `/api/collections`. The Table view is the single collections
+table — the former **Manage → Collections** page merged into it; see
+[Collections table](#collections-table-1554) below. Old
+`?page=manage-collections` links open the Collections page on Table (the URL
+is rewritten to `?page=collections`).
 
 **Views (#1629).** A right-aligned `ToggleButtonGroup` next to **New
 collection** switches between three views. The view itself is
@@ -750,9 +751,9 @@ graph, the dialog passes `fitOnRebuild` so an order change refits
 (animated, 400ms): the rebuilt model keeps carried positions under a kept
 transform, and without the refit the hub can drift out of frame.
 
-**Filters.** The shared `FilterBar` (the `ManageCollectionsPage`/`ManagePage`
-pattern) sits above all three views and carries four popover facets plus a
-Clear-all action and deletable summary chips:
+**Filters.** The shared `FilterBar` (the `ManagePage` pattern) sits above
+all three views and carries five popover facets plus a Clear-all action and
+deletable summary chips:
 
 - **Name** — a `FilterTextPanel` bound to the client-side search text
   (never persisted): it narrows Cards/Table rows by name, description and
@@ -770,11 +771,16 @@ Clear-all action and deletable summary chips:
   client-side filter (never persisted) that narrows the shown rows; in
   the graph it joins the search dimming (`filterActive`), so
   visibility-only filtering also dims non-matches.
+- **Category** — a `CategoryFilterTreePanel` (multi-select, never
+  persisted), ancestor-aware like the Images table: selecting a parent
+  matches collections filed anywhere beneath it, and unfiled collections
+  never match. Like Visibility it narrows Cards/Table rows and dims
+  non-matches in the graph.
 
 **Clear all** appears whenever any facet is active and resets the
-server-side filters to `DEFAULT_COLLECTION_FILTERS` plus the search text
-and Visibility set. Summary chips (`Type: …`, `Owner: …`, `Name: …`,
-`Visibility: …`) delete a single facet. The **Choose columns** action
+server-side filters to `DEFAULT_COLLECTION_FILTERS` plus the search text,
+Visibility and Category sets. Summary chips (`Type: …`, `Owner: …`,
+`Name: …`, `Visibility: …`, `Category: …`) delete a single facet. The **Choose columns** action
 renders only in Table view.
 
 **List.** `GET /api/collections?type=` rendered as a fixed-width flex-wrap
@@ -965,20 +971,20 @@ refreshing `?collection={id}&item={image_id}` re-opens the sequence on that
 image (falling back to the first image when the id is not a visible member).
 `?item=` without `?collection=` is ignored.
 
-### Manage Collections table (#1554)
+### Collections table (#1554)
 
-**Where.** `components/ManageCollectionsPage.tsx`, mounted by `App` for
-`page === 'manage-collections'`; the **Manage → Collections** sub-menu item
-gates on `canEditContent || canViewPeople` (admins, instructors, staff —
-students never see Manage). Everything below the nav item shares the flag
-gate too.
+**Where.** `components/CollectionsTable.tsx`, the Collections page's Table
+view. The former `ManageCollectionsPage` (**Manage → Collections**,
+`?page=manage-collections`) merged into it: the Manage menu item is gone
+(staff therefore no longer get a Manage tab), old links open the
+Collections page on Table, and telemetry no longer reports a
+`manage-collections` page. The table is available to every role; row
+affordances stay gated on `collection.permissions`, and students are never
+offered the Visibility column.
 
-**Table.** `GET /api/collections` with no API filters — the server already
-scopes the list per role, and every facet is client-side, mirroring
-`ManagePage`'s idiom: stored filter facets in a `FilterBar` (Name text,
-Type, Visibility, Owner incl. _No owner (orphaned)_, Category tree panel —
-persisted under the `manage-collections` table-preferences key), sortable
-columns (`TableSortLabel`), client-side `TablePagination` with the shared
+**Table.** Rows are the page's list (`useCollectionsData`, server-scoped per
+role) after the shared `FilterBar` facets above; sortable columns
+(`TableSortLabel`), client-side `TablePagination` with the shared
 rows-per-page preference, and a Category column rendering
 `CategoryBreadcrumb` (extracted from `ManagePage`; segments link into
 Browse, hidden-subtree rows get the eye icon). Columns (#1567): Cover
@@ -991,13 +997,14 @@ the Restricted label, #1567), Owners
 (`describeCollectionOwners`), image count, Programs and Groups (own scope
 solid plus the filed category's scope at inherited opacity), Category,
 **Visibility** (a per-row show/hide `Switch` gated on `permissions.canHide`,
-same as Manage Images' Visibility column), Created, Modified, Actions.
-The default-visible set mirrors ManagePage's lean six — Cover, Name, Type,
-Category, Groups, Visibility, Modified — so the table sizes to content and
-wraps instead of overflowing into horizontal scroll; the rest are opt-in.
-Column visibility is user-persisted through **Choose columns**
-(`ColumnVisibilityDialog` + `useTableColumnPreferences` under the
-`manage-collections` columns key, same mechanism as `manage-images`).
+same as Manage Images' Visibility column), Created, Updated, Actions.
+Owner keeps the "You" chip, and Created/Updated show relative time with the
+exact timestamp on hover. The default-visible set is Cover, Name, Type,
+Category, Images, Owner, Updated — plus Visibility for admins/instructors;
+the rest are opt-in. Column visibility is user-persisted through
+**Choose columns** (`ColumnVisibilityDialog` + `useTableColumnPreferences`
+under the `collections` columns key; choices saved under the old
+`manage-collections` key are not migrated).
 Rows hidden via the switch render greyscale/dimmed — `data-dimmed` cells,
 grayscale thumbnail, inactive-color chips — matching `ManagePage`'s
 inactive-image convention. The same treatment (plus a disabled
@@ -1012,11 +1019,9 @@ category-hidden or the chosen target category is hidden — the same
 and a visibility toggle pending when the switch locks is dropped from the
 save so only the refile applies.
 
-**Actions.** Row click opens the edit dialog for `permissions.canEdit`
-rows — fetching the full record first, since summaries omit the restricted
-scope — and calls `onOpenCollection` (the collection detail view) for
-read-only rows; the cover thumbnail always navigates to the collection
-view (#1567, matching Manage Images). A single kebab **actions** button
+**Actions.** Row click opens the collection (same as Cards), for every
+row. Edit lives in the row menu and fetches the full record first, since
+summaries omit the restricted scope. A single kebab **actions** button
 opens a contextual menu (#1567): **View** (always), **Edit**
 (`canEdit` or curatorial filing), **Manage owners** (`canTransfer`,
 `CollectionOwnersDialog`). Rows carry no **Move** action —
@@ -1025,9 +1030,8 @@ with the Browse card's Move overlay and tile drag as the other curatorial
 paths. Staff therefore get Edit only where the API
 grants it and never see Owners/Delete affordances they cannot use;
 Delete stays inside the edit dialog, same convention as `EditImageModal`.
-Owners/transfer saves fetch a fresh record for `version` before PUT/POST,
-and the page refetches after every mutation or whenever the `categories`
-prop changes — the signal that a Move (or its snackbar undo) landed.
+Edit, owners/transfer and the Visibility switch go through the page's
+`useCollectionsData` mutations, which keep rows and OCC versions fresh.
 
 **Bulk edit (#1578).** A selection checkbox column leads each row —
 enabled for curators (admin/instructor) on every row, and for
@@ -1040,9 +1044,10 @@ root) and a **Visible to students** switch, both curator-gated on the
 frontend and enshrined server-side by the admin/instructor dependency on
 `PATCH /collections/bulk`; plus a two-step **Delete selected** arm that
 requires `canDelete` on every selected row. Saving calls
-`PATCH /api/collections/bulk`, the delete calls `DELETE …/bulk`; both
-refetch the table, clear the selection, and a refile also fires
-`onCategoriesChanged` so the Browse tree re-renders.
+`PATCH /api/collections/bulk`, the delete calls `DELETE …/bulk` (both
+wired in `App` as `onBulkUpdate`/`onBulkDelete`); both reload the list,
+clear the selection and refresh the Browse tree. The **Bulk Edit** button
+only shows in Table view, and the selection drops ids that leave the list.
 
 ### Browse tile integration (#1529)
 
@@ -1471,7 +1476,7 @@ opens `AddToCollectionDialog`). The dialog renders whenever
 
 The write API's owner endpoints — `PUT /api/collections/{id}/owners` and
 `POST /api/collections/{id}/transfer` (#1531) — are surfaced on the
-collections pages and the Manage → Collections table (#1554) — there is no
+collections pages and the Collections table (#1554) — there is no
 separate Admin section.
 
 **Entry points.** An **Owners** button appears on the detail header and on
@@ -1567,13 +1572,15 @@ the shared group-chip palette.
 - `frontend/tests/collectionUtils.test.ts` — wire → domain mapping, role
   gating for `restricted`, `?collection=` parsing.
 - `frontend/tests/navigation.test.ts`, `components/AppShell.test.tsx` —
-  unified Collections tab for every role (desktop + compact drawer),
-  Manage → Collections for non-students, and hidden for
+  unified Collections tab for every role (desktop + compact drawer), no
+  Manage → Collections item (or staff Manage tab), and hidden for
   every role when `collectionsEnabled` is false.
 - Unified page + manage table (#1554, #1629): `CollectionsPage.test.tsx`
   (Type chip group, shared filter bar + client-side search, view toggle,
   graph fetch/order/Shared-only wiring, edit-dialog delete flow),
-  `CollectionsTable.test.tsx` (sort, paging, You chip, row click),
+  `CollectionsTable.test.tsx` (sort, paging, You chip, row click, hidden /
+  category-hidden dimming, Visibility switch, row-menu gating, selection,
+  scope chips),
   `collectionsGraphModel.test.ts` (payload→model mapping, visible-id
   filtering, trimmed `collection_ids`, shared detection, `sharedOnly`
   hidden flags, order-3 isolated categories, deterministic positions),
@@ -1583,11 +1590,9 @@ the shared group-chip palette.
   non-propagating actions, no delete affordance),
   `CollectionEditDialog.test.tsx` (delete arm/confirm/failure, category
   picker save + hide link, #1566),
-  `ManageCollectionsPage.test.tsx` (unfiltered fetch, facets/sort, row
-  actions on `permissions`, no row Move, breadcrumb navigation,
-  categories-change refetch), `App.test.tsx` (`?type=` filter seed on
+  `App.test.tsx` (`?type=` filter seed on
   load and popstate, `type` emitted only when specific,
-  `manage-collections` gate).
+  `?page=manage-collections` → Collections Table redirect).
 - Feature flag: `backend/tests/test_database.py` (`COLLECTIONS_ENABLED`
   default / env parsing), `test_router_collections.py` (router-wide
   `require_collections_enabled` dependency, 404 when off), `test_main.py`

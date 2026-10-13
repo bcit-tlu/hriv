@@ -440,9 +440,6 @@ vi.mock('../src/components/AppShell', () => ({
       <button type="button" onClick={() => onTabChange('manage')}>
         Shell tab manage
       </button>
-      <button type="button" onClick={() => onTabChange('manage-collections')}>
-        Shell tab manage-collections
-      </button>
       <button type="button" onClick={() => onTabChange('browse')}>
         Shell tab browse
       </button>
@@ -698,9 +695,6 @@ vi.mock('../src/useCollectionsData', async () => {
   }
 })
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
-vi.mock('../src/components/ManageCollectionsPage', () => ({
-  default: () => <div data-testid="manage-collections-page" />,
-}))
 const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
@@ -1801,38 +1795,13 @@ describe('App shell interactions', () => {
     expect(screen.queryByTestId('people-page')).not.toBeInTheDocument()
   })
 
-  it('renders ManageCollectionsPage for staff (canViewPeople)', async () => {
-    authState = {
-      ...authState,
-      currentUser: { ...mockCurrentUser, role: 'staff' },
-      canEditContent: false,
-      canManageUsers: false,
-      canViewPeople: true,
-    }
+  it('redirects ?page=manage-collections to the Collections table view', async () => {
+    window.history.replaceState(null, '', '/?page=manage-collections')
     render(<App />)
-    await waitFor(() =>
-      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Shell tab manage-collections' }))
-    expect(await screen.findByTestId('manage-collections-page')).toBeInTheDocument()
-  })
-
-  it('does not render ManageCollectionsPage for students', async () => {
-    authState = {
-      ...authState,
-      currentUser: { ...mockCurrentUser, role: 'student' },
-      canEditContent: false,
-      canManageUsers: false,
-      canViewPeople: false,
-    }
-    render(<App />)
-    await waitFor(() =>
-      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Shell tab manage-collections' }))
-    expect(screen.queryByTestId('manage-collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument()
+    expect(collectionsPageProps.current?.initialView).toBe('table')
+    expect(new URLSearchParams(window.location.search).get('page')).toBe('collections')
+    window.history.replaceState(null, '', '/')
   })
 
   it('renders PeoplePage editable for admins', () => {
@@ -2784,9 +2753,9 @@ describe('App collections feature flag (COLLECTIONS_ENABLED)', () => {
     apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
     window.history.replaceState(null, '', '/?page=manage-collections')
     render(<App />)
-    expect(screen.queryByTestId('manage-collections-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
-    expect(screen.queryByTestId('manage-collections-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
   })
 
   it('still honours ?collection={id} once the flag resolves on', async () => {

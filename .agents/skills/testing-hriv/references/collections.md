@@ -36,10 +36,11 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
    `type` → sequence), `?collection={id}`,
    `?collection={id}&item={image_id}` all restore on load and on
    back/forward; a Browse-opened collection also carries `?cat=`/`?item=`
-   for its scope. **Manage → Collections** (`?page=manage-collections`) is
-   the non-student table view — mirrors Manage → Images; rows offer Edit
-   (where `canEdit`), Owners (where `canTransfer`), Move (admin/instructor);
-   staff see all rows but no Move/Owners/Delete.
+   for its scope. The old **Manage → Collections** page merged into the
+   Collections tab's **Table** view (`?page=manage-collections` now opens
+   it): row click opens the collection; the row menu offers View, Edit
+   (`canEdit` or admin/instructor), Manage owners (`canTransfer`); curators
+   get a Visibility switch and bulk-edit selection.
 6. **Edit/Delete:** pencil on the card's metadata area, Edit button on the
    detail header, gated by `permissions.can_edit`. Delete lives inside the
    edit dialog only (#1554 — **Delete Collection** at the bottom, click to
@@ -75,8 +76,8 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
 ### Filters
 
 - The unified Collections page uses the shared **FilterBar** popover pattern
-  (same as Manage → Collections): popover buttons **Name**, **Type**,
-  **Owner**, **Visibility** above all three views (Cards/Table/Graph), plus
+  : popover buttons **Name**, **Type**,
+  **Owner**, **Visibility**, **Category** above all three views (Cards/Table/Graph), plus
   deletable summary chips and a **Clear all** action while any facet is
   active.
 - **Name** popover = client-side text filter (name/description/owner); in
@@ -132,11 +133,14 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   `[data-testid="collection-card-action-area"]`; cover overlay chip
   `[data-testid="collection-type-chip"]`.
 - Filter bar: popover buttons by accessible name (`Name`, `Type`, `Owner`,
-  `Visibility`); active-facet summary chips `[data-testid="filter-chip"]`;
-  **Clear all** button while any facet is active.
-- Manage table: `[data-testid="manage-collections-table"]`, rows
-  `manage-collection-row-{id}`; filter facets labelled Name / Type /
-  Visibility / Owner / Category.
+  `Visibility`, `Category`; Table headers share some names, so pick the
+  `aria-haspopup="menu"` button); active-facet summary chips
+  `[data-testid="filter-chip"]`; **Clear all** button while any facet is
+  active.
+- Table view: `[data-testid="collections-table"]`, rows
+  `collections-table-row-{id}` (`data-hidden="true"` on own- or
+  category-hidden rows); row menu button `Actions for {name}`; switch
+  `Visibility for {name}`; checkboxes `Select {name}`.
 - Detail: `[data-testid="collection-detail"]`, visibility chip
   `[data-testid="collection-visibility-chip"]`, restricted scope chips
   `detail-program-chip` / `detail-group-chip`.

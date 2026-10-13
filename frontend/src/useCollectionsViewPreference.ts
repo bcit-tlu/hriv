@@ -23,25 +23,31 @@ function isCollectionsGraphOrder(value: unknown): value is CollectionsGraphOrder
   return value === 1 || value === 2 || value === 3
 }
 
-function loadStoredPrefs(storageKey: string, enablePersistence: boolean): CollectionsViewPrefs {
-  if (!enablePersistence) return { ...DEFAULT_COLLECTIONS_VIEW_PREFS }
+function loadStoredPrefs(
+  storageKey: string,
+  enablePersistence: boolean,
+  initialView: CollectionsView,
+): CollectionsViewPrefs {
+  const defaults = { ...DEFAULT_COLLECTIONS_VIEW_PREFS, view: initialView }
+  if (!enablePersistence) return defaults
   try {
     const stored = localStorage.getItem(storageKey)
-    if (stored === null) return { ...DEFAULT_COLLECTIONS_VIEW_PREFS }
+    if (stored === null) return defaults
     const parsed: unknown = JSON.parse(stored)
     if (parsed == null || typeof parsed !== 'object') {
-      return { ...DEFAULT_COLLECTIONS_VIEW_PREFS }
+      return defaults
     }
     const record = parsed as Record<string, unknown>
     return {
-      // The view is intentionally not restored — the page always opens on
-      // Cards while Table/Graph are being evaluated (#1629 follow-up).
-      view: 'cards',
+      // The view is intentionally not restored — the page opens on Cards
+      // (or the caller's `initialView`) while Table/Graph are being
+      // evaluated (#1629 follow-up).
+      view: initialView,
       order: isCollectionsGraphOrder(record.order) ? record.order : 1,
       sharedOnly: typeof record.sharedOnly === 'boolean' ? record.sharedOnly : false,
     }
   } catch {
-    return { ...DEFAULT_COLLECTIONS_VIEW_PREFS }
+    return defaults
   }
 }
 
@@ -64,21 +70,26 @@ function storePrefs(storageKey: string, prefs: CollectionsViewPrefs): void {
  * `enablePersistence` lets tests/stories opt out of localStorage. The view
  * is intentionally not persisted while Table/Graph are being evaluated —
  * the page always loads on Cards (#1629 follow-up); in-session view state
- * still works because the page remounts on tab switches.
+ * still works because the page remounts on tab switches. `initialView`
+ * overrides the Cards default for one mount (old Manage → Collections links
+ * land on Table).
  */
 export function useCollectionsViewPreference(
   userId: number | string | null,
-  { enablePersistence = true }: { enablePersistence?: boolean } = {},
+  {
+    enablePersistence = true,
+    initialView = 'cards',
+  }: { enablePersistence?: boolean; initialView?: CollectionsView } = {},
 ): readonly [CollectionsViewPrefs, Dispatch<SetStateAction<CollectionsViewPrefs>>] {
   const storageKey = `hrivpref:collections-view:user:${userId ?? 'anonymous'}`
   const [state, setState] = useState(() => ({
     key: storageKey,
-    prefs: loadStoredPrefs(storageKey, enablePersistence),
+    prefs: loadStoredPrefs(storageKey, enablePersistence, initialView),
   }))
   const currentState =
     state.key === storageKey
       ? state
-      : { key: storageKey, prefs: loadStoredPrefs(storageKey, enablePersistence) }
+      : { key: storageKey, prefs: loadStoredPrefs(storageKey, enablePersistence, initialView) }
 
   if (state.key !== storageKey) {
     setState(currentState)
@@ -96,7 +107,7 @@ export function useCollectionsViewPreference(
       const previousPrefs =
         previousState.key === storageKey
           ? previousState.prefs
-          : loadStoredPrefs(storageKey, enablePersistence)
+          : loadStoredPrefs(storageKey, enablePersistence, initialView)
       const prefs =
         typeof nextPrefsOrUpdater === 'function'
           ? nextPrefsOrUpdater(previousPrefs)
@@ -109,7 +120,7 @@ export function useCollectionsViewPreference(
         storePrefs(storageKey, prefs)
       }
     },
-    [enablePersistence, storageKey],
+    [enablePersistence, initialView, storageKey],
   )
 
   return [currentPrefs, setPrefs] as const
