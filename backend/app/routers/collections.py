@@ -80,6 +80,9 @@ from ..schemas import (
     CollectionBulkDelete,
     CollectionBulkUpdate,
     CollectionCreate,
+    CollectionGraphImageOut,
+    CollectionGraphNodeOut,
+    CollectionGraphOut,
     CollectionImagesUpdate,
     CollectionMove,
     CollectionOut,
@@ -88,6 +91,7 @@ from ..schemas import (
     CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
+    CollectionsGraphOut,
 )
 from ..tile_order import bump_scopes, collection_scope_keys
 
@@ -167,6 +171,75 @@ async def list_collections(
     return [collection_summary_out(ctx, c) for c in visible]
 
 
+# ── Graph endpoints (#1628) ───────────────────────────────────────────────
+# ``/graph`` is registered before ``/{collection_id}`` so the literal segment
+# is never parsed as an int path parameter (which would 422 every request).
+
+
+def _graph_node(ctx: _ViewerContext, collection: Collection) -> CollectionGraphNodeOut:
+    """Node payload for one collection; ``image_count`` counts only members
+    the caller may see (visible-only, like ``collection_summary_out``)."""
+    return CollectionGraphNodeOut(
+        id=collection.id,
+        name=collection.name,
+        type=collection.type,
+        image_count=len(ctx.visible_images(collection)),
+        hidden=bool(collection.hidden),
+        category_id=collection.category_id,
+    )
+
+
+@router.get("/graph", response_model=CollectionsGraphOut)
+async def collections_graph(
+    user: Annotated[User, Depends(get_current_user)],
+    order: Annotated[int, Query(ge=1, le=2)] = 1,
+    db: AsyncSession = Depends(get_db),
+):
+    """Structural graph for the Collections page.
+
+    Nodes are exactly the collections an unfiltered ``GET /collections``
+    would return. At ``order=2`` each caller-visible member image is a node
+    whose ``collection_ids`` list every visible collection containing it —
+    edges are implied. ``image_links`` / ``CollectionImage.image`` are
+    selectin-loaded, so member loading adds two queries total, not per
+    collection.
+    """
+    collections = (
+        (await db.execute(
+            select(Collection).order_by(
+                Collection.updated_at.desc(), Collection.id.desc()
+            )
+        ))
+        .scalars()
+        .unique()
+        .all()
+    )
+    ctx = await _ViewerContext.build(db, user)
+    visible = [c for c in collections if ctx.can_view(c)]
+
+    images: list[CollectionGraphImageOut] = []
+    if order == 2:
+        names: dict[int, str] = {}
+        members: dict[int, list[int]] = {}
+        for collection in visible:
+            for image in ctx.visible_images(collection):
+                names.setdefault(image.id, image.name)
+                members.setdefault(image.id, []).append(collection.id)
+        images = [
+            CollectionGraphImageOut(
+                id=image_id,
+                name=names[image_id],
+                collection_ids=sorted(collection_ids),
+            )
+            for image_id, collection_ids in sorted(members.items())
+        ]
+    return CollectionsGraphOut(
+        order=order,
+        collections=[_graph_node(ctx, c) for c in visible],
+        images=images,
+    )
+
+
 @router.get("/{collection_id}", response_model=CollectionOut)
 async def get_collection(
     collection_id: int,
@@ -175,6 +248,68 @@ async def get_collection(
 ):
     ctx, collection = await get_visible_collection_or_404(db, user, collection_id)
     return collection_out(ctx, collection)
+
+
+@router.get("/{collection_id}/graph", response_model=CollectionGraphOut)
+async def collection_graph(
+    collection_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    order: Annotated[int, Query(ge=1, le=2)] = 1,
+    db: AsyncSession = Depends(get_db),
+):
+    """Graph from one collection's perspective (the dialog view).
+
+    ``images`` are the hub's caller-visible members in member order. At
+    ``order=2`` every visible collection sharing a visible member is added
+    to ``collection_ids`` and to ``related_collections`` (deduplicated,
+    excluding the hub), so the dialog can switch perspective client-side.
+    """
+    ctx, collection = await get_visible_collection_or_404(
+        db, user, collection_id
+    )
+    hub_images = ctx.visible_images(collection)
+    hub_image_ids = {image.id for image in hub_images}
+    members: dict[int, list[int]] = {
+        image.id: [collection.id] for image in hub_images
+    }
+
+    related: list[Collection] = []
+    if order == 2 and hub_image_ids:
+        others = (
+            (await db.execute(
+                select(Collection)
+                .join(CollectionImage)
+                .where(
+                    CollectionImage.image_id.in_(hub_image_ids),
+                    Collection.id != collection.id,
+                )
+            ))
+            .scalars()
+            .unique()
+            .all()
+        )
+        related = [c for c in others if ctx.can_view(c)]
+        for other in related:
+            for image in ctx.visible_images(other):
+                if image.id in hub_image_ids:
+                    members[image.id].append(other.id)
+
+    return CollectionGraphOut(
+        order=order,
+        collection=_graph_node(ctx, collection),
+        images=[
+            CollectionGraphImageOut(
+                id=image.id,
+                name=image.name,
+                collection_ids=sorted(members[image.id]),
+            )
+            for image in hub_images
+        ],
+        related_collections=[
+            _graph_node(ctx, c)
+            for c in sorted(related, key=lambda c: (c.name, c.id))
+        ],
+    )
 
 
 # ── Write helpers ─────────────────────────────────────────────────────────

@@ -315,6 +315,8 @@ below answers `404` while `COLLECTIONS_ENABLED` is off (see
 | ------ | -------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/collections`               | student                                                              | Visible collections as `CollectionSummaryOut[]`. Query: `type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned` (**admin only**, others **403**), `uncategorized=true` (unfiled queue, not on Browse). Ordered by `updated_at` desc.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | GET    | `/api/collections/{id}`          | student                                                              | `CollectionOut` (summary + ordered `images: ImageOut[]`, `program_ids`, `group_ids`, `viewport_state`). **404** when missing _or_ not visible (no existence leak).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| GET    | `/api/collections/graph`         | student                                                              | Graph hub view (#1628). Query `order` = 1 or 2 (default 1, other values **422**). `collections` = the same visibility-filtered set an unfiltered `GET /api/collections` returns, same ordering; `image_count` is visible-members-only. `order=2` adds `images`: each caller-visible member image once, `collection_ids` listing every _visible_ collection containing it (edges implied).                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| GET    | `/api/collections/{id}/graph`    | student (404 if not visible)                                         | Single-collection perspective for the dialog (#1628). `collection` node + `images` = the hub's caller-visible members in member order. `order=1`: each `collection_ids` is `[id]` and `related_collections` is `[]`; `order=2`: `collection_ids` spans every visible collection containing the image and `related_collections` lists those collections (deduplicated, excluding the hub, sorted by name then id).                                                                                                                                                                                                                                                                                                                                                                                                     |
 | POST   | `/api/collections`               | student                                                              | Create; owner = caller (`user_id`). Body `CollectionCreate`: `name`, `description?`, `type`, `visibility` (default `private`), `category_id?`, ordered `image_ids`, `program_ids` / `group_ids` (restricted only). Admins and instructors must provide a valid category; staff and students create unfiled collections and cannot file on create. Filed creates bump the category tile-order scope and Browse revisions. **201** `CollectionOut`.                                                                                                                                                                                                                                                                                                                                                                     |
 | PATCH  | `/api/collections/{id}`          | student (must pass `can_edit_collection`)                            | Body `CollectionUpdate`: any of `name`, `description`, `visibility`, `program_ids`, `group_ids`, `hidden`, `cover_image_id`, `cover_blank` + required `version`. `type` is immutable (**422** if changed). `cover_image_id` pins the tile cover to a member the caller can view (**422** for a non-member or invisible member; `null` restores the first-member fallback). `cover_blank=true` is the explicit "no cover" pick — the tile renders the type-logo placeholder; the two cover states are mutually exclusive (a `cover_image_id` write clears the flag; `cover_blank=true` clears the pin). A `hidden`-only body instead requires `can_hide_collection` (any admin/instructor — curatorial, not ownership-bound); mixing `hidden` with other fields keeps the normal gates. Returns fresh `CollectionOut`. |
 | DELETE | `/api/collections/{id}`          | student (must pass `can_delete_collection`)                          | **204**.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -352,6 +354,39 @@ disclosing how many. It is detail-only so list rows and Browse tiles cannot
 leak hidden membership; viewers use it to tell an all-restricted collection
 (`member_count > 0`, no visible `images`) apart from a truly empty one
 (`member_count === 0`).
+
+### Graph endpoints (#1628)
+
+Two read-only endpoints serve the hub-and-spoke graphs rendered by the
+Collections page and the collection-page dialog. Both are available to every
+authenticated role and are filtered server-side by the same
+`_ViewerContext` gates as `GET /api/collections` — non-viewable collections
+appear nowhere in the payload, including inside `collection_ids`.
+
+`GET /api/collections/graph?order=1|2` (default `1`) returns
+`CollectionsGraphOut`: `order`, `collections` (a `CollectionGraphNodeOut`
+per viewable collection — `id`, `name`, `type`, `image_count`, `hidden`,
+`category_id` — ordered like the list endpoint by `updated_at` desc, `id`
+desc), and `images` (empty at `order=1`). At `order=2`, `images` contains
+one `CollectionGraphImageOut` per caller-visible member image — `id`,
+`name`, and `collection_ids` listing every _visible_ collection containing
+it, ascending; the list is sorted by image id. Edges are implied
+(hub→collection, collection→image) — no explicit edge list is sent.
+`image_count` always counts only members the caller may see, so students
+cannot learn how many members are restricted from them.
+
+`GET /api/collections/{id}/graph?order=1|2` returns `CollectionGraphOut`
+for the collection-page dialog: the same node fields for the hub
+collection, plus `images` = the hub's caller-visible members in member
+order (each `collection_ids` is `[id]` at `order=1`), plus
+`related_collections` — at `order=2`, the other viewable collections
+sharing ≥1 visible member, deduplicated, excluding the hub, sorted by name
+then id, so the dialog can switch perspective without another round trip.
+Missing or non-viewable collections are **404**, never 403.
+
+`/api/collections/graph` is registered **before**
+`/api/collections/{collection_id}` in the router; FastAPI would otherwise
+parse the literal `graph` segment as the int path parameter and answer 422.
 
 Each `CategoryTree` node additionally carries `collections:
 CollectionSummaryOut[]` — the collections filed into that category, subject
