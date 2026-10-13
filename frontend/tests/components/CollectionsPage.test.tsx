@@ -5,7 +5,7 @@ import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionsPage from '../../src/components/CollectionsPage'
 import type { CollectionsPageProps } from '../../src/components/CollectionsPage'
-import { ApiError, fetchCollections } from '../../src/api'
+import { ApiError, fetchCollections, fetchCollectionsGraph } from '../../src/api'
 import { DEFAULT_COLLECTION_FILTERS } from '../../src/useCollectionsData'
 import type { User } from '../../src/types'
 import {
@@ -22,11 +22,13 @@ vi.mock('../../src/api', async (importOriginal) => {
     ...actual,
     fetchCollection: vi.fn(),
     fetchCollections: vi.fn(),
+    fetchCollectionsGraph: vi.fn(),
     fetchImage: vi.fn(),
     fetchUsersPaged: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   }
 })
 const fetchCollectionsMock = vi.mocked(fetchCollections)
+const fetchCollectionsGraphMock = vi.mocked(fetchCollectionsGraph)
 
 // Sequence and synchronized details mount the real OpenSeadragon viewer,
 // which jsdom cannot run; stub both components and record their props so
@@ -53,6 +55,16 @@ vi.mock('../../src/components/CollectionManageDialog', () => ({
   default: (props: Record<string, unknown>) => {
     manageDialogProps.current = props
     return props.open ? <div data-testid="collection-manage" /> : null
+  },
+}))
+
+// The canvas graph (d3 + canvas 2D) cannot run under jsdom; stub it and
+// render the overlay so the order toggle stays exercisable (#1629).
+const collectionsGraphProps: { current: Record<string, unknown> | null } = { current: null }
+vi.mock('../../src/collectionsGraph/CollectionsGraph', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionsGraphProps.current = props
+    return <div data-testid="collections-graph">{props.overlay as React.ReactNode}</div>
   },
 }))
 
@@ -92,7 +104,6 @@ function makeAuth(user: User): AuthContextValue {
 
 function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPageProps {
   return {
-    collectionPageType: 'sequence',
     currentUser: ADMIN,
     programs: [],
     groups: [],
@@ -141,10 +152,18 @@ function renderPage(overrides: Partial<CollectionsPageProps> = {}) {
 describe('CollectionsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     fetchCollectionsMock.mockResolvedValue([])
+    fetchCollectionsGraphMock.mockResolvedValue({
+      order: 1,
+      collections: [],
+      images: [],
+      categories: [],
+    })
     sequenceViewerProps.current = null
     synchronizedViewerProps.current = null
     manageDialogProps.current = null
+    collectionsGraphProps.current = null
   })
 
   describe('list states', () => {
@@ -175,7 +194,7 @@ describe('CollectionsPage', () => {
       renderPage({
         currentUser: STUDENT,
         collections,
-        collectionPageType: 'sequence',
+        filters: { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' },
       })
       await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledWith({ mine: true }))
       const button = screen.getByRole('button', { name: 'New collection' })
@@ -212,7 +231,6 @@ describe('CollectionsPage', () => {
             owners: [{ kind: 'user', userId: STUDENT.id, name: STUDENT.name }],
           }),
         ),
-        collectionPageType: 'sequence',
       })
       const button = screen.getByRole('button', { name: 'New collection' })
       await waitFor(() => expect(button).toBeDisabled())
@@ -233,7 +251,6 @@ describe('CollectionsPage', () => {
       renderPage({
         currentUser: INSTRUCTOR,
         collections,
-        collectionPageType: 'sequence',
       })
       expect(screen.getByRole('button', { name: 'New collection' })).toBeEnabled()
       expect(fetchCollectionsMock).not.toHaveBeenCalled()
@@ -301,15 +318,116 @@ describe('CollectionsPage', () => {
     })
   })
 
+  describe('views (#1629)', () => {
+    it('switches between Cards, Table and Graph via the view toggle', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+
+      expect(screen.getByTestId('collections-grid')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
+      expect(await screen.findByTestId('collections-table')).toBeInTheDocument()
+      expect(screen.queryByTestId('collections-grid')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(1))
+      expect(await screen.findByTestId('collections-graph')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+    })
+
+    it('refetches the graph when the order toggle changes', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(1))
+
+      fireEvent.click(screen.getByRole('button', { name: '2nd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(2))
+      fireEvent.click(screen.getByRole('button', { name: '3rd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(3))
+    })
+
+    it('disables Shared only at first order', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(1))
+      expect(screen.getByRole('button', { name: 'Shared only' })).toBeDisabled()
+    })
+
+    it('does not refetch the graph on view round-trips (#1636)', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders the graph with zero collections at 3rd order (#1636)', async () => {
+      fetchCollectionsGraphMock.mockResolvedValue({
+        order: 3,
+        collections: [],
+        images: [],
+        categories: [{ id: 9, label: 'Anatomy', path: 'Anatomy', image_count: 3 }],
+      })
+      renderPage({ collections: [] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      fireEvent.click(await screen.findByRole('button', { name: '3rd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(3))
+
+      // Isolated categories still have a graph — the collection empty
+      // state must not hide it.
+      expect(await screen.findByTestId('collections-graph')).toBeInTheDocument()
+      expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
+      const m = collectionsGraphProps.current?.model as { stats: { categories: number } }
+      expect(m.stats.categories).toBe(1)
+    })
+
+    it('search narrows cards/table rows but only highlights graph nodes', async () => {
+      renderPage({
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Skull atlas' }),
+          makeCollectionSummary({ id: 2, name: 'Pelvis set' }),
+        ],
+      })
+      fireEvent.change(screen.getByTestId('collections-search').querySelector('input')!, {
+        target: { value: 'skull' },
+      })
+      // Cards keep only the match; the helper explains the filter scope.
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(1)
+      expect(screen.getByText('Filters by name, description and owner.')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalled())
+      expect(
+        screen.getByText('Highlights matches in the graph; nodes are not removed.'),
+      ).toBeInTheDocument()
+    })
+  })
+
   describe('filters', () => {
-    it('renders the type page heading and has no in-page type toggle (#1554)', () => {
-      const { unmount } = renderPage({ collectionPageType: 'sequence' })
-      expect(screen.getByRole('heading', { name: 'Sequence collections' })).toBeInTheDocument()
-      // Type is the page (nav sub-menu), not a filter — the toggle is gone.
-      expect(screen.queryByRole('button', { name: 'All' })).not.toBeInTheDocument()
-      unmount()
-      renderPage({ collectionPageType: 'synchronized' })
-      expect(screen.getByRole('heading', { name: 'Synchronized collections' })).toBeInTheDocument()
+    it('renders the unified heading and the Type filter chips (#1629)', () => {
+      renderPage()
+      expect(screen.getByRole('heading', { name: 'Collections' })).toBeInTheDocument()
+      // The Sequence/Synchronized sub-pages became filter chips.
+      expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Sequence' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Synchronized' })).toBeInTheDocument()
+    })
+
+    it('the Type chip group drives the shared filters', () => {
+      const onFiltersChange = vi.fn()
+      renderPage({ onFiltersChange })
+      fireEvent.click(screen.getByRole('button', { name: 'Synchronized' }))
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        type: 'synchronized',
+      })
     })
 
     it('toggles My collections and resets the owner facet', () => {
