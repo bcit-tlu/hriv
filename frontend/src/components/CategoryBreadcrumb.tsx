@@ -69,7 +69,7 @@ export default function CategoryBreadcrumb({
                 onNavigate(fullPath.slice(0, i + 1))
               }
             }}
-            sx={{ verticalAlign: 'baseline' }}
+            sx={{ verticalAlign: 'baseline', textAlign: 'left' }}
           >
             {cat.label}
           </Link>

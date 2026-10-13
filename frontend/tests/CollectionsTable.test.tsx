@@ -57,10 +57,12 @@ describe('CollectionsTable', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('opens the collection from the name link and from row click', () => {
+  it('renders the name as plain text and opens the collection on row click', () => {
     const onOpen = vi.fn()
     renderTable([row({ id: 5, name: 'Skull comparison' })], onOpen)
-    fireEvent.click(screen.getByRole('button', { name: 'Skull comparison' }))
+    // Plain text like the Manage Images Name cell — no centred button text on wrap.
+    expect(screen.queryByRole('button', { name: 'Skull comparison' })).toBeNull()
+    fireEvent.click(screen.getByText('Skull comparison'))
     expect(onOpen).toHaveBeenCalledWith(5)
     onOpen.mockClear()
     fireEvent.click(screen.getByTestId('collections-table-row-5'))

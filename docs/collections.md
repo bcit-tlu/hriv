@@ -676,7 +676,8 @@ table — the former **Manage → Collections** page merged into it; see
 is rewritten to `?page=collections`).
 
 **Views (#1629).** A right-aligned `ToggleButtonGroup` next to **New
-collection** switches between three views. The view itself is
+collection** switches between three views; each button shows its icon plus
+a text label (**Cards**, **Table**, **Graph**). The view itself is
 **intentionally not persisted** — while Table/Graph are being evaluated
 the page always loads on Cards (`useCollectionsViewPreference` stores only
 `{ order, sharedOnly }` under `hrivpref:collections-view:user:<id>` and
@@ -687,7 +688,7 @@ Invalid stored values fall back to defaults:
 
 - **Cards** — the existing `CollectionCard` grid.
 - **Table** — `components/CollectionsTable.tsx`: a dense sortable, paged
-  table (cover via `RenewingThumbnail`, name link, type chip, category
+  table (cover via `RenewingThumbnail`, plain-text name, type chip, category
   breadcrumb or "Unfiled", image count, owner with a "You" chip, relative
   Updated; default sort Updated descending; `useRowsPerPagePreference('collections')`).
   Row click opens the collection; no bulk actions or edit controls. The

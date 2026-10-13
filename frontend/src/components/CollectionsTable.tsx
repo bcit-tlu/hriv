@@ -3,7 +3,6 @@ import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
@@ -463,18 +462,9 @@ export default function CollectionsTable({
       name: (
         <TableCell {...dimAttr}>
           <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-            <Link
-              component="button"
-              variant="body2"
-              underline="hover"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpenCollection(c.id)
-              }}
-              sx={{ cursor: 'pointer', textAlign: 'left' }}
-            >
-              {c.name}
-            </Link>
+            {/* Plain text like the Manage Images Name cell — the row click
+                opens the collection. */}
+            {c.name}
             {/* The eye-off marker is reserved for the collection's own hidden
                 flag — category-hidden rows convey the inherited state
                 through dimming + the locked switch. */}

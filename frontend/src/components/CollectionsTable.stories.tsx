@@ -89,7 +89,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: sortable, paged rows with cover, name link, type chip, category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
+          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: sortable, paged rows with cover, name, type chip, category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
       },
     },
   },

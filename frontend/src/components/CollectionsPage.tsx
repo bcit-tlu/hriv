@@ -218,6 +218,9 @@ export interface CollectionsPageProps {
   initialView?: CollectionsView
 }
 
+// Icon + text label per view button (sentence case, like other buttons).
+const viewToggleSx = { gap: 0.75, px: 1.25, textTransform: 'none' } as const
+
 function ownerFilterKey(owner: CollectionOwnerFilter): string {
   if (owner === 'any' || owner === 'orphaned') return owner
   return owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
@@ -1100,20 +1103,17 @@ export default function CollectionsPage({
               data-testid="collections-view-toggle"
               sx={graphToggleSx}
             >
-              <ToggleButton value="cards" aria-label="Cards view">
-                <Tooltip title="Cards: one tile per collection with its cover image">
-                  <ViewModuleIcon fontSize="small" />
-                </Tooltip>
+              <ToggleButton value="cards" aria-label="Cards view" sx={viewToggleSx}>
+                <ViewModuleIcon fontSize="small" />
+                Cards
               </ToggleButton>
-              <ToggleButton value="table" aria-label="Table view">
-                <Tooltip title="Table: sortable rows with choosable columns">
-                  <TableRowsIcon fontSize="small" />
-                </Tooltip>
+              <ToggleButton value="table" aria-label="Table view" sx={viewToggleSx}>
+                <TableRowsIcon fontSize="small" />
+                Table
               </ToggleButton>
-              <ToggleButton value="graph" aria-label="Graph view">
-                <Tooltip title="Graph: how collections, images and categories connect">
-                  <HubIcon fontSize="small" />
-                </Tooltip>
+              <ToggleButton value="graph" aria-label="Graph view" sx={viewToggleSx}>
+                <HubIcon fontSize="small" />
+                Graph
               </ToggleButton>
             </ToggleButtonGroup>
             {viewPrefs.view === 'table' && selectedIds.size > 0 && (
