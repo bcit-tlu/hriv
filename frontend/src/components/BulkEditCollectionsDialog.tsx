@@ -52,7 +52,7 @@ interface BulkEditCollectionsDialogProps {
 }
 
 /**
- * Bulk edit for the Manage → Collections table (#1578) — mirrors
+ * Bulk edit for the Collections Table view (#1578) — mirrors
  * `BulkEditImagesModal`: refile into a category and curatorial hide/show
  * for curators, plus a two-step delete for rows the caller may delete.
  * Scope (private/public/restricted) is deliberately not bulk-editable —
@@ -172,7 +172,7 @@ export default function BulkEditCollectionsDialog({
                 }}
                 label="Move to Category"
                 placeholder={!categoryChanged ? '(no change)' : undefined}
-                rootLabel="None. Access in Manage > Collections."
+                rootLabel="None. Access in Collections."
                 onAddCategory={onAddCategory}
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}

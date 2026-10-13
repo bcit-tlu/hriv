@@ -68,8 +68,7 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page =
-  'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin' | 'guide'
+export type Page = 'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide'
 
 export interface AppShellProps {
   page: Page
@@ -167,12 +166,10 @@ export default function AppShell(props: AppShellProps) {
   // (Home + Collections when enabled — the whole student layout) stay inline
   // instead of hiding behind a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
-  // Staff see the Manage tab only for the Collections table, so it counts
-  // for them just when the flag is on.
   const navTabCount =
     1 +
     (collectionsEnabled ? 1 : 0) +
-    (canEditContent ? 2 : collectionsEnabled && canViewPeople ? 1 : 0) +
+    (canEditContent ? 2 : 0) +
     (canViewPeople ? 1 : 0) +
     (canManageUsers ? 1 : 0)
   const collapseNav = isCompactViewport && navTabCount > 2
@@ -359,10 +356,8 @@ export default function AppShell(props: AppShellProps) {
             <Box sx={{ flexGrow: 1 }} />
           ) : (
             <Tabs
-              // 'guide'/'manage-collections' have no AppBar tab — the guide
-              // opens via the notification menu; the collections table opens
-              // via the Manage dropdown.
-              value={page === 'guide' || page === 'manage-collections' ? false : page}
+              // 'guide' has no AppBar tab — it opens via the notification menu.
+              value={page === 'guide' ? false : page}
               onChange={(_, v: Page) => {
                 if (
                   v === 'browse' ||
@@ -407,7 +402,7 @@ export default function AppShell(props: AppShellProps) {
                 />
               )}
               {canEditContent && <Tab label="Images" value="manage" />}
-              {(canEditContent || (collectionsEnabled && canViewPeople)) && (
+              {canEditContent && (
                 <Tab
                   label="Manage"
                   value={false}
@@ -432,17 +427,6 @@ export default function AppShell(props: AppShellProps) {
                   }}
                 >
                   Categories
-                </MenuItem>
-              )}
-              {collectionsEnabled && (
-                <MenuItem
-                  selected={page === 'manage-collections'}
-                  onClick={() => {
-                    setManageMenuAnchor(null)
-                    onTabChange('manage-collections')
-                  }}
-                >
-                  Collections
                 </MenuItem>
               )}
               {canManageUsers && (

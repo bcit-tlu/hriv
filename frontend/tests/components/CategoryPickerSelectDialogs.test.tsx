@@ -30,15 +30,13 @@ describe('CategoryPickerSelect — add category dialog', () => {
         categories={[]}
         value={null}
         onChange={vi.fn()}
-        rootLabel="None. Access in Manage > Collections."
+        rootLabel="None. Access in Collections."
       />,
     )
 
-    expect(screen.getByRole('combobox')).toHaveTextContent('None. Access in Manage > Collections.')
+    expect(screen.getByRole('combobox')).toHaveTextContent('None. Access in Collections.')
     await user.click(screen.getByRole('combobox'))
-    expect(
-      screen.getByRole('option', { name: 'None. Access in Manage > Collections.' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'None. Access in Collections.' })).toBeInTheDocument()
   })
 
   it('adds a child under a category and selects the newly created id', async () => {

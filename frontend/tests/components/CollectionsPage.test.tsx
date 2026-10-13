@@ -577,7 +577,12 @@ describe('CollectionsPage', () => {
       fireEvent.click(within(table).getByText('Name'))
       expect(nameTh).toHaveAttribute('aria-sort', 'ascending')
 
-      await user.click(screen.getByRole('button', { name: 'Visibility' }))
+      // The curator's table also has a sortable Visibility header — target the facet.
+      await user.click(
+        screen
+          .getAllByRole('button', { name: 'Visibility' })
+          .find((b) => b.getAttribute('aria-haspopup') === 'menu')!,
+      )
       await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
       await user.keyboard('{Escape}')
 
@@ -633,6 +638,128 @@ describe('CollectionsPage', () => {
       await user.click(within(dialog).getByRole('checkbox', { name: 'ID' }))
       await user.click(within(dialog).getByRole('button', { name: 'Done' }))
       expect(await screen.findByText('ID')).toBeInTheDocument()
+    })
+  })
+
+  describe('merged table (Manage → Collections)', () => {
+    it('opens on Table when initialView is table', async () => {
+      renderPage({ initialView: 'table', collections: [makeCollectionSummary({ id: 1 })] })
+      expect(await screen.findByTestId('collections-table')).toBeInTheDocument()
+    })
+
+    it('filters by an ancestor category through the Category facet', async () => {
+      const user = userEvent.setup()
+      renderPage({
+        initialView: 'table',
+        categories: [
+          makeCategory({
+            id: 10,
+            label: 'Anatomy',
+            children: [makeCategory({ id: 12, label: 'Skull', parentId: 10 })],
+          }),
+          makeCategory({ id: 11, label: 'Histology' }),
+        ],
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Under skull', categoryId: 12 }),
+          makeCollectionSummary({ id: 2, name: 'Under histology', categoryId: 11 }),
+          makeCollectionSummary({ id: 3, name: 'Unfiled one', categoryId: null }),
+        ],
+      })
+      await user.click(
+        screen
+          .getAllByRole('button', { name: 'Category' })
+          .find((b) => b.getAttribute('aria-haspopup') === 'menu')!,
+      )
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: /Anatomy/ }))
+      await user.keyboard('{Escape}')
+      const table = screen.getByTestId('collections-table')
+      expect(within(table).getByText('Under skull')).toBeInTheDocument()
+      expect(within(table).queryByText('Under histology')).toBeNull()
+      expect(within(table).queryByText('Unfiled one')).toBeNull()
+      expect(screen.getByText('Category: Anatomy')).toBeInTheDocument()
+    })
+
+    it('shows the Visibility column to curators by default and never to students', async () => {
+      const { unmount } = renderPage({
+        initialView: 'table',
+        collections: [makeCollectionSummary({ id: 1, name: 'Row' })],
+      })
+      expect(await screen.findByRole('switch', { name: 'Visibility for Row' })).toBeInTheDocument()
+      unmount()
+
+      const user = userEvent.setup()
+      renderPage({
+        currentUser: STUDENT,
+        initialView: 'table',
+        collections: [makeCollectionSummary({ id: 1, name: 'Row' })],
+      })
+      await screen.findByTestId('collections-table')
+      expect(screen.queryByRole('switch', { name: 'Visibility for Row' })).toBeNull()
+      await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).queryByRole('checkbox', { name: 'Visibility' })).toBeNull()
+    })
+
+    it('bulk-edits the selected rows and clears the selection', async () => {
+      const user = userEvent.setup()
+      const onBulkUpdate = vi.fn().mockResolvedValue(undefined)
+      renderPage({
+        initialView: 'table',
+        onBulkUpdate,
+        onBulkDelete: vi.fn(),
+        categories: [makeCategory({ id: 11, label: 'Histology' })],
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'One' }),
+          makeCollectionSummary({ id: 2, name: 'Two' }),
+        ],
+      })
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() => expect(onBulkUpdate).toHaveBeenCalledWith([1], { hidden: true }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull())
+    })
+
+    it('drops a selected row that leaves the list so it does not return selected', async () => {
+      const user = userEvent.setup()
+      const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const two = makeCollectionSummary({ id: 2, name: 'Two' })
+      const props = {
+        initialView: 'table' as const,
+        onBulkUpdate: vi.fn(),
+        onBulkDelete: vi.fn(),
+      }
+      const { rerender } = renderPage({ ...props, collections: [one, two] })
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      expect(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' })).toBeInTheDocument()
+      const rerenderWith = (collections: (typeof one)[]) =>
+        rerender(
+          <AuthContext.Provider value={makeAuth(ADMIN)}>
+            <CollectionsPage {...makeProps({ ...props, collections })} />
+          </AuthContext.Provider>,
+        )
+      rerenderWith([two])
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
+      rerenderWith([one, two])
+      expect(screen.getByRole('checkbox', { name: 'Select One' })).not.toBeChecked()
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
+    })
+
+    it('opens the edit dialog from the row menu', async () => {
+      const user = userEvent.setup()
+      const loadCollection = vi.fn().mockResolvedValue(makeCollection({ id: 1, name: 'One' }))
+      renderPage({
+        initialView: 'table',
+        loadCollection,
+        collections: [makeCollectionSummary({ id: 1, name: 'One' })],
+      })
+      await user.click(screen.getByRole('button', { name: 'Actions for One' }))
+      await user.click(screen.getByRole('menuitem', { name: 'Edit' }))
+      await waitFor(() => expect(loadCollection).toHaveBeenCalledWith(1))
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
     })
   })
 

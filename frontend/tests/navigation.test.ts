@@ -7,7 +7,6 @@ const ALL_IDS = [
   'collections',
   'images',
   'categories',
-  'manage-collections',
   'programs',
   'groups',
   'announcement',
@@ -55,7 +54,7 @@ describe('getNavigationItems', () => {
     expect(ids).toEqual(['home', 'collections'])
   })
 
-  it('returns type pages + people for staff — plus the manage collections table (#1554)', () => {
+  it('returns the collections page + people for staff', () => {
     const items = getNavigationItems({
       collectionsEnabled: true,
       canEditContent: false,
@@ -63,7 +62,7 @@ describe('getNavigationItems', () => {
       canViewPeople: true,
     })
     const ids = items.map((i) => i.id)
-    expect(ids).toEqual(['home', 'collections', 'manage-collections', 'people'])
+    expect(ids).toEqual(['home', 'collections', 'people'])
   })
 
   it('the unified collections item is a primary item for every role (#1629)', () => {
@@ -85,7 +84,7 @@ describe('getNavigationItems', () => {
     }
   })
 
-  it('staff sees only the collections table among manage items (#1554)', () => {
+  it('staff sees no manage items (the collections table lives on the Collections page)', () => {
     const items = getNavigationItems({
       collectionsEnabled: true,
       canEditContent: false,
@@ -94,9 +93,7 @@ describe('getNavigationItems', () => {
     })
     const ids = items.map((i) => i.id)
     expect(ids).not.toContain('admin')
-    expect(items.filter((i) => i.section === 'manage').map((i) => i.id)).toEqual([
-      'manage-collections',
-    ])
+    expect(items.filter((i) => i.section === 'manage')).toEqual([])
   })
 
   it('includes manage-section items for instructor with correct sections', () => {
@@ -107,12 +104,7 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const manageItems = items.filter((i) => i.section === 'manage')
-    expect(manageItems.map((i) => i.id).sort()).toEqual([
-      'announcement',
-      'categories',
-      'groups',
-      'manage-collections',
-    ])
+    expect(manageItems.map((i) => i.id).sort()).toEqual(['announcement', 'categories', 'groups'])
   })
 
   it('includes account-section items only for admin or staff', () => {
@@ -192,7 +184,6 @@ describe('getNavigationItems', () => {
     for (const caps of roles) {
       const ids = getNavigationItems({ ...caps, collectionsEnabled: false }).map((i) => i.id)
       expect(ids).not.toContain('collections')
-      expect(ids).not.toContain('manage-collections')
       expect(ids[0]).toBe('home')
     }
     expect(

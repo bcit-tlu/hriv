@@ -47,7 +47,6 @@ import type { Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
 import CollectionsPage from './components/CollectionsPage'
 import type { CollectionsView } from './useCollectionsViewPreference'
-import ManageCollectionsPage from './components/ManageCollectionsPage'
 import AddToCollectionDialog from './components/AddToCollectionDialog'
 import CollectionEditDialog, { type CollectionFormValues } from './components/CollectionEditDialog'
 import CollectionCoverPickerModal from './components/CollectionCoverPickerModal'
@@ -110,6 +109,8 @@ import {
   deleteGroup,
   fetchCollections,
   fetchImageCollections,
+  bulkUpdateCollections,
+  bulkDeleteCollections,
   ApiError,
   userMessage,
 } from './api'
@@ -151,6 +152,8 @@ import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 const EMPTY_COLLECTION_TYPES: ReadonlySet<CollectionType> = new Set()
+/** Retired `?page=` value — Manage → Collections merged into the Collections Table view. */
+const LEGACY_MANAGE_COLLECTIONS_PAGE = 'manage-collections'
 
 function listFailedSourceImages() {
   return listSourceImages({ status: 'failed', limit: MAX_REHYDRATED_FAILURES })
@@ -185,9 +188,6 @@ export default function App() {
   const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference(
     currentUser?.id ?? null,
   )
-  // Manage > Collections table (#1554): instructors, staff, and admins —
-  // everyone except students.
-  const canManageCollections = canEditContent || canViewPeople
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
@@ -224,14 +224,9 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
-    if (
-      p === 'collections' ||
-      p === 'manage' ||
-      p === 'manage-collections' ||
-      p === 'people' ||
-      p === 'admin' ||
-      p === 'guide'
-    )
+    // Manage → Collections merged into the Collections Table view.
+    if (p === LEGACY_MANAGE_COLLECTIONS_PAGE) return 'collections'
+    if (p === 'collections' || p === 'manage' || p === 'people' || p === 'admin' || p === 'guide')
       return p
     return 'browse'
   })
@@ -244,23 +239,14 @@ export default function App() {
       ? 'browse'
       : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
-        : (page === 'collections' || page === 'manage-collections') &&
-            features != null &&
-            !features.collections
+        : page === 'collections' && features != null && !features.collections
           ? 'browse'
-          : page === 'manage-collections' && !canManageCollections
-            ? 'browse'
-            : page
+          : page
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
   useEffect(() => {
-    if (
-      features == null ||
-      features.collections ||
-      (page !== 'collections' && page !== 'manage-collections')
-    )
-      return
+    if (features == null || features.collections || page !== 'collections') return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
     setPage('browse')
     setSelectedCollectionId(null)
@@ -474,10 +460,7 @@ export default function App() {
   // active; the `move`/`loadCollection` actions are mounted unconditionally
   // so filed Browse collection moves (#1529) keep list/detail state in sync.
   const collectionsData = useCollectionsData({
-    enabled:
-      collectionsEnabled &&
-      (page === 'collections' || page === 'manage-collections') &&
-      currentUser != null,
+    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
     currentUser,
     selectedCollectionId,
     type: collectionTypeParam,
@@ -511,6 +494,39 @@ export default function App() {
     )
       reloadMyCollectionsShelf()
   }, [page, myCollectionsShelfEnabled, reloadMyCollectionsShelf])
+
+  // Collections Table bulk edit (#1578): the API applies the diff
+  // atomically; a category move also invalidates every affected tile-order
+  // scope so a cached revision can't falsely 409 a reorder.
+  const handleBulkUpdateCollections = useCallback(
+    async (ids: number[], data: { category_id?: number | null; hidden?: boolean }) => {
+      await bulkUpdateCollections({ collection_ids: ids, ...data })
+      if (data.category_id !== undefined) {
+        const selected = new Set(ids)
+        const affected = new Set<number | null>()
+        for (const c of collectionsData.collections) {
+          if (selected.has(c.id) && (c.categoryId ?? null) !== data.category_id) {
+            affected.add(c.categoryId ?? null)
+            affected.add(data.category_id)
+          }
+        }
+        for (const scope of affected) tileOrderingCoordinator.invalidateRevision(scope)
+      }
+      await collectionsData.reload()
+      refreshCategories()
+      reloadMyCollectionsShelf()
+    },
+    [collectionsData, refreshCategories, reloadMyCollectionsShelf],
+  )
+  const handleBulkDeleteCollections = useCallback(
+    async (ids: number[]) => {
+      await bulkDeleteCollections({ collection_ids: ids })
+      await collectionsData.reload()
+      refreshCategories()
+      reloadMyCollectionsShelf()
+    },
+    [collectionsData, refreshCategories, reloadMyCollectionsShelf],
+  )
   const {
     open: myCollectionsDrawerOpen,
     setOpen: setMyCollectionsDrawerOpen,
@@ -522,6 +538,28 @@ export default function App() {
   // Reported upward by CollectionsPage — the list graph fills the viewport
   // like the image/collection viewers (#1630 feedback).
   const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
+  // Old Manage → Collections links open the Collections page on its Table
+  // view; cleared once the user leaves Collections so later visits open on
+  // Cards as usual.
+  const [collectionsInitialView, setCollectionsInitialView] = useState<CollectionsView | undefined>(
+    () =>
+      new URLSearchParams(window.location.search).get('page') === LEGACY_MANAGE_COLLECTIONS_PAGE
+        ? 'table'
+        : undefined,
+  )
+  if (collectionsInitialView != null && page !== 'collections') {
+    setCollectionsInitialView(undefined)
+  }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('page') !== LEGACY_MANAGE_COLLECTIONS_PAGE) return
+    params.set('page', 'collections')
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}?${params.toString()}`,
+    )
+  }, [])
   const onViewerPage =
     (page === 'browse' && selectedImage != null) ||
     (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
@@ -877,19 +915,14 @@ export default function App() {
       }
       setCanvasEditActive(false)
       const validPage = (
-        [
-          'browse',
-          'collections',
-          'manage',
-          'manage-collections',
-          'people',
-          'admin',
-          'guide',
-        ].includes(popPage)
-          ? popPage
-          : 'browse'
+        popPage === LEGACY_MANAGE_COLLECTIONS_PAGE
+          ? 'collections'
+          : ['browse', 'collections', 'manage', 'people', 'admin', 'guide'].includes(popPage)
+            ? popPage
+            : 'browse'
       ) as Page
       setPage(validPage)
+      if (popPage === LEGACY_MANAGE_COLLECTIONS_PAGE) setCollectionsInitialView('table')
       // The collection id lives in the URL (`?collection=`), which the browser
       // has already restored by the time popstate fires. `?item=` (sequence
       // position) and `?type=` (type page, #1554) are restored the same way.
@@ -2431,6 +2464,9 @@ export default function App() {
               onEditCategory={editCategoryInline}
               onToggleCategoryVisibility={toggleCategoryVisibility}
               onNavigateCategory={handleNavigateBrowseFromCollection}
+              onBulkUpdate={handleBulkUpdateCollections}
+              onBulkDelete={handleBulkDeleteCollections}
+              initialView={collectionsInitialView}
               onToggleHidden={(collection) =>
                 collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
                   // Filed collection tiles live in the category tree, so
@@ -2440,36 +2476,6 @@ export default function App() {
                   return updated
                 })
               }
-            />
-          ) : page === 'manage-collections' &&
-            (!collectionsEnabled || !canManageCollections) ? null : page ===
-            'manage-collections' ? (
-            <ManageCollectionsPage
-              categories={categories}
-              programs={programs}
-              groups={groups}
-              currentUser={currentUser}
-              onNavigateCategory={(categoryPath) => {
-                runCanvasNavigation(() => {
-                  setPath(categoryPath)
-                  setPage('browse')
-                  pushNavState(
-                    'browse',
-                    categoryPath.map((c) => c.id),
-                  )
-                })
-              }}
-              onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
-              onAddCategory={addCategoryInline}
-              onEditCategory={editCategoryInline}
-              onToggleCategoryVisibility={toggleCategoryVisibility}
-              onOpenCollection={(id) => handleOpenCollection(id)}
-              onCategoriesChanged={() => {
-                // A bulk refile/delete changes tile membership in the tree.
-                refreshCategories()
-                reloadMyCollectionsShelf()
-              }}
-              onError={setErrorSnack}
             />
           ) : page === 'people' && canViewPeople ? (
             <PeoplePage

@@ -3,9 +3,9 @@
 Collections gather a handful of images into a named set — for example, the
 four views of one specimen, or a sequence that tells a story over time.
 
-Open the **Collections** tab in the app bar and pick **Sequence** or
-**Synchronized** from the menu — each page lists only collections of that
-type. Everyone who is signed in,
+Open the **Collections** tab in the app bar to see every collection you can
+view, both types together; use the **Type** filter to show only
+**Sequence** or **Synchronized** collections. Everyone who is signed in,
 including students, can see the tab; admins, instructors, staff and students
 can all create their own collections (staff see every collection and, like
 students, edit the ones they own or co-own). (If
@@ -175,7 +175,7 @@ root-level category such as **Featured**.
   images and categories in the same folder; the order is shared for every
   viewer.
 - Admins and instructors can **file** a collection into a category or choose
-  **None. Access in Manage > Collections.** to unfile it, using the card's **Move** action (the
+  **None. Access in Collections.** to unfile it, using the card's **Move** action (the
   folder icon in the cover's top-right corner), the **Category** picker in
   the collection's edit dialog, or by dragging a filed tile
   onto a category tile's _Move here_ zone. Filing is curatorial, not
@@ -200,7 +200,7 @@ collection:
 - disappears from students' lists, Browse tiles, and search results —
   **except for its owners**, who keep full access to their own work;
 - stays visible to admins, instructors and staff, shown desaturated with an
-  eye-off marker on cards and in the Manage → Collections table (the page
+  eye-off marker on cards and in the Collections table (the page
   itself greys its controls — no separate marker);
 - keeps its place in the category structure and tile order — nothing moves.
 
@@ -210,12 +210,16 @@ collection, and owners can't hide or unhide their own collections.
 
 ## Find a collection
 
-Pick the type first — **Collections → Sequence** or **Collections →
-Synchronized** in the app bar — then use the filters in the header row:
+Use the filter bar above the collections — it applies to the Cards, Table
+and Graph views alike:
 
-- **My collections** – just the collections you co-own.
-- **Owner** – collections co-owned by a particular person, or owned by a
-  program (not shown to students).
+- **Name** – matches name, description or owner.
+- **Type** – **Sequence** or **Synchronized** only.
+- **Owner** – **My collections** (just the ones you co-own), or collections
+  co-owned by a particular person or owned by a program (named owners are
+  not shown to students).
+- **Visibility** – private, public or restricted.
+- **Category** – collections filed in a category or anywhere beneath it.
 
 Each card shows the cover image, how many images it holds, a type icon
 beside the name (carousel for a sequence, columns for a synchronized
@@ -255,7 +259,7 @@ picks up their changes so you can re-apply yours.
 
 If a collection shows an owners affordance (the **Owners** action in the
 card's cover overlay, the transfer icon beside the "Managed by" line on the
-collection page, or **Manage owners** in its Manage → Collections row
+collection page, or **Manage owners** in its Collections table row
 menu),
 you can manage who owns it — administrators for any
 collection, instructors for collections they co-own or that belong to a
@@ -292,27 +296,30 @@ with the **Owner** filter's _No owner (orphaned)_ option and assign owners
 with **Owners**.
 :::
 
-## Manage → Collections (instructors, staff, admins)
+## Collections table
 
-The **Manage → Collections** table lists every collection you can see —
-both types together — in sortable columns with filter facets for name,
-type, visibility, owner, and category. The **Category** column links into
+Switch the **Collections** tab to its **Table** view to list every
+collection you can see — both types together — in sortable columns. The
+filter bar above (name, type, owner, visibility, and category) applies to
+every view. (This replaces the old **Manage → Collections** page.) The **Category** column links into
 Browse at that location; the **Programs** and **Groups** columns show each
 collection's restriction scope (including scope inherited from its filed
-category, shown dimmed), and **Created**/**Modified** show dates. The
-**Visibility** switch hides or shows a collection to students where you
-have that permission — hidden rows render greyscale, just like the Manage
-Images table. Clicking a row's thumbnail opens the collection itself.
+category, shown dimmed), and **Created**/**Updated** show how long ago, with
+the exact date on hover. Admins and instructors also get a **Visibility**
+switch that hides or shows a collection to students. Hidden rows, and rows
+filed under a hidden category, render greyscale, just like the Manage
+Images table. Clicking a row opens the collection itself.
 
 Use **Choose columns** to show or hide columns — the choice is remembered
 between sessions, as on the Manage Images table. Like that table, only a
-compact set shows by default (cover, name, type, category, groups,
-visibility, modified); opt the rest in as you need them. Rows offer actions
-through a single **actions** (⋮) menu where you have permission: **View**,
-**Edit**, and **Manage owners** — filing lives in the edit dialog's
-Category picker, and delete stays inside the edit dialog. Clicking a row
-you can edit opens the editor; clicking a read-only row opens the
-collection itself.
+compact set shows by default (cover, name, type, category, images, owner,
+updated, plus visibility for admins and instructors); opt the rest in as
+you need them. Rows offer actions through a single **actions** (⋮) menu
+where you have permission: **View**, **Edit**, and **Manage owners**.
+Categorizing lives in the edit dialog's Category picker, and delete stays
+inside the edit dialog. Tick rows to **Bulk Edit** them: admins and
+instructors can categorize or hide any selection; anyone can delete
+collections they could delete one by one.
 
 ## Share a link
 

@@ -46,17 +46,28 @@ with deterministic fixtures.
   drops the URL parameter), **Owner** (**My collections** for every role — selecting it clears
   the owner facet — plus named owners for admin/instructor/staff and _No owner (orphaned)_ for
   admins; the hook never sends `orphaned` for other roles and never sends
-  `owner_user_id` / `owner_program_id` for students) and **Visibility** (client-side
-  multi-select that narrows rows and dims non-matching graph nodes). While any facet is active
+  `owner_user_id` / `owner_program_id` for students), **Visibility** (client-side
+  multi-select that narrows rows and dims non-matching graph nodes) and **Category**
+  (client-side, ancestor-aware category tree — a parent matches collections filed anywhere
+  beneath it; narrows rows and dims non-matching graph nodes). While any facet is active
   the bar shows deletable summary chips and a **Clear all** action.
   `normalizeCollectionFilters` applies both owner rules to the hook's filter state, so an owner
   selection left over from a previous user is dropped rather than hiding the new user's own
   saves.
 - **Table columns.** In Table view the FilterBar's **Choose columns** action opens
   `ColumnVisibilityDialog` (per-user persisted visibility and order): Cover, ID, Name, Type,
-  Scope, Description, Category, Images, Owner, Programs, Groups, Created, Updated — default
-  visible set is Cover, Name, Type, Category, Images, Owner, Updated. Every column except Cover
+  Scope, Description, Category, Images, Owner, Programs, Groups, Visibility, Created, Updated —
+  default visible set is Cover, Name, Type, Category, Images, Owner, Updated, plus Visibility
+  for admins/instructors. Students are never offered Visibility. Every column except Cover
   sorts; ID/Images/Created/Updated open descending.
+- **Table rows (merged Manage → Collections, #1554/#1567/#1578).** The Table view is the only
+  collections table. Hidden and category-hidden rows dim (own-hidden adds the eye-off marker;
+  a hidden filing category locks the Visibility switch). Category cells are breadcrumb links
+  to Browse; Programs/Groups show the collection's own scope chips plus the filed category's
+  inherited chips. Row click opens the collection; the row menu offers View, Edit (owners and
+  curators) and Manage owners (`canTransfer`). A selection column (curators: any row; others:
+  rows they could delete) drives **Bulk Edit (N selected)** → `BulkEditCollectionsDialog`.
+  Old `?page=manage-collections` links open this page on Table.
 - **Grid.** One column on phones, two at `sm`, three at `md`, four at `lg`, each cell a
   `CollectionCard`.
 - **States.** Spinner while the first page loads, a plain error `Alert` (no action), and an

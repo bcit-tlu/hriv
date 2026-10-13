@@ -1,5 +1,4 @@
-export type NavigationPage =
-  'browse' | 'collections' | 'manage' | 'manage-collections' | 'people' | 'admin'
+export type NavigationPage = 'browse' | 'collections' | 'manage' | 'people' | 'admin'
 export type NavigationSection = 'primary' | 'manage' | 'account'
 export type NavigationIcon =
   | 'home'
@@ -23,8 +22,6 @@ export interface NavigationItem {
   requiresViewPeople?: boolean
   /** Hidden unless the deployment's `collections` feature flag is on. */
   requiresCollections?: boolean
-  /** Hidden from students: visible to admins, instructors, and staff. */
-  requiresNonStudent?: boolean
 }
 
 const navigationItems: readonly NavigationItem[] = [
@@ -55,18 +52,6 @@ const navigationItems: readonly NavigationItem[] = [
     section: 'manage',
     icon: 'categories',
     requiresEditContent: true,
-  },
-  // All-collections manage table (#1554). Staff reach it too — mirroring
-  // their read-level access to the image manage surface — so this gates on
-  // "not a student" rather than `requiresEditContent`.
-  {
-    id: 'manage-collections',
-    label: 'Collections',
-    section: 'manage',
-    icon: 'collections',
-    page: 'manage-collections',
-    requiresCollections: true,
-    requiresNonStudent: true,
   },
   {
     id: 'programs',
@@ -124,7 +109,6 @@ export function getNavigationItems({
       (!item.requiresEditContent || canEditContent) &&
       (!item.requiresManageUsers || canManageUsers) &&
       (!item.requiresViewPeople || canViewPeople) &&
-      (!item.requiresCollections || collectionsEnabled) &&
-      (!item.requiresNonStudent || canEditContent || canViewPeople),
+      (!item.requiresCollections || collectionsEnabled),
   )
 }

@@ -89,7 +89,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The unified Collections page Table view (#1629): a dense, sortable, paged table — cover, name link, type chip, category breadcrumb, image count, owner (with a "You" chip), and relative Updated. Row click opens the collection; there are no bulk or edit controls.',
+          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: sortable, paged rows with cover, name, type chip, category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
       },
     },
   },
@@ -131,7 +131,7 @@ export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByTestId('collections-table')).toBeInTheDocument()
-    await expect(canvas.getByText('Italian › Gothic')).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Gothic' })).toBeInTheDocument()
     await expect(canvas.getByTestId('collections-table-you-chip')).toBeInTheDocument()
   },
 }
@@ -175,6 +175,51 @@ export const AllColumns: Story = {
         updatedAt: FIXED_AT,
       },
     ],
+  },
+}
+
+/** Curator view: hidden rows dim (own-hidden adds the eye-off marker; a
+ *  hidden filing category locks the switch), plus selection and row menu. */
+export const HiddenRows: Story = {
+  name: 'Hidden Rows',
+  args: {
+    categoryPaths: buildCategoryPaths([
+      ...categories,
+      { ...categories[0], id: 9, label: 'Archive', status: 'hidden', children: [] },
+    ]),
+    columns: ['cover', 'name', 'type', 'category', 'owner', 'visibility', 'updated'],
+    selected: new Set([2]),
+    onSelectedChange: fn(),
+    onEdit: fn(),
+    onManageOwners: fn(),
+    onToggleHidden: fn(),
+    collections: [
+      makeRow({
+        id: 1,
+        name: 'Visible set',
+        permissions: { ...makeRow().permissions, canHide: true },
+      }),
+      makeRow({
+        id: 2,
+        name: 'Hidden set',
+        hidden: true,
+        permissions: { ...makeRow().permissions, canHide: true },
+      }),
+      makeRow({
+        id: 3,
+        name: 'In hidden category',
+        categoryId: 9,
+        permissions: { ...makeRow().permissions, canHide: true },
+      }),
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('img', { name: 'Visibility: Hidden' })).toBeInTheDocument()
+    await expect(
+      canvas.getByRole('switch', { name: 'Visibility for In hidden category' }),
+    ).toBeDisabled()
+    await expect(canvas.getByRole('checkbox', { name: 'Select Hidden set' })).toBeChecked()
   },
 }
 
