@@ -370,9 +370,10 @@ export default function CollectionsGraph({
       sx={{
         position: 'relative',
         width: '100%',
-        // Fill a flex-column parent (page graph, dialog body); on xs /
-        // non-flex parents fall back to a fixed height (#1630 feedback).
-        flex: '1 1 0',
+        // Fill a flex-column parent (page graph, dialog body) at md+; a
+        // zero flex basis on xs would collapse the fixed 420px fallback
+        // down to the 320px minimum (#1630 feedback + review).
+        flex: { md: '1 1 0' },
         height: { xs: 420, md: '100%' },
         minHeight: 320,
       }}
