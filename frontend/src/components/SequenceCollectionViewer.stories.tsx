@@ -146,7 +146,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image link, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566).',
+          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image button, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566).',
       },
     },
   },

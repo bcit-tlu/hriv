@@ -654,7 +654,7 @@ measurement metadata.
   underneath, and rotating back restores the exact view.
 - **Given** fewer than two visible members (or fewer than two whose tiles
   survive), **Then** a fallback alert shows the ordered member list with
-  per-row **Open image** links; members whose tiles fail mid-session are
+  per-row **Open image** buttons; members whose tiles fail mid-session are
   skipped so the surviving panes slide forward.
 
 ### "Add to Collection" from the image view (`AddToCollectionDialog.test.tsx`, `useAddToCollection.test.tsx`, `App.test.tsx`)

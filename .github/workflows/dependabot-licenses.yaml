@@ -51,6 +51,11 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
+          # The persisted GITHUB_TOKEN `http.extraheader` would override the
+          # app token embedded in the push URL → 403 as github-actions[bot].
+          # The repo is public, so `git fetch origin main` below needs no
+          # credential.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
