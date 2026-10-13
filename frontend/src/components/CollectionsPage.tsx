@@ -51,6 +51,7 @@ import {
 } from '../useCollectionsViewPreference'
 import CollectionsGraph from '../collectionsGraph/CollectionsGraph'
 import { buildGraphModel } from '../collectionsGraph/buildModel'
+import type { GraphModel } from '../collectionsGraph/types'
 import CollectionsTable from './CollectionsTable'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
@@ -585,13 +586,20 @@ export default function CollectionsPage({
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
   const [graphError, setGraphError] = useState<string | null>(null)
 
-  // The graph payload is fetched whenever the order changes or the list
-  // refreshes (and refetched even while the view is switched away, so the
-  // kept-alive canvas reflects filter edits made from cards/table).
+  // The graph payload fetches lazily the first time Graph is selected,
+  // then refetches only when the order or the listed collections change —
+  // switching view alone never invalidates the model, so positions and
+  // zoom survive Cards → Graph → Cards round-trips (#1636 review). Once a
+  // payload exists it keeps refreshing while hidden so the kept-alive
+  // canvas reflects filter edits made from cards/table.
   const graphLoaded = graphPayload != null
+  const fetchedGraph = useRef<{ order: number; collections: typeof collections } | null>(null)
   useEffect(() => {
     if (selectedCollectionId != null) return
     if (viewPrefs.view !== 'graph' && !graphLoaded) return
+    const f = fetchedGraph.current
+    if (f != null && f.order === viewPrefs.order && f.collections === collections) return
+    fetchedGraph.current = { order: viewPrefs.order, collections }
     let cancelled = false
     fetchCollectionsGraph(viewPrefs.order)
       .then((payload) => {
@@ -601,7 +609,10 @@ export default function CollectionsPage({
         }
       })
       .catch((err: unknown) => {
-        if (!cancelled) setGraphError(userMessage(err, 'Failed to load the collections graph.'))
+        if (!cancelled) {
+          fetchedGraph.current = null
+          setGraphError(userMessage(err, 'Failed to load the collections graph.'))
+        }
       })
     return () => {
       cancelled = true
@@ -615,12 +626,36 @@ export default function CollectionsPage({
 
   // List rows already carry the server-side filters (type / mine / owner) —
   // intersecting the payload with their ids is how those filters reach the
-  // graph; search only highlights (#1629).
-  const graphModel = useMemo(() => {
-    if (!graphPayload) return null
-    const visibleIds = new Set(collections.map((c) => c.id))
-    return buildGraphModel(graphPayload, visibleIds, viewPrefs.sharedOnly)
-  }, [graphPayload, collections, viewPrefs.sharedOnly])
+  // graph; search only highlights (#1629). The previous model seeds each
+  // rebuild so settled positions survive refetches and Shared-only toggles
+  // (#1636) — stored in render-phase-adjusted state (same sanctioned
+  // "you might not need an effect" pattern as the type seed).
+  const [graphState, setGraphState] = useState<{
+    payload: ApiCollectionsGraph | null
+    collections: typeof collections
+    sharedOnly: boolean
+    model: GraphModel | null
+  }>({ payload: null, collections, sharedOnly: viewPrefs.sharedOnly, model: null })
+  if (
+    graphState.payload !== graphPayload ||
+    graphState.collections !== collections ||
+    graphState.sharedOnly !== viewPrefs.sharedOnly
+  ) {
+    setGraphState({
+      payload: graphPayload,
+      collections,
+      sharedOnly: viewPrefs.sharedOnly,
+      model: graphPayload
+        ? buildGraphModel(
+            graphPayload,
+            new Set(collections.map((c) => c.id)),
+            viewPrefs.sharedOnly,
+            graphState.model ?? undefined,
+          )
+        : null,
+    })
+  }
+  const graphModel = graphState.model
 
   const graphTooltipInfo = useMemo(() => {
     const byId = new Map(collections.map((c) => [c.id, c]))
@@ -985,41 +1020,42 @@ export default function CollectionsPage({
 
         {error ? (
           <Alert severity="error">{error}</Alert>
-        ) : loading && collections.length === 0 ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-            <CircularProgress aria-label="Loading collections" />
-          </Box>
-        ) : collections.length === 0 ? (
-          <Box
-            data-testid="collections-empty"
-            sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
-          >
-            <CollectionsIcon sx={{ fontSize: 56, opacity: 0.5 }} />
-            <Typography variant="h6" sx={{ mt: 1 }}>
-              No collections yet
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {filters.mine || filters.owner !== 'any' || filters.type !== 'all' ? (
-                'No collections match the current filters.'
-              ) : (
-                <>
-                  <Link
-                    component="button"
-                    variant="body2"
-                    underline="hover"
-                    onClick={openCreate}
-                    sx={{ verticalAlign: 'baseline' }}
-                  >
-                    Create a collection
-                  </Link>{' '}
-                  to group images for side-by-side comparison or a guided sequence.
-                </>
-              )}
-            </Typography>
-          </Box>
         ) : (
           <>
-            {viewPrefs.view === 'cards' && (
+            {loading && collections.length === 0 && viewPrefs.view !== 'graph' ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+                <CircularProgress aria-label="Loading collections" />
+              </Box>
+            ) : collections.length === 0 && viewPrefs.view !== 'graph' ? (
+              <Box
+                data-testid="collections-empty"
+                sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
+              >
+                <CollectionsIcon sx={{ fontSize: 56, opacity: 0.5 }} />
+                <Typography variant="h6" sx={{ mt: 1 }}>
+                  No collections yet
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  {filters.mine || filters.owner !== 'any' || filters.type !== 'all' ? (
+                    'No collections match the current filters.'
+                  ) : (
+                    <>
+                      <Link
+                        component="button"
+                        variant="body2"
+                        underline="hover"
+                        onClick={openCreate}
+                        sx={{ verticalAlign: 'baseline' }}
+                      >
+                        Create a collection
+                      </Link>{' '}
+                      to group images for side-by-side comparison or a guided sequence.
+                    </>
+                  )}
+                </Typography>
+              </Box>
+            ) : null}
+            {viewPrefs.view === 'cards' && collections.length > 0 && (
               <Box
                 data-testid="collections-grid"
                 sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
@@ -1046,7 +1082,7 @@ export default function CollectionsPage({
                 })}
               </Box>
             )}
-            {viewPrefs.view === 'table' && (
+            {viewPrefs.view === 'table' && collections.length > 0 && (
               <CollectionsTable
                 collections={shownCollections}
                 categoryPaths={categoryPaths}
@@ -1057,15 +1093,22 @@ export default function CollectionsPage({
             )}
             {/* Graph state (positions, zoom, selection) survives view
                 switches and collection round-trips: the canvas stays mounted
-                (hidden) once a model exists; positions live on the model and
-                the transform is keyed to the model in CollectionsGraph (#1627). */}
+                (hidden) once a model exists; positions ride on the model and
+                the transform lives for the component's mount (#1627, #1636).
+                Order-3 isolated categories render even with zero
+                collections, so the graph branch bypasses the empty state. */}
+            {viewPrefs.view === 'graph' && graphError && (
+              <Alert severity="error" sx={{ mb: 1 }}>
+                {graphError}
+              </Alert>
+            )}
+            {viewPrefs.view === 'graph' && !graphModel && !graphError && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+                <CircularProgress aria-label="Loading collections graph" />
+              </Box>
+            )}
             {graphModel && (
               <Box sx={{ display: viewPrefs.view === 'graph' ? 'block' : 'none' }}>
-                {graphError && (
-                  <Alert severity="error" sx={{ mb: 1 }}>
-                    {graphError}
-                  </Alert>
-                )}
                 <CollectionsGraph
                   model={graphModel}
                   onOpenCollection={onOpenCollection}
@@ -1122,14 +1165,6 @@ export default function CollectionsPage({
                   }
                 />
               </Box>
-            )}
-            {viewPrefs.view === 'graph' && !graphModel && !graphError && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-                <CircularProgress aria-label="Loading graph" />
-              </Box>
-            )}
-            {viewPrefs.view === 'graph' && !graphModel && graphError && (
-              <Alert severity="error">{graphError}</Alert>
             )}
           </>
         )}

@@ -354,6 +354,40 @@ describe('CollectionsPage', () => {
       expect(screen.getByRole('button', { name: 'Shared only' })).toBeDisabled()
     })
 
+    it('does not refetch the graph on view round-trips (#1636)', async () => {
+      renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders the graph with zero collections at 3rd order (#1636)', async () => {
+      fetchCollectionsGraphMock.mockResolvedValue({
+        order: 3,
+        collections: [],
+        images: [],
+        categories: [{ id: 9, label: 'Anatomy', path: 'Anatomy', image_count: 3 }],
+      })
+      renderPage({ collections: [] })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      fireEvent.click(await screen.findByRole('button', { name: '3rd order' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledWith(3))
+
+      // Isolated categories still have a graph — the collection empty
+      // state must not hide it.
+      expect(await screen.findByTestId('collections-graph')).toBeInTheDocument()
+      expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
+      const m = collectionsGraphProps.current?.model as { stats: { categories: number } }
+      expect(m.stats.categories).toBe(1)
+    })
+
     it('search narrows cards/table rows but only highlights graph nodes', async () => {
       renderPage({
         collections: [

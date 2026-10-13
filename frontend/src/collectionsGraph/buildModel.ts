@@ -3,6 +3,19 @@ import type { GraphEdge, GraphModel, GraphNode } from './types'
 
 const GOLDEN_ANGLE = 2.399963
 
+/**
+ * Hub+collection identity of a model (#1636): when two models share the
+ * same collection id set, `prev` already carried every shared node's
+ * position, so the component can skip pre-ticking — nothing would jump.
+ */
+export function graphSpineKey(model: GraphModel): string {
+  return model.nodes
+    .filter((n) => n.kind === 'collection')
+    .map((n) => n.id)
+    .sort((a, b) => a - b)
+    .join(',')
+}
+
 /** Collection radius ∝ √visible-image-count, clamped like the prototype. */
 export function collectionRadius(imageCount: number): number {
   return Math.max(4, Math.min(14, Math.sqrt(imageCount) * 1.5))
@@ -25,11 +38,17 @@ export function collectionRadius(imageCount: number): number {
  * Seeding is deterministic: collections on a golden-angle spiral around
  * the hub, images on a small ring around their first collection, and
  * categories on an outer ring, so the simulation starts near a solution.
+ *
+ * `prev` carries settled positions into a rebuild (#1636): every node
+ * whose `(kind, id)` exists in `prev` keeps its `x/y/vx/vy` instead of
+ * the deterministic seed, so refetches and Shared-only toggles do not
+ * bounce the layout.
  */
 export function buildGraphModel(
   payload: ApiCollectionsGraph,
   visibleCollectionIds: ReadonlySet<number>,
   sharedOnly: boolean,
+  prev?: GraphModel,
 ): GraphModel {
   const nodes: GraphNode[] = []
   const edges: GraphEdge[] = []
@@ -132,6 +151,19 @@ export function buildGraphModel(
     for (const catNode of categoryIndex.values()) {
       catNode.isolated = !connected.has(catNode.i)
       if (catNode.isolated) unconnectedCategories++
+    }
+  }
+
+  if (prev != null) {
+    const prevByKey = new Map<string, GraphNode>(prev.nodes.map((n) => [`${n.kind}:${n.id}`, n]))
+    for (const n of nodes) {
+      const old = prevByKey.get(`${n.kind}:${n.id}`)
+      if (old != null) {
+        n.x = old.x
+        n.y = old.y
+        n.vx = old.vx
+        n.vy = old.vy
+      }
     }
   }
 

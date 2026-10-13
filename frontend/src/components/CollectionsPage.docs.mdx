@@ -14,9 +14,10 @@ import * as CollectionsPageStories from './CollectionsPage.stories'
 <Title />
 
 <Subtitle>
-  One typed Collections page — Sequence or Synchronized, chosen by the Collections nav sub-menu:
-  header filters, responsive card grid, create/edit/delete flows, and the detail view — the sequence
-  viewer for sequence collections and the synchronized viewer for synchronized collections.
+  The unified Collections page — one tab with Cards, Table, and Graph views; a Type chip filter
+  replaces the old Sequence/Synchronized sub-pages: header filters and search, create/edit/delete
+  flows, and the detail view — the sequence viewer for sequence collections and the synchronized
+  viewer for synchronized collections.
 </Subtitle>
 
 ## When to use
@@ -38,8 +39,10 @@ with deterministic fixtures.
 
 ## Implementation guidance
 
-- **Filters.** Type is the page, not a filter (#1554) — the remaining filters live in the header
-  row left of **New collection**: a **My collections** chip and an **Owner** select. Selecting My
+- **Filters.** Type became a shared filter chip group (#1629) — **All / Sequence / Synchronized**
+  live in the header row left of **New collection** alongside a **My collections** chip and an
+  **Owner** select, and apply to every view. `?type=` deep links seed the chip; **All** clears the
+  URL parameter. Selecting My
   collections resets and disables the owner facet. Admins get an extra _No owner (orphaned)_
   owner choice; the hook never sends `orphaned` for other roles. Students never see the Owner
   select, and the hook never sends `owner_user_id` / `owner_program_id` for them.
@@ -54,7 +57,7 @@ with deterministic fixtures.
 - **Create / edit.** Both use `CollectionEditDialog`. Editing from a card first loads the full
   record (summaries omit the restricted scope); editing from the detail header reuses the loaded
   detail.
-- **Student collection count caps.** The type-page **New collection** button stays enabled until
+- **Student collection count caps.** The **New collection** button stays enabled until
   both types are capped. Since the visible list is type-filtered, the page fetches all of the
   student's collection summaries to determine both caps; the create dialog disables capped types
   and selects the other type when its default type is capped.

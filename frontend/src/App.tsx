@@ -2189,12 +2189,24 @@ export default function App() {
 
   // "Open image" from the collections graph (#1629): the graph only carries
   // image ids, so fetch the record first, then take the same `?image={id}`
-  // viewer path as the collection detail.
+  // viewer path as the collection detail. The epoch ref guards the async
+  // hop (#1636 review): navigating anywhere (or clicking another node)
+  // before the fetch lands must not be overwritten by the stale result.
+  const graphImageEpoch = useRef(0)
+  useEffect(() => {
+    graphImageEpoch.current += 1
+  }, [page])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
+      const epoch = ++graphImageEpoch.current
       void apiFetchImage(imageId)
-        .then((api) => handleOpenCollectionImage(apiImageToItem(api)))
-        .catch((err) => setErrorSnack(userMessage(err, 'Failed to load the image.')))
+        .then((api) => {
+          if (epoch === graphImageEpoch.current) handleOpenCollectionImage(apiImageToItem(api))
+        })
+        .catch((err) => {
+          if (epoch === graphImageEpoch.current)
+            setErrorSnack(userMessage(err, 'Failed to load the image.'))
+        })
     },
     [handleOpenCollectionImage],
   )

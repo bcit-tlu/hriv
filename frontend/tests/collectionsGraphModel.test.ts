@@ -148,6 +148,41 @@ describe('buildGraphModel', () => {
       expect(Math.hypot(n.x - hub.x, n.y - hub.y)).toBeGreaterThan(0)
     }
   })
+
+  it('carries settled positions from prev for nodes sharing (kind, id)', () => {
+    const p = payload({
+      order: 2,
+      collections: [coll(1), coll(2)],
+      images: [img(10, [1, 2]), img(11, [1])],
+    })
+    const a = buildGraphModel(p, ALL(p), false)
+    const moved = a.nodes.find((n) => n.kind === 'collection' && n.id === 1)!
+    moved.x = 555
+    moved.y = -42
+    moved.vx = 3
+    moved.vy = -1
+    a.nodes[0].x = 7
+
+    // A sharedOnly rebuild keeps every (kind, id) — positions survive.
+    const b = buildGraphModel(p, ALL(p), true, a)
+    const moved2 = b.nodes.find((n) => n.kind === 'collection' && n.id === 1)!
+    expect([moved2.x, moved2.y, moved2.vx, moved2.vy]).toEqual([555, -42, 3, -1])
+    expect(b.nodes[0].x).toBe(7)
+    const img10a = a.nodes.find((n) => n.kind === 'image' && n.id === 10)!
+    const img10b = b.nodes.find((n) => n.kind === 'image' && n.id === 10)!
+    expect([img10b.x, img10b.y]).toEqual([img10a.x, img10a.y])
+
+    // Nodes new to the next model (order 3 categories) still get seeds.
+    const p3 = payload({
+      order: 3,
+      collections: p.collections,
+      images: p.images.map((i) => ({ ...i, category_id: 9 })),
+      categories: [cat(9)],
+    })
+    const c = buildGraphModel(p3, ALL(p3), false, b)
+    const cat9 = c.nodes.find((n) => n.kind === 'category')!
+    expect(Math.hypot(cat9.x, cat9.y)).toBeGreaterThan(0)
+  })
 })
 
 describe('collectionRadius', () => {

@@ -168,7 +168,16 @@ export class GraphRenderer {
     }
     if (!this.qt) return null
     const p = transform.invert([px, py])
-    return this.qt.find(p[0], p[1], 30 / Math.sqrt(transform.k)) ?? null
+    // Fixed 12 px screen-space tolerance. Nodes render at `r / sqrt(k)`
+    // graph units, so a node's drawn radius in graph units is r/sqrt(k)
+    // and the tap padding is 12/k — both shrink with zoom, so distant
+    // clicks stop hitting at high k (#1636).
+    const k = transform.k
+    const tol = 12 / k
+    const maxR = this.model.nodes.reduce((m, n) => Math.max(m, n.r), 0)
+    const node = this.qt.find(p[0], p[1], maxR / Math.sqrt(k) + tol)
+    if (!node) return null
+    return Math.hypot(node.x - p[0], node.y - p[1]) <= node.r / Math.sqrt(k) + tol ? node : null
   }
 
   draw(state: DrawState): void {

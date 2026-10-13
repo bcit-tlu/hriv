@@ -115,4 +115,27 @@ describe('CollectionsTable', () => {
     fireEvent.click(screen.getByRole('button', { name: /next page/i }))
     expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(2)
   })
+
+  it('clamps the page when filters shrink the list (#1636 review)', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 7 }))
+    localStorage.setItem('hrivpref:rows-per-page:collections:user:7', '5')
+    const rows = (n: number) =>
+      Array.from({ length: n }, (_, i) => row({ id: i + 1, name: `C${i + 1}` }))
+    const ui = (collections: CollectionSummary[]) => (
+      <CollectionsTable
+        collections={collections}
+        categoryPaths={buildCategoryPaths([])}
+        currentUser={USER}
+        onOpenCollection={vi.fn()}
+      />
+    )
+    const { rerender } = render(ui(rows(7)))
+    fireEvent.click(screen.getByRole('button', { name: /next page/i }))
+    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(2)
+
+    // The shared filter shrinks the list while on page 2 — the stale page
+    // must not leave the table empty.
+    rerender(ui(rows(3)))
+    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(3)
+  })
 })

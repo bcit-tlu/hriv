@@ -19,6 +19,7 @@ import { CollectionTypeChip } from '../components/CollectionCard'
 import type { GraphModel, GraphNode } from './types'
 import { GraphRenderer, paletteFrom, type DrawState } from './renderer'
 import { createGraphSimulation, preTick, startDragRepel, stopDragRepel } from './simulation'
+import { graphSpineKey } from './buildModel'
 
 /**
  * Info the tooltip needs that the graph payload does not carry (the graph
@@ -66,12 +67,11 @@ interface TooltipState {
  * batched drawing, viewport culling, label cap, lazy quadtree, zoom
  * `.filter` yielding to drag over a node.
  *
- * State (positions, zoom) survives re-renders and remounts for the same
- * `model` identity: positions live on `model.nodes` and the last fitted
- * transform rides in a module-level WeakMap keyed by the model object.
+ * State (positions, zoom) survives model rebuilds: `buildGraphModel`
+ * carries positions for shared `(kind, id)` nodes and the transform lives
+ * in `transformRef` for the mount — the view refits only on the first
+ * build, never on rebuilds (Shared only, order changes, refreshes).
  */
-const fittedTransforms = new WeakMap<GraphModel, ZoomTransform>()
-
 export default function CollectionsGraph({
   model,
   onOpenCollection,
@@ -89,7 +89,9 @@ export default function CollectionsGraph({
   const frameRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<GraphRenderer | null>(null)
   const zoomRef = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
-  const transformRef = useRef<ZoomTransform | null>(fittedTransforms.get(model) ?? null)
+  const transformRef = useRef<ZoomTransform | null>(null)
+  const prevModelRef = useRef<GraphModel | null>(null)
+  const fitCountRef = useRef(0)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [legendOpen, setLegendOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -156,7 +158,6 @@ export default function CollectionsGraph({
       })
       .on('zoom', (e: { transform: ZoomTransform }) => {
         transformRef.current = e.transform
-        fittedTransforms.set(model, e.transform)
         rendererNow.requestDraw(drawState(e.transform))
       })
     zoomRef.current = zb
@@ -178,16 +179,24 @@ export default function CollectionsGraph({
     )
 
     rendererNow.resize()
-    const savedTransform = fittedTransforms.get(model)
-    if (savedTransform == null) {
-      // First build of this model: pre-tick then fit ONCE — no autofit on
-      // cool/resize/return (epic #1627).
+    const prevModel = prevModelRef.current
+    prevModelRef.current = model
+    const currentTransform = transformRef.current
+    if (currentTransform == null) {
+      // First build of the mount: pre-tick then fit ONCE — no autofit on
+      // cool/resize/rebuild (epic #1627, #1636 review).
       preTick(gs.sim)
       fitView(canvas, zb, transformRef, model)
-      fittedTransforms.set(model, transformRef.current!)
+      fitCountRef.current += 1
+      frameRef.current?.setAttribute('data-fit-count', String(fitCountRef.current))
     } else {
-      transformRef.current = savedTransform
-      applyTransform(canvas, zb, savedTransform)
+      // Rebuild (order / Shared only / refresh): `buildGraphModel` already
+      // carried positions for shared (kind, id) nodes, and the transform
+      // persists — only re-settle when the collection spine changed.
+      if (prevModel == null || graphSpineKey(prevModel) !== graphSpineKey(model)) {
+        preTick(gs.sim)
+      }
+      applyTransform(canvas, zb, currentTransform)
     }
     if (!simulate) gs.sim.stop()
 
@@ -319,10 +328,11 @@ export default function CollectionsGraph({
     const canvas = canvasRef.current
     if (!canvas || !zoomRef.current) return
     fitView(canvas, zoomRef.current, transformRef, model, false)
-    fittedTransforms.set(model, transformRef.current!)
   }
 
-  const empty = model.stats.collections === 0
+  // Empty only when nothing but the hub is drawable — isolated order-3
+  // categories still render with zero collections (#1636 review).
+  const empty = !model.nodes.some((n) => n.kind !== 'hub' && !n.hidden)
   const s = model.stats
   const statsLine =
     `${s.collections} ${s.collections === 1 ? 'collection' : 'collections'}` +

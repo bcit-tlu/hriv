@@ -88,7 +88,14 @@ export default function CollectionsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collections, sortKey, sortDir, categoryPaths])
 
-  const pageRows = sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+  // Clamp the stored index: filters/search shrink `collections` without
+  // resetting page state, so the slice and TablePagination must agree on
+  // one effective page (#1636 review).
+  const effectivePage = Math.min(page, Math.max(0, Math.ceil(sorted.length / rowsPerPage) - 1))
+  const pageRows = sorted.slice(
+    effectivePage * rowsPerPage,
+    effectivePage * rowsPerPage + rowsPerPage,
+  )
 
   const headerCell = (key: SortKey, label: string, alignRight = false) => (
     <TableCell
@@ -198,7 +205,7 @@ export default function CollectionsTable({
       <TablePagination
         component="div"
         count={sorted.length}
-        page={Math.min(page, Math.max(0, Math.ceil(sorted.length / rowsPerPage) - 1))}
+        page={effectivePage}
         onPageChange={(_, p) => setPage(p)}
         rowsPerPage={rowsPerPage}
         onRowsPerPageChange={(e) => {
