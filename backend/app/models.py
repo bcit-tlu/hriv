@@ -513,6 +513,10 @@ COLLECTION_VISIBILITIES: tuple[str, ...] = ("private", "public", "restricted")
 # renders the first two; the extra slots are reserved for future layouts.
 SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
 
+# Student collection caps (#1583).
+STUDENT_SEQUENCE_MAX_IMAGES = 20
+STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
+
 
 class Collection(Base):
     """A user- and/or program-owned grouping of existing images.
@@ -562,14 +566,27 @@ class Collection(Base):
         ForeignKey("programs.id", ondelete="SET NULL"), nullable=True,
     )
     # Browse placement (epic #1525): the category the collection is filed in;
-    # NULL = uncategorized (shown at the Browse root like uncategorized
-    # images). Deleting the category unfiles the collection rather than
-    # deleting it. ``sort_order`` is the tile-order position inside the scope.
+    # NULL = unfiled (not on Browse). Deleting the category unfiles the
+    # collection rather than deleting it. ``sort_order`` is the tile-order
+    # position inside a category scope.
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True,
     )
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
+    )
+    # Pinned tile cover: a member image picked via the tile's cover picker.
+    # NULL = the tile falls back to the first member. SET NULL so deleting
+    # the image row clears the pin; membership drops also clear it (the
+    # serializer falls back when the pinned image is not a visible member).
+    cover_image_id: Mapped[int | None] = mapped_column(
+        ForeignKey("images.id", ondelete="SET NULL"), nullable=True,
+    )
+    # Explicit "no cover" state from the cover picker: the tile renders the
+    # type-logo placeholder instead of falling back to the first member.
+    # Mutually exclusive with a pinned cover — writes to one clear the other.
+    cover_blank: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
     # Curatorial hide (#1559): a hidden collection drops out of student
     # view unless the student owns it — owners keep access (unlike images,

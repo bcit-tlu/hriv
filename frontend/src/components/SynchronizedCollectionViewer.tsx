@@ -12,9 +12,9 @@ import Paper from '@mui/material/Paper'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { alpha } from '@mui/material/styles'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import PushPinIcon from '@mui/icons-material/PushPin'
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
+import LinkIcon from '@mui/icons-material/Link'
+import LinkOffIcon from '@mui/icons-material/LinkOff'
+import ImageIcon from '@mui/icons-material/Image'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SaveIcon from '@mui/icons-material/Save'
 import ScreenRotationIcon from '@mui/icons-material/ScreenRotation'
@@ -154,6 +154,13 @@ export default function SynchronizedCollectionViewer({
     [images, failedIds],
   )
   const panes = useMemo(() => available.slice(0, MAX_PANES), [available])
+  // Restore view stays inert until a *valid* viewport has been saved for at
+  // least one rendered pane (#1567) — `viewportStateFromSaved` rejects
+  // malformed entries, so a junk `viewport_state` can't enable a button
+  // that only goes home.
+  const hasSavedView = panes.some(
+    (image) => viewportStateFromSaved(collection.viewportState[String(image.id)]) != null,
+  )
 
   // `initialViewport` is mount-only input for ImageViewer — freeze the saved
   // entry the first time an image occupies a pane so a later save/refetch
@@ -415,9 +422,13 @@ export default function SynchronizedCollectionViewer({
         <Alert severity="info" sx={{ mt: 3 }}>
           {images.length === 0 && collection.memberCount > 0
             ? 'All images in this collection are currently restricted.'
-            : images.length < 2
-              ? 'A synchronized comparison needs at least two visible images. Open an image below to view it on its own.'
-              : 'Fewer than two of the images in this collection could be loaded. They may have been removed or you may no longer have access to them.'}
+            : images.length === 0
+              ? canEdit
+                ? 'This collection has no images. Use "Manage Images" to add some.'
+                : 'This collection has no images.'
+              : images.length < 2
+                ? 'A synchronized comparison needs at least two visible images. Open an image below to view it on its own.'
+                : 'Fewer than two of the images in this collection could be loaded. They may have been removed or you may no longer have access to them.'}
         </Alert>
         {images.length > 0 && (
           <List dense sx={{ mt: 2 }}>
@@ -426,15 +437,7 @@ export default function SynchronizedCollectionViewer({
                 key={img.id}
                 divider
                 secondaryAction={
-                  <Button
-                    size="small"
-                    endIcon={<OpenInNewIcon />}
-                    href={`?image=${img.id}`}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      onOpenImage(img)
-                    }}
-                  >
+                  <Button size="small" endIcon={<ImageIcon />} onClick={() => onOpenImage(img)}>
                     Open image
                   </Button>
                 }
@@ -461,7 +464,14 @@ export default function SynchronizedCollectionViewer({
   const gridPanes = panes.length > 2
 
   return (
-    <Box data-testid="synchronized-collection-viewer">
+    <Box
+      data-testid="synchronized-collection-viewer"
+      sx={{
+        display: { md: 'flex' },
+        flexDirection: { md: 'column' },
+        flex: { md: '1 1 0' },
+      }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -470,6 +480,7 @@ export default function SynchronizedCollectionViewer({
           gap: 1,
           mt: 2,
           mb: 1,
+          flexShrink: 0,
         }}
       >
         {/* Panes start pinned (linked); the per-pane pin in each viewport's
@@ -486,9 +497,10 @@ export default function SynchronizedCollectionViewer({
           variant="outlined"
           startIcon={<RestartAltIcon />}
           onClick={handleReset}
+          disabled={!hasSavedView}
           data-testid="synchronized-reset"
         >
-          Reset view
+          Restore view
         </Button>
         {canEdit && (
           <Button
@@ -504,27 +516,71 @@ export default function SynchronizedCollectionViewer({
         )}
       </Box>
 
-      <Box sx={{ position: 'relative' }}>
+      <Box
+        sx={{
+          position: 'relative',
+          display: { md: 'flex' },
+          flexDirection: { md: 'column' },
+          flex: { md: '1 1 0' },
+          minHeight: { md: gridPanes ? 'auto' : 320 },
+        }}
+      >
         <Box
           sx={
             gridPanes
-              ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 2 }
-              : { display: 'flex', gap: 2 }
+              ? {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gridTemplateRows: { md: 'repeat(2, minmax(auto, 1fr))' },
+                  gap: 2,
+                  flex: { md: '1 1 0' },
+                }
+              : {
+                  display: 'flex',
+                  gap: 2,
+                  flex: { md: '1 1 0' },
+                }
           }
         >
           {paneProps.map(({ image, pane }) => {
             const pinned = !unpinnedIds.has(image.id)
             return (
-              <Box key={image.id} sx={gridPanes ? { minWidth: 0 } : { flex: 1, minWidth: 0 }}>
+              <Box
+                key={image.id}
+                sx={
+                  gridPanes
+                    ? {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 0,
+                      }
+                    : {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        flex: '1 1 0',
+                        minWidth: 0,
+                      }
+                }
+              >
                 <Paper
                   elevation={3}
-                  sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden' }}
+                  data-testid={`synchronized-viewer-frame-${image.id}`}
+                  sx={{
+                    position: 'relative',
+                    borderRadius: 2,
+                    overflow: 'hidden',
+                    display: { md: 'flex' },
+                    flexDirection: { md: 'column' },
+                    flex: { md: '1 1 0' },
+                    height: { md: '100%' },
+                    ...(gridPanes ? { minHeight: { md: 200 } } : {}),
+                  }}
                 >
                   <ImageViewer
                     tileSources={image.tileSources}
                     imageId={image.id}
                     categoryId={image.categoryId ?? undefined}
-                    height={gridPanes ? '34vh' : '55vh'}
+                    height={{ xs: gridPanes ? '34vh' : '55vh', md: '100%' }}
                     initialViewport={pane.initialViewport}
                     initialOverlays={pane.initialOverlays}
                     overlaysLocked={pane.initialOverlays != null}
@@ -535,20 +591,20 @@ export default function SynchronizedCollectionViewer({
                     onTileSourceRenewed={onImageRenewed}
                     onError={(message) => handleViewerError(image, message)}
                   />
-                  {/* Pin sits top-right of the viewport (the ImageViewer's
-                      own toolbar docks bottom-left, so no overlap). Pinned =
-                      linked; unpinning detaches this pane's pan/zoom/rotate
-                      (#1564). */}
+                  {/* Link toggle sits top-right of the viewport (the
+                      ImageViewer's own toolbar docks bottom-left, so no
+                      overlap). Linked = synced; unlinking detaches this
+                      pane's pan/zoom/rotate (#1564, #1567). */}
                   <Tooltip
                     title={
                       pinned
-                        ? 'Unpin view — pan, zoom and rotate independently'
-                        : 'Pin view — link pan, zoom and rotation with the other panes'
+                        ? 'Unlink view — pan, zoom and rotate independently'
+                        : 'Link view — share pan, zoom and rotation with the other panes'
                     }
                   >
                     <IconButton
                       size="small"
-                      aria-label={pinned ? `Unpin ${image.name}` : `Pin ${image.name}`}
+                      aria-label={pinned ? `Unlink ${image.name}` : `Link ${image.name}`}
                       aria-pressed={pinned}
                       onClick={() => handlePinToggle(image.id)}
                       data-testid={`pin-toggle-${image.id}`}
@@ -564,15 +620,19 @@ export default function SynchronizedCollectionViewer({
                         },
                       })}
                     >
-                      {pinned ? (
-                        <PushPinIcon fontSize="small" />
-                      ) : (
-                        <PushPinOutlinedIcon fontSize="small" />
-                      )}
+                      {pinned ? <LinkIcon /> : <LinkOffIcon />}
                     </IconButton>
                   </Tooltip>
                 </Paper>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    mt: 0.5,
+                    flexShrink: 0,
+                  }}
+                >
                   <Typography
                     variant="body2"
                     color="text.secondary"
@@ -585,7 +645,7 @@ export default function SynchronizedCollectionViewer({
                   <Button
                     size="small"
                     variant="text"
-                    endIcon={<OpenInNewIcon />}
+                    endIcon={<ImageIcon />}
                     onClick={() => onOpenImage(image)}
                     aria-label={`Open ${image.name}`}
                   >

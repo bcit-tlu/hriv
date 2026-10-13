@@ -36,7 +36,7 @@ hand the resulting map to each row.
 
 - **Segments link.** Each ancestor and the leaf call `onNavigate` with the path slice up to that
   depth; clicks stop propagation so table rows don't also fire their row action.
-- **Fallbacks.** `categoryId: null` renders an em-dash (uncategorized / Browse root); an id missing
+- **Fallbacks.** `categoryId: null` renders an em-dash (unfiled / not on Browse); an id missing
   from the map renders the raw id rather than crashing on a stale reference.
 - **Hidden marker.** `getCategoryHiddenStateFromPath` decides the eye icon — pass the themed
   `hiddenColor` (visibility palette `inactive`) so the glyph matches each table's palette.

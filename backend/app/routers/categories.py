@@ -621,11 +621,13 @@ async def delete_category(
         raise HTTPException(status_code=404, detail="Category not found")
     category_id_value = cat.id
     category_label = cat.label
-    # Deleting a category removes its tile from the parent scope, and every
-    # image/collection in the deleted subtree reparents to root via
-    # ON DELETE SET NULL — bump both scopes first (revision-then-rows lock
-    # order), then delete the row, then bump the browse revision last so
-    # the row lock precedes browse_state as in PATCH /categories.
+    # Deleting a category removes its tile from the parent scope. Images in
+    # the subtree reparent to root via ON DELETE SET NULL, so the root still
+    # needs invalidation. Collections likewise become unfiled via SET NULL,
+    # but are not root-scope members. Bump both scopes first
+    # (revision-then-rows lock order), then delete the row, then bump the
+    # browse revision last so the row lock precedes browse_state as in PATCH
+    # /categories.
     await bump_scopes(
         db, {scope_key_for(cat.parent_id), scope_key_for(None)}
     )
