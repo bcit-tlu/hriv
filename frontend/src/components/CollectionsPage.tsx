@@ -49,6 +49,7 @@ import {
 import CollectionsGraph from '../collectionsGraph/CollectionsGraph'
 import { buildGraphModel } from '../collectionsGraph/buildModel'
 import type { GraphModel } from '../collectionsGraph/types'
+import { graphToggleSx } from '../collectionsGraph/toggleStyles'
 import CollectionsTable, {
   COLLECTIONS_TABLE_COLUMN_OPTIONS,
   COLLECTIONS_TABLE_COLUMNS,
@@ -1011,7 +1012,7 @@ export default function CollectionsPage({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
-            mb: 1,
+            mb: 3,
             flexShrink: 0,
           }}
         >
@@ -1032,19 +1033,20 @@ export default function CollectionsPage({
               }}
               aria-label="Collections view"
               data-testid="collections-view-toggle"
+              sx={graphToggleSx}
             >
               <ToggleButton value="cards" aria-label="Cards view">
-                <Tooltip title="Cards">
+                <Tooltip title="Cards: one tile per collection with its cover image">
                   <ViewModuleIcon fontSize="small" />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton value="table" aria-label="Table view">
-                <Tooltip title="Table">
+                <Tooltip title="Table: sortable rows with choosable columns">
                   <TableRowsIcon fontSize="small" />
                 </Tooltip>
               </ToggleButton>
               <ToggleButton value="graph" aria-label="Graph view">
-                <Tooltip title="Graph">
+                <Tooltip title="Graph: how collections, images and categories connect">
                   <HubIcon fontSize="small" />
                 </Tooltip>
               </ToggleButton>
@@ -1142,16 +1144,19 @@ export default function CollectionsPage({
             ) : undefined
           }
           actions={
-            viewPrefs.view === 'table' ? (
-              <Button
-                size="small"
-                startIcon={<ViewColumnIcon fontSize="small" />}
-                aria-label="Choose columns"
-                onClick={() => setColumnDialogOpen(true)}
-              >
-                Choose columns
-              </Button>
-            ) : undefined
+            // Always rendered so the bar keeps the same height in every
+            // view — hidden-but-space-reserving outside table view.
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              aria-hidden={viewPrefs.view !== 'table'}
+              tabIndex={viewPrefs.view === 'table' ? undefined : -1}
+              sx={viewPrefs.view === 'table' ? undefined : { visibility: 'hidden' }}
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
           }
         >
           <FilterPopoverButton label="Name" activeCount={searchQ ? 1 : 0}>
@@ -1354,6 +1359,7 @@ export default function CollectionsPage({
                         }}
                         aria-label="Graph order"
                         data-testid="graph-order-toggle"
+                        sx={graphToggleSx}
                       >
                         <Tooltip title="Collections">
                           <ToggleButton value={1} aria-label="1st order">
@@ -1379,7 +1385,7 @@ export default function CollectionsPage({
                         onChange={() => setViewPrefs((p) => ({ ...p, sharedOnly: !p.sharedOnly }))}
                         aria-label="Shared only"
                         data-testid="graph-shared-only"
-                        sx={{ bgcolor: 'background.paper' }}
+                        sx={graphToggleSx}
                       >
                         Shared only
                       </ToggleButton>

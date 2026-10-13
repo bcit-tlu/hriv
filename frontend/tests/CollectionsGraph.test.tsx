@@ -107,6 +107,38 @@ describe('CollectionsGraph', () => {
     await waitFor(() => expect(frame()).toHaveAttribute('data-fit-count', '1'))
   })
 
+  it('page legend at 1st order names the hub and omits higher-order rows', () => {
+    renderGraph()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
+    expect(screen.getByText('Collections hub (centre)')).toBeInTheDocument()
+    expect(screen.getByText('Collection — size reflects image count')).toBeInTheDocument()
+    expect(screen.getByText('Synchronized collection')).toBeInTheDocument()
+    expect(screen.queryByText('Image')).not.toBeInTheDocument()
+    expect(screen.queryByText('Shared image (in 2+ collections)')).not.toBeInTheDocument()
+    expect(screen.queryByText('Category')).not.toBeInTheDocument()
+  })
+
+  it('page legend gains image and category rows at higher orders', () => {
+    const p3: ApiCollectionsGraph = {
+      order: 3,
+      collections: PAYLOAD.collections,
+      images: [{ id: 10, name: 'img', collection_ids: [1, 2], category_id: 7 }],
+      categories: [{ id: 7, label: 'Bones', path: 'Bones', image_count: 1 }],
+    }
+    render(
+      <CollectionsGraph
+        model={buildGraphModel(p3, new Set([1, 2]), false)}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        simulate={false}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
+    expect(screen.getByText('Image')).toBeInTheDocument()
+    expect(screen.getByText('Shared image (in 2+ collections)')).toBeInTheDocument()
+    expect(screen.getByText('Category')).toBeInTheDocument()
+  })
+
   it('refits on rebuild when fitOnRebuild is set (the dialog graph)', async () => {
     const { rerender } = render(
       <CollectionsGraph

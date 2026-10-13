@@ -64,6 +64,10 @@ export interface CollectionsGraphProps {
    *  graph deliberately keeps the transform (#1636); the collection dialog
    *  passes this so an order change cannot leave the hub off-canvas. */
   fitOnRebuild?: boolean
+  /** Legend wording: 'page' describes the collections hub; 'collection'
+   *  (the dialog) names the hub "This collection" and defers
+   *  related-collection rows to 2nd order. */
+  legendVariant?: 'page' | 'collection'
 }
 
 interface TooltipState {
@@ -100,6 +104,7 @@ export default function CollectionsGraph({
   labelFor,
   statsCaption,
   fitOnRebuild = false,
+  legendVariant = 'page',
 }: CollectionsGraphProps) {
   const { mode } = useColorMode()
   const palette = useMemo(() => paletteFrom(mode, getThemePalette(mode)), [mode])
@@ -463,24 +468,45 @@ export default function CollectionsGraph({
               </IconButton>
             </Box>
             <Collapse in={legendOpen}>
-              <LegendRow swatch={<Swatch fill={palette.hub} />} label="collections hub" />
               <LegendRow
-                swatch={<Swatch fill={palette.collection} />}
-                label="collection (√ images)"
+                swatch={<Swatch fill={palette.hub} />}
+                label={
+                  legendVariant === 'collection'
+                    ? 'This collection (centre)'
+                    : 'Collections hub (centre)'
+                }
               />
-              <LegendRow
-                swatch={<Swatch fill={palette.collection} ring={palette.syncRing} />}
-                label="synchronized collection"
-              />
-              <LegendRow swatch={<Swatch fill={palette.image} />} label="image" />
-              <LegendRow
-                swatch={<Swatch fill={palette.imageShared} stroke={palette.imageSharedStroke} />}
-                label="shared image (2+ collections)"
-              />
-              <LegendRow
-                swatch={<Swatch fill={palette.categoryFill} stroke={palette.category} />}
-                label="category (order 3)"
-              />
+              {(legendVariant === 'page' || model.stats.order >= 2) && (
+                <LegendRow
+                  swatch={<Swatch fill={palette.collection} />}
+                  label={
+                    legendVariant === 'collection'
+                      ? 'Related collection — size reflects image count'
+                      : 'Collection — size reflects image count'
+                  }
+                />
+              )}
+              {(legendVariant === 'page' || model.stats.order >= 2) && (
+                <LegendRow
+                  swatch={<Swatch fill={palette.collection} ring={palette.syncRing} />}
+                  label="Synchronized collection"
+                />
+              )}
+              {model.stats.order >= 2 && (
+                <LegendRow swatch={<Swatch fill={palette.image} />} label="Image" />
+              )}
+              {model.stats.order >= 2 && (
+                <LegendRow
+                  swatch={<Swatch fill={palette.imageShared} stroke={palette.imageSharedStroke} />}
+                  label="Shared image (in 2+ collections)"
+                />
+              )}
+              {model.stats.order >= 3 && (
+                <LegendRow
+                  swatch={<Swatch fill={palette.categoryFill} stroke={palette.category} />}
+                  label="Category"
+                />
+              )}
             </Collapse>
           </Paper>
         )}

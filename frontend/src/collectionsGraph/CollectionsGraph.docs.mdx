@@ -46,6 +46,10 @@ collection-page graph dialog (#1630) reuses this component with a different mode
   row above the `position: relative` canvas wrapper — nothing overlays the drawing; legend,
   empty state and tooltip stay inside the wrapper, and the ResizeObserver / tooltip clamp
   measure it.
+- The collapsible legend is order- and variant-aware via `legendVariant`: the default
+  `'page'` labels the hub "Collections hub (centre)"; `'collection'` (the dialog) uses "This
+  collection (centre)" and shows the related-collection/synchronized rows only at order ≥ 2.
+  Image/shared-image rows appear at order ≥ 2, the category row at order ≥ 3.
 - `sharedOnly` hides single-collection images from drawing and hit testing but keeps them in
   the simulation; category nodes are never hidden.
 - Node clicks: collections call `onOpenCollection`, images call `onOpenImage(imageId)` — the

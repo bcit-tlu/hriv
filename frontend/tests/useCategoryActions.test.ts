@@ -44,6 +44,8 @@ function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryA
     setErrorSnack: vi.fn(),
     setWarningSnack: vi.fn(),
     setMoveSnack: vi.fn(),
+    navigateToCategory: vi.fn(),
+    openCollection: vi.fn(),
     ...overrides,
   }
 }
@@ -1023,6 +1025,11 @@ describe('useCategoryActions', () => {
           message: expect.stringContaining('Epithelia'),
         }),
       )
+      const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0] as {
+        onView?: () => void
+      }
+      snackCall.onView?.()
+      expect(deps.navigateToCategory).toHaveBeenCalledWith(2)
     })
 
     it('does not move an unfiled collection absent from the category tree', async () => {
@@ -1204,6 +1211,11 @@ describe('useCategoryActions', () => {
           message: expect.stringContaining('Epithelia'),
         }),
       )
+      const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0] as {
+        onView?: () => void
+      }
+      snackCall.onView?.()
+      expect(deps.openCollection).toHaveBeenCalledWith(7)
     })
 
     it('does not add images to an unfiled collection absent from the tree', async () => {

@@ -618,11 +618,14 @@ describe('CollectionsPage', () => {
       expect(onFiltersChange).toHaveBeenCalledWith({ ...DEFAULT_COLLECTION_FILTERS, type: 'all' })
     })
 
-    it('Choose columns appears only in table view and toggling a column adds its header', async () => {
+    it('Choose columns is hidden outside table view and toggling a column adds its header', async () => {
       const user = userEvent.setup()
       localStorage.setItem('hriv_user', JSON.stringify({ id: ADMIN.id }))
       renderPage({ collections: [makeCollectionSummary({ id: 1 })] })
-      expect(screen.queryByRole('button', { name: 'Choose columns' })).not.toBeInTheDocument()
+      // The button always renders (it reserves the FilterBar's height in
+      // every view) but is hidden/unreachable outside table view.
+      const hiddenButton = screen.getByText('Choose columns').closest('button')!
+      expect(hiddenButton).not.toBeVisible()
 
       fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
       await user.click(await screen.findByRole('button', { name: 'Choose columns' }))

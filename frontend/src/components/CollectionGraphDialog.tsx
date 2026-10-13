@@ -17,6 +17,7 @@ import { ApiError, fetchCollectionGraph, userMessage, type ApiCollectionGraph } 
 import CollectionsGraph, { type GraphTooltipInfo } from '../collectionsGraph/CollectionsGraph'
 import { buildCollectionGraphModel } from '../collectionsGraph/buildCollectionModel'
 import type { GraphModel, GraphNode } from '../collectionsGraph/types'
+import { graphToggleSx } from '../collectionsGraph/toggleStyles'
 import type { CategoryPathSegment } from './CategoryBreadcrumb'
 
 type GraphOrder = 1 | 2 | 3
@@ -289,6 +290,7 @@ export default function CollectionGraphDialog({
               // An order change rebuilds the model on kept positions — refit
               // so the hub can't drift out of the kept transform's frame.
               fitOnRebuild
+              legendVariant="collection"
               overlay={
                 <ToggleButtonGroup
                   size="small"
@@ -299,6 +301,7 @@ export default function CollectionGraphDialog({
                   }}
                   aria-label="Graph order"
                   data-testid="collection-graph-order"
+                  sx={graphToggleSx}
                 >
                   <Tooltip title="Images">
                     <ToggleButton value={1} aria-label="1st order">

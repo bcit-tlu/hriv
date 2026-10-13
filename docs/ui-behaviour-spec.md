@@ -665,8 +665,9 @@ lists collections the API marks `permissions.can_edit` (UX gate — the backend
 re-checks).
 
 - **Given** the collections flag is on and an image is open, **When** the
-  viewer action bar renders, **Then** an **Add to Collection** button follows
-  **Share View** for every role. It is absent when the flag is off, disabled
+  viewer action bar renders, **Then** an **Add to Collection** button sits
+  between the Hide/Show Image control and **Edit Details** (with **Share
+  View** last) for every role. It is absent when the flag is off, disabled
   with the "Exit canvas edit mode first" tooltip while canvas edit mode is
   active, and desaturated (`grayscale(100%)`) when the image is inactive or
   hidden by category — the same rules as **Edit Details** / **Share View**.
@@ -876,7 +877,8 @@ committed on Save) in the edit modals.
   (`grayscale(100%)`).
 - **Given** an editor (`canEditContent`) on a Browse category page with the
   collections feature enabled, **Then** a "New collection" button sits
-  between "Add Category" and "Add Images"; clicking it opens
+  between the Hide/Show Category control and "Add Category" (with "Add
+  Images" last); clicking it opens
   `CollectionEditDialog` in create mode with the current Browse category
   pre-filed (`defaultCategoryId`).
 - **EditCategoryDialog** visibility button uses local state; the actual
