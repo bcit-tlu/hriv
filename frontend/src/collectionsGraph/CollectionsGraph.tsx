@@ -17,7 +17,7 @@ import { useColorMode } from '../useColorMode'
 import { getThemePalette } from '../theme'
 import { CollectionTypeChip } from '../components/CollectionCard'
 import type { GraphModel, GraphNode } from './types'
-import { GraphRenderer, paletteFrom, type DrawState } from './renderer'
+import { GraphRenderer, paletteFrom, type DrawState, type LabelThresholds } from './renderer'
 import { createGraphSimulation, preTick, startDragRepel, stopDragRepel } from './simulation'
 import { graphSpineKey } from './buildModel'
 
@@ -51,6 +51,12 @@ export interface CollectionsGraphProps {
   /** Keep the running simulation after mount instead of letting it cool —
    *  stories use this off so Chromatic snapshots are deterministic. */
   simulate?: boolean
+  /** Per-kind zoom levels at which labels appear (defaults: page tuning). */
+  labelThresholds?: Partial<LabelThresholds>
+  /** Rewrite a node's drawn label (dialog strips the hub-name prefix). */
+  labelFor?: (n: GraphNode) => string
+  /** Replace the computed stats caption (the dialog counts differ, #1630). */
+  statsCaption?: string
 }
 
 interface TooltipState {
@@ -82,6 +88,9 @@ export default function CollectionsGraph({
   legend = true,
   overlay,
   simulate = true,
+  labelThresholds,
+  labelFor,
+  statsCaption,
 }: CollectionsGraphProps) {
   const { mode } = useColorMode()
   const palette = useMemo(() => paletteFrom(mode, getThemePalette(mode)), [mode])
@@ -122,8 +131,9 @@ export default function CollectionsGraph({
       searchDim: searchSets.dim,
       searchMatch: searchSets.match,
       searchActive,
+      labelFor,
     }),
-    [model, searchSets, searchActive, selectedId],
+    [model, searchSets, searchActive, selectedId, labelFor],
   )
 
   // Build/attach the simulation + renderer once per model identity.
@@ -142,6 +152,7 @@ export default function CollectionsGraph({
       rendererRef.current = rendererNow
       ;(rendererNow as unknown as { __model?: GraphModel }).__model = model
     }
+    if (labelThresholds) rendererNow.setLabelThresholds(labelThresholds)
     const dragTarget = (mx: number, my: number): GraphNode | null =>
       rendererNow.findNode(mx, my, transformRef.current ?? zoomIdentity)
 
@@ -304,6 +315,13 @@ export default function CollectionsGraph({
     if (t) rendererRef.current?.requestDraw(drawState(t))
   }, [palette, drawState])
 
+  // Label tuning (per-kind zoom thresholds, #1630) → redraw.
+  useEffect(() => {
+    if (labelThresholds) rendererRef.current?.setLabelThresholds(labelThresholds)
+    const t = transformRef.current
+    if (t) rendererRef.current?.requestDraw(drawState(t))
+  }, [labelThresholds, drawState])
+
   // Search/hover/selection change → redraw.
   useEffect(() => {
     const t = transformRef.current
@@ -335,14 +353,15 @@ export default function CollectionsGraph({
   const empty = !model.nodes.some((n) => n.kind !== 'hub' && !n.hidden)
   const s = model.stats
   const statsLine =
+    statsCaption ??
     `${s.collections} ${s.collections === 1 ? 'collection' : 'collections'}` +
-    (s.order >= 2
-      ? ` · ${s.images} ${s.images === 1 ? 'image' : 'images'} · ${s.shared} shared`
-      : '') +
-    (s.order >= 3
-      ? ` · ${s.categories} ${s.categories === 1 ? 'category' : 'categories'}` +
-        (s.unconnectedCategories > 0 ? ` (${s.unconnectedCategories} without a collection)` : '')
-      : '')
+      (s.order >= 2
+        ? ` · ${s.images} ${s.images === 1 ? 'image' : 'images'} · ${s.shared} shared`
+        : '') +
+      (s.order >= 3
+        ? ` · ${s.categories} ${s.categories === 1 ? 'category' : 'categories'}` +
+          (s.unconnectedCategories > 0 ? ` (${s.unconnectedCategories} without a collection)` : '')
+        : '')
 
   return (
     <Box

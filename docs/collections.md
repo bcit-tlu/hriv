@@ -705,6 +705,27 @@ defaults):
   fetch the record (`GET /api/images/{id}`) and take the normal `?image=`
   viewer path; hub and category clicks are inert.
 
+**Graph View dialog (#1630).** The collection detail header carries an
+outlined **Graph View** button (`collection-graph-open`) between the
+Hide/Show toggle and **Manage Images** — read-only, shown to every viewer
+on both collection types. It opens `components/CollectionGraphDialog.tsx`
+(`Dialog maxWidth="md"`, ~70vh canvas) rendering the same
+`CollectionsGraph` component over `GET /api/collections/{id}/graph?order=`
+(`fetchCollectionGraph`, `buildCollectionGraphModel`): the collection is
+the hub, its visible member images the spokes; **2nd order** adds the
+other visible collections sharing ≥1 member, **3rd order** adds the
+members' categories. Clicking a related collection pushes a perspective
+breadcrumb (`Collection A › Collection B`) and refetches — the page URL
+and detail never change, and the canvas remounts per perspective so each
+collection gets its own fit-once; the **Open collection** action closes
+the dialog and navigates the page to the current perspective. Image
+clicks close the dialog and take the page's `onOpenImageById`
+fetch-then-viewer path. Image labels appear earlier than on the page
+graph (`k > 1` vs `k > 2.5`, via the renderer's `labelThresholds` option)
+and drop the hub collection's name prefix (`DrawState.labelFor`). A
+deleted/removed perspective answers 404 → "This collection is no longer
+available." with a **Back** action that pops the stack.
+
 **Search.** The shared search field is client-side and never persisted: it
 narrows Cards/Table rows by name, description and owner
 ("Filters by name, description and owner."), and on the Graph it dims

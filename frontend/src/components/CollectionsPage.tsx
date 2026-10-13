@@ -75,6 +75,7 @@ import type {
 } from '../types'
 import CollectionCard, { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
+import CollectionGraphDialog from './CollectionGraphDialog'
 import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
@@ -211,6 +212,7 @@ function CollectionDetailHeader({
   onEdit,
   onTransfer,
   onManage,
+  onOpenGraph,
   togglingHidden,
   onToggleHidden,
   canFile,
@@ -228,6 +230,8 @@ function CollectionDetailHeader({
   onTransfer?: () => void
   /** Opens the member Manage dialog (#1566) — replaces the Reorder toggle. */
   onManage?: () => void
+  /** Opens the Graph View dialog (#1630) — read-only, shown to everyone. */
+  onOpenGraph?: () => void
   togglingHidden?: boolean
   onToggleHidden?: () => void
   /** The filed category (or an ancestor) is hidden — the collection is
@@ -422,6 +426,20 @@ function CollectionDetailHeader({
                 {collection.hidden ? 'Show collection' : 'Hide collection'}
               </Button>
             ))}
+          {/* Graph View sits between Hide and Manage (#1630): a read-only
+              structural view every viewer gets, no permission gate. */}
+          {onOpenGraph && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<HubIcon />}
+              onClick={onOpenGraph}
+              data-testid="collection-graph-open"
+              sx={hiddenSx}
+            >
+              Graph View
+            </Button>
+          )}
           {/* Manage opens the member dialog (reorder/add/remove, #1566) — it
               replaces the old sequence-only Reorder toggle and applies to
               both collection types. */}
@@ -552,6 +570,7 @@ export default function CollectionsPage({
   // Member-management dialog (#1566) — reorder/add/remove live here now that
   // the sequence viewer's inline reorder mode is gone.
   const [manageOpen, setManageOpen] = useState(false)
+  const [graphDialogOpen, setGraphDialogOpen] = useState(false)
   const editRequestRef = useRef(0)
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
@@ -831,6 +850,7 @@ export default function CollectionsPage({
               onEdit={() => void openEdit(detail)}
               onTransfer={() => setTransferTarget(detail)}
               onManage={() => setManageOpen(true)}
+              onOpenGraph={() => setGraphDialogOpen(true)}
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
@@ -861,6 +881,7 @@ export default function CollectionsPage({
               onEdit={() => void openEdit(detail)}
               onTransfer={() => setTransferTarget(detail)}
               onManage={() => setManageOpen(true)}
+              onOpenGraph={() => setGraphDialogOpen(true)}
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
@@ -1222,6 +1243,21 @@ export default function CollectionsPage({
         }
         onImageRenewed={(image) => detail && onCollectionImageRenewed(detail.id, image)}
         onError={onViewerError}
+      />
+
+      {/* Graph View dialog (#1630) — local perspective graph; its stack is
+          dialog-local so the page URL never changes while navigating. */}
+      <CollectionGraphDialog
+        open={graphDialogOpen && detail != null}
+        collectionId={detail?.id ?? 0}
+        collectionName={detail?.name ?? ''}
+        categoryPaths={categoryPaths}
+        onClose={() => setGraphDialogOpen(false)}
+        onOpenImage={onOpenImageById ?? (() => undefined)}
+        onOpenCollection={(id) => {
+          setGraphDialogOpen(false)
+          onOpenCollection(id)
+        }}
       />
 
       <CollectionOwnersDialog

@@ -53,6 +53,10 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - Unified Collections page — view toggle, Table view, Graph view, view
   preference, `?type=` filter seed (#1629; graph endpoints #1628/#1633):
   `npm test -- CollectionsPage CollectionsTable collectionsGraphModel useCollectionsViewPreference useCollectionsData navigation AppShell App.test`
+- Collection Graph View dialog — detail-header button, perspective stack,
+  order toggle, image/collection clicks (#1630; `CollectionGraphDialog.tsx`,
+  `buildCollectionModel.ts`, `fetchCollectionGraph` in `api.ts`):
+  `npm test -- CollectionGraphDialog collectionGraphModel CollectionsGraph CollectionsPage`
 - "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
   `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
   `npm test -- AddToCollectionDialog useAddToCollection App.test`

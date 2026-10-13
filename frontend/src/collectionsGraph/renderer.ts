@@ -30,6 +30,14 @@ export interface GraphPalette {
 
 /** Label candidates drawn per frame, nearest the viewport centre first. */
 const LABEL_CAP = 200
+
+/** Zoom level (k) above which each node kind draws its label (#1630). */
+export interface LabelThresholds {
+  collection: number
+  image: number
+  category: number
+}
+const DEFAULT_LABEL_THRESHOLDS: LabelThresholds = { collection: 1.2, image: 2.5, category: 1 }
 /** Quadtree rebuild throttle while the simulation is still warm. */
 const QT_REBUILD_MS = 150
 
@@ -106,6 +114,7 @@ export class GraphRenderer {
   private lastQt = 0
   private drawQueued = false
   private warm = false
+  private labelThresholds: LabelThresholds = DEFAULT_LABEL_THRESHOLDS
 
   constructor(canvas: HTMLCanvasElement, model: GraphModel, palette: GraphPalette) {
     this.canvas = canvas
@@ -114,6 +123,14 @@ export class GraphRenderer {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas 2D context unavailable')
     this.ctx = ctx
+  }
+
+  /**
+   * Per-kind zoom level (k) at which labels start drawing (#1630 — the
+   * collection dialog wants image labels earlier than the page graph).
+   */
+  setLabelThresholds(t: Partial<LabelThresholds>): void {
+    this.labelThresholds = { ...this.labelThresholds, ...t }
   }
 
   setModel(model: GraphModel): void {
@@ -369,24 +386,27 @@ export class GraphRenderer {
       if (sx < -60 || sx > w + 60 || sy < -20 || sy > h + 20) continue
       let show: boolean
       let font = '11px Roboto,Arial'
+      const thr = this.labelThresholds
       if (n.kind === 'collection') {
         show =
-          k > 1.2 ||
+          k > thr.collection ||
           n === state.hover ||
           n.id === state.selectedId ||
           sr >= 12 ||
           (state.searchActive && state.searchMatch.has(n))
       } else if (n.kind === 'image') {
         font = '10px Roboto,Arial'
-        show = k > 2.5 || n === state.hover
+        show = k > thr.image || n === state.hover
       } else {
         // category labels appear a little earlier — they are sparse
-        show = k > 1 || n === state.hover
+        show = k > thr.category || n === state.hover
       }
       if (show) {
         cands.push({
           n,
-          lbl: n.label,
+          // `labelFor` lets callers rewrite labels (the dialog strips the
+          // hub collection's name prefix from image labels, #1630).
+          lbl: state.labelFor?.(n) ?? n.label,
           sx,
           sy,
           sr,
@@ -445,6 +465,8 @@ export interface DrawState {
   /** Collections matching the active search (label priority boost). */
   searchMatch: ReadonlySet<GraphNode>
   searchActive: boolean
+  /** Optional label rewriter (e.g. hub-name prefix stripping, #1630). */
+  labelFor?: (n: GraphNode) => string
 }
 
 function fitText(ctx: CanvasRenderingContext2D, s: string, maxW: number): string {
