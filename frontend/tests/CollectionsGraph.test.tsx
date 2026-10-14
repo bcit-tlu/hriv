@@ -128,6 +128,31 @@ describe('CollectionsGraph', () => {
     )
   })
 
+  it('hides the pan/zoom hint when the canvas is too narrow for both overlays', async () => {
+    // The dialog canvas is narrower than the viewport, so the hint yields
+    // to the legend on measured width, not a breakpoint — simulate a
+    // 400px canvas wrapper (< the 560px threshold).
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 400,
+    })
+    class FiringResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        this.cb = cb
+      }
+      cb: ResizeObserverCallback
+      observe(el: Element) {
+        this.cb([], this as unknown as ResizeObserver)
+        void el
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', FiringResizeObserver)
+    renderGraph()
+    await waitFor(() => expect(screen.getByTestId('graph-hint')).not.toBeVisible())
+  })
+
   it('page legend gains image and category rows at higher orders', () => {
     const p3: ApiCollectionsGraph = {
       order: 3,

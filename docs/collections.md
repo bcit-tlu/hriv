@@ -752,7 +752,8 @@ Invalid stored values fall back to defaults:
   categories (order ≥ 3); the dialog variant renames the hub "This
   collection (centre)" and prefixes the related rows. An unboxed,
   single-line bottom-right hint reads "Scroll or pinch to zoom, and drag
-  to pan." (hidden at xs widths where it would collide with the legend).
+  to pan." (hidden when the canvas is narrower than ~560px — e.g. the
+  dialog at small viewports — where it would collide with the legend).
 
 **Graph View dialog (#1630).** The collection detail header carries an
 outlined **Graph View** button (`collection-graph-open`) between the
