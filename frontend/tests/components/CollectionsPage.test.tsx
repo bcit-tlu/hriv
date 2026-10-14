@@ -447,6 +447,25 @@ describe('CollectionsPage', () => {
       await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(2))
     })
 
+    it('refetches the graph when a pending fetch was cancelled on view exit (#1631)', async () => {
+      // A request that never settles — leaving Graph cancels it.
+      fetchCollectionsGraphMock.mockReturnValue(new Promise(() => {}))
+      renderPage({
+        collections: [makeCollectionSummary({ id: 1 })],
+        listMode: 'full',
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+
+      // Same rows identity on re-entry: the recorded key from the cancelled
+      // run must not suppress the refetch.
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(2))
+    })
+
     it('renders the graph with zero collections at 3rd order (#1636)', async () => {
       fetchCollectionsGraphMock.mockResolvedValue({
         order: 3,
@@ -894,6 +913,46 @@ describe('CollectionsPage', () => {
         expect(props.onBulkUpdate).toHaveBeenCalledWith([1], { hidden: true }, [
           expect.objectContaining({ id: 1, name: 'One (renamed)' }),
         ]),
+      )
+    })
+
+    it('prunes deleted off-page rows from the selection when the bulk save 404s (#1631)', async () => {
+      const user = userEvent.setup()
+      const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const two = makeCollectionSummary({ id: 2, name: 'Two' })
+      const onBulkUpdate = vi
+        .fn()
+        .mockRejectedValue(new ApiError(404, 'One or more collections not found'))
+      const props = { initialView: 'table' as const, onBulkUpdate, onBulkDelete: vi.fn() }
+      const { rerender } = renderPage({ ...props, collections: [one, two], total: 2 })
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      await user.click(screen.getByRole('checkbox', { name: 'Select Two' }))
+
+      // Page over so id 1 is off-page but still selected — it was deleted
+      // elsewhere while invisible, so the bulk call 404s.
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage {...makeProps({ ...props, collections: [two], total: 2 })} />
+        </AuthContext.Provider>,
+      )
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (2 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+      expect(
+        await within(dialog).findByText('Failed to save changes. Please try again.'),
+      ).toBeInTheDocument()
+      // Selection was pruned to the confirmed-on-page rows — the dialog
+      // (which aria-hides the toolbar while open) now shows one row.
+      await waitFor(() =>
+        expect(within(dialog).getByText(/Editing 1 selected collection\./)).toBeInTheDocument(),
+      )
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /Bulk Edit \(1 selected\)/ }),
+        ).toBeInTheDocument(),
       )
     })
 

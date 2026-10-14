@@ -24,6 +24,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import {
+  ApiError,
   fetchCollection,
   fetchCollections,
   fetchCollectionsGraph,
@@ -754,6 +755,24 @@ export default function CollectionsPage({
     }
     setSelectedRowsMap(merged)
   }
+  // A bulk call 404s when a selected row was deleted by someone else while
+  // it sat off-page — prune the selection to the current page's rows (the
+  // only ones we can confirm still exist) and rethrow a clearer message so
+  // the dialog's error path still surfaces it (#1631).
+  const pruneMissingSelection = (err: unknown): unknown => {
+    if (!(err instanceof ApiError) || err.status !== 404) return err
+    setSelectedRowsMap((prev) => {
+      const pruned = new Map<number, CollectionSummary>()
+      for (const c of collections) {
+        const row = prev.get(c.id)
+        if (row != null) pruned.set(c.id, row)
+      }
+      return pruned
+    })
+    return new Error(
+      'Some selected collections no longer exist. The selection has been refreshed — please review it and try again.',
+    )
+  }
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
   const [graphError, setGraphError] = useState<string | null>(null)
@@ -772,23 +791,31 @@ export default function CollectionsPage({
     if (listMode !== 'full' || viewPrefs.view !== 'graph') return
     const f = fetchedGraph.current
     if (f != null && f.order === viewPrefs.order && f.collections === collections) return
-    fetchedGraph.current = { order: viewPrefs.order, collections }
+    const mine = { order: viewPrefs.order, collections }
+    fetchedGraph.current = mine
     let cancelled = false
+    let settled = false
     fetchCollectionsGraph(viewPrefs.order)
       .then((payload) => {
+        settled = true
         if (!cancelled) {
           setGraphPayload(payload)
           setGraphError(null)
         }
       })
       .catch((err: unknown) => {
+        settled = true
         if (!cancelled) {
-          fetchedGraph.current = null
+          if (fetchedGraph.current === mine) fetchedGraph.current = null
           setGraphError(userMessage(err, 'Failed to load the collections graph.'))
         }
       })
     return () => {
       cancelled = true
+      // A cancelled in-flight run must not leave its key recorded — on
+      // re-entry the same rows array would otherwise suppress the refetch
+      // and leave the canvas empty forever.
+      if (!settled && fetchedGraph.current === mine) fetchedGraph.current = null
     }
   }, [listMode, viewPrefs.view, viewPrefs.order, collections, selectedCollectionId])
 
@@ -1727,13 +1754,21 @@ export default function CollectionsPage({
         onClose={() => setBulkEditOpen(false)}
         onSave={async (data) => {
           if (!onBulkUpdate) return
-          await onBulkUpdate([...selectedIds], data, selectedRows)
+          try {
+            await onBulkUpdate([...selectedIds], data, selectedRows)
+          } catch (err) {
+            throw pruneMissingSelection(err)
+          }
           setBulkEditOpen(false)
           setSelectedRowsMap(new Map())
         }}
         onDelete={async () => {
           if (!onBulkDelete) return
-          await onBulkDelete([...selectedIds])
+          try {
+            await onBulkDelete([...selectedIds])
+          } catch (err) {
+            throw pruneMissingSelection(err)
+          }
           setBulkEditOpen(false)
           setSelectedRowsMap(new Map())
         }}

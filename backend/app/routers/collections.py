@@ -213,8 +213,12 @@ def _list_sort_key(
         )
     if sort == "image_count":
         return image_counts.get(collection.id, 0)
-    # id / created_at / updated_at
-    return getattr(collection, sort)
+    if sort == "id":
+        return collection.id
+    if sort == "created_at":
+        return collection.created_at
+    # sort is validated to the allowlist; the only remaining key.
+    return collection.updated_at
 
 
 async def _caller_visible_image_counts(

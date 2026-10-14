@@ -244,9 +244,11 @@ export function matchesCollectionFilters(
   user: Pick<User, 'id'> | null,
 ): boolean {
   if (filters.type !== 'all' && row.type !== filters.type) return false
-  // q/visibility/category mirrors are the server-side facets (#1631) — the
-  // category check is exact-match only; the following reload reconciles the
-  // server's ancestor-aware semantics.
+  // q/visibility are the server-side facets (#1631). Category is NOT
+  // mirrored: the server filter is ancestor-aware and this mirror has no
+  // category tree, so checking `row.categoryId` would wrongly reject rows
+  // filed into a descendant of a selected category — the follow-up reload
+  // reconciles category membership.
   const q = filters.q.trim().toLowerCase()
   if (
     q !== '' &&
@@ -256,11 +258,6 @@ export function matchesCollectionFilters(
   )
     return false
   if (filters.visibility.length > 0 && !filters.visibility.includes(row.visibility)) return false
-  if (
-    filters.categoryIds.length > 0 &&
-    (row.categoryId == null || !filters.categoryIds.includes(row.categoryId))
-  )
-    return false
   // Owner filters match membership in the co-owner set (#1531); orphaned
   // means no user owners and no program owner (an empty owners list).
   if (filters.mine) return row.owners.some((o) => o.kind === 'user' && o.userId === user?.id)
@@ -531,6 +528,32 @@ export function useCollectionsData({
     [],
   )
 
+  /**
+   * Slot a freshly saved row into the current rows (#1631). `full` mode
+   * holds the whole visible set, so a matching row is prepended (deduped)
+   * and a non-matching one dropped. `paged` mode holds one server-sorted
+   * page: an on-page row updates in place or leaves the page when it no
+   * longer matches, but an off-page row is never prepended — prepending
+   * would break the server ordering, and the follow-up reload places it.
+   */
+  const placeRow = useCallback(
+    (prev: CollectionSummary[], row: CollectionSummary): CollectionSummary[] => {
+      const { filters: f, currentUser: u, listMode: mode } = latest.current
+      const matches = matchesCollectionFilters(row, f, u)
+      if (mode === 'paged') {
+        const idx = prev.findIndex((c) => c.id === row.id)
+        if (idx < 0) return prev
+        if (!matches) return prev.filter((c) => c.id !== row.id)
+        const next = prev.slice()
+        next[idx] = row
+        return next
+      }
+      const rest = prev.filter((c) => c.id !== row.id)
+      return matches ? [row, ...rest] : rest
+    },
+    [],
+  )
+
   const pollRows = useCallback(async (signal: AbortSignal) => {
     const {
       currentUser: user,
@@ -677,14 +700,11 @@ export function useCollectionsData({
       // Reflect the server's response immediately; the refresh below only
       // reconciles with other users' changes and must not make a successful
       // save look like a failure if it happens to fail.
-      const { filters: current, currentUser: user, load: refresh } = latest.current
-      if (matchesCollectionFilters(created, current, user)) {
-        writeCurrentRows((prev) => [created, ...prev.filter((c) => c.id !== created.id)])
-      }
-      void refresh()
+      writeCurrentRows((prev) => placeRow(prev, created))
+      void latest.current.load()
       return created
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   const update = useCallback(
@@ -697,15 +717,11 @@ export function useCollectionsData({
       const updated = await updateCollection(id, toCollectionPatch(values, baseline, version))
       const mapped = apiCollectionToCollection(updated)
       setDetail((prev) => (prev?.id === id ? mapped : prev))
-      const { filters: current, currentUser: user, load: refresh } = latest.current
-      writeCurrentRows((prev) => {
-        const rest = prev.filter((c) => c.id !== id)
-        return matchesCollectionFilters(mapped, current, user) ? [mapped, ...rest] : rest
-      })
-      void refresh()
+      writeCurrentRows((prev) => placeRow(prev, mapped))
+      void latest.current.load()
       return mapped
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   const remove = useCallback(
@@ -774,16 +790,7 @@ export function useCollectionsData({
             }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          writeCurrentRows((prev) => {
-            const rest = prev.filter((c) => c.id !== id)
-            return matchesCollectionFilters(
-              updated,
-              latest.current.filters,
-              latest.current.currentUser,
-            )
-              ? [updated, ...rest]
-              : rest
-          })
+          writeCurrentRows((prev) => placeRow(prev, updated))
           void latest.current.load()
           return updated
         } catch (err) {
@@ -799,7 +806,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -822,16 +829,7 @@ export function useCollectionsData({
           }),
         )
         setDetail((prev) => (prev?.id === id ? updated : prev))
-        writeCurrentRows((prev) => {
-          const rest = prev.filter((c) => c.id !== id)
-          return matchesCollectionFilters(
-            updated,
-            latest.current.filters,
-            latest.current.currentUser,
-          )
-            ? [updated, ...rest]
-            : rest
-        })
+        writeCurrentRows((prev) => placeRow(prev, updated))
         return updated
       }
       const queued = mutationQueue.current.then(run, () => run(null))
@@ -841,7 +839,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -870,16 +868,7 @@ export function useCollectionsData({
             }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          writeCurrentRows((prev) => {
-            const rest = prev.filter((c) => c.id !== id)
-            return matchesCollectionFilters(
-              updated,
-              latest.current.filters,
-              latest.current.currentUser,
-            )
-              ? [updated, ...rest]
-              : rest
-          })
+          writeCurrentRows((prev) => placeRow(prev, updated))
           void latest.current.load()
           return updated
         } catch (err) {
@@ -889,16 +878,7 @@ export function useCollectionsData({
           if (conflict) {
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
-            writeCurrentRows((prev) => {
-              const rest = prev.filter((c) => c.id !== id)
-              return matchesCollectionFilters(
-                current,
-                latest.current.filters,
-                latest.current.currentUser,
-              )
-                ? [current, ...rest]
-                : rest
-            })
+            writeCurrentRows((prev) => placeRow(prev, current))
           }
           throw err
         }
@@ -910,7 +890,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -934,16 +914,7 @@ export function useCollectionsData({
             }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          writeCurrentRows((prev) => {
-            const rest = prev.filter((c) => c.id !== id)
-            return matchesCollectionFilters(
-              updated,
-              latest.current.filters,
-              latest.current.currentUser,
-            )
-              ? [updated, ...rest]
-              : rest
-          })
+          writeCurrentRows((prev) => placeRow(prev, updated))
           void latest.current.load()
           return updated
         } catch (err) {
@@ -951,16 +922,7 @@ export function useCollectionsData({
           if (conflict) {
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
-            writeCurrentRows((prev) => {
-              const rest = prev.filter((c) => c.id !== id)
-              return matchesCollectionFilters(
-                current,
-                latest.current.filters,
-                latest.current.currentUser,
-              )
-                ? [current, ...rest]
-                : rest
-            })
+            writeCurrentRows((prev) => placeRow(prev, current))
           }
           throw err
         }
@@ -972,7 +934,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -984,7 +946,9 @@ export function useCollectionsData({
    * version wins. The `POST …/move` response is the fresh detail record, so
    * an open detail and the list row update in place. On a 409 the conflict's
    * authoritative record is merged (as in `transfer`) so a retry posts the
-   * fresh version instead of failing again.
+   * fresh version instead of failing again. A reload follows the write
+   * (#1631): the server-side category facet is ancestor-aware and the local
+   * mirror cannot decide whether a moved row still belongs on the page.
    */
   const move = useCallback(
     (id: number, categoryId: number | null, version: number): Promise<Collection> => {
@@ -996,16 +960,8 @@ export function useCollectionsData({
             await moveCollection(id, { category_id: categoryId, version: effectiveVersion }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          writeCurrentRows((prev) => {
-            const rest = prev.filter((c) => c.id !== id)
-            return matchesCollectionFilters(
-              updated,
-              latest.current.filters,
-              latest.current.currentUser,
-            )
-              ? [updated, ...rest]
-              : rest
-          })
+          writeCurrentRows((prev) => placeRow(prev, updated))
+          void latest.current.load()
           return updated
         } catch (err) {
           // A 409 carries the authoritative record — merge it so the next
@@ -1014,16 +970,7 @@ export function useCollectionsData({
           if (conflict) {
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
-            writeCurrentRows((prev) => {
-              const rest = prev.filter((c) => c.id !== id)
-              return matchesCollectionFilters(
-                current,
-                latest.current.filters,
-                latest.current.currentUser,
-              )
-                ? [current, ...rest]
-                : rest
-            })
+            writeCurrentRows((prev) => placeRow(prev, current))
           }
           throw err
         }
@@ -1035,7 +982,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -1057,16 +1004,7 @@ export function useCollectionsData({
             await updateCollection(id, { hidden, version: baseline.version }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          writeCurrentRows((prev) => {
-            const rest = prev.filter((c) => c.id !== id)
-            return matchesCollectionFilters(
-              updated,
-              latest.current.filters,
-              latest.current.currentUser,
-            )
-              ? [updated, ...rest]
-              : rest
-          })
+          writeCurrentRows((prev) => placeRow(prev, updated))
           void latest.current.load()
           return updated
         } catch (err) {
@@ -1076,16 +1014,7 @@ export function useCollectionsData({
           if (conflict) {
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
-            writeCurrentRows((prev) => {
-              const rest = prev.filter((c) => c.id !== id)
-              return matchesCollectionFilters(
-                current,
-                latest.current.filters,
-                latest.current.currentUser,
-              )
-                ? [current, ...rest]
-                : rest
-            })
+            writeCurrentRows((prev) => placeRow(prev, current))
           }
           throw err
         }
@@ -1097,7 +1026,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -1122,16 +1051,7 @@ export function useCollectionsData({
             }),
           )
           setDetail((prev) => (prev?.id === id ? updated : prev))
-          writeCurrentRows((prev) => {
-            const rest = prev.filter((c) => c.id !== id)
-            return matchesCollectionFilters(
-              updated,
-              latest.current.filters,
-              latest.current.currentUser,
-            )
-              ? [updated, ...rest]
-              : rest
-          })
+          writeCurrentRows((prev) => placeRow(prev, updated))
           void latest.current.load()
           return updated
         } catch (err) {
@@ -1141,16 +1061,7 @@ export function useCollectionsData({
           if (conflict) {
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
-            writeCurrentRows((prev) => {
-              const rest = prev.filter((c) => c.id !== id)
-              return matchesCollectionFilters(
-                current,
-                latest.current.filters,
-                latest.current.currentUser,
-              )
-                ? [current, ...rest]
-                : rest
-            })
+            writeCurrentRows((prev) => placeRow(prev, current))
           }
           throw err
         }
@@ -1162,7 +1073,7 @@ export function useCollectionsData({
       )
       return queued
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**
@@ -1174,14 +1085,9 @@ export function useCollectionsData({
   const mergeUpdated = useCallback(
     (updated: Collection) => {
       setDetail((prev) => (prev?.id === updated.id ? updated : prev))
-      writeCurrentRows((prev) => {
-        const rest = prev.filter((c) => c.id !== updated.id)
-        return matchesCollectionFilters(updated, latest.current.filters, latest.current.currentUser)
-          ? [updated, ...rest]
-          : rest
-      })
+      writeCurrentRows((prev) => placeRow(prev, updated))
     },
-    [writeCurrentRows],
+    [writeCurrentRows, placeRow],
   )
 
   /**

@@ -400,20 +400,22 @@ describe('matchesCollectionFilters', () => {
         user,
       ),
     ).toBe(false)
+    // Category is NOT mirrored (#1631): the server facet is ancestor-aware
+    // and the hook has no category tree, so `categoryIds` never rejects a
+    // row — the follow-up reload reconciles membership.
     expect(
       matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [4] }, user),
     ).toBe(true)
     expect(
       matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [5] }, user),
-    ).toBe(false)
-    // Unfiled rows never match a category facet.
+    ).toBe(true)
     expect(
       matchesCollectionFilters(
         makeCollection({ categoryId: null }),
         { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [4] },
         user,
       ),
-    ).toBe(false)
+    ).toBe(true)
   })
 })
 
@@ -1105,6 +1107,78 @@ describe('useCollectionsData', () => {
           }),
         ),
       )
+    })
+
+    it('update replaces an on-page row in place instead of prepending (#1631)', async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [
+          makeApiCollectionSummary({ id: 1, name: 'A', version: 1 }),
+          makeApiCollectionSummary({ id: 2, name: 'B', version: 1 }),
+        ],
+        total: 2,
+      })
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 2, name: 'B renamed', version: 2 }),
+      )
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1, 2]))
+      // Hang the follow-up reload so the optimistic placement is observable.
+      fetchCollectionsPagedMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.update(2, { ...VALUES, name: 'B renamed' }, 1, null)
+      })
+      expect(result.current.collections.map((c) => c.id)).toEqual([1, 2])
+      expect(result.current.collections[1]).toMatchObject({ id: 2, name: 'B renamed' })
+    })
+
+    it('update drops an on-page row that no longer matches the filters (#1631)', async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [
+          makeApiCollectionSummary({ id: 1, name: 'A', version: 1 }),
+          makeApiCollectionSummary({ id: 2, name: 'B', version: 1 }),
+        ],
+        total: 2,
+      })
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.collections).toHaveLength(2))
+      act(() =>
+        result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, visibility: ['private'] }),
+      )
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ visibility: ['private'] }),
+        ),
+      )
+      fetchCollectionsPagedMock.mockImplementationOnce(() => new Promise(() => {}))
+      updateCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, name: 'A renamed', visibility: 'restricted', version: 2 }),
+      )
+
+      await act(async () => {
+        await result.current.update(1, { ...VALUES, name: 'A renamed' }, 1, null)
+      })
+      expect(result.current.collections.map((c) => c.id)).toEqual([2])
+    })
+
+    it('create never prepends a row to the paged list (#1631)', async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 1 })],
+        total: 1,
+      })
+      createCollectionMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 42, name: 'Skulls', type: 'sequence' }),
+      )
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
+      fetchCollectionsPagedMock.mockImplementationOnce(() => new Promise(() => {}))
+
+      await act(async () => {
+        await result.current.create(VALUES)
+      })
+      // Not prepended — the reload (mocked pending) places it by sort.
+      expect(result.current.collections.map((c) => c.id)).toEqual([1])
+      await waitFor(() => expect(fetchCollectionsPagedMock).toHaveBeenCalledTimes(2))
     })
 
     it('background refresh refetches the current page, not page 1', async () => {
@@ -2206,6 +2280,10 @@ describe('useCollectionsData', () => {
       )
       const { result } = renderData({ selectedCollectionId: 1 })
       await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      // The follow-up reload returns the post-move list.
+      fetchCollectionsMock.mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, version: 4, category_id: 8 }),
+      ])
 
       let moved: unknown
       await act(async () => {
@@ -2215,6 +2293,9 @@ describe('useCollectionsData', () => {
       expect(result.current.detail).toMatchObject({ id: 1, version: 4, categoryId: 8 })
       expect(result.current.collections[0]).toMatchObject({ id: 1, version: 4, categoryId: 8 })
       expect(moved).toMatchObject({ id: 1, version: 4 })
+      // A move reloads the list (#1631) — the ancestor-aware category
+      // facet cannot be mirrored locally.
+      await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
     })
 
     it('moves to the root with a null category and leaves another open detail alone', async () => {
@@ -2228,6 +2309,10 @@ describe('useCollectionsData', () => {
       )
       const { result } = renderData({ selectedCollectionId: 2 })
       await waitFor(() => expect(result.current.detail?.id).toBe(2))
+      fetchCollectionsMock.mockResolvedValue([
+        makeApiCollectionSummary({ id: 1, version: 6, category_id: null }),
+        makeApiCollectionSummary({ id: 2, category_id: 8 }),
+      ])
 
       await act(async () => {
         await result.current.move(1, null, 5)
@@ -2235,6 +2320,7 @@ describe('useCollectionsData', () => {
       expect(moveCollectionMock).toHaveBeenCalledWith(1, { category_id: null, version: 5 })
       expect(result.current.detail).toMatchObject({ id: 2, version: 2 })
       expect(result.current.collections[0]).toMatchObject({ id: 1, version: 6, categoryId: null })
+      await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
     })
 
     it('serializes moves behind in-flight viewer writes so the queued version wins', async () => {
