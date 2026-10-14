@@ -790,6 +790,12 @@ export default function CollectionsPage({
       n === 1
         ? '1 selected collection no longer exists and was removed from the selection. Please try again.'
         : `${n} selected collections no longer exist and were removed from the selection. Please try again.`
+    if (missing.size === ids.length) {
+      // Nothing left to edit — a retry would send an empty bulk request.
+      // Close the dialog and surface the explanation via the snack instead.
+      setBulkEditOpen(false)
+      onViewerError(message)
+    }
     return new ApiError(404, message)
   }
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
@@ -1773,6 +1779,12 @@ export default function CollectionsPage({
         onClose={() => setBulkEditOpen(false)}
         onSave={async (data) => {
           if (!onBulkUpdate) return
+          // A 404-pruned selection can empty between renders — never send
+          // an empty bulk request.
+          if (selectedIds.size === 0) {
+            setBulkEditOpen(false)
+            return
+          }
           try {
             await onBulkUpdate([...selectedIds], data, selectedRows)
           } catch (err) {
@@ -1783,6 +1795,10 @@ export default function CollectionsPage({
         }}
         onDelete={async () => {
           if (!onBulkDelete) return
+          if (selectedIds.size === 0) {
+            setBulkEditOpen(false)
+            return
+          }
           try {
             await onBulkDelete([...selectedIds])
           } catch (err) {

@@ -974,6 +974,40 @@ describe('CollectionsPage', () => {
       expect(screen.getByRole('checkbox', { name: 'Select One' })).toBeChecked()
     })
 
+    it('closes the dialog and snacks when the 404 revalidation empties the selection (#1631)', async () => {
+      const user = userEvent.setup()
+      const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const onBulkUpdate = vi
+        .fn()
+        .mockRejectedValue(new ApiError(404, 'One or more collections not found'))
+      const onViewerError = vi.fn()
+      renderPage({
+        initialView: 'table',
+        onBulkUpdate,
+        onBulkDelete: vi.fn(),
+        onViewerError,
+        collections: [one],
+      })
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      fetchCollectionMock.mockRejectedValue(new ApiError(404, 'Collection not found'))
+
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+      // The probe removed the only selected row — the dialog closes and the
+      // explanation goes to the snack instead of the dialog's error alert.
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(onViewerError).toHaveBeenCalledWith(
+        '1 selected collection no longer exists and was removed from the selection. Please try again.',
+      )
+      // No selection remains — no bulk affordance, and no retry can fire an
+      // empty bulk request.
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).not.toBeInTheDocument()
+      expect(onBulkUpdate).toHaveBeenCalledTimes(1)
+    })
+
     it('opens the edit dialog from the row menu', async () => {
       const user = userEvent.setup()
       const loadCollection = vi.fn().mockResolvedValue(makeCollection({ id: 1, name: 'One' }))
