@@ -3,7 +3,11 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
-import { matchesCollectionFilters, type CollectionListFilters } from '../useCollectionsData'
+import {
+  matchesCollectionFilters,
+  type CollectionListFilters,
+  type CollectionSort,
+} from '../useCollectionsData'
 import type {
   Category,
   Collection,
@@ -224,10 +228,22 @@ function CollectionsPageExample(args: StoryArgs) {
     type: args.typeFilter ?? 'all',
     mine: false,
     owner: 'any',
+    q: '',
+    visibility: [],
+    categoryIds: [],
   })
+  // Stand-in for the hook's server-side sort/page state (#1631).
+  const [sort, setSort] = useState<CollectionSort>({ key: 'updated', direction: 'desc' })
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(25)
   const user = makeUser(args.role)
-  // The real page receives a server-filtered list; mirror that here so the filter bar has effect.
-  const collections = args.collections.filter((c) => matchesCollectionFilters(c, filters, user))
+  // The real page receives a server-filtered/sorted/paged list; mirror that
+  // here so the filter bar and pagination have effect.
+  const all = args.collections.filter((c) => matchesCollectionFilters(c, filters, user))
+  // Fixture order stands in for the server's ordering — the sort state is
+  // still tracked so header clicks respond, but rows are not reordered.
+  void sort
+  const collections = all.slice(page * pageSize, page * pageSize + pageSize)
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <Box sx={{ p: 3 }}>
@@ -236,10 +252,24 @@ function CollectionsPageExample(args: StoryArgs) {
           programs={programs}
           groups={[]}
           collections={collections}
+          total={all.length}
+          sort={sort}
+          onSortChange={setSort}
+          page={page}
+          onPageChange={setPage}
+          pageSize={pageSize}
+          onPageSizeChange={(n) => {
+            setPageSize(n)
+            setPage(0)
+          }}
+          listMode="full"
           loading={args.loading}
           error={args.error}
           filters={filters}
-          onFiltersChange={setFilters}
+          onFiltersChange={(next) => {
+            setFilters(next)
+            setPage(0)
+          }}
           ownerOptions={[
             { kind: 'user', userId: 7, name: 'Ada Lovelace' },
             { kind: 'user', userId: 8, name: 'Grace Hopper' },

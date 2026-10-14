@@ -759,12 +759,21 @@ export interface CollectionFilters {
   orphaned?: boolean
   /** Only unfiled collections (`category_id IS NULL`), not shown on Browse. */
   uncategorized?: boolean
+  /** Case-insensitive substring over name, description and owner label (#1631). */
+  q?: string
+  /** Repeated `visibility` params; the server keeps rows whose visibility is in the set (#1631). */
+  visibility?: ApiCollectionVisibility[]
+  /** Repeated `category_id` params — ancestor-aware on the server (#1631). */
+  category_ids?: number[]
+  /** Server-side sort key (#1631); the allowed values live on the endpoint. */
+  sort?: string
+  direction?: 'asc' | 'desc'
+  /** 1-based page; the server requires `page_size` when `page` is sent (#1631). */
+  page?: number
+  page_size?: number
 }
 
-export function fetchCollections(
-  filters: CollectionFilters = {},
-  init?: RequestInit,
-): Promise<ApiCollectionSummary[]> {
+function collectionsQueryString(filters: CollectionFilters): string {
   const params = new URLSearchParams()
   if (filters.type) params.set('type', filters.type)
   if (filters.mine) params.set('mine', 'true')
@@ -774,8 +783,64 @@ export function fetchCollections(
   if (filters.limit != null) params.set('limit', String(filters.limit))
   if (filters.orphaned) params.set('orphaned', 'true')
   if (filters.uncategorized) params.set('uncategorized', 'true')
-  const qs = params.toString()
+  if (filters.q && filters.q.trim()) params.set('q', filters.q.trim())
+  for (const visibility of filters.visibility ?? []) params.append('visibility', visibility)
+  for (const id of filters.category_ids ?? []) params.append('category_id', String(id))
+  if (filters.sort) params.set('sort', filters.sort)
+  if (filters.direction) params.set('direction', filters.direction)
+  if (filters.page != null) params.set('page', String(filters.page))
+  if (filters.page_size != null) params.set('page_size', String(filters.page_size))
+  return params.toString()
+}
+
+export function fetchCollections(
+  filters: CollectionFilters = {},
+  init?: RequestInit,
+): Promise<ApiCollectionSummary[]> {
+  const qs = collectionsQueryString(filters)
   return request(`/collections${qs ? `?${qs}` : ''}`, init)
+}
+
+export interface PaginatedCollections {
+  items: ApiCollectionSummary[]
+  /** Total matching collections before pagination (from the X-Total-Count header). */
+  total: number
+}
+
+/**
+ * Server-side paged collection listing (#1631) — the same `GET /collections`
+ * contract as `fetchCollections` but also returns `X-Total-Count`, falling
+ * back to the item count when the header is absent or unparsable (e.g. a
+ * stubbed unpaginated response).
+ */
+export async function fetchCollectionsPaged(
+  filters: CollectionFilters = {},
+  init?: RequestInit,
+): Promise<PaginatedCollections> {
+  const qs = collectionsQueryString(filters)
+  const { data, response } = await requestRaw<ApiCollectionSummary[]>(
+    `/collections${qs ? `?${qs}` : ''}`,
+    init,
+  )
+  const items = data ?? []
+  const header = response.headers.get('X-Total-Count')
+  const parsed = header != null ? Number(header) : NaN
+  return { items, total: Number.isNaN(parsed) ? items.length : parsed }
+}
+
+/**
+ * Distinct owners across the caller-visible collections (#1631) — feeds the
+ * Owner facet now that the list is paged and the option set can no longer be
+ * derived from the loaded rows.
+ */
+export function fetchCollectionOwners(
+  type?: ApiCollectionType,
+  init?: RequestInit,
+): Promise<ApiCollectionOwner[]> {
+  const params = new URLSearchParams()
+  if (type) params.set('type', type)
+  const qs = params.toString()
+  return request(`/collections/owners${qs ? `?${qs}` : ''}`, init)
 }
 
 export function fetchCollection(id: number): Promise<ApiCollection> {

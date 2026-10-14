@@ -5,10 +5,11 @@ import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionsPage from '../../src/components/CollectionsPage'
 import type { CollectionsPageProps } from '../../src/components/CollectionsPage'
-import { ApiError, fetchCollections, fetchCollectionsGraph } from '../../src/api'
+import { ApiError, fetchCollection, fetchCollections, fetchCollectionsGraph } from '../../src/api'
 import { DEFAULT_COLLECTION_FILTERS } from '../../src/useCollectionsData'
 import type { User } from '../../src/types'
 import {
+  makeApiCollection,
   makeApiCollectionSummary,
   makeCategory,
   makeCollection,
@@ -28,6 +29,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   }
 })
 const fetchCollectionsMock = vi.mocked(fetchCollections)
+const fetchCollectionMock = vi.mocked(fetchCollection)
 const fetchCollectionsGraphMock = vi.mocked(fetchCollectionsGraph)
 
 // Sequence and synchronized details mount the real OpenSeadragon viewer,
@@ -122,6 +124,14 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     filters: DEFAULT_COLLECTION_FILTERS,
     onFiltersChange: vi.fn(),
     ownerOptions: [],
+    total: 0,
+    sort: { key: 'updated', direction: 'desc' },
+    onSortChange: vi.fn(),
+    page: 0,
+    onPageChange: vi.fn(),
+    pageSize: 25,
+    onPageSizeChange: vi.fn(),
+    listMode: 'full',
     selectedCollectionId: null,
     detail: null,
     detailLoading: false,
@@ -389,6 +399,75 @@ describe('CollectionsPage', () => {
       expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
     })
 
+    it('fetches the graph payload only while in graph view and full mode (#1631)', async () => {
+      const rerenderWith = (
+        rerender: (ui: React.ReactElement) => void,
+        overrides: Partial<CollectionsPageProps>,
+      ) => {
+        const next = makeProps(overrides)
+        rerender(
+          <AuthContext.Provider value={makeAuth(ADMIN)}>
+            <CollectionsPage {...next} />
+          </AuthContext.Provider>,
+        )
+      }
+
+      // Paged mode: the graph stays mounted but never triggers a fetch.
+      const { rerender } = renderPage({
+        collections: [makeCollectionSummary({ id: 1 })],
+        listMode: 'paged',
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).not.toHaveBeenCalled()
+
+      // Full mode in graph view fetches once.
+      rerenderWith(rerender, {
+        collections: [makeCollectionSummary({ id: 1 })],
+        listMode: 'full',
+      })
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      // Back in paged mode (Cards/Table page flip or poll), changed
+      // collections must not refetch the hidden payload.
+      rerenderWith(rerender, {
+        collections: [makeCollectionSummary({ id: 2 })],
+        listMode: 'paged',
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
+
+      // Re-entering graph mode with new full rows refetches once.
+      rerenderWith(rerender, {
+        collections: [makeCollectionSummary({ id: 3 })],
+        listMode: 'full',
+      })
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(2))
+    })
+
+    it('refetches the graph when a pending fetch was cancelled on view exit (#1631)', async () => {
+      // A request that never settles — leaving Graph cancels it.
+      fetchCollectionsGraphMock.mockReturnValue(new Promise(() => {}))
+      renderPage({
+        collections: [makeCollectionSummary({ id: 1 })],
+        listMode: 'full',
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cards view' }))
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+
+      // Same rows identity on re-entry: the recorded key from the cancelled
+      // run must not suppress the refetch.
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(2))
+    })
+
     it('renders the graph with zero collections at 3rd order (#1636)', async () => {
       fetchCollectionsGraphMock.mockResolvedValue({
         order: 3,
@@ -409,8 +488,10 @@ describe('CollectionsPage', () => {
       expect(m.stats.categories).toBe(1)
     })
 
-    it('search narrows cards/table rows but only highlights graph nodes', async () => {
-      renderPage({
+    it('search commits filters.q to the server; graph only highlights nodes (#1631)', async () => {
+      const onFiltersChange = vi.fn()
+      const { rerender } = renderPage({
+        onFiltersChange,
         collections: [
           makeCollectionSummary({ id: 1, name: 'Skull atlas' }),
           makeCollectionSummary({ id: 2, name: 'Pelvis set' }),
@@ -420,21 +501,66 @@ describe('CollectionsPage', () => {
       fireEvent.change(screen.getByLabelText('Filter collections by name'), {
         target: { value: 'skull' },
       })
-      // Cards keep only the match; the helper explains the filter scope.
-      expect(screen.getAllByTestId('collection-card')).toHaveLength(1)
+      // Debounced 300 ms — nothing commits yet and every card stays (the
+      // server re-queries; the page does not filter rows itself).
+      expect(onFiltersChange).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(onFiltersChange).toHaveBeenCalledWith({
+          ...DEFAULT_COLLECTION_FILTERS,
+          q: 'skull',
+        }),
+      )
+      expect(screen.getAllByTestId('collection-card')).toHaveLength(2)
       expect(screen.getByText('Filters by name, description and owner.')).toBeInTheDocument()
 
       fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
       await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalled())
-      // The Name popover stays open across the view switch — its helper
-      // text explains the graph's highlight-only behaviour.
-      expect(
-        await screen.findByText('Highlights matches in the graph; nodes are not removed.'),
-      ).toBeInTheDocument()
+      // Graph keeps the full set — q/visibility/category only drive the
+      // highlight predicate, never drop nodes (#1631).
+      const two = makeCollectionSummary({ id: 2, name: 'Pelvis set' })
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage
+            {...makeProps({
+              filters: { ...DEFAULT_COLLECTION_FILTERS, q: 'skull' },
+              collections: [makeCollectionSummary({ id: 1, name: 'Skull atlas' }), two],
+              total: 2,
+            })}
+          />
+        </AuthContext.Provider>,
+      )
+      await waitFor(() => expect(collectionsGraphProps.current?.searchQuery).toBe('skull'))
+      const matches = collectionsGraphProps.current?.matchesSearch as (id: number) => boolean
+      expect(matches(1)).toBe(true)
+      expect(matches(2)).toBe(false)
     })
   })
 
   describe('filters', () => {
+    it('Cards shows the shared server-pagination footer and forwards page changes (#1631)', async () => {
+      const user = userEvent.setup()
+      const onPageChange = vi.fn()
+      const onPageSizeChange = vi.fn()
+      renderPage({
+        collections: Array.from({ length: 5 }, (_, i) =>
+          makeCollectionSummary({ id: i + 1, name: `C${i + 1}` }),
+        ),
+        total: 40,
+        page: 0,
+        pageSize: 5,
+        onPageChange,
+        onPageSizeChange,
+      })
+      expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
+      // 0-based page state → the footer labels 1–5 of 40.
+      expect(screen.getByText('1–5 of 40')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Go to next page' }))
+      expect(onPageChange).toHaveBeenCalledWith(1)
+      fireEvent.mouseDown(screen.getByRole('combobox', { name: /rows per page/i }))
+      await user.click(await screen.findByRole('option', { name: '10' }))
+      expect(onPageSizeChange).toHaveBeenCalledWith(10)
+    })
+
     it('renders the unified heading and the FilterBar popovers', () => {
       renderPage()
       expect(screen.getByRole('heading', { name: 'Collections' })).toBeInTheDocument()
@@ -520,9 +646,11 @@ describe('CollectionsPage', () => {
       expect(within(menu).queryByText('Ada Lovelace')).not.toBeInTheDocument()
     })
 
-    it('the Visibility facet narrows the cards client-side', async () => {
+    it('the Visibility facet commits to the server filters (#1631)', async () => {
       const user = userEvent.setup()
-      renderPage({
+      const onFiltersChange = vi.fn()
+      const { rerender } = renderPage({
+        onFiltersChange,
         collections: [
           makeCollectionSummary({ id: 1, name: 'Pub', visibility: 'public' }),
           makeCollectionSummary({ id: 2, name: 'Priv', visibility: 'private' }),
@@ -530,25 +658,33 @@ describe('CollectionsPage', () => {
       })
       await user.click(screen.getByRole('button', { name: 'Visibility' }))
       await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
-      expect(screen.getAllByTestId('collection-card')).toHaveLength(1)
-      expect(screen.getByText('Pub')).toBeInTheDocument()
-      expect(screen.queryByText('Priv')).not.toBeInTheDocument()
-      // Active facet shows a summary chip.
-      expect(screen.getByText('Visibility: Public')).toBeInTheDocument()
+      // Server-side facet: the page forwards it; rows come back filtered.
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        visibility: ['public'],
+      })
+      // An active facet shows a summary chip once the parent re-renders.
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage
+            {...makeProps({
+              filters: { ...DEFAULT_COLLECTION_FILTERS, visibility: ['public'] },
+            })}
+          />
+        </AuthContext.Provider>,
+      )
+      expect(await screen.findByText('Visibility: Public')).toBeInTheDocument()
     })
 
-    it('shows "No matching collections" when client facets exclude every row', async () => {
+    it('shows "No matching collections" when the server returns an empty page', async () => {
       const user = userEvent.setup()
-      renderPage({
-        collections: [
-          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
-          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
-        ],
+      const onFiltersChange = vi.fn()
+      const { rerender } = renderPage({
+        onFiltersChange,
+        collections: [],
+        total: 0,
+        filters: { ...DEFAULT_COLLECTION_FILTERS, visibility: ['public'] },
       })
-      await user.click(screen.getByRole('button', { name: 'Visibility' }))
-      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
-      await user.keyboard('{Escape}')
-
       expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
         'No matching collections',
       )
@@ -558,46 +694,39 @@ describe('CollectionsPage', () => {
       expect(screen.queryByTestId('collections-grid')).not.toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: 'Clear all' }))
+      expect(onFiltersChange).toHaveBeenCalledWith(DEFAULT_COLLECTION_FILTERS)
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage
+            {...makeProps({
+              collections: [makeCollectionSummary({ id: 1 }), makeCollectionSummary({ id: 2 })],
+              total: 2,
+            })}
+          />
+        </AuthContext.Provider>,
+      )
       expect(await screen.findByTestId('collections-grid')).toBeInTheDocument()
       expect(screen.getAllByTestId('collection-card')).toHaveLength(2)
       expect(screen.queryByTestId('collections-empty')).not.toBeInTheDocument()
     })
 
-    it('keeps the table mounted (sort state intact) through a zero-match filter', async () => {
-      const user = userEvent.setup()
+    it('keeps the table mounted through an empty page and reflects controlled sort (#1631)', async () => {
+      const onSortChange = vi.fn()
       renderPage({
-        collections: [
-          makeCollectionSummary({ id: 1, name: 'Priv A', visibility: 'private' }),
-          makeCollectionSummary({ id: 2, name: 'Priv B', visibility: 'private' }),
-        ],
+        initialView: 'table',
+        collections: [],
+        total: 40,
+        sort: { key: 'name', direction: 'asc' },
+        onSortChange,
       })
-      fireEvent.click(screen.getByRole('button', { name: 'Table view' }))
       const table = await screen.findByTestId('collections-table')
-      const nameTh = within(table).getByText('Name').closest('th')!
-      fireEvent.click(within(table).getByText('Name'))
-      expect(nameTh).toHaveAttribute('aria-sort', 'ascending')
-
-      // The curator's table also has a sortable Visibility header — target the facet.
-      await user.click(
-        screen
-          .getAllByRole('button', { name: 'Visibility' })
-          .find((b) => b.getAttribute('aria-haspopup') === 'menu')!,
-      )
-      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Public' }))
-      await user.keyboard('{Escape}')
-
-      expect(await screen.findByTestId('collections-empty')).toHaveTextContent(
-        'No matching collections',
-      )
-      expect(screen.getByTestId('collections-table')).not.toBeVisible()
-
-      await user.click(screen.getByRole('button', { name: 'Clear all' }))
-      const restored = await screen.findByTestId('collections-table')
-      expect(restored).toBeVisible()
-      expect(within(restored).getByText('Name').closest('th')).toHaveAttribute(
+      // aria-sort comes from the controlled props, not internal state.
+      expect(within(table).getByText('Name').closest('th')).toHaveAttribute(
         'aria-sort',
         'ascending',
       )
+      fireEvent.click(within(table).getByText('Name'))
+      expect(onSortChange).toHaveBeenCalledWith({ key: 'name', direction: 'desc' })
     })
 
     it('Clear all resets the server filters and the client facets', async () => {
@@ -647,10 +776,12 @@ describe('CollectionsPage', () => {
       expect(await screen.findByTestId('collections-table')).toBeInTheDocument()
     })
 
-    it('filters by an ancestor category through the Category facet', async () => {
+    it('the Category facet commits the picked category id to the server filters (#1631)', async () => {
       const user = userEvent.setup()
-      renderPage({
+      const onFiltersChange = vi.fn()
+      const { rerender } = renderPage({
         initialView: 'table',
+        onFiltersChange,
         categories: [
           makeCategory({
             id: 10,
@@ -671,11 +802,32 @@ describe('CollectionsPage', () => {
           .find((b) => b.getAttribute('aria-haspopup') === 'menu')!,
       )
       await user.click(await screen.findByRole('menuitemcheckbox', { name: /Anatomy/ }))
-      await user.keyboard('{Escape}')
-      const table = screen.getByTestId('collections-table')
-      expect(within(table).getByText('Under skull')).toBeInTheDocument()
-      expect(within(table).queryByText('Under histology')).toBeNull()
-      expect(within(table).queryByText('Unfiled one')).toBeNull()
+      // Server-side facet — the server expands descendants; the page sends
+      // only the picked id and the parent re-queries the rows.
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        categoryIds: [10],
+      })
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage
+            {...makeProps({
+              initialView: 'table',
+              categories: [
+                makeCategory({
+                  id: 10,
+                  label: 'Anatomy',
+                  children: [makeCategory({ id: 12, label: 'Skull', parentId: 10 })],
+                }),
+                makeCategory({ id: 11, label: 'Histology' }),
+              ],
+              filters: { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [10] },
+              collections: [makeCollectionSummary({ id: 1, name: 'Under skull', categoryId: 12 })],
+              total: 1,
+            })}
+          />
+        </AuthContext.Provider>,
+      )
       expect(screen.getByText('Category: Anatomy')).toBeInTheDocument()
     })
 
@@ -719,33 +871,141 @@ describe('CollectionsPage', () => {
       const dialog = await screen.findByRole('dialog')
       await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
       await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
-      await waitFor(() => expect(onBulkUpdate).toHaveBeenCalledWith([1], { hidden: true }))
+      // The third argument carries the full selected rows (possibly off-page, #1631).
+      await waitFor(() =>
+        expect(onBulkUpdate).toHaveBeenCalledWith([1], { hidden: true }, [
+          expect.objectContaining({ id: 1, name: 'One' }),
+        ]),
+      )
       await waitFor(() => expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull())
     })
 
-    it('drops a selected row that leaves the list so it does not return selected', async () => {
+    it('keeps a selected row that pages out, and refreshes its data when it returns (#1631)', async () => {
       const user = userEvent.setup()
       const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const oneRenamed = makeCollectionSummary({ id: 1, name: 'One (renamed)' })
       const two = makeCollectionSummary({ id: 2, name: 'Two' })
       const props = {
         initialView: 'table' as const,
-        onBulkUpdate: vi.fn(),
+        onBulkUpdate: vi.fn().mockResolvedValue(undefined),
         onBulkDelete: vi.fn(),
       }
-      const { rerender } = renderPage({ ...props, collections: [one, two] })
+      const { rerender } = renderPage({ ...props, collections: [one, two], total: 2 })
       await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
       expect(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' })).toBeInTheDocument()
       const rerenderWith = (collections: (typeof one)[]) =>
         rerender(
           <AuthContext.Provider value={makeAuth(ADMIN)}>
-            <CollectionsPage {...makeProps({ ...props, collections })} />
+            <CollectionsPage {...makeProps({ ...props, collections, total: collections.length })} />
           </AuthContext.Provider>,
         )
+      // The row is not on this page (server-paged away) — the off-page
+      // selection is kept so the bulk count still includes it.
       rerenderWith([two])
-      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
-      rerenderWith([one, two])
-      expect(screen.getByRole('checkbox', { name: 'Select One' })).not.toBeChecked()
-      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' })).toBeInTheDocument()
+      // When it returns on a later page the selection refreshes to the
+      // fresh row data and stays checked.
+      rerenderWith([oneRenamed, two])
+      expect(screen.getByRole('checkbox', { name: 'Select One (renamed)' })).toBeChecked()
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+      await waitFor(() =>
+        expect(props.onBulkUpdate).toHaveBeenCalledWith([1], { hidden: true }, [
+          expect.objectContaining({ id: 1, name: 'One (renamed)' }),
+        ]),
+      )
+    })
+
+    it('revalidates the selection and drops only confirmed-missing rows on a bulk 404 (#1631)', async () => {
+      const user = userEvent.setup()
+      const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const two = makeCollectionSummary({ id: 2, name: 'Two' })
+      const onBulkUpdate = vi
+        .fn()
+        .mockRejectedValue(new ApiError(404, 'One or more collections not found'))
+      const props = { initialView: 'table' as const, onBulkUpdate, onBulkDelete: vi.fn() }
+      const { rerender } = renderPage({ ...props, collections: [one, two], total: 2 })
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      await user.click(screen.getByRole('checkbox', { name: 'Select Two' }))
+
+      // Page over so id 1 is off-page but still selected — the bulk call
+      // 404s. The probes pin the missing row precisely: the off-page id 1
+      // still exists, while the on-page id 2 was deleted under a stale page.
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage {...makeProps({ ...props, collections: [two], total: 2 })} />
+        </AuthContext.Provider>,
+      )
+      fetchCollectionMock.mockImplementation(async (id: number) => {
+        if (id === 2) throw new ApiError(404, 'Collection not found')
+        return makeApiCollection({ id })
+      })
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (2 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+      // The rethrown ApiError carries the explanatory detail, which the
+      // dialog surfaces via `userMessage` (#1631).
+      expect(
+        await within(dialog).findByText(
+          '1 selected collection no longer exists and was removed from the selection. Please try again.',
+        ),
+      ).toBeInTheDocument()
+      // Only the confirmed-missing id 2 was dropped — the off-page id 1 is
+      // kept, so the dialog still edits one row.
+      await waitFor(() =>
+        expect(within(dialog).getByText(/Editing 1 selected collection\./)).toBeInTheDocument(),
+      )
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      // Back on the page showing id 1, it is still selected.
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage {...makeProps({ ...props, collections: [one, two], total: 2 })} />
+        </AuthContext.Provider>,
+      )
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /Bulk Edit \(1 selected\)/ }),
+        ).toBeInTheDocument(),
+      )
+      expect(screen.getByRole('checkbox', { name: 'Select One' })).toBeChecked()
+    })
+
+    it('closes the dialog and snacks when the 404 revalidation empties the selection (#1631)', async () => {
+      const user = userEvent.setup()
+      const one = makeCollectionSummary({ id: 1, name: 'One' })
+      const onBulkUpdate = vi
+        .fn()
+        .mockRejectedValue(new ApiError(404, 'One or more collections not found'))
+      const onViewerError = vi.fn()
+      renderPage({
+        initialView: 'table',
+        onBulkUpdate,
+        onBulkDelete: vi.fn(),
+        onViewerError,
+        collections: [one],
+      })
+      await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
+      fetchCollectionMock.mockRejectedValue(new ApiError(404, 'Collection not found'))
+
+      await user.click(screen.getByRole('button', { name: 'Bulk Edit (1 selected)' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
+      await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
+
+      // The probe removed the only selected row — the dialog closes and the
+      // explanation goes to the snack instead of the dialog's error alert.
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(onViewerError).toHaveBeenCalledWith(
+        '1 selected collection no longer exists and was removed from the selection. Please try again.',
+      )
+      // No selection remains — no bulk affordance, and no retry can fire an
+      // empty bulk request.
+      expect(screen.queryByRole('button', { name: /Bulk Edit/ })).not.toBeInTheDocument()
+      expect(onBulkUpdate).toHaveBeenCalledTimes(1)
     })
 
     it('opens the edit dialog from the row menu', async () => {

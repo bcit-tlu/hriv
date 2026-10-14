@@ -2,12 +2,12 @@
 the write API (create / update / delete / images / viewport + OCC), and
 ownership transfer / orphan handling."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.sql.dml import Update
@@ -24,6 +24,7 @@ from app.routers.collections import (
     create_collection,
     delete_collection,
     get_collection,
+    list_collection_owners,
     list_collections,
     move_collection,
     replace_collection_images,
@@ -134,7 +135,10 @@ def _collection(
         viewport_state={"1": {"zoom": 1.0}},
         version=3,
         created_at=NOW,
-        updated_at=NOW,
+        # Distinct recency per id so the default ``updated_at desc`` sort
+        # reproduces the input order the old SQL ``ORDER BY`` used to leave
+        # to the database (rows with equal timestamps came back unordered).
+        updated_at=NOW - timedelta(seconds=id),
         programs=[SimpleNamespace(id=p) for p in (programs or [])],
         groups=[SimpleNamespace(id=g) for g in (groups or [])],
         image_links=[
@@ -229,6 +233,42 @@ def _write_db(
 
     db.execute = AsyncMock(side_effect=_execute)
     db.refresh = AsyncMock(side_effect=_refresh)
+    return db
+
+
+def _db_by_entity(
+    collections: list | None = None,
+    categories: list | None = None,
+    counts: list[tuple[int, int]] | None = None,
+) -> AsyncMock:
+    """Mock session for the list endpoint's multi-statement flow (#1631).
+
+    The first ``select(Collection)`` is the list query (``image_links``
+    noloaded); a later ``select(Collection)`` hydrates the page — both
+    answer with *collections*. ``select(Category)`` answers *categories*
+    and the grouped member-count statement answers *counts* as
+    ``[(collection_id, n)]`` rows.
+    """
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    async def _execute(stmt):
+        result = MagicMock()
+        entity = stmt.column_descriptions[0].get("entity")
+        if entity is Collection:
+            result.scalars.return_value.unique.return_value.all.return_value = (
+                list(collections or [])
+            )
+        elif entity is Category:
+            result.scalars.return_value.all.return_value = list(
+                categories or []
+            )
+        else:
+            # select(CollectionImage.collection_id, func.count()).group_by(...)
+            result.all.return_value = list(counts or [])
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
     return db
 
 
@@ -440,7 +480,8 @@ async def test_list_applies_query_filters_to_statement() -> None:
         orphaned=True,
         limit=2,
     )
-    sql = str(db.execute.call_args.args[0])
+    # [0] is the list query; the hydrate select is the last execute (#1631).
+    sql = str(db.execute.call_args_list[0].args[0])
     assert "collections.type =" in sql
     # mine / owner_user_id resolve through collection_owners membership
     # (#1531); orphaned = no owner rows AND no program owner.
@@ -2483,7 +2524,7 @@ async def test_list_uncategorized_filter() -> None:
     cols = [_collection(1, "public", user_id=10)]
     db = _mock_db(cols)
     await list_collections(_user("admin"), db=db, uncategorized=True)
-    stmt = db.execute.call_args.args[0]
+    stmt = db.execute.call_args_list[0].args[0]
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "category_id IS NULL" in compiled
 
@@ -2506,6 +2547,341 @@ async def test_list_student_hides_collections_in_excluded_categories(
     student = _user("student", id=2, programs=[1], groups=[5])
     out = await list_collections(student, db=_mock_db(cols))
     assert [c.id for c in out] == [2, 3]
+
+
+# ── list search / sort / paging (#1631) ─────────────────
+
+
+async def test_list_q_matches_name_description_and_owner() -> None:
+    cols = [
+        _collection(1, "public", user_id=10),
+        _collection(2, "public", user_id=10),
+        _collection(3, "public", owner_ids=[42]),
+        _collection(4, "public", user_id=None, owner_ids=[], owner_program_id=8),
+    ]
+    cols[1].description = "A needle in the description"
+    admin = _user("admin")
+    assert [
+        c.id for c in await list_collections(admin, db=_mock_db(cols), q="C1")
+    ] == [1]
+    assert {
+        c.id for c in await list_collections(admin, db=_mock_db(cols), q="NEEDLE")
+    } == {2}
+    # Owner label: user owners then "<program> (program)" — case-insensitive.
+    assert {
+        c.id for c in await list_collections(admin, db=_mock_db(cols), q="user42")
+    } == {3}
+    assert {
+        c.id
+        for c in await list_collections(admin, db=_mock_db(cols), q="p8 (PROGRAM)")
+    } == {4}
+    # Blank q is a no-op.
+    assert len(await list_collections(admin, db=_mock_db(cols), q="   ")) == 4
+
+
+async def test_list_q_treats_wildcards_as_literal() -> None:
+    cols = [_collection(1, "public", user_id=10), _collection(2, "public", user_id=10)]
+    cols[0].name = "100% off"
+    admin = _user("admin")
+    assert {
+        c.id for c in await list_collections(admin, db=_mock_db(cols), q="%")
+    } == {1}
+    assert {
+        c.id for c in await list_collections(admin, db=_mock_db(cols), q="100%")
+    } == {1}
+    assert await list_collections(admin, db=_mock_db(cols), q="_") == []
+
+
+async def test_list_visibility_filter() -> None:
+    cols = [
+        _collection(1, "private", user_id=1),
+        _collection(2, "public", user_id=10),
+        _collection(3, "restricted", user_id=10, programs=[1], groups=[5]),
+    ]
+    admin = _user("admin", id=1)
+    out = await list_collections(
+        admin, db=_mock_db(cols), visibility=["public", "restricted"]
+    )
+    assert {c.id for c in out} == {2, 3}
+    out = await list_collections(admin, db=_mock_db(cols), visibility=["private"])
+    assert {c.id for c in out} == {1}
+
+
+async def test_list_visibility_invalid_value_is_422() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await list_collections(
+            _user("admin"), db=_mock_db([]), visibility=["bogus"]
+        )
+    assert exc.value.status_code == 422
+
+
+async def test_list_category_id_filter_matches_descendants() -> None:
+    categories = [
+        Category(id=1, label="A"),
+        Category(id=2, label="B", parent_id=1),
+        Category(id=3, label="C", parent_id=2),
+        Category(id=9, label="Other"),
+    ]
+    cols = [
+        _collection(1, "public", user_id=10, category_id=1),
+        _collection(2, "public", user_id=10, category_id=3),  # grandchild of 1
+        _collection(3, "public", user_id=10, category_id=9),
+        _collection(4, "public", user_id=10),  # unfiled never matches
+    ]
+    out = await list_collections(
+        _user("admin"),
+        db=_db_by_entity(collections=cols, categories=categories),
+        category_id=[1],
+    )
+    assert {c.id for c in out} == {1, 2}
+
+
+async def test_list_sort_name_directions_and_tie_break() -> None:
+    cols = [_collection(i, "public", user_id=10) for i in (1, 2, 3)]
+    cols[0].name, cols[1].name, cols[2].name = "beta", "Alpha", "gamma"
+    admin = _user("admin")
+    asc = await list_collections(admin, db=_mock_db(cols), sort="name")
+    assert [c.id for c in asc] == [2, 1, 3]  # default direction asc, casefolded
+    desc = await list_collections(
+        admin, db=_mock_db(cols), sort="name", direction="desc"
+    )
+    assert [c.id for c in desc] == [3, 1, 2]
+    # Equal keys break on id in the same direction.
+    cols[2].name = "alpha"
+    tied = await list_collections(admin, db=_mock_db(cols), sort="name")
+    assert [c.id for c in tied] == [2, 3, 1]
+
+
+async def test_list_sort_scalar_columns() -> None:
+    cols = [_collection(i, "public", user_id=10) for i in (1, 2, 3)]
+    cols[0].description = "banana"
+    cols[1].description = "Apple"
+    cols[0].type = "synchronized"
+    cols[0].visibility = "restricted"
+    cols[2].visibility = "public"
+    admin = _user("admin")
+    # description: None sorts as ""; "apple" < "banana".
+    out = await list_collections(admin, db=_mock_db(cols), sort="description")
+    assert [c.id for c in out] == [3, 2, 1]
+    out = await list_collections(
+        admin, db=_mock_db(cols), sort="description", direction="desc"
+    )
+    assert [c.id for c in out] == [1, 2, 3]
+    # type: "sequence" < "synchronized".
+    out = await list_collections(admin, db=_mock_db(cols), sort="type")
+    assert [c.id for c in out] == [2, 3, 1]
+    # visibility: private < public < restricted.
+    out = await list_collections(admin, db=_mock_db(cols), sort="visibility")
+    assert [c.id for c in out] == [2, 3, 1]
+    # owner label is a casefolded string ("user10" < "user3" < "user42").
+    cols[1].owners = [SimpleNamespace(id=42, name="user42")]
+    out = await list_collections(admin, db=_mock_db(cols), sort="owner")
+    assert [c.id for c in out] == [1, 3, 2]
+    # Timestamps and id default to desc.
+    cols[0].created_at = NOW - timedelta(days=2)
+    cols[1].created_at = NOW
+    cols[2].created_at = NOW - timedelta(days=1)
+    out = await list_collections(admin, db=_mock_db(cols), sort="created_at")
+    assert [c.id for c in out] == [2, 3, 1]
+    out = await list_collections(admin, db=_mock_db(cols), sort="id")
+    assert [c.id for c in out] == [3, 2, 1]
+    out = await list_collections(
+        admin, db=_mock_db(cols), sort="id", direction="asc"
+    )
+    assert [c.id for c in out] == [1, 2, 3]
+
+
+async def test_list_sort_category_path_and_unfiled() -> None:
+    categories = [
+        Category(id=1, label="Anatomy"),
+        Category(id=2, label="Bone", parent_id=1),
+    ]
+    cols = [
+        _collection(1, "public", user_id=10, category_id=2),  # "Anatomy › Bone"
+        _collection(2, "public", user_id=10),                 # "Unfiled"
+        _collection(3, "public", user_id=10, category_id=1),  # "Anatomy"
+    ]
+    db = _db_by_entity(collections=cols, categories=categories)
+    out = await list_collections(_user("admin"), db=db, sort="category")
+    assert [c.id for c in out] == [3, 1, 2]
+
+
+async def test_list_sort_hidden_includes_hidden_category_ancestors() -> None:
+    categories = [
+        Category(id=1, label="Hidden", status="hidden"),
+        Category(id=2, label="Child", parent_id=1),  # hidden via ancestor
+        Category(id=3, label="Open"),
+    ]
+    cols = [
+        _collection(1, "public", user_id=10, category_id=2),
+        _collection(2, "public", user_id=10, hidden=True),
+        _collection(3, "public", user_id=10, category_id=3),
+        _collection(4, "public", user_id=10),
+    ]
+    db = _db_by_entity(collections=cols, categories=categories)
+    asc = await list_collections(_user("admin"), db=db, sort="hidden")
+    assert [c.id for c in asc] == [3, 4, 1, 2]
+    desc = await list_collections(
+        _user("admin"), db=db, sort="hidden", direction="desc"
+    )
+    assert [c.id for c in desc] == [2, 1, 4, 3]
+
+
+async def test_list_sort_image_count_uses_grouped_count() -> None:
+    cols = [_collection(i, "public", user_id=10) for i in (1, 2, 3)]
+    db = _db_by_entity(collections=cols, counts=[(1, 5), (3, 2)])
+    admin = _user("admin")
+    # Default direction is desc; a collection without a count row is 0.
+    desc = await list_collections(admin, db=db, sort="image_count")
+    assert [c.id for c in desc] == [1, 3, 2]
+    asc = await list_collections(
+        admin, db=db, sort="image_count", direction="asc"
+    )
+    assert [c.id for c in asc] == [2, 3, 1]
+    # Statement [1] is the grouped count over collection_images ⨝ images.
+    count_sql = str(db.execute.await_args_list[1].args[0])
+    assert "collection_images" in count_sql and "GROUP BY" in count_sql
+
+
+async def test_list_sort_image_count_student_filters_hidden_members(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.collection_views.get_student_excluded_category_ids",
+        AsyncMock(return_value={8}),
+    )
+    cols = [_collection(1, "public", user_id=10)]
+    student = _user("student", id=2)
+    db = _db_by_entity(collections=cols, counts=[(1, 2)])
+    await list_collections(student, db=db, sort="image_count")
+    count_sql = str(db.execute.await_args_list[1].args[0])
+    # Mirrors can_view_image: active-only and excluded categories not counted.
+    assert "images.active" in count_sql and "NOT IN" in count_sql
+
+    admin_db = _db_by_entity(collections=cols, counts=[(1, 2)])
+    await list_collections(_user("admin"), db=admin_db, sort="image_count")
+    admin_sql = str(admin_db.execute.await_args_list[1].args[0])
+    assert "images.active" not in admin_sql
+
+
+async def test_list_rejects_invalid_sort_and_direction() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await list_collections(_user("admin"), db=_mock_db([]), sort="bogus")
+    assert exc.value.status_code == 422
+    with pytest.raises(HTTPException) as exc:
+        await list_collections(
+            _user("admin"), db=_mock_db([]), direction="sideways"
+        )
+    assert exc.value.status_code == 422
+
+
+async def test_list_paging_param_validation() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await list_collections(_user("admin"), db=_mock_db([]), page=2)
+    assert exc.value.status_code == 422
+    with pytest.raises(HTTPException) as exc:
+        await list_collections(
+            _user("admin"), db=_mock_db([]), limit=5, page_size=10
+        )
+    assert exc.value.status_code == 422
+    # page_size alone is page 1.
+    cols = [_collection(i, "public", user_id=10) for i in (1, 2, 3)]
+    out = await list_collections(
+        _user("admin"),
+        db=_mock_db(cols),
+        sort="id",
+        direction="asc",
+        page_size=2,
+    )
+    assert [c.id for c in out] == [1, 2]
+
+
+async def test_list_pages_after_visibility_and_reports_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collections = [_collection(id=i, visibility="public") for i in range(1, 6)]
+    can_view = MagicMock(side_effect=lambda collection: collection.id != 2)
+    ctx = SimpleNamespace(can_view=can_view)
+    monkeypatch.setattr(
+        collections_router._ViewerContext, "build", AsyncMock(return_value=ctx)
+    )
+    monkeypatch.setattr(
+        collections_router,
+        "collection_summary_out",
+        MagicMock(side_effect=lambda _ctx, collection: collection.id),
+    )
+
+    page1_response = Response()
+    page1 = await list_collections(
+        _user("admin"),
+        db=_mock_db(collections),
+        sort="id",
+        direction="asc",
+        page_size=2,
+        page=1,
+        response=page1_response,
+    )
+    assert page1 == [1, 3]
+    assert page1_response.headers["X-Total-Count"] == "4"
+
+    page2_response = Response()
+    page2 = await list_collections(
+        _user("admin"),
+        db=_mock_db(collections),
+        sort="id",
+        direction="asc",
+        page_size=2,
+        page=2,
+        response=page2_response,
+    )
+    assert page2 == [4, 5]
+    assert page2_response.headers["X-Total-Count"] == "4"
+
+    # limit still caps the visible list; the header reports the full count.
+    limit_response = Response()
+    rows = await list_collections(
+        _user("admin"),
+        db=_mock_db(collections),
+        sort="id",
+        direction="asc",
+        limit=2,
+        response=limit_response,
+    )
+    assert rows == [1, 3]
+    assert limit_response.headers["X-Total-Count"] == "4"
+
+
+# ── GET /collections/owners (#1631) ──────────────────────
+
+
+async def test_owners_dedupes_excludes_non_visible_and_sorts() -> None:
+    cols = [
+        _collection(1, "public", owner_ids=[3, 1], owner_program_id=7),
+        _collection(2, "public", owner_ids=[1]),  # user1 deduped across cols
+        _collection(3, "private", user_id=10),  # invisible to the student
+        _collection(4, "private", user_id=2),   # the student's own
+        _collection(5, "public", user_id=None, owner_ids=[]),  # orphan
+    ]
+    out = await list_collection_owners(
+        _user("student", id=2), db=_mock_db(cols)
+    )
+    # Sorted by (name.casefold(), kind, id): "p7" < "user1" < ...
+    assert [(o.user_id, o.program_id, o.name) for o in out] == [
+        (None, 7, "P7"),
+        (1, None, "user1"),
+        (2, None, "user2"),
+        (3, None, "user3"),
+    ]
+
+
+async def test_owners_type_filter_applies_to_statement() -> None:
+    db = _mock_db([])
+    await list_collection_owners(_user("admin"), db=db, type="sequence")
+    sql = str(db.execute.call_args.args[0])
+    assert "collections.type =" in sql
+    with pytest.raises(HTTPException) as exc:
+        await list_collection_owners(_user("admin"), db=db, type="bogus")
+    assert exc.value.status_code == 422
 
 
 # ── bulk operations (#1578) ─────────────────────────────

@@ -80,17 +80,31 @@ Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarc
   **Owner**, **Visibility**, **Category** above all three views (Cards/Table/Graph), plus
   deletable summary chips and a **Clear all** action while any facet is
   active.
-- **Name** popover = client-side text filter (name/description/owner); in
-  the Graph view it dims non-matching nodes without removing them.
+- **Name** popover = server-side text filter (name/description/owner)
+  debounced 300 ms into `filters.q` → `GET /api/collections?q=`; in the
+  Graph view it dims non-matching nodes without removing them.
 - **Type** popover = single-select Sequence/Synchronized (`?type=` still
   seeds it).
 - **Owner** popover lists **My collections** for every role;
   admin/instructor/staff additionally get named owner options (never
-  students). Admins get an extra **No owner (orphaned)** option →
+  students) loaded from `GET /api/collections/owners` (#1631). Admins get
+  an extra **No owner (orphaned)** option →
   `GET /api/collections?orphaned=true`.
 - Selecting **My collections** clears the Owner facet. **Visibility** is a
-  client-side multi-select (Private/Public/Restricted) that narrows rows and
-  dims non-matching graph nodes.
+  multi-select (Private/Public/Restricted) sent server-side as repeated
+  `visibility=` params in Cards/Table and dims non-matching graph nodes.
+  **Category** is a multi-select tree sent as repeated `category_id=`
+  (ancestor-aware server-side).
+- Cards and Table share server-side paging (#1631): the same
+  `TablePagination` footer sits under both views
+  (`page`/`page_size`, `X-Total-Count`); the rows-per-page menu offers
+  5/10/25/50/100/200 and persists per user. To exercise paging locally set
+  rows-per-page to 5 and flip pages — watch for `page=2&page_size=5` in
+  the network log; sorting a column re-issues the request with
+  `sort`/`direction` (Programs and Groups headers are not sortable).
+  Changing a filter, sort or page size resets to page 1; a bulk selection
+  survives page changes. The Graph view re-requests the list unpaged and
+  uses the facets for highlight only.
 - The Cards/Table/Graph view toggle is **not persisted** — the page always
   loads on Cards; only the graph order and Shared-only toggle persist.
 - The Table view exposes **Choose columns** (the shared

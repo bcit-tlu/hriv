@@ -13,6 +13,7 @@ import Switch from '@mui/material/Switch'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { privateFilingWarning } from '../collectionUtils'
+import { userMessage } from '../api'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import type { Category, Group, Program } from '../types'
@@ -121,9 +122,9 @@ export default function BulkEditCollectionsDialog({
     try {
       await onSave(data)
       resetForm()
-    } catch {
+    } catch (err) {
       setSaving(false)
-      setSaveError('Failed to save changes. Please try again.')
+      setSaveError(userMessage(err, 'Failed to save changes. Please try again.'))
     }
   }
 
@@ -137,9 +138,9 @@ export default function BulkEditCollectionsDialog({
     try {
       await onDelete()
       resetForm()
-    } catch {
+    } catch (err) {
       setSaving(false)
-      setDeleteError('Failed to delete collections. Please try again.')
+      setDeleteError(userMessage(err, 'Failed to delete collections. Please try again.'))
     }
   }
 

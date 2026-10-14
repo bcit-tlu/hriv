@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from sqlalchemy import delete, event, select, update
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -150,11 +150,12 @@ async def _new_collection(
     *,
     owner_id: int,
     co_owner_ids: list[int] | None = None,
+    visibility: str = "private",
 ) -> int:
     collection = Collection(
         name=f"{TEST_PREFIX}coll-{uuid4().hex[:8]}",
         type=type_,
-        visibility="private",
+        visibility=visibility,
         # Creator audit column (#1531); authority flows from ``owners``.
         user_id=owner_id,
         viewport_state={},
@@ -1115,3 +1116,185 @@ async def test_image_ids_in_filed_collections_real_pg(session_factory) -> None:
         assert found == {img_filed}
         # Empty input short-circuits without a query.
         assert await image_ids_in_filed_collections(session, set()) == set()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/collections — search / sort / paging (#1631)
+# ---------------------------------------------------------------------------
+
+
+async def test_list_paging_counts_only_visible_collections(session_factory) -> None:
+    """A student paging through interleaved non-visible private collections
+    gets exactly ``page_size`` visible rows per page, and ``X-Total-Count``
+    counts only the visible set."""
+    async with session_factory() as session:
+        student_id = await _new_student(session, "paging")
+        admin_id = await _new_admin(session, "paging")
+        visible_ids = []
+        # Interleave the student's own private collections (visible) with
+        # admin-owned private collections (invisible to the student).
+        for index in range(7):
+            collection_id = await _new_collection(
+                session,
+                "sequence",
+                [],
+                owner_id=student_id if index % 2 == 0 else admin_id,
+            )
+            if index % 2 == 0:
+                visible_ids.append(collection_id)
+        student = await _get_user(session, student_id)
+
+        # ``q`` scopes the listing to this test's rows (seeded collections
+        # share the database).
+        response = Response()
+        page1 = await list_collections(
+            student,
+            q=f"{TEST_PREFIX}coll-",
+            page_size=2,
+            page=1,
+            response=response,
+            db=session,
+        )
+        assert len(page1) == 2
+        assert response.headers["X-Total-Count"] == str(len(visible_ids))
+        page2 = await list_collections(
+            student,
+            q=f"{TEST_PREFIX}coll-",
+            page_size=2,
+            page=2,
+            response=Response(),
+            db=session,
+        )
+        assert len(page2) == 2
+        page3 = await list_collections(
+            student,
+            q=f"{TEST_PREFIX}coll-",
+            page_size=2,
+            page=3,
+            response=Response(),
+            db=session,
+        )
+        assert page3 == []
+        assert {c.id for c in [*page1, *page2]} == set(visible_ids)
+
+
+async def test_list_paged_rows_carry_hydrated_member_data(session_factory) -> None:
+    """Two-phase load: the first query noloads ``image_links``, so a paged
+    row only has correct ``image_count`` / ``cover_thumb`` if the hydrate
+    select populated them (a MissingGreenlet here means hydration broke)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "hydrate")
+        image_a = await _new_image(session, "ha")
+        image_b = await _new_image(session, "hb")
+        collection_id = await _new_collection(
+            session, "sequence", [image_a, image_b], owner_id=admin_id
+        )
+        await session.execute(
+            update(Image).where(Image.id == image_a).values(thumb="/thumbs/ha.jpg")
+        )
+        await session.commit()
+        admin = await _get_user(session, admin_id)
+
+        response = Response()
+        rows = await list_collections(
+            admin,
+            q=f"{TEST_PREFIX}coll-",
+            page_size=1,
+            page=1,
+            response=response,
+            db=session,
+        )
+        assert [c.id for c in rows] == [collection_id]
+        assert response.headers["X-Total-Count"] == "1"
+        assert rows[0].image_count == 2
+        assert rows[0].cover_thumb is not None
+        assert "/thumbs/ha.jpg" in rows[0].cover_thumb
+
+
+async def test_list_image_count_sort_counts_student_visible_members(
+    session_factory,
+) -> None:
+    """``sort=image_count`` uses the grouped count query; for a student it
+    excludes members in a hidden (excluded) category — matching
+    ``ctx.visible_images``."""
+    async with session_factory() as session:
+        student_id = await _new_student(session, "counts")
+        admin_id = await _new_admin(session, "counts")
+        hidden_cat = Category(
+            label=f"{TEST_PREFIX}hidden-cat", status="hidden"
+        )
+        session.add(hidden_cat)
+        await session.flush()
+        visible_a = await _new_image(session, "ca")
+        visible_b = await _new_image(session, "cb")
+        hidden_a = Image(
+            name=f"{TEST_PREFIX}hidden-a",
+            thumb="",
+            tile_sources="",
+            category_id=hidden_cat.id,
+        )
+        hidden_b = Image(
+            name=f"{TEST_PREFIX}hidden-b",
+            thumb="",
+            tile_sources="",
+            category_id=hidden_cat.id,
+        )
+        session.add_all([hidden_a, hidden_b])
+        await session.flush()
+        # three visible to admin, one to the student
+        sparse_id = await _new_collection(
+            session,
+            "sequence",
+            [visible_a, hidden_a.id, hidden_b.id],
+            owner_id=admin_id,
+            visibility="public",
+        )
+        # two visible to both
+        dense_id = await _new_collection(
+            session,
+            "sequence",
+            [visible_a, visible_b],
+            owner_id=admin_id,
+            visibility="public",
+        )
+        await session.commit()
+
+        student = await _get_user(session, student_id)
+        student_rows = await list_collections(
+            student,
+            q=f"{TEST_PREFIX}coll-",
+            sort="image_count",
+            db=session,
+        )
+        assert [c.id for c in student_rows] == [dense_id, sparse_id]
+        assert [c.image_count for c in student_rows] == [2, 1]
+
+        admin = await _get_user(session, admin_id)
+        admin_rows = await list_collections(
+            admin,
+            q=f"{TEST_PREFIX}coll-",
+            sort="image_count",
+            db=session,
+        )
+        assert [c.id for c in admin_rows] == [sparse_id, dense_id]
+        assert [c.image_count for c in admin_rows] == [3, 2]
+
+
+async def test_list_q_percent_is_literal(session_factory) -> None:
+    """``%`` in ``q`` is a literal substring, not a LIKE wildcard."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "q-pct")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        await session.execute(
+            update(Collection)
+            .where(Collection.id == collection_id)
+            .values(name=f"{TEST_PREFIX}100% off")
+        )
+        await session.commit()
+        admin = await _get_user(session, admin_id)
+
+        rows = await list_collections(admin, q="%", db=session)
+        assert collection_id in [c.id for c in rows]
+        assert all("%" in c.name for c in rows)

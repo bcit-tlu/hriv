@@ -57,6 +57,8 @@ import {
   tileOrderConflictCurrent,
   type TileOrderResponse,
   fetchCollections,
+  fetchCollectionsPaged,
+  fetchCollectionOwners,
   fetchCollection,
   fetchImageCollections,
   createCollection,
@@ -1024,6 +1026,82 @@ describe('Collections API', () => {
     await fetchCollections({ mine: false, orphaned: false })
     const [url] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/collections')
+  })
+
+  it('fetchCollections serializes the search/sort/page params with repeated list values (#1631)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollections({
+      q: 'skull',
+      visibility: ['public', 'private'],
+      category_ids: [10, 12],
+      sort: 'name',
+      direction: 'asc',
+      page: 2,
+      page_size: 25,
+    })
+    const [url] = mockFetch.mock.calls[0]
+    const qs = new URL(url, 'http://x').searchParams
+    expect(qs.get('q')).toBe('skull')
+    expect(qs.getAll('visibility')).toEqual(['public', 'private'])
+    expect(qs.getAll('category_id')).toEqual(['10', '12'])
+    expect(qs.get('sort')).toBe('name')
+    expect(qs.get('direction')).toBe('asc')
+    expect(qs.get('page')).toBe('2')
+    expect(qs.get('page_size')).toBe('25')
+  })
+
+  it('fetchCollectionsPaged returns the X-Total-Count header total (#1631)', async () => {
+    const rows = [makeApiCollectionSummary({ id: 1 })]
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: (k: string) => (k === 'X-Total-Count' ? '42' : null) },
+        json: () => Promise.resolve(rows),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+    const result = await fetchCollectionsPaged({ page: 1, page_size: 5 })
+    expect(result.items).toEqual(rows)
+    expect(result.total).toBe(42)
+    const qs = new URL(mockFetch.mock.calls[0][0] as string, 'http://x').searchParams
+    expect(qs.get('page')).toBe('1')
+    expect(qs.get('page_size')).toBe('5')
+  })
+
+  it('fetchCollectionsPaged falls back to the row count when the header is absent or NaN (#1631)', async () => {
+    const rows = [makeApiCollectionSummary({ id: 1 }), makeApiCollectionSummary({ id: 2 })]
+    mockFetch.mockReturnValueOnce(jsonResponse(rows))
+    expect((await fetchCollectionsPaged()).total).toBe(2)
+
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: (k: string) => (k === 'X-Total-Count' ? 'bogus' : null) },
+        json: () => Promise.resolve(rows),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+    expect((await fetchCollectionsPaged()).total).toBe(2)
+  })
+
+  it('fetchCollectionOwners hits /api/collections/owners with an optional type (#1631)', async () => {
+    const owners = [
+      { user_id: 7, name: 'Zed' },
+      { program_id: 3, name: 'Anatomy' },
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(owners))
+    const result = await fetchCollectionOwners()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/collections/owners')
+    expect(result).toEqual(owners)
+
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollectionOwners('sequence')
+    const qs = new URL(mockFetch.mock.calls[1][0] as string, 'http://x').searchParams
+    expect(qs.get('type')).toBe('sequence')
   })
 
   it('fetchCollection hits /api/collections/{id}', async () => {

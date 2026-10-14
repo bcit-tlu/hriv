@@ -21,7 +21,23 @@ function row(n: Partial<CollectionSummary>): CollectionSummary {
   return makeCollectionSummary(n)
 }
 
-function renderTable(collections: CollectionSummary[], onOpen = vi.fn()) {
+/** The controlled sort/paging props the page's data hook supplies (#1631). */
+const defaultPaging = {
+  sortKey: 'updated' as const,
+  sortDir: 'desc' as const,
+  onSortChange: vi.fn(),
+  page: 0,
+  rowsPerPage: 25,
+  total: 0,
+  onPageChange: vi.fn(),
+  onRowsPerPageChange: vi.fn(),
+}
+
+function renderTable(
+  collections: CollectionSummary[],
+  onOpen = vi.fn(),
+  paging: Partial<typeof defaultPaging> = {},
+) {
   const utils = render(
     <CollectionsTable
       collections={collections}
@@ -34,6 +50,8 @@ function renderTable(collections: CollectionSummary[], onOpen = vi.fn()) {
       ])}
       currentUser={USER}
       onOpenCollection={onOpen}
+      {...defaultPaging}
+      {...paging}
     />,
   )
   return { ...utils, onOpen }
@@ -80,28 +98,14 @@ describe('CollectionsTable', () => {
     expect(within(theirs).queryByTestId('collections-table-you-chip')).not.toBeInTheDocument()
   })
 
-  it('sorts by Updated descending by default and toggles on header click', () => {
+  it('renders rows in the order given — sorting is server-side (#1631)', () => {
     renderTable([
       row({ id: 1, name: 'Old', updatedAt: '2026-01-01T00:00:00Z' }),
       row({ id: 2, name: 'New', updatedAt: '2026-01-10T00:00:00Z' }),
       row({ id: 3, name: 'Mid', updatedAt: '2026-01-05T00:00:00Z' }),
     ])
     const names = () => screen.getAllByTestId(/collections-table-row-/).map((r) => r.dataset.testid)
-    expect(names()).toEqual([
-      'collections-table-row-2',
-      'collections-table-row-3',
-      'collections-table-row-1',
-    ])
-
-    // Name header click sorts ascending.
-    fireEvent.click(screen.getByText('Name'))
-    expect(names()).toEqual([
-      'collections-table-row-3',
-      'collections-table-row-2',
-      'collections-table-row-1',
-    ])
-    // Second click flips to descending.
-    fireEvent.click(screen.getByText('Name'))
+    // No client-side sort: the server-picked page order is the render order.
     expect(names()).toEqual([
       'collections-table-row-1',
       'collections-table-row-2',
@@ -109,37 +113,46 @@ describe('CollectionsTable', () => {
     ])
   })
 
-  it('paginates with the rows-per-page preference', () => {
-    localStorage.setItem('hriv_user', JSON.stringify({ id: 7 }))
-    localStorage.setItem('hrivpref:rows-per-page:collections:user:7', '5')
+  it('reports controlled sort changes: same key flips, new key opens on its default', () => {
+    const onSortChange = vi.fn()
+    renderTable([row({ id: 1 })], vi.fn(), {
+      sortKey: 'name',
+      sortDir: 'asc',
+      onSortChange,
+    })
+    // Clicking the active key flips its direction.
+    fireEvent.click(screen.getByText('Name'))
+    expect(onSortChange).toHaveBeenLastCalledWith('name', 'desc')
+    // IDs/counts/timestamps open descending, text columns ascending.
+    fireEvent.click(screen.getByText('Updated'))
+    expect(onSortChange).toHaveBeenLastCalledWith('updated', 'desc')
+    fireEvent.click(screen.getByText('Type'))
+    expect(onSortChange).toHaveBeenLastCalledWith('type', 'asc')
+  })
+
+  it('renders every supplied row — the server slices pages (#1631)', () => {
     const rows = Array.from({ length: 7 }, (_, i) => row({ id: i + 1, name: `C${i + 1}` }))
-    renderTable(rows)
-    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(5)
-    fireEvent.click(screen.getByRole('button', { name: /next page/i }))
-    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(2)
+    renderTable(rows, vi.fn(), { rowsPerPage: 5, total: 12 })
+    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(7)
+    // The footer counts the server total, not the rendered rows.
+    expect(screen.getByText(/of 12/)).toBeInTheDocument()
   })
 
-  it('clamps the page when filters shrink the list (#1636 review)', () => {
-    localStorage.setItem('hriv_user', JSON.stringify({ id: 7 }))
-    localStorage.setItem('hrivpref:rows-per-page:collections:user:7', '5')
-    const rows = (n: number) =>
-      Array.from({ length: n }, (_, i) => row({ id: i + 1, name: `C${i + 1}` }))
-    const ui = (collections: CollectionSummary[]) => (
-      <CollectionsTable
-        collections={collections}
-        categoryPaths={buildCategoryPaths([])}
-        currentUser={USER}
-        onOpenCollection={vi.fn()}
-      />
-    )
-    const { rerender } = render(ui(rows(7)))
+  it('forwards page and rows-per-page changes to the parent (#1631)', () => {
+    const onPageChange = vi.fn()
+    const onRowsPerPageChange = vi.fn()
+    renderTable([row({ id: 1 })], vi.fn(), {
+      page: 0,
+      rowsPerPage: 5,
+      total: 30,
+      onPageChange,
+      onRowsPerPageChange,
+    })
     fireEvent.click(screen.getByRole('button', { name: /next page/i }))
-    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(2)
-
-    // The shared filter shrinks the list while on page 2 — the stale page
-    // must not leave the table empty.
-    rerender(ui(rows(3)))
-    expect(screen.getAllByTestId(/collections-table-row-/)).toHaveLength(3)
+    expect(onPageChange).toHaveBeenCalledWith(1)
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /rows per page/i }))
+    fireEvent.click(screen.getByRole('option', { name: '10' }))
+    expect(onRowsPerPageChange).toHaveBeenCalledWith(10)
   })
 
   it('renders only the requested columns, in order', () => {
@@ -149,6 +162,7 @@ describe('CollectionsTable', () => {
         categoryPaths={buildCategoryPaths([])}
         currentUser={USER}
         onOpenCollection={vi.fn()}
+        {...defaultPaging}
         columns={['name', 'id']}
       />,
     )
@@ -175,6 +189,7 @@ describe('CollectionsTable', () => {
         categoryPaths={buildCategoryPaths([])}
         currentUser={USER}
         onOpenCollection={vi.fn()}
+        {...defaultPaging}
         columns={['name', 'scope', 'description', 'programs', 'groups', 'created']}
         programs={[
           {
@@ -208,7 +223,8 @@ describe('CollectionsTable', () => {
     expect(screen.getByText('Created')).toBeInTheDocument()
   })
 
-  it('sorts by ID descending on first click', () => {
+  it('requests ID descending on first click (#1631)', () => {
+    const onSortChange = vi.fn()
     render(
       <CollectionsTable
         collections={[
@@ -219,22 +235,13 @@ describe('CollectionsTable', () => {
         categoryPaths={buildCategoryPaths([])}
         currentUser={USER}
         onOpenCollection={vi.fn()}
+        {...defaultPaging}
+        onSortChange={onSortChange}
         columns={['id', 'name']}
       />,
     )
-    const names = () => screen.getAllByTestId(/collections-table-row-/).map((r) => r.dataset.testid)
     fireEvent.click(screen.getByText('ID'))
-    expect(names()).toEqual([
-      'collections-table-row-9',
-      'collections-table-row-5',
-      'collections-table-row-1',
-    ])
-    fireEvent.click(screen.getByText('ID'))
-    expect(names()).toEqual([
-      'collections-table-row-1',
-      'collections-table-row-5',
-      'collections-table-row-9',
-    ])
+    expect(onSortChange).toHaveBeenCalledWith('id', 'desc')
   })
 
   describe('merged Manage features', () => {
@@ -264,6 +271,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={ADMIN}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           columns={['name', 'type', 'category']}
         />,
       )
@@ -295,6 +303,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={ADMIN}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           onToggleHidden={onToggleHidden}
           columns={['name', 'visibility']}
         />,
@@ -315,6 +324,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={ADMIN}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           onToggleHidden={vi.fn().mockRejectedValue(new Error('nope'))}
           onError={onError}
           columns={['name', 'visibility']}
@@ -337,6 +347,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={STAFF}
           onOpenCollection={onOpen}
+          {...defaultPaging}
           onEdit={onEdit}
           onManageOwners={onManageOwners}
           columns={['name']}
@@ -363,6 +374,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={USER}
           onOpenCollection={onOpen}
+          {...defaultPaging}
           onEdit={onEdit}
           columns={['name']}
         />,
@@ -383,6 +395,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={STAFF}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           selected={new Set()}
           onSelectedChange={onSelectedChange}
           columns={['name']}
@@ -401,6 +414,7 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={STAFF}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           onSelectedChange={vi.fn()}
           columns={['name']}
         />,
@@ -412,14 +426,16 @@ describe('CollectionsTable', () => {
           categoryPaths={CATS}
           currentUser={ADMIN}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           columns={['name']}
         />,
       )
       expect(screen.queryByRole('checkbox')).toBeNull()
     })
 
-    it('sorts Programs by the displayed own + inherited scope', () => {
-      render(
+    it('keeps Programs and Groups headers unsortable (#1631)', () => {
+      const onSortChange = vi.fn()
+      const { container } = render(
         <CollectionsTable
           collections={[
             row({ id: 1, name: 'Zed own', visibility: 'restricted', programIds: [9] }),
@@ -430,17 +446,27 @@ describe('CollectionsTable', () => {
           ])}
           currentUser={ADMIN}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
+          onSortChange={onSortChange}
           programs={[
             { id: 5, name: 'Anatomy', oidc_group: null, created_at: '', updated_at: '' },
             { id: 9, name: 'Zoology', oidc_group: null, created_at: '', updated_at: '' },
           ]}
-          columns={['name', 'programs']}
+          columns={['name', 'programs', 'groups']}
         />,
       )
+      // Neither column has a server-side sort key — plain header cells.
+      for (const label of ['Programs', 'Groups']) {
+        const th = [...container.querySelectorAll('th')].find((el) => el.textContent === label)!
+        expect(th.querySelector('.MuiTableSortLabel-root')).toBeNull()
+      }
       fireEvent.click(screen.getByText('Programs'))
+      fireEvent.click(screen.getByText('Groups'))
+      expect(onSortChange).not.toHaveBeenCalled()
+      // Row order stays as supplied.
       expect(screen.getAllByTestId(/collections-table-row-/).map((r) => r.dataset.testid)).toEqual([
-        'collections-table-row-2',
         'collections-table-row-1',
+        'collections-table-row-2',
       ])
     })
 
@@ -461,6 +487,7 @@ describe('CollectionsTable', () => {
           ])}
           currentUser={ADMIN}
           onOpenCollection={vi.fn()}
+          {...defaultPaging}
           columns={['name', 'programs']}
         />,
       )
