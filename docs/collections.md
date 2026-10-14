@@ -750,8 +750,9 @@ Invalid stored values fall back to defaults:
   under the **Legend** caption, then rows for the hub, sequence and
   synchronized collections, images, shared images (order ≥ 2) and
   categories (order ≥ 3); the dialog variant renames the hub "This
-  collection (centre)" and prefixes the related rows. A matching
-  bottom-right hint reads "Scroll or pinch to zoom, and drag to pan."
+  collection (centre)" and prefixes the related rows. An unboxed,
+  single-line bottom-right hint reads "Scroll or pinch to zoom, and drag
+  to pan." (hidden at xs widths where it would collide with the legend).
 
 **Graph View dialog (#1630).** The collection detail header carries an
 outlined **Graph View** button (`collection-graph-open`) between the

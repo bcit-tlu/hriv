@@ -444,14 +444,17 @@ export default function CollectionsGraph({
             data-testid="graph-legend"
             sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.75 }}
           >
-            <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+            <Typography
+              variant="subtitle2"
+              sx={{ fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3 }}
+            >
               Legend
             </Typography>
             <Typography
               variant="caption"
               color="text.secondary"
               display="block"
-              sx={{ whiteSpace: 'nowrap' }}
+              sx={{ whiteSpace: 'nowrap', fontStyle: 'italic' }}
             >
               Node size reflects image count
             </Typography>
@@ -510,26 +513,24 @@ export default function CollectionsGraph({
         )}
 
         {!empty && (
-          <Paper
-            variant="outlined"
+          <Typography
+            variant="caption"
+            color="text.secondary"
             data-testid="graph-hint"
             sx={{
               position: 'absolute',
               right: 8,
               bottom: 8,
-              px: 1,
-              py: 0.5,
+              whiteSpace: 'nowrap',
+              textAlign: 'right',
               pointerEvents: 'none',
-              maxWidth: 200,
               // The always-open legend owns the bottom-left; on phone
               // widths the two would collide, so the hint yields.
               display: { xs: 'none', sm: 'block' },
             }}
           >
-            <Typography variant="caption" color="text.secondary">
-              Scroll or pinch to zoom, and drag to pan.
-            </Typography>
-          </Paper>
+            Scroll or pinch to zoom, and drag to pan.
+          </Typography>
         )}
 
         {empty && (

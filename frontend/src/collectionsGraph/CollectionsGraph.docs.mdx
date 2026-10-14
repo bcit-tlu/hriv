@@ -54,8 +54,8 @@ collection-page graph dialog (#1630) reuses this component with a different mode
   always shows the image/shared-image rows (member images are the
   spokes at every order), and shows the related-collection/synchronized rows only at
   order ≥ 2. On the page, image/shared-image rows appear at order ≥ 2; the category row
-  appears at order ≥ 3 in both variants. A bottom-right hint reads "Scroll or pinch to
-  zoom, and drag to pan."
+  appears at order ≥ 3 in both variants. An unboxed, single-line bottom-right hint reads
+  "Scroll or pinch to zoom, and drag to pan." (hidden at xs widths).
 - `sharedOnly` hides single-collection images from drawing and hit testing but keeps them in
   the simulation; category nodes are never hidden.
 - Node clicks: collections call `onOpenCollection`, images call `onOpenImage(imageId)` — the
