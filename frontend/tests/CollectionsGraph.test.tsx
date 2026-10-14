@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { zoomIdentity } from 'd3-zoom'
 import CollectionsGraph from '../src/collectionsGraph/CollectionsGraph'
-import { GraphRenderer, paletteFrom, type GraphPalette } from '../src/collectionsGraph/renderer'
+import {
+  GraphRenderer,
+  labelPx,
+  paletteFrom,
+  type GraphPalette,
+} from '../src/collectionsGraph/renderer'
 import { buildGraphModel } from '../src/collectionsGraph/buildModel'
 import { getThemePalette } from '../src/theme'
 import type { ApiCollectionsGraph } from '../src/api'
@@ -363,16 +368,16 @@ describe('GraphRenderer.findNode', () => {
 describe('GraphRenderer hub label placement', () => {
   // draw() paints through every palette field — use the real palette.
   const palette = paletteFrom('light', getThemePalette('light'))
-  // Recording ctx: captures fillText args plus the textAlign in effect.
+  // Recording ctx: captures fillText args plus the textAlign/font in effect.
   function recordingCtx() {
-    const drawn: { lbl: string; x: number; y: number; align: string }[] = []
-    const state: { textAlign: string } = { textAlign: 'left' }
+    const drawn: { lbl: string; x: number; y: number; align: string; font: string }[] = []
+    const state: { textAlign: string; font: string } = { textAlign: 'left', font: '' }
     const ctx = new Proxy(state, {
       get(t, prop) {
         if (prop === 'measureText') return () => ({ width: 100 })
         if (prop === 'fillText')
           return (lbl: string, x: number, y: number) =>
-            drawn.push({ lbl, x, y, align: t.textAlign })
+            drawn.push({ lbl, x, y, align: t.textAlign, font: t.font })
         if (prop in t) return t[prop as keyof typeof t]
         return () => undefined
       },
@@ -431,7 +436,8 @@ describe('GraphRenderer hub label placement', () => {
     const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
     expect(hub.align).toBe('right')
     expect(hub.x).toBe(783)
-    expect(hub.y).toBe(304)
+    // baseline = sy + hfs/3 = 300 + 13/3
+    expect(hub.y).toBe(300 + 13 / 3)
   })
 
   it('keeps the label on the right when it fits there', () => {
@@ -447,5 +453,79 @@ describe('GraphRenderer hub label placement', () => {
     const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
     expect(hub.align).toBe('left')
     expect(hub.x).toBe(400 + 4 + 3)
+  })
+})
+
+describe('labelPx', () => {
+  it('scales by √k between the 12px floor and the 32px cap', () => {
+    expect(labelPx(13, 1)).toBe(13)
+    expect(labelPx(12, 0.25)).toBe(12) // floor
+    expect(labelPx(13, 4)).toBe(26)
+    expect(labelPx(13, 24)).toBe(32) // cap
+    expect(labelPx(12, 0.1)).toBe(12)
+  })
+})
+
+describe('GraphRenderer label zoom scaling', () => {
+  const palette = paletteFrom('light', getThemePalette('light'))
+
+  function recordingCtx() {
+    const drawn: { lbl: string; font: string }[] = []
+    const state: { font: string } = { font: '' }
+    const ctx = new Proxy(state, {
+      get(t, prop) {
+        if (prop === 'measureText') return () => ({ width: 10 })
+        if (prop === 'fillText') return (lbl: string) => drawn.push({ lbl, font: t.font })
+        if (prop in t) return t[prop as keyof typeof t]
+        return () => undefined
+      },
+      set(t, prop, v) {
+        ;(t as Record<string | symbol, unknown>)[prop] = v
+        return true
+      },
+    })
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, drawn }
+  }
+
+  const model = {
+    nodes: [
+      { i: 0, kind: 'hub' as const, id: Number.NaN, label: 'Hub', r: 4, x: 0, y: 0 },
+      { i: 1, kind: 'collection' as const, id: 2, label: 'Coll 2', r: 6, x: 50, y: 50 },
+    ],
+    edges: [],
+    stats: {
+      collections: 1,
+      images: 0,
+      shared: 0,
+      categories: 0,
+      unconnectedCategories: 0,
+      order: 1,
+    },
+  }
+
+  function drawFont(t: ReturnType<typeof zoomIdentity.scale>): string {
+    const { ctx, drawn } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, model, palette)
+    r.setLabelThresholds({ collection: 0 })
+    r.draw({
+      transform: t,
+      hover: null,
+      selected: null,
+      selectedId: null,
+      searchDim: new Set(),
+      searchMatch: new Set(),
+      searchActive: false,
+    })
+    return drawn.find((d) => d.lbl === 'Coll 2')!.font
+  }
+
+  it('grows the collection label font with √k', () => {
+    expect(drawFont(zoomIdentity)).toBe('13px Roboto,Arial')
+    expect(drawFont(zoomIdentity.scale(4))).toBe('26px Roboto,Arial')
   })
 })

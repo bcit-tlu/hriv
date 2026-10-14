@@ -31,6 +31,16 @@ export interface GraphPalette {
 /** Label candidates drawn per frame, nearest the viewport centre first. */
 const LABEL_CAP = 200
 
+/** App minimum text size (MUI caption, 0.75rem) — labels never shrink below it. */
+const LABEL_MIN_PX = 12
+/** Cap so fully zoomed-in (k=24) labels stay readable rather than huge. */
+const LABEL_MAX_PX = 32
+/** Base sizes at k=1; scale by √k like node radii. */
+const LABEL_BASE_PX = { collection: 13, image: 12, category: 12, hub: 13 } as const
+export function labelPx(base: number, k: number): number {
+  return Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, base * Math.sqrt(k)))
+}
+
 /** Zoom level (k) above which each node kind draws its label (#1630). */
 export interface LabelThresholds {
   collection: number
@@ -101,7 +111,8 @@ export function adjacency(model: GraphModel, focus: GraphNode): Set<GraphNode> {
  * Canvas 2D renderer for a `GraphModel` — ports the prototype's `draw`
  * faithfully (#1629): one `setTransform(dpr·k, …)` per frame, edges and
  * nodes batched by style into single paths, viewport culling, screen-space
- * labels with per-frame overlap-skipping and a cap, and a lazily rebuilt
+ * labels sized ∝ √k between 12px and 32px with per-frame overlap-skipping
+ * and a cap, and a lazily rebuilt
  * hit-test quadtree (≤ every 150 ms while warm, immediately once cooled).
  */
 export class GraphRenderer {
@@ -363,7 +374,7 @@ export class GraphRenderer {
       }
     }
 
-    // ---- labels in screen space: constant px, overlap-skip, cap ----
+    // ---- labels in screen space: ∝ √k (12–32px), overlap-skip, cap ----
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const drawn: { x: number; y: number; w: number; h: number }[] = []
     const cands: {
@@ -372,7 +383,7 @@ export class GraphRenderer {
       sx: number
       sy: number
       sr: number
-      font: string
+      fs: number
       d: number
     }[] = []
     const ccx = w / 2
@@ -385,7 +396,7 @@ export class GraphRenderer {
       const sr = n.r * Math.sqrt(k)
       if (sx < -60 || sx > w + 60 || sy < -20 || sy > h + 20) continue
       let show: boolean
-      let font = '11px Roboto,Arial'
+      let base: number = LABEL_BASE_PX.collection
       const thr = this.labelThresholds
       if (n.kind === 'collection') {
         show =
@@ -395,9 +406,10 @@ export class GraphRenderer {
           sr >= 12 ||
           (state.searchActive && state.searchMatch.has(n))
       } else if (n.kind === 'image') {
-        font = '10px Roboto,Arial'
+        base = LABEL_BASE_PX.image
         show = k > thr.image || n === state.hover
       } else {
+        base = LABEL_BASE_PX.category
         // category labels appear a little earlier — they are sparse
         show = k > thr.category || n === state.hover
       }
@@ -410,7 +422,7 @@ export class GraphRenderer {
           sx,
           sy,
           sr,
-          font,
+          fs: labelPx(base, k),
           d: (sx - ccx) * (sx - ccx) + (sy - ccy) * (sy - ccy),
         })
       }
@@ -421,9 +433,9 @@ export class GraphRenderer {
     }
     for (const c of cands) {
       const lbl = c.lbl.length > 34 ? c.lbl.slice(0, 33) + '…' : c.lbl
-      ctx.font = c.font
+      ctx.font = `${c.fs}px Roboto,Arial`
       const tw = ctx.measureText(lbl).width
-      const rect = { x: c.sx + c.sr + 3, y: c.sy - 9, w: tw, h: 12 }
+      const rect = { x: c.sx + c.sr + 3, y: c.sy - c.fs * 0.75, w: tw, h: c.fs }
       if (
         drawn.some(
           (R) =>
@@ -436,7 +448,7 @@ export class GraphRenderer {
         continue
       drawn.push(rect)
       ctx.fillStyle = palette.label
-      ctx.fillText(lbl, rect.x, c.sy + 4)
+      ctx.fillText(lbl, rect.x, c.sy + c.fs / 3)
     }
 
     // hub label last: centred inside when it fits; otherwise to the
@@ -447,11 +459,12 @@ export class GraphRenderer {
       const sx = t.applyX(hub.x)
       const sy = t.applyY(hub.y)
       const sr = hub.r * Math.sqrt(k)
-      ctx.font = '500 12px Roboto,Arial'
+      const hfs = labelPx(LABEL_BASE_PX.hub, k)
+      ctx.font = `500 ${hfs}px Roboto,Arial`
       if (ctx.measureText(hub.label).width <= 2 * sr - 6) {
         ctx.textAlign = 'center'
         ctx.fillStyle = palette.hubLabel
-        ctx.fillText(hub.label, sx, sy + 4)
+        ctx.fillText(hub.label, sx, sy + hfs / 3)
         ctx.textAlign = 'left'
       } else {
         const lbl = hub.label.length > 34 ? hub.label.slice(0, 33) + '…' : hub.label
@@ -461,10 +474,10 @@ export class GraphRenderer {
         // that side has room (a long name near the right edge would clip)
         if (sx + sr + 3 + tw > w && sx - sr - 3 - tw >= 0) {
           ctx.textAlign = 'right'
-          ctx.fillText(lbl, sx - sr - 3, sy + 4)
+          ctx.fillText(lbl, sx - sr - 3, sy + hfs / 3)
           ctx.textAlign = 'left'
         } else {
-          ctx.fillText(lbl, sx + sr + 3, sy + 4)
+          ctx.fillText(lbl, sx + sr + 3, sy + hfs / 3)
         }
       }
     }

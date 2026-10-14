@@ -450,7 +450,7 @@ export default function CollectionsGraph({
             sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.75 }}
           >
             <Typography
-              variant="subtitle2"
+              variant="subtitle1"
               sx={{ fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3 }}
             >
               Legend
