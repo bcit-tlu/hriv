@@ -131,6 +131,26 @@ def _owners_out(collection: Collection) -> list[CollectionOwnerOut]:
     return owners
 
 
+def owner_label(collection: Collection) -> str:
+    """Display owner line mirroring the frontend ``describeCollectionOwners``:
+    user owners sorted by (name, id) joined with ", ", then the owning
+    program as "‹name› (program)"; "No owner" when orphaned. Shared by the
+    list's ``q`` search and ``sort=owner`` (#1631).
+    """
+    parts = [
+        o.name
+        for o in sorted(
+            collection.owners, key=lambda u: (u.name.casefold(), u.id)
+        )
+    ]
+    if (
+        collection.owner_program_id is not None
+        and collection.owner_program is not None
+    ):
+        parts.append(f"{collection.owner_program.name} (program)")
+    return ", ".join(parts) if parts else "No owner"
+
+
 def _permissions_for(user: User, collection: Collection) -> CollectionPermissionsOut:
     return CollectionPermissionsOut(
         can_edit=can_edit_collection(user, collection),

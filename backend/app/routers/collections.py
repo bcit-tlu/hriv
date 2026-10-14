@@ -41,9 +41,10 @@ category tree can embed collection summaries without importing this router.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select, update as sql_update
+from sqlalchemy import func, or_, select, update as sql_update
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import lazyload, selectinload
 
 from ..auth import get_current_user, require_role
 from ..authz import (
@@ -58,13 +59,16 @@ from ..authz import (
 from ..browse_state import bump_browse_revision
 from ..collection_views import (
     _ViewerContext,
+    _owners_out,
     collection_out,
     collection_summary_out,
     get_visible_collection_or_404,
+    owner_label,
 )
 from ..database import get_db, settings
 from ..models import (
     COLLECTION_TYPES,
+    COLLECTION_VISIBILITIES,
     STUDENT_MAX_COLLECTIONS_PER_TYPE,
     STUDENT_SEQUENCE_MAX_IMAGES,
     SYNCHRONIZED_COLLECTION_MAX_IMAGES,
@@ -88,6 +92,7 @@ from ..schemas import (
     CollectionMove,
     CollectionOut,
     CollectionOwnersUpdate,
+    CollectionOwnerOut,
     CollectionSummaryOut,
     CollectionTransfer,
     CollectionUpdate,
@@ -115,6 +120,130 @@ router = APIRouter(
 )
 
 
+# ── List search / sort / paging (#1631) ───────────────────────────────────
+
+_LIST_SORT_KEYS = frozenset({
+    "id",
+    "name",
+    "type",
+    "visibility",
+    "description",
+    "category",
+    "image_count",
+    "owner",
+    "hidden",
+    "created_at",
+    "updated_at",
+})
+# Sorts whose natural reading order is descending when ``direction`` is
+# omitted (recency / magnitude); text columns default to ascending.
+_LIST_DESC_DEFAULT = frozenset({"id", "image_count", "created_at", "updated_at"})
+
+
+def _category_label_path(by_id: dict[int, Category], category: Category) -> str:
+    """``›``-joined label path from the root down to *category*."""
+    labels: list[str] = []
+    node: Category | None = category
+    while node is not None:
+        labels.append(node.label)
+        node = by_id.get(node.parent_id)
+    return " › ".join(reversed(labels))
+
+
+def _category_with_descendants(
+    by_id: dict[int, Category], root_ids: list[int]
+) -> set[int]:
+    """*root_ids* plus every descendant id, walked via ``parent_id``."""
+    children: dict[int | None, list[int]] = {}
+    for cat in by_id.values():
+        children.setdefault(cat.parent_id, []).append(cat.id)
+    allowed: set[int] = set()
+    stack = list(root_ids)
+    while stack:
+        cat_id = stack.pop()
+        if cat_id in allowed:
+            continue
+        allowed.add(cat_id)
+        stack.extend(children.get(cat_id, []))
+    return allowed
+
+
+def _category_hidden(
+    by_id: dict[int, Category], category_id: int | None
+) -> bool:
+    """True when the filed category or any ancestor is ``status="hidden"``
+    (mirrors the hidden-subtree rule in ``app.visibility``)."""
+    node = by_id.get(category_id) if category_id is not None else None
+    while node is not None:
+        if node.status == "hidden":
+            return True
+        node = by_id.get(node.parent_id)
+    return False
+
+
+def _list_sort_key(
+    collection: Collection,
+    sort: str,
+    cat_by_id: dict[int, Category],
+    image_counts: dict[int, int],
+) -> object:
+    """Primary sort key for one collection (ties break on ``id``)."""
+    if sort == "name":
+        return collection.name.casefold()
+    if sort == "type":
+        return collection.type
+    if sort == "visibility":
+        return collection.visibility
+    if sort == "description":
+        return (collection.description or "").casefold()
+    if sort == "owner":
+        return owner_label(collection).casefold()
+    if sort == "category":
+        cat = (
+            cat_by_id.get(collection.category_id)
+            if collection.category_id is not None
+            else None
+        )
+        label = "Unfiled" if cat is None else _category_label_path(cat_by_id, cat)
+        return label.casefold()
+    if sort == "hidden":
+        return bool(
+            collection.hidden
+            or _category_hidden(cat_by_id, collection.category_id)
+        )
+    if sort == "image_count":
+        return image_counts.get(collection.id, 0)
+    # id / created_at / updated_at
+    return getattr(collection, sort)
+
+
+async def _caller_visible_image_counts(
+    db: AsyncSession, ctx: _ViewerContext, collection_ids: list[int]
+) -> dict[int, int]:
+    """Grouped count of caller-visible members per collection — the
+    SQL twin of ``len(ctx.visible_images(c))`` without loading image rows.
+    Students get the ``active`` + non-excluded-category clauses of
+    ``_ViewerContext.can_view_image``; everyone else counts every member."""
+    if not collection_ids:
+        return {}
+    stmt = (
+        select(CollectionImage.collection_id, func.count())
+        .join(Image, Image.id == CollectionImage.image_id)
+        .where(CollectionImage.collection_id.in_(collection_ids))
+        .group_by(CollectionImage.collection_id)
+    )
+    if ctx.excluded_category_ids is not None:
+        stmt = stmt.where(Image.active.is_(True))
+        if ctx.excluded_category_ids:
+            stmt = stmt.where(
+                or_(
+                    Image.category_id.is_(None),
+                    Image.category_id.not_in(ctx.excluded_category_ids),
+                )
+            )
+    return dict((await db.execute(stmt)).all())
+
+
 @router.get("", response_model=list[CollectionSummaryOut])
 async def list_collections(
     user: Annotated[User, Depends(get_current_user)],
@@ -124,7 +253,15 @@ async def list_collections(
     owner_program_id: int | None = None,
     orphaned: bool = False,
     uncategorized: bool = False,
+    q: str | None = None,
+    visibility: Annotated[list[str] | None, Query()] = None,
+    category_id: Annotated[list[int] | None, Query()] = None,
+    sort: str = "updated_at",
+    direction: str | None = None,
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    page: Annotated[int | None, Query(ge=1)] = None,
+    page_size: Annotated[int | None, Query(ge=1, le=200)] = None,
+    response: Response = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
 ):
     """List collections visible to the caller (server-side filtered).
@@ -134,8 +271,34 @@ async def list_collections(
     roles receive 403. ``mine`` / ``owner_user_id`` match
     ``collection_owners`` membership (#1531). ``uncategorized=true`` selects
     the unfiled queue: collections not shown on Browse because their
-    ``category_id`` is null. ``limit`` is applied after visibility filtering,
-    so inaccessible collections do not consume result slots.
+    ``category_id`` is null.
+
+    Search / sort / paging (#1631) all run after the visibility gate:
+
+    * ``q`` — case-insensitive substring over name, description and the
+      owner label; ``%``/``_`` are literal, blank values are ignored.
+    * ``visibility`` — repeatable; each value must be private, public or
+      restricted (**422** otherwise).
+    * ``category_id`` — repeatable, ancestor-aware: matches collections
+      filed in a listed category or any descendant; unfiled never matches.
+    * ``sort`` — one of ``id``, ``name``, ``type``, ``visibility``,
+      ``description``, ``category`` (``›``-joined label path, unfiled sorts
+      as "Unfiled"), ``image_count`` (caller-visible members), ``owner``,
+      ``hidden`` (collection flag or a hidden ancestor category),
+      ``created_at``, ``updated_at``; anything else is **422**.
+      ``direction`` is ``asc``/``desc`` (default ``desc`` for ``id``,
+      ``image_count``, ``created_at``, ``updated_at``; ``asc`` otherwise);
+      ties always break on ``id`` in the same direction.
+    * ``page`` + ``page_size`` slice the sorted result; ``page`` without
+      ``page_size`` is **422**. The pre-slice count is reported in the
+      ``X-Total-Count`` header. ``limit`` (the drawer/shelf cap) may not be
+      combined with ``page``/``page_size`` (**422**) and is applied after
+      visibility filtering, so inaccessible collections do not consume
+      result slots.
+
+    Member images are only loaded for the returned slice: the first query
+    skips ``image_links`` (``lazyload``) and the page rows are hydrated with
+    a second ``populate_existing`` select.
     """
     if type is not None and type not in COLLECTION_TYPES:
         raise HTTPException(
@@ -146,8 +309,35 @@ async def list_collections(
         raise HTTPException(
             status_code=403, detail="Only admins may list orphaned collections"
         )
+    for value in visibility or []:
+        if value not in COLLECTION_VISIBILITIES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "visibility must be one of "
+                    f"{', '.join(COLLECTION_VISIBILITIES)}"
+                ),
+            )
+    if sort not in _LIST_SORT_KEYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"sort must be one of {', '.join(sorted(_LIST_SORT_KEYS))}",
+        )
+    if direction is not None and direction not in ("asc", "desc"):
+        raise HTTPException(
+            status_code=422, detail="direction must be asc or desc"
+        )
+    if page is not None and page_size is None:
+        raise HTTPException(
+            status_code=422, detail="page requires page_size"
+        )
+    if limit is not None and (page is not None or page_size is not None):
+        raise HTTPException(
+            status_code=422,
+            detail="limit cannot be combined with page/page_size",
+        )
 
-    stmt = select(Collection)
+    stmt = select(Collection).options(lazyload(Collection.image_links))
     if type is not None:
         stmt = stmt.where(Collection.type == type)
     if mine:
@@ -167,8 +357,75 @@ async def list_collections(
     collections = (await db.execute(stmt)).scalars().unique().all()
     ctx = await _ViewerContext.build(db, user)
     visible = [c for c in collections if ctx.can_view(c)]
-    if limit is not None:
+
+    needle = (q or "").strip().casefold()
+    if needle:
+        visible = [
+            c
+            for c in visible
+            if needle in c.name.casefold()
+            or needle in (c.description or "").casefold()
+            or needle in owner_label(c).casefold()
+        ]
+    if visibility:
+        wanted = set(visibility)
+        visible = [c for c in visible if c.visibility in wanted]
+
+    cat_by_id: dict[int, Category] = {}
+    if category_id or sort in ("category", "hidden"):
+        categories = (await db.execute(select(Category))).scalars().all()
+        cat_by_id = {c.id: c for c in categories}
+    if category_id:
+        filed_in = _category_with_descendants(cat_by_id, category_id)
+        visible = [c for c in visible if c.category_id in filed_in]
+
+    image_counts = (
+        await _caller_visible_image_counts(
+            db, ctx, [c.id for c in visible]
+        )
+        if sort == "image_count"
+        else {}
+    )
+    descending = (
+        direction == "desc"
+        if direction is not None
+        else sort in _LIST_DESC_DEFAULT
+    )
+    visible.sort(
+        key=lambda c: (
+            _list_sort_key(c, sort, cat_by_id, image_counts),
+            c.id,
+        ),
+        reverse=descending,
+    )
+
+    if response is not None:
+        response.headers["X-Total-Count"] = str(len(visible))
+    if page_size is not None:
+        offset = (page - 1) * page_size if page is not None else 0
+        visible = visible[offset:offset + page_size]
+    elif limit is not None:
         visible = visible[:limit]
+
+    if visible:
+        hydrated = (
+            (
+                await db.execute(
+                    select(Collection)
+                    .where(Collection.id.in_([c.id for c in visible]))
+                    .options(
+                        selectinload(Collection.image_links)
+                        .selectinload(CollectionImage.image)
+                    )
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .unique()
+            .all()
+        )
+        by_id = {c.id: c for c in hydrated}
+        visible = [by_id.get(c.id, c) for c in visible]
     return [collection_summary_out(ctx, c) for c in visible]
 
 
@@ -218,14 +475,6 @@ async def _graph_categories(
     counts = dict((await db.execute(count_stmt)).all())
     excluded = ctx.excluded_category_ids or set()
 
-    def _path(category: Category) -> str:
-        labels: list[str] = []
-        node: Category | None = category
-        while node is not None:
-            labels.append(node.label)
-            node = by_id.get(node.parent_id)
-        return " › ".join(reversed(labels))
-
     nodes: list[CollectionGraphCategoryOut] = []
     for category_id, count in counts.items():
         if (
@@ -241,7 +490,7 @@ async def _graph_categories(
             CollectionGraphCategoryOut(
                 id=category_id,
                 label=category.label,
-                path=_path(category),
+                path=_category_label_path(by_id, category),
                 image_count=count,
             )
         )
@@ -307,6 +556,51 @@ async def collections_graph(
         images=images,
         categories=(
             await _graph_categories(db, ctx) if order == 3 else []
+        ),
+    )
+
+
+@router.get("/owners", response_model=list[CollectionOwnerOut])
+async def list_collection_owners(
+    user: Annotated[User, Depends(get_current_user)],
+    type: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Distinct owners across the collections the caller may see (#1631).
+
+    Backs the Owner facet: the frontend can no longer derive it from
+    ``GET /api/collections`` now that the list pages server-side. Same
+    visibility filtering and optional ``type`` query as the list (422 on an
+    unknown type). User owners and owning programs are deduplicated across
+    collections and sorted by (name, kind, id); ``CollectionOwnerOut`` is
+    the same shape as a summary's ``owners`` entries.
+    """
+    if type is not None and type not in COLLECTION_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"type must be one of {', '.join(COLLECTION_TYPES)}",
+        )
+    stmt = select(Collection).options(lazyload(Collection.image_links))
+    if type is not None:
+        stmt = stmt.where(Collection.type == type)
+    collections = (await db.execute(stmt)).scalars().unique().all()
+    ctx = await _ViewerContext.build(db, user)
+    seen: set[tuple[int | None, int | None]] = set()
+    owners: list[CollectionOwnerOut] = []
+    for collection in collections:
+        if not ctx.can_view(collection):
+            continue
+        for owner in _owners_out(collection):
+            key = (owner.user_id, owner.program_id)
+            if key not in seen:
+                seen.add(key)
+                owners.append(owner)
+    return sorted(
+        owners,
+        key=lambda o: (
+            o.name.casefold(),
+            "user" if o.user_id is not None else "program",
+            o.user_id if o.user_id is not None else o.program_id,
         ),
     )
 
