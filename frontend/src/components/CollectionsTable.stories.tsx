@@ -1,6 +1,12 @@
+import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, within } from 'storybook/test'
 import CollectionsTable, { COLLECTIONS_TABLE_COLUMNS } from './CollectionsTable'
+import {
+  collectionSortDefaultDirection,
+  type CollectionSort,
+  type CollectionSortKey,
+} from '../useCollectionsData'
 import { buildCategoryPaths } from './CategoryBreadcrumb'
 import type { Category, CollectionSummary, User } from '../types'
 
@@ -89,7 +95,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: sortable, paged rows with cover, name, type chip, category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
+          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: server-sorted, server-paged rows (#1631 — sorting/paging state is controlled by the page\'s data hook) with cover, name, type chip, category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
       },
     },
   },
@@ -98,14 +104,60 @@ const meta = {
     categoryPaths: buildCategoryPaths(categories),
     currentUser: viewer,
     onOpenCollection: fn(),
+    sortKey: 'updated',
+    sortDir: 'desc',
+    onSortChange: fn(),
+    page: 0,
+    rowsPerPage: 25,
+    total: 0,
+    onPageChange: fn(),
+    onRowsPerPageChange: fn(),
   },
 } satisfies Meta<typeof CollectionsTable>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
+/** Controlled sort/page state lives in the page's hook — this wrapper
+ *  plays that role so header clicks and paging still respond in the story. */
+function StatefulTable(args: React.ComponentProps<typeof CollectionsTable>) {
+  const [sort, setSort] = useState<CollectionSort>({ key: 'updated', direction: 'desc' })
+  const [page, setPage] = useState(0)
+  const [rowsPerPage, setRowsPerPage] = useState(5)
+  const sorted = [...(args.collections ?? [])].sort((a, b) => {
+    const va = sort.key === 'name' ? a.name : a.updatedAt
+    const vb = sort.key === 'name' ? b.name : b.updatedAt
+    const cmp = String(va).localeCompare(String(vb))
+    return (cmp !== 0 ? cmp : a.id - b.id) * (sort.direction === 'asc' ? 1 : -1)
+  })
+  return (
+    <CollectionsTable
+      {...args}
+      collections={sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)}
+      sortKey={sort.key}
+      sortDir={sort.direction}
+      onSortChange={(key: CollectionSortKey, dir: 'asc' | 'desc') => {
+        setSort((s) => ({
+          key,
+          direction: s.key === key ? dir : collectionSortDefaultDirection(key),
+        }))
+        setPage(0)
+      }}
+      page={page}
+      rowsPerPage={rowsPerPage}
+      total={sorted.length}
+      onPageChange={setPage}
+      onRowsPerPageChange={(n) => {
+        setRowsPerPage(n)
+        setPage(0)
+      }}
+    />
+  )
+}
+
 export const Basic: Story = {
   args: {
+    total: 3,
     collections: [
       makeRow({ id: 1, name: 'Skull comparison', type: 'synchronized', categoryId: 2 }),
       makeRow({
@@ -139,6 +191,7 @@ export const Basic: Story = {
 export const AllColumns: Story = {
   name: 'All Columns',
   args: {
+    total: 2,
     collections: [
       makeRow({
         id: 1,
@@ -188,6 +241,7 @@ export const HiddenRows: Story = {
       { ...categories[0], id: 9, label: 'Archive', status: 'hidden', children: [] },
     ]),
     columns: ['cover', 'name', 'type', 'category', 'owner', 'visibility', 'updated'],
+    total: 3,
     selected: new Set([2]),
     onSelectedChange: fn(),
     onEdit: fn(),
@@ -221,6 +275,24 @@ export const HiddenRows: Story = {
     ).toBeDisabled()
     await expect(canvas.getByRole('checkbox', { name: 'Select Hidden set' })).toBeChecked()
   },
+}
+
+/** Interactive slice of the server-paged contract: header clicks flip the
+ *  sort and the footer pages the full fixture set. */
+export const SortableAndPaged: Story = {
+  name: 'Sortable And Paged',
+  args: {
+    collections: Array.from({ length: 12 }, (_, i) =>
+      makeRow({
+        id: i + 1,
+        name: `Collection ${String(i + 1).padStart(2, '0')}`,
+        categoryId: i % 2 === 0 ? 2 : 1,
+        imageCount: (i * 3) % 7,
+        updatedAt: `2026-08-${String(10 + i).padStart(2, '0')}T09:00:00Z`,
+      }),
+    ),
+  },
+  render: (args) => <StatefulTable {...args} />,
 }
 
 export const Empty: Story = {

@@ -256,13 +256,24 @@ returned by the API (UX only — the backend re-checks).
   **Automatic** row clears both states back to the first-member fallback,
   and a member row pins `cover_image_id`.
 - **Given** the unified Collections page, **Then** a shared `FilterBar` sits
-  above the Cards/Table/Graph views with popover facets: **Name** (client-side
-  text over name/description/owner — narrows rows, dims non-matching graph
-  nodes), **Type** (single-select; `?type=` still seeds it), **Owner**
-  (**My collections**, named owners for non-students, _No owner (orphaned)_
-  for admins) and **Visibility** (multi-select Private/Public/Restricted,
-  client-side, also dims non-matching graph nodes). A **Clear all** action
-  and deletable summary chips appear while any facet is active.
+  above the Cards/Table/Graph views with popover facets: **Name** (debounced
+  server-side `q=` text over name/description/owner in Cards/Table — dims
+  non-matching graph nodes), **Type** (single-select; `?type=` still seeds
+  it), **Owner** (**My collections**, named owners for non-students from
+  `GET /api/collections/owners`, _No owner (orphaned)_ for admins),
+  **Visibility** (multi-select Private/Public/Restricted, server-side
+  `visibility=`, also dims non-matching graph nodes) and **Category**
+  (multi-select ancestor-aware, server-side `category_id=`). A **Clear all**
+  action and deletable summary chips appear while any facet is active.
+- **Given** the Cards or Table view (#1631), **Then** the list is
+  server-paged — `page`/`page_size` params and the `X-Total-Count` header
+  drive a shared `TablePagination` footer (also under the Cards grid),
+  rows-per-page persists per user
+  (`hrivpref:rows-per-page:collections:user:<id>`, options
+  5/10/25/50/100/200), and filter/sort/page-size changes reset to page 1.
+  Background refresh re-fetches the current page, and bulk selection
+  survives page changes (the count includes off-page rows). The Graph view
+  instead requests the full visible set unpaged.
 - **Given** the user is on the Collections page (list or an open collection
   detail), **When** they click the already-selected **Collections** tab,
   **Then** the detail closes and the list re-renders — `onTabChange` is
@@ -272,8 +283,9 @@ returned by the API (UX only — the backend re-checks).
   (Cover, ID, Name, Type, Scope, Description, Category, Images, Owner,
   Programs, Groups, Created, Updated) with per-user persisted visibility and
   order; default visible set is Cover, Name, Type, Category, Images, Owner,
-  Updated. Every column except Cover sorts; ID/Images/Created/Updated open
-  descending.
+  Updated. Every column except Cover, Programs and Groups sorts
+  server-side (`sort=`/`direction=`); ID/Images/Created/Updated open
+  descending and ties break on id.
 - **Given** the Cards/Table/Graph toggle, **Then** the view choice is held in
   memory only — the page always loads on Cards (order and Shared-only still
   persist per user).

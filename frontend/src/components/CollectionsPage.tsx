@@ -7,6 +7,7 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
+import TablePagination from '@mui/material/TablePagination'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
@@ -73,7 +74,9 @@ import {
   toCollectionPatch,
   type CollectionListFilters,
   type CollectionOwnerFilter,
+  type CollectionSort,
 } from '../useCollectionsData'
+import { ROWS_PER_PAGE_OPTIONS } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import type {
   Category,
@@ -106,6 +109,19 @@ export interface CollectionsPageProps {
   filters: CollectionListFilters
   onFiltersChange: (filters: CollectionListFilters) => void
   ownerOptions: CollectionOwner[]
+  /**
+   * Server-side sort/paging state (#1631), owned by `useCollectionsData`:
+   * `collections` is the current page (or the full visible set in graph
+   * mode) and `total` is the X-Total-Count across pages. Cards and Table
+   * share this one page state, so switching views keeps the page.
+   */
+  total: number
+  sort: CollectionSort
+  onSortChange: (sort: CollectionSort) => void
+  page: number
+  onPageChange: (page: number) => void
+  pageSize: number
+  onPageSizeChange: (pageSize: number) => void
   /** Detail placeholder state; `selectedCollectionId` null renders the list. */
   selectedCollectionId: number | null
   detail: Collection | null
@@ -211,6 +227,8 @@ export interface CollectionsPageProps {
   onBulkUpdate?: (
     ids: number[],
     data: { category_id?: number | null; hidden?: boolean },
+    /** The full selected rows — may include rows on other pages (#1631). */
+    rows: CollectionSummary[],
   ) => Promise<void>
   /** Table-view bulk delete (#1578) — every row must be `canDelete`. */
   onBulkDelete?: (ids: number[]) => Promise<void>
@@ -563,6 +581,13 @@ export default function CollectionsPage({
   filters,
   onFiltersChange,
   ownerOptions,
+  total,
+  sort,
+  onSortChange,
+  page,
+  onPageChange,
+  pageSize,
+  onPageSizeChange,
   selectedCollectionId,
   detail,
   detailLoading,
@@ -651,31 +676,79 @@ export default function CollectionsPage({
   useEffect(() => {
     onViewChange?.(viewPrefs.view)
   }, [onViewChange, viewPrefs.view])
-  // Search and the Visibility facet are client-side and intentionally NOT
-  // persisted.
-  const [searchQuery, setSearchQuery] = useState('')
-  const [visibilityFilter, setVisibilityFilter] = useState<ReadonlySet<CollectionVisibility>>(
-    () => new Set(),
+  // The Name field types into local state and commits to `filters.q` after
+  // a short debounce (#1631) — Cards/Table apply it server-side while the
+  // graph only highlights. Clear all / chip deletes commit immediately.
+  const [searchText, setSearchText] = useState(filters.q)
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const filtersRef = useRef(filters)
+  useEffect(() => {
+    filtersRef.current = filters
+  }, [filters])
+  // External `filters.q` changes (chip delete, Clear all, a user switch)
+  // resync the text field.
+  const [searchSynced, setSearchSynced] = useState(filters.q)
+  if (searchSynced !== filters.q) {
+    setSearchSynced(filters.q)
+    setSearchText(filters.q)
+  }
+  const commitSearch = (value: string, immediate = false) => {
+    if (searchDebounce.current != null) clearTimeout(searchDebounce.current)
+    searchDebounce.current = undefined
+    if (immediate) {
+      onFiltersChange({ ...filtersRef.current, q: value })
+      return
+    }
+    searchDebounce.current = setTimeout(() => {
+      searchDebounce.current = undefined
+      onFiltersChange({ ...filtersRef.current, q: value })
+    }, 300)
+  }
+  useEffect(
+    () => () => {
+      if (searchDebounce.current != null) clearTimeout(searchDebounce.current)
+    },
+    [],
   )
-  // Category facet — client-side and ancestor-aware like the Images table:
-  // a parent matches collections filed anywhere beneath it.
-  const [categoryFilter, setCategoryFilter] = useState<ReadonlySet<number>>(() => new Set())
-  // Table-view bulk selection (#1578), reconciled against the live rows so a
-  // collection deleted elsewhere can't linger in a later bulk call.
-  const [selectedIdsRaw, setSelectedIds] = useState<ReadonlySet<number>>(() => new Set())
-  const selectedIds = useMemo(() => {
-    const live = new Set(collections.map((c) => c.id))
-    return [...selectedIdsRaw].every((id) => live.has(id))
-      ? selectedIdsRaw
-      : new Set([...selectedIdsRaw].filter((id) => live.has(id)))
-  }, [collections, selectedIdsRaw])
-  // Commit the pruning so a row that leaves the list (server-side filter,
-  // delete) does not come back selected when it reappears.
-  if (selectedIds !== selectedIdsRaw) setSelectedIds(selectedIds)
-  const selectedRows = useMemo(
-    () => collections.filter((c) => selectedIds.has(c.id)),
-    [collections, selectedIds],
+  // Table-view bulk selection (#1578) — a row map so selections survive
+  // page changes (#1631): ids absent from the current page stay selected,
+  // while ids present on the page refresh their rows.
+  const [selectedRowsMap, setSelectedRowsMap] = useState<Map<number, CollectionSummary>>(
+    () => new Map(),
   )
+  if (selectedRowsMap.size > 0) {
+    let changed = false
+    const next = new Map(selectedRowsMap)
+    for (const c of collections) {
+      const existing = next.get(c.id)
+      if (existing != null && existing !== c) {
+        next.set(c.id, c)
+        changed = true
+      }
+    }
+    if (changed) setSelectedRowsMap(next)
+  }
+  // Filters, sort and view changes swap the listed set — the selection
+  // clears so a stale off-page row cannot ride a later bulk call. Page and
+  // page-size changes intentionally do not clear it.
+  const selectionScope = `${JSON.stringify(filters)}|${sort.key}|${sort.direction}|${viewPrefs.view}`
+  const [selectionScopeApplied, setSelectionScopeApplied] = useState(selectionScope)
+  if (selectionScopeApplied !== selectionScope) {
+    setSelectionScopeApplied(selectionScope)
+    if (selectedRowsMap.size > 0) setSelectedRowsMap(new Map())
+  }
+  const selectedIds = useMemo(() => new Set(selectedRowsMap.keys()), [selectedRowsMap])
+  const selectedRows = useMemo(() => [...selectedRowsMap.values()], [selectedRowsMap])
+  // The table's `onSelectedChange` only knows the current page's ids —
+  // merge so off-page selections are kept (#1631).
+  const mergeSelected = (next: Set<number>) => {
+    const merged = new Map(selectedRowsMap)
+    for (const c of collections) {
+      if (next.has(c.id)) merged.set(c.id, c)
+      else merged.delete(c.id)
+    }
+    setSelectedRowsMap(merged)
+  }
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
   const [graphError, setGraphError] = useState<string | null>(null)
@@ -1022,16 +1095,20 @@ export default function CollectionsPage({
       body = null
     }
   } else {
-    // The Name text and Visibility facet are client-side and never
-    // persisted (#1629): they narrow the cards/table rows, and in the
-    // graph only highlight matches — nodes are never removed.
-    const searchQ = searchQuery.trim().toLowerCase()
+    // Name, Visibility and Category are server-side facets for Cards/Table
+    // (#1631) — `collections` is already the filtered page. The graph view
+    // keeps the full visible set and uses the same facets for highlight
+    // only (ancestor-aware, like the old client filter): nodes are never
+    // removed.
+    const searchQ = filters.q.trim().toLowerCase()
+    const visibilityFacet = new Set<CollectionVisibility>(filters.visibility)
+    const categoryFacet = new Set<number>(filters.categoryIds)
     const matchesClientFilters = (c: CollectionSummary): boolean => {
-      if (visibilityFilter.size > 0 && !visibilityFilter.has(c.visibility)) return false
-      if (categoryFilter.size > 0) {
+      if (visibilityFacet.size > 0 && !visibilityFacet.has(c.visibility)) return false
+      if (categoryFacet.size > 0) {
         const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
         if (!seg) return false
-        if (![seg.category, ...seg.ancestors].some((cat) => categoryFilter.has(cat.id))) {
+        if (![seg.category, ...seg.ancestors].some((cat) => categoryFacet.has(cat.id))) {
           return false
         }
       }
@@ -1042,10 +1119,6 @@ export default function CollectionsPage({
           .includes(searchQ)
       )
     }
-    const shownCollections =
-      searchQ || visibilityFilter.size > 0 || categoryFilter.size > 0
-        ? collections.filter(matchesClientFilters)
-        : collections
     const searchHelper =
       viewPrefs.view === 'graph'
         ? 'Highlights matches in the graph; nodes are not removed.'
@@ -1054,14 +1127,20 @@ export default function CollectionsPage({
       filters.type !== 'all' ||
       filters.mine ||
       filters.owner !== 'any' ||
-      searchQ !== '' ||
-      visibilityFilter.size > 0 ||
-      categoryFilter.size > 0
+      filters.q.trim() !== '' ||
+      filters.visibility.length > 0 ||
+      filters.categoryIds.length > 0
     const clearAllFilters = () => {
+      // q commits immediately so a pending debounce cannot resurrect it.
+      setSearchText('')
+      commitSearch('', true)
       onFiltersChange({ ...DEFAULT_COLLECTION_FILTERS })
-      setSearchQuery('')
-      setVisibilityFilter(new Set())
-      setCategoryFilter(new Set())
+    }
+    const setCategoryFacet = (id: number) => {
+      const next = filters.categoryIds.includes(id)
+        ? filters.categoryIds.filter((c) => c !== id)
+        : [...filters.categoryIds, id]
+      onFiltersChange({ ...filters, categoryIds: next.sort((a, b) => a - b) })
     }
     const ownerSummaryLabel = filters.mine
       ? 'My collections'
@@ -1142,8 +1221,9 @@ export default function CollectionsPage({
         </Box>
 
         {/* Shared filter bar (#1629): the popover facets feed all three
-            views — type/mine/owner stay server-side filters; Name and
-            Visibility narrow client-side. */}
+            views — in Cards/Table every facet is a server-side request
+            parameter (#1631); the graph keeps the full set and uses Name,
+            Visibility and Category for highlight only. */}
         <FilterBar
           clearAction={
             hasActiveFilters ? (
@@ -1182,12 +1262,15 @@ export default function CollectionsPage({
                     onDelete={() => onFiltersChange({ ...filters, mine: false, owner: 'any' })}
                   />
                 )}
-                {searchQ !== '' && (
+                {filters.q.trim() !== '' && (
                   <Chip
                     data-testid="filter-chip"
-                    label={`Name: ${searchQuery}`}
+                    label={`Name: ${filters.q}`}
                     size="small"
-                    onDelete={() => setSearchQuery('')}
+                    onDelete={() => {
+                      setSearchText('')
+                      commitSearch('', true)
+                    }}
                     sx={{
                       bgcolor: (theme) =>
                         theme.palette.mode === 'dark'
@@ -1200,7 +1283,7 @@ export default function CollectionsPage({
                     }}
                   />
                 )}
-                {[...categoryFilter].map((id) => {
+                {filters.categoryIds.map((id) => {
                   const seg = categoryPaths.get(id)
                   const label = seg
                     ? [...seg.ancestors, seg.category].map((cat) => cat.label).join(':')
@@ -1212,26 +1295,24 @@ export default function CollectionsPage({
                       label={`Category: ${label}`}
                       size="small"
                       onDelete={() =>
-                        setCategoryFilter((prev) => {
-                          const next = new Set(prev)
-                          next.delete(id)
-                          return next
+                        onFiltersChange({
+                          ...filters,
+                          categoryIds: filters.categoryIds.filter((c) => c !== id),
                         })
                       }
                     />
                   )
                 })}
-                {[...visibilityFilter].map((v) => (
+                {filters.visibility.map((v) => (
                   <Chip
                     key={`vis:${v}`}
                     data-testid="filter-chip"
                     label={`Visibility: ${COLLECTION_VISIBILITY_LABELS[v]}`}
                     size="small"
                     onDelete={() =>
-                      setVisibilityFilter((prev) => {
-                        const next = new Set(prev)
-                        next.delete(v)
-                        return next
+                      onFiltersChange({
+                        ...filters,
+                        visibility: filters.visibility.filter((c) => c !== v),
                       })
                     }
                   />
@@ -1255,10 +1336,15 @@ export default function CollectionsPage({
             </Button>
           }
         >
-          <FilterPopoverButton label="Name" activeCount={searchQ ? 1 : 0}>
+          <FilterPopoverButton label="Name" activeCount={filters.q.trim() !== '' ? 1 : 0}>
             <FilterTextPanel
-              value={searchQuery}
-              onChange={setSearchQuery}
+              value={searchText}
+              onChange={(value) => {
+                setSearchText(value)
+                // An emptied box commits at once — no 300 ms window where
+                // the cleared search still filters server-side.
+                commitSearch(value, value === '')
+              }}
               placeholder="Filter by name, description or owner"
               ariaLabel="Filter collections by name"
               helperText={searchHelper}
@@ -1302,29 +1388,33 @@ export default function CollectionsPage({
               searchPlaceholder={ownerFacetOptions.length > 6 ? 'Search owners' : undefined}
             />
           </FilterPopoverButton>
-          <FilterPopoverButton label="Visibility" activeCount={visibilityFilter.size}>
+          <FilterPopoverButton label="Visibility" activeCount={filters.visibility.length}>
             <FilterOptionPanel
               options={(['private', 'public', 'restricted'] as const).map((v) => ({
                 value: v,
                 label: COLLECTION_VISIBILITY_LABELS[v],
               }))}
-              selectedValues={[...visibilityFilter]}
-              onChange={(values) => setVisibilityFilter(new Set(values as CollectionVisibility[]))}
+              selectedValues={[...filters.visibility]}
+              onChange={(values) =>
+                // Sorted so the hook's cache keys stay stable regardless of
+                // click order.
+                onFiltersChange({
+                  ...filters,
+                  visibility: (values as CollectionVisibility[]).sort(),
+                })
+              }
             />
           </FilterPopoverButton>
-          <FilterPopoverButton label="Category" activeCount={categoryFilter.size} panelWidth={300}>
+          <FilterPopoverButton
+            label="Category"
+            activeCount={filters.categoryIds.length}
+            panelWidth={300}
+          >
             <Box sx={{ maxHeight: 320, overflow: 'auto' }}>
               <CategoryFilterTreePanel
                 categories={categories}
-                selectedIds={categoryFilter}
-                onToggle={(id) =>
-                  setCategoryFilter((prev) => {
-                    const next = new Set(prev)
-                    if (next.has(id)) next.delete(id)
-                    else next.add(id)
-                    return next
-                  })
-                }
+                selectedIds={new Set(filters.categoryIds)}
+                onToggle={setCategoryFacet}
               />
             </Box>
           </FilterPopoverButton>
@@ -1334,11 +1424,11 @@ export default function CollectionsPage({
           <Alert severity="error">{error}</Alert>
         ) : (
           <>
-            {loading && collections.length === 0 && viewPrefs.view !== 'graph' ? (
+            {collections.length === 0 && (loading || total > 0) && viewPrefs.view !== 'graph' ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
                 <CircularProgress aria-label="Loading collections" />
               </Box>
-            ) : shownCollections.length === 0 && viewPrefs.view !== 'graph' ? (
+            ) : collections.length === 0 && viewPrefs.view !== 'graph' ? (
               <Box
                 data-testid="collections-empty"
                 sx={{ textAlign: 'center', color: 'text.secondary', mt: 8 }}
@@ -1367,12 +1457,12 @@ export default function CollectionsPage({
                 </Typography>
               </Box>
             ) : null}
-            {viewPrefs.view === 'cards' && shownCollections.length > 0 && (
+            {viewPrefs.view === 'cards' && collections.length > 0 && (
               <Box
                 data-testid="collections-grid"
                 sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}
               >
-                {shownCollections.map((c) => {
+                {collections.map((c) => {
                   const seg = c.categoryId != null ? categoryPaths.get(c.categoryId) : undefined
                   const catPath = seg ? [...seg.ancestors, seg.category] : []
                   return (
@@ -1394,13 +1484,27 @@ export default function CollectionsPage({
                 })}
               </Box>
             )}
-            {viewPrefs.view === 'table' && collections.length > 0 && (
-              // Stay mounted (hidden) on a zero-match client filter so the
-              // table's local sort/page state survives; the empty-state
-              // message above covers the hidden rows.
-              <Box sx={{ display: shownCollections.length > 0 ? undefined : 'none' }}>
+            {/* Cards/Table share the server-side page controls (#1631):
+                the table renders its own footer; Cards gets the same
+                TablePagination under the grid. It stays mounted while a
+                page reloads so the footer doesn't blink between pages. */}
+            {viewPrefs.view === 'cards' && (collections.length > 0 || loading || total > 0) && (
+              <TablePagination
+                component="div"
+                count={total}
+                page={page}
+                onPageChange={(_, p) => onPageChange(p)}
+                rowsPerPage={pageSize}
+                onRowsPerPageChange={(e) => onPageSizeChange(Number.parseInt(e.target.value, 10))}
+                rowsPerPageOptions={[...ROWS_PER_PAGE_OPTIONS]}
+              />
+            )}
+            {viewPrefs.view === 'table' && (collections.length > 0 || total > 0) && (
+              // Stay mounted (hidden) while an empty page waits for the
+              // hook's step-back reload so the table doesn't flash away.
+              <Box sx={{ display: collections.length > 0 ? undefined : 'none' }}>
                 <CollectionsTable
-                  collections={shownCollections}
+                  collections={collections}
                   categoryPaths={categoryPaths}
                   currentUser={currentUser}
                   onOpenCollection={onOpenCollection}
@@ -1414,7 +1518,15 @@ export default function CollectionsPage({
                   onToggleHidden={onToggleHidden}
                   onError={onViewerError}
                   selected={selectedIds}
-                  onSelectedChange={onBulkUpdate || onBulkDelete ? setSelectedIds : undefined}
+                  onSelectedChange={onBulkUpdate || onBulkDelete ? mergeSelected : undefined}
+                  sortKey={sort.key}
+                  sortDir={sort.direction}
+                  onSortChange={(key, direction) => onSortChange({ key, direction })}
+                  page={page}
+                  rowsPerPage={pageSize}
+                  total={total}
+                  onPageChange={onPageChange}
+                  onRowsPerPageChange={onPageSizeChange}
                 />
               </Box>
             )}
@@ -1458,12 +1570,12 @@ export default function CollectionsPage({
                   model={graphModel}
                   onOpenCollection={onOpenCollection}
                   onOpenImage={onOpenImageById}
-                  searchQuery={searchQuery}
+                  searchQuery={filters.q}
                   matchesSearch={(id) => {
                     const c = collections.find((r) => r.id === id)
                     return c != null && matchesClientFilters(c)
                   }}
-                  filterActive={visibilityFilter.size > 0 || categoryFilter.size > 0}
+                  filterActive={filters.visibility.length > 0 || filters.categoryIds.length > 0}
                   tooltipInfo={graphTooltipInfo}
                   overlay={
                     <>
@@ -1607,15 +1719,15 @@ export default function CollectionsPage({
         onClose={() => setBulkEditOpen(false)}
         onSave={async (data) => {
           if (!onBulkUpdate) return
-          await onBulkUpdate([...selectedIds], data)
+          await onBulkUpdate([...selectedIds], data, selectedRows)
           setBulkEditOpen(false)
-          setSelectedIds(new Set())
+          setSelectedRowsMap(new Map())
         }}
         onDelete={async () => {
           if (!onBulkDelete) return
           await onBulkDelete([...selectedIds])
           setBulkEditOpen(false)
-          setSelectedIds(new Set())
+          setSelectedRowsMap(new Map())
         }}
         categories={categories}
         selectedCount={selectedIds.size}

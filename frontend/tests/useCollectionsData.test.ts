@@ -6,6 +6,7 @@ import type { User } from '../src/types'
 import {
   DEFAULT_COLLECTION_FILTERS,
   COLLECTION_NOT_FOUND_MESSAGE,
+  collectionSortDefaultDirection,
   matchesCollectionFilters,
   normalizeCollectionFilters,
   toCollectionApiFilters,
@@ -25,6 +26,8 @@ vi.mock('../src/api', async (importOriginal) => {
   return {
     ...actual,
     fetchCollections: vi.fn(),
+    fetchCollectionsPaged: vi.fn(),
+    fetchCollectionOwners: vi.fn(),
     fetchCollection: vi.fn(),
     createCollection: vi.fn(),
     updateCollection: vi.fn(),
@@ -42,6 +45,8 @@ import {
   deleteCollection,
   fetchCollection,
   fetchCollections,
+  fetchCollectionsPaged,
+  fetchCollectionOwners,
   moveCollection,
   replaceCollectionImages,
   replaceCollectionOwners,
@@ -51,6 +56,8 @@ import {
 } from '../src/api'
 
 const fetchCollectionsMock = vi.mocked(fetchCollections)
+const fetchCollectionsPagedMock = vi.mocked(fetchCollectionsPaged)
+const fetchCollectionOwnersMock = vi.mocked(fetchCollectionOwners)
 const fetchCollectionMock = vi.mocked(fetchCollection)
 const createCollectionMock = vi.mocked(createCollection)
 const updateCollectionMock = vi.mocked(updateCollection)
@@ -98,6 +105,9 @@ function renderData(
         type: 'all',
         refreshToken: 0,
         backgroundRefresh: false,
+        // Existing cases exercise the legacy full-set contract; the paged
+        // path has its own suite below (#1631).
+        listMode: 'full',
         ...options,
         ...props,
       }),
@@ -110,7 +120,11 @@ describe('normalizeCollectionFilters', () => {
   const programOwner = { kind: 'program', programId: 4, name: 'P' } as const
 
   it('returns the same object when nothing needs dropping', () => {
-    const filters = { type: 'sequence', mine: false, owner: userOwner } as const
+    const filters = {
+      ...DEFAULT_COLLECTION_FILTERS,
+      type: 'sequence',
+      owner: userOwner,
+    } as const
     expect(normalizeCollectionFilters(filters, { role: 'instructor' })).toBe(filters)
     expect(normalizeCollectionFilters(DEFAULT_COLLECTION_FILTERS, { role: 'student' })).toBe(
       DEFAULT_COLLECTION_FILTERS,
@@ -120,13 +134,16 @@ describe('normalizeCollectionFilters', () => {
   it('drops every owner facet for students, keeping type and mine', () => {
     for (const owner of [userOwner, programOwner, 'orphaned'] as const) {
       expect(
-        normalizeCollectionFilters({ type: 'sequence', mine: true, owner }, { role: 'student' }),
-      ).toEqual({ type: 'sequence', mine: true, owner: 'any' })
+        normalizeCollectionFilters(
+          { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence', mine: true, owner },
+          { role: 'student' },
+        ),
+      ).toEqual({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence', mine: true })
     }
   })
 
   it('drops orphaned for every non-admin but keeps explicit owners', () => {
-    const orphaned = { type: 'all', mine: false, owner: 'orphaned' } as const
+    const orphaned = { ...DEFAULT_COLLECTION_FILTERS, owner: 'orphaned' } as const
     expect(normalizeCollectionFilters(orphaned, { role: 'admin' })).toBe(orphaned)
     for (const user of [{ role: 'instructor' }, { role: 'staff' }, null] as const) {
       expect(normalizeCollectionFilters(orphaned, user)).toEqual({ ...orphaned, owner: 'any' })
@@ -145,17 +162,20 @@ describe('toCollectionApiFilters', () => {
 
   it('maps type, mine and owner filters', () => {
     expect(
-      toCollectionApiFilters({ type: 'sequence', mine: true, owner: 'any' }, { role: 'student' }),
+      toCollectionApiFilters(
+        { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence', mine: true },
+        { role: 'student' },
+      ),
     ).toEqual({ type: 'sequence', mine: true })
     expect(
       toCollectionApiFilters(
-        { type: 'all', mine: false, owner: { kind: 'user', userId: 3, name: 'X' } },
+        { ...DEFAULT_COLLECTION_FILTERS, owner: { kind: 'user', userId: 3, name: 'X' } },
         { role: 'instructor' },
       ),
     ).toEqual({ owner_user_id: 3 })
     expect(
       toCollectionApiFilters(
-        { type: 'all', mine: false, owner: { kind: 'program', programId: 4, name: 'P' } },
+        { ...DEFAULT_COLLECTION_FILTERS, owner: { kind: 'program', programId: 4, name: 'P' } },
         { role: 'staff' },
       ),
     ).toEqual({ owner_program_id: 4 })
@@ -169,7 +189,7 @@ describe('toCollectionApiFilters', () => {
     ] as const
     for (const owner of owners) {
       const api = toCollectionApiFilters(
-        { type: 'sequence', mine: false, owner },
+        { ...DEFAULT_COLLECTION_FILTERS, type: 'sequence', owner },
         { role: 'student' },
       )
       expect(api).toEqual({ type: 'sequence' })
@@ -180,7 +200,7 @@ describe('toCollectionApiFilters', () => {
   })
 
   it('only sends orphaned for admins', () => {
-    const filters = { type: 'all', mine: false, owner: 'orphaned' } as const
+    const filters = { ...DEFAULT_COLLECTION_FILTERS, owner: 'orphaned' } as const
     expect(toCollectionApiFilters(filters, { role: 'admin' })).toEqual({ orphaned: true })
     expect(toCollectionApiFilters(filters, { role: 'instructor' })).toEqual({})
     expect(toCollectionApiFilters(filters, null)).toEqual({})
@@ -189,10 +209,95 @@ describe('toCollectionApiFilters', () => {
   it('lets mine win over an owner filter', () => {
     expect(
       toCollectionApiFilters(
-        { type: 'all', mine: true, owner: { kind: 'user', userId: 3, name: 'X' } },
+        {
+          ...DEFAULT_COLLECTION_FILTERS,
+          mine: true,
+          owner: { kind: 'user', userId: 3, name: 'X' },
+        },
         { role: 'admin' },
       ),
     ).toEqual({ mine: true })
+  })
+
+  it('paged mode adds the facets, sort and 1-based page (#1631)', () => {
+    expect(
+      toCollectionApiFilters(
+        {
+          ...DEFAULT_COLLECTION_FILTERS,
+          type: 'sequence',
+          q: '  skull ',
+          visibility: ['restricted', 'private'],
+          categoryIds: [9, 4],
+        },
+        { role: 'instructor' },
+        { listMode: 'paged', sort: 'name', direction: 'asc', page: 2, pageSize: 25 },
+      ),
+    ).toEqual({
+      type: 'sequence',
+      q: 'skull',
+      visibility: ['private', 'restricted'],
+      category_ids: [4, 9],
+      sort: 'name',
+      direction: 'asc',
+      page: 3,
+      page_size: 25,
+    })
+  })
+
+  it('paged mode maps the UI sort keys to API keys and default directions (#1631)', () => {
+    for (const [key, apiKey] of [
+      ['scope', 'visibility'],
+      ['images', 'image_count'],
+      ['visibility', 'hidden'],
+      ['created', 'created_at'],
+      ['updated', 'updated_at'],
+    ] as const) {
+      expect(
+        toCollectionApiFilters(
+          DEFAULT_COLLECTION_FILTERS,
+          { role: 'admin' },
+          {
+            listMode: 'paged',
+            sort: key,
+            page: 0,
+            pageSize: 10,
+          },
+        ),
+      ).toMatchObject({
+        sort: apiKey,
+        direction: collectionSortDefaultDirection(key),
+        page: 1,
+        page_size: 10,
+      })
+    }
+    expect(collectionSortDefaultDirection('id')).toBe('desc')
+    expect(collectionSortDefaultDirection('images')).toBe('desc')
+    expect(collectionSortDefaultDirection('name')).toBe('asc')
+  })
+
+  it('full mode omits the search/facet/sort/page params entirely (#1631)', () => {
+    expect(
+      toCollectionApiFilters(
+        {
+          ...DEFAULT_COLLECTION_FILTERS,
+          q: 'skull',
+          visibility: ['private'],
+          categoryIds: [4],
+        },
+        { role: 'admin' },
+        { listMode: 'full', sort: 'name', direction: 'asc', page: 3, pageSize: 10 },
+      ),
+    ).toEqual({})
+  })
+
+  it('paged mode still applies the legacy filters and keeps blank q out', () => {
+    expect(
+      toCollectionApiFilters(
+        { ...DEFAULT_COLLECTION_FILTERS, mine: true, q: '   ' },
+        { role: 'admin' },
+        { listMode: 'paged', sort: 'updated', direction: 'desc', page: 0, pageSize: 50 },
+      ),
+    ).toEqual({ mine: true, sort: 'updated_at', direction: 'desc', page: 1, page_size: 50 })
   })
 })
 
@@ -252,6 +357,60 @@ describe('matchesCollectionFilters', () => {
       matchesCollectionFilters(
         shared,
         { ...DEFAULT_COLLECTION_FILTERS, owner: 'orphaned' as const },
+        user,
+      ),
+    ).toBe(false)
+  })
+
+  it('applies the q, visibility and category facets (#1631)', () => {
+    const row = makeCollection({
+      name: 'Skull comparison',
+      description: 'Frontal and lateral',
+      visibility: 'private',
+      categoryId: 4,
+      owners: [{ kind: 'user', userId: 9, name: 'Bob' }],
+    })
+    // q is a case-insensitive substring over name, description and owner.
+    expect(matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, q: 'SKULL' }, user)).toBe(
+      true,
+    )
+    expect(
+      matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, q: 'lateral' }, user),
+    ).toBe(true)
+    expect(matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, q: 'bob' }, user)).toBe(
+      true,
+    )
+    expect(
+      matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, q: 'pelvis' }, user),
+    ).toBe(false)
+    expect(
+      matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, visibility: [] }, user),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(
+        row,
+        { ...DEFAULT_COLLECTION_FILTERS, visibility: ['private', 'public'] },
+        user,
+      ),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(
+        row,
+        { ...DEFAULT_COLLECTION_FILTERS, visibility: ['public'] },
+        user,
+      ),
+    ).toBe(false)
+    expect(
+      matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [4] }, user),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(row, { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [5] }, user),
+    ).toBe(false)
+    // Unfiled rows never match a category facet.
+    expect(
+      matchesCollectionFilters(
+        makeCollection({ categoryId: null }),
+        { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [4] },
         user,
       ),
     ).toBe(false)
@@ -345,6 +504,9 @@ describe('useCollectionsData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     fetchCollectionsMock.mockResolvedValue([])
+    fetchCollectionsPagedMock.mockResolvedValue({ items: [], total: 0 })
+    fetchCollectionOwnersMock.mockResolvedValue([])
+    localStorage.clear()
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -357,23 +519,32 @@ describe('useCollectionsData', () => {
     expect(fetchCollectionsMock).not.toHaveBeenCalled()
   })
 
-  it('loads and maps the list, deriving owner options', async () => {
+  it('loads and maps the list, fetching owner options from /collections/owners (#1631)', async () => {
     fetchCollectionsMock.mockResolvedValue([
       makeApiCollectionSummary({ id: 1, owners: [{ user_id: 7, name: 'Zed' }] }),
       makeApiCollectionSummary({ id: 2, owners: [{ program_id: 3, name: 'Anatomy' }] }),
       makeApiCollectionSummary({ id: 3, owners: [{ user_id: 7, name: 'Zed' }] }),
       makeApiCollectionSummary({ id: 4, owners: [] }),
     ])
+    // The facet comes from GET /collections/owners now that the list is
+    // paged — the endpoint already dedupes and sorts.
+    fetchCollectionOwnersMock.mockResolvedValue([
+      { program_id: 3, name: 'Anatomy' },
+      { user_id: 7, name: 'Zed' },
+    ])
     const { result } = renderData()
     expect(result.current.loading).toBe(true)
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.collections.map((c) => c.id)).toEqual([1, 2, 3, 4])
     expect(result.current.collections[0].owners).toEqual([{ kind: 'user', userId: 7, name: 'Zed' }])
-    expect(result.current.ownerOptions).toEqual([
-      { kind: 'program', programId: 3, name: 'Anatomy' },
-      { kind: 'user', userId: 7, name: 'Zed' },
-    ])
+    await waitFor(() =>
+      expect(result.current.ownerOptions).toEqual([
+        { kind: 'program', programId: 3, name: 'Anatomy' },
+        { kind: 'user', userId: 7, name: 'Zed' },
+      ]),
+    )
     expect(fetchCollectionsMock).toHaveBeenCalledWith({})
+    expect(fetchCollectionOwnersMock).toHaveBeenCalledWith(undefined)
   })
 
   it('does not duplicate the initial list request when StrictMode replays effects', async () => {
@@ -387,6 +558,7 @@ describe('useCollectionsData', () => {
           type: 'synchronized',
           refreshToken: 0,
           backgroundRefresh: false,
+          listMode: 'full',
         }),
       { wrapper: ({ children }) => createElement(StrictMode, null, children) },
     )
@@ -406,7 +578,14 @@ describe('useCollectionsData', () => {
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(1))
     // `type` lives in the filter state since #1629 — setFilters may change
     // it freely; `orphaned` still drops for students.
-    act(() => result.current.setFilters({ type: 'synchronized', mine: true, owner: 'orphaned' }))
+    act(() =>
+      result.current.setFilters({
+        ...DEFAULT_COLLECTION_FILTERS,
+        type: 'synchronized',
+        mine: true,
+        owner: 'orphaned',
+      }),
+    )
     await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
     expect(fetchCollectionsMock).toHaveBeenLastCalledWith({ type: 'synchronized', mine: true })
   })
@@ -471,6 +650,7 @@ describe('useCollectionsData', () => {
     fetchCollectionsMock.mockResolvedValueOnce([
       makeApiCollectionSummary({ id: 1, owners: [{ user_id: 9, name: 'Zed' }] }),
     ])
+    fetchCollectionOwnersMock.mockResolvedValue([{ user_id: 9, name: 'Zed' }])
     const { result, rerender } = renderData({}, admin)
     await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([1]))
     expect(result.current.ownerOptions).toHaveLength(1)
@@ -541,13 +721,15 @@ describe('useCollectionsData', () => {
     expect(result.current.collections.map((c) => c.id)).toEqual([5])
   })
 
-  it('keeps owner options from the unfiltered result while an owner filter is active', async () => {
-    fetchCollectionsMock.mockResolvedValueOnce([
-      makeApiCollectionSummary({ id: 1, owners: [{ user_id: 7, name: 'Ada' }] }),
-      makeApiCollectionSummary({ id: 2, owners: [{ user_id: 8, name: 'Bob' }] }),
+  it('keeps owner options from the endpoint while an owner filter is active', async () => {
+    fetchCollectionOwnersMock.mockResolvedValue([
+      { user_id: 7, name: 'Ada' },
+      { user_id: 8, name: 'Bob' },
     ])
     const { result } = renderData()
     await waitFor(() => expect(result.current.ownerOptions).toHaveLength(2))
+    // The owners endpoint takes only the type facet — an owner selection
+    // must not collapse the menu to the chosen row.
     fetchCollectionsMock.mockResolvedValueOnce([
       makeApiCollectionSummary({ id: 2, owners: [{ user_id: 8, name: 'Bob' }] }),
     ])
@@ -558,7 +740,23 @@ describe('useCollectionsData', () => {
       }),
     )
     await waitFor(() => expect(result.current.collections).toHaveLength(1))
+    await waitFor(() => expect(fetchCollectionOwnersMock).toHaveBeenLastCalledWith(undefined))
     expect(result.current.ownerOptions).toHaveLength(2)
+  })
+
+  it('skips the owners endpoint for students', async () => {
+    fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
+    const { result } = renderData({}, makeUser({ role: 'student' }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.collections).toHaveLength(1)
+    expect(fetchCollectionOwnersMock).not.toHaveBeenCalled()
+    expect(result.current.ownerOptions).toEqual([])
+  })
+
+  it('passes the active type facet to the owners endpoint', async () => {
+    const { result } = renderData({ type: 'sequence' })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(fetchCollectionOwnersMock).toHaveBeenCalledWith('sequence')
   })
 
   it('surfaces list errors and clears them on retry', async () => {
@@ -792,6 +990,222 @@ describe('useCollectionsData', () => {
       resolveSynchronized([makeApiCollectionSummary({ id: 3, type: 'synchronized' })])
     })
     expect(result.current.collections.map((c) => c.id)).toEqual([3])
+  })
+
+  it('full mode reports the row count as total (#1631)', async () => {
+    fetchCollectionsMock.mockResolvedValue([
+      makeApiCollectionSummary({ id: 1 }),
+      makeApiCollectionSummary({ id: 2 }),
+    ])
+    const { result } = renderData()
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.total).toBe(2)
+    expect(fetchCollectionsPagedMock).not.toHaveBeenCalled()
+  })
+
+  describe('paged list mode (#1631)', () => {
+    const renderPaged = (
+      options: Partial<Parameters<typeof useCollectionsData>[0]> = {},
+      user: User | null = makeUser(),
+    ) => renderData({ listMode: 'paged', ...options }, user)
+
+    it('requests page 1 with the default sort and reports X-Total-Count', async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 1 })],
+        total: 40,
+      })
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(fetchCollectionsPagedMock).toHaveBeenCalledWith({
+        sort: 'updated_at',
+        direction: 'desc',
+        page: 1,
+        page_size: 25,
+      })
+      expect(fetchCollectionsMock).not.toHaveBeenCalled()
+      expect(result.current.total).toBe(40)
+      expect(result.current.collections.map((c) => c.id)).toEqual([1])
+      expect(result.current.page).toBe(0)
+      expect(result.current.pageSize).toBe(25)
+      expect(result.current.sort).toEqual({ key: 'updated', direction: 'desc' })
+    })
+
+    it('setPage(2) requests page=3; filters, sort and page size reset to page 1', async () => {
+      // Non-empty pages so the empty-page stepback does not fire (#1631).
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 7 })],
+        total: 100,
+      })
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() => result.current.setPage(2))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 3 }),
+        ),
+      )
+      expect(result.current.page).toBe(2)
+
+      act(() => result.current.setFilters({ ...DEFAULT_COLLECTION_FILTERS, type: 'sequence' }))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 1, type: 'sequence' }),
+        ),
+      )
+      expect(result.current.page).toBe(0)
+
+      act(() => result.current.setPage(1))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 2 }),
+        ),
+      )
+      act(() => result.current.setSort({ key: 'name', direction: 'asc' }))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 1, sort: 'name', direction: 'asc' }),
+        ),
+      )
+      expect(result.current.page).toBe(0)
+
+      act(() => result.current.setPage(1))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 2 }),
+        ),
+      )
+      act(() => result.current.setPageSize(5))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 1, page_size: 5 }),
+        ),
+      )
+      expect(result.current.page).toBe(0)
+      expect(result.current.pageSize).toBe(5)
+    })
+
+    it('serializes the q/visibility/category facets into the paged request', async () => {
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      act(() =>
+        result.current.setFilters({
+          ...DEFAULT_COLLECTION_FILTERS,
+          q: 'skull',
+          visibility: ['restricted', 'private'],
+          categoryIds: [9, 4],
+        }),
+      )
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            q: 'skull',
+            visibility: ['private', 'restricted'],
+            category_ids: [4, 9],
+          }),
+        ),
+      )
+    })
+
+    it('background refresh refetches the current page, not page 1', async () => {
+      vi.useFakeTimers()
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'visible',
+        configurable: true,
+      })
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 1 })],
+        total: 60,
+      })
+      const { result } = renderPaged({ backgroundRefresh: true })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(result.current.loading).toBe(false)
+
+      await act(async () => {
+        result.current.setPage(2)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 3 }),
+      )
+
+      await act(async () => {
+        vi.advanceTimersByTime(30_000)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 3 }),
+        { signal: expect.any(AbortSignal) },
+      )
+      expect(result.current.total).toBe(60)
+    })
+
+    it('steps back to the last page when the server returns an empty page with rows behind', async () => {
+      fetchCollectionsPagedMock
+        .mockResolvedValueOnce({ items: [makeApiCollectionSummary({ id: 1 })], total: 30 })
+        .mockResolvedValueOnce({ items: [], total: 25 })
+        .mockResolvedValueOnce({ items: [makeApiCollectionSummary({ id: 9 })], total: 25 })
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      await act(async () => {
+        result.current.setPage(1)
+        await Promise.resolve()
+      })
+      // The empty second page (rows deleted under us) bounces back to page 1.
+      await waitFor(() => expect(result.current.page).toBe(0))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 1 }),
+        ),
+      )
+      await waitFor(() => expect(result.current.collections.map((c) => c.id)).toEqual([9]))
+      expect(result.current.total).toBe(25)
+    })
+
+    it('reads and writes the shared rows-per-page preference key', async () => {
+      const key = 'hrivpref:rows-per-page:collections:user:7'
+      localStorage.setItem(key, '5')
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(result.current.pageSize).toBe(5)
+      expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page_size: 5 }),
+      )
+
+      await act(async () => {
+        result.current.setPageSize(50)
+        await Promise.resolve()
+      })
+      expect(localStorage.getItem(key)).toBe('50')
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page_size: 50 }),
+        ),
+      )
+
+      // Values outside ROWS_PER_PAGE_OPTIONS are rejected.
+      act(() => result.current.setPageSize(7))
+      expect(result.current.pageSize).toBe(50)
+      expect(localStorage.getItem(key)).toBe('50')
+    })
+
+    it('requests the mapped sort key and direction', async () => {
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      act(() => result.current.setSort({ key: 'scope', direction: 'desc' }))
+      await waitFor(() =>
+        expect(fetchCollectionsPagedMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ sort: 'visibility', direction: 'desc' }),
+        ),
+      )
+    })
   })
 
   it('does not poll when backgroundRefresh is false', async () => {

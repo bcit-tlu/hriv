@@ -41,25 +41,34 @@ with deterministic fixtures.
 ## Implementation guidance
 
 - **Filters.** A shared `FilterBar` (the Manage-page pattern) sits above all three views with
-  popover facets: **Name** (client-side text filter — narrows Cards/Table rows, dims
-  non-matching graph nodes), **Type** (single-select; `?type=` deep links seed it and clearing
+  popover facets: **Name** (debounced 300 ms into `filters.q` — a server-side substring filter
+  over name/description/owner in Cards/Table, dims non-matching graph nodes), **Type**
+  (single-select; `?type=` deep links seed it and clearing
   drops the URL parameter), **Owner** (**My collections** for every role — selecting it clears
-  the owner facet — plus named owners for admin/instructor/staff and _No owner (orphaned)_ for
+  the owner facet — plus named owners for admin/instructor/staff from `GET
+/api/collections/owners` and _No owner (orphaned)_ for
   admins; the hook never sends `orphaned` for other roles and never sends
-  `owner_user_id` / `owner_program_id` for students), **Visibility** (client-side
-  multi-select that narrows rows and dims non-matching graph nodes) and **Category**
-  (client-side, ancestor-aware category tree — a parent matches collections filed anywhere
-  beneath it; narrows rows and dims non-matching graph nodes). While any facet is active
+  `owner_user_id` / `owner_program_id` for students), **Visibility** (server-side
+  `visibility=` multi-select; dims non-matching graph nodes) and **Category**
+  (server-side `category_id=`, ancestor-aware — a parent matches collections filed anywhere
+  beneath it; dims non-matching graph nodes). While any facet is active
   the bar shows deletable summary chips and a **Clear all** action.
   `normalizeCollectionFilters` applies both owner rules to the hook's filter state, so an owner
   selection left over from a previous user is dropped rather than hiding the new user's own
   saves.
+- **Server paging and sorting (#1631).** Cards and Table share one server-side page state owned
+  by `useCollectionsData` (`page`, `pageSize`, `sort`, `total` props): requests carry
+  `page`/`page_size`/`sort`/`direction` and the `X-Total-Count` header drives the shared
+  `TablePagination` footer shown under both views. Filter, sort or page-size changes reset to
+  page 1, the background poll refetches the current page, and bulk selection survives page
+  changes (off-page rows stay selected). The Graph view flips the hook to its `full` list mode —
+  an unpaged request, facets used for highlight only.
 - **Table columns.** In Table view the FilterBar's **Choose columns** action opens
   `ColumnVisibilityDialog` (per-user persisted visibility and order): Cover, ID, Name, Type,
   Scope, Description, Category, Images, Owner, Programs, Groups, Visibility, Created, Updated —
   default visible set is Cover, Name, Type, Category, Images, Owner, Updated, plus Visibility
-  for admins/instructors. Students are never offered Visibility. Every column except Cover
-  sorts; ID/Images/Created/Updated open descending.
+  for admins/instructors. Students are never offered Visibility. Every column except Cover,
+  Programs and Groups sorts (server-side); ID/Images/Created/Updated open descending.
 - **Table rows (merged Manage → Collections, #1554/#1567/#1578).** The Table view is the only
   collections table. Hidden and category-hidden rows dim (own-hidden adds the eye-off marker;
   a hidden filing category locks the Visibility switch). Category cells are breadcrumb links

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
@@ -31,7 +31,8 @@ import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getVisibilityColors } from '../theme'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
-import { useRowsPerPagePreference, ROWS_PER_PAGE_OPTIONS } from '../useRowsPerPagePreference'
+import { collectionSortDefaultDirection, type CollectionSortKey } from '../useCollectionsData'
+import { ROWS_PER_PAGE_OPTIONS } from '../useRowsPerPagePreference'
 import type { Category, CollectionSummary, Group, Program, User } from '../types'
 import CategoryBreadcrumb, { type CategoryPathSegment } from './CategoryBreadcrumb'
 import { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
@@ -39,20 +40,7 @@ import type { ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import { filterSurfaceBg } from './FilterPopoverButton'
 import RenewingThumbnail from './RenewingThumbnail'
 
-type SortKey =
-  | 'id'
-  | 'name'
-  | 'type'
-  | 'scope'
-  | 'description'
-  | 'category'
-  | 'images'
-  | 'owner'
-  | 'programs'
-  | 'groups'
-  | 'visibility'
-  | 'created'
-  | 'updated'
+type SortKey = CollectionSortKey
 
 /** Hideable/reorderable columns — the table renders exactly the keys it is
  *  given, in order (#1577 convention, same as the Manage tables). */
@@ -125,6 +113,8 @@ export const DEFAULT_VISIBLE_COLLECTIONS_TABLE_COLUMNS: readonly CollectionsTabl
 export const DEFAULT_VISIBLE_CURATOR_COLLECTIONS_TABLE_COLUMNS: readonly CollectionsTableColumn[] =
   ['cover', 'name', 'type', 'category', 'images', 'owner', 'visibility', 'updated']
 
+// Programs/Groups have no server-side sort key (#1631) — the columns stay
+// renderable but their headers are not sortable.
 const SORTABLE_COLUMNS = new Set<CollectionsTableColumn>([
   'id',
   'name',
@@ -134,8 +124,6 @@ const SORTABLE_COLUMNS = new Set<CollectionsTableColumn>([
   'category',
   'images',
   'owner',
-  'programs',
-  'groups',
   'visibility',
   'created',
   'updated',
@@ -168,15 +156,29 @@ export interface CollectionsTableProps {
    *  `onSelectedChange` is wired and some row is selectable. */
   selected?: ReadonlySet<number>
   onSelectedChange?: (selected: Set<number>) => void
+  /**
+   * Server-side sort/page state (#1631), owned by the page's data hook:
+   * `collections` is already the current page in the requested order and
+   * `total` is the X-Total-Count across pages.
+   */
+  sortKey: SortKey
+  sortDir: 'asc' | 'desc'
+  onSortChange: (key: SortKey, dir: 'asc' | 'desc') => void
+  page: number
+  rowsPerPage: number
+  total: number
+  onPageChange: (page: number) => void
+  onRowsPerPageChange: (rowsPerPage: number) => void
 }
 
 /**
  * The Collections page's Table view (#1629) — the single collections table
- * since Manage → Collections merged into it. Sortable and paged
- * client-side; hidden and category-hidden rows dim like the Manage Images
- * table. Row click opens the collection; Edit and Manage owners live in the
- * row menu, gated on `collection.permissions`. Column visibility and order
- * come from the page's Choose columns dialog.
+ * since Manage → Collections merged into it. Sorting and paging are
+ * server-side (#1631): `collections` arrives already ordered and sliced.
+ * Hidden and category-hidden rows dim like the Manage Images table. Row
+ * click opens the collection; Edit and Manage owners live in the row menu,
+ * gated on `collection.permissions`. Column visibility and order come from
+ * the page's Choose columns dialog.
  */
 export default function CollectionsTable({
   collections,
@@ -194,6 +196,14 @@ export default function CollectionsTable({
   onError,
   selected,
   onSelectedChange,
+  sortKey,
+  sortDir,
+  onSortChange,
+  page,
+  rowsPerPage,
+  total,
+  onPageChange,
+  onRowsPerPageChange,
 }: CollectionsTableProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -201,20 +211,9 @@ export default function CollectionsTable({
   // canEdit: an instructor may refile a colleague's collection through the
   // edit dialog's category picker (#1566/#1567).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
-  const [sortKey, setSortKey] = useState<SortKey>('updated')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('collections')
   const [togglingId, setTogglingId] = useState<number | null>(null)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [menuCollection, setMenuCollection] = useState<CollectionSummary | null>(null)
-
-  const categoryLabel = (categoryId: number | null): string => {
-    if (categoryId == null) return 'Unfiled'
-    const seg = categoryPaths.get(categoryId)
-    if (!seg) return 'Unfiled'
-    return [...seg.ancestors, seg.category].map((c) => c.label).join(' › ')
-  }
 
   // A collection filed under a hidden category is invisible to students
   // regardless of its own `hidden` flag — dim it like the image table's
@@ -240,70 +239,10 @@ export default function CollectionsTable({
   }
   const programName = (id: number) => programs.find((p) => p.id === id)?.name ?? `Program ${id}`
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? `Group ${id}`
-  const programsLabel = (c: CollectionSummary): string => {
-    const { own, inherited } = scopeIds(c, 'program')
-    return [...own, ...inherited].map(programName).join(', ')
-  }
-  const groupsLabel = (c: CollectionSummary): string => {
-    const { own, inherited } = scopeIds(c, 'group')
-    return [...own, ...inherited].map(groupName).join(', ')
-  }
 
-  const sorted = useMemo(() => {
-    const rows = [...collections]
-    const dir = sortDir === 'asc' ? 1 : -1
-    const value = (c: CollectionSummary): string | number => {
-      switch (sortKey) {
-        case 'id':
-          return c.id
-        case 'name':
-          return c.name.toLowerCase()
-        case 'type':
-          return c.type
-        case 'scope':
-          return c.visibility
-        case 'description':
-          return (c.description ?? '').toLowerCase()
-        case 'category':
-          return categoryLabel(c.categoryId).toLowerCase()
-        case 'images':
-          return c.imageCount
-        case 'owner':
-          return describeCollectionOwners(c.owners).toLowerCase()
-        case 'programs':
-          return programsLabel(c).toLowerCase()
-        case 'groups':
-          return groupsLabel(c).toLowerCase()
-        case 'visibility':
-          // Visible first ascending; own-hidden and category-hidden after.
-          return c.hidden || isCategoryHidden(c) ? 1 : 0
-        case 'created':
-          return c.createdAt
-        case 'updated':
-          return c.updatedAt
-      }
-    }
-    rows.sort((a, b) => {
-      const va = value(a)
-      const vb = value(b)
-      const cmp =
-        typeof va === 'number' && typeof vb === 'number'
-          ? va - vb
-          : String(va).localeCompare(String(vb))
-      return cmp !== 0 ? cmp * dir : (a.id - b.id) * dir
-    })
-    return rows
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collections, sortKey, sortDir, categoryPaths, programs, groups])
-
-  // Clamp the stored index: filters/search shrink `collections` without
-  // resetting page state, so the slice and TablePagination must agree on
-  // one effective page (#1636 review).
-  const effectivePage = Math.min(page, Math.max(0, Math.ceil(sorted.length / rowsPerPage) - 1))
-  const pageRows = sorted.slice(
-    effectivePage * rowsPerPage,
-    effectivePage * rowsPerPage + rowsPerPage,
-  )
+  // `collections` is already the requested page in server order (#1631) —
+  // no client-side sort or slice happens here.
+  const pageRows = collections
 
   // Curators may bulk refile/hide any row; everyone else can only select
   // rows they could delete singly (sole-owner students/staff).
@@ -348,10 +287,6 @@ export default function CollectionsTable({
     setMenuCollection(null)
   }
 
-  // IDs, counts and timestamps open descending like the old Images/Updated
-  // columns; text columns open ascending.
-  const DESC_FIRST = new Set<SortKey>(['id', 'images', 'created', 'updated'])
-
   const headerCell = (column: CollectionsTableColumn, label: string, alignRight = false) => {
     if (!SORTABLE_COLUMNS.has(column)) {
       return (
@@ -371,13 +306,16 @@ export default function CollectionsTable({
           active={sortKey === key}
           direction={sortKey === key ? sortDir : 'asc'}
           onClick={() => {
-            if (sortKey === key) {
-              setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-            } else {
-              setSortKey(key)
-              setSortDir(DESC_FIRST.has(key) ? 'desc' : 'asc')
-            }
-            setPage(0)
+            // Same key flips; a new key opens on its default direction and
+            // the page resets via the hook's page-scope (#1631).
+            onSortChange(
+              key,
+              sortKey === key
+                ? sortDir === 'asc'
+                  ? 'desc'
+                  : 'asc'
+                : collectionSortDefaultDirection(key),
+            )
           }}
         >
           {label}
@@ -672,14 +610,11 @@ export default function CollectionsTable({
         </Table>
         <TablePagination
           component="div"
-          count={sorted.length}
-          page={effectivePage}
-          onPageChange={(_, p) => setPage(p)}
+          count={total}
+          page={page}
+          onPageChange={(_, p) => onPageChange(p)}
           rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => {
-            setRowsPerPage(Number.parseInt(e.target.value, 10))
-            setPage(0)
-          }}
+          onRowsPerPageChange={(e) => onRowsPerPageChange(Number.parseInt(e.target.value, 10))}
           rowsPerPageOptions={[...ROWS_PER_PAGE_OPTIONS]}
         />
       </TableContainer>

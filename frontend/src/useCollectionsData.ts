@@ -8,6 +8,8 @@ import {
   fetchCollection,
   collectionConflictCurrent,
   fetchCollections,
+  fetchCollectionsPaged,
+  fetchCollectionOwners,
   moveCollection,
   replaceCollectionImages,
   replaceCollectionOwners,
@@ -16,30 +18,92 @@ import {
   updateCollection,
   userMessage,
   type ApiImage,
+  type ApiCollectionType,
   type CollectionFilters,
 } from './api'
 import {
+  apiCollectionOwnerToOwner,
   apiCollectionSummaryToSummary,
   apiCollectionToCollection,
   apiImageToItem,
+  describeCollectionOwners,
 } from './collectionUtils'
+import { loadStoredRowsPerPage, ROWS_PER_PAGE_OPTIONS } from './useRowsPerPagePreference'
 import type { CollectionFormValues } from './components/CollectionEditDialog'
-import type { Collection, CollectionOwner, CollectionSummary, CollectionType, User } from './types'
+import type {
+  Collection,
+  CollectionOwner,
+  CollectionSummary,
+  CollectionType,
+  CollectionVisibility,
+  User,
+} from './types'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
 
 /** Owner facet of the Collections list filter bar. */
 export type CollectionOwnerFilter = 'any' | 'orphaned' | CollectionOwner
 
+/**
+ * Sort keys the Collections table/page can request (#1631) — the table's
+ * column set minus `programs`/`groups`, which have no server-side key.
+ */
+export type CollectionSortKey =
+  | 'id'
+  | 'name'
+  | 'type'
+  | 'scope'
+  | 'description'
+  | 'category'
+  | 'images'
+  | 'owner'
+  | 'visibility'
+  | 'created'
+  | 'updated'
+
+export interface CollectionSort {
+  key: CollectionSortKey
+  direction: 'asc' | 'desc'
+}
+
+/** UI sort key → `GET /api/collections?sort=` value (#1631). */
+export const COLLECTION_SORT_API_KEYS: Record<CollectionSortKey, string> = {
+  id: 'id',
+  name: 'name',
+  type: 'type',
+  scope: 'visibility',
+  description: 'description',
+  category: 'category',
+  images: 'image_count',
+  owner: 'owner',
+  visibility: 'hidden',
+  created: 'created_at',
+  updated: 'updated_at',
+}
+
+/** IDs, counts and timestamps open descending; text columns open ascending. */
+export function collectionSortDefaultDirection(key: CollectionSortKey): 'asc' | 'desc' {
+  return key === 'id' || key === 'images' || key === 'created' || key === 'updated' ? 'desc' : 'asc'
+}
+
 export interface CollectionListFilters {
   type: CollectionType | 'all'
   mine: boolean
   owner: CollectionOwnerFilter
+  /** Server-side search text (#1631) — also the graph's highlight term. */
+  q: string
+  /** Server-side visibility facet; kept sorted for stable cache keys. */
+  visibility: CollectionVisibility[]
+  /** Server-side category facet (ancestor-aware on the server). */
+  categoryIds: number[]
 }
 
 export const DEFAULT_COLLECTION_FILTERS: CollectionListFilters = {
   type: 'all',
   mine: false,
   owner: 'any',
+  q: '',
+  visibility: [],
+  categoryIds: [],
 }
 
 export const COLLECTION_NOT_FOUND_MESSAGE =
@@ -48,12 +112,18 @@ export const COLLECTION_NOT_FOUND_MESSAGE =
 const EMPTY_ROWS = Object.freeze([]) as unknown as CollectionSummary[]
 const MAX_CACHED_COLLECTION_FILTERS = 8
 
+/** Per-request-key cache entry: the page rows plus the matching X-Total-Count. */
+interface CachedCollectionRows {
+  rows: CollectionSummary[]
+  total: number
+}
+
 function cacheRows(
-  cache: Record<string, CollectionSummary[]>,
+  cache: Record<string, CachedCollectionRows>,
   key: string,
-  rows: CollectionSummary[],
-): Record<string, CollectionSummary[]> {
-  const next = { ...cache, [key]: rows }
+  entry: CachedCollectionRows,
+): Record<string, CachedCollectionRows> {
+  const next = { ...cache, [key]: entry }
   while (Object.keys(next).length > MAX_CACHED_COLLECTION_FILTERS) {
     delete next[Object.keys(next)[0]]
   }
@@ -77,22 +147,44 @@ export function normalizeCollectionFilters(
   return filters
 }
 
-/** Translate UI filters into API query params. */
+/**
+ * Translate UI filters into API query params. In `'paged'` list mode the
+ * search/visibility/category facets and the sort/page controls ride along
+ * (#1631); in `'full'` mode (the Graph view's full-set fetch) the request
+ * carries only type/mine/owner, exactly like the pre-#1631 callers.
+ */
 export function toCollectionApiFilters(
   filters: CollectionListFilters,
   user: Pick<User, 'role'> | null,
+  options?: {
+    listMode?: 'paged' | 'full'
+    sort?: CollectionSortKey
+    direction?: 'asc' | 'desc'
+    /** 0-based UI page — sent to the server as `page + 1`. */
+    page?: number
+    pageSize?: number
+  },
 ): CollectionFilters {
   const { type, mine, owner } = normalizeCollectionFilters(filters, user)
   const api: CollectionFilters = {}
   if (type !== 'all') api.type = type
-  if (mine) {
-    api.mine = true
-    return api
-  }
-  if (owner === 'orphaned') api.orphaned = true
+  if (mine) api.mine = true
+  else if (owner === 'orphaned') api.orphaned = true
   else if (owner !== 'any') {
     if (owner.kind === 'user') api.owner_user_id = owner.userId
     else api.owner_program_id = owner.programId
+  }
+  if (options?.listMode === 'paged') {
+    const q = filters.q.trim()
+    if (q) api.q = q
+    if (filters.visibility.length > 0) api.visibility = [...filters.visibility].sort()
+    if (filters.categoryIds.length > 0)
+      api.category_ids = [...filters.categoryIds].sort((a, b) => a - b)
+    const sortKey = options.sort ?? 'updated'
+    api.sort = COLLECTION_SORT_API_KEYS[sortKey]
+    api.direction = options.direction ?? collectionSortDefaultDirection(sortKey)
+    api.page = (options.page ?? 0) + 1
+    if (options.pageSize != null) api.page_size = options.pageSize
   }
   return api
 }
@@ -152,6 +244,23 @@ export function matchesCollectionFilters(
   user: Pick<User, 'id'> | null,
 ): boolean {
   if (filters.type !== 'all' && row.type !== filters.type) return false
+  // q/visibility/category mirrors are the server-side facets (#1631) — the
+  // category check is exact-match only; the following reload reconciles the
+  // server's ancestor-aware semantics.
+  const q = filters.q.trim().toLowerCase()
+  if (
+    q !== '' &&
+    !`${row.name} ${row.description ?? ''} ${describeCollectionOwners(row.owners)}`
+      .toLowerCase()
+      .includes(q)
+  )
+    return false
+  if (filters.visibility.length > 0 && !filters.visibility.includes(row.visibility)) return false
+  if (
+    filters.categoryIds.length > 0 &&
+    (row.categoryId == null || !filters.categoryIds.includes(row.categoryId))
+  )
+    return false
   // Owner filters match membership in the co-owner set (#1531); orphaned
   // means no user owners and no program owner (an empty owners list).
   if (filters.mine) return row.owners.some((o) => o.kind === 'user' && o.userId === user?.id)
@@ -161,20 +270,6 @@ export function matchesCollectionFilters(
   if (owner.kind === 'user')
     return row.owners.some((o) => o.kind === 'user' && o.userId === owner.userId)
   return row.owners.some((o) => o.kind === 'program' && o.programId === owner.programId)
-}
-
-function uniqueOwners(collections: CollectionSummary[]): CollectionOwner[] {
-  const seen = new Set<string>()
-  const owners: CollectionOwner[] = []
-  for (const c of collections) {
-    for (const owner of c.owners) {
-      const key = owner.kind === 'user' ? `u${owner.userId}` : `p${owner.programId}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      owners.push(owner)
-    }
-  }
-  return owners.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export interface UseCollectionsDataOptions {
@@ -197,6 +292,12 @@ export interface UseCollectionsDataOptions {
   typeSeedNonce?: number
   refreshToken: number
   backgroundRefresh: boolean
+  /**
+   * `'paged'` (Cards/Table) requests one page of rows per key with the
+   * search/visibility/category facets and sort attached; `'full'` (Graph)
+   * requests the whole visible set with only type/mine/owner (#1631).
+   */
+  listMode?: 'paged' | 'full'
 }
 
 export function useCollectionsData({
@@ -207,8 +308,9 @@ export function useCollectionsData({
   typeSeedNonce = 0,
   refreshToken,
   backgroundRefresh,
+  listMode = 'paged',
 }: UseCollectionsDataOptions) {
-  const [collectionsByKey, setCollectionsByKey] = useState<Record<string, CollectionSummary[]>>({})
+  const [collectionsByKey, setCollectionsByKey] = useState<Record<string, CachedCollectionRows>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Filters are scoped to the signed-in user so one user's owner selection
@@ -253,6 +355,33 @@ export function useCollectionsData({
     }
   }
   const [ownerOptions, setOwnerOptions] = useState<CollectionOwner[]>([])
+  // Sort/page/page-size live outside `filters` on purpose (#1631): Clear all
+  // must not reset them; each resets the page to 0 via `pageScope` below.
+  const [sort, setSort] = useState<CollectionSort>({ key: 'updated', direction: 'desc' })
+  const [page, setPage] = useState(0)
+  // Same storage key `useRowsPerPagePreference('collections')` writes — the
+  // two consumers share the per-user rows-per-page preference (#1631).
+  const pageSizeKey = `hrivpref:rows-per-page:collections:user:${userId ?? 'anonymous'}`
+  const [pageSizeState, setPageSizeState] = useState(() => ({
+    key: pageSizeKey,
+    value: loadStoredRowsPerPage(pageSizeKey, 25),
+  }))
+  if (pageSizeState.key !== pageSizeKey) {
+    setPageSizeState({ key: pageSizeKey, value: loadStoredRowsPerPage(pageSizeKey, 25) })
+  }
+  const pageSize = pageSizeState.value
+  const setPageSize = useCallback(
+    (next: number) => {
+      if (!(ROWS_PER_PAGE_OPTIONS as readonly number[]).includes(next)) return
+      try {
+        localStorage.setItem(pageSizeKey, String(next))
+      } catch {
+        // Ignore localStorage write failures and fall back to in-memory state.
+      }
+      setPageSizeState({ key: pageSizeKey, value: next })
+    },
+    [pageSizeKey],
+  )
   const [detail, setDetail] = useState<Collection | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -273,16 +402,46 @@ export function useCollectionsData({
   // even if its own first load fails.
   const rowsUserId = useRef(userId)
   const [rowsCacheUserId, setRowsCacheUserId] = useState(userId)
+  // Last X-Total-Count seen for the current scope; keeps the pagination
+  // footer from collapsing while an uncached page key is still loading.
+  // Total of the last resolved page — keeps the pagination footer steady
+  // while a newly-keyed page is still loading and has no cache entry yet.
+  const [lastTotal, setLastTotal] = useState(0)
   const role = currentUser?.role ?? null
   const filters = useMemo(
     () => normalizeCollectionFilters(rawFilters, role ? { role } : null),
     [rawFilters, role],
   )
+  // Changing any of these scopes the list back to page 1 — page itself is
+  // intentionally absent so `setPage` only moves the page (#1631).
+  const pageScope = `${JSON.stringify(filters)}|${sort.key}|${sort.direction}|${listMode}|${userId}|${pageSize}`
+  const [pageScopeApplied, setPageScopeApplied] = useState(pageScope)
+  if (pageScopeApplied !== pageScope) {
+    setPageScopeApplied(pageScope)
+    if (page !== 0) setPage(0)
+  }
   const apiFilters = useMemo(
-    () => toCollectionApiFilters(filters, role ? { role } : null),
-    [filters, role],
+    () =>
+      toCollectionApiFilters(
+        filters,
+        role ? { role } : null,
+        listMode === 'paged'
+          ? {
+              listMode,
+              sort: sort.key,
+              direction: sort.direction,
+              page,
+              pageSize,
+            }
+          : { listMode },
+      ),
+    [filters, role, listMode, sort, page, pageSize],
   )
   const currentKey = useMemo(() => JSON.stringify(apiFilters), [apiFilters])
+  // Owner facet options come from GET /collections/owners now that the list
+  // is paged (#1631) — students have no facet and skip the endpoint.
+  const ownersType: ApiCollectionType | undefined =
+    filters.type === 'all' ? undefined : filters.type
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current
@@ -293,16 +452,39 @@ export function useCollectionsData({
       setCollectionsByKey({})
       setRowsCacheUserId(userId)
       setOwnerOptions([])
+      setLastTotal(0)
     }
     setLoading(true)
     setError(null)
     try {
-      const rows = (await fetchCollections(apiFilters)).map(apiCollectionSummaryToSummary)
+      let rows: CollectionSummary[]
+      let total: number
+      if (listMode === 'paged') {
+        const res = await fetchCollectionsPaged(apiFilters)
+        rows = res.items.map(apiCollectionSummaryToSummary)
+        total = res.total
+      } else {
+        rows = (await fetchCollections(apiFilters)).map(apiCollectionSummaryToSummary)
+        total = rows.length
+      }
       if (seq !== loadSeq.current) return
-      setCollectionsByKey((prev) => cacheRows(prev, currentKey, rows))
-      // Owner choices come from the unfiltered-by-owner result so the menu
-      // does not collapse to the single owner currently selected.
-      if (!filters.mine && filters.owner === 'any') setOwnerOptions(uniqueOwners(rows))
+      setCollectionsByKey((prev) => cacheRows(prev, currentKey, { rows, total }))
+      setLastTotal(total)
+      // Rows deleted under us left this page empty — step back to the last
+      // page that can still hold rows; the key change triggers the reload.
+      if (listMode === 'paged' && rows.length === 0 && total > 0 && page > 0) {
+        setPage(Math.ceil(total / pageSize) - 1)
+      }
+      if (role !== 'student') {
+        void fetchCollectionOwners(ownersType)
+          .then((owners) => {
+            if (seq !== loadSeq.current) return
+            setOwnerOptions(
+              owners.map(apiCollectionOwnerToOwner).filter((o): o is CollectionOwner => o != null),
+            )
+          })
+          .catch(() => {})
+      }
     } catch (err) {
       if (seq !== loadSeq.current) return
       setError(userMessage(err, 'Failed to load collections.'))
@@ -312,34 +494,69 @@ export function useCollectionsData({
         setLoading(false)
       }
     }
-  }, [apiFilters, currentKey, filters, userId])
+  }, [apiFilters, currentKey, listMode, page, pageSize, ownersType, role, userId])
 
   // Mutations read the filters, user and loader in effect when the request
   // completes, not those captured when it started, so a save that outlives a
   // filter change is placed and refreshed against the current view.
-  const latest = useRef({ filters, currentUser, load, key: currentKey })
+  const latest = useRef({
+    filters,
+    currentUser,
+    load,
+    key: currentKey,
+    apiFilters,
+    listMode,
+    page,
+    pageSize,
+  })
   useEffect(() => {
-    latest.current = { filters, currentUser, load, key: currentKey }
-  }, [filters, currentUser, load, currentKey])
+    latest.current = {
+      filters,
+      currentUser,
+      load,
+      key: currentKey,
+      apiFilters,
+      listMode,
+      page,
+      pageSize,
+    }
+  }, [filters, currentUser, load, currentKey, apiFilters, listMode, page, pageSize])
 
   const writeCurrentRows = useCallback(
     (updater: (rows: CollectionSummary[]) => CollectionSummary[]) => {
       invalidateRef.current?.()
       const { key } = latest.current
-      setCollectionsByKey((prev) => (key in prev ? { [key]: updater(prev[key]) } : {}))
+      setCollectionsByKey((prev) =>
+        key in prev ? { [key]: { ...prev[key], rows: updater(prev[key].rows) } } : {},
+      )
     },
     [],
   )
 
   const pollRows = useCallback(async (signal: AbortSignal) => {
-    const { filters: currentFilters, currentUser: user, key } = latest.current
+    const {
+      currentUser: user,
+      key,
+      apiFilters: currentApiFilters,
+      listMode: mode,
+      page: currentPage,
+      pageSize: currentPageSize,
+    } = latest.current
     if (signal.aborted || foregroundLoadInFlight.current !== null || user == null) return
     const seq = loadSeq.current
     try {
-      const currentApiFilters = toCollectionApiFilters(currentFilters, { role: user.role })
-      const rows = (await fetchCollections(currentApiFilters, { signal })).map(
-        apiCollectionSummaryToSummary,
-      )
+      let rows: CollectionSummary[]
+      let total: number
+      if (mode === 'paged') {
+        const res = await fetchCollectionsPaged(currentApiFilters, { signal })
+        rows = res.items.map(apiCollectionSummaryToSummary)
+        total = res.total
+      } else {
+        rows = (await fetchCollections(currentApiFilters, { signal })).map(
+          apiCollectionSummaryToSummary,
+        )
+        total = rows.length
+      }
       if (
         signal.aborted ||
         foregroundLoadInFlight.current !== null ||
@@ -348,9 +565,22 @@ export function useCollectionsData({
       ) {
         return
       }
-      setCollectionsByKey((prev) => cacheRows(prev, key, rows))
-      if (!currentFilters.mine && currentFilters.owner === 'any') {
-        setOwnerOptions(uniqueOwners(rows))
+      setCollectionsByKey((prev) => cacheRows(prev, key, { rows, total }))
+      setLastTotal(total)
+      if (mode === 'paged' && rows.length === 0 && total > 0 && currentPage > 0) {
+        setPage(Math.ceil(total / currentPageSize) - 1)
+      }
+      if (user.role !== 'student') {
+        const ownerType: ApiCollectionType | undefined =
+          latest.current.filters.type === 'all' ? undefined : latest.current.filters.type
+        void fetchCollectionOwners(ownerType, { signal })
+          .then((owners) => {
+            if (signal.aborted || seq !== loadSeq.current || latest.current.key !== key) return
+            setOwnerOptions(
+              owners.map(apiCollectionOwnerToOwner).filter((o): o is CollectionOwner => o != null),
+            )
+          })
+          .catch(() => {})
       }
     } catch {
       // Background failures preserve the rows and foreground error state.
@@ -1018,15 +1248,24 @@ export function useCollectionsData({
     )
   }, [])
 
-  const collections =
-    rowsCacheUserId === userId ? (collectionsByKey[currentKey] ?? EMPTY_ROWS) : EMPTY_ROWS
+  const entry = rowsCacheUserId === userId ? collectionsByKey[currentKey] : undefined
+  const collections = entry?.rows ?? EMPTY_ROWS
+  const total = entry?.total ?? lastTotal
 
   return {
     collections,
+    total,
     loading,
     error,
     filters,
     setFilters,
+    sort,
+    setSort,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    listMode,
     ownerOptions,
     reload: load,
     detail,

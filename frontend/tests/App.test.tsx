@@ -23,6 +23,8 @@ const apiMocks = vi.hoisted(() => ({
   fetchVersions: vi.fn(),
   fetchFeatures: vi.fn(),
   fetchCollections: vi.fn(),
+  fetchCollectionsPaged: vi.fn(),
+  fetchCollectionOwners: vi.fn(),
   fetchCollection: vi.fn(),
   fetchFrontendVersion: vi.fn(),
   fetchImageSourceInfo: vi.fn(),
@@ -162,6 +164,8 @@ function resetFixtures() {
     collections_home_shelf: false,
   })
   apiMocks.fetchCollections.mockResolvedValue([])
+  apiMocks.fetchCollectionsPaged.mockResolvedValue({ items: [], total: 0 })
+  apiMocks.fetchCollectionOwners.mockResolvedValue([])
   apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ type: 'sequence' }))
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
   apiMocks.fetchImageSourceInfo.mockResolvedValue({
@@ -644,7 +648,14 @@ const collectionsDataMocks = vi.hoisted(() => ({
   move: vi.fn(),
   saveOwners: vi.fn(),
   setHidden: vi.fn(),
-  filters: { type: 'all' as string, mine: false, owner: 'any' as string },
+  filters: {
+    type: 'all' as string,
+    mine: false,
+    owner: 'any' as string,
+    q: '',
+    visibility: [] as string[],
+    categoryIds: [] as number[],
+  },
   setFilters: vi.fn(),
   useRealHook: false,
 }))
@@ -667,6 +678,16 @@ vi.mock('../src/useCollectionsData', async () => {
         filters: collectionsDataMocks.filters,
         setFilters: collectionsDataMocks.setFilters,
         ownerOptions: [],
+        // Server-side sort/page surface (#1631) — stubbed the same way the
+        // rest of the hook is so the Collections page wiring renders.
+        total: 0,
+        sort: { key: 'updated', direction: 'desc' },
+        setSort: vi.fn(),
+        page: 0,
+        setPage: vi.fn(),
+        pageSize: 25,
+        setPageSize: vi.fn(),
+        listMode: 'paged',
         reload: vi.fn(),
         detail: null,
         detailLoading: false,
@@ -2335,56 +2356,68 @@ describe('App collections deep links (#1414)', () => {
     window.history.replaceState(null, '', '/?page=collections&type=sequence')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
-    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
+    // Cards is the default view — the paged endpoint carries the type
+    // filter plus the default sort/page params (#1631).
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'sequence', page: 1 }),
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(2))
-    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(2))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'sequence' }),
+    )
   })
 
   it('revalidates the list when Back restores it from collection detail', async () => {
     window.history.replaceState(null, '', '/?page=collections&type=sequence')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1))
 
     fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
     await waitFor(() =>
       expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5'),
     )
     await waitFor(() => expect(apiMocks.fetchCollection).toHaveBeenCalledTimes(1))
-    expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1)
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1)
 
     window.history.replaceState(null, '', '/?page=collections&type=sequence')
     act(() => {
       popStateHandler!('collections', [], null)
     })
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(2))
-    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'sequence' })
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(2))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'sequence' }),
+    )
   })
 
   it('requests only the selected type for the ?type=synchronized deep link (#1629)', async () => {
     window.history.replaceState(null, '', '/?page=collections&type=synchronized')
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalledTimes(1))
-    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'synchronized' }),
+    )
   })
 
   it('applies ?type= restored by Back as the Type filter (#1629)', async () => {
     collectionsDataMocks.useRealHook = true
     await renderWithCollectionsEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalled())
-    apiMocks.fetchCollections.mockClear()
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalled())
+    apiMocks.fetchCollectionsPaged.mockClear()
 
     window.history.replaceState(null, '', '/?page=collections&type=synchronized')
     act(() => {
       popStateHandler!('collections', [], null)
     })
-    await waitFor(() => expect(apiMocks.fetchCollections).toHaveBeenCalled())
-    expect(apiMocks.fetchCollections).toHaveBeenLastCalledWith({ type: 'synchronized' })
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalled())
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'synchronized' }),
+    )
   })
 
   it('pushes ?collection={id} history when a collection is opened and ?page=collections when closed', async () => {

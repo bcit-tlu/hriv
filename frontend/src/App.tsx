@@ -127,7 +127,14 @@ import {
   useProcessingJobs,
 } from './useProcessingJobs'
 import type { ProcessingJob } from './useProcessingJobs'
-import type { Category, Collection, CollectionType, Group, ImageItem } from './types'
+import type {
+  Category,
+  Collection,
+  CollectionSummary,
+  CollectionType,
+  Group,
+  ImageItem,
+} from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
@@ -456,6 +463,12 @@ export default function App() {
     currentCategories,
   } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
 
+  // Reported upward by CollectionsPage — the list graph fills the viewport
+  // like the image/collection viewers (#1630 feedback). Declared before the
+  // data hook because it selects the list fetch mode: Graph needs the full
+  // visible set, Cards/Table one server-paged result (#1631).
+  const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
+
   // Collections data (#1414). The list fetch runs only while the tab is
   // active; the `move`/`loadCollection` actions are mounted unconditionally
   // so filed Browse collection moves (#1529) keep list/detail state in sync.
@@ -467,6 +480,7 @@ export default function App() {
     typeSeedNonce: collectionTypeSeedNonce,
     refreshToken: collectionsRefreshToken,
     backgroundRefresh: page === 'collections' && selectedCollectionId == null,
+    listMode: collectionsListView === 'graph' ? 'full' : 'paged',
   })
 
   const myCollectionsShelfEnabled =
@@ -499,12 +513,18 @@ export default function App() {
   // atomically; a category move also invalidates every affected tile-order
   // scope so a cached revision can't falsely 409 a reorder.
   const handleBulkUpdateCollections = useCallback(
-    async (ids: number[], data: { category_id?: number | null; hidden?: boolean }) => {
+    async (
+      ids: number[],
+      data: { category_id?: number | null; hidden?: boolean },
+      rows: CollectionSummary[],
+    ) => {
       await bulkUpdateCollections({ collection_ids: ids, ...data })
       if (data.category_id !== undefined) {
         const selected = new Set(ids)
         const affected = new Set<number | null>()
-        for (const c of collectionsData.collections) {
+        // `rows` carries the selection — paged list state only holds the
+        // current page, so selected rows may be off-page (#1631).
+        for (const c of rows) {
           if (selected.has(c.id) && (c.categoryId ?? null) !== data.category_id) {
             affected.add(c.categoryId ?? null)
             affected.add(data.category_id)
@@ -535,9 +555,6 @@ export default function App() {
   } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
   const myCollectionsDrawerVisible =
     myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
-  // Reported upward by CollectionsPage — the list graph fills the viewport
-  // like the image/collection viewers (#1630 feedback).
-  const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
   // Old Manage → Collections links open the Collections page on its Table
   // view; cleared once the user leaves Collections so later visits open on
   // Cards as usual.
@@ -2414,6 +2431,13 @@ export default function App() {
               filters={collectionsData.filters}
               onFiltersChange={collectionsData.setFilters}
               ownerOptions={collectionsData.ownerOptions}
+              total={collectionsData.total}
+              sort={collectionsData.sort}
+              onSortChange={collectionsData.setSort}
+              page={collectionsData.page}
+              onPageChange={collectionsData.setPage}
+              pageSize={collectionsData.pageSize}
+              onPageSizeChange={collectionsData.setPageSize}
               selectedCollectionId={selectedCollectionId}
               detail={collectionsData.detail}
               detailLoading={collectionsData.detailLoading}

@@ -221,6 +221,11 @@ and Graph views alike:
 - **Visibility** – private, public or restricted.
 - **Category** – collections filed in a category or anywhere beneath it.
 
+Filtering, sorting and paging happen on the server in the Cards and Table
+views — changing a filter or the sort returns you to the first page, and a
+pagination footer under the list lets you pick the page size and move
+between pages. In the Graph view the same facets only highlight matches.
+
 Each card shows the cover image, how many images it holds, a type icon
 beside the name (carousel for a sequence, columns for a synchronized
 collection), and a visibility chip.
@@ -299,7 +304,9 @@ with **Owners**.
 ## Collections table
 
 Switch the **Collections** tab to its **Table** view to list every
-collection you can see — both types together — in sortable columns. The
+collection you can see — both types together — in sortable columns (all
+except Cover, Programs and Groups; sorting and paging are server-side, so
+a column click re-orders the whole list, not just the page shown). The
 filter bar above (name, type, owner, visibility, and category) applies to
 every view. (This replaces the old **Manage → Collections** page.) The **Category** column links into
 Browse at that location; the **Programs** and **Groups** columns show each
