@@ -1096,7 +1096,7 @@ describe('Collections API', () => {
     expect(result.notModified).toBe(false)
     const init = mockFetch.mock.calls[0][1] as RequestInit
     expect(init.cache).toBe('no-store')
-    expect((init.headers as Record<string, string>)['If-None-Match']).toBeUndefined()
+    expect((init.headers as Record<string, string>)['if-none-match']).toBeUndefined()
   })
 
   it('fetchCollectionsPaged sends If-None-Match and maps a 304 (#1619)', async () => {
@@ -1122,7 +1122,7 @@ describe('Collections API', () => {
       notModified: true,
     })
     const init = mockFetch.mock.calls[0][1] as RequestInit
-    expect((init.headers as Record<string, string>)['If-None-Match']).toBe('W/"collections-8-def"')
+    expect((init.headers as Record<string, string>)['if-none-match']).toBe('W/"collections-8-def"')
   })
 
   it('fetchCollectionsPaged falls back to the row count when the header is absent or NaN (#1631)', async () => {

@@ -43,7 +43,10 @@ The revision is incremented inside the same transaction as the data change for:
 - Collection writes that change tile- or list-visible data (#1525, #1531,
   #1619) — create / update / delete, member-image and viewport replacements,
   `PUT /owners` (owner names render on tiles), `POST /move`, `POST /transfer`;
-  plus the user/program deletions that alter or delete collections. Since
+  plus the user/program deletions that alter or delete collections and group
+  deletion (`DELETE /api/groups/{id}` — the `collection_groups` cascade
+  changes `group_ids` on list rows and can lift a restricted collection's
+  group gate). Since
   #1619 these bumps are unconditional: unfiled collections never render on
   Browse but are rows in `GET /api/collections`, and the version CAS on move /
   viewport writes advances `version`/`updated_at` even on a no-op.
@@ -98,7 +101,7 @@ X-Browse-Revision = {revision}
 Cache-Control: private, no-cache
 ```
 
-`hash` is an opaque MD5 of the viewer fragment (`user_id|role|sorted
+`hash` is an opaque SHA-256 (truncated) of the viewer fragment (`user_id|role|sorted
 program ids|sorted group ids` — for all roles, since `can_transfer` and
 `mine`/owner permissions depend on them) plus the canonical query fragment
 (`type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned`,

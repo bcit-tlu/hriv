@@ -3722,3 +3722,44 @@ async def test_list_collections_etag_varies_by_viewer() -> None:
         await _list_etag_of(_user("student", id=1, groups=[2]))
         != await _list_etag_of(_user("student", id=1))
     )
+
+
+def test_etag_matches_uses_weak_comparison() -> None:
+    """RFC 9110: ``If-None-Match`` matches weakly — a client sending the
+    strong form (no ``W/``) must match our weak tag, and vice versa."""
+    weak = 'W/"collections-7-abc"'
+    assert collections_router._etag_matches('*', weak)
+    assert collections_router._etag_matches(weak, weak)
+    # Strong form from the client still matches the weak tag.
+    assert collections_router._etag_matches('"collections-7-abc"', weak)
+    # Comma-separated lists match on any entry.
+    assert collections_router._etag_matches(
+        f'"other", {weak}', weak
+    )
+    assert collections_router._etag_matches(
+        'W/"collections-7-abc", "x"', '"collections-7-abc"'
+    )
+    # A different opaque value never matches.
+    assert not collections_router._etag_matches(
+        '"collections-7-different"', weak
+    )
+    assert not collections_router._etag_matches('', weak)
+
+
+async def test_list_collections_304_on_strong_if_none_match(
+    _collections_list_instruments: tuple[MagicMock, MagicMock],
+) -> None:
+    """A client that strips the ``W/`` prefix still gets 304 (weak
+    comparison, RFC 9110)."""
+    collections_router.get_browse_revision.return_value = 7
+    user = _user("admin")
+    etag = await _list_etag_of(user)
+    strong = etag.removeprefix("W/")
+
+    db = _mock_db([_collection(1, "public")])
+    result = await list_collections(
+        user, request=_list_request(strong), response=Response(), db=db
+    )
+
+    assert result.status_code == 304
+    db.execute.assert_not_awaited()

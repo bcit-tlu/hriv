@@ -833,15 +833,16 @@ export async function fetchCollectionsPaged(
 ): Promise<PaginatedCollections> {
   const qs = collectionsQueryString(filters)
   const { headers: initHeaders, ...restInit } = init ?? {}
+  const headers = new Headers(initHeaders)
+  if (options?.ifNoneMatch) {
+    headers.set('If-None-Match', options.ifNoneMatch)
+  }
   const { data, response } = await requestRaw<ApiCollectionSummary[]>(
     `/collections${qs ? `?${qs}` : ''}`,
     {
       cache: 'no-store',
       ...restInit,
-      headers: {
-        ...(initHeaders as Record<string, string> | undefined),
-        ...(options?.ifNoneMatch ? { 'If-None-Match': options.ifNoneMatch } : {}),
-      },
+      headers: Object.fromEntries(headers.entries()),
     },
   )
   const etag = response.headers.get('ETag') ?? response.headers.get('etag') ?? null

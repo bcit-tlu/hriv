@@ -291,8 +291,20 @@ def _list_etag(user: User, browse_revision: int, query_fragment: str) -> str:
     programs = ",".join(str(i) for i in sorted({p.id for p in user.programs}))
     groups = ",".join(str(i) for i in sorted({g.id for g in user.groups}))
     viewer = f"{user.id}|{user.role}|{programs}|{groups}"
-    digest = hashlib.md5(f"{viewer}\n{query_fragment}".encode()).hexdigest()
+    digest = hashlib.sha256(f"{viewer}\n{query_fragment}".encode()).hexdigest()[:32]
     return f'W/"collections-{browse_revision}-{digest}"'
+
+
+def _etag_matches(header_value: str, etag: str) -> bool:
+    """RFC 9110 weak comparison for ``If-None-Match``: an optional ``W/``
+    prefix is stripped from both sides before comparing the opaque tag."""
+    for candidate in header_value.split(","):
+        candidate = candidate.strip()
+        if candidate == "*":
+            return True
+        if candidate.removeprefix("W/") == etag.removeprefix("W/"):
+            return True
+    return False
 
 
 @router.get("", response_model=list[CollectionSummaryOut])
@@ -426,9 +438,7 @@ async def list_collections(
 
     if request is not None:
         client_etags = request.headers.get("if-none-match", "")
-        if client_etags == "*" or etag in [
-            t.strip() for t in client_etags.split(",")
-        ]:
+        if _etag_matches(client_etags, etag):
             _collections_list_requests.add(1, {"outcome": "not_modified"})
             return Response(
                 status_code=304,
@@ -529,9 +539,10 @@ async def list_collections(
         )
         by_id = {c.id: c for c in hydrated}
         visible = [by_id.get(c.id, c) for c in visible]
+    rows = [collection_summary_out(ctx, c) for c in visible]
     _collections_list_requests.add(1, {"outcome": "full"})
     _collections_list_build_duration.record(time.monotonic() - build_started)
-    return [collection_summary_out(ctx, c) for c in visible]
+    return rows
 
 
 # ── Graph endpoints (#1628) ───────────────────────────────────────────────

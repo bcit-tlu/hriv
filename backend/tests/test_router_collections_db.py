@@ -55,6 +55,7 @@ from app.routers.collections import (
     transfer_collection,
     update_collection,
 )
+from app.routers.groups import delete_group
 from app.routers.images import delete_image, update_image
 from app.routers.tile_order import get_tile_order
 from app.routers.users import delete_user
@@ -1501,4 +1502,41 @@ async def test_list_etag_delete_sole_owner_of_unfiled_collection_bumps(
         before = await _list_etag(session, admin)
         await delete_user(owner_id, admin, session)
         after = await _list_etag(session, admin)
+        assert after != before
+
+
+async def test_list_etag_delete_group_lifts_collection_gate(
+    session_factory,
+) -> None:
+    """Deleting group G cascades its ``collection_groups`` rows: a
+    collection restricted to G becomes visible to a student outside G, so
+    the same conditional request must return 200 with a different ETag —
+    the viewer's hash inputs do not change (#1619)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "etag-grp")
+        student_id = await _new_student(session, "etag-grp")
+        group_id = await _new_group(session, "etag-grp")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        admin = await _get_user(session, admin_id)
+        student = await _get_user(session, student_id)
+        await update_collection(
+            collection_id,
+            CollectionUpdate(
+                visibility="restricted", group_ids=[group_id], version=1
+            ),
+            admin,
+            session,
+        )
+
+        rows = await list_collections(student, db=session)
+        assert collection_id not in [c.id for c in rows]
+        before = await _list_etag(session, student)
+
+        await delete_group(group_id, admin, session)
+
+        rows = await list_collections(student, db=session)
+        assert collection_id in [c.id for c in rows]
+        after = await _list_etag(session, student)
         assert after != before
