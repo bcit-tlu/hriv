@@ -769,7 +769,11 @@ export default function CollectionsPage({
       }
       return pruned
     })
-    return new Error(
+    // Rethrow an ApiError whose detail is the friendlier message — the
+    // dialog surfaces it through `userMessage` (a plain Error would fall
+    // back to the generic text).
+    return new ApiError(
+      404,
       'Some selected collections no longer exist. The selection has been refreshed — please review it and try again.',
     )
   }

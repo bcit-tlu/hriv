@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkEditCollectionsDialog from '../../src/components/BulkEditCollectionsDialog'
+import { ApiError } from '../../src/api'
 import { makeCategory } from '../helpers/fixtures'
 
 const CATEGORIES = [
@@ -212,6 +213,32 @@ describe('BulkEditCollectionsDialog (#1578)', () => {
   it('shows an error toast when bulk save fails', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockRejectedValue(new Error('Server error'))
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() => {
+      expect(screen.getByText('Failed to save changes. Please try again.')).toBeInTheDocument()
+    })
+  })
+
+  it('surfaces an ApiError detail instead of the generic save failure (#1631)', async () => {
+    const user = userEvent.setup()
+    const onSave = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(404, 'Some selected collections no longer exist. Review and try again.'),
+      )
+    renderDialog({ onSave })
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    expect(
+      await screen.findByText('Some selected collections no longer exist. Review and try again.'),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the generic text for a non-Error save rejection', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockRejectedValue('oops')
     renderDialog({ onSave })
 
     await user.click(screen.getByRole('button', { name: /save changes/i }))

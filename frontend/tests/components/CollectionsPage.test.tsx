@@ -940,8 +940,12 @@ describe('CollectionsPage', () => {
       await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
       await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }))
 
+      // The rethrown ApiError carries the explanatory detail, which the
+      // dialog surfaces via `userMessage` (#1631).
       expect(
-        await within(dialog).findByText('Failed to save changes. Please try again.'),
+        await within(dialog).findByText(
+          'Some selected collections no longer exist. The selection has been refreshed — please review it and try again.',
+        ),
       ).toBeInTheDocument()
       // Selection was pruned to the confirmed-on-page rows — the dialog
       // (which aria-hides the toolbar while open) now shows one row.
