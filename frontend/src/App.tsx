@@ -2438,6 +2438,7 @@ export default function App() {
               onPageChange={collectionsData.setPage}
               pageSize={collectionsData.pageSize}
               onPageSizeChange={collectionsData.setPageSize}
+              listMode={collectionsData.listMode}
               selectedCollectionId={selectedCollectionId}
               detail={collectionsData.detail}
               detailLoading={collectionsData.detailLoading}

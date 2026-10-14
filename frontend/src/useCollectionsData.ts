@@ -404,8 +404,6 @@ export function useCollectionsData({
   const [rowsCacheUserId, setRowsCacheUserId] = useState(userId)
   // Last X-Total-Count seen for the current scope; keeps the pagination
   // footer from collapsing while an uncached page key is still loading.
-  // Total of the last resolved page — keeps the pagination footer steady
-  // while a newly-keyed page is still loading and has no cache entry yet.
   const [lastTotal, setLastTotal] = useState(0)
   const role = currentUser?.role ?? null
   const filters = useMemo(

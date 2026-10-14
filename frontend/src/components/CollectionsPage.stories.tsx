@@ -262,6 +262,7 @@ function CollectionsPageExample(args: StoryArgs) {
             setPageSize(n)
             setPage(0)
           }}
+          listMode="full"
           loading={args.loading}
           error={args.error}
           filters={filters}

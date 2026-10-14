@@ -122,6 +122,10 @@ export interface CollectionsPageProps {
   onPageChange: (page: number) => void
   pageSize: number
   onPageSizeChange: (pageSize: number) => void
+  /** The data hook's fetch mode — `paged` in Cards/Table, `full` in Graph
+   *  (#1631). Gates the graph-payload effect so page flips and background
+   *  polls of a single page never refetch it. */
+  listMode: 'paged' | 'full'
   /** Detail placeholder state; `selectedCollectionId` null renders the list. */
   selectedCollectionId: number | null
   detail: Collection | null
@@ -588,6 +592,7 @@ export default function CollectionsPage({
   onPageChange,
   pageSize,
   onPageSizeChange,
+  listMode,
   selectedCollectionId,
   detail,
   detailLoading,
@@ -756,14 +761,15 @@ export default function CollectionsPage({
   // The graph payload fetches lazily the first time Graph is selected,
   // then refetches only when the order or the listed collections change —
   // switching view alone never invalidates the model, so positions and
-  // zoom survive Cards → Graph → Cards round-trips (#1636 review). Once a
-  // payload exists it keeps refreshing while hidden so the kept-alive
-  // canvas reflects filter edits made from cards/table.
-  const graphLoaded = graphPayload != null
+  // zoom survive Cards → Graph → Cards round-trips (#1636 review). It only
+  // runs in the hook's `full` list mode (#1631): in paged mode
+  // `collections` is one page, so page flips and background polls must
+  // not refetch — entering Graph flips the mode and the resulting full
+  // rows swap triggers the one fetch the graph needs.
   const fetchedGraph = useRef<{ order: number; collections: typeof collections } | null>(null)
   useEffect(() => {
     if (selectedCollectionId != null) return
-    if (viewPrefs.view !== 'graph' && !graphLoaded) return
+    if (listMode !== 'full' || viewPrefs.view !== 'graph') return
     const f = fetchedGraph.current
     if (f != null && f.order === viewPrefs.order && f.collections === collections) return
     fetchedGraph.current = { order: viewPrefs.order, collections }
@@ -784,7 +790,7 @@ export default function CollectionsPage({
     return () => {
       cancelled = true
     }
-  }, [viewPrefs.view, viewPrefs.order, collections, graphLoaded, selectedCollectionId])
+  }, [listMode, viewPrefs.view, viewPrefs.order, collections, selectedCollectionId])
 
   const renewCoverThumb = useMemo(
     () => (id: number) => fetchCollection(id).then((c) => ({ id: c.id, thumb: c.cover_thumb })),
@@ -1131,9 +1137,11 @@ export default function CollectionsPage({
       filters.visibility.length > 0 ||
       filters.categoryIds.length > 0
     const clearAllFilters = () => {
-      // q commits immediately so a pending debounce cannot resurrect it.
+      // Cancel any pending debounce so a stale q commit cannot resurrect
+      // it, then reset every facet in one change.
+      if (searchDebounce.current != null) clearTimeout(searchDebounce.current)
+      searchDebounce.current = undefined
       setSearchText('')
-      commitSearch('', true)
       onFiltersChange({ ...DEFAULT_COLLECTION_FILTERS })
     }
     const setCategoryFacet = (id: number) => {

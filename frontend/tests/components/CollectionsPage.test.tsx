@@ -129,6 +129,7 @@ function makeProps(overrides: Partial<CollectionsPageProps> = {}): CollectionsPa
     onPageChange: vi.fn(),
     pageSize: 25,
     onPageSizeChange: vi.fn(),
+    listMode: 'full',
     selectedCollectionId: null,
     detail: null,
     detailLoading: false,
@@ -394,6 +395,56 @@ describe('CollectionsPage', () => {
         await new Promise((r) => setTimeout(r, 10))
       })
       expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('fetches the graph payload only while in graph view and full mode (#1631)', async () => {
+      const rerenderWith = (
+        rerender: (ui: React.ReactElement) => void,
+        overrides: Partial<CollectionsPageProps>,
+      ) => {
+        const next = makeProps(overrides)
+        rerender(
+          <AuthContext.Provider value={makeAuth(ADMIN)}>
+            <CollectionsPage {...next} />
+          </AuthContext.Provider>,
+        )
+      }
+
+      // Paged mode: the graph stays mounted but never triggers a fetch.
+      const { rerender } = renderPage({
+        collections: [makeCollectionSummary({ id: 1 })],
+        listMode: 'paged',
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Graph view' }))
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).not.toHaveBeenCalled()
+
+      // Full mode in graph view fetches once.
+      rerenderWith(rerender, {
+        collections: [makeCollectionSummary({ id: 1 })],
+        listMode: 'full',
+      })
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1))
+
+      // Back in paged mode (Cards/Table page flip or poll), changed
+      // collections must not refetch the hidden payload.
+      rerenderWith(rerender, {
+        collections: [makeCollectionSummary({ id: 2 })],
+        listMode: 'paged',
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+      expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(1)
+
+      // Re-entering graph mode with new full rows refetches once.
+      rerenderWith(rerender, {
+        collections: [makeCollectionSummary({ id: 3 })],
+        listMode: 'full',
+      })
+      await waitFor(() => expect(fetchCollectionsGraphMock).toHaveBeenCalledTimes(2))
     })
 
     it('renders the graph with zero collections at 3rd order (#1636)', async () => {
