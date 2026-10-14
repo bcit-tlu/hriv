@@ -51,12 +51,12 @@ from app.processing import (
 
 
 @pytest.fixture(autouse=True)
-def _patch_filed_membership(monkeypatch: pytest.MonkeyPatch) -> None:
-    """image_ids_in_filed_collections runs a real SELECT (#1527); unit tests
+def _patch_collection_membership(monkeypatch: pytest.MonkeyPatch) -> None:
+    """image_ids_in_collections runs a real SELECT (#1527); unit tests
     mock the session, so default it to "no membership" — a test that wants a
     member image installs its own return value."""
     monkeypatch.setattr(
-        "app.processing.image_ids_in_filed_collections",
+        "app.processing.image_ids_in_collections",
         AsyncMock(return_value=set()),
     )
 

@@ -43,9 +43,10 @@ async def _delete_sole_owned_collections(
 
     Runs *before* the user rows are deleted (the ``collection_owners`` FK
     cascade would otherwise erase the owner rows first and hide which
-    collections were sole-owned). Returns True when any affected collection
-    was filed into a category so the caller can invalidate the tree ETag —
-    whether it died or merely lost an owner, its Browse tile changes.
+    collections were sole-owned). Returns True when any collection was
+    affected — filed or unfiled, it dies or loses an owner row, and both
+    change its list row / Browse tile, so the caller must invalidate the
+    ETag (#1531, #1619).
     """
     if not departing_ids:
         return False
@@ -73,7 +74,7 @@ async def _delete_sole_owned_collections(
             await bump_scopes(db, affected_scope_keys)
         for collection in dying:
             await db.delete(collection)
-    return any(c.category_id is not None for c in affected)
+    return bool(affected)
 
 
 async def _set_user_programs(
@@ -290,10 +291,12 @@ async def bulk_delete_users(
     users = result.scalars().unique().all()
     if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
-    filed_affected = await _delete_sole_owned_collections(db, set(body.user_ids))
+    collections_affected = await _delete_sole_owned_collections(
+        db, set(body.user_ids)
+    )
     for user in users:
         await db.delete(user)
-    if filed_affected:
+    if collections_affected:
         await bump_browse_revision(db)
     await db.commit()
 
@@ -363,8 +366,8 @@ async def delete_user(
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    filed_affected = await _delete_sole_owned_collections(db, {user_id})
+    collections_affected = await _delete_sole_owned_collections(db, {user_id})
     await db.delete(user)
-    if filed_affected:
+    if collections_affected:
         await bump_browse_revision(db)
     await db.commit()

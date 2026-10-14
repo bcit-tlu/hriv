@@ -299,6 +299,16 @@ hashes, and request IDs stay in logs/traces. Client-side, the equivalent
 poll-outcome counters are dev-mode only (`window.__hrivBrowseStats`,
 `docs/drag-and-drop.md` → Instrumentation) — they are not telemetry events.
 
+`GET /api/collections` short-circuits on the same revision (#1619) and emits
+the equivalent pair:
+
+- `hriv.collections_list.requests` — counter, `outcome` ∈
+  `full` | `not_modified`.
+- `hriv.collections_list.build.duration` — histogram (seconds), recorded
+  only on the non-short-circuited path.
+
+`outcome` remains the only label.
+
 ## Tile Rebuild Metrics
 
 The durable parallel tile-rebuild scheduler (issue #1189) emits the

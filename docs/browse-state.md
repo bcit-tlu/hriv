@@ -40,10 +40,13 @@ The revision is incremented inside the same transaction as the data change for:
 
 - Category create/update/delete (`/api/categories/*`)
 - Image create/update/delete (`/api/images/*`)
-- Collection writes that change tile-visible data (#1525, #1531) — create /
-  update / delete, member-image and viewport replacements, `PUT /owners`
-  (owner names render on tiles), `POST /move`, `POST /transfer`; plus the
-  user/program deletions that alter or delete collections
+- Collection writes that change tile- or list-visible data (#1525, #1531,
+  #1619) — create / update / delete, member-image and viewport replacements,
+  `PUT /owners` (owner names render on tiles), `POST /move`, `POST /transfer`;
+  plus the user/program deletions that alter or delete collections. Since
+  #1619 these bumps are unconditional: unfiled collections never render on
+  Browse but are rows in `GET /api/collections`, and the version CAS on move /
+  viewport writes advances `version`/`updated_at` even on a no-op.
 - `PUT /api/tile-order` (reorder)
 - Image processing completion (`process_source_image`, `process_replace_image`)
 - Admin restore/import (`admin_ops.py`)
@@ -57,7 +60,10 @@ No-op category/image edits (where the submitted values equal the current values)
 do not bump the revision, so opening a dialog and clicking save without changing
 anything no longer invalidates every viewer's tree cache. Image create/update/
 delete/processing only bumps the revision when the image is or becomes attached
-to a category; uncategorized images do not appear in the browse tree.
+to a category OR belongs to any collection — a member image's
+thumb/active/count renders on the collection's list row and Browse tile even
+when the collection is unfiled (#1619); uncategorized non-member images do not
+appear in either surface.
 
 The per-entity `version` used for `If-Match` optimistic concurrency is only
 incremented when the request actually changes the entity, so a no-op save does not
@@ -81,6 +87,40 @@ invalidates every affected viewer's cached tree.
 When `COLLECTIONS_ENABLED` is off, `CategoryTree.collections` is always
 empty and the collections query is skipped entirely — flag-off deployments
 neither leak collection data nor grow the tree query count.
+
+## Collections list ETag (#1619)
+
+`GET /api/collections` rides the same `browse_state.revision`, computing:
+
+```text
+ETag = W/"collections-{revision}-{hash}"
+X-Browse-Revision = {revision}
+Cache-Control: private, no-cache
+```
+
+`hash` is an opaque MD5 of the viewer fragment (`user_id|role|sorted
+program ids|sorted group ids` — for all roles, since `can_transfer` and
+`mine`/owner permissions depend on them) plus the canonical query fragment
+(`type`, `mine`, `owner_user_id`, `owner_program_id`, `orphaned`,
+`uncategorized`, normalized `q`, sorted `visibility`/`category_id`, `sort`,
+`direction`, `limit`, `page`, `page_size`). A matching `If-None-Match`
+(comma-split list or `*`) returns `304` before the collection select runs;
+the validation errors (422/403) still precede the check so they are never
+masked by a stale ETag.
+
+Because the list includes unfiled collections, every collection write bumps
+the revision — including writes on unfiled rows (create, move/viewport CAS,
+sole-owner user deletion) and writes to images that belong to any
+collection (`image_ids_in_collections` in `collection_views.py`).
+
+Frontend: `fetchCollectionsPaged` defaults to `cache: 'no-store'` (the
+browser must not synthesize a 200 from a revalidated entry), accepts
+`ifNoneMatch`, and reports `etag`/`notModified`. `useCollectionsData`
+stores the ETag per request key (both `paged` and `full` list modes) and
+sends it on the next load or background poll for that exact key only —
+never on a first load and never across a user switch. A `304` keeps the
+cached rows and `X-Total-Count` total, refreshes the stored ETag, and skips
+the page step-back logic.
 
 ## Frontend behavior
 
@@ -111,6 +151,13 @@ separate navigation check.
 - `hriv.browse_tree.build.duration` — histogram (seconds) recorded only on the
   full-build path, i.e. the work each 304 avoids.
 
+`GET /api/collections` emits the same pair (#1619):
+
+- `hriv.collections_list.requests` — counter, attribute `outcome` ∈
+  `full` | `not_modified`.
+- `hriv.collections_list.build.duration` — histogram (seconds) recorded only
+  on the full-build path.
+
 Backend work saved ≈ `not_modified` count × mean build duration (one PromQL
 expression over the two series). The same split is derivable from Loki
 `http.request` logs (`route="/api/categories/tree"`, `status` 304 vs 200,
@@ -124,6 +171,13 @@ Backend tests cover:
 
 - `GET /api/categories/tree` returns `304` when the ETag matches and does not
   call the expensive tree loader.
+- `GET /api/collections` returns `304` on a matching `If-None-Match` (or `*`)
+  without running the collection select; a `200` sets `ETag`,
+  `Cache-Control` and `X-Browse-Revision`; the tag varies by viewer and by
+  canonical query (#1619).
+- The list ETag is stable across identical calls and advances after each
+  collection mutation, member-image write, and sole-owner user deletion —
+  including on unfiled collections.
 - The response sets `X-Browse-Revision` and an ETag on a normal `200`.
 - `browse_state` helpers `get_browse_revision` / `bump_browse_revision` behave
   correctly when the singleton row is missing.
