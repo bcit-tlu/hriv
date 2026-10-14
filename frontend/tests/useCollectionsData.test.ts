@@ -2368,6 +2368,8 @@ describe('useCollectionsData', () => {
         .mockResolvedValueOnce(makeApiCollection({ id: 1, version: 8, category_id: 8 }))
       const { result } = renderData({ selectedCollectionId: 1 })
       await waitFor(() => expect(result.current.detail?.version).toBe(3))
+      // The follow-up reload (#1631) returns the post-conflict list.
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 7 })])
 
       await act(async () => {
         await expect(result.current.move(1, 8, 3)).rejects.toBeInstanceOf(ApiError)
@@ -2384,6 +2386,22 @@ describe('useCollectionsData', () => {
         version: 7,
       })
       expect(result.current.detail).toMatchObject({ id: 1, version: 8, categoryId: 8 })
+    })
+
+    it('reloads the list after merging a 409 conflict record (#1631)', async () => {
+      fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1, version: 3 })])
+      moveCollectionMock.mockRejectedValueOnce(
+        new ApiError(409, 'Stale version', makeApiCollection({ id: 1, version: 7 })),
+      )
+      const { result } = renderData()
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+
+      await act(async () => {
+        await expect(result.current.move(1, 8, 3)).rejects.toBeInstanceOf(ApiError)
+      })
+      // The merged conflict could change facet membership (e.g. the
+      // ancestor-aware category filter), so the list is reloaded.
+      await waitFor(() => expect(fetchCollectionsMock).toHaveBeenCalledTimes(2))
     })
   })
 

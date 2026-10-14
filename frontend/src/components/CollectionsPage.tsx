@@ -756,26 +756,41 @@ export default function CollectionsPage({
     setSelectedRowsMap(merged)
   }
   // A bulk call 404s when a selected row was deleted by someone else while
-  // it sat off-page — prune the selection to the current page's rows (the
-  // only ones we can confirm still exist) and rethrow a clearer message so
-  // the dialog's error path still surfaces it (#1631).
-  const pruneMissingSelection = (err: unknown): unknown => {
+  // it sat off-page — revalidate every selected id against the API, drop
+  // only the confirmed-missing ones (a stale page can still show a deleted
+  // row, and an off-page row may be fine), and rethrow an ApiError whose
+  // detail explains the refresh; the dialog surfaces it via `userMessage`.
+  const pruneMissingSelection = async (err: unknown): Promise<unknown> => {
     if (!(err instanceof ApiError) || err.status !== 404) return err
-    setSelectedRowsMap((prev) => {
-      const pruned = new Map<number, CollectionSummary>()
-      for (const c of collections) {
-        const row = prev.get(c.id)
-        if (row != null) pruned.set(c.id, row)
+    const ids = [...selectedRowsMap.keys()]
+    const probes = await Promise.allSettled(ids.map((id) => fetchCollection(id)))
+    const missing = new Set<number>()
+    probes.forEach((probe, i) => {
+      if (
+        probe.status === 'rejected' &&
+        probe.reason instanceof ApiError &&
+        probe.reason.status === 404
+      ) {
+        missing.add(ids[i])
       }
-      return pruned
     })
-    // Rethrow an ApiError whose detail is the friendlier message — the
-    // dialog surfaces it through `userMessage` (a plain Error would fall
-    // back to the generic text).
-    return new ApiError(
-      404,
-      'Some selected collections no longer exist. The selection has been refreshed — please review it and try again.',
-    )
+    if (missing.size === 0) {
+      return new ApiError(
+        404,
+        'The server could not identify which selected collection is missing. Please refresh the list and reselect.',
+      )
+    }
+    setSelectedRowsMap((prev) => {
+      const next = new Map(prev)
+      for (const id of missing) next.delete(id)
+      return next
+    })
+    const n = missing.size
+    const message =
+      n === 1
+        ? '1 selected collection no longer exists and was removed from the selection. Please try again.'
+        : `${n} selected collections no longer exist and were removed from the selection. Please try again.`
+    return new ApiError(404, message)
   }
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [graphPayload, setGraphPayload] = useState<ApiCollectionsGraph | null>(null)
@@ -1761,7 +1776,7 @@ export default function CollectionsPage({
           try {
             await onBulkUpdate([...selectedIds], data, selectedRows)
           } catch (err) {
-            throw pruneMissingSelection(err)
+            throw await pruneMissingSelection(err)
           }
           setBulkEditOpen(false)
           setSelectedRowsMap(new Map())
@@ -1771,7 +1786,7 @@ export default function CollectionsPage({
           try {
             await onBulkDelete([...selectedIds])
           } catch (err) {
-            throw pruneMissingSelection(err)
+            throw await pruneMissingSelection(err)
           }
           setBulkEditOpen(false)
           setSelectedRowsMap(new Map())

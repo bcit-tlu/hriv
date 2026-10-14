@@ -5,10 +5,11 @@ import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
 import CollectionsPage from '../../src/components/CollectionsPage'
 import type { CollectionsPageProps } from '../../src/components/CollectionsPage'
-import { ApiError, fetchCollections, fetchCollectionsGraph } from '../../src/api'
+import { ApiError, fetchCollection, fetchCollections, fetchCollectionsGraph } from '../../src/api'
 import { DEFAULT_COLLECTION_FILTERS } from '../../src/useCollectionsData'
 import type { User } from '../../src/types'
 import {
+  makeApiCollection,
   makeApiCollectionSummary,
   makeCategory,
   makeCollection,
@@ -28,6 +29,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   }
 })
 const fetchCollectionsMock = vi.mocked(fetchCollections)
+const fetchCollectionMock = vi.mocked(fetchCollection)
 const fetchCollectionsGraphMock = vi.mocked(fetchCollectionsGraph)
 
 // Sequence and synchronized details mount the real OpenSeadragon viewer,
@@ -916,7 +918,7 @@ describe('CollectionsPage', () => {
       )
     })
 
-    it('prunes deleted off-page rows from the selection when the bulk save 404s (#1631)', async () => {
+    it('revalidates the selection and drops only confirmed-missing rows on a bulk 404 (#1631)', async () => {
       const user = userEvent.setup()
       const one = makeCollectionSummary({ id: 1, name: 'One' })
       const two = makeCollectionSummary({ id: 2, name: 'Two' })
@@ -928,13 +930,18 @@ describe('CollectionsPage', () => {
       await user.click(screen.getByRole('checkbox', { name: 'Select One' }))
       await user.click(screen.getByRole('checkbox', { name: 'Select Two' }))
 
-      // Page over so id 1 is off-page but still selected — it was deleted
-      // elsewhere while invisible, so the bulk call 404s.
+      // Page over so id 1 is off-page but still selected — the bulk call
+      // 404s. The probes pin the missing row precisely: the off-page id 1
+      // still exists, while the on-page id 2 was deleted under a stale page.
       rerender(
         <AuthContext.Provider value={makeAuth(ADMIN)}>
           <CollectionsPage {...makeProps({ ...props, collections: [two], total: 2 })} />
         </AuthContext.Provider>,
       )
+      fetchCollectionMock.mockImplementation(async (id: number) => {
+        if (id === 2) throw new ApiError(404, 'Collection not found')
+        return makeApiCollection({ id })
+      })
       await user.click(screen.getByRole('button', { name: 'Bulk Edit (2 selected)' }))
       const dialog = await screen.findByRole('dialog')
       await user.click(within(dialog).getByRole('switch', { name: /visible to students/i }))
@@ -944,20 +951,27 @@ describe('CollectionsPage', () => {
       // dialog surfaces via `userMessage` (#1631).
       expect(
         await within(dialog).findByText(
-          'Some selected collections no longer exist. The selection has been refreshed — please review it and try again.',
+          '1 selected collection no longer exists and was removed from the selection. Please try again.',
         ),
       ).toBeInTheDocument()
-      // Selection was pruned to the confirmed-on-page rows — the dialog
-      // (which aria-hides the toolbar while open) now shows one row.
+      // Only the confirmed-missing id 2 was dropped — the off-page id 1 is
+      // kept, so the dialog still edits one row.
       await waitFor(() =>
         expect(within(dialog).getByText(/Editing 1 selected collection\./)).toBeInTheDocument(),
       )
       await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      // Back on the page showing id 1, it is still selected.
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage {...makeProps({ ...props, collections: [one, two], total: 2 })} />
+        </AuthContext.Provider>,
+      )
       await waitFor(() =>
         expect(
           screen.getByRole('button', { name: /Bulk Edit \(1 selected\)/ }),
         ).toBeInTheDocument(),
       )
+      expect(screen.getByRole('checkbox', { name: 'Select One' })).toBeChecked()
     })
 
     it('opens the edit dialog from the row menu', async () => {

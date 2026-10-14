@@ -879,6 +879,7 @@ export function useCollectionsData({
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
             writeCurrentRows((prev) => placeRow(prev, current))
+            void latest.current.load()
           }
           throw err
         }
@@ -923,6 +924,7 @@ export function useCollectionsData({
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
             writeCurrentRows((prev) => placeRow(prev, current))
+            void latest.current.load()
           }
           throw err
         }
@@ -971,6 +973,7 @@ export function useCollectionsData({
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
             writeCurrentRows((prev) => placeRow(prev, current))
+            void latest.current.load()
           }
           throw err
         }
@@ -1015,6 +1018,7 @@ export function useCollectionsData({
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
             writeCurrentRows((prev) => placeRow(prev, current))
+            void latest.current.load()
           }
           throw err
         }
@@ -1062,6 +1066,7 @@ export function useCollectionsData({
             const current = apiCollectionToCollection(conflict)
             setDetail((prev) => (prev?.id === id ? current : prev))
             writeCurrentRows((prev) => placeRow(prev, current))
+            void latest.current.load()
           }
           throw err
         }
