@@ -298,9 +298,16 @@ export class GraphRenderer {
     ctx.fill()
     ctx.strokeStyle = palette.imageSharedStroke
     ctx.lineWidth = 1.2 / k
+    // dimmed shared images keep a faded outline to match their fill
+    ctx.globalAlpha = 0.15
     ctx.beginPath()
     for (const n of model.nodes)
-      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r)) circ(n)
+      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && dim(n)) circ(n)
+    ctx.stroke()
+    ctx.globalAlpha = 1
+    ctx.beginPath()
+    for (const n of model.nodes)
+      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
     ctx.stroke()
 
     // ---- collection nodes: synchronized fill differs from sequenced
@@ -448,8 +455,17 @@ export class GraphRenderer {
         ctx.textAlign = 'left'
       } else {
         const lbl = hub.label.length > 34 ? hub.label.slice(0, 33) + '…' : hub.label
+        const tw = ctx.measureText(lbl).width
         ctx.fillStyle = palette.label
-        ctx.fillText(lbl, sx + sr + 3, sy + 4)
+        // Prefer the right like the other labels; flip left when only
+        // that side has room (a long name near the right edge would clip)
+        if (sx + sr + 3 + tw > w && sx - sr - 3 - tw >= 0) {
+          ctx.textAlign = 'right'
+          ctx.fillText(lbl, sx - sr - 3, sy + 4)
+          ctx.textAlign = 'left'
+        } else {
+          ctx.fillText(lbl, sx + sr + 3, sy + 4)
+        }
       }
     }
   }

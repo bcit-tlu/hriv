@@ -17,8 +17,9 @@ export function graphSpineKey(model: GraphModel): string {
 }
 
 /**
- * Collection radius = 4 + 1.5·√count, capped at 16 — monotonic so one
- * more image is always a (slightly) bigger node (#1653).
+ * Collection radius = 4 + 1.5·√count, capped at 16 — monotonic below the
+ * cap (reached at 64 images) so one more image is a (slightly) bigger
+ * node; no floor plateau (#1653).
  */
 export function collectionRadius(imageCount: number): number {
   return Math.min(16, 4 + Math.sqrt(imageCount) * 1.5)

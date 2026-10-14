@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { zoomIdentity } from 'd3-zoom'
 import CollectionsGraph from '../src/collectionsGraph/CollectionsGraph'
-import { GraphRenderer, type GraphPalette } from '../src/collectionsGraph/renderer'
+import { GraphRenderer, paletteFrom, type GraphPalette } from '../src/collectionsGraph/renderer'
 import { buildGraphModel } from '../src/collectionsGraph/buildModel'
+import { getThemePalette } from '../src/theme'
 import type { ApiCollectionsGraph } from '../src/api'
 import type { GraphNode } from '../src/collectionsGraph/types'
 
@@ -331,5 +332,95 @@ describe('GraphRenderer.findNode', () => {
     // Image allowance: 2/sqrt(10) + 12/10 ≈ 1.83; click 2.1 units away.
     expect(r.findNode(...px(t, 2.9, 0), t)).toBeNull()
     expect(r.findNode(...px(t, 4.2, 0), t)?.id).toBe(2)
+  })
+})
+
+describe('GraphRenderer hub label placement', () => {
+  // draw() paints through every palette field — use the real palette.
+  const palette = paletteFrom('light', getThemePalette('light'))
+  // Recording ctx: captures fillText args plus the textAlign in effect.
+  function recordingCtx() {
+    const drawn: { lbl: string; x: number; y: number; align: string }[] = []
+    const state: { textAlign: string } = { textAlign: 'left' }
+    const ctx = new Proxy(state, {
+      get(t, prop) {
+        if (prop === 'measureText') return () => ({ width: 100 })
+        if (prop === 'fillText')
+          return (lbl: string, x: number, y: number) =>
+            drawn.push({ lbl, x, y, align: t.textAlign })
+        if (prop in t) return t[prop as keyof typeof t]
+        return () => undefined
+      },
+      set(t, prop, v) {
+        ;(t as Record<string | symbol, unknown>)[prop] = v
+        return true
+      },
+    })
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, drawn }
+  }
+
+  const hubModel = (x: number) => ({
+    nodes: [
+      {
+        i: 0,
+        kind: 'hub' as const,
+        id: Number.NaN,
+        label: 'A very long collection name',
+        r: 4,
+        x,
+        y: 300,
+      },
+    ],
+    edges: [],
+    stats: {
+      collections: 0,
+      images: 0,
+      shared: 0,
+      categories: 0,
+      unconnectedCategories: 0,
+      order: 1,
+    },
+  })
+
+  const drawState = {
+    transform: zoomIdentity,
+    hover: null,
+    selected: null,
+    selectedId: null,
+    searchDim: new Set(),
+    searchMatch: new Set(),
+    searchActive: false,
+  }
+
+  it('draws the oversized hub label on the left when only that side has room', () => {
+    const { ctx, drawn } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, hubModel(790), palette)
+    r.draw(drawState)
+
+    // sr = 4 at k=1 → x = 790 - 4 - 3 = 783, right-aligned text.
+    const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
+    expect(hub.align).toBe('right')
+    expect(hub.x).toBe(783)
+    expect(hub.y).toBe(304)
+  })
+
+  it('keeps the label on the right when it fits there', () => {
+    const { ctx, drawn } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, hubModel(400), palette)
+    r.draw(drawState)
+
+    const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
+    expect(hub.align).toBe('left')
+    expect(hub.x).toBe(400 + 4 + 3)
   })
 })
