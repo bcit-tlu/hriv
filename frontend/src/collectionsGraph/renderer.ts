@@ -12,7 +12,7 @@ export interface GraphPalette {
   hub: string
   hubLabel: string
   collection: string
-  syncRing: string
+  collectionSync: string
   image: string
   imageStroke: string
   imageShared: string
@@ -56,11 +56,11 @@ export function paletteFrom(
     hub: p.secondary.main,
     hubLabel: p.primary.contrastText,
     collection: p.primary.main,
-    syncRing: p.background.paper,
+    collectionSync: p.primary.light,
     image: p.surfaceVariant,
     imageStroke: p.secondary.main,
-    imageShared: p.primary.light,
-    imageSharedStroke: p.primary.dark,
+    imageShared: p.surfaceVariant,
+    imageSharedStroke: p.primary.main,
     category: p.secondary.main,
     categoryFill: p.background.paper,
     selectionRing: p.text.primary,
@@ -297,40 +297,33 @@ export class GraphRenderer {
       if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
     ctx.fill()
     ctx.strokeStyle = palette.imageSharedStroke
-    ctx.lineWidth = 0.8 / k
+    ctx.lineWidth = 1.2 / k
     ctx.beginPath()
     for (const n of model.nodes)
       if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r)) circ(n)
     ctx.stroke()
 
-    // ---- collection nodes ----
-    ctx.fillStyle = palette.collection
-    ctx.globalAlpha = 0.15
-    ctx.beginPath()
-    for (const n of model.nodes)
-      if (n.kind === 'collection' && inV(n.x, n.y, n.r) && dim(n)) circ(n)
-    ctx.fill()
-    ctx.globalAlpha = 1
-    ctx.beginPath()
-    for (const n of model.nodes)
-      if (n.kind === 'collection' && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
-    ctx.fill()
-    // synchronized = inner ring
-    ctx.strokeStyle = palette.syncRing
-    ctx.lineWidth = 1.6 / k
-    ctx.beginPath()
-    for (const n of model.nodes)
-      if (
-        n.kind === 'collection' &&
-        n.collection?.type === 'synchronized' &&
-        inV(n.x, n.y, n.r) &&
-        !dim(n)
-      ) {
-        const rr = (n.r / Math.sqrt(k)) * 0.55
-        ctx.moveTo(n.x + rr, n.y)
-        ctx.arc(n.x, n.y, rr, 0, 7)
-      }
-    ctx.stroke()
+    // ---- collection nodes: synchronized fill differs from sequenced
+    // (no ring — the fill itself is the type cue, #1656) ----
+    const fillCollections = (sync: boolean, alpha_: number, dimmed: boolean) => {
+      ctx.fillStyle = sync ? palette.collectionSync : palette.collection
+      ctx.globalAlpha = alpha_
+      ctx.beginPath()
+      for (const n of model.nodes)
+        if (
+          n.kind === 'collection' &&
+          (n.collection?.type === 'synchronized') === sync &&
+          inV(n.x, n.y, n.r) &&
+          dim(n) === dimmed
+        )
+          circ(n)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    fillCollections(false, 0.15, true)
+    fillCollections(false, 1, false)
+    fillCollections(true, 0.15, true)
+    fillCollections(true, 1, false)
 
     // ---- category nodes: hollow secondary-stroke discs ----
     ctx.fillStyle = palette.categoryFill
@@ -439,17 +432,25 @@ export class GraphRenderer {
       ctx.fillText(lbl, rect.x, c.sy + 4)
     }
 
-    // hub label last, centred inside the hub
+    // hub label last: centred inside when it fits; otherwise to the
+    // right like the other labels (a small dialog hub would truncate
+    // to nothing, #1653)
     const hub = model.nodes[0]
     if (hub?.kind === 'hub') {
       const sx = t.applyX(hub.x)
       const sy = t.applyY(hub.y)
       const sr = hub.r * Math.sqrt(k)
-      ctx.textAlign = 'center'
       ctx.font = '500 12px Roboto,Arial'
-      ctx.fillStyle = palette.hubLabel
-      ctx.fillText(fitText(ctx, hub.label, 2 * sr - 6), sx, sy + 4)
-      ctx.textAlign = 'left'
+      if (ctx.measureText(hub.label).width <= 2 * sr - 6) {
+        ctx.textAlign = 'center'
+        ctx.fillStyle = palette.hubLabel
+        ctx.fillText(hub.label, sx, sy + 4)
+        ctx.textAlign = 'left'
+      } else {
+        const lbl = hub.label.length > 34 ? hub.label.slice(0, 33) + '…' : hub.label
+        ctx.fillStyle = palette.label
+        ctx.fillText(lbl, sx + sr + 3, sy + 4)
+      }
     }
   }
 }
@@ -467,10 +468,4 @@ export interface DrawState {
   searchActive: boolean
   /** Optional label rewriter (e.g. hub-name prefix stripping, #1630). */
   labelFor?: (n: GraphNode) => string
-}
-
-function fitText(ctx: CanvasRenderingContext2D, s: string, maxW: number): string {
-  if (ctx.measureText(s).width <= maxW) return s
-  while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1)
-  return s + '…'
 }

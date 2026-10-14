@@ -16,9 +16,12 @@ export function graphSpineKey(model: GraphModel): string {
     .join(',')
 }
 
-/** Collection radius ∝ √visible-image-count, clamped like the prototype. */
+/**
+ * Collection radius = 4 + 1.5·√count, capped at 16 — monotonic so one
+ * more image is always a (slightly) bigger node (#1653).
+ */
 export function collectionRadius(imageCount: number): number {
-  return Math.max(4, Math.min(14, Math.sqrt(imageCount) * 1.5))
+  return Math.min(16, 4 + Math.sqrt(imageCount) * 1.5)
 }
 
 /**

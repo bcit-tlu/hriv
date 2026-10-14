@@ -732,8 +732,12 @@ Invalid stored values fall back to defaults:
   (U without a collection)" at 3rd order, where U counts category nodes
   with no image edge — the isolated "not yet transitioned" nodes. Physics,
   rendering and interaction port the locked prototype design (#1627):
-  collection radius ∝ √image count, synchronized collections get an inner
-  ring, shared images are accent-filled, fit runs once after synchronous
+  collection radius = 4 + 1.5·√image count capped at 16 (monotonic — the
+  Graph View dialog hub is sized on the same scale, with its label falling
+  beside the node when it does not fit inside, #1653), synchronized
+  collections are filled primary-light with no ring, shared images share
+  the plain image fill with a primary (red) outline (#1656), fit runs once
+  after synchronous
   pre-ticks per model build (resize and view switches redraw without
   refitting; the **Fit graph** button refits explicitly), drag uses pointer-space
   subjects and only reheats after real movement, and zoom (0.1–24×) yields
@@ -741,7 +745,13 @@ Invalid stored values fall back to defaults:
   round-trips because positions live on the model and the transform rides
   on `model.view`. Collection clicks open the collection; image clicks
   fetch the record (`GET /api/images/{id}`) and take the normal `?image=`
-  viewer path; hub and category clicks are inert.
+  viewer path; hub and category clicks are inert. The bottom-left legend
+  is always open (#1656): a "Node size reflects image count" subtitle
+  under the **Legend** caption, then rows for the hub, sequence and
+  synchronized collections, images, shared images (order ≥ 2) and
+  categories (order ≥ 3); the dialog variant renames the hub "This
+  collection (centre)" and prefixes the related rows. A matching
+  bottom-right hint reads "Scroll or pinch to zoom, and drag to pan."
 
 **Graph View dialog (#1630).** The collection detail header carries an
 outlined **Graph View** button (`collection-graph-open`) between the

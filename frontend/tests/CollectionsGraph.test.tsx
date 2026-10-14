@@ -107,15 +107,24 @@ describe('CollectionsGraph', () => {
     await waitFor(() => expect(frame()).toHaveAttribute('data-fit-count', '1'))
   })
 
-  it('page legend at 1st order names the hub and omits higher-order rows', () => {
+  it('page legend is always open and names the hub at 1st order, omitting higher-order rows', () => {
     renderGraph()
-    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
+    // No expand toggle — the legend renders fully (#1656).
+    expect(screen.queryByRole('button', { name: /legend/i })).toBeNull()
+    expect(screen.getByText('Node size reflects image count')).toBeInTheDocument()
     expect(screen.getByText('Collections hub (centre)')).toBeInTheDocument()
-    expect(screen.getByText('Collection — size reflects image count')).toBeInTheDocument()
+    expect(screen.getByText('Sequence collection')).toBeInTheDocument()
     expect(screen.getByText('Synchronized collection')).toBeInTheDocument()
     expect(screen.queryByText('Image')).not.toBeInTheDocument()
     expect(screen.queryByText('Shared image (in 2+ collections)')).not.toBeInTheDocument()
     expect(screen.queryByText('Category')).not.toBeInTheDocument()
+  })
+
+  it('shows the pan/zoom hint bottom-right', () => {
+    renderGraph()
+    expect(screen.getByTestId('graph-hint')).toHaveTextContent(
+      'Scroll or pinch to zoom, and drag to pan.',
+    )
   })
 
   it('page legend gains image and category rows at higher orders', () => {
@@ -133,7 +142,6 @@ describe('CollectionsGraph', () => {
         simulate={false}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
     expect(screen.getByText('Image')).toBeInTheDocument()
     expect(screen.getByText('Shared image (in 2+ collections)')).toBeInTheDocument()
     expect(screen.getByText('Category')).toBeInTheDocument()
@@ -242,6 +250,8 @@ describe('CollectionsGraph', () => {
       />,
     )
     expect(screen.getByText('No collections match the current filters.')).toBeInTheDocument()
+    expect(screen.queryByTestId('graph-legend')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('graph-hint')).not.toBeInTheDocument()
   })
 })
 

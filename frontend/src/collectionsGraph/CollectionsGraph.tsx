@@ -2,13 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
-import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
-import Collapse from '@mui/material/Collapse'
 import FitScreenIcon from '@mui/icons-material/FitScreen'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import { drag } from 'd3-drag'
 import { select } from 'd3-selection'
 import 'd3-transition'
@@ -47,7 +43,7 @@ export interface CollectionsGraphProps {
    *  is empty (the Visibility facet) — dims non-matches the same way. */
   filterActive?: boolean
   tooltipInfo?: GraphTooltipInfo
-  /** Show the collapsible legend overlay (default true). */
+  /** Show the legend overlay (default true). */
   legend?: boolean
   /** Extra controls rendered in the top-right overlay (order toggle, etc.). */
   overlay?: ReactNode
@@ -119,7 +115,6 @@ export default function CollectionsGraph({
   const prevModelRef = useRef<GraphModel | null>(null)
   const fitCountRef = useRef(0)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
-  const [legendOpen, setLegendOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const hoverRef = useRef<GraphNode | null>(null)
 
@@ -447,69 +442,93 @@ export default function CollectionsGraph({
           <Paper
             variant="outlined"
             data-testid="graph-legend"
-            sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.5, maxWidth: 200 }}
+            sx={{ position: 'absolute', left: 8, bottom: 8, px: 1, py: 0.75 }}
           >
-            <Box
-              sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
-              onClick={() => setLegendOpen((o) => !o)}
+            <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+              Legend
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              display="block"
+              sx={{ whiteSpace: 'nowrap' }}
             >
-              <Typography variant="caption" sx={{ fontWeight: 600, flexGrow: 1 }}>
-                Legend
-              </Typography>
-              <IconButton
-                size="small"
-                aria-label={legendOpen ? 'Collapse legend' : 'Expand legend'}
-              >
-                {legendOpen ? (
-                  <ExpandLessIcon fontSize="small" />
-                ) : (
-                  <ExpandMoreIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Box>
-            <Collapse in={legendOpen}>
+              Node size reflects image count
+            </Typography>
+            <LegendRow
+              swatch={<Swatch fill={palette.hub} />}
+              label={
+                legendVariant === 'collection'
+                  ? 'This collection (centre)'
+                  : 'Collections hub (centre)'
+              }
+            />
+            {(legendVariant === 'page' || model.stats.order >= 2) && (
               <LegendRow
-                swatch={<Swatch fill={palette.hub} />}
+                swatch={<Swatch fill={palette.collection} />}
                 label={
                   legendVariant === 'collection'
-                    ? 'This collection (centre)'
-                    : 'Collections hub (centre)'
+                    ? 'Related sequence collection'
+                    : 'Sequence collection'
                 }
               />
-              {(legendVariant === 'page' || model.stats.order >= 2) && (
-                <LegendRow
-                  swatch={<Swatch fill={palette.collection} />}
-                  label={
-                    legendVariant === 'collection'
-                      ? 'Related collection — size reflects image count'
-                      : 'Collection — size reflects image count'
-                  }
-                />
-              )}
-              {(legendVariant === 'page' || model.stats.order >= 2) && (
-                <LegendRow
-                  swatch={<Swatch fill={palette.collection} ring={palette.syncRing} />}
-                  label="Synchronized collection"
-                />
-              )}
-              {/* The dialog graph draws member-image spokes at every
-                  order, so its image rows are not order-gated. */}
-              {(legendVariant === 'collection' || model.stats.order >= 2) && (
-                <LegendRow swatch={<Swatch fill={palette.image} />} label="Image" />
-              )}
-              {(legendVariant === 'collection' || model.stats.order >= 2) && (
-                <LegendRow
-                  swatch={<Swatch fill={palette.imageShared} stroke={palette.imageSharedStroke} />}
-                  label="Shared image (in 2+ collections)"
-                />
-              )}
-              {model.stats.order >= 3 && (
-                <LegendRow
-                  swatch={<Swatch fill={palette.categoryFill} stroke={palette.category} />}
-                  label="Category"
-                />
-              )}
-            </Collapse>
+            )}
+            {(legendVariant === 'page' || model.stats.order >= 2) && (
+              <LegendRow
+                swatch={<Swatch fill={palette.collectionSync} />}
+                label={
+                  legendVariant === 'collection'
+                    ? 'Related synchronized collection'
+                    : 'Synchronized collection'
+                }
+              />
+            )}
+            {/* The dialog graph draws member-image spokes at every
+                order, so its image rows are not order-gated. */}
+            {(legendVariant === 'collection' || model.stats.order >= 2) && (
+              <LegendRow swatch={<Swatch fill={palette.image} />} label="Image" />
+            )}
+            {(legendVariant === 'collection' || model.stats.order >= 2) && (
+              <LegendRow
+                swatch={
+                  <Swatch
+                    fill={palette.imageShared}
+                    stroke={palette.imageSharedStroke}
+                    strokeWidth={2}
+                  />
+                }
+                label="Shared image (in 2+ collections)"
+              />
+            )}
+            {model.stats.order >= 3 && (
+              <LegendRow
+                swatch={<Swatch fill={palette.categoryFill} stroke={palette.category} />}
+                label="Category"
+              />
+            )}
+          </Paper>
+        )}
+
+        {!empty && (
+          <Paper
+            variant="outlined"
+            data-testid="graph-hint"
+            sx={{
+              position: 'absolute',
+              right: 8,
+              bottom: 8,
+              px: 1,
+              py: 0.5,
+              pointerEvents: 'none',
+              maxWidth: 200,
+              // The always-open legend owns the bottom-left; on phone
+              // widths the two would collide, so the hint yields.
+              display: { xs: 'none', sm: 'block' },
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              Scroll or pinch to zoom, and drag to pan.
+            </Typography>
           </Paper>
         )}
 
@@ -611,7 +630,15 @@ function fitView(
   transformRef.current = nt
 }
 
-function Swatch({ fill, stroke, ring }: { fill: string; stroke?: string; ring?: string }) {
+function Swatch({
+  fill,
+  stroke,
+  strokeWidth = 1.5,
+}: {
+  fill: string
+  stroke?: string
+  strokeWidth?: number
+}) {
   return (
     <Box
       sx={{
@@ -619,8 +646,7 @@ function Swatch({ fill, stroke, ring }: { fill: string; stroke?: string; ring?: 
         height: 12,
         borderRadius: '50%',
         bgcolor: fill,
-        border: stroke ? `1.5px solid ${stroke}` : ring ? `2px solid ${ring}` : 'none',
-        boxShadow: ring ? `inset 0 0 0 1.5px ${ring}` : undefined,
+        border: stroke ? `${strokeWidth}px solid ${stroke}` : 'none',
         flexShrink: 0,
       }}
     />
@@ -631,7 +657,7 @@ function LegendRow({ swatch, label }: { swatch: ReactNode; label: string }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.25 }}>
       {swatch}
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
         {label}
       </Typography>
     </Box>

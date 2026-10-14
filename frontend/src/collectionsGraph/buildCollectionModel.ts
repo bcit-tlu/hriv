@@ -7,8 +7,9 @@ const GOLDEN_ANGLE = 2.399963
 /**
  * Build the single-collection perspective model for the Graph View dialog
  * (#1630): the hub IS the collection (`kind: 'hub'` carrying the payload
- * node so the type chip/owner tooltip still works), spokes are its member
- * images in member order. Order ≥2 adds one `collection` node per
+ * node so the type chip/owner tooltip still works), sized on the same
+ * `collectionRadius` scale as related collections (#1653), spokes are
+ * its member images in member order. Order ≥2 adds one `collection` node per
  * `related_collections` entry with image→collection edges; order 3 adds
  * the members' categories.
  *
@@ -32,7 +33,7 @@ export function buildCollectionGraphModel(
     kind: 'hub',
     id: hubId,
     label: payload.collection.name,
-    r: 22,
+    r: collectionRadius(payload.collection.image_count),
     x: 0,
     y: 0,
     collection: payload.collection,

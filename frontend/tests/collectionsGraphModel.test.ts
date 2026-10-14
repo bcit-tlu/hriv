@@ -186,11 +186,19 @@ describe('buildGraphModel', () => {
 })
 
 describe('collectionRadius', () => {
-  it('scales with sqrt(image count) within the clamps', () => {
+  it('is 4 + 1.5·√count capped at 16', () => {
     expect(collectionRadius(0)).toBe(4)
-    expect(collectionRadius(1)).toBe(4)
-    expect(collectionRadius(16)).toBe(6)
-    expect(collectionRadius(100)).toBe(14)
-    expect(collectionRadius(10000)).toBe(14)
+    expect(collectionRadius(1)).toBe(5.5)
+    expect(collectionRadius(4)).toBe(7)
+    expect(collectionRadius(16)).toBe(10)
+    expect(collectionRadius(64)).toBe(16)
+    expect(collectionRadius(10000)).toBe(16)
+  })
+
+  it('is strictly increasing while below the cap (which is hit at 64)', () => {
+    for (let n = 0; n < 63; n++) {
+      expect(collectionRadius(n + 1)).toBeGreaterThan(collectionRadius(n))
+    }
+    expect(collectionRadius(64)).toBe(collectionRadius(65))
   })
 })
