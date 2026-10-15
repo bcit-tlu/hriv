@@ -26,6 +26,15 @@ import {
 
 let pendingFullScreenHandoff: string | number | null = null
 
+// OSD starts asynchronous tile-source work during construction but does not
+// cancel every continuation when it is destroyed. React Strict Mode's
+// development-only effect replay can therefore let a discarded viewer create a
+// TiledImage after its drawer has been destroyed, producing a false assertion.
+// Delay construction until after that replay; production and test mounts stay
+// synchronous.
+const deferViewerInitializationForStrictMode =
+  import.meta.env.DEV && import.meta.env.MODE !== 'test'
+
 const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
   const { viewport } = viewer
   const homeZoom = viewport.getHomeZoom()
@@ -129,6 +138,7 @@ export default function ImageViewer({
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  const [viewerMountReady, setViewerMountReady] = useState(!deferViewerInitializationForStrictMode)
   const canvasEditModeRef = useRef(false)
   const onViewportChangeRef = useRef(onViewportChange)
   const onOverlaysChangeRef = useRef(onOverlaysChange)
@@ -175,6 +185,12 @@ export default function ImageViewer({
       renewalTimerRef.current = null
     }
   }, [])
+  useEffect(() => {
+    if (viewerMountReady) return
+    const timer = window.setTimeout(() => setViewerMountReady(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [viewerMountReady])
+
   useEffect(() => {
     imageIdRef.current = imageId
     resetRenewalState()
@@ -415,7 +431,7 @@ export default function ImageViewer({
   useEffect(() => {
     homeViewportAtLastSettledStateRef.current = null
     const handoffKey = fullScreenHandoffKeyRef.current
-    if (!containerRef.current) return
+    if (!viewerMountReady || !containerRef.current) return
 
     const initialTileSources = getCurrentTileSources()
     tileSourcesRef.current = initialTileSources
@@ -432,12 +448,13 @@ export default function ImageViewer({
     // "WebGL context was lost" console warning).
     memoizeWebGLDrawerSupport(OpenSeadragon.WebGLDrawer)
 
-    // navigatorDrawer is an OpenSeadragon 6 option missing from the v5 typings.
-    const viewerOptions: OpenSeadragon.Options & {
-      navigatorDrawer?: OpenSeadragon.DrawerType
-    } = {
+    const viewerOptions: OpenSeadragon.Options = {
       element: containerRef.current,
       tileSources: initialTileSources,
+      // Some catalogued DZI pyramids are hosted on a different origin. Their
+      // tile servers permit anonymous CORS, which WebGL requires before it can
+      // upload tile images as textures.
+      crossOriginPolicy: 'Anonymous',
       prefixUrl: '/openseadragon-svg-icons/',
       navImages: {
         zoomIn: {
@@ -1147,6 +1164,7 @@ export default function ImageViewer({
     updateMeasurementLabels,
     emitToolbarAction,
     scheduleTileSourceRenewal,
+    viewerMountReady,
   ])
 
   useEffect(() => {

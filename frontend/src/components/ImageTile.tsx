@@ -40,6 +40,9 @@ function ImageTile({
       sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
     >
       <CardActionArea
+        component="div"
+        role="button"
+        tabIndex={0}
         data-testid="image-tile-action-area"
         onClick={() => onClick(image)}
         sx={{

@@ -106,6 +106,26 @@ describe('ImageTile', () => {
       await user.click(screen.getByText('Test Image'))
       expect(onClick).toHaveBeenCalledWith(image)
     })
+
+    it('uses a keyboard-accessible non-button action area around editor controls', async () => {
+      const user = userEvent.setup()
+      const image = makeImage()
+      const onClick = vi.fn()
+      render(<ImageTile image={image} onClick={onClick} onEditDetails={vi.fn()} />)
+
+      const actionArea = screen.getByTestId('image-tile-action-area')
+      const editButton = screen.getByLabelText('Edit image details')
+
+      expect(actionArea).toHaveProperty('tagName', 'DIV')
+      expect(actionArea).toHaveAttribute('role', 'button')
+      expect(actionArea).toHaveAttribute('tabindex', '0')
+      expect(editButton.closest('button')).toBe(editButton)
+
+      await user.tab()
+      expect(actionArea).toHaveFocus()
+      await user.keyboard('{Enter}')
+      expect(onClick).toHaveBeenCalledWith(image)
+    })
   })
 
   // ─── Inactive indicator ───────────────────────────────────────────
