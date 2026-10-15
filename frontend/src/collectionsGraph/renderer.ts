@@ -12,7 +12,7 @@ export interface GraphPalette {
   hub: string
   hubLabel: string
   collection: string
-  syncRing: string
+  collectionSync: string
   image: string
   imageStroke: string
   imageShared: string
@@ -31,13 +31,27 @@ export interface GraphPalette {
 /** Label candidates drawn per frame, nearest the viewport centre first. */
 const LABEL_CAP = 200
 
-/** Zoom level (k) above which each node kind draws its label (#1630). */
+/** App minimum text size (MUI caption, 0.75rem) — labels never shrink below it. */
+const LABEL_MIN_PX = 12
+/** Cap so fully zoomed-in (k=24) labels stay readable rather than huge. */
+const LABEL_MAX_PX = 26
+/** Base sizes at k=1; scale by √k like node radii. */
+const LABEL_BASE_PX = { collection: 12, image: 12, category: 12, hub: 14 } as const
+export function labelPx(base: number, k: number): number {
+  return Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, base * Math.sqrt(k)))
+}
+
+/**
+ * Zoom level (k) above which each node kind draws its label (#1630).
+ * Defaults are tuned so labels stay visible at typical fit zooms;
+ * overlap-skipping and LABEL_CAP still bound how many draw.
+ */
 export interface LabelThresholds {
   collection: number
   image: number
   category: number
 }
-const DEFAULT_LABEL_THRESHOLDS: LabelThresholds = { collection: 1.2, image: 2.5, category: 1 }
+const DEFAULT_LABEL_THRESHOLDS: LabelThresholds = { collection: 0.5, image: 1.5, category: 0.4 }
 /** Quadtree rebuild throttle while the simulation is still warm. */
 const QT_REBUILD_MS = 150
 
@@ -56,11 +70,11 @@ export function paletteFrom(
     hub: p.secondary.main,
     hubLabel: p.primary.contrastText,
     collection: p.primary.main,
-    syncRing: p.background.paper,
+    collectionSync: p.primary.light,
     image: p.surfaceVariant,
     imageStroke: p.secondary.main,
-    imageShared: p.primary.light,
-    imageSharedStroke: p.primary.dark,
+    imageShared: p.surfaceVariant,
+    imageSharedStroke: p.primary.main,
     category: p.secondary.main,
     categoryFill: p.background.paper,
     selectionRing: p.text.primary,
@@ -101,7 +115,8 @@ export function adjacency(model: GraphModel, focus: GraphNode): Set<GraphNode> {
  * Canvas 2D renderer for a `GraphModel` — ports the prototype's `draw`
  * faithfully (#1629): one `setTransform(dpr·k, …)` per frame, edges and
  * nodes batched by style into single paths, viewport culling, screen-space
- * labels with per-frame overlap-skipping and a cap, and a lazily rebuilt
+ * labels sized ∝ √k between 12px and 26px with per-frame overlap-skipping
+ * and a cap, and a lazily rebuilt
  * hit-test quadtree (≤ every 150 ms while warm, immediately once cooled).
  */
 export class GraphRenderer {
@@ -218,6 +233,13 @@ export class GraphRenderer {
       ctx.moveTo(n.x + n.r / Math.sqrt(k), n.y)
       ctx.arc(n.x, n.y, n.r / Math.sqrt(k), 0, 7)
     }
+    // Inset ring: the stroke's outer edge coincides with the fill's edge,
+    // so a shared image keeps the same footprint as a plain one (#1656).
+    const innerCirc = (n: GraphNode, lw: number) => {
+      const rr = Math.max(0.5 / Math.sqrt(k), n.r / Math.sqrt(k) - lw / 2)
+      ctx.moveTo(n.x + rr, n.y)
+      ctx.arc(n.x, n.y, rr, 0, 7)
+    }
 
     // ---- edges, batched by style; viewport-culled (graph coords) ----
     const vx0 = -t.x / k - 40
@@ -297,40 +319,45 @@ export class GraphRenderer {
       if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
     ctx.fill()
     ctx.strokeStyle = palette.imageSharedStroke
-    ctx.lineWidth = 0.8 / k
-    ctx.beginPath()
-    for (const n of model.nodes)
-      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r)) circ(n)
-    ctx.stroke()
-
-    // ---- collection nodes ----
-    ctx.fillStyle = palette.collection
+    // Ring = 1/6 of the image node's diameter (r=4 → 8), matching the
+    // legend swatch's 2px border on 12px; scales with the node (√k).
+    const sharedLw = (2 * 4) / 6 / Math.sqrt(k)
+    ctx.lineWidth = sharedLw
+    // dimmed shared images keep a faded outline to match their fill
     ctx.globalAlpha = 0.15
     ctx.beginPath()
     for (const n of model.nodes)
-      if (n.kind === 'collection' && inV(n.x, n.y, n.r) && dim(n)) circ(n)
-    ctx.fill()
+      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && dim(n))
+        innerCirc(n, sharedLw)
+    ctx.stroke()
     ctx.globalAlpha = 1
     ctx.beginPath()
     for (const n of model.nodes)
-      if (n.kind === 'collection' && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
-    ctx.fill()
-    // synchronized = inner ring
-    ctx.strokeStyle = palette.syncRing
-    ctx.lineWidth = 1.6 / k
-    ctx.beginPath()
-    for (const n of model.nodes)
-      if (
-        n.kind === 'collection' &&
-        n.collection?.type === 'synchronized' &&
-        inV(n.x, n.y, n.r) &&
-        !dim(n)
-      ) {
-        const rr = (n.r / Math.sqrt(k)) * 0.55
-        ctx.moveTo(n.x + rr, n.y)
-        ctx.arc(n.x, n.y, rr, 0, 7)
-      }
+      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n))
+        innerCirc(n, sharedLw)
     ctx.stroke()
+
+    // ---- collection nodes: synchronized fill differs from sequenced
+    // (no ring — the fill itself is the type cue, #1656) ----
+    const fillCollections = (sync: boolean, alpha_: number, dimmed: boolean) => {
+      ctx.fillStyle = sync ? palette.collectionSync : palette.collection
+      ctx.globalAlpha = alpha_
+      ctx.beginPath()
+      for (const n of model.nodes)
+        if (
+          n.kind === 'collection' &&
+          (n.collection?.type === 'synchronized') === sync &&
+          inV(n.x, n.y, n.r) &&
+          dim(n) === dimmed
+        )
+          circ(n)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    fillCollections(false, 0.15, true)
+    fillCollections(false, 1, false)
+    fillCollections(true, 0.15, true)
+    fillCollections(true, 1, false)
 
     // ---- category nodes: hollow secondary-stroke discs ----
     ctx.fillStyle = palette.categoryFill
@@ -363,7 +390,7 @@ export class GraphRenderer {
       }
     }
 
-    // ---- labels in screen space: constant px, overlap-skip, cap ----
+    // ---- labels in screen space: ∝ √k (12–26px), overlap-skip, cap ----
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const drawn: { x: number; y: number; w: number; h: number }[] = []
     const cands: {
@@ -372,7 +399,7 @@ export class GraphRenderer {
       sx: number
       sy: number
       sr: number
-      font: string
+      fs: number
       d: number
     }[] = []
     const ccx = w / 2
@@ -385,19 +412,20 @@ export class GraphRenderer {
       const sr = n.r * Math.sqrt(k)
       if (sx < -60 || sx > w + 60 || sy < -20 || sy > h + 20) continue
       let show: boolean
-      let font = '11px Roboto,Arial'
+      let base: number = LABEL_BASE_PX.collection
       const thr = this.labelThresholds
       if (n.kind === 'collection') {
         show =
           k > thr.collection ||
           n === state.hover ||
           n.id === state.selectedId ||
-          sr >= 12 ||
+          sr >= 8 ||
           (state.searchActive && state.searchMatch.has(n))
       } else if (n.kind === 'image') {
-        font = '10px Roboto,Arial'
+        base = LABEL_BASE_PX.image
         show = k > thr.image || n === state.hover
       } else {
+        base = LABEL_BASE_PX.category
         // category labels appear a little earlier — they are sparse
         show = k > thr.category || n === state.hover
       }
@@ -410,7 +438,7 @@ export class GraphRenderer {
           sx,
           sy,
           sr,
-          font,
+          fs: labelPx(base, k),
           d: (sx - ccx) * (sx - ccx) + (sy - ccy) * (sy - ccy),
         })
       }
@@ -421,9 +449,9 @@ export class GraphRenderer {
     }
     for (const c of cands) {
       const lbl = c.lbl.length > 34 ? c.lbl.slice(0, 33) + '…' : c.lbl
-      ctx.font = c.font
+      ctx.font = `${c.fs}px Roboto,Arial`
       const tw = ctx.measureText(lbl).width
-      const rect = { x: c.sx + c.sr + 3, y: c.sy - 9, w: tw, h: 12 }
+      const rect = { x: c.sx + c.sr + 3, y: c.sy - c.fs * 0.75, w: tw, h: c.fs }
       if (
         drawn.some(
           (R) =>
@@ -436,20 +464,38 @@ export class GraphRenderer {
         continue
       drawn.push(rect)
       ctx.fillStyle = palette.label
-      ctx.fillText(lbl, rect.x, c.sy + 4)
+      ctx.fillText(lbl, rect.x, c.sy + c.fs / 3)
     }
 
-    // hub label last, centred inside the hub
+    // hub label last: centred inside when it fits; otherwise to the
+    // right like the other labels (a small dialog hub would truncate
+    // to nothing, #1653)
     const hub = model.nodes[0]
     if (hub?.kind === 'hub') {
       const sx = t.applyX(hub.x)
       const sy = t.applyY(hub.y)
       const sr = hub.r * Math.sqrt(k)
-      ctx.textAlign = 'center'
-      ctx.font = '500 12px Roboto,Arial'
-      ctx.fillStyle = palette.hubLabel
-      ctx.fillText(fitText(ctx, hub.label, 2 * sr - 6), sx, sy + 4)
-      ctx.textAlign = 'left'
+      const hfs = labelPx(LABEL_BASE_PX.hub, k)
+      ctx.font = `500 ${hfs}px Roboto,Arial`
+      if (ctx.measureText(hub.label).width <= 2 * sr - 6) {
+        ctx.textAlign = 'center'
+        ctx.fillStyle = palette.hubLabel
+        ctx.fillText(hub.label, sx, sy + hfs / 3)
+        ctx.textAlign = 'left'
+      } else {
+        const lbl = hub.label.length > 34 ? hub.label.slice(0, 33) + '…' : hub.label
+        const tw = ctx.measureText(lbl).width
+        ctx.fillStyle = palette.label
+        // Prefer the right like the other labels; flip left when only
+        // that side has room (a long name near the right edge would clip)
+        if (sx + sr + 3 + tw > w && sx - sr - 3 - tw >= 0) {
+          ctx.textAlign = 'right'
+          ctx.fillText(lbl, sx - sr - 3, sy + hfs / 3)
+          ctx.textAlign = 'left'
+        } else {
+          ctx.fillText(lbl, sx + sr + 3, sy + hfs / 3)
+        }
+      }
     }
   }
 }
@@ -467,10 +513,4 @@ export interface DrawState {
   searchActive: boolean
   /** Optional label rewriter (e.g. hub-name prefix stripping, #1630). */
   labelFor?: (n: GraphNode) => string
-}
-
-function fitText(ctx: CanvasRenderingContext2D, s: string, maxW: number): string {
-  if (ctx.measureText(s).width <= maxW) return s
-  while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1)
-  return s + '…'
 }

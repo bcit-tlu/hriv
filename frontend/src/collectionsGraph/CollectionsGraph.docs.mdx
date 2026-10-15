@@ -37,7 +37,8 @@ collection-page graph dialog (#1630) reuses this component with a different mode
 
 - Physics and rendering port the locked prototype design (#1627): soft links, firm collisions,
   charge on hub/collections/categories only, rAF-coalesced batched canvas drawing, viewport
-  culling, label cap, and a lazily rebuilt hit-test quadtree.
+  culling, label cap, and a lazily rebuilt hit-test quadtree. Node labels are drawn in
+  screen space at 12–26px, scaling ∝ √k with zoom.
 - The view fits once after synchronous pre-ticks per model build; resize and view switches
   redraw without refitting — the outlined **Fit graph** toolbar button refits explicitly.
   Optional `fitOnRebuild` also refits (animated) when a rebuilt model arrives under a kept
@@ -46,16 +47,20 @@ collection-page graph dialog (#1630) reuses this component with a different mode
   row above the `position: relative` canvas wrapper — nothing overlays the drawing; legend,
   empty state and tooltip stay inside the wrapper, and the ResizeObserver / tooltip clamp
   measure it.
-- The collapsible legend is order- and variant-aware via `legendVariant`: the default
-  `'page'` labels the hub "Collections hub (centre)"; `'collection'` (the dialog) uses "This
-  collection (centre)", always shows the image/shared-image rows (member images are the
+- The legend is always open (#1656) — a "Node size reflects image count" subtitle under the
+  caption — and is order- and variant-aware via `legendVariant`: the default
+  `'page'` labels the hub "Collections hub (centre)" and the collection rows "Sequence
+  collection" / "Synchronized collection"; `'collection'` (the dialog) uses "This
+  collection (centre)", "Related sequence collection" / "Related synchronized collection",
+  always shows the image/shared-image rows (member images are the
   spokes at every order), and shows the related-collection/synchronized rows only at
   order ≥ 2. On the page, image/shared-image rows appear at order ≥ 2; the category row
-  appears at order ≥ 3 in both variants.
+  appears at order ≥ 3 in both variants. An unboxed, single-line hint sits right-aligned
+  just below the canvas and reads "Scroll or pinch to zoom, and drag to pan."
 - `sharedOnly` hides single-collection images from drawing and hit testing but keeps them in
   the simulation; category nodes are never hidden.
 - Node clicks: collections call `onOpenCollection`, images call `onOpenImage(imageId)` — the
-  page fetches the record and takes the normal `?image={id}` viewer path; hub and category
-  clicks are inert.
+  page fetches the record and takes the normal `?image={id}` viewer path; category
+  clicks navigate to the category's Browse page via `onOpenCategory`; hub clicks are inert.
 
 <Stories />

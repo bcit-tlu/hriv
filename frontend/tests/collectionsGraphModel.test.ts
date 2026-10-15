@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildGraphModel, collectionRadius } from '../src/collectionsGraph/buildModel'
+import {
+  buildGraphModel,
+  categoryRadius,
+  collectionRadius,
+} from '../src/collectionsGraph/buildModel'
 import type { ApiCollectionsGraph } from '../src/api'
 
 function coll(id: number, imageCount = 4) {
@@ -59,6 +63,9 @@ describe('buildGraphModel', () => {
     const n11 = m.nodes.find((n) => n.kind === 'image' && n.id === 11)!
     const n12 = m.nodes.find((n) => n.kind === 'image' && n.id === 12)!
     expect(n10.shared).toBe(true)
+    // Shared and plain images share one radius — the ring is inset in the
+    // renderer, so the footprint is identical (#1656 follow-up).
+    expect(n10.r).toBe(n11.r)
     expect(n10.imageCollectionIds).toEqual([1, 2])
     expect(n11.shared).toBe(false)
     // 99 is not a surviving collection — trimmed, so 12 is not shared.
@@ -186,11 +193,27 @@ describe('buildGraphModel', () => {
 })
 
 describe('collectionRadius', () => {
-  it('scales with sqrt(image count) within the clamps', () => {
-    expect(collectionRadius(0)).toBe(4)
-    expect(collectionRadius(1)).toBe(4)
-    expect(collectionRadius(16)).toBe(6)
-    expect(collectionRadius(100)).toBe(14)
+  it('follows a floored log curve from 6 to 14 (flat past 64 images)', () => {
+    expect(collectionRadius(0)).toBe(6)
+    expect(collectionRadius(1)).toBeCloseTo(7.33, 1) // 6 + 8·ln2/ln65
+    expect(collectionRadius(64)).toBe(14)
     expect(collectionRadius(10000)).toBe(14)
+  })
+
+  it('is strictly increasing below the cap, and compressed (#1653)', () => {
+    for (let n = 0; n < 63; n++) {
+      expect(collectionRadius(n + 1)).toBeGreaterThan(collectionRadius(n))
+    }
+    expect(collectionRadius(64)).toBe(collectionRadius(65))
+    // One more image near the hub sizes is a subtle step, not a doubling.
+    expect(collectionRadius(6) - collectionRadius(5)).toBeLessThan(0.5)
+  })
+})
+
+describe('categoryRadius', () => {
+  it('shares the collection curve so sizes compare across kinds', () => {
+    expect(categoryRadius(0)).toBe(6)
+    expect(categoryRadius(64)).toBe(14)
+    expect(categoryRadius(10)).toBe(collectionRadius(10))
   })
 })

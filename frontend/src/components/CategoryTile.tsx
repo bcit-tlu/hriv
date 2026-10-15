@@ -239,7 +239,7 @@ function CategoryTile({
                 color: 'primary.contrastText',
               }}
             >
-              <DriveFileMoveIcon sx={{ fontSize: 22 }} />
+              <DriveFileMoveIcon sx={{ fontSize: 24 }} />
             </Box>
             <Typography variant="caption" sx={{ fontWeight: 600, color: 'primary.main' }}>
               Drop here
@@ -299,7 +299,7 @@ function CategoryTile({
                   flexShrink: 0,
                 }}
               >
-                <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+                <FolderOutlinedIcon color="primary" sx={{ flexShrink: 0, fontSize: 24 }} />
               </Box>
               <Tooltip title={category.label}>
                 <Typography

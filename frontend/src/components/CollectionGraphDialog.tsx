@@ -38,6 +38,8 @@ export interface CollectionGraphDialogProps {
   onClose: () => void
   /** Page's image opener (fetches the full record then opens the viewer). */
   onOpenImage: (imageId: number) => void
+  /** Page's category navigation — closes the dialog like image opens do. */
+  onOpenCategory?: (categoryId: number) => void
   /** Page's collection opener — used by the "Open collection" action so a
    *  navigated perspective can become the real detail view. */
   onOpenCollection: (id: number) => void
@@ -60,6 +62,7 @@ export default function CollectionGraphDialog({
   categoryPaths,
   onClose,
   onOpenImage,
+  onOpenCategory,
   onOpenCollection,
   fetchGraph = fetchCollectionGraph,
   simulate = true,
@@ -282,9 +285,17 @@ export default function CollectionGraphDialog({
               model={model}
               onOpenCollection={handleNodeOpen}
               onOpenImage={handleImageOpen}
+              onOpenCategory={
+                onOpenCategory
+                  ? (id) => {
+                      onClose()
+                      onOpenCategory(id)
+                    }
+                  : undefined
+              }
               tooltipInfo={tooltipInfo}
               labelFor={labelFor}
-              labelThresholds={{ image: 1 }}
+              labelThresholds={{ image: 0.6 }}
               statsCaption={statsCaption}
               simulate={simulate}
               // An order change rebuilds the model on kept positions — refit

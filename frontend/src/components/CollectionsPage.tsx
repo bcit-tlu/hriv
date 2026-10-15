@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Breadcrumbs from '@mui/material/Breadcrumbs'
@@ -898,6 +898,14 @@ export default function CollectionsPage({
         byId.get(id)?.name ?? graphPayload?.collections.find((c) => c.id === id)?.name,
     }
   }, [collections, categoryPaths, graphPayload])
+  // Graph category nodes navigate straight to the category's Browse page.
+  const openCategoryById = useCallback(
+    (id: number) => {
+      const seg = categoryPaths.get(id)
+      if (seg) onNavigateCategory([...seg.ancestors, seg.category])
+    },
+    [categoryPaths, onNavigateCategory],
+  )
   // Filing collections into categories is curatorial: any admin/instructor
   // may move any collection (unlike edit/delete, which are owner-scoped).
   const canFileCollections = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
@@ -1630,6 +1638,7 @@ export default function CollectionsPage({
                   model={graphModel}
                   onOpenCollection={onOpenCollection}
                   onOpenImage={onOpenImageById}
+                  onOpenCategory={openCategoryById}
                   searchQuery={filters.q}
                   matchesSearch={(id) => {
                     const c = collections.find((r) => r.id === id)
@@ -1766,6 +1775,7 @@ export default function CollectionsPage({
         categoryPaths={categoryPaths}
         onClose={() => setGraphDialogOpen(false)}
         onOpenImage={onOpenImageById ?? (() => undefined)}
+        onOpenCategory={openCategoryById}
         onOpenCollection={(id) => {
           setGraphDialogOpen(false)
           onOpenCollection(id)
