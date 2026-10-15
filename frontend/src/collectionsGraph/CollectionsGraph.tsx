@@ -120,6 +120,12 @@ export default function CollectionsGraph({
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const hoverRef = useRef<GraphNode | null>(null)
+  // Latest click handlers — the canvas listener effect runs per model
+  // build, so it must not capture render-time callbacks (#1658 review).
+  const openersRef = useRef({ onOpenCollection, onOpenImage, onOpenCategory })
+  useEffect(() => {
+    openersRef.current = { onOpenCollection, onOpenImage, onOpenCategory }
+  })
 
   // search dimming: non-matching collections dim in the graph (#1629);
   // nothing is removed from the model.
@@ -309,6 +315,7 @@ export default function CollectionsGraph({
     const onClick = (e: MouseEvent) => {
       const nd = rendererNow.findNode(e.offsetX, e.offsetY, transformRef.current ?? zoomIdentity)
       if (!nd || nd.kind === 'hub') return
+      const { onOpenCollection, onOpenImage, onOpenCategory } = openersRef.current
       if (nd.kind === 'collection') {
         setSelectedId(nd.id)
         onOpenCollection(nd.id)

@@ -60,7 +60,7 @@ collection-page graph dialog (#1630) reuses this component with a different mode
 - `sharedOnly` hides single-collection images from drawing and hit testing but keeps them in
   the simulation; category nodes are never hidden.
 - Node clicks: collections call `onOpenCollection`, images call `onOpenImage(imageId)` — the
-  page fetches the record and takes the normal `?image={id}` viewer path; hub and category
+  page fetches the record and takes the normal `?image={id}` viewer path; category
   clicks navigate to the category's Browse page via `onOpenCategory`; hub clicks are inert.
 
 <Stories />

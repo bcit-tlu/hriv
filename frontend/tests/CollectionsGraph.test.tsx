@@ -263,6 +263,35 @@ describe('CollectionsGraph', () => {
     expect(onOpenCategory).toHaveBeenCalledWith(7)
   })
 
+  it('calls the latest click handlers, not the ones captured at model build', () => {
+    const p3: ApiCollectionsGraph = {
+      order: 3,
+      collections: PAYLOAD.collections,
+      images: [{ id: 10, name: 'img', collection_ids: [1], category_id: 7 }],
+      categories: [{ id: 7, label: 'Bones', path: 'Bones', image_count: 1 }],
+    }
+    const m = buildGraphModel(p3, new Set([1, 2]), false)
+    const first = vi.fn()
+    const second = vi.fn()
+    const graph = (cb: typeof first) => (
+      <CollectionsGraph
+        model={m}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        onOpenCategory={cb}
+        simulate={false}
+      />
+    )
+    const { rerender } = render(graph(first))
+    rerender(graph(second)) // same model — the listener effect does not re-run
+    vi.spyOn(GraphRenderer.prototype, 'findNode').mockReturnValue(
+      m.nodes.find((n) => n.kind === 'category' && n.id === 7)!,
+    )
+    fireEvent.click(canvas())
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith(7)
+  })
+
   it('does nothing when the click lands on empty space', () => {
     const { onOpenCollection, onOpenImage } = renderGraph()
     vi.spyOn(GraphRenderer.prototype, 'findNode').mockReturnValue(null)
