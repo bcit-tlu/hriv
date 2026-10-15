@@ -101,6 +101,7 @@ interface MockViewer {
 
 const osdState = vi.hoisted(() => ({
   viewers: [] as MockViewer[],
+  viewerOptions: [] as Record<string, unknown>[],
   buttons: [] as MockButton[],
   trackers: [] as { options: MockTrackerOptions; destroy: ReturnType<typeof vi.fn> }[],
   initError: null as Error | null,
@@ -247,9 +248,10 @@ vi.mock('openseadragon', () => {
     return viewer
   }
 
-  const OSD = () => {
+  const OSD = (options: Record<string, unknown>) => {
     if (osdState.initError) throw osdState.initError
     const viewer = makeViewer()
+    osdState.viewerOptions.push(options)
     osdState.viewers.push(viewer)
     return viewer
   }
@@ -327,6 +329,7 @@ function drawRect(opts: { shiftKey?: boolean; drag?: boolean } = {}) {
 
 beforeEach(() => {
   osdState.viewers.length = 0
+  osdState.viewerOptions.length = 0
   osdState.buttons.length = 0
   osdState.trackers.length = 0
   osdState.initError = null
@@ -369,6 +372,18 @@ const setViewportAtHome = (v: MockViewer) => {
   v.viewport.getFlip.mockReturnValue(false)
   return homeBounds
 }
+
+describe('ImageViewer drawer configuration', () => {
+  it('uses anonymous CORS for the WebGL viewer and canvas for its navigator', () => {
+    render(<ImageViewer tileSources="https://tiles.example.test/image.dzi" />)
+
+    expect(osdState.viewerOptions).toHaveLength(1)
+    expect(osdState.viewerOptions[0]).toMatchObject({
+      crossOriginPolicy: 'Anonymous',
+      navigatorDrawer: 'canvas',
+    })
+  })
+})
 
 describe('ImageViewer lifecycle telemetry', () => {
   it('emits view started/ready events and restores the initial viewport and overlays', () => {
