@@ -99,7 +99,7 @@ test('synthetic student can log in, browse, and view an image', async ({ page, b
       test.step('navigate configured category path', async () => {
         for (const categoryName of categoryPath) {
           const categoryButton = tileGrid
-            .locator('button')
+            .getByRole('button')
             .filter({ has: page.getByText(categoryName, { exact: true }) })
             .first()
           await expect(categoryButton, `category not visible: ${categoryName}`).toBeVisible({
@@ -117,8 +117,9 @@ test('synthetic student can log in, browse, and view an image', async ({ page, b
 
     await recorder.recordStep('image', () =>
       test.step('open configured image and wait for viewer canvas', async () => {
+        // Image tiles may be role="button" divs rather than native buttons.
         const imageButton = tileGrid
-          .locator('button')
+          .getByRole('button')
           .filter({ has: page.getByAltText(imageName, { exact: true }) })
           .first()
         await expect(imageButton, `image not visible: ${imageName}`).toBeVisible({ timeout: 20000 })
