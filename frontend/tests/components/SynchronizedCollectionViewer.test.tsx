@@ -766,13 +766,14 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
   })
 
-  it('hides Save view from non-editors but keeps Restore view', () => {
+  it('hides Set as default view from non-editors but keeps Restore default view', () => {
     const collection = syncCollection({
       permissions: { canEdit: false, canDelete: false, canTransfer: false, canHide: false },
     })
     renderViewer({ collection })
     expect(screen.queryByTestId('synchronized-save')).not.toBeInTheDocument()
-    expect(screen.getByTestId('synchronized-reset')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Restore default view' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Set as default view' })).not.toBeInTheDocument()
   })
 
   it('forwards tile-source renewals to onImageRenewed', () => {
@@ -797,6 +798,7 @@ describe('SynchronizedCollectionViewer', () => {
     const c = makeFakeViewer({ zoom: 1, x: 0.5, y: 0.5, rotation: 0 })
     mockState.fakes.set(102, c.viewer)
     const { props } = renderViewer({ collection })
+    expect(screen.getByRole('button', { name: 'Set as default view' })).toBeInTheDocument()
     act(() => {
       mockState.fakes.get(100)!.open()
       b.viewer.open()
@@ -832,7 +834,7 @@ describe('SynchronizedCollectionViewer', () => {
     })
     expect(b.state.x).toBeCloseTo(0.6)
     expect(b.state.y).toBeCloseTo(0.6)
-    // Save view persists the replacement pair's viewports.
+    // Set as default view persists the replacement pair's viewports.
     await act(async () => {
       fireEvent.click(screen.getByTestId('synchronized-save'))
     })

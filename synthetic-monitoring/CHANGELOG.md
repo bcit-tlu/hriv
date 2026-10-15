@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.9](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.8...synthetic-monitoring-v1.2.9) (2026-10-15)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** match role="button" image tiles in the student journey ([#1674](https://github.com/bcit-tlu/hriv/issues/1674)) ([4cb24fc](https://github.com/bcit-tlu/hriv/commit/4cb24fc5fc7b66fd8af033f13f3e964bfb0ef15c))
+
 ## [1.2.8](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.7...synthetic-monitoring-v1.2.8) (2026-10-05)
 
 
