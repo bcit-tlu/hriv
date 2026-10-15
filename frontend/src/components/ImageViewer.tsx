@@ -1020,6 +1020,7 @@ export default function ImageViewer({
       const duration = viewStartTimeRef.current
         ? Math.round(performance.now() - viewStartTimeRef.current)
         : undefined
+      const errorMessage = typeof event?.message === 'string' ? event.message : undefined
       emitEvent({
         event: 'image.view.failed',
         action: 'view',
@@ -1027,11 +1028,13 @@ export default function ImageViewer({
         duration_ms: duration,
         image_id: imageIdRef.current,
         category_id: categoryIdRef.current,
+        error_message: errorMessage,
       })
       emitFrontendError({
         action: 'image_viewer_open',
         error: 'image_viewer',
         errorCode: 'image_viewer_open_failed',
+        message: errorMessage,
         imageId: imageIdRef.current,
         categoryId: categoryIdRef.current,
       })

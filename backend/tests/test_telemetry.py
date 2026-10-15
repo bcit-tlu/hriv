@@ -14,6 +14,7 @@ from app.routers.telemetry import (
     TELEMETRY_SCHEMA_VERSION,
     TelemetryBatch,
     TelemetryEvent,
+    _sanitize_error_message,
     ingest_synthetic_result,
     ingest_telemetry_events,
 )
@@ -58,6 +59,37 @@ def _allow_rate_limit():
         new_callable=AsyncMock,
         return_value=None,
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Failed (/api/tiles/abc123/a.dzi)", "Failed ([url]"),
+        ('Failed "/api/tiles/abc/a.dzi"', 'Failed "[url]'),
+        ("Failed url:/api/tiles/abc/a.dzi", "Failed url:[url]"),
+        ("Failed (https://h/a.dzi?tile_token=abc)", "Failed [url]"),
+        ("HTTP/1.1 error and/or image/jpeg", "HTTP/1.1 error and/or image/jpeg"),
+        ("Malformed DZI descriptor", "Malformed DZI descriptor"),
+        (
+            "Malformed DZI: TileSize=0 Overlap=2",
+            "Malformed DZI: TileSize=0 Overlap=2",
+        ),
+        ("Bad descriptor (Format=webp)", "Bad descriptor (Format=webp)"),
+        ("Size Width=1024, Height=768.", "Size Width=1024, Height=768."),
+        ("tilesize=256", "tilesize=256"),
+        ("user_id=123", "[url]"),
+        ("tile_token=abcdef", "[url]"),
+        ("TileSize=0&tile_token=abc", "[url]"),
+        ("TileSize=0?tile_token=abc", "[url]"),
+        ("Width=", "[url]"),
+        ("TileSize=" + "1" * 17, "[url]"),
+        ("Request key=value failed", "Request [url] failed"),
+    ],
+)
+def test_sanitize_error_message_redacts_paths_after_opening_punctuation(
+    raw: str, expected: str
+) -> None:
+    assert _sanitize_error_message(raw) == expected
 
 
 async def test_telemetry_events_accepted_and_logged(
@@ -338,6 +370,103 @@ async def test_telemetry_logs_error_code_and_request_id(
     assert getattr(log, "error.type") == "api_http_5xx"
     assert getattr(log, "error.code") == "api_http_5xx"
     assert getattr(log, "request.id") == "req-123"
+
+
+async def test_telemetry_logs_sanitized_error_messages_for_view_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    message = (
+        "HTTP 404 attempting to load TileSource: "
+        "https://hriv.example/api/tiles/abc.dzi?tile_token=secret\n\t"
+        + "extra " * 80
+    )
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(event="frontend.error", error_message=message),
+            TelemetryEvent(event="image.view.failed", error_message=message),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=8, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
+        )
+
+    logs = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert [getattr(log, "event.name") for log in logs] == [
+        "frontend.error",
+        "image.view.failed",
+    ]
+    for log in logs:
+        sanitized = getattr(log, "error.message")
+        assert sanitized.startswith(
+            "HTTP 404 attempting to load TileSource: [url] extra"
+        )
+        assert "https://" not in sanitized
+        assert "\n" not in sanitized
+        assert "\t" not in sanitized
+        assert len(sanitized) == 256
+        assert sanitized.endswith("…")
+
+
+async def test_telemetry_omits_error_messages_for_other_events_or_empty_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(event="frontend.error", error_message=" \n\t "),
+            TelemetryEvent(event="image.view.failed"),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                error_message="https://hriv.example/private/path",
+            ),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=8, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
+        )
+
+    logs = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert len(logs) == 3
+    assert all(not hasattr(log, "error.message") for log in logs)
+
+
+async def test_telemetry_accepts_maximum_error_message_length_and_truncates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="frontend.error",
+                error_message="x" * 1000,
+            )
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=8, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        response = await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
+        )
+
+    log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
+    assert response.status_code == 202
+    assert getattr(log, "error.message") == f"{'x' * 255}…"
+
+
+def test_telemetry_rejects_error_message_over_attribute_limit() -> None:
+    with pytest.raises(ValidationError):
+        TelemetryEvent(event="frontend.error", error_message="x" * 1001)
 
 
 async def test_telemetry_bounds_unknown_error_code_and_unit(

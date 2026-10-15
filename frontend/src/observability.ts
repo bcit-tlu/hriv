@@ -29,6 +29,11 @@ import { getClientSyntheticMode, setClientSyntheticMode } from './syntheticMode'
  */
 export const TELEMETRY_SCHEMA_VERSION = 2
 
+export const MAX_ERROR_MESSAGE_LENGTH = 256
+
+const DIAGNOSTIC_ATTRIBUTE_RE =
+  /^[("'\x5b]?(?:TileSize|Overlap|Format|Width|Height)=[A-Za-z0-9]{1,16}[)"'\x5d,;.:]?$/i
+
 /**
  * Event names currently accepted by the authenticated backend ingestion
  * endpoint. Keep this in lockstep with `backend/app/routers/telemetry.py`.
@@ -91,6 +96,8 @@ interface TelemetryEventBase {
   duration_ms?: number
   error?: string
   error_code?: TelemetryErrorCode
+  /** Sanitized diagnostic message; logs only. */
+  error_message?: string
   action?: string
   page?: FrontendPage
   from_page?: FrontendPage
@@ -131,6 +138,7 @@ export interface FrontendErrorEventOptions {
   action: string
   error: string
   errorCode: TelemetryErrorCode
+  message?: string
   page?: FrontendPage
   imageId?: number
   categoryId?: number
@@ -260,6 +268,24 @@ function normalizeRequestId(value: string | null | undefined): string | undefine
   return normalized ? normalized : undefined
 }
 
+export function sanitizeDiagnosticMessage(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+
+  // eslint-disable-next-line no-control-regex
+  const normalized = raw.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim()
+  if (!normalized) return undefined
+
+  const redacted = normalized.replace(
+    /\S*(?::\/\/|[?=])\S*|(?<![^\s"'(\x5b<{:,])\.{0,2}\/\S*/g,
+    (token) => (DIAGNOSTIC_ATTRIBUTE_RE.test(token) ? token : '[url]'),
+  )
+  if (!redacted) return undefined
+
+  return redacted.length > MAX_ERROR_MESSAGE_LENGTH
+    ? `${redacted.slice(0, MAX_ERROR_MESSAGE_LENGTH - 1)}…`
+    : redacted
+}
+
 function pruneErrorDedupe(now: number): void {
   for (const [key, seenAt] of _errorDedupe.entries()) {
     if (now - seenAt > ERROR_DEDUPE_TTL_MS) {
@@ -329,7 +355,7 @@ function ensureClientEnv(): Partial<ClientEnv> {
 }
 
 function normalizeEvent(event: TelemetryEvent): TelemetryPayload {
-  return {
+  const normalized: TelemetryPayload = {
     ...ensureClientEnv(),
     ...event,
     schema_version: TELEMETRY_SCHEMA_VERSION,
@@ -338,6 +364,13 @@ function normalizeEvent(event: TelemetryEvent): TelemetryPayload {
     synthetic: getClientSyntheticMode() || event.synthetic || false,
     trace_id: event.trace_id ?? activeTraceId(),
   }
+  const errorMessage = sanitizeDiagnosticMessage(event.error_message)
+  if (errorMessage === undefined) {
+    delete normalized.error_message
+  } else {
+    normalized.error_message = errorMessage
+  }
+  return normalized
 }
 
 function supportsPerformanceEntry(entryType: string): boolean {
@@ -647,6 +680,7 @@ export function emitFrontendError(options: FrontendErrorEventOptions): void {
     action: options.action,
     error: options.error,
     error_code: options.errorCode,
+    error_message: options.message,
     outcome: 'failure',
     page,
     image_id: options.imageId,

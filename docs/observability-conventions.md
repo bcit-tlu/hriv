@@ -93,6 +93,7 @@ Prohibited in Prometheus labels:
 - `zoom_level`
 - `filename`
 - `exception_message`
+- `error_message`
 - `user_agent`
 
 High-cardinality values belong in traces or structured logs. If a proposed
@@ -168,25 +169,26 @@ it as `event.client_synthetic`; it never overrides the server-authoritative
 The browser payload schema is versioned by `schema_version`. The backend
 enriches accepted events into a structured-log envelope for Loki.
 
-| Concept                  | Browser field                          | Structured log field                            | Notes                                                                     |
-| ------------------------ | -------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| Event name               | `event`                                | `event.name`                                    | Required, dotted, allowlisted                                             |
-| Event version            | `schema_version`                       | `schema.version`                                | Omitted means current version; unsupported explicit versions are rejected |
-| Outcome                  | `outcome`                              | `event.outcome`                                 | Defaults to `unknown`                                                     |
-| Duration                 | `duration_ms`                          | `event.duration_ms`                             | Milliseconds                                                              |
-| Action                   | `action`                               | `event.action`                                  | Low-cardinality only                                                      |
-| Page                     | `page`                                 | `event.page`                                    | Low-cardinality only                                                      |
-| Error code/category      | `error`                                | `error.type`                                    | Never free-text exception bodies                                          |
-| Session id               | Header `X-Session-ID`                  | `browser.tab.session_id`                        | Stable per browser tab                                                    |
-| Request correlation      | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down                                        |
-| User identity            | not emitted by browser                 | `user.id`, `user.role`                          | Derived from the authenticated backend user                               |
-| Synthetic classification | `synthetic` hint                       | `event.synthetic`                               | Server-authoritative from user metadata                                   |
-| Client synthetic         | Header `X-Client-Synthetic`            | `event.client_synthetic`                        | `true`/`false`; recorded but does **not** override `event.synthetic`      |
-| Route                    | not emitted by browser                 | request logs carry `route`                      | Aggregate on normalized routes only                                       |
-| Service version          | not emitted by browser                 | resource `service.version`                      | Derived from runtime config                                               |
-| Environment              | not emitted by browser                 | resource `deployment.environment.name`          | Derived from runtime config                                               |
-| Browser / OS / device    | bounded fields                         | `client.*` fields                               | Re-bounded server-side                                                    |
-| Domain ids               | `image_id`, `category_id`              | `image.id`, `category.id`                       | Structured logs only, never metric labels                                 |
+| Concept                  | Browser field                          | Structured log field                            | Notes                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | -------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Event name               | `event`                                | `event.name`                                    | Required, dotted, allowlisted                                                                                                                                                                                                                                                                                                               |
+| Event version            | `schema_version`                       | `schema.version`                                | Omitted means current version; unsupported explicit versions are rejected                                                                                                                                                                                                                                                                   |
+| Outcome                  | `outcome`                              | `event.outcome`                                 | Defaults to `unknown`                                                                                                                                                                                                                                                                                                                       |
+| Duration                 | `duration_ms`                          | `event.duration_ms`                             | Milliseconds                                                                                                                                                                                                                                                                                                                                |
+| Action                   | `action`                               | `event.action`                                  | Low-cardinality only                                                                                                                                                                                                                                                                                                                        |
+| Page                     | `page`                                 | `event.page`                                    | Low-cardinality only                                                                                                                                                                                                                                                                                                                        |
+| Error code/category      | `error`                                | `error.type`                                    | Never free-text exception bodies                                                                                                                                                                                                                                                                                                            |
+| Diagnostic message       | `error_message`                        | `error.message`                                 | Sanitized single line; URL/path/query tokens → `[url]`, except allowlisted DZI assignments (`TileSize`, `Overlap`, `Format`, `Width`, `Height` with a ≤16-char alphanumeric value); all other `key=value` tokens → `[url]`; ≤256 chars; `frontend.error` and `image.view.failed` only; never a metric label or dashboard group-by dimension |
+| Session id               | Header `X-Session-ID`                  | `browser.tab.session_id`                        | Stable per browser tab                                                                                                                                                                                                                                                                                                                      |
+| Request correlation      | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down                                                                                                                                                                                                                                                                                                          |
+| User identity            | not emitted by browser                 | `user.id`, `user.role`                          | Derived from the authenticated backend user                                                                                                                                                                                                                                                                                                 |
+| Synthetic classification | `synthetic` hint                       | `event.synthetic`                               | Server-authoritative from user metadata                                                                                                                                                                                                                                                                                                     |
+| Client synthetic         | Header `X-Client-Synthetic`            | `event.client_synthetic`                        | `true`/`false`; recorded but does **not** override `event.synthetic`                                                                                                                                                                                                                                                                        |
+| Route                    | not emitted by browser                 | request logs carry `route`                      | Aggregate on normalized routes only                                                                                                                                                                                                                                                                                                         |
+| Service version          | not emitted by browser                 | resource `service.version`                      | Derived from runtime config                                                                                                                                                                                                                                                                                                                 |
+| Environment              | not emitted by browser                 | resource `deployment.environment.name`          | Derived from runtime config                                                                                                                                                                                                                                                                                                                 |
+| Browser / OS / device    | bounded fields                         | `client.*` fields                               | Re-bounded server-side                                                                                                                                                                                                                                                                                                                      |
+| Domain ids               | `image_id`, `category_id`              | `image.id`, `category.id`                       | Structured logs only, never metric labels                                                                                                                                                                                                                                                                                                   |
 
 Reserved envelope concepts for later event families include `timestamp`,
 `trace_id`, `value`, `unit`, and `error_code`. When those are implemented they
@@ -779,6 +781,8 @@ Additional frontend-error fields:
 
 - `error`
 - `error_code`
+- `error_message` — sanitized diagnostic message; also accepted on
+  `image.view.failed`
 
 Allowed `error_code` values:
 
@@ -839,6 +843,12 @@ Privacy rules for frontend telemetry:
   tokens. (The _client_ must not send these; the backend resolves image names
   and category labels itself from the event's numeric ids — see the
   server-authoritative `image.name` / `category.label` enrichment below.)
+- `error_message` carries only the sanitized viewer/library diagnostic
+  (OpenSeadragon `open-failed` message today); the client and backend both
+  redact URL/path/query tokens and cap length. Allowlisted DZI attribute
+  assignments (`TileSize`, `Overlap`, `Format`, `Width`, `Height` with a
+  ≤16-character alphanumeric value) are kept; every other `key=value` token is
+  redacted. It lives in structured logs only.
 - Preserve `request_id` only when the backend already generated it.
 - Browser and device fields must stay inside the documented bounded sets.
 
@@ -871,37 +881,38 @@ is unset, the frontend falls back to the same-origin relative path
 
 ### Event fields
 
-| Field              | Type                                  | Purpose                                                          |
-| ------------------ | ------------------------------------- | ---------------------------------------------------------------- |
-| `event`            | string (required)                     | One of the allowed event names above                             |
-| `schema_version`   | integer                               | Event payload version (logged as `schema.version`)               |
-| `event_version`    | integer                               | Event-specific contract version (logged as `event.version`)      |
-| `outcome`          | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                          |
-| `duration_ms`      | number                                | End-to-end duration in milliseconds, when meaningful             |
-| `action`           | string                                | Low-cardinality action label (e.g. `view`, `navigate`)           |
-| `page`             | string                                | Low-cardinality page identifier for navigation events            |
-| `from_page`        | bounded string                        | Previous page for navigation transitions (bounded to page names) |
-| `direction`        | bounded string                        | `down`/`up`/`jump` for `navigate_category` transitions           |
-| `guide_doc`        | bounded string                        | Guide page slug for `navigate_guide_doc` hits (kebab-case only)  |
-| `admin_tab`        | bounded string                        | Admin tab for `navigate_admin_tab` hits (`changelog`/`backups`)  |
-| `error`            | string                                | High-level error category, never free-text or PII                |
-| `error_code`       | bounded string                        | Stable error code for `frontend.error` events                    |
-| `synthetic`        | boolean                               | Client hint only; server metadata is authoritative (see below)   |
-| `image_id`         | integer                               | Structured domain id for image events (never a Prometheus label) |
-| `category_id`      | integer                               | Structured domain id for category context (never a label)        |
-| `from_category_id` | integer                               | Previous category id for `navigate_category` transitions         |
-| `request_id`       | string                                | Backend request identifier when already generated server-side    |
-| `trace_id`         | string                                | Active trace identifier when available                           |
-| `value`            | number                                | Numeric value for `frontend.performance` events                  |
-| `unit`             | bounded string                        | Unit for `value` (`ms` or `score`)                               |
-| `upload_mode`      | bounded string                        | `single`/`bulk` for `image.upload.completed`                     |
-| `file_type`        | bounded string                        | Bounded upload file-type bucket (see above)                      |
-| `browser_family`   | bounded string                        | `chrome`/`firefox`/`safari`/`edge`/`opera`/`samsung`/`other`     |
-| `browser_major`    | string                                | Major browser version only (e.g. `128`)                          |
-| `os_family`        | bounded string                        | `windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`     |
-| `device_class`     | bounded string                        | `desktop`/`mobile`/`tablet`/`other`                              |
-| `viewport_bucket`  | bounded string                        | `xs`/`sm`/`md`/`lg`/`xl` (Material UI breakpoints)               |
-| `touch_capable`    | boolean                               | Whether the device reports touch capability                      |
+| Field              | Type                                  | Purpose                                                                                  |
+| ------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `event`            | string (required)                     | One of the allowed event names above                                                     |
+| `schema_version`   | integer                               | Event payload version (logged as `schema.version`)                                       |
+| `event_version`    | integer                               | Event-specific contract version (logged as `event.version`)                              |
+| `outcome`          | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                                                  |
+| `duration_ms`      | number                                | End-to-end duration in milliseconds, when meaningful                                     |
+| `action`           | string                                | Low-cardinality action label (e.g. `view`, `navigate`)                                   |
+| `page`             | string                                | Low-cardinality page identifier for navigation events                                    |
+| `from_page`        | bounded string                        | Previous page for navigation transitions (bounded to page names)                         |
+| `direction`        | bounded string                        | `down`/`up`/`jump` for `navigate_category` transitions                                   |
+| `guide_doc`        | bounded string                        | Guide page slug for `navigate_guide_doc` hits (kebab-case only)                          |
+| `admin_tab`        | bounded string                        | Admin tab for `navigate_admin_tab` hits (`changelog`/`backups`)                          |
+| `error`            | string                                | High-level error category, never free-text or PII                                        |
+| `error_code`       | bounded string                        | Stable error code for `frontend.error` events                                            |
+| `error_message`    | string                                | Sanitized diagnostic for `frontend.error` and `image.view.failed` (structured logs only) |
+| `synthetic`        | boolean                               | Client hint only; server metadata is authoritative (see below)                           |
+| `image_id`         | integer                               | Structured domain id for image events (never a Prometheus label)                         |
+| `category_id`      | integer                               | Structured domain id for category context (never a label)                                |
+| `from_category_id` | integer                               | Previous category id for `navigate_category` transitions                                 |
+| `request_id`       | string                                | Backend request identifier when already generated server-side                            |
+| `trace_id`         | string                                | Active trace identifier when available                                                   |
+| `value`            | number                                | Numeric value for `frontend.performance` events                                          |
+| `unit`             | bounded string                        | Unit for `value` (`ms` or `score`)                                                       |
+| `upload_mode`      | bounded string                        | `single`/`bulk` for `image.upload.completed`                                             |
+| `file_type`        | bounded string                        | Bounded upload file-type bucket (see above)                                              |
+| `browser_family`   | bounded string                        | `chrome`/`firefox`/`safari`/`edge`/`opera`/`samsung`/`other`                             |
+| `browser_major`    | string                                | Major browser version only (e.g. `128`)                                                  |
+| `os_family`        | bounded string                        | `windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`                             |
+| `device_class`     | bounded string                        | `desktop`/`mobile`/`tablet`/`other`                                                      |
+| `viewport_bucket`  | bounded string                        | `xs`/`sm`/`md`/`lg`/`xl` (Material UI breakpoints)                                       |
+| `touch_capable`    | boolean                               | Whether the device reports touch capability                                              |
 
 Domain identifiers (`image_id`, `category_id`) are emitted only as **structured
 event fields**, never as Prometheus metric labels, to keep metric cardinality
