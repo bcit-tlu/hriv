@@ -145,8 +145,10 @@ describe('CollectionOwnersDialog (#1531)', () => {
     fetchUsersPagedMock.mockResolvedValue({ items: DIRECTORY_USERS, total: 2 })
   })
 
-  it('renders the current owners and a User/Program radio row', () => {
+  it('renders the current owners and a User/Program radio row', async () => {
     renderDialog({ collection: CO_OWNED })
+    // Let the directory fetch settle inside act.
+    await screen.findByRole('checkbox', { name: 'select Grace Hopper' })
     expect(screen.getByRole('heading', { name: 'Owners' })).toBeInTheDocument()
     expect(screen.getByText(/Ada Lovelace, Grace Hopper/)).toBeInTheDocument()
     // User first, Program second.
@@ -166,8 +168,9 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(getComputedStyle(screen.getByTestId('owners-mode-section')).height).toBe('528px')
   })
 
-  it('keeps the confirm disabled until something changes', () => {
+  it('keeps the confirm disabled until something changes', async () => {
     renderDialog()
+    await screen.findByRole('checkbox', { name: 'select Grace Hopper' })
     expect(screen.getByTestId('owners-confirm')).toBeDisabled()
   })
 
@@ -337,8 +340,9 @@ describe('CollectionOwnersDialog (#1531)', () => {
     expect(await screen.findByTestId('owners-error')).toHaveTextContent(/at least one owner/)
   })
 
-  it('shows the orphaned hint for ownerless collections', () => {
+  it('shows the orphaned hint for ownerless collections', async () => {
     renderDialog({ collection: ORPHANED })
+    await screen.findByRole('checkbox', { name: 'select Grace Hopper' })
     expect(screen.getByText(/This collection is orphaned/)).toBeInTheDocument()
   })
 

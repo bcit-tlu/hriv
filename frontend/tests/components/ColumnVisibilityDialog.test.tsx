@@ -2,9 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { DragEndEvent } from '@dnd-kit/react'
-import ColumnVisibilityDialog, {
-  resolveReorderedKeys,
-} from '../../src/components/ColumnVisibilityDialog'
+import ColumnVisibilityDialog from '../../src/components/ColumnVisibilityDialog'
+import { resolveReorderedKeys } from '../../src/components/columnVisibilityUtils'
 
 type TestColumn = 'name' | 'email' | 'role'
 

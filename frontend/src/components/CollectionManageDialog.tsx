@@ -545,17 +545,25 @@ export default function CollectionManageDialog({
   // share the same path (click/Space/Enter toggles, Remove stages once).
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(new Set())
-  useEffect(() => {
+  // Render-phase adjustments (CollectionGraphDialog pattern): closing the
+  // dialog resets selection state for the next open, and a new collection
+  // in an open dialog reseeds the draft/baseline for that session.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
     if (!open) {
-      seededFor.current = null
       // A fresh open always starts outside selection mode with an empty set.
       setSelecting(false)
       setSelectedIds(new Set())
+    }
+  }
+  useEffect(() => {
+    if (!open) {
+      seededFor.current = null
       return
     }
     if (collection != null && seededFor.current !== collection.id) {
       seededFor.current = collection.id
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- per-session draft seed
       setBaselineIds(collection.images.map((img) => img.id))
       updateDraft(collection.images)
     }
