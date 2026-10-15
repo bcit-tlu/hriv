@@ -1,5 +1,5 @@
 import type { ApiCollectionGraph } from '../api'
-import { collectionRadius } from './buildModel'
+import { categoryRadius, collectionRadius } from './buildModel'
 import type { GraphEdge, GraphModel, GraphNode } from './types'
 
 const GOLDEN_ANGLE = 2.399963
@@ -102,7 +102,7 @@ export function buildCollectionGraphModel(
         kind: 'category',
         id: cat.id,
         label: cat.label,
-        r: Math.max(6, Math.min(18, Math.sqrt(cat.image_count) * 2)),
+        r: categoryRadius(cat.image_count),
         x: Math.cos(a) * 220,
         y: Math.sin(a) * 220,
         category: cat,

@@ -41,13 +41,17 @@ export function labelPx(base: number, k: number): number {
   return Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, base * Math.sqrt(k)))
 }
 
-/** Zoom level (k) above which each node kind draws its label (#1630). */
+/**
+ * Zoom level (k) above which each node kind draws its label (#1630).
+ * Defaults are tuned so labels stay visible at typical fit zooms;
+ * overlap-skipping and LABEL_CAP still bound how many draw.
+ */
 export interface LabelThresholds {
   collection: number
   image: number
   category: number
 }
-const DEFAULT_LABEL_THRESHOLDS: LabelThresholds = { collection: 1.2, image: 2.5, category: 1 }
+const DEFAULT_LABEL_THRESHOLDS: LabelThresholds = { collection: 0.5, image: 1.5, category: 0.4 }
 /** Quadtree rebuild throttle while the simulation is still warm. */
 const QT_REBUILD_MS = 150
 
@@ -403,7 +407,7 @@ export class GraphRenderer {
           k > thr.collection ||
           n === state.hover ||
           n.id === state.selectedId ||
-          sr >= 12 ||
+          sr >= 8 ||
           (state.searchActive && state.searchMatch.has(n))
       } else if (n.kind === 'image') {
         base = LABEL_BASE_PX.image

@@ -732,9 +732,10 @@ Invalid stored values fall back to defaults:
   (U without a collection)" at 3rd order, where U counts category nodes
   with no image edge — the isolated "not yet transitioned" nodes. Physics,
   rendering and interaction port the locked prototype design (#1627):
-  collection radius = 4 + 1.5·√image count capped at 16 (monotonic — the
-  Graph View dialog hub is sized on the same scale, with its label falling
-  beside the node when it does not fit inside, #1653), synchronized
+  collection radius follows a floored log curve 6→14 (categories 7→16,
+  flat past 64 images; the page hub is r=20, and the Graph View dialog hub
+  is sized on the same scale with its label falling beside the node when
+  it does not fit inside, #1653), synchronized
   collections are filled primary-light with no ring, shared images share
   the plain image fill with a primary (red) outline (#1656), fit runs once
   after synchronous
@@ -753,9 +754,8 @@ Invalid stored values fall back to defaults:
   synchronized collections, images, shared images (order ≥ 2) and
   categories (order ≥ 3); the dialog variant renames the hub "This
   collection (centre)" and prefixes the related rows. An unboxed,
-  single-line bottom-right hint reads "Scroll or pinch to zoom, and drag
-  to pan." (hidden when the canvas is narrower than ~560px — e.g. the
-  dialog at small viewports — where it would collide with the legend).
+  single-line hint below the canvas (right-aligned) reads "Scroll or pinch
+  to zoom, and drag to pan."
 
 **Graph View dialog (#1630).** The collection detail header carries an
 outlined **Graph View** button (`collection-graph-open`) between the
@@ -773,7 +773,7 @@ collection gets its own fit-once; the **Open collection** action closes
 the dialog and navigates the page to the current perspective. Image
 clicks close the dialog and take the page's `onOpenImageById`
 fetch-then-viewer path. Image labels appear earlier than on the page
-graph (`k > 1` vs `k > 2.5`, via the renderer's `labelThresholds` option)
+graph (`k > 0.6` vs `k > 1.5`, via the renderer's `labelThresholds` option)
 and drop the hub collection's name prefix (`DrawState.labelFor`). A
 deleted/removed perspective answers 404 → "This collection is no longer
 available." with a **Back** action that pops the stack. Unlike the page

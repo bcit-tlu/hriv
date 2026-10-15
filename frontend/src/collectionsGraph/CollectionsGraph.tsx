@@ -66,9 +66,6 @@ export interface CollectionsGraphProps {
   legendVariant?: 'page' | 'collection'
 }
 
-// legend (~230px) + hint (~230px) + 8px insets, with slack.
-const HINT_MIN_CANVAS_WIDTH = 560
-
 interface TooltipState {
   node: GraphNode
   x: number
@@ -118,7 +115,6 @@ export default function CollectionsGraph({
   const prevModelRef = useRef<GraphModel | null>(null)
   const fitCountRef = useRef(0)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
-  const [hintFits, setHintFits] = useState(true)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const hoverRef = useRef<GraphNode | null>(null)
 
@@ -360,7 +356,6 @@ export default function CollectionsGraph({
     if (!wrap || !canvas || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
       rendererRef.current?.resize()
-      setHintFits(wrap.clientWidth >= HINT_MIN_CANVAS_WIDTH)
       const t = transformRef.current
       if (t) rendererRef.current?.requestDraw(drawState(t))
     })
@@ -451,7 +446,7 @@ export default function CollectionsGraph({
           >
             <Typography
               variant="subtitle1"
-              sx={{ fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3 }}
+              sx={{ fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3, mb: '5px' }}
             >
               Legend
             </Typography>
@@ -459,7 +454,7 @@ export default function CollectionsGraph({
               variant="caption"
               color="text.secondary"
               display="block"
-              sx={{ whiteSpace: 'nowrap', fontStyle: 'italic' }}
+              sx={{ whiteSpace: 'nowrap', fontStyle: 'italic', mb: '5px' }}
             >
               Node size reflects image count
             </Typography>
@@ -517,30 +512,6 @@ export default function CollectionsGraph({
           </Paper>
         )}
 
-        {!empty && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            data-testid="graph-hint"
-            sx={{
-              position: 'absolute',
-              right: 8,
-              bottom: 8,
-              whiteSpace: 'nowrap',
-              textAlign: 'right',
-              pointerEvents: 'none',
-              // The always-open legend owns the bottom-left; the hint
-              // yields when the canvas wrapper is narrower than the two
-              // overlays side by side — measured, not a viewport
-              // breakpoint, because the dialog canvas is narrower than
-              // the viewport.
-              display: hintFits ? 'block' : 'none',
-            }}
-          >
-            Scroll or pinch to zoom, and drag to pan.
-          </Typography>
-        )}
-
         {empty && (
           <Box
             data-testid="collections-graph-empty"
@@ -576,6 +547,19 @@ export default function CollectionsGraph({
           </Paper>
         )}
       </Box>
+
+      {/* Pan/zoom hint sits below the canvas, right-aligned — outside the
+          wrapper so it can never overlap the legend (#1656 review). */}
+      {!empty && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="graph-hint"
+          sx={{ alignSelf: 'flex-end', textAlign: 'right', mt: 0.5, flexShrink: 0 }}
+        >
+          Scroll or pinch to zoom, and drag to pan.
+        </Typography>
+      )}
     </Box>
   )
 }

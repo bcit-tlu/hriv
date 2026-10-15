@@ -16,13 +16,27 @@ export function graphSpineKey(model: GraphModel): string {
     .join(',')
 }
 
+/** Image count at which node radii reach their maximum. */
+const RADIUS_COUNT_CAP = 64
+
 /**
- * Collection radius = 4 + 1.5·√count, capped at 16 — monotonic below the
- * cap (reached at 64 images) so one more image is a (slightly) bigger
- * node; no floor plateau (#1653).
+ * Floored logarithmic radius: `min` at 0 images rising along ln(1+n) to
+ * `max` at RADIUS_COUNT_CAP images (flat beyond). Compressed on purpose —
+ * the legend only promises "bigger means more", not proportionality (#1653).
  */
+export function scaledRadius(imageCount: number, min: number, max: number): number {
+  const t = Math.min(1, Math.log1p(Math.max(0, imageCount)) / Math.log1p(RADIUS_COUNT_CAP))
+  return min + (max - min) * t
+}
+
+/** Collection node radius: 6 → 14. */
 export function collectionRadius(imageCount: number): number {
-  return Math.min(16, 4 + Math.sqrt(imageCount) * 1.5)
+  return scaledRadius(imageCount, 6, 14)
+}
+
+/** Category node radius: 7 → 16 (same curve, slightly larger — they are sparse). */
+export function categoryRadius(imageCount: number): number {
+  return scaledRadius(imageCount, 7, 16)
 }
 
 /**
@@ -63,7 +77,7 @@ export function buildGraphModel(
     kind: 'hub',
     id: Number.NaN,
     label: 'Collections',
-    r: 40,
+    r: 20,
     x: 0,
     y: 0,
   }
@@ -136,7 +150,7 @@ export function buildGraphModel(
         kind: 'category',
         id: cat.id,
         label: cat.label,
-        r: Math.max(6, Math.min(18, Math.sqrt(cat.image_count) * 2)),
+        r: categoryRadius(cat.image_count),
         x: Math.cos(ang) * rr,
         y: Math.sin(ang) * rr,
         category: cat,

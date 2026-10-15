@@ -294,9 +294,8 @@ returned by the API (UX only — the backend re-checks).
   row above the canvas (no control overlays the drawing area); the legend is
   always expanded inside the canvas ("Node size reflects image count"
   subtitle), a "Scroll or pinch to zoom, and drag to pan." hint sits
-  bottom-right (hidden when the measured canvas is narrower than ~560px),
-  node labels grow/shrink with zoom (12px floor), and the empty state and
-  tooltip stay inside the canvas.
+  right-aligned just below the canvas, node labels grow/shrink with zoom
+  (12px floor), and the empty state and tooltip stay inside the canvas.
 - **Given** the Graph View dialog, **When** the user switches the order,
   **Then** the rebuilt model refits the view (animated); the page-level graph
   keeps its transform on model rebuilds.

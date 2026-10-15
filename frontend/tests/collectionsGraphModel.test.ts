@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildGraphModel, collectionRadius } from '../src/collectionsGraph/buildModel'
+import {
+  buildGraphModel,
+  categoryRadius,
+  collectionRadius,
+} from '../src/collectionsGraph/buildModel'
 import type { ApiCollectionsGraph } from '../src/api'
 
 function coll(id: number, imageCount = 4) {
@@ -186,19 +190,26 @@ describe('buildGraphModel', () => {
 })
 
 describe('collectionRadius', () => {
-  it('is 4 + 1.5·√count capped at 16', () => {
-    expect(collectionRadius(0)).toBe(4)
-    expect(collectionRadius(1)).toBe(5.5)
-    expect(collectionRadius(4)).toBe(7)
-    expect(collectionRadius(16)).toBe(10)
-    expect(collectionRadius(64)).toBe(16)
-    expect(collectionRadius(10000)).toBe(16)
+  it('follows a floored log curve from 6 to 14 (flat past 64 images)', () => {
+    expect(collectionRadius(0)).toBe(6)
+    expect(collectionRadius(1)).toBeCloseTo(7.33, 1) // 6 + 8·ln2/ln65
+    expect(collectionRadius(64)).toBe(14)
+    expect(collectionRadius(10000)).toBe(14)
   })
 
-  it('is strictly increasing while below the cap (which is hit at 64)', () => {
+  it('is strictly increasing below the cap, and compressed (#1653)', () => {
     for (let n = 0; n < 63; n++) {
       expect(collectionRadius(n + 1)).toBeGreaterThan(collectionRadius(n))
     }
     expect(collectionRadius(64)).toBe(collectionRadius(65))
+    // One more image near the hub sizes is a subtle step, not a doubling.
+    expect(collectionRadius(6) - collectionRadius(5)).toBeLessThan(0.5)
+  })
+})
+
+describe('categoryRadius', () => {
+  it('is the same curve shifted up: 7 → 16', () => {
+    expect(categoryRadius(0)).toBe(7)
+    expect(categoryRadius(64)).toBe(16)
   })
 })

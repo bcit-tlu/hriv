@@ -284,7 +284,7 @@ export default function CollectionGraphDialog({
               onOpenImage={handleImageOpen}
               tooltipInfo={tooltipInfo}
               labelFor={labelFor}
-              labelThresholds={{ image: 1 }}
+              labelThresholds={{ image: 0.6 }}
               statsCaption={statsCaption}
               simulate={simulate}
               // An order change rebuilds the model on kept positions — refit
