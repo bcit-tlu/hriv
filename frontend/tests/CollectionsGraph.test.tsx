@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { zoomIdentity } from 'd3-zoom'
 import CollectionsGraph from '../src/collectionsGraph/CollectionsGraph'
-import { GraphRenderer, type GraphPalette } from '../src/collectionsGraph/renderer'
+import {
+  GraphRenderer,
+  labelPx,
+  paletteFrom,
+  type GraphPalette,
+} from '../src/collectionsGraph/renderer'
 import { buildGraphModel } from '../src/collectionsGraph/buildModel'
+import { getThemePalette } from '../src/theme'
 import type { ApiCollectionsGraph } from '../src/api'
 import type { GraphNode } from '../src/collectionsGraph/types'
 
@@ -107,15 +113,25 @@ describe('CollectionsGraph', () => {
     await waitFor(() => expect(frame()).toHaveAttribute('data-fit-count', '1'))
   })
 
-  it('page legend at 1st order names the hub and omits higher-order rows', () => {
+  it('page legend is always open and names the hub at 1st order, omitting higher-order rows', () => {
     renderGraph()
-    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
+    // No expand toggle — the legend renders fully (#1656).
+    expect(screen.queryByRole('button', { name: /legend/i })).toBeNull()
+    expect(screen.getByText('Node size reflects image count')).toBeInTheDocument()
     expect(screen.getByText('Collections hub (centre)')).toBeInTheDocument()
-    expect(screen.getByText('Collection — size reflects image count')).toBeInTheDocument()
+    expect(screen.getByText('Sequence collection')).toBeInTheDocument()
     expect(screen.getByText('Synchronized collection')).toBeInTheDocument()
     expect(screen.queryByText('Image')).not.toBeInTheDocument()
     expect(screen.queryByText('Shared image (in 2+ collections)')).not.toBeInTheDocument()
     expect(screen.queryByText('Category')).not.toBeInTheDocument()
+  })
+
+  it('shows the pan/zoom hint below the canvas (not inside the wrapper)', () => {
+    renderGraph()
+    const hint = screen.getByTestId('graph-hint')
+    expect(hint).toHaveTextContent('Scroll or pinch to zoom, and drag to pan.')
+    expect(screen.getByTestId('collections-graph')).toContainElement(hint)
+    expect(screen.getByTestId('collections-graph-canvas').parentElement).not.toContainElement(hint)
   })
 
   it('page legend gains image and category rows at higher orders', () => {
@@ -133,7 +149,6 @@ describe('CollectionsGraph', () => {
         simulate={false}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
     expect(screen.getByText('Image')).toBeInTheDocument()
     expect(screen.getByText('Shared image (in 2+ collections)')).toBeInTheDocument()
     expect(screen.getByText('Category')).toBeInTheDocument()
@@ -223,6 +238,89 @@ describe('CollectionsGraph', () => {
     expect(onOpenImage).not.toHaveBeenCalled()
   })
 
+  it('opens a category when the click lands on a category node', () => {
+    const p3: ApiCollectionsGraph = {
+      order: 3,
+      collections: PAYLOAD.collections,
+      images: [{ id: 10, name: 'img', collection_ids: [1], category_id: 7 }],
+      categories: [{ id: 7, label: 'Bones', path: 'Bones', image_count: 1 }],
+    }
+    const m = buildGraphModel(p3, new Set([1, 2]), false)
+    const onOpenCategory = vi.fn()
+    render(
+      <CollectionsGraph
+        model={m}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        onOpenCategory={onOpenCategory}
+        simulate={false}
+      />,
+    )
+    vi.spyOn(GraphRenderer.prototype, 'findNode').mockReturnValue(
+      m.nodes.find((n) => n.kind === 'category' && n.id === 7)!,
+    )
+    fireEvent.click(canvas())
+    expect(onOpenCategory).toHaveBeenCalledWith(7)
+  })
+
+  it('calls the latest click handlers, not the ones captured at model build', () => {
+    const p3: ApiCollectionsGraph = {
+      order: 3,
+      collections: PAYLOAD.collections,
+      images: [{ id: 10, name: 'img', collection_ids: [1], category_id: 7 }],
+      categories: [{ id: 7, label: 'Bones', path: 'Bones', image_count: 1 }],
+    }
+    const m = buildGraphModel(p3, new Set([1, 2]), false)
+    const first = vi.fn()
+    const second = vi.fn()
+    const graph = (cb: typeof first) => (
+      <CollectionsGraph
+        model={m}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        onOpenCategory={cb}
+        simulate={false}
+      />
+    )
+    const { rerender } = render(graph(first))
+    rerender(graph(second)) // same model — the listener effect does not re-run
+    vi.spyOn(GraphRenderer.prototype, 'findNode').mockReturnValue(
+      m.nodes.find((n) => n.kind === 'category' && n.id === 7)!,
+    )
+    fireEvent.click(canvas())
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledWith(7)
+  })
+
+  it('labels top-level category tooltips instead of repeating the name', () => {
+    const p3: ApiCollectionsGraph = {
+      order: 3,
+      collections: PAYLOAD.collections,
+      images: [],
+      categories: [
+        { id: 7, label: 'Bones', path: 'Bones', image_count: 1 },
+        { id: 8, label: 'Femur', path: 'Bones › Femur', image_count: 1 },
+      ],
+    }
+    const m = buildGraphModel(p3, new Set([1, 2]), false)
+    render(
+      <CollectionsGraph
+        model={m}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        simulate={false}
+      />,
+    )
+    const findSpy = vi.spyOn(GraphRenderer.prototype, 'findNode')
+    findSpy.mockReturnValue(m.nodes.find((n) => n.kind === 'category' && n.id === 7)!)
+    fireEvent.mouseMove(canvas())
+    expect(screen.getByTestId('graph-tooltip')).toHaveTextContent('Top-level category')
+    expect(screen.getByTestId('graph-tooltip')).not.toHaveTextContent('Bones › Bones')
+    findSpy.mockReturnValue(m.nodes.find((n) => n.kind === 'category' && n.id === 8)!)
+    fireEvent.mouseMove(canvas())
+    expect(screen.getByTestId('graph-tooltip')).toHaveTextContent('Bones › Femur')
+  })
+
   it('does nothing when the click lands on empty space', () => {
     const { onOpenCollection, onOpenImage } = renderGraph()
     vi.spyOn(GraphRenderer.prototype, 'findNode').mockReturnValue(null)
@@ -242,6 +340,8 @@ describe('CollectionsGraph', () => {
       />,
     )
     expect(screen.getByText('No collections match the current filters.')).toBeInTheDocument()
+    expect(screen.queryByTestId('graph-legend')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('graph-hint')).not.toBeInTheDocument()
   })
 })
 
@@ -321,5 +421,275 @@ describe('GraphRenderer.findNode', () => {
     // Image allowance: 2/sqrt(10) + 12/10 ≈ 1.83; click 2.1 units away.
     expect(r.findNode(...px(t, 2.9, 0), t)).toBeNull()
     expect(r.findNode(...px(t, 4.2, 0), t)?.id).toBe(2)
+  })
+})
+
+describe('GraphRenderer hub label placement', () => {
+  // draw() paints through every palette field — use the real palette.
+  const palette = paletteFrom('light', getThemePalette('light'))
+  // Recording ctx: captures fillText args plus the textAlign/font in effect.
+  function recordingCtx() {
+    const drawn: { lbl: string; x: number; y: number; align: string; font: string }[] = []
+    const state: { textAlign: string; font: string } = { textAlign: 'left', font: '' }
+    const ctx = new Proxy(state, {
+      get(t, prop) {
+        if (prop === 'measureText') return () => ({ width: 100 })
+        if (prop === 'fillText')
+          return (lbl: string, x: number, y: number) =>
+            drawn.push({ lbl, x, y, align: t.textAlign, font: t.font })
+        if (prop in t) return t[prop as keyof typeof t]
+        return () => undefined
+      },
+      set(t, prop, v) {
+        ;(t as Record<string | symbol, unknown>)[prop] = v
+        return true
+      },
+    })
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, drawn }
+  }
+
+  const hubModel = (x: number) => ({
+    nodes: [
+      {
+        i: 0,
+        kind: 'hub' as const,
+        id: Number.NaN,
+        label: 'A very long collection name',
+        r: 4,
+        x,
+        y: 300,
+      },
+    ],
+    edges: [],
+    stats: {
+      collections: 0,
+      images: 0,
+      shared: 0,
+      categories: 0,
+      unconnectedCategories: 0,
+      order: 1,
+    },
+  })
+
+  const drawState = {
+    transform: zoomIdentity,
+    hover: null,
+    selected: null,
+    selectedId: null,
+    searchDim: new Set(),
+    searchMatch: new Set(),
+    searchActive: false,
+  }
+
+  it('draws the oversized hub label on the left when only that side has room', () => {
+    const { ctx, drawn } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, hubModel(790), palette)
+    r.draw(drawState)
+
+    // sr = 4 at k=1 → x = 790 - 4 - 3 = 783, right-aligned text.
+    const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
+    expect(hub.align).toBe('right')
+    expect(hub.x).toBe(783)
+    // baseline = sy + hfs/3 = 300 + 14/3
+    expect(hub.y).toBe(300 + 14 / 3)
+  })
+
+  it('keeps the label on the right when it fits there', () => {
+    const { ctx, drawn } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, hubModel(400), palette)
+    r.draw(drawState)
+
+    const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
+    expect(hub.align).toBe('left')
+    expect(hub.x).toBe(400 + 4 + 3)
+  })
+})
+
+describe('labelPx', () => {
+  it('scales by √k between the 12px floor and the 32px cap', () => {
+    expect(labelPx(12, 1)).toBe(12)
+    expect(labelPx(12, 0.25)).toBe(12) // floor
+    expect(labelPx(12, 4)).toBe(24)
+    expect(labelPx(12, 24)).toBe(26) // cap
+    expect(labelPx(12, 0.1)).toBe(12)
+  })
+})
+
+describe('GraphRenderer label zoom scaling', () => {
+  const palette = paletteFrom('light', getThemePalette('light'))
+
+  function recordingCtx() {
+    const drawn: { lbl: string; font: string }[] = []
+    const state: { font: string } = { font: '' }
+    const ctx = new Proxy(state, {
+      get(t, prop) {
+        if (prop === 'measureText') return () => ({ width: 10 })
+        if (prop === 'fillText') return (lbl: string) => drawn.push({ lbl, font: t.font })
+        if (prop in t) return t[prop as keyof typeof t]
+        return () => undefined
+      },
+      set(t, prop, v) {
+        ;(t as Record<string | symbol, unknown>)[prop] = v
+        return true
+      },
+    })
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, drawn }
+  }
+
+  const model = {
+    nodes: [
+      { i: 0, kind: 'hub' as const, id: Number.NaN, label: 'Hub', r: 4, x: 0, y: 0 },
+      { i: 1, kind: 'collection' as const, id: 2, label: 'Coll 2', r: 6, x: 50, y: 50 },
+    ],
+    edges: [],
+    stats: {
+      collections: 1,
+      images: 0,
+      shared: 0,
+      categories: 0,
+      unconnectedCategories: 0,
+      order: 1,
+    },
+  }
+
+  function drawFont(t: ReturnType<typeof zoomIdentity.scale>): string {
+    const { ctx, drawn } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, model, palette)
+    r.setLabelThresholds({ collection: 0 })
+    r.draw({
+      transform: t,
+      hover: null,
+      selected: null,
+      selectedId: null,
+      searchDim: new Set(),
+      searchMatch: new Set(),
+      searchActive: false,
+    })
+    return drawn.find((d) => d.lbl === 'Coll 2')!.font
+  }
+
+  it('grows the collection label font with √k', () => {
+    expect(drawFont(zoomIdentity)).toBe('12px Roboto,Arial')
+    expect(drawFont(zoomIdentity.scale(4))).toBe('24px Roboto,Arial')
+  })
+})
+
+describe('GraphRenderer shared-image ring', () => {
+  const palette = paletteFrom('light', getThemePalette('light'))
+
+  // Recording ctx: captures each arc() with the strokeStyle/lineWidth in
+  // effect — both are set before beginPath, so the arc-time values are the
+  // stroke-time values for the batch.
+  function recordingCtx() {
+    const arcs: { x: number; y: number; r: number; strokeStyle: string; lineWidth: number }[] = []
+    const state: { strokeStyle: string; lineWidth: number } = {
+      strokeStyle: '',
+      lineWidth: 1,
+    }
+    const ctx = new Proxy(state, {
+      get(t, prop) {
+        if (prop === 'measureText') return () => ({ width: 10 })
+        if (prop === 'arc')
+          return (x: number, y: number, r: number) =>
+            arcs.push({ x, y, r, strokeStyle: t.strokeStyle, lineWidth: t.lineWidth })
+        if (prop in t) return t[prop as keyof typeof t]
+        return () => undefined
+      },
+      set(t, prop, v) {
+        ;(t as Record<string | symbol, unknown>)[prop] = v
+        return true
+      },
+    })
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, arcs }
+  }
+
+  const SHARED = { x: 30, y: 30 }
+  const PLAIN = { x: -30, y: -30 }
+  const model = {
+    nodes: [
+      { i: 0, kind: 'hub' as const, id: Number.NaN, label: 'Hub', r: 4, x: 0, y: 0 },
+      { i: 1, kind: 'collection' as const, id: 2, label: 'Coll 2', r: 6, x: 50, y: 50 },
+      {
+        i: 2,
+        kind: 'image' as const,
+        id: 10,
+        label: 'shared',
+        r: 4,
+        x: SHARED.x,
+        y: SHARED.y,
+        shared: true,
+        imageCollectionIds: [2, 3],
+      },
+      {
+        i: 3,
+        kind: 'image' as const,
+        id: 11,
+        label: 'plain',
+        r: 4,
+        x: PLAIN.x,
+        y: PLAIN.y,
+        shared: false,
+        imageCollectionIds: [2],
+      },
+    ],
+    edges: [],
+    stats: {
+      collections: 1,
+      images: 2,
+      shared: 1,
+      categories: 0,
+      unconnectedCategories: 0,
+      order: 1,
+    },
+  }
+
+  function drawArcs(t: ReturnType<typeof zoomIdentity.scale>) {
+    const { ctx, arcs } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, model, palette)
+    r.draw({
+      transform: t,
+      hover: null,
+      selected: null,
+      selectedId: null,
+      searchDim: new Set(),
+      searchMatch: new Set(),
+      searchActive: false,
+    })
+    return arcs.filter((a) => a.strokeStyle === palette.imageSharedStroke)
+  }
+
+  it.each([1, 4])('draws an inset ring only under the shared image at k=%i', (k) => {
+    const ringArcs = drawArcs(zoomIdentity.scale(k))
+    const lw = 8 / 6 / Math.sqrt(k)
+
+    // (a) shared image: inset ring, outer edge coincides with the fill edge.
+    const shared = ringArcs.filter((a) => a.x === SHARED.x && a.y === SHARED.y)
+    expect(shared).toHaveLength(1)
+    expect(shared[0].r).toBeCloseTo(4 / Math.sqrt(k) - lw / 2, 5)
+    expect(shared[0].r + shared[0].lineWidth / 2).toBeCloseTo(4 / Math.sqrt(k), 5)
+    expect(shared[0].lineWidth).toBeCloseTo(lw, 5)
+
+    // (b) plain image: no arc under the shared-stroke style at all.
+    expect(ringArcs.filter((a) => a.x === PLAIN.x && a.y === PLAIN.y)).toHaveLength(0)
   })
 })

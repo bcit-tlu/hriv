@@ -291,8 +291,11 @@ returned by the API (UX only — the backend re-checks).
   persist per user).
 - **Given** the Graph view, **Then** the stats caption, order toggle,
   Shared-only toggle and an outlined **Fit graph** button sit in a toolbar
-  row above the canvas (no control overlays the drawing area); legend, empty
-  state and tooltip stay inside the canvas.
+  row above the canvas (no control overlays the drawing area); the legend is
+  always expanded inside the canvas ("Node size reflects image count"
+  subtitle), a "Scroll or pinch to zoom, and drag to pan." hint sits
+  right-aligned just below the canvas, node labels grow/shrink with zoom
+  (12px floor), and the empty state and tooltip stay inside the canvas.
 - **Given** the Graph View dialog, **When** the user switches the order,
   **Then** the rebuilt model refits the view (animated); the page-level graph
   keeps its transform on model rebuilds.

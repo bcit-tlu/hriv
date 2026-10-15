@@ -146,21 +146,22 @@ describe('CollectionGraphDialog', () => {
     renderDialog(fetchGraph)
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(1, 1))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand legend' }))
     expect(await screen.findByText('This collection (centre)')).toBeInTheDocument()
+    expect(screen.getByText('Node size reflects image count')).toBeInTheDocument()
+    expect(screen.getByTestId('graph-hint')).toHaveTextContent(
+      'Scroll or pinch to zoom, and drag to pan.',
+    )
     // Member images are the spokes at every order, so the image rows show
     // even at 1st; related-collection rows wait for 2nd.
     expect(screen.getByText('Image')).toBeInTheDocument()
     expect(screen.getByText('Shared image (in 2+ collections)')).toBeInTheDocument()
-    expect(screen.queryByText('Related collection — size reflects image count')).toBeNull()
-    expect(screen.queryByText('Synchronized collection')).toBeNull()
+    expect(screen.queryByText('Related sequence collection')).toBeNull()
+    expect(screen.queryByText('Related synchronized collection')).toBeNull()
 
     fireEvent.click(await screen.findByRole('button', { name: '2nd order' }))
     await screen.findByText(/1 related collection/)
-    expect(
-      await screen.findByText('Related collection — size reflects image count'),
-    ).toBeInTheDocument()
-    expect(screen.getByText('Synchronized collection')).toBeInTheDocument()
+    expect(await screen.findByText('Related sequence collection')).toBeInTheDocument()
+    expect(screen.getByText('Related synchronized collection')).toBeInTheDocument()
   })
 
   it('refits the graph when the order toggle rebuilds the model', async () => {
@@ -252,6 +253,27 @@ describe('CollectionGraphDialog', () => {
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith(1, 2))
     expect(await screen.findByText('Skull atlas — graph')).toBeInTheDocument()
     expect(screen.getByTestId('collection-graph-crumbs')).not.toHaveTextContent('Pelvis set')
+  })
+
+  it('category click closes the dialog and navigates via onOpenCategory', async () => {
+    const p3: ApiCollectionGraph = {
+      order: 3,
+      collection: collNode(1, 'Skull atlas'),
+      images: [{ id: 10, name: 'Skull atlas Image 1', collection_ids: [1], category_id: 7 }],
+      related_collections: [],
+      categories: [{ id: 7, label: 'Bones', path: 'Bones', image_count: 1 }],
+    }
+    const onOpenCategory = vi.fn()
+    const fetchGraph = vi.fn<FetchGraph>().mockResolvedValue(p3)
+    const { props } = renderDialog(fetchGraph, { onOpenCategory })
+    await waitFor(() => expect(fetchGraph).toHaveBeenCalled())
+
+    spyFind((n) => n.kind === 'category' && n.id === 7)
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+      expect(onOpenCategory).toHaveBeenCalledWith(7)
+    })
+    expect(props.onClose).toHaveBeenCalled()
   })
 
   it('image click closes the dialog and opens the image via the page handler', async () => {

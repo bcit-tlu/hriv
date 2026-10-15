@@ -16,9 +16,31 @@ export function graphSpineKey(model: GraphModel): string {
     .join(',')
 }
 
-/** Collection radius ∝ √visible-image-count, clamped like the prototype. */
+/** Image count at which node radii reach their maximum. */
+const RADIUS_COUNT_CAP = 64
+
+/**
+ * Floored logarithmic radius: `min` at 0 images rising along ln(1+n) to
+ * `max` at RADIUS_COUNT_CAP images (flat beyond). Compressed on purpose —
+ * the legend only promises "bigger means more", not proportionality (#1653).
+ */
+export function scaledRadius(imageCount: number, min: number, max: number): number {
+  const t = Math.min(1, Math.log1p(Math.max(0, imageCount)) / Math.log1p(RADIUS_COUNT_CAP))
+  return min + (max - min) * t
+}
+
+/** Collection node radius: 6 → 14. */
 export function collectionRadius(imageCount: number): number {
-  return Math.max(4, Math.min(14, Math.sqrt(imageCount) * 1.5))
+  return scaledRadius(imageCount, 6, 14)
+}
+
+/**
+ * Category node radius: same curve as collections so sizes compare
+ * across kinds — a small category must never look bigger than a larger
+ * collection.
+ */
+export function categoryRadius(imageCount: number): number {
+  return scaledRadius(imageCount, 6, 14)
 }
 
 /**
@@ -59,7 +81,7 @@ export function buildGraphModel(
     kind: 'hub',
     id: Number.NaN,
     label: 'Collections',
-    r: 40,
+    r: 20,
     x: 0,
     y: 0,
   }
@@ -103,7 +125,9 @@ export function buildGraphModel(
         kind: 'image',
         id: img.id,
         label: img.name,
-        r: isShared ? 4 : 2.5,
+        // one radius for every image — the shared ring is drawn inset
+        // so the footprint is identical (#1656 follow-up)
+        r: 4,
         // start on a small ring around the first collection — the sim
         // begins near the solution instead of exploding images outward
         x: (first?.x ?? 0) + Math.cos(a) * rr,
@@ -132,7 +156,7 @@ export function buildGraphModel(
         kind: 'category',
         id: cat.id,
         label: cat.label,
-        r: Math.max(6, Math.min(18, Math.sqrt(cat.image_count) * 2)),
+        r: categoryRadius(cat.image_count),
         x: Math.cos(ang) * rr,
         y: Math.sin(ang) * rr,
         category: cat,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildCollectionGraphModel } from '../src/collectionsGraph/buildCollectionModel'
+import { collectionRadius } from '../src/collectionsGraph/buildModel'
 import type { ApiCollectionGraph } from '../src/api'
 
 function coll(id: number, name = `Collection ${id}`, imageCount = 4) {
@@ -79,6 +80,23 @@ describe('buildCollectionGraphModel', () => {
     expect(imgEdges).toContainEqual({ source: i11.i, target: rel7.i, kind: 'image' })
     // Related collection radii come from collectionRadius (√image count).
     expect(rel5.r).toBeGreaterThanOrEqual(4)
+  })
+
+  it('sizes the hub on the collectionRadius scale like related collections (#1653)', () => {
+    const p = payload({
+      order: 2,
+      collection: coll(1, 'Skull atlas', 6),
+      images: [img(10, [1, 5])],
+      related_collections: [coll(5, 'Pelvis set', 5)],
+    })
+    const m = buildCollectionGraphModel(p)
+
+    const hub = m.nodes[0]
+    expect(hub.r).toBe(collectionRadius(6))
+    // A related collection with one fewer image sits within 1px of the
+    // hub — the viewed collection no longer dwarfs its neighbours.
+    const rel5 = m.nodes.find((n) => n.kind === 'collection' && n.id === 5)!
+    expect(Math.abs(hub.r - rel5.r)).toBeLessThanOrEqual(1)
   })
 
   it('order 3 adds the hub members’ categories with image→category edges', () => {
