@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -80,19 +80,19 @@ function applyTarget(viewer: OpenSeadragon.Viewer, state: ViewportState): void {
   viewport.setRotation(state.rotation ?? 0, true)
 }
 
+const PORTRAIT_QUERY = '(orientation: portrait)'
+function subscribePortrait(onChange: () => void): () => void {
+  const mql = window.matchMedia?.(PORTRAIT_QUERY)
+  if (!mql) return () => {}
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+function readPortrait(): boolean {
+  return window.matchMedia?.(PORTRAIT_QUERY)?.matches ?? false
+}
 /** Portrait detector — jsdom has no matchMedia, so the query is optional. */
 function usePortrait(): boolean {
-  const [portrait, setPortrait] = useState(
-    () => window.matchMedia?.('(orientation: portrait)')?.matches ?? false,
-  )
-  useEffect(() => {
-    const mql = window.matchMedia?.('(orientation: portrait)')
-    if (!mql) return
-    const onChange = (event: MediaQueryListEvent) => setPortrait(event.matches)
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
-  return portrait
+  return useSyncExternalStore(subscribePortrait, readPortrait, () => false)
 }
 
 export default function SynchronizedCollectionViewer({
