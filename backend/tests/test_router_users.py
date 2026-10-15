@@ -927,11 +927,12 @@ async def test_delete_user_co_owned_collection_survives() -> None:
     assert user in deleted
 
 
-async def test_delete_user_unfiled_sole_owned_dies_without_bump(
+async def test_delete_user_unfiled_sole_owned_dies_and_bumps(
     mock_bump_scopes: AsyncMock,
 ) -> None:
-    """An unfiled sole-owned collection still dies, but no Browse tile is
-    affected so the ETag stays put."""
+    """An unfiled sole-owned collection dies with the user — no Browse tile
+    is affected (no scope bump), but it leaves the collections list so the
+    ETag still advances (#1619)."""
     admin = _make_user(id=99, role="admin")
     user = _make_user(id=1)
     col = _collection_for_delete([1], category_id=None)
@@ -943,7 +944,7 @@ async def test_delete_user_unfiled_sole_owned_dies_without_bump(
 
     await delete_user(1, admin, db)
     mock_bump_scopes.assert_not_awaited()
-    users_router.bump_browse_revision.assert_not_awaited()
+    users_router.bump_browse_revision.assert_awaited_once()
     deleted = [c.args[0] for c in db.delete.await_args_list]
     assert col in deleted and user in deleted
 
@@ -968,7 +969,7 @@ async def test_delete_user_mixed_filed_and_unfiled_sole_owned_bumps_filed_scope(
     assert filed in deleted and unfiled in deleted and user in deleted
 
 
-async def test_delete_user_without_filed_collections_skips_bump() -> None:
+async def test_delete_user_without_collections_skips_bump() -> None:
     admin = _make_user(id=99, role="admin")
     user = _make_user(id=1)
     db = AsyncMock()

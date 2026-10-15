@@ -506,7 +506,15 @@ describe('useCollectionsData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     fetchCollectionsMock.mockResolvedValue([])
-    fetchCollectionsPagedMock.mockResolvedValue({ items: [], total: 0 })
+    // Both list modes go through fetchCollectionsPaged (#1619); delegate to
+    // the fetchCollections stub so the existing full-mode mocks and
+    // call assertions still describe what the hook fetched.
+    fetchCollectionsPagedMock.mockImplementation(async (filters, init) => {
+      const items = await (init === undefined
+        ? fetchCollectionsMock(filters)
+        : fetchCollectionsMock(filters, init))
+      return { items, total: items.length, etag: null, notModified: false }
+    })
     fetchCollectionOwnersMock.mockResolvedValue([])
     localStorage.clear()
   })
@@ -994,7 +1002,7 @@ describe('useCollectionsData', () => {
     expect(result.current.collections.map((c) => c.id)).toEqual([3])
   })
 
-  it('full mode reports the row count as total (#1631)', async () => {
+  it('full mode reports the row count as total and goes through fetchCollectionsPaged (#1631/#1619)', async () => {
     fetchCollectionsMock.mockResolvedValue([
       makeApiCollectionSummary({ id: 1 }),
       makeApiCollectionSummary({ id: 2 }),
@@ -1002,7 +1010,7 @@ describe('useCollectionsData', () => {
     const { result } = renderData()
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.total).toBe(2)
-    expect(fetchCollectionsPagedMock).not.toHaveBeenCalled()
+    expect(fetchCollectionsPagedMock).toHaveBeenCalled()
   })
 
   describe('paged list mode (#1631)', () => {
@@ -1015,6 +1023,8 @@ describe('useCollectionsData', () => {
       fetchCollectionsPagedMock.mockResolvedValue({
         items: [makeApiCollectionSummary({ id: 1 })],
         total: 40,
+        etag: null,
+        notModified: false,
       })
       const { result } = renderPaged()
       await waitFor(() => expect(result.current.loading).toBe(false))
@@ -1037,6 +1047,8 @@ describe('useCollectionsData', () => {
       fetchCollectionsPagedMock.mockResolvedValue({
         items: [makeApiCollectionSummary({ id: 7 })],
         total: 100,
+        etag: null,
+        notModified: false,
       })
       const { result } = renderPaged()
       await waitFor(() => expect(result.current.loading).toBe(false))
@@ -1116,6 +1128,8 @@ describe('useCollectionsData', () => {
           makeApiCollectionSummary({ id: 2, name: 'B', version: 1 }),
         ],
         total: 2,
+        etag: null,
+        notModified: false,
       })
       updateCollectionMock.mockResolvedValueOnce(
         makeApiCollection({ id: 2, name: 'B renamed', version: 2 }),
@@ -1139,6 +1153,8 @@ describe('useCollectionsData', () => {
           makeApiCollectionSummary({ id: 2, name: 'B', version: 1 }),
         ],
         total: 2,
+        etag: null,
+        notModified: false,
       })
       const { result } = renderPaged()
       await waitFor(() => expect(result.current.collections).toHaveLength(2))
@@ -1165,6 +1181,8 @@ describe('useCollectionsData', () => {
       fetchCollectionsPagedMock.mockResolvedValue({
         items: [makeApiCollectionSummary({ id: 1 })],
         total: 1,
+        etag: null,
+        notModified: false,
       })
       createCollectionMock.mockResolvedValueOnce(
         makeApiCollection({ id: 42, name: 'Skulls', type: 'sequence' }),
@@ -1190,6 +1208,8 @@ describe('useCollectionsData', () => {
       fetchCollectionsPagedMock.mockResolvedValue({
         items: [makeApiCollectionSummary({ id: 1 })],
         total: 60,
+        etag: null,
+        notModified: false,
       })
       const { result } = renderPaged({ backgroundRefresh: true })
       await act(async () => {
@@ -1222,9 +1242,19 @@ describe('useCollectionsData', () => {
 
     it('steps back to the last page when the server returns an empty page with rows behind', async () => {
       fetchCollectionsPagedMock
-        .mockResolvedValueOnce({ items: [makeApiCollectionSummary({ id: 1 })], total: 30 })
-        .mockResolvedValueOnce({ items: [], total: 25 })
-        .mockResolvedValueOnce({ items: [makeApiCollectionSummary({ id: 9 })], total: 25 })
+        .mockResolvedValueOnce({
+          items: [makeApiCollectionSummary({ id: 1 })],
+          total: 30,
+          etag: null,
+          notModified: false,
+        })
+        .mockResolvedValueOnce({ items: [], total: 25, etag: null, notModified: false })
+        .mockResolvedValueOnce({
+          items: [makeApiCollectionSummary({ id: 9 })],
+          total: 25,
+          etag: null,
+          notModified: false,
+        })
       const { result } = renderPaged()
       await waitFor(() => expect(result.current.loading).toBe(false))
 
@@ -1279,6 +1309,68 @@ describe('useCollectionsData', () => {
           expect.objectContaining({ sort: 'visibility', direction: 'desc' }),
         ),
       )
+    })
+
+    it("sends no If-None-Match on a key's first load, then revalidates with the stored ETag (#1619)", async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 1 })],
+        total: 1,
+        etag: 'W/"collections-7-abc"',
+        notModified: false,
+      })
+      const { result, rerender } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      // First load of a key is unconditional — no third argument.
+      expect(fetchCollectionsPagedMock.mock.calls[0]).toHaveLength(1)
+
+      rerender({ refreshToken: 1 })
+      await waitFor(() => expect(fetchCollectionsPagedMock).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(fetchCollectionsPagedMock.mock.calls[1][2]).toEqual({
+        ifNoneMatch: 'W/"collections-7-abc"',
+      })
+    })
+
+    it('a 304 keeps the cached rows and total and stays non-error (#1619)', async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 1 })],
+        total: 7,
+        etag: 'W/"collections-7-abc"',
+        notModified: false,
+      })
+      const { result, rerender } = renderPaged()
+      await waitFor(() => expect(result.current.collections).toHaveLength(1))
+
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [],
+        total: 0,
+        etag: 'W/"collections-7-abc"',
+        notModified: true,
+      })
+      rerender({ refreshToken: 1 })
+      await waitFor(() => expect(fetchCollectionsPagedMock).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      expect(result.current.collections.map((c) => c.id)).toEqual([1])
+      expect(result.current.total).toBe(7)
+      expect(result.current.error).toBeNull()
+    })
+
+    it('sends no If-None-Match for an uncached key (#1619)', async () => {
+      fetchCollectionsPagedMock.mockResolvedValue({
+        items: [makeApiCollectionSummary({ id: 1 })],
+        total: 30,
+        etag: 'W/"collections-7-abc"',
+        notModified: false,
+      })
+      const { result } = renderPaged()
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      act(() => result.current.setPage(1))
+      await waitFor(() => expect(fetchCollectionsPagedMock).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      // Page 2 was never cached — its load is unconditional.
+      expect(fetchCollectionsPagedMock.mock.calls[1]).toHaveLength(1)
+      expect(result.current.collections.map((c) => c.id)).toEqual([1])
     })
   })
 

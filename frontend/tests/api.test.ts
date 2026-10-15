@@ -1065,9 +1065,64 @@ describe('Collections API', () => {
     const result = await fetchCollectionsPaged({ page: 1, page_size: 5 })
     expect(result.items).toEqual(rows)
     expect(result.total).toBe(42)
+    expect(result.notModified).toBe(false)
+    expect(result.etag).toBeNull()
     const qs = new URL(mockFetch.mock.calls[0][0] as string, 'http://x').searchParams
     expect(qs.get('page')).toBe('1')
     expect(qs.get('page_size')).toBe('5')
+  })
+
+  it('fetchCollectionsPaged defaults to no-store and returns the ETag (#1619)', async () => {
+    const rows = [makeApiCollectionSummary({ id: 1 })]
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get: (k: string) =>
+            k === 'X-Total-Count'
+              ? '1'
+              : k.toLowerCase() === 'etag'
+                ? 'W/"collections-7-abc"'
+                : null,
+        },
+        json: () => Promise.resolve(rows),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+    const result = await fetchCollectionsPaged()
+    expect(result.etag).toBe('W/"collections-7-abc"')
+    expect(result.notModified).toBe(false)
+    const init = mockFetch.mock.calls[0][1] as RequestInit
+    expect(init.cache).toBe('no-store')
+    expect((init.headers as Record<string, string>)['if-none-match']).toBeUndefined()
+  })
+
+  it('fetchCollectionsPaged sends If-None-Match and maps a 304 (#1619)', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 304,
+        statusText: 'Not Modified',
+        headers: {
+          get: (k: string) => (k.toLowerCase() === 'etag' ? 'W/"collections-8-def"' : null),
+        },
+        json: () => Promise.reject(new Error('no body')),
+        text: () => Promise.resolve(''),
+      }),
+    )
+    const result = await fetchCollectionsPaged({}, undefined, {
+      ifNoneMatch: 'W/"collections-8-def"',
+    })
+    expect(result).toEqual({
+      items: [],
+      total: 0,
+      etag: 'W/"collections-8-def"',
+      notModified: true,
+    })
+    const init = mockFetch.mock.calls[0][1] as RequestInit
+    expect((init.headers as Record<string, string>)['if-none-match']).toBe('W/"collections-8-def"')
   })
 
   it('fetchCollectionsPaged falls back to the row count when the header is absent or NaN (#1631)', async () => {

@@ -4,7 +4,7 @@ ownership transfer / orphan handling."""
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 from fastapi import FastAPI, HTTPException, Response
@@ -290,6 +290,11 @@ def _no_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         collections_router, "bump_browse_revision", AsyncMock(return_value=1)
+    )
+    # The list endpoint reads the browse revision for its ETag (#1619);
+    # tests that assert on it install their own value.
+    monkeypatch.setattr(
+        collections_router, "get_browse_revision", AsyncMock(return_value=1)
     )
 
 
@@ -721,10 +726,11 @@ async def test_create_private_collection_any_role_owner_is_caller(role: str) -> 
     db.commit.assert_awaited_once()
     if curator:
         collections_router.bump_scopes.assert_awaited_once()
-        collections_router.bump_browse_revision.assert_awaited_once()
     else:
         collections_router.bump_scopes.assert_not_awaited()
-        collections_router.bump_browse_revision.assert_not_awaited()
+    # Unconditional since #1619 — an unfiled collection is still a new row
+    # in GET /api/collections.
+    collections_router.bump_browse_revision.assert_awaited_once()
 
 
 @pytest.mark.parametrize("role", ["admin", "instructor"])
@@ -772,7 +778,9 @@ async def test_create_non_curator_collection_is_unfiled(role: str) -> None:
     )
     assert out.category_id is None
     collections_router.bump_scopes.assert_not_awaited()
-    collections_router.bump_browse_revision.assert_not_awaited()
+    # Unfiled collections still appear in the list — the bump is
+    # unconditional since #1619.
+    collections_router.bump_browse_revision.assert_awaited_once()
 
 
 @pytest.mark.parametrize("collection_type", ("sequence", "synchronized"))
@@ -2412,14 +2420,16 @@ async def test_move_uncategorized_into_category() -> None:
     assert collections_router.bump_scopes.call_args.args[1] == {9}
 
 
-async def test_move_same_category_is_noop_without_bumps() -> None:
+async def test_move_same_category_skips_scope_bump_only() -> None:
     col = _collection(1, "public", user_id=10, category_id=3)
     cat = SimpleNamespace(id=3)
     db = _move_db(collection=col, category=cat)
     out = await move_collection(1, _move(3), _user("admin"), db=db)
     assert col.category_id == 3
     collections_router.bump_scopes.assert_not_awaited()
-    collections_router.bump_browse_revision.assert_not_awaited()
+    # The CAS still ran and advanced version/updated_at, which the list
+    # ETag covers — the browse bump is unconditional (#1619).
+    collections_router.bump_browse_revision.assert_awaited_once()
     # The version CAS still runs so stale tokens get a 409.
     assert col.version == 4 and out.version == 4
 
@@ -3574,3 +3584,182 @@ async def test_graph_order3_count_filters_active_for_students_only() -> None:
     db = _graph_db(categories=categories, counts={10: 1})
     await collections_graph(_user("student", id=2), order=3, db=db)
     assert "images.active" in _count_sql(db)
+
+
+# ── list ETag / 304 (#1619) ──────────────────────────────
+
+
+@pytest.fixture
+def _collections_list_instruments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[MagicMock, MagicMock]:
+    """Swap the OTel counter/histogram for mocks (#1619)."""
+    requests = MagicMock()
+    duration = MagicMock()
+    monkeypatch.setattr(
+        collections_router, "_collections_list_requests", requests
+    )
+    monkeypatch.setattr(
+        collections_router, "_collections_list_build_duration", duration
+    )
+    return requests, duration
+
+
+def _list_request(if_none_match: str | None = None) -> MagicMock:
+    request = MagicMock()
+    request.headers = (
+        {"if-none-match": if_none_match} if if_none_match is not None else {}
+    )
+    return request
+
+
+async def _list_etag_of(user: User, **kwargs) -> str:
+    """Run the list endpoint and return the emitted ETag."""
+    response = Response()
+    kwargs.setdefault("db", _mock_db([]))
+    await list_collections(
+        user, request=_list_request(), response=response, **kwargs
+    )
+    return response.headers["ETag"]
+
+
+async def test_list_collections_sets_etag_and_records_full(
+    _collections_list_instruments: tuple[MagicMock, MagicMock],
+) -> None:
+    requests_mock, duration_mock = _collections_list_instruments
+    collections_router.get_browse_revision.return_value = 7
+    response = Response()
+    cols = [_collection(1, "public")]
+
+    out = await list_collections(
+        _user("admin"),
+        request=_list_request(),
+        response=response,
+        db=_mock_db(cols),
+    )
+
+    assert [c.id for c in out] == [1]
+    assert response.headers["ETag"].startswith('W/"collections-7-')
+    assert response.headers["Cache-Control"] == "private, no-cache"
+    assert response.headers["X-Browse-Revision"] == "7"
+    requests_mock.add.assert_called_once_with(1, {"outcome": "full"})
+    duration_mock.record.assert_called_once()
+
+
+async def test_list_collections_304_short_circuits(
+    _collections_list_instruments: tuple[MagicMock, MagicMock],
+) -> None:
+    """A matching If-None-Match returns 304 before the collection select."""
+    requests_mock, duration_mock = _collections_list_instruments
+    collections_router.get_browse_revision.return_value = 7
+    user = _user("admin")
+    etag = await _list_etag_of(user)
+    assert etag.startswith('W/"collections-7-')
+
+    db = _mock_db([_collection(1, "public")])
+    result = await list_collections(
+        user, request=_list_request(etag), response=Response(), db=db
+    )
+
+    assert result.status_code == 304
+    assert result.headers["ETag"] == etag
+    assert result.headers["Cache-Control"] == "private, no-cache"
+    assert result.headers["X-Browse-Revision"] == "7"
+    # The revision lookup is stubbed — no collection query may run.
+    db.execute.assert_not_awaited()
+    assert requests_mock.add.call_args_list == [
+        call(1, {"outcome": "full"}),
+        call(1, {"outcome": "not_modified"}),
+    ]
+    duration_mock.record.assert_called_once()
+
+
+async def test_list_collections_304_on_star(
+    _collections_list_instruments: tuple[MagicMock, MagicMock],
+) -> None:
+    requests_mock, _duration_mock = _collections_list_instruments
+    collections_router.get_browse_revision.return_value = 3
+    db = _mock_db([])
+
+    result = await list_collections(
+        _user("admin"), request=_list_request("*"), db=db
+    )
+
+    assert result.status_code == 304
+    db.execute.assert_not_awaited()
+    requests_mock.add.assert_called_once_with(1, {"outcome": "not_modified"})
+
+
+async def test_list_collections_etag_varies_by_query() -> None:
+    collections_router.get_browse_revision.return_value = 7
+    user = _user("admin")
+    base = await _list_etag_of(user)
+    assert await _list_etag_of(user, mine=True) != base
+    assert await _list_etag_of(user, page=2, page_size=5) != base
+    assert await _list_etag_of(user, q=" Foo ") != base
+    # ``q`` is normalized (strip + casefold) into the hash.
+    assert await _list_etag_of(user, q="foo") == await _list_etag_of(
+        user, q="FOO "
+    )
+    # Revision is part of the tag.
+    collections_router.get_browse_revision.return_value = 8
+    assert await _list_etag_of(user) != base
+
+
+async def test_list_collections_etag_varies_by_viewer() -> None:
+    collections_router.get_browse_revision.return_value = 7
+    etag_a = await _list_etag_of(_user("admin", id=1))
+    assert await _list_etag_of(_user("admin", id=2)) != etag_a
+    assert (
+        await _list_etag_of(_user("instructor", id=1, programs=[3]))
+        != etag_a
+    )
+    assert (
+        await _list_etag_of(_user("instructor", id=1, programs=[4]))
+        != await _list_etag_of(_user("instructor", id=1, programs=[3]))
+    )
+    assert (
+        await _list_etag_of(_user("student", id=1, groups=[2]))
+        != await _list_etag_of(_user("student", id=1))
+    )
+
+
+def test_etag_matches_uses_weak_comparison() -> None:
+    """RFC 9110: ``If-None-Match`` matches weakly — a client sending the
+    strong form (no ``W/``) must match our weak tag, and vice versa."""
+    weak = 'W/"collections-7-abc"'
+    assert collections_router._etag_matches('*', weak)
+    assert collections_router._etag_matches(weak, weak)
+    # Strong form from the client still matches the weak tag.
+    assert collections_router._etag_matches('"collections-7-abc"', weak)
+    # Comma-separated lists match on any entry.
+    assert collections_router._etag_matches(
+        f'"other", {weak}', weak
+    )
+    assert collections_router._etag_matches(
+        'W/"collections-7-abc", "x"', '"collections-7-abc"'
+    )
+    # A different opaque value never matches.
+    assert not collections_router._etag_matches(
+        '"collections-7-different"', weak
+    )
+    assert not collections_router._etag_matches('', weak)
+
+
+async def test_list_collections_304_on_strong_if_none_match(
+    _collections_list_instruments: tuple[MagicMock, MagicMock],
+) -> None:
+    """A client that strips the ``W/`` prefix still gets 304 (weak
+    comparison, RFC 9110)."""
+    collections_router.get_browse_revision.return_value = 7
+    user = _user("admin")
+    etag = await _list_etag_of(user)
+    strong = etag.removeprefix("W/")
+
+    db = _mock_db([_collection(1, "public")])
+    result = await list_collections(
+        user, request=_list_request(strong), response=Response(), db=db
+    )
+
+    assert result.status_code == 304
+    db.execute.assert_not_awaited()

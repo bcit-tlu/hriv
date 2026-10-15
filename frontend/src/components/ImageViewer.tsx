@@ -25,6 +25,15 @@ import {
 
 let pendingFullScreenHandoff: string | number | null = null
 
+// OSD starts asynchronous tile-source work during construction but does not
+// cancel every continuation when it is destroyed. React Strict Mode's
+// development-only effect replay can therefore let a discarded viewer create a
+// TiledImage after its drawer has been destroyed, producing a false assertion.
+// Delay construction until after that replay; production and test mounts stay
+// synchronous.
+const deferViewerInitializationForStrictMode =
+  import.meta.env.DEV && import.meta.env.MODE !== 'test'
+
 const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
   const { viewport } = viewer
   const homeZoom = viewport.getHomeZoom()
@@ -128,6 +137,7 @@ export default function ImageViewer({
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  const [viewerMountReady, setViewerMountReady] = useState(!deferViewerInitializationForStrictMode)
   const canvasEditModeRef = useRef(false)
   const onViewportChangeRef = useRef(onViewportChange)
   const onOverlaysChangeRef = useRef(onOverlaysChange)
@@ -174,6 +184,14 @@ export default function ImageViewer({
       renewalTimerRef.current = null
     }
   }, [])
+  useEffect(() => {
+    const canClaimFullScreenHandoff =
+      fullScreenHandoffKey != null && pendingFullScreenHandoff === fullScreenHandoffKey
+    if (viewerMountReady || canClaimFullScreenHandoff) return
+    const timer = window.setTimeout(() => setViewerMountReady(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [fullScreenHandoffKey, viewerMountReady])
+
   useEffect(() => {
     imageIdRef.current = imageId
     resetRenewalState()
@@ -414,7 +432,8 @@ export default function ImageViewer({
   useEffect(() => {
     homeViewportAtLastSettledStateRef.current = null
     const handoffKey = fullScreenHandoffKeyRef.current
-    if (!containerRef.current) return
+    const canClaimFullScreenHandoff = handoffKey != null && pendingFullScreenHandoff === handoffKey
+    if ((!viewerMountReady && !canClaimFullScreenHandoff) || !containerRef.current) return
 
     const initialTileSources = getCurrentTileSources()
     tileSourcesRef.current = initialTileSources
@@ -426,83 +445,91 @@ export default function ImageViewer({
       category_id: categoryIdRef.current,
     })
 
-    try {
-      viewerRef.current = OpenSeadragon({
-        element: containerRef.current,
-        tileSources: initialTileSources,
-        prefixUrl: '/openseadragon-svg-icons/',
-        navImages: {
-          zoomIn: {
-            REST: 'zoomin_rest.svg',
-            GROUP: 'zoomin_grouphover.svg',
-            HOVER: 'zoomin_hover.svg',
-            DOWN: 'zoomin_pressed.svg',
-          },
-          zoomOut: {
-            REST: 'zoomout_rest.svg',
-            GROUP: 'zoomout_grouphover.svg',
-            HOVER: 'zoomout_hover.svg',
-            DOWN: 'zoomout_pressed.svg',
-          },
-          home: {
-            REST: 'home_rest.svg',
-            GROUP: 'home_grouphover.svg',
-            HOVER: 'home_hover.svg',
-            DOWN: 'home_pressed.svg',
-          },
-          fullpage: {
-            REST: 'fullpage_rest.svg',
-            GROUP: 'fullpage_grouphover.svg',
-            HOVER: 'fullpage_hover.svg',
-            DOWN: 'fullpage_pressed.svg',
-          },
-          rotateleft: {
-            REST: 'rotateleft_rest.svg',
-            GROUP: 'rotateleft_grouphover.svg',
-            HOVER: 'rotateleft_hover.svg',
-            DOWN: 'rotateleft_pressed.svg',
-          },
-          rotateright: {
-            REST: 'rotateright_rest.svg',
-            GROUP: 'rotateright_grouphover.svg',
-            HOVER: 'rotateright_hover.svg',
-            DOWN: 'rotateright_pressed.svg',
-          },
-          previous: {
-            REST: 'previous_rest.svg',
-            GROUP: 'previous_grouphover.svg',
-            HOVER: 'previous_hover.svg',
-            DOWN: 'previous_pressed.svg',
-          },
-          next: {
-            REST: 'next_rest.svg',
-            GROUP: 'next_grouphover.svg',
-            HOVER: 'next_hover.svg',
-            DOWN: 'next_pressed.svg',
-          },
-          flip: {
-            REST: 'flip_rest.svg',
-            GROUP: 'flip_grouphover.svg',
-            HOVER: 'flip_hover.svg',
-            DOWN: 'flip_pressed.svg',
-          },
+    const viewerOptions: OpenSeadragon.Options = {
+      element: containerRef.current,
+      tileSources: initialTileSources,
+      // Some catalogued DZI pyramids are hosted on a different origin. Their
+      // tile servers permit anonymous CORS, which WebGL requires before it can
+      // upload tile images as textures.
+      crossOriginPolicy: 'Anonymous',
+      prefixUrl: '/openseadragon-svg-icons/',
+      navImages: {
+        zoomIn: {
+          REST: 'zoomin_rest.svg',
+          GROUP: 'zoomin_grouphover.svg',
+          HOVER: 'zoomin_hover.svg',
+          DOWN: 'zoomin_pressed.svg',
         },
-        animationTime: 0.4,
-        blendTime: 0.1,
-        minZoomImageRatio: 0.8,
-        maxZoomPixelRatio: 4,
-        visibilityRatio: 1,
-        constrainDuringPan: true,
-        showNavigator: true,
-        navigatorPosition: 'BOTTOM_RIGHT',
-        navigatorSizeRatio: 0.15,
-        gestureSettingsMouse: { scrollToZoom: true },
-        // Rotation controls
-        showRotationControl: true,
-        gestureSettingsTouch: { pinchRotate: true },
-        // Position controls at bottom-left
-        navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-      })
+        zoomOut: {
+          REST: 'zoomout_rest.svg',
+          GROUP: 'zoomout_grouphover.svg',
+          HOVER: 'zoomout_hover.svg',
+          DOWN: 'zoomout_pressed.svg',
+        },
+        home: {
+          REST: 'home_rest.svg',
+          GROUP: 'home_grouphover.svg',
+          HOVER: 'home_hover.svg',
+          DOWN: 'home_pressed.svg',
+        },
+        fullpage: {
+          REST: 'fullpage_rest.svg',
+          GROUP: 'fullpage_grouphover.svg',
+          HOVER: 'fullpage_hover.svg',
+          DOWN: 'fullpage_pressed.svg',
+        },
+        rotateleft: {
+          REST: 'rotateleft_rest.svg',
+          GROUP: 'rotateleft_grouphover.svg',
+          HOVER: 'rotateleft_hover.svg',
+          DOWN: 'rotateleft_pressed.svg',
+        },
+        rotateright: {
+          REST: 'rotateright_rest.svg',
+          GROUP: 'rotateright_grouphover.svg',
+          HOVER: 'rotateright_hover.svg',
+          DOWN: 'rotateright_pressed.svg',
+        },
+        previous: {
+          REST: 'previous_rest.svg',
+          GROUP: 'previous_grouphover.svg',
+          HOVER: 'previous_hover.svg',
+          DOWN: 'previous_pressed.svg',
+        },
+        next: {
+          REST: 'next_rest.svg',
+          GROUP: 'next_grouphover.svg',
+          HOVER: 'next_hover.svg',
+          DOWN: 'next_pressed.svg',
+        },
+        flip: {
+          REST: 'flip_rest.svg',
+          GROUP: 'flip_grouphover.svg',
+          HOVER: 'flip_hover.svg',
+          DOWN: 'flip_pressed.svg',
+        },
+      },
+      animationTime: 0.4,
+      blendTime: 0.1,
+      minZoomImageRatio: 0.8,
+      maxZoomPixelRatio: 4,
+      visibilityRatio: 1,
+      constrainDuringPan: true,
+      showNavigator: true,
+      navigatorPosition: 'BOTTOM_RIGHT',
+      navigatorSizeRatio: 0.15,
+      gestureSettingsMouse: { scrollToZoom: true },
+      // Rotation controls
+      showRotationControl: true,
+      gestureSettingsTouch: { pinchRotate: true },
+      // Position controls at bottom-left
+      navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      // The minimap does not need WebGL; canvas avoids a second context
+      // (and its create/destroy warnings) per viewer.
+      navigatorDrawer: 'canvas',
+    }
+    try {
+      viewerRef.current = OpenSeadragon(viewerOptions)
     } catch (error) {
       emitFrontendError({
         action: 'image_viewer_init',
@@ -1134,6 +1161,7 @@ export default function ImageViewer({
     updateMeasurementLabels,
     emitToolbarAction,
     scheduleTileSourceRenewal,
+    viewerMountReady,
   ])
 
   useEffect(() => {

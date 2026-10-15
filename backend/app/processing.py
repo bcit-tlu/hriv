@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
-from .collection_views import image_ids_in_filed_collections
+from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .auth_events import actor_log_fields
 from .models import Image, SourceImage, User
@@ -813,11 +813,11 @@ async def process_source_image(source_image_id: int) -> None:
                 src.progress = 100
                 src.status_message = "Completed"
                 # Images attached to a category appear in the tree; an
-                # uncategorized image may still sit on a filed collection's
+                # uncategorized image may still sit on any collection's
                 # tile (cover/count) — see #1527.
                 if (
                     img.category_id is not None
-                    or await image_ids_in_filed_collections(db, {img.id})
+                    or await image_ids_in_collections(db, {img.id})
                 ):
                     await bump_browse_revision(db)
                 await db.commit()
@@ -1103,11 +1103,11 @@ async def process_replace_image(
                 src.progress = 100
                 src.status_message = "Completed"
                 # Images attached to a category appear in the tree; an
-                # uncategorized image may still sit on a filed collection's
+                # uncategorized image may still sit on any collection's
                 # tile (cover/count) — see #1527.
                 if (
                     img.category_id is not None
-                    or await image_ids_in_filed_collections(db, {img.id})
+                    or await image_ids_in_collections(db, {img.id})
                 ):
                     await bump_browse_revision(db)
                 await db.commit()
@@ -1618,7 +1618,7 @@ async def promote_source_image_tile_rebuild(
             img.version = img.version + 1
             if (
                 img.category_id is not None
-                or await image_ids_in_filed_collections(session, {img.id})
+                or await image_ids_in_collections(session, {img.id})
             ):
                 await bump_browse_revision(session)
     except (Exception, asyncio.CancelledError):

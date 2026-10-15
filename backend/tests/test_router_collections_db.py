@@ -15,6 +15,7 @@ so the module shares the database with the reorder-fixture tests safely.
 
 import os
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -42,21 +43,33 @@ from app.models import (
 )
 from app.routers.categories import delete_category
 from app.routers.collections import (
+    bulk_delete_collections,
+    bulk_update_collections,
     create_collection,
     delete_collection,
     list_collections,
     move_collection,
     replace_collection_images,
+    replace_collection_owners,
     replace_collection_viewport,
+    transfer_collection,
     update_collection,
 )
+from app.routers.groups import delete_group
+from app.routers.images import delete_image, update_image
 from app.routers.tile_order import get_tile_order
+from app.routers.users import delete_user
 from app.schemas import (
+    CollectionBulkDelete,
+    CollectionBulkUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionMove,
+    CollectionOwnersUpdate,
+    CollectionTransfer,
     CollectionUpdate,
     CollectionViewportUpdate,
+    ImageUpdate,
 )
 
 DB_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -844,7 +857,10 @@ async def test_create_collection_files_category_and_invalidates_browse(session_f
         assert browse_after == browse_before + 1
 
 
-async def test_create_unfiled_student_does_not_invalidate_browse(session_factory) -> None:
+async def test_create_unfiled_student_bumps_browse_not_scopes(session_factory) -> None:
+    """An unfiled create bumps no tile-order scope but still advances the
+    browse revision — the new collection is a row in ``GET /api/collections``
+    (#1619)."""
     async with session_factory() as session:
         student = User(
             name=f"{TEST_PREFIX}student-create-{uuid4().hex[:8]}",
@@ -879,11 +895,12 @@ async def test_create_unfiled_student_does_not_invalidate_browse(session_factory
                 select(TileOrderRevision.revision).where(TileOrderRevision.scope_key == 0)
             )
         ).scalar_one_or_none() == root_before
-        assert (
+        browse_after = (
             await session.execute(
                 select(BrowseState.revision).where(BrowseState.id == 1)
             )
-        ).scalar_one_or_none() == browse_before
+        ).scalar_one()
+        assert browse_after == (browse_before or 0) + 1
 
 
 async def test_list_limit_orders_and_truncates(session_factory) -> None:
@@ -1083,11 +1100,11 @@ async def test_delete_category_unfiles_collection_via_set_null(
         assert collection_id in [item.id for item in queued]
 
 
-async def test_image_ids_in_filed_collections_real_pg(session_factory) -> None:
-    """The member-image invalidation helper: only members of *filed*
-    collections count — uncategorized-collection members and non-members do
-    not force a browse bump."""
-    from app.collection_views import image_ids_in_filed_collections
+async def test_image_ids_in_collections_real_pg(session_factory) -> None:
+    """The member-image invalidation helper (#1619): members of any
+    collection — filed or unfiled — count (their thumb/count render on the
+    collection's list row); non-members do not."""
+    from app.collection_views import image_ids_in_collections
 
     async with session_factory() as session:
         admin_id = await _new_admin(session, "filed")
@@ -1110,12 +1127,12 @@ async def test_image_ids_in_filed_collections_real_pg(session_factory) -> None:
         )
         await session.commit()
 
-        found = await image_ids_in_filed_collections(
+        found = await image_ids_in_collections(
             session, {img_filed, img_unfiled, img_orphan}
         )
-        assert found == {img_filed}
+        assert found == {img_filed, img_unfiled}
         # Empty input short-circuits without a query.
-        assert await image_ids_in_filed_collections(session, set()) == set()
+        assert await image_ids_in_collections(session, set()) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -1298,3 +1315,228 @@ async def test_list_q_percent_is_literal(session_factory) -> None:
         rows = await list_collections(admin, q="%", db=session)
         assert collection_id in [c.id for c in rows]
         assert all("%" in c.name for c in rows)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/collections — ETag / revision (#1619)
+# ---------------------------------------------------------------------------
+
+
+async def _list_etag(session: AsyncSession, user: User, **kwargs) -> str:
+    """Run the list endpoint and return its ``ETag`` header."""
+    response = Response()
+    await list_collections(user, response=response, db=session, **kwargs)
+    etag = response.headers.get("ETag")
+    assert etag is not None
+    return etag
+
+
+async def test_list_etag_is_stable_across_identical_calls(session_factory) -> None:
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "etag-stable")
+        admin = await _get_user(session, admin_id)
+        etag1 = await _list_etag(session, admin)
+        etag2 = await _list_etag(session, admin)
+        assert etag1 == etag2
+        assert etag1.startswith('W/"collections-')
+        # A different query fragment hashes to a different tag.
+        assert await _list_etag(session, admin, mine=True) != etag1
+
+
+async def test_list_etag_changes_after_each_collection_mutation(
+    session_factory,
+) -> None:
+    """Every list-visible write bumps the browse revision, so the ETag must
+    change after each mutation — including on unfiled collections (#1619)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "etag-seq")
+        other_admin_id = await _new_admin(session, "etag-seq2")
+        category_id = await _new_category(session, "etag-seq")
+        program_id = await _new_program(session, "etag-seq")
+        image_id = await _new_image(session, "etag-seq")
+        admin = await _get_user(session, admin_id)
+
+        seen: list[str] = []
+
+        async def next_etag() -> str:
+            etag = await _list_etag(session, admin)
+            assert etag not in seen
+            seen.append(etag)
+            return etag
+
+        await next_etag()
+        # create (filed)
+        created = await create_collection(
+            CollectionCreate(
+                name=f"{TEST_PREFIX}etag", type="sequence",
+                category_id=category_id,
+            ),
+            admin,
+            session,
+        )
+        collection_id = created.id
+        await next_etag()
+        # PATCH
+        await update_collection(
+            collection_id,
+            CollectionUpdate(name=f"{TEST_PREFIX}etag-renamed", version=1),
+            admin,
+            session,
+        )
+        await next_etag()
+        # PUT images
+        await replace_collection_images(
+            collection_id,
+            CollectionImagesUpdate(image_ids=[image_id], version=2),
+            admin,
+            session,
+        )
+        await next_etag()
+        # PUT viewport
+        await replace_collection_viewport(
+            collection_id,
+            CollectionViewportUpdate(
+                viewport_state={"1": {"zoom": 2.0}}, version=3
+            ),
+            admin,
+            session,
+        )
+        await next_etag()
+        # POST move (file → a different category needs a second category;
+        # move to root/unfiled)
+        await move_collection(
+            collection_id,
+            CollectionMove(category_id=None, version=4),
+            admin,
+            session,
+        )
+        await next_etag()
+        # PUT owners
+        await replace_collection_owners(
+            collection_id,
+            CollectionOwnersUpdate(
+                user_ids=[admin_id, other_admin_id], version=5
+            ),
+            admin,
+            session,
+        )
+        await next_etag()
+        # POST transfer (to program)
+        await transfer_collection(
+            collection_id,
+            CollectionTransfer(program_id=program_id, version=6),
+            admin,
+            session,
+        )
+        await next_etag()
+        # bulk PATCH (hidden)
+        await bulk_update_collections(
+            CollectionBulkUpdate(
+                collection_ids=[collection_id], hidden=True
+            ),
+            admin,
+            session,
+        )
+        await next_etag()
+        # bulk DELETE a separate collection (helper insert — no endpoint
+        # mutation, so no bump of its own)
+        second_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        await session.commit()
+        await bulk_delete_collections(
+            CollectionBulkDelete(collection_ids=[second_id]),
+            admin,
+            session,
+        )
+        await next_etag()
+        # DELETE
+        await delete_collection(collection_id, admin, session)
+        await next_etag()
+
+
+async def test_list_etag_unfiled_collection_member_image_writes_bump(
+    session_factory,
+) -> None:
+    """Deactivating or deleting an uncategorized image that is a member of
+    an *unfiled* collection changes the list row (cover/count) — the ETag
+    must advance (#1619)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "etag-member")
+        admin = await _get_user(session, admin_id)
+        img_a = await _new_image(session, "member-a")
+        img_b = await _new_image(session, "member-b")
+        await session.commit()
+        await _new_collection(
+            session, "sequence", [img_a, img_b], owner_id=admin_id
+        )
+
+        before = await _list_etag(session, admin)
+        request = MagicMock()
+        request.headers = {}
+        await update_image(
+            img_a, ImageUpdate(active=False), request, admin, session
+        )
+        after_deactivate = await _list_etag(session, admin)
+        assert after_deactivate != before
+
+        await delete_image(img_b, admin, db=session)
+        after_delete = await _list_etag(session, admin)
+        assert after_delete != after_deactivate
+
+
+async def test_list_etag_delete_sole_owner_of_unfiled_collection_bumps(
+    session_factory,
+) -> None:
+    """Deleting a user whose sole-owned collection is unfiled removes a
+    list row — the ETag must advance even though no tile was affected
+    (#1619)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "etag-user")
+        owner_id = await _new_user(session, "student", "etag-owner")
+        admin = await _get_user(session, admin_id)
+        await _new_collection(
+            session, "sequence", [], owner_id=owner_id
+        )
+
+        before = await _list_etag(session, admin)
+        await delete_user(owner_id, admin, session)
+        after = await _list_etag(session, admin)
+        assert after != before
+
+
+async def test_list_etag_delete_group_lifts_collection_gate(
+    session_factory,
+) -> None:
+    """Deleting group G cascades its ``collection_groups`` rows: a
+    collection restricted to G becomes visible to a student outside G, so
+    the same conditional request must return 200 with a different ETag —
+    the viewer's hash inputs do not change (#1619)."""
+    async with session_factory() as session:
+        admin_id = await _new_admin(session, "etag-grp")
+        student_id = await _new_student(session, "etag-grp")
+        group_id = await _new_group(session, "etag-grp")
+        collection_id = await _new_collection(
+            session, "sequence", [], owner_id=admin_id
+        )
+        admin = await _get_user(session, admin_id)
+        student = await _get_user(session, student_id)
+        await update_collection(
+            collection_id,
+            CollectionUpdate(
+                visibility="restricted", group_ids=[group_id], version=1
+            ),
+            admin,
+            session,
+        )
+
+        rows = await list_collections(student, db=session)
+        assert collection_id not in [c.id for c in rows]
+        before = await _list_etag(session, student)
+
+        await delete_group(group_id, admin, session)
+
+        rows = await list_collections(student, db=session)
+        assert collection_id in [c.id for c in rows]
+        after = await _list_etag(session, student)
+        assert after != before

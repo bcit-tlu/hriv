@@ -172,6 +172,15 @@ descending order is retained. For paged listings the list also accepts
 `sort` and `direction` — all applied after the visibility filter, with the
 pre-slice count reported in the `X-Total-Count` header (#1631).
 
+`GET /api/collections` is a conditional request endpoint (#1619): responses
+carry a weak `ETag` (`W/"collections-{revision}-{hash}"`, hashing the
+viewer's id/role/programs/groups plus the canonical query) with
+`Cache-Control: private, no-cache` and `X-Browse-Revision`. A matching
+`If-None-Match` (or `*`) returns `304 Not Modified` with the same headers
+before the collection query runs; any collection write — including to
+unfiled collections — advances the revision and mints a new tag
+(`docs/browse-state.md`).
+
 Unfiled collections remain available in the Collections and collection
 management views. `GET /api/collections?uncategorized=true` keeps its
 existing filter name and returns the unfiled queue; it does not mean that
@@ -181,8 +190,10 @@ Filing is curatorial, not ownership-bound: `POST /api/collections/{id}/move`
 is admin/instructor-only and is deliberately separate from the owner-gated
 PATCH. A `category_id: null` move or bulk update unfiles the collection.
 Move and bulk-update writes invalidate only non-null category tile-order
-scopes, plus the global browse revision when placement changes, so in-flight
-reorder clients get a 409 and the tree ETag invalidates. `visibility` still
+scopes, plus the global browse revision — unconditionally since #1619,
+because the version CAS advances `version`/`updated_at` even on a no-op
+move and both fields appear in the list payload — so in-flight reorder
+clients get a 409 and the tree/list ETags invalidate. `visibility` still
 gates _who sees_ a filed tile; placement only gates _where_ it sits.
 
 To feature a collection at the top of Browse, curators can file it into a

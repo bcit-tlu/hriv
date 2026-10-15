@@ -36,11 +36,11 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         images_router, "bump_browse_revision", AsyncMock(return_value=1)
     )
-    # image_ids_in_filed_collections queries collection membership (#1527);
+    # image_ids_in_collections queries collection membership (#1527);
     # default to "not a member" — tests override with their own return set.
     monkeypatch.setattr(
         images_router,
-        "image_ids_in_filed_collections",
+        "image_ids_in_collections",
         AsyncMock(return_value=set()),
     )
 
@@ -1851,18 +1851,18 @@ async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup
     # The cleanup received the final stored path of the staged upload.
     assert cleanup.await_args.args[0].endswith(".png")
 
-# ── Filed-collection member invalidation (epic #1525 / #1527) ──
+# ── Collection-member invalidation (epic #1525 / #1527 / #1619) ──
 
 
-async def test_update_image_uncategorized_member_of_filed_collection_bumps(
+async def test_update_image_uncategorized_member_of_collection_bumps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An uncategorized image never appears in the tree itself, but when it
-    belongs to a filed collection its active/thumb feed that tile — an edit
+    belongs to a collection its active/thumb feed that row/tile — an edit
     must still invalidate the browse ETag."""
     monkeypatch.setattr(
         images_router,
-        "image_ids_in_filed_collections",
+        "image_ids_in_collections",
         AsyncMock(return_value={1}),
     )
     img = _make_image(id=1, category_id=None)
@@ -1888,11 +1888,11 @@ async def test_update_image_uncategorized_non_member_skips_bump() -> None:
     images_router.bump_browse_revision.assert_not_awaited()
 
 
-async def test_delete_image_member_of_filed_collection_bumps() -> None:
-    """Deleting a member image shrinks a filed collection's image_count /
+async def test_delete_image_member_of_collection_bumps() -> None:
+    """Deleting a member image shrinks a collection's image_count /
     cover — the tree ETag must advance even though the image is
     uncategorized."""
-    images_router.image_ids_in_filed_collections.return_value = {1}
+    images_router.image_ids_in_collections.return_value = {1}
     img = _make_image(id=1, category_id=None)
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
@@ -1907,7 +1907,7 @@ async def test_delete_image_member_check_runs_before_delete() -> None:
     """Ordering regression: the membership SELECT cannot run after the
     delete autoflushes collection_images rows away."""
     calls: list[str] = []
-    images_router.image_ids_in_filed_collections.side_effect = (
+    images_router.image_ids_in_collections.side_effect = (
         lambda *a, **k: calls.append("member_check") or {1}
     )
     img = _make_image(id=1, category_id=None)
@@ -1920,8 +1920,8 @@ async def test_delete_image_member_check_runs_before_delete() -> None:
     assert calls == ["member_check", "delete"]
 
 
-async def test_bulk_delete_images_member_of_filed_collection_bumps() -> None:
-    images_router.image_ids_in_filed_collections.return_value = {2}
+async def test_bulk_delete_images_member_of_collection_bumps() -> None:
+    images_router.image_ids_in_collections.return_value = {2}
     imgs = [
         _make_image(id=1, category_id=None),
         _make_image(id=2, category_id=None),

@@ -188,6 +188,36 @@ async def test_delete_group_success() -> None:
     db.delete.assert_awaited_once()
 
 
+async def test_delete_group_bumps_browse_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deleting a group cascades ``collection_groups`` rows — the
+    collections-list ETag must invalidate (#1619)."""
+    group = _group(1, instructors=[_user("instructor", id=7)])
+    db = _mock_db(group=group)
+    bump = AsyncMock()
+    monkeypatch.setattr("app.routers.groups.bump_browse_revision", bump)
+    await delete_group(1, _user("instructor", id=7), db=db)
+    bump.assert_awaited_once_with(db)
+
+
+async def test_delete_group_attached_to_categories_409_no_bump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group = _group(
+        1,
+        instructors=[_user("instructor", id=7)],
+        categories=[SimpleNamespace(id=3, label="Cat")],
+    )
+    db = _mock_db(group=group)
+    bump = AsyncMock()
+    monkeypatch.setattr("app.routers.groups.bump_browse_revision", bump)
+    with pytest.raises(HTTPException) as exc:
+        await delete_group(1, _user("instructor", id=7), db=db)
+    assert exc.value.status_code == 409
+    bump.assert_not_awaited()
+
+
 async def test_delete_group_attached_to_categories_409() -> None:
     group = _group(
         1,
