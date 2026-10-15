@@ -319,10 +319,9 @@ export class GraphRenderer {
       if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
     ctx.fill()
     ctx.strokeStyle = palette.imageSharedStroke
-    // 2 screen px at k=1 scaling like the node radius (√k) — matches the
-    // 12px/2px legend swatch ratio. Inset ring: shared images keep the
-    // same footprint as plain images.
-    const sharedLw = 2 / Math.sqrt(k)
+    // Ring = 1/6 of the image node's diameter (r=4 → 8), matching the
+    // legend swatch's 2px border on 12px; scales with the node (√k).
+    const sharedLw = (2 * 4) / 6 / Math.sqrt(k)
     ctx.lineWidth = sharedLw
     // dimmed shared images keep a faded outline to match their fill
     ctx.globalAlpha = 0.15
