@@ -36,7 +36,6 @@ type DragOperation = {
 type DragHandler = (event: { operation: DragOperation }) => void | Promise<void>
 
 let capturedOnDragEnd: DragHandler | undefined
-let capturedOnDragStart: DragHandler | undefined
 
 vi.mock('@dnd-kit/react', async () => {
   const actual = await vi.importActual<typeof import('@dnd-kit/react')>('@dnd-kit/react')
@@ -44,7 +43,6 @@ vi.mock('@dnd-kit/react', async () => {
     ...actual,
     DragDropProvider: (props: Record<string, unknown>) => {
       capturedOnDragEnd = props.onDragEnd as DragHandler | undefined
-      capturedOnDragStart = props.onDragStart as DragHandler | undefined
       const ActualProvider = actual.DragDropProvider as React.ComponentType<Record<string, unknown>>
       return <ActualProvider {...props} />
     },
@@ -118,7 +116,6 @@ const draftOrder = () =>
 
 beforeEach(() => {
   capturedOnDragEnd = undefined
-  capturedOnDragStart = undefined
   vi.restoreAllMocks()
 })
 

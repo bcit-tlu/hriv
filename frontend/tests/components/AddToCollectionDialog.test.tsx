@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AuthContext } from '../../src/authContextValue'
 import type { AuthContextValue } from '../../src/authContextValue'
@@ -311,16 +311,30 @@ describe('AddToCollectionDialog', () => {
   })
 
   it('resets the filter when reopened', async () => {
-    const user = userEvent.setup()
     const { rerender, props } = renderDialog()
     const wrap = (open: boolean) => (
       <AuthContext.Provider value={makeAuth('instructor')}>
         <AddToCollectionDialog {...props} open={open} />
       </AuthContext.Provider>
     )
-    await user.type(screen.getByRole('textbox', { name: 'Filter collections' }), 'chest')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Filter collections' }), {
+      target: { value: 'chest' },
+    })
     rerender(wrap(false))
+    // Let the close transition (and its focus-restore updates) settle.
+    await waitFor(() =>
+      expect(screen.queryByRole('textbox', { name: 'Filter collections' })).not.toBeInTheDocument(),
+    )
     rerender(wrap(true))
-    expect(screen.getByRole('textbox', { name: 'Filter collections' })).toHaveValue('')
+    // The filter input is refocused by the dialog's transition onEntered —
+    // wait for that async focus (and its FormControl updates) to settle.
+    const filter = screen.getByRole('textbox', { name: 'Filter collections' })
+    await waitFor(() => expect(filter).toHaveFocus())
+    expect(filter).toHaveValue('')
+    // Let the trailing transition/focus timers settle inside an awaited act
+    // so their FormControl updates do not escape act.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    })
   })
 })

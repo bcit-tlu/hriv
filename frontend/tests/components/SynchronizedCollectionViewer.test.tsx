@@ -633,6 +633,26 @@ describe('SynchronizedCollectionViewer', () => {
     expect(screen.queryByTestId('synchronized-portrait-hint')).not.toBeInTheDocument()
   })
 
+  it('reacts to orientation changes and unsubscribes on unmount', () => {
+    const mql = stubMatchMedia(false)
+    const view = renderViewer()
+    expect(screen.queryByTestId('synchronized-portrait-hint')).not.toBeInTheDocument()
+
+    const onChange = vi
+      .mocked(mql.addEventListener)
+      .mock.calls.find(([event]) => event === 'change')?.[1] as (e: MediaQueryListEvent) => void
+    expect(onChange).toBeTypeOf('function')
+
+    mql.matches = true
+    act(() => {
+      onChange({ matches: true } as MediaQueryListEvent)
+    })
+    expect(screen.getByTestId('synchronized-portrait-hint')).toBeInTheDocument()
+
+    view.unmount()
+    expect(mql.removeEventListener).toHaveBeenCalledWith('change', onChange)
+  })
+
   it('renders up to four members as a 2×2 grid (#1561)', () => {
     renderViewer({ collection: syncCollection({ images: images(4) }) })
     const viewers = screen.getAllByTestId('image-viewer')

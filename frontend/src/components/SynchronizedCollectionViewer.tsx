@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -80,20 +80,19 @@ function applyTarget(viewer: OpenSeadragon.Viewer, state: ViewportState): void {
   viewport.setRotation(state.rotation ?? 0, true)
 }
 
+const PORTRAIT_QUERY = '(orientation: portrait)'
+function subscribePortrait(onChange: () => void): () => void {
+  const mql = window.matchMedia?.(PORTRAIT_QUERY)
+  if (!mql) return () => {}
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+function readPortrait(): boolean {
+  return window.matchMedia?.(PORTRAIT_QUERY)?.matches ?? false
+}
 /** Portrait detector — jsdom has no matchMedia, so the query is optional. */
 function usePortrait(): boolean {
-  const [portrait, setPortrait] = useState(
-    () => window.matchMedia?.('(orientation: portrait)')?.matches ?? false,
-  )
-  useEffect(() => {
-    const mql = window.matchMedia?.('(orientation: portrait)')
-    if (!mql) return
-    const onChange = (event: MediaQueryListEvent) => setPortrait(event.matches)
-    setPortrait(mql.matches)
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
-  return portrait
+  return useSyncExternalStore(subscribePortrait, readPortrait, () => false)
 }
 
 export default function SynchronizedCollectionViewer({
@@ -170,7 +169,9 @@ export default function SynchronizedCollectionViewer({
     collectionId,
     map: new Map<number, ViewportState | undefined>(),
   })
+  // eslint-disable-next-line react-hooks/refs -- intentional render-time cache keyed by collection id (see comment above)
   if (initialViewports.current.collectionId !== collectionId) {
+    // eslint-disable-next-line react-hooks/refs -- intentional render-time cache keyed by collection id (see comment above)
     initialViewports.current = { collectionId, map: new Map() }
   }
   const initialViewportFor = (image: ImageItem): ViewportState | undefined => {
@@ -192,7 +193,9 @@ export default function SynchronizedCollectionViewer({
       { value: PaneProps; overlaysKey: string; annotationsKey: string; measurementKey: string }
     >(),
   })
+  // eslint-disable-next-line react-hooks/refs -- intentional render-time cache keyed by collection id (see comment above)
   if (panePropsCache.current.collectionId !== collectionId) {
+    // eslint-disable-next-line react-hooks/refs -- intentional render-time cache keyed by collection id (see comment above)
     panePropsCache.current = { collectionId, map: new Map() }
   }
   const panePropsFor = (image: ImageItem): PaneProps => {
@@ -458,6 +461,7 @@ export default function SynchronizedCollectionViewer({
     )
   }
 
+  // eslint-disable-next-line react-hooks/refs -- intentional render-time cache keyed by collection id (see comment above)
   const paneProps = panes.map((image) => ({ image, pane: panePropsFor(image) }))
   // Two panes keep the original side-by-side row; three or four render as a
   // 2×2 grid (SYNCHRONIZED_COLLECTION_MAX_IMAGES caps members at four).

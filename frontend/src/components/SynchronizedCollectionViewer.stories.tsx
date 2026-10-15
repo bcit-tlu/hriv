@@ -146,13 +146,15 @@ const PORTRAIT_MQL = {
 
 /** Force `orientation: portrait` to match for the duration of one story. */
 function ForcePortrait({ children }: { children: ReactNode }) {
-  // Assignment happens during render (not in an effect): the child's
-  // usePortrait lazy initializer reads matchMedia before any effect runs.
-  const [original] = useState(() => window.matchMedia)
-  window.matchMedia = ((query: string) =>
-    query === '(orientation: portrait)'
-      ? PORTRAIT_MQL
-      : original(query)) as typeof window.matchMedia
+  // Assignment happens inside the lazy initializer (still render, not an
+  // effect): the child's usePortrait lazy initializer reads matchMedia
+  // before any effect runs.
+  const [original] = useState(() => {
+    const orig = window.matchMedia
+    window.matchMedia = ((query: string) =>
+      query === '(orientation: portrait)' ? PORTRAIT_MQL : orig(query)) as typeof window.matchMedia
+    return orig
+  })
   useEffect(() => {
     return () => {
       window.matchMedia = original
