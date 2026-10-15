@@ -17,7 +17,6 @@ import {
   createMeasurementLabel,
   computeMagnification,
   createPinchRotationTracker,
-  memoizeWebGLDrawerSupport,
   MAX_SHARE_OVERLAYS,
   type ViewportState,
   type MeasurementConfig,
@@ -442,11 +441,6 @@ export default function ImageViewer({
       image_id: imageIdRef.current,
       category_id: categoryIdRef.current,
     })
-
-    // Cache WebGLDrawer.isSupported so OSD's destructive WebGL probe runs
-    // once per session instead of once per Viewer (each run emits a
-    // "WebGL context was lost" console warning).
-    memoizeWebGLDrawerSupport(OpenSeadragon.WebGLDrawer)
 
     const viewerOptions: OpenSeadragon.Options = {
       element: containerRef.current,
