@@ -277,6 +277,15 @@ describe('observability', () => {
     expect(sanitizeDiagnosticMessage('Failed at /api/tiles/x.dzi')).toBe('Failed at [url]')
     expect(sanitizeDiagnosticMessage('Failed at ./cache/x.dzi')).toBe('Failed at [url]')
     expect(sanitizeDiagnosticMessage('Failed at ../cache/x.dzi')).toBe('Failed at [url]')
+    expect(sanitizeDiagnosticMessage('Failed (/api/tiles/abc123/a.dzi)')).toBe('Failed ([url]')
+    expect(sanitizeDiagnosticMessage('Failed "/api/tiles/abc/a.dzi"')).toBe('Failed "[url]')
+    expect(sanitizeDiagnosticMessage('Failed url:/api/tiles/abc/a.dzi')).toBe('Failed url:[url]')
+    expect(sanitizeDiagnosticMessage('Failed (https://h/a.dzi?tile_token=abc)')).toBe(
+      'Failed [url]',
+    )
+    expect(sanitizeDiagnosticMessage('HTTP/1.1 error and/or image/jpeg')).toBe(
+      'HTTP/1.1 error and/or image/jpeg',
+    )
     expect(sanitizeDiagnosticMessage('Request key=value failed')).toBe('Request [url] failed')
     expect(sanitizeDiagnosticMessage('line\n\tbreak')).toBe('line break')
 

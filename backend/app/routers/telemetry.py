@@ -94,7 +94,9 @@ _MAX_ERROR_MESSAGE_LENGTH = 256
 
 _ERROR_MESSAGE_EVENTS = frozenset({"frontend.error", "image.view.failed"})
 _ERROR_MESSAGE_WHITESPACE_RE = re.compile(r"[\s\x00-\x1f\x7f]+")
-_ERROR_MESSAGE_URL_PATH_RE = re.compile(r"\S*(?:://|[?=])\S*|(?<!\S)\.{0,2}/\S*")
+_ERROR_MESSAGE_URL_PATH_RE = re.compile(
+    r"""\S*(?::\/\/|[?=])\S*|(?<![^\s"'(\[<{:,])\.{0,2}\/\S*"""
+)
 
 # Bounded allowlists for client-environment buckets. Anything outside these
 # sets is coerced to "other" so metrics/dashboards stay low-cardinality and a

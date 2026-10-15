@@ -14,6 +14,7 @@ from app.routers.telemetry import (
     TELEMETRY_SCHEMA_VERSION,
     TelemetryBatch,
     TelemetryEvent,
+    _sanitize_error_message,
     ingest_synthetic_result,
     ingest_telemetry_events,
 )
@@ -58,6 +59,23 @@ def _allow_rate_limit():
         new_callable=AsyncMock,
         return_value=None,
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Failed (/api/tiles/abc123/a.dzi)", "Failed ([url]"),
+        ('Failed "/api/tiles/abc/a.dzi"', 'Failed "[url]'),
+        ("Failed url:/api/tiles/abc/a.dzi", "Failed url:[url]"),
+        ("Failed (https://h/a.dzi?tile_token=abc)", "Failed [url]"),
+        ("HTTP/1.1 error and/or image/jpeg", "HTTP/1.1 error and/or image/jpeg"),
+        ("Malformed DZI descriptor", "Malformed DZI descriptor"),
+    ],
+)
+def test_sanitize_error_message_redacts_paths_after_opening_punctuation(
+    raw: str, expected: str
+) -> None:
+    assert _sanitize_error_message(raw) == expected
 
 
 async def test_telemetry_events_accepted_and_logged(

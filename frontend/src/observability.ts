@@ -272,7 +272,10 @@ export function sanitizeDiagnosticMessage(raw: unknown): string | undefined {
   const normalized = raw.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim()
   if (!normalized) return undefined
 
-  const redacted = normalized.replace(/\S*(?::\/\/|[?=])\S*|(?<!\S)\.{0,2}\/\S*/g, '[url]')
+  const redacted = normalized.replace(
+    /\S*(?::\/\/|[?=])\S*|(?<![^\s"'(\x5b<{:,])\.{0,2}\/\S*/g,
+    '[url]',
+  )
   if (!redacted) return undefined
 
   return redacted.length > MAX_ERROR_MESSAGE_LENGTH
