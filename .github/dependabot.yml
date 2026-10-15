@@ -16,6 +16,8 @@
 # cannot follow yet (typescript 7 vs typescript-eslint, storybook 11
 # prereleases, vitest 5 vs @storybook/addon-vitest) are ignored until those
 # peers catch up; revisit each ignore when the blocking peer publishes support.
+# The restore-validation `kubernetes` client is held at its current major
+# while the clusters stay on Kubernetes 1.35; drop that ignore when they upgrade.
 
 version: 2
 
@@ -147,6 +149,11 @@ updates:
       prefix: chore(deps)
       prefix-development: chore(deps-dev)
     labels: [dependencies, python]
+    ignore:
+      # Each client major targets one Kubernetes minor (36.x = 1.36). The
+      # fleet stays on 1.35 (RKE2, ingress-nginx), so hold the client there.
+      - dependency-name: kubernetes
+        update-types: ['version-update:semver-major']
     groups:
       python-minor-patch:
         update-types: [minor, patch]
