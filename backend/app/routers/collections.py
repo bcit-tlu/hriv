@@ -27,6 +27,16 @@ Owner targets for ``PUT /owners`` may be any active user. Collections with
 no owner rows AND no program owner are orphaned (admin-only until
 reassigned); ``collections.user_id`` is creator audit, not ownership.
 
+``GET /api/collections`` carries a weak revision-based ETag (#1619),
+``W/"collections-{browse_revision}-{hash}"``, where the hash covers the
+viewer's id/role/programs/groups and the canonical query string. A matching
+``If-None-Match`` short-circuits to ``304 Not Modified`` before the
+collection select runs; responses also set ``Cache-Control: private,
+no-cache`` and ``X-Browse-Revision``. Every mutation that changes a
+list-visible row bumps the browse revision — including writes to unfiled
+collections, which appear in the list even though they never render on
+Browse.
+
 Browse placement (epic #1525 / #1527): ``category_id`` files a collection
 into the category tree (``None`` = unfiled, not on Browse). ``POST
 …/{id}/move`` is admin/instructor-only and independent of ownership — filing
@@ -38,9 +48,12 @@ Serialization/visibility helpers live in ``app.collection_views`` so the
 category tree can embed collection summaries without importing this router.
 """
 
+import hashlib
+import time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from opentelemetry import metrics
 from sqlalchemy import func, or_, select, update as sql_update
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +69,7 @@ from ..authz import (
     can_hide_collection,
     can_transfer_collection,
 )
-from ..browse_state import bump_browse_revision
+from ..browse_state import bump_browse_revision, get_browse_revision
 from ..collection_views import (
     _ViewerContext,
     _owners_out,
@@ -100,6 +113,25 @@ from ..schemas import (
     CollectionsGraphOut,
 )
 from ..tile_order import bump_scopes, collection_scope_keys
+
+_meter = metrics.get_meter(__name__)
+
+# Collections-list 304 short-circuit observability (#1619), mirroring the
+# browse-tree pair in routers/categories.py: the counter splits successful
+# full builds from ETag short-circuits; the histogram measures the avoided
+# work so "work saved" ≈ not_modified count × mean build duration. `outcome`
+# is on the metric-label allowlist in docs/observability-conventions.md.
+_collections_list_requests = _meter.create_counter(
+    "hriv.collections_list.requests",
+    description="GET /api/collections responses by outcome",
+    unit="1",
+)
+_collections_list_build_duration = _meter.create_histogram(
+    "hriv.collections_list.build.duration",
+    description="Collection list build duration on non-short-circuited requests",
+    unit="s",
+)
+
 
 def require_collections_enabled() -> None:
     """Router-wide gate for the ``COLLECTIONS_ENABLED`` dark-launch flag.
@@ -248,6 +280,33 @@ async def _caller_visible_image_counts(
     return dict((await db.execute(stmt)).all())
 
 
+def _list_etag(user: User, browse_revision: int, query_fragment: str) -> str:
+    """Weak ETag for one (viewer, canonical query) pair at *browse_revision*.
+
+    The viewer fragment covers id, role, program and group membership for
+    every role — not just students — because ``permissions.can_transfer``
+    depends on instructor program membership and ``mine``/owner permissions
+    depend on the user id (#1619).
+    """
+    programs = ",".join(str(i) for i in sorted({p.id for p in user.programs}))
+    groups = ",".join(str(i) for i in sorted({g.id for g in user.groups}))
+    viewer = f"{user.id}|{user.role}|{programs}|{groups}"
+    digest = hashlib.sha256(f"{viewer}\n{query_fragment}".encode()).hexdigest()[:32]
+    return f'W/"collections-{browse_revision}-{digest}"'
+
+
+def _etag_matches(header_value: str, etag: str) -> bool:
+    """RFC 9110 weak comparison for ``If-None-Match``: an optional ``W/``
+    prefix is stripped from both sides before comparing the opaque tag."""
+    for candidate in header_value.split(","):
+        candidate = candidate.strip()
+        if candidate == "*":
+            return True
+        if candidate.removeprefix("W/") == etag.removeprefix("W/"):
+            return True
+    return False
+
+
 @router.get("", response_model=list[CollectionSummaryOut])
 async def list_collections(
     user: Annotated[User, Depends(get_current_user)],
@@ -265,6 +324,7 @@ async def list_collections(
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     page: Annotated[int | None, Query(ge=1)] = None,
     page_size: Annotated[int | None, Query(ge=1, le=200)] = None,
+    request: Request = None,  # type: ignore[assignment]
     response: Response = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
 ):
@@ -303,6 +363,12 @@ async def list_collections(
     Member images are only loaded for the returned slice: the first query
     skips ``image_links`` (``lazyload``) and the page rows are hydrated with
     a second ``populate_existing`` select.
+
+    Conditional requests (#1619): the response carries a weak
+    ``W/"collections-{revision}-{hash}"`` ETag (viewer + canonical query)
+    plus ``Cache-Control: private, no-cache`` and ``X-Browse-Revision``. A
+    matching ``If-None-Match`` (or ``*``) returns ``304`` before the
+    collection select runs.
     """
     if type is not None and type not in COLLECTION_TYPES:
         raise HTTPException(
@@ -341,6 +407,49 @@ async def list_collections(
             detail="limit cannot be combined with page/page_size",
         )
 
+    # ── Browse-revision 304 short-circuit (#1619) ──
+    # The list renders unfiled collections too, so every collection write —
+    # filed or not — bumps the same browse revision the tree uses; a matching
+    # ETag therefore proves this exact query result is unchanged.
+    browse_revision = await get_browse_revision(db)
+    query_fragment = "|".join(
+        [
+            str(type),
+            str(mine),
+            str(owner_user_id),
+            str(owner_program_id),
+            str(orphaned),
+            str(uncategorized),
+            (q or "").strip().casefold(),
+            ",".join(sorted(visibility or [])),
+            ",".join(str(i) for i in sorted(category_id or [])),
+            str(sort),
+            str(direction),
+            str(limit),
+            str(page),
+            str(page_size),
+        ]
+    )
+    etag = _list_etag(user, browse_revision, query_fragment)
+    if response is not None:
+        response.headers["ETag"] = etag
+        response.headers["Cache-Control"] = "private, no-cache"
+        response.headers["X-Browse-Revision"] = str(browse_revision)
+
+    if request is not None:
+        client_etags = request.headers.get("if-none-match", "")
+        if _etag_matches(client_etags, etag):
+            _collections_list_requests.add(1, {"outcome": "not_modified"})
+            return Response(
+                status_code=304,
+                headers={
+                    "ETag": etag,
+                    "Cache-Control": "private, no-cache",
+                    "X-Browse-Revision": str(browse_revision),
+                },
+            )
+
+    build_started = time.monotonic()
     stmt = select(Collection).options(lazyload(Collection.image_links))
     if type is not None:
         stmt = stmt.where(Collection.type == type)
@@ -430,7 +539,10 @@ async def list_collections(
         )
         by_id = {c.id: c for c in hydrated}
         visible = [by_id.get(c.id, c) for c in visible]
-    return [collection_summary_out(ctx, c) for c in visible]
+    rows = [collection_summary_out(ctx, c) for c in visible]
+    _collections_list_requests.add(1, {"outcome": "full"})
+    _collections_list_build_duration.record(time.monotonic() - build_started)
+    return rows
 
 
 # ── Graph endpoints (#1628) ───────────────────────────────────────────────
@@ -1011,8 +1123,10 @@ async def create_collection(
     collection.groups = grps
     _replace_image_links(collection, images)
     db.add(collection)
-    if body.category_id is not None:
-        await bump_browse_revision(db)
+    # Unconditional: an unfiled collection never reaches Browse but still
+    # appears in ``GET /api/collections``, whose ETag rides this revision
+    # (#1619).
+    await bump_browse_revision(db)
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)
@@ -1408,6 +1522,11 @@ async def replace_collection_viewport(
     ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
     await _bump_version_or_409(db, ctx, collection, body.version)
     collection.viewport_state = dict(body.viewport_state)
+    # The CAS advances ``version``/``updated_at`` — both are in
+    # ``CollectionSummaryOut`` and ``updated_at`` is the default list sort —
+    # so the list ETag must invalidate even though tiles are unchanged
+    # (#1619).
+    await bump_browse_revision(db)
     await db.commit()
     await db.refresh(collection)
     return collection_out(ctx, collection)
@@ -1437,8 +1556,9 @@ async def move_collection(
     convention as ``PUT /api/tile-order``), then the collection row via the
     version CAS, then the browse revision — matching PATCH's
     row-then-browse order so a concurrent PATCH cannot deadlock against a
-    move. A no-op move (same category) skips both revision bumps while
-    still running the CAS.
+    move. A no-op move (same category) skips the scope bump while still
+    running the CAS — and the CAS advances ``version``/``updated_at``, which
+    the list ETag covers, so the browse bump is not skipped (#1619).
     """
     collection = await db.get(Collection, collection_id)
     if collection is None:
@@ -1458,8 +1578,9 @@ async def move_collection(
             await bump_scopes(db, affected)
     ctx = await _ViewerContext.build(db, user)
     await _bump_version_or_409(db, ctx, collection, body.version)
-    if moved:
-        await bump_browse_revision(db)
+    # Unconditional (#1619): even a no-op move runs the CAS, which advances
+    # ``version``/``updated_at`` — both surface in the collections list.
+    await bump_browse_revision(db)
     collection.category_id = body.category_id
     await db.commit()
     await db.refresh(collection)

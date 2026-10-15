@@ -7,7 +7,6 @@ import {
   deleteCollection,
   fetchCollection,
   collectionConflictCurrent,
-  fetchCollections,
   fetchCollectionsPaged,
   fetchCollectionOwners,
   moveCollection,
@@ -112,10 +111,16 @@ export const COLLECTION_NOT_FOUND_MESSAGE =
 const EMPTY_ROWS = Object.freeze([]) as unknown as CollectionSummary[]
 const MAX_CACHED_COLLECTION_FILTERS = 8
 
-/** Per-request-key cache entry: the page rows plus the matching X-Total-Count. */
+/**
+ * Per-request-key cache entry: the page rows plus the matching
+ * X-Total-Count and the response's weak ETag (#1619). The ETag seeds the
+ * next `If-None-Match` for this exact key; `null` until the server sends
+ * one.
+ */
 interface CachedCollectionRows {
   rows: CollectionSummary[]
   total: number
+  etag: string | null
 }
 
 function cacheRows(
@@ -389,6 +394,12 @@ export function useCollectionsData({
   const loadSeq = useRef(0)
   const foregroundLoadInFlight = useRef<number | null>(null)
   const invalidateRef = useRef<(() => void) | null>(null)
+  // Mirror of `collectionsByKey` so `load`/`pollRows` can read the cached
+  // ETag for the request key without stale closures (#1619).
+  const rowsByKeyRef = useRef(collectionsByKey)
+  useEffect(() => {
+    rowsByKeyRef.current = collectionsByKey
+  }, [collectionsByKey])
   const lastForegroundEffectRun = useRef<{
     enabled: boolean
     userId: number | null
@@ -442,8 +453,10 @@ export function useCollectionsData({
     const seq = ++loadSeq.current
     foregroundLoadInFlight.current = seq
     invalidateRef.current?.()
-    if (rowsUserId.current !== userId) {
+    const userChanged = rowsUserId.current !== userId
+    if (userChanged) {
       rowsUserId.current = userId
+      rowsByKeyRef.current = {}
       setCollectionsByKey({})
       setRowsCacheUserId(userId)
       setOwnerOptions([])
@@ -451,24 +464,47 @@ export function useCollectionsData({
     }
     setLoading(true)
     setError(null)
+    // Only revalidate against an entry cached under this exact key for this
+    // user — never on a first load and never across a user switch (#1619).
+    const cached = userChanged ? undefined : rowsByKeyRef.current[currentKey]
     try {
-      let rows: CollectionSummary[]
-      let total: number
-      if (listMode === 'paged') {
-        const res = await fetchCollectionsPaged(apiFilters)
-        rows = res.items.map(apiCollectionSummaryToSummary)
-        total = res.total
-      } else {
-        rows = (await fetchCollections(apiFilters)).map(apiCollectionSummaryToSummary)
-        total = rows.length
-      }
+      const res = cached?.etag
+        ? await fetchCollectionsPaged(apiFilters, undefined, {
+            ifNoneMatch: cached.etag,
+          })
+        : await fetchCollectionsPaged(apiFilters)
       if (seq !== loadSeq.current) return
-      setCollectionsByKey((prev) => cacheRows(prev, currentKey, { rows, total }))
-      setLastTotal(total)
-      // Rows deleted under us left this page empty — step back to the last
-      // page that can still hold rows; the key change triggers the reload.
-      if (listMode === 'paged' && rows.length === 0 && total > 0 && page > 0) {
-        setPage(Math.ceil(total / pageSize) - 1)
+      if (res.notModified) {
+        // 304 — keep the cached rows/total; refresh the stored ETag if the
+        // 304 carried one. The page step-back logic is untouched: an empty
+        // page that would have stepped back already did so on the 200 that
+        // produced it.
+        if (cached) {
+          setCollectionsByKey((prev) =>
+            currentKey in prev
+              ? {
+                  ...prev,
+                  [currentKey]: {
+                    ...prev[currentKey],
+                    etag: res.etag ?? prev[currentKey].etag,
+                  },
+                }
+              : prev,
+          )
+          setLastTotal(cached.total)
+        }
+      } else {
+        const rows = res.items.map(apiCollectionSummaryToSummary)
+        // 'full' mode has no server paging — the fallback in
+        // fetchCollectionsPaged already reports items.length.
+        const total = res.total
+        setCollectionsByKey((prev) => cacheRows(prev, currentKey, { rows, total, etag: res.etag }))
+        setLastTotal(total)
+        // Rows deleted under us left this page empty — step back to the last
+        // page that can still hold rows; the key change triggers the reload.
+        if (listMode === 'paged' && rows.length === 0 && total > 0 && page > 0) {
+          setPage(Math.ceil(total / pageSize) - 1)
+        }
       }
       if (role !== 'student') {
         void fetchCollectionOwners(ownersType)
@@ -565,19 +601,18 @@ export function useCollectionsData({
     } = latest.current
     if (signal.aborted || foregroundLoadInFlight.current !== null || user == null) return
     const seq = loadSeq.current
+    // Revalidate with the ETag cached under this exact key (#1619).
+    const cached = rowsByKeyRef.current[key]
     try {
-      let rows: CollectionSummary[]
-      let total: number
-      if (mode === 'paged') {
-        const res = await fetchCollectionsPaged(currentApiFilters, { signal })
-        rows = res.items.map(apiCollectionSummaryToSummary)
-        total = res.total
-      } else {
-        rows = (await fetchCollections(currentApiFilters, { signal })).map(
-          apiCollectionSummaryToSummary,
-        )
-        total = rows.length
-      }
+      const res = cached?.etag
+        ? await fetchCollectionsPaged(
+            currentApiFilters,
+            { signal },
+            {
+              ifNoneMatch: cached.etag,
+            },
+          )
+        : await fetchCollectionsPaged(currentApiFilters, { signal })
       if (
         signal.aborted ||
         foregroundLoadInFlight.current !== null ||
@@ -586,10 +621,27 @@ export function useCollectionsData({
       ) {
         return
       }
-      setCollectionsByKey((prev) => cacheRows(prev, key, { rows, total }))
-      setLastTotal(total)
-      if (mode === 'paged' && rows.length === 0 && total > 0 && currentPage > 0) {
-        setPage(Math.ceil(total / currentPageSize) - 1)
+      if (res.notModified) {
+        // 304 — keep the cached rows/total, just advance the stored ETag.
+        if (cached) {
+          setCollectionsByKey((prev) =>
+            key in prev
+              ? {
+                  ...prev,
+                  [key]: { ...prev[key], etag: res.etag ?? prev[key].etag },
+                }
+              : prev,
+          )
+          setLastTotal(cached.total)
+        }
+      } else {
+        const rows = res.items.map(apiCollectionSummaryToSummary)
+        const total = res.total
+        setCollectionsByKey((prev) => cacheRows(prev, key, { rows, total, etag: res.etag }))
+        setLastTotal(total)
+        if (mode === 'paged' && rows.length === 0 && total > 0 && currentPage > 0) {
+          setPage(Math.ceil(total / currentPageSize) - 1)
+        }
       }
       if (user.role !== 'student') {
         const ownerType: ApiCollectionType | undefined =

@@ -236,18 +236,18 @@ def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut
     )
 
 
-async def image_ids_in_filed_collections(
+async def image_ids_in_collections(
     db: AsyncSession, image_ids: Iterable[int]
 ) -> set[int]:
-    """Subset of *image_ids* that belong to a collection filed into a
-    category (``category_id IS NOT NULL``).
+    """Subset of *image_ids* that belong to any collection, filed or not.
 
-    Such an image's ``thumb``/``active``/membership renders on that
-    collection's Browse tile via ``cover_thumb``/``image_count``, so writes
-    to it must bump the browse revision even when the image itself is
-    uncategorized — the image routers historically skip the bump for
-    uncategorized images because they never appeared in the tree (epic
-    #1525 / #1527).
+    An image's ``thumb``/``active``/membership renders on the collection's
+    list row (``cover_thumb``/``image_count``) and on its Browse tile
+    regardless of filing, so writes to it must bump the browse revision even
+    when both the image and its collection are uncategorized — the image
+    routers historically skip the bump for uncategorized images because they
+    never appeared in the tree (epic #1525 / #1527; widened to unfiled
+    collections for the list ETag in #1619).
     """
     ids = {i for i in image_ids}
     if not ids:
@@ -255,10 +255,7 @@ async def image_ids_in_filed_collections(
     result = await db.execute(
         select(CollectionImage.image_id)
         .join(Collection, Collection.id == CollectionImage.collection_id)
-        .where(
-            CollectionImage.image_id.in_(ids),
-            Collection.category_id.isnot(None),
-        )
+        .where(CollectionImage.image_id.in_(ids))
         .distinct()
     )
     return set(result.scalars().all())

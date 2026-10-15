@@ -164,7 +164,12 @@ function resetFixtures() {
     collections_home_shelf: false,
   })
   apiMocks.fetchCollections.mockResolvedValue([])
-  apiMocks.fetchCollectionsPaged.mockResolvedValue({ items: [], total: 0 })
+  apiMocks.fetchCollectionsPaged.mockResolvedValue({
+    items: [],
+    total: 0,
+    etag: null,
+    notModified: false,
+  })
   apiMocks.fetchCollectionOwners.mockResolvedValue([])
   apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ type: 'sequence' }))
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })

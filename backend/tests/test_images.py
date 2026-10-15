@@ -12,11 +12,11 @@ from app.schemas import ImageOut
 
 
 @pytest.fixture(autouse=True)
-def _patch_filed_membership(monkeypatch: pytest.MonkeyPatch) -> None:
-    """image_ids_in_filed_collections runs a real SELECT (#1527); these unit
+def _patch_collection_membership(monkeypatch: pytest.MonkeyPatch) -> None:
+    """image_ids_in_collections runs a real SELECT (#1527); these unit
     tests mock the session, so default it to "no membership"."""
     monkeypatch.setattr(
-        "app.routers.images.image_ids_in_filed_collections",
+        "app.routers.images.image_ids_in_collections",
         AsyncMock(return_value=set()),
     )
 

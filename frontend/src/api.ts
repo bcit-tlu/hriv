@@ -805,6 +805,13 @@ export interface PaginatedCollections {
   items: ApiCollectionSummary[]
   /** Total matching collections before pagination (from the X-Total-Count header). */
   total: number
+  /**
+   * Weak ETag (`W/"collections-{revision}-{hash}"`, #1619) from the
+   * response, or null when the header is absent.
+   */
+  etag: string | null
+  /** True on a 304 revalidation hit — `items`/`total` are empty placeholders. */
+  notModified: boolean
 }
 
 /**
@@ -812,20 +819,45 @@ export interface PaginatedCollections {
  * contract as `fetchCollections` but also returns `X-Total-Count`, falling
  * back to the item count when the header is absent or unparsable (e.g. a
  * stubbed unpaginated response).
+ *
+ * Conditional-request support (#1619): `options.ifNoneMatch` is sent as the
+ * `If-None-Match` header and a 304 resolves to `{ notModified: true }` with
+ * the response's ETag. Fetch defaults to `cache: 'no-store'` so the browser
+ * never synthesizes a 200 from a revalidated cache entry — the 304
+ * short-circuit must reach the app (same reason as `fetchCategoryTree`).
  */
 export async function fetchCollectionsPaged(
   filters: CollectionFilters = {},
   init?: RequestInit,
+  options?: { ifNoneMatch?: string | null },
 ): Promise<PaginatedCollections> {
   const qs = collectionsQueryString(filters)
+  const { headers: initHeaders, ...restInit } = init ?? {}
+  const headers = new Headers(initHeaders)
+  if (options?.ifNoneMatch) {
+    headers.set('If-None-Match', options.ifNoneMatch)
+  }
   const { data, response } = await requestRaw<ApiCollectionSummary[]>(
     `/collections${qs ? `?${qs}` : ''}`,
-    init,
+    {
+      cache: 'no-store',
+      ...restInit,
+      headers: Object.fromEntries(headers.entries()),
+    },
   )
+  const etag = response.headers.get('ETag') ?? response.headers.get('etag') ?? null
+  if (response.status === 304) {
+    return { items: [], total: 0, etag, notModified: true }
+  }
   const items = data ?? []
   const header = response.headers.get('X-Total-Count')
   const parsed = header != null ? Number(header) : NaN
-  return { items, total: Number.isNaN(parsed) ? items.length : parsed }
+  return {
+    items,
+    total: Number.isNaN(parsed) ? items.length : parsed,
+    etag,
+    notModified: false,
+  }
 }
 
 /**
