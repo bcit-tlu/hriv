@@ -647,11 +647,11 @@ measurement metadata.
   its saved position so every pane returns to where it was saved — the
   relative offset between saved entries is the alignment around different
   highlights; entries that don't match the shape are ignored.
-- **Given** `permissions.can_edit`, **Then** a **Save view** button appears
+- **Given** `permissions.can_edit`, **Then** a **Set as default view** button appears (#1610)
   and clicking it PUTs every rendered pane's current viewport as
   `viewport_state` with the collection `version`; a failure surfaces
-  `userMessage` on the snackbar. Non-editors never see **Save view**.
-- **Given** the **Restore view** button (everyone), **Then** it stays
+  `userMessage` on the snackbar. Non-editors never see **Set as default view**.
+- **Given** the **Restore default view** button (everyone), **Then** it stays
   disabled until a view has been saved (#1567); **When** clicked, **Then**
   each pane re-applies its saved position and the link baselines re-arm.
 - **Given** each pane's **link** button at the top-right of its viewport

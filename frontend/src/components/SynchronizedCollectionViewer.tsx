@@ -153,7 +153,7 @@ export default function SynchronizedCollectionViewer({
     [images, failedIds],
   )
   const panes = useMemo(() => available.slice(0, MAX_PANES), [available])
-  // Restore view stays inert until a *valid* viewport has been saved for at
+  // Restore default view stays inert until a *valid* viewport has been saved for at
   // least one rendered pane (#1567) — `viewportStateFromSaved` rejects
   // malformed entries, so a junk `viewport_state` can't enable a button
   // that only goes home.
@@ -164,7 +164,7 @@ export default function SynchronizedCollectionViewer({
   // `initialViewport` is mount-only input for ImageViewer — freeze the saved
   // entry the first time an image occupies a pane so a later save/refetch
   // (which replaces `collection`) cannot remount the viewer and discard
-  // unsaved navigation. Reset view reads `collection.viewportState` live.
+  // unsaved navigation. Restore default view reads `collection.viewportState` live.
   const initialViewports = useRef({
     collectionId,
     map: new Map<number, ViewportState | undefined>(),
@@ -504,7 +504,7 @@ export default function SynchronizedCollectionViewer({
           disabled={!hasSavedView}
           data-testid="synchronized-reset"
         >
-          Restore view
+          Restore default view
         </Button>
         {canEdit && (
           <Button
@@ -515,7 +515,7 @@ export default function SynchronizedCollectionViewer({
             disabled={saving}
             data-testid="synchronized-save"
           >
-            Save view
+            Set as default view
           </Button>
         )}
       </Box>
