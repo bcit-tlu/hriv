@@ -64,8 +64,8 @@ function storePrefs(storageKey: string, prefs: CollectionsViewPrefs): void {
 }
 
 /**
- * Persisted Collections-page view preferences (#1629), modelled on
- * `useImageInfoExpandedPreference`: scoped to the signed-in user so one
+ * Persisted Collections-page view preferences (#1629), scoped to the
+ * signed-in user (`hrivpref:*:user:<id>`) so one
  * account's view choice never carries over to the next on the same tab.
  * `enablePersistence` lets tests/stories opt out of localStorage. The view
  * is intentionally not persisted while Table/Graph are being evaluated —

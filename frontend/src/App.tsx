@@ -32,7 +32,8 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
-import ImageInfoAccordion from './components/ImageInfoAccordion'
+import ImageDetailsDrawer from './components/ImageDetailsDrawer'
+import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import SortableTileGrid from './components/SortableTileGrid'
 import MyCollectionsDrawer, {
   MY_COLLECTIONS_ROW_CONTENT_GAP_PX,
@@ -87,7 +88,6 @@ import {
   useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
-import { useImageInfoExpandedPreference } from './useImageInfoExpandedPreference'
 import { useImageSourceInfo } from './useImageSourceInfo'
 import { useMyCollectionsShelf } from './useMyCollectionsShelf'
 import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
@@ -192,9 +192,6 @@ export default function App() {
     canEditContent,
     canViewPeople,
   } = useAuth()
-  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference(
-    currentUser?.id ?? null,
-  )
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
@@ -320,10 +317,14 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  // "Image details" drawer open state, keyed by image id so it resets on every
+  // image change without an effect. `canvasEditActive` forces it closed in the
+  // derived `imageDetailsOpen` below.
+  const [imageDetailsOpenFor, setImageDetailsOpenFor] = useState<number | null>(null)
   const imageSourceInfo = useImageSourceInfo(
     selectedImage?.id ?? null,
     selectedImage?.version ?? 0,
-    imageInfoExpanded,
+    selectedImage != null && imageDetailsOpenFor === selectedImage.id,
   )
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
@@ -882,6 +883,9 @@ export default function App() {
 
   // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
   const [canvasEditActive, setCanvasEditActive] = useState(false)
+  // The drawer closes while canvas edit mode is active (it would cover the edit toolbar).
+  const imageDetailsOpen =
+    selectedImage != null && imageDetailsOpenFor === selectedImage.id && !canvasEditActive
   const canvasDraftDirtyRef = useRef(false)
   const canvasSavingRef = useRef(false)
   const pendingPopStateRef = useRef<{
@@ -2844,19 +2848,31 @@ export default function App() {
                   onSaveCanvasAnnotations={handleSaveCanvasAnnotations}
                   canvasDraftDirty={canvasDraftDirty}
                   onCanvasEditModeChange={setCanvasEditActive}
+                  viewportOverlay={
+                    <ImageDetailsDrawer
+                      image={selectedImage}
+                      programNames={ancestorProgramIds.map(
+                        (pid) =>
+                          programs.find((program) => program.id === pid)?.name ?? String(pid),
+                      )}
+                      groupNames={ancestorGroupIds.map(
+                        (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
+                      )}
+                      measurement={selectedImageMeasurement}
+                      sourceInfo={imageSourceInfo}
+                      open={imageDetailsOpen}
+                      onOpenChange={(next) =>
+                        setImageDetailsOpenFor(next ? selectedImage.id : null)
+                      }
+                      disabled={canvasEditActive}
+                    />
+                  }
                 />
               </Paper>
 
-              <ImageInfoAccordion
-                image={selectedImage}
-                programNames={ancestorProgramIds.map(
-                  (pid) => programs.find((program) => program.id === pid)?.name ?? String(pid),
-                )}
-                groupNames={ancestorGroupIds.map(
-                  (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
-                )}
-                measurement={selectedImageMeasurement}
-                sourceInfo={imageSourceInfo}
+              <ImageViewerInfoBar
+                imageId={selectedImage.id}
+                note={selectedImage.note}
                 collections={
                   selectedImageCollections.length > 0 ? (
                     <ImageCollectionsList
@@ -2867,8 +2883,6 @@ export default function App() {
                     />
                   ) : null
                 }
-                expanded={imageInfoExpanded}
-                onExpandedChange={setImageInfoExpanded}
               />
             </>
           ) : (

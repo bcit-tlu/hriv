@@ -1,4 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
+import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
 import type { ResponsiveStyleValue } from '@mui/system'
@@ -99,6 +101,8 @@ interface ImageViewerProps {
    * raw `viewport-change` handlers and drive the viewport imperatively.
    */
   onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
+  /** Extra UI portaled into the OSD container (`viewer.container`) so it stays visible in OSD full-page mode. */
+  viewportOverlay?: ReactNode
 }
 
 interface DragState {
@@ -132,6 +136,7 @@ export default function ImageViewer({
   onTileSourceRenewed,
   onError,
   onViewerReady,
+  viewportOverlay,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -1235,6 +1240,12 @@ export default function ImageViewer({
           registerCancelHandler={registerCanvasCancel}
         />
       )}
+      {/* Like CanvasOverlay, portal into viewer.container so the overlay
+          survives OSD full-page reparenting; positioned children anchor to
+          the position:relative container. */}
+      {viewerInstance && viewportOverlay
+        ? createPortal(viewportOverlay, viewerInstance.container)
+        : null}
     </Box>
   )
 }

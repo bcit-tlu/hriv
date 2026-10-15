@@ -383,6 +383,21 @@ describe('ImageViewer drawer configuration', () => {
       navigatorDrawer: 'canvas',
     })
   })
+
+  it('portals viewportOverlay content into the OSD container', async () => {
+    render(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        viewportOverlay={<div data-testid="viewport-overlay">overlay</div>}
+      />,
+    )
+
+    // viewer.container is detached in the OSD mock, so query inside it
+    // rather than via screen.
+    await waitFor(() =>
+      expect(viewer().container.querySelector('[data-testid="viewport-overlay"]')).not.toBeNull(),
+    )
+  })
 })
 
 describe('ImageViewer lifecycle telemetry', () => {

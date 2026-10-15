@@ -1,0 +1,48 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ImageDetailsDrawerStories from './ImageDetailsDrawer.stories'
+
+<Meta of={ImageDetailsDrawerStories} />
+
+<Title />
+
+<Subtitle>
+  An "i"-triggered, right-anchored overlay drawer of image metadata inside the viewer viewport.
+</Subtitle>
+
+## When to use
+
+`App` renders the drawer through `ImageViewer`'s `viewportOverlay` portal so it stays usable in
+OSD full-page mode. The "i" button in the top-right corner opens a right-anchored panel listing
+copyright, programs, groups, dates, dimensions, file size, measurement, and source-file details;
+each field is one non-wrapping line with the full value in `title`. Notes, collections, and the
+viewer instructions live in `ImageViewerInfoBar` below the viewer instead.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ImageDetailsDrawerStories.Basic} />
+
+## Examples
+
+### All fields populated
+
+<Canvas of={ImageDetailsDrawerStories.Open} />
+
+### Long values
+
+Long lines truncate with an ellipsis; the `title` attribute carries the full value.
+
+<Canvas of={ImageDetailsDrawerStories.LongValues} />
+
+## Stories
+
+<Stories includePrimary={false} />

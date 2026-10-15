@@ -545,15 +545,18 @@ vi.mock('../src/components/ImageViewer', () => ({
     onCanvasEditModeChange,
     onCanvasAnnotationsChange,
     onSaveCanvasAnnotations,
+    viewportOverlay,
   }: {
     imageId?: number
     onCanvasEditModeChange?: (active: boolean) => void
     onCanvasAnnotationsChange?: (annotations: unknown[]) => void
     onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+    viewportOverlay?: ReactNode
   }) {
     const [internalEditMode, setInternalEditMode] = useState(false)
     return (
       <div>
+        {viewportOverlay}
         Image Viewer {String(imageId)} / internal edit: {String(internalEditMode)}
         <button
           type="button"
@@ -1518,7 +1521,6 @@ describe('App breadcrumbs', () => {
 
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
 
     fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
     expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
@@ -1644,29 +1646,17 @@ describe('App failure notifications', () => {
   })
 })
 
-describe('App image information accordion', () => {
-  const preferenceKey = 'hrivpref:image-info-expanded:user:1'
-  let storedUser: string | null = null
-
+describe('App image details drawer', () => {
   beforeEach(() => {
     resetFixtures()
     Object.assign(mockImage, { copyright: 'Educational use only' })
-    storedUser = localStorage.getItem('hriv_user')
-    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
-    localStorage.removeItem(preferenceKey)
   })
 
   afterEach(() => {
     Object.assign(mockImage, { copyright: null })
-    localStorage.removeItem(preferenceKey)
-    if (storedUser === null) {
-      localStorage.removeItem('hriv_user')
-    } else {
-      localStorage.setItem('hriv_user', storedUser)
-    }
   })
 
-  it('renders collapsed and reveals image information when expanded', async () => {
+  it('renders a closed drawer trigger and reveals image details when opened', async () => {
     apiMocks.fetchImageSourceInfo.mockResolvedValueOnce({
       originalFilename: 'specimen-scan.tif',
       fileType: 'TIF',
@@ -1675,11 +1665,11 @@ describe('App image information accordion', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
-    const summary = screen.getByRole('button', { name: 'Image information' })
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    const trigger = screen.getByRole('button', { name: 'Image details' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
 
-    fireEvent.click(summary)
+    fireEvent.click(trigger)
 
     const copyright = screen.getByText('Copyright:', { exact: true }).parentElement
     expect(copyright).toHaveTextContent('Copyright: Educational use only')
@@ -1689,6 +1679,40 @@ describe('App image information accordion', () => {
     expect(fileType.parentElement).toHaveTextContent('File type: TIF')
     const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
     expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
+  })
+
+  it('closes the drawer when another image is selected', async () => {
+    currentImagesMock = [mockImage, mockSecondImage]
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  })
+
+  it('disables the trigger and hides an open drawer in canvas edit mode', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Image details' })).toBeDisabled()
   })
 })
 

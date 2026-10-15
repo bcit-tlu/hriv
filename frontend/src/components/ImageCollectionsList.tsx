@@ -30,11 +30,12 @@ function isModifiedClick(e: MouseEvent): boolean {
 }
 
 /**
- * Read-only "Collections" row for the image viewer metadata area (#1586).
+ * Read-only "Collections" links for the image viewer info bar (#1586, #1677).
  *
  * Lists the collections the current image belongs to, each name linking to that
  * collection. When there are more than `limit` (default 3), the extras collapse
- * behind a "… and N more" link that expands them inline.
+ * behind a "… and N more" link that expands them inline. The "Collections:"
+ * label is rendered by the caller (`ImageViewerInfoBar`).
  */
 export default function ImageCollectionsList({
   collections,
@@ -52,7 +53,6 @@ export default function ImageCollectionsList({
 
   return (
     <Typography color="text.secondary" component="span" variant="body2">
-      <strong>Collection{collections.length > 1 ? 's' : ''}:</strong>{' '}
       {shown.map((collection, index) => {
         const href = hrefForCollection?.(collection.id)
         const linkProps = href ? { href } : ({ component: 'button', type: 'button' } as const)

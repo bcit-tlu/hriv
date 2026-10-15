@@ -1253,11 +1253,12 @@ visibility, duplicates and the synchronized cap on every write.
 
 ### Collection membership in the image view (#1586)
 
-**Where.** `App.tsx` (metadata row + fetch effect),
-`components/ImageCollectionsList.tsx`, `fetchImageCollections` in `api.ts`.
+**Where.** `App.tsx` (info bar wiring + fetch effect),
+`components/ImageViewerInfoBar.tsx`, `components/ImageCollectionsList.tsx`,
+`fetchImageCollections` in `api.ts`.
 
-**What.** A read-only **Collections** row inside the **Image information**
-accordion's first classification row (after Groups) lists the collections the
+**What.** A read-only **Collections** row in the info bar directly below the
+viewer (`ImageViewerInfoBar`'s 40% middle column) lists the collections the
 current image belongs to, so a viewer can see where else it is used. It is
 informational only — distinct from the single-parent category and from the "Add
 to Collection" write flow above.
@@ -1277,8 +1278,9 @@ builds `?collection={id}`), a modifier- or middle-click opens it in a new tab.
 Every link is safe to follow — the list is already visibility-filtered
 server-side, so it only ever contains collections the caller may open. It shows
 up to three names, then truncates with an inline "… and N more" link that expands
-the rest (reset per image via a `key`). The label pluralizes ("Collection" /
-"Collections") like the Program/Group rows.
+the rest (reset per image via a `key`). The always-plural "Collections:" label
+is rendered by `ImageViewerInfoBar`; `ImageCollectionsList` renders only the
+links and the "more" affordance.
 
 ### Sequence collection viewer (#1416)
 
