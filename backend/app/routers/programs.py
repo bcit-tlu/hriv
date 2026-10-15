@@ -99,8 +99,13 @@ async def update_program(
             raise HTTPException(
                 status_code=409, detail="OIDC group already mapped to another program",
             )
+    # A program's name renders as the owner on its filed collections'
+    # Browse tiles — invalidate the tree ETag when it changes (#1527).
+    name_changed = "name" in update_data and update_data["name"] != program.name
     for key, value in update_data.items():
         setattr(program, key, value)
+    if name_changed:
+        await bump_browse_revision(db)
     await db.commit()
     await db.refresh(program)
     return program

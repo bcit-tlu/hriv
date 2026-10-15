@@ -25,6 +25,14 @@ function storageKeyForTable(tableKey: string, userId: number | string) {
   return `hrivpref:table-columns:${tableKey}:user:${userId}`
 }
 
+function orderStorageKeyFor(userId: number | string) {
+  return orderStorageKeyForTable('people', userId)
+}
+
+function orderStorageKeyForTable(tableKey: string, userId: number | string) {
+  return `hrivpref:table-column-order:${tableKey}:user:${userId}`
+}
+
 describe('useTableColumnPreferences', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -224,6 +232,188 @@ describe('useTableColumnPreferences', () => {
     expect(setItemSpy).not.toHaveBeenCalledWith(
       storageKeyForTable('admin', 1),
       JSON.stringify(firstState),
+    )
+  })
+
+  it('defaults column order to allColumns order when no stored order exists', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+
+    const { result } = renderPreferencesHook()
+
+    expect(result.current.columnOrder).toEqual(['name', 'email', 'role'])
+    expect(result.current.orderedVisibleColumns).toEqual(['name', 'role'])
+  })
+
+  it('loads stored column order from localStorage on mount', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(orderStorageKeyFor(1), JSON.stringify(['role', 'name', 'email']))
+
+    const { result } = renderPreferencesHook()
+
+    expect(result.current.columnOrder).toEqual(['role', 'name', 'email'])
+  })
+
+  it('setColumnOrder updates state and persists to localStorage', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+
+    const { result } = renderPreferencesHook()
+
+    act(() => {
+      result.current.setColumnOrder(['email', 'role', 'name'])
+    })
+
+    expect(result.current.columnOrder).toEqual(['email', 'role', 'name'])
+    expect(JSON.parse(localStorage.getItem(orderStorageKeyFor(1)) ?? '[]')).toEqual([
+      'email',
+      'role',
+      'name',
+    ])
+    // Visibility storage stays under its own key and untouched by ordering.
+    expect(localStorage.getItem(storageKeyFor(1))).toBeNull()
+  })
+
+  it('drops unknown keys from a stored order and appends new columns at the end', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(orderStorageKeyFor(1), JSON.stringify(['role', 'removed_column', 'name']))
+
+    const { result } = renderPreferencesHook()
+
+    expect(result.current.columnOrder).toEqual(['role', 'name', 'email'])
+  })
+
+  it('deduplicates repeated keys and ignores non-string entries in a stored order', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(orderStorageKeyFor(1), JSON.stringify(['email', 'email', 42, 'name']))
+
+    const { result } = renderPreferencesHook()
+
+    expect(result.current.columnOrder).toEqual(['email', 'name', 'role'])
+  })
+
+  it('normalizes setColumnOrder input the same way as stored data', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+
+    const { result } = renderPreferencesHook()
+
+    act(() => {
+      result.current.setColumnOrder(['role', 'bogus' as TestColumn, 'role'])
+    })
+
+    expect(result.current.columnOrder).toEqual(['role', 'name', 'email'])
+  })
+
+  it('orderedVisibleColumns follows order and visibility together', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+
+    const { result } = renderPreferencesHook()
+
+    act(() => {
+      result.current.setColumnOrder(['role', 'email', 'name'])
+    })
+    expect(result.current.orderedVisibleColumns).toEqual(['role', 'name'])
+
+    act(() => {
+      result.current.setColumnVisible('email', true)
+    })
+    expect(result.current.orderedVisibleColumns).toEqual(['role', 'email', 'name'])
+
+    act(() => {
+      result.current.setColumnVisible('name', false)
+    })
+    expect(result.current.orderedVisibleColumns).toEqual(['role', 'email'])
+  })
+
+  it('stores column order in user-scoped keys so different users stay isolated', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    const firstUser = renderPreferencesHook()
+
+    act(() => {
+      firstUser.result.current.setColumnOrder(['role', 'name', 'email'])
+    })
+    firstUser.unmount()
+
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 2 }))
+    const secondUser = renderPreferencesHook()
+
+    expect(secondUser.result.current.columnOrder).toEqual(['name', 'email', 'role'])
+    expect(JSON.parse(localStorage.getItem(orderStorageKeyFor(1)) ?? '[]')).toEqual([
+      'role',
+      'name',
+      'email',
+    ])
+    expect(localStorage.getItem(orderStorageKeyFor(2))).toBeNull()
+  })
+
+  it('falls back to allColumns order when stored order JSON is corrupted', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(orderStorageKeyFor(1), '{not-json')
+
+    const { result } = renderPreferencesHook()
+
+    expect(result.current.columnOrder).toEqual(['name', 'email', 'role'])
+  })
+
+  it('falls back to allColumns order when stored order is not an array', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(orderStorageKeyFor(1), JSON.stringify({ order: ['role'] }))
+
+    const { result } = renderPreferencesHook()
+
+    expect(result.current.columnOrder).toEqual(['name', 'email', 'role'])
+  })
+
+  it('keeps reordering in memory when localStorage writes fail', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('localStorage unavailable')
+    })
+
+    const { result } = renderPreferencesHook()
+
+    act(() => {
+      result.current.setColumnOrder(['email', 'name', 'role'])
+    })
+
+    expect(result.current.columnOrder).toEqual(['email', 'name', 'role'])
+  })
+
+  it('does not rewrite the current order snapshot on initial mount', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+
+    renderPreferencesHook()
+
+    expect(setItemSpy).not.toHaveBeenCalledWith(
+      orderStorageKeyFor(1),
+      JSON.stringify(['name', 'email', 'role']),
+    )
+  })
+
+  it('does not write stale order data when the storage key changes', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(orderStorageKeyForTable('people', 1), JSON.stringify(['role']))
+    localStorage.setItem(
+      orderStorageKeyForTable('admin', 1),
+      JSON.stringify(['email', 'name', 'role']),
+    )
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+
+    const { result, rerender } = renderHook(
+      ({ tableKey }) =>
+        useTableColumnPreferences<TestColumn>({
+          tableKey,
+          allColumns,
+          defaultVisibleColumns,
+        }),
+      { initialProps: { tableKey: 'people' } },
+    )
+
+    setItemSpy.mockClear()
+    rerender({ tableKey: 'admin' })
+
+    expect(result.current.columnOrder).toEqual(['email', 'name', 'role'])
+    expect(setItemSpy).not.toHaveBeenCalledWith(
+      orderStorageKeyForTable('admin', 1),
+      JSON.stringify(['role', 'name', 'email']),
     )
   })
 })

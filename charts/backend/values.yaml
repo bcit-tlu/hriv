@@ -16,6 +16,12 @@ env:
   TILES_DIR: /data/tiles
   EXPORT_PIGZ_THREADS: 2
   AZURE_BACKUP_PREFIX: ''
+  # Number of trusted proxies that APPEND to X-Forwarded-For before the
+  # backend; the client IP is taken that many entries from the right.
+  # 1 = frontend nginx only. Fleet chain HAProxy (overwrites XFF) ->
+  # ingress-nginx -> frontend nginx = 3 (set in flux-fleet overlays).
+  # See docs/deployment-proxy-chain.md.
+  TRUSTED_PROXY_HOPS: 1
 
 azureReadBackup:
   secretName: azure-read-backup-credentials
@@ -103,6 +109,19 @@ observability:
 # refuses to start if the secret is missing at runtime.
 jwtSecret: ''
 
+# ── CORS ──────────────────────────────────────────────────
+# Comma-separated list of allowed cross-origin frontend origins, rendered
+# as the backend's CORS_ORIGINS env var. Credentialed CORS is only ever
+# enabled for these explicit origins.
+#
+# Required when tasks.executionMode=required: the chart fails to render
+# (and the backend refuses to boot) with an empty or wildcard value, so a
+# production deployment can never silently run permissive credentialed
+# CORS. In local mode an empty value falls back to a wildcard WITHOUT
+# credentials — dev compose and the Vite dev-server proxy are same-origin
+# and unaffected; only set this for cross-origin dev or deployment.
+corsOrigins: ''
+
 # ── OpenID Connect / OAuth 2.0 authentication ───────────────
 # Disabled by default so chart consumers can start with local
 # email/password login (see bootstrapAdmin below). Enable and supply
@@ -133,8 +152,10 @@ auth:
     # Trust email from IdP without requiring email_verified claim.
     # Enable when your IdP does not emit the email_verified claim.
     trustEmail: false
-    # CORS origins (comma-separated). Used as fallback redirect target when
-    # postLoginRedirect is empty.
+    # DEPRECATED fallback for the top-level corsOrigins value above. Kept
+    # so existing overlays keep working; prefer corsOrigins for new
+    # deployments — this nested key only existed because CORS_ORIGINS used
+    # to be rendered inside the OIDC-gated ConfigMap.
     corsOrigins: ''
 
 # ── PostgreSQL database configuration ───────────────────────
@@ -180,8 +201,11 @@ tasks:
     # PostgreSQL-authoritative child execution window. This is independent
     # from redis.worker.maxJobs.
     parallelism: 2
-    childTimeoutSeconds: 1800
-    leaseSeconds: 2100
+    # The 2026-09-18 repeat rehearsal exhausted the former 1800-second
+    # timeout on representative large sources. Keep the lease above this
+    # timeout so a healthy child retains authority throughout processing.
+    childTimeoutSeconds: 3600 # supported range: 60-86400
+    leaseSeconds: 3900
     heartbeatSeconds: 30
     # arq cron expressions are minute-granular, so use whole-minute values.
     pumpCadenceSeconds: 60
@@ -189,6 +213,44 @@ tasks:
     maxAttempts: 2
     retryBackoffBaseSeconds: 60
     retryBackoffCapSeconds: 900
+
+# ── API pod profile ─────────────────────────────────────────
+# Per-component settings rendered as env vars on the API (backend)
+# Deployment, mirroring the worker-only profile under
+# ``redis.worker.*`` so each pod class carries an explicit,
+# reviewable connection budget instead of silently inheriting the
+# backend code defaults.
+# ── Collections feature flags (epic #1409, #1583) ─────────────
+# Rendered as COLLECTIONS_ENABLED and COLLECTIONS_HOME_SHELF on the API pod. Collections are
+# dark-launched so unrelated releases can ship while the epic is still
+# landing: while false, every /api/collections route answers 404 and the
+# frontend (which reads GET /api/features at boot) hides the Collections
+# tab and ignores ?collection= deep links. The chart default stays false
+# (stable inherits it); the `latest` flux-fleet overlay sets true. Remove
+# the flag with the epic's closing issue (#1419). See docs/collections.md.
+collections:
+  enabled: false
+  homeShelf: false
+
+api:
+  # SQLAlchemy pool sizing for the API process (DB_POOL_SIZE /
+  # DB_MAX_OVERFLOW).  The defaults match the backend code defaults in
+  # ``backend/app/database.py``, so installing this chart version with no
+  # overlay change is a runtime no-op — the values only become visible
+  # and tunable per component.  See the connection-budget table in
+  # ``charts/backend/README.md`` before raising them: the shared pg-core
+  # cluster runs max_connections=100 across all app databases.
+  db:
+    poolSize: 10
+    maxOverflow: 20
+  # libvips thread-pool size per operation (VIPS_CONCURRENCY).  In
+  # deployed environments tasks.executionMode=required means image
+  # processing never runs in-process on the API pod, so this only matters
+  # for ``local``-mode installs where the in-process fallback can run
+  # libvips work.  Rendered anyway so the API pod carries an explicit
+  # profile like the worker's, and so local-mode fallback concurrency
+  # stays bounded by something other than the host's detected CPU count.
+  vipsConcurrency: 1
 
 # ── Redis / arq background worker ────────────────────────────
 # When enabled, the chart injects REDIS_URL into the backend pod and
@@ -300,6 +362,11 @@ redis:
       maxReplicas: 5
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
+      # Keep scale-down from terminating long-running libvips children during
+      # brief utilization dips. Kubernetes permits at most 3600 seconds; this
+      # exceeds the default rebuild child timeout and observed lease recovery
+      # horizon from the #1189 latest-cluster rehearsal.
+      scaleDownStabilizationWindowSeconds: 3600
 
 # ── Feedback delivery ────────────────────────────────────────
 # The backend accepts in-app feedback submissions via
@@ -350,6 +417,25 @@ feedback:
 vault:
   enabled: false
 
+# ── Synthetic monitoring result ingestion ────────────────────
+# The synthetic-monitoring CronJob posts its authoritative journey result to
+# POST /api/telemetry/synthetic-result. It authenticates with a shared static
+# secret (X-Synthetic-Ingest-Token) instead of the monitor account's user JWT
+# so failure reports still land during auth/DB outages, when no login is
+# possible (hriv#1495). The same secret value is delivered to both the
+# CronJob and this Deployment.
+#
+# Leave ingestTokenSecret.name empty to disable the token path entirely:
+# the endpoint then accepts only JWT-authenticated synthetic accounts (local
+# dev). When set, the backend renders SYNTHETIC_INGEST_TOKEN from the named
+# secret/key; the key is marked optional so a missing key degrades to
+# JWT-only ingestion rather than blocking the rollout — the stale-result
+# metrics alert is the designed detector for that misconfiguration.
+syntheticMonitoring:
+  ingestTokenSecret:
+    name: ''
+    key: token
+
 # ── NetworkPolicy ─────────────────────────────────────────────
 # Restricts ingress to the API pods so only the frontend proxy and the
 # metrics scraper can reach the backend Service. This is the enforcement
@@ -395,7 +481,7 @@ networkPolicy:
 tiles:
   enabled: false
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     port: 8001
     resources: {}
 
@@ -431,14 +517,38 @@ persistence:
     accessModes:
       - ReadWriteOnce
 
-resources: {}
+# ── API pod resources ───────────────────────────────────────
+# Previously ``{}``, which meant the API pod silently inherited the
+# namespace LimitRange (requests ~25m CPU / 96Mi memory, a 1Gi memory
+# limit, and no CPU limit).  These explicit defaults keep the deployed
+# outcome identical on memory/ephemeral limits and raise the requests to
+# honest API sizing so the scheduler sees the pod's real footprint; the
+# only behavioural change for existing deployments is the new CPU limit
+# of 2.  Set ``resources: null`` in an overlay to restore
+# LimitRange-inherited sizing — note ``resources: {}`` is a no-op merge
+# over these defaults, not an override.
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+    ephemeral-storage: 128Mi
+  limits:
+    cpu: '2'
+    memory: 1Gi
+    ephemeral-storage: 1Gi
 
 # ── Pod health probes ───────────────────────────────────────
 # Defaults are intentionally conservative so transient DB or node I/O
 # pressure does not evict a healthy backend pod. The readiness probe
-# checks /api/health/ready (database + storage), while the liveness probe
-# checks /api/health/storage so Kubernetes restarts the pod when the
+# checks /api/_probe (database + storage), which is served through the
+# include_router request path so a routed-API outage marks pods unready
+# instead of passing silently — see #1473. The liveness probe checks
+# /api/health/storage so Kubernetes restarts the pod when the
 # source-images volume becomes read-only.
+#
+# /api/_probe is intentionally NOT in otel.excludedUrls above: the probe
+# must traverse the instrumented middleware path it canaries. Do not add
+# it there — that would reintroduce the readiness blind spot.
 probes:
   backend:
     liveness:
@@ -448,7 +558,7 @@ probes:
       timeoutSeconds: 5
       failureThreshold: 6
     readiness:
-      path: /api/health/ready
+      path: /api/_probe
       initialDelaySeconds: 5
       periodSeconds: 10
       timeoutSeconds: 5
@@ -499,6 +609,12 @@ bootstrapAdmin:
   enabled: true
   name: 'Haruki Tanaka'
   email: 'admin@example.ca'
+  # Container image for the seed Job's psql client. Deliberately
+  # decoupled from ``postgres.cluster.image`` so BYO-database installs
+  # (``postgres.enabled: false``) do not pull the CNPG-ecosystem image
+  # just to run psql. Any image providing a PostgreSQL client
+  # compatible with the target server works.
+  image: 'postgres:16-alpine'
   # bcrypt hash of the bootstrap password.  Defaults to the same
   # development hash shared by docker-compose seed users (intended
   # to be rotated immediately after first login).  Override with

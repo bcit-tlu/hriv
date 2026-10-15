@@ -821,3 +821,71 @@ that narrow race as evidence of a bad source image.
 Bulk-import coordinator slot-starvation events are obsolete. New coordinators
 do not run in arq worker slots, so queued children cannot be blocked behind
 their own waiting coordinator.
+
+## Tile Rebuild Stalled Or Failing
+
+**Alert meaning:** A durable parallel tile rebuild (`job_type="rebuild_tiles"`)
+is making no forward progress — queued items exist but no children are
+completing — or its item-failure rate is elevated. The rebuild is derived-data
+regeneration, not user-facing traffic, so this is a `warning`.
+
+**User impact:** Tiles being regenerated remain missing or stale for longer;
+viewer pages for affected images may 404 their DZI manifests. New uploads and
+existing images are unaffected.
+
+**First checks:**
+
+1. Open `HRIV Data and Recovery` and look at the tile-rebuild panels:
+   `hriv_tile_rebuild_active_children`, `hriv_tile_rebuild_queued_items`, and
+   the `hriv.tile_rebuild.items.completed` rate.
+2. Identify the active supervisor and inspect its per-status counts:
+
+   ```bash
+   kubectl -n hriv exec deploy/hriv-backend -- \
+     curl -s "http://localhost:8000/api/jobs/" -H "Authorization: Bearer $ADMIN_JWT"
+   ```
+
+3. Check `hriv.tile_rebuild.pump.runs` by `outcome`: sustained `locked`
+   means another pump holds the advisory lock; `failed` means the pump's
+   claim transaction is erroring; `idle` with nonzero queued items means the
+   parallelism window is full or items sit behind `retry_not_before` backoff.
+4. Check `hriv.tile_rebuild.enqueue.failures` by `reason` and
+   `hriv.tile_rebuild.duplicate_deliveries`; a rising duplicate count with no
+   completions points at claims superseded faster than children start.
+
+**Likely causes and responses:**
+
+- **Worker loss or Redis interruption:** children stop starting and
+  `hriv.tile_rebuild.lease.reclaims` rises once leases expire. Confirm worker
+  liveness via `hriv_task_queue_worker_up` and see
+  [Task Queue Unavailable or Worker Stale](#task-queue-unavailable-or-worker-stale).
+  Reconciliation repumps automatically — no operator action needed unless the
+  worker or Redis stays down.
+- **Every child failing:** read `hriv.tile_rebuild.item.retries` by `reason`
+  and item error summaries via `GET /api/jobs/{id}/items?status=failed`.
+  `lease_expired` churn suggests heartbeats are losing their lease (check
+  `REBUILD_HEARTBEAT_SECONDS` vs `REBUILD_LEASE_SECONDS` and DB latency);
+  `transient` churn suggests infrastructure flapping.
+- **Cancellation requested:** `hriv_tile_rebuild_jobs_active` stays 1 while
+  `cancelling`; watch `hriv.tile_rebuild.cancellation.latency` for the drain
+  time. Started children finish their in-flight libvips generation before the
+  supervisor finalizes.
+- **Retry backoff:** requeued items wait for their persisted
+  `retry_not_before`; a plateau in completions with a nonzero
+  `hriv_tile_rebuild_queued_items` during a failure burst is expected while
+  backoff drains.
+
+**Loki / Tempo queries:**
+
+- Loki: `{service_name=~"hriv-backend.*"} |= "rebuild."` — the `rebuild.*`
+  structured events (`rebuild.job_created`, `rebuild.item_reserved`,
+  `rebuild.item_terminal`, `rebuild.leases_reclaimed`,
+  `rebuild.job_terminal`) carry `job_id`/`item_id`/`source_image_id` for
+  per-item drill-down.
+- TraceQL: `{ name = "rebuild_tile_item" && status = error }`
+
+**Escalation:** if a rebuild cannot complete or cancel cleanly after the
+checks above, cancel it via `POST /api/jobs/{id}/cancel`, confirm the
+supervisor reaches `cancelled`, and fall back to the serial
+`POST /api/admin/tasks/rebuild-tiles` path for the remaining work. Durable
+job rows are never deleted by fallback — they remain the audit record.

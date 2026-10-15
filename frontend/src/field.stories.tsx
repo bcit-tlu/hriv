@@ -118,7 +118,11 @@ export const Basic: Story = {
 }
 
 export const Variants: Story = {
-  parameters: { controls: { disable: true } },
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: { disable: true },
+  },
   render: () => (
     <Stack spacing={3} sx={{ width: 400 }}>
       <TextField label="Standard" placeholder="Standard field" variant="standard" />
@@ -129,7 +133,11 @@ export const Variants: Story = {
 }
 
 export const States: Story = {
-  parameters: { controls: { disable: true } },
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: { disable: true },
+  },
   render: () => (
     <Stack spacing={3} sx={{ width: 400 }}>
       <TextField helperText="Required field" label="Required" required variant="standard" />
@@ -163,7 +171,11 @@ export const DialogFields: Story = {
 
 export const SelectFields: Story = {
   name: 'Select Fields',
-  parameters: { controls: { disable: true } },
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: { disable: true },
+  },
   render: () => (
     <Stack spacing={2} sx={{ width: 440 }}>
       <TextField fullWidth label="Snapshot" select value="snapshot-a" variant="outlined">

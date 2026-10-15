@@ -77,14 +77,14 @@ def _parse_role_mapping() -> MappingProxyType[str, str]:
     return _EMPTY_MAPPING
 
 
-_ROLE_PRIORITY: dict[str, int] = {"admin": 0, "instructor": 1, "student": 2}
+_ROLE_PRIORITY: dict[str, int] = {"admin": 0, "instructor": 1, "staff": 2, "student": 3}
 
 
 def _resolve_role(groups: list[str]) -> str | None:
     """Map IdP groups/claims to a HRIV role.
 
     When a user belongs to multiple mapped groups the highest-privilege
-    role wins (admin > instructor > student).  This is essential for
+    role wins (admin > instructor > staff > student).  This is essential for
     IdPs like Azure AD where users are members of several groups
     simultaneously (e.g. both ``Current_Employee`` and
     ``HRIV_Admins``).  Returns ``None`` when no group matched any

@@ -1,0 +1,68 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as SearchModalStories from './SearchModal.stories'
+
+<Meta of={SearchModalStories} />
+
+<Title />
+
+<Subtitle>
+  Client-side search across categories, images, programs, people, the guide, and collections — with
+  multi-select for adding image results to a collection.
+</Subtitle>
+
+## When to use
+
+`App` opens this modal from the top-bar **Search** button. All searching is client-side: the
+index is whatever data the caller already has — the category tree, uncategorized images,
+programs, users (admin/instructor), the bundled guide, and the caller's visible collections
+(`useVisibleCollections`, fetched lazily each time the modal opens; the backend list is
+already access-filtered).
+
+## Interactive example
+
+<Primary />
+
+<Controls of={SearchModalStories.Basic} />
+
+## Implementation guidance
+
+- **Result kinds.** `ResultKind` covers `category`, `image`, `program`, `user`, `guide`, and
+  `collection`. Each kind has a type chip; a chip scopes matches to the kind's primary
+  fields (`PRIMARY_FIELDS_BY_KIND`) unless explicit Field chips override. Collections match
+  **Name** and **Description**; their rows show the collection type, image count, and owner,
+  and selecting one navigates to `?collection={id}` via `onSelectCollection`.
+- **Collections appear for every role.** They are _not_ part of `suppressExtendedResults`
+  (unlike program/user/guide results) because the list endpoint is already access-filtered —
+  a student never sees a restricted collection they fail.
+- **Multi-select is picker-only.** The select layer exists solely when `initialSelectMode` opens
+  the modal as a collection-image picker (the Manage Collection dialog's **Add** flow) with
+  `onAddImagesToCollection` provided — normal search shows no Select affordance. The picker
+  offers only the two addable kinds — **Categories** and **Images** chips, pre-applied and
+  toggleable; no other type chips or Field chips render (unticking both widens to all kinds).
+  Image rows
+  become labelled checkboxes (`Select {image name}`) and category rows checkable too — a checked
+  category claims every image in its subtree in registration order — while every other kind keeps
+  its navigation behaviour.
+- **Select all.** Above the results list, **Select all** / **Unselect all** bulk-toggles every
+  selectable row currently displayed — image picks and category subtrees alike. The header row
+  stays pinned while the result list scrolls.
+- **Sticky footer.** The picker footer shows “N images selected” — a count of unique image
+  objects, so a checked category enumerates its whole subtree — followed by **Cancel** (closes the
+  picker) and **Add to collection**. Each
+  image records whether it was picked directly or pinned by a checked category, so unchecking a
+  category only releases members no other claim still holds. The payload preserves result order
+  (not click order), and closing or handing off resets the selection.
+- **Result dedupe.** Multiple field matches on one entity group into a single row listing
+  each matched field; `MAX_RESULTS` caps the display.
+
+## Stories
+
+<Stories />

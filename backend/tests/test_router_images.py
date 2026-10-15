@@ -11,10 +11,12 @@ import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
 
 import app.auth as auth
+from app.models import Category
 from app.routers import images as images_router
 from app.routers.images import (
     list_images,
     get_image,
+    list_image_collections,
     create_image,
     update_image,
     bulk_update_images,
@@ -33,6 +35,13 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
     execute side effects and missing scalar_one() on return values.  """
     monkeypatch.setattr(
         images_router, "bump_browse_revision", AsyncMock(return_value=1)
+    )
+    # image_ids_in_collections queries collection membership (#1527);
+    # default to "not a member" — tests override with their own return set.
+    monkeypatch.setattr(
+        images_router,
+        "image_ids_in_collections",
+        AsyncMock(return_value=set()),
     )
 
 
@@ -101,6 +110,63 @@ def _images_test_app(user_role: str, db: AsyncMock) -> FastAPI:
     return app
 
 
+def _make_source(
+    id: int,
+    original_filename: str,
+    image_id: int = 1,
+    status: str = "completed",
+    uploaded_by: int | None = 22,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=id,
+        original_filename=original_filename,
+        image_id=image_id,
+        status=status,
+        uploaded_by=uploaded_by,
+    )
+
+
+async def _request_source_info(
+    role: str,
+    image: SimpleNamespace | None,
+    sources: list[SimpleNamespace],
+    uploader: SimpleNamespace | None = None,
+    category: SimpleNamespace | None = None,
+) -> tuple[httpx.Response, AsyncMock]:
+    db = AsyncMock()
+
+    async def get(model, entity_id):
+        if model is images_router.Image:
+            return image
+        if model is Category:
+            return category
+        if model is images_router.User:
+            return uploader
+        return None
+
+    async def execute(stmt):
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "source_images.status = 'completed'" in sql
+        assert "ORDER BY source_images.id DESC" in sql
+        assert "LIMIT 1" in sql
+        completed = [
+            source
+            for source in sources
+            if source.image_id == image.id and source.status == "completed"
+        ]
+        latest = max(completed, key=lambda source: source.id, default=None)
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = latest
+        return result
+
+    db.get = AsyncMock(side_effect=get)
+    db.execute = AsyncMock(side_effect=execute)
+    transport = httpx.ASGITransport(app=_images_test_app(role, db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/api/images/1/source-info")
+    return response, db
+
+
 async def test_list_images_admin() -> None:
     imgs = [_make_image(id=1), _make_image(id=2)]
     mock_result = MagicMock()
@@ -162,6 +228,42 @@ async def test_list_images_student_filters() -> None:
     assert len(result) == 1
 
 
+async def test_list_images_staff_unfiltered() -> None:
+    """Staff take the unrestricted path — no visibility helper call, no
+    active-only filter."""
+    imgs = [_make_image(id=1, active=True), _make_image(id=2, active=False)]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = imgs
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_images(_make_user("staff"), db=db)
+    assert len(result) == 2
+    # Only one query — no categories visibility pre-query like students.
+    assert db.execute.await_count == 1
+
+
+async def test_get_image_staff_inactive_visible() -> None:
+    img = _make_image(active=False)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    result = await get_image(1, _make_user("staff"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_staff_hidden_category_visible() -> None:
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], groups=[], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("staff"), db)
+    assert result.name == "test-img"
+
+
 async def test_get_image_found() -> None:
     img = _make_image()
     db = AsyncMock()
@@ -169,6 +271,119 @@ async def test_get_image_found() -> None:
 
     result = await get_image(1, _make_user(), db)
     assert result.name == "test-img"
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_uploader"),
+    [
+        ("admin", "Uploader Name"),
+        ("instructor", "Uploader Name"),
+        ("staff", None),
+        ("student", None),
+    ],
+)
+async def test_get_image_source_info_role_gates_uploader_name(
+    role: str, expected_uploader: str | None
+) -> None:
+    response, _db = await _request_source_info(
+        role,
+        _make_image(),
+        [_make_source(1, "scan.tif")],
+        SimpleNamespace(name="Uploader Name"),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "original_filename": "scan.tif",
+        "file_type": "TIF",
+        "uploaded_by_name": expected_uploader,
+    }
+
+
+async def test_get_image_source_info_returns_nulls_without_sources() -> None:
+    response, _db = await _request_source_info("admin", _make_image(), [])
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "original_filename": None,
+        "file_type": None,
+        "uploaded_by_name": None,
+    }
+
+
+async def test_get_image_source_info_uses_latest_completed_source() -> None:
+    sources = [
+        _make_source(1, "older.jpeg"),
+        _make_source(2, "pending.tif", status="pending"),
+    ]
+
+    pending_response, _db = await _request_source_info(
+        "admin", _make_image(), sources, SimpleNamespace(name="Uploader Name")
+    )
+    assert pending_response.json()["original_filename"] == "older.jpeg"
+    assert pending_response.json()["file_type"] == "JPEG"
+
+    sources.append(_make_source(3, "newest.tif"))
+    completed_response, _db = await _request_source_info(
+        "admin", _make_image(), sources, SimpleNamespace(name="Uploader Name")
+    )
+    assert completed_response.json()["original_filename"] == "newest.tif"
+    assert completed_response.json()["file_type"] == "TIF"
+
+
+async def test_get_image_source_info_handles_missing_uploader_and_extension() -> None:
+    response, db = await _request_source_info(
+        "admin",
+        _make_image(),
+        [_make_source(1, "original scan", uploaded_by=None)],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "original_filename": "original scan",
+        "file_type": None,
+        "uploaded_by_name": None,
+    }
+    assert db.get.await_count == 1
+
+
+async def test_get_image_source_info_returns_null_name_when_uploader_is_missing() -> None:
+    response, db = await _request_source_info(
+        "admin", _make_image(), [_make_source(1, "scan.tif")]
+    )
+
+    assert response.status_code == 200
+    assert response.json()["uploaded_by_name"] is None
+    assert db.get.await_count == 2
+
+
+@pytest.mark.parametrize(
+    ("image", "category"),
+    [
+        (None, None),
+        (_make_image(active=False), None),
+        (
+            _make_image(category_id=5),
+            SimpleNamespace(
+                id=5,
+                status="active",
+                programs=[SimpleNamespace(id=10)],
+                groups=[],
+                parent_id=None,
+            ),
+        ),
+    ],
+    ids=("missing", "inactive", "category-restricted"),
+)
+async def test_get_image_source_info_hides_unavailable_images(
+    image: SimpleNamespace | None, category: SimpleNamespace | None
+) -> None:
+    response, db = await _request_source_info(
+        "student", image, [_make_source(1, "scan.tif")], category=category
+    )
+
+    assert response.status_code == 404
+    db.execute.assert_not_awaited()
 
 
 async def test_get_image_not_found() -> None:
@@ -257,6 +472,154 @@ async def test_get_image_admin_sees_restricted() -> None:
 
     result = await get_image(1, _make_user("admin"), db)
     assert result.name == "test-img"
+
+
+# ── list_image_collections (#1586) ────────────────────────────────────────
+#
+# Direct-call unit tests, so the response_model is not enforced and the DB
+# layer is mocked. The visibility context and serializer are patched at the
+# router boundary (their real behaviour is covered by the collections tests);
+# these assert this endpoint's own wiring: the dark-launch gate, the reused
+# image 404 gate, the membership query, and the can_view filter.
+
+
+def _make_collection(
+    id: int, name: str, visibility: str = "public"
+) -> SimpleNamespace:
+    return SimpleNamespace(id=id, name=name, visibility=visibility)
+
+
+class _FakeViewerCtx:
+    """Stand-in for ``_ViewerContext``: ``can_view`` hides private rows,
+    mirroring the real gate's effect for a student."""
+
+    def can_view(self, collection: SimpleNamespace) -> bool:
+        return collection.visibility != "private"
+
+
+def _patch_collections_layer(
+    monkeypatch: pytest.MonkeyPatch, *, enabled: bool = True
+) -> None:
+    monkeypatch.setattr(images_router.settings, "collections_enabled", enabled)
+    monkeypatch.setattr(
+        images_router,
+        "_ViewerContext",
+        SimpleNamespace(build=AsyncMock(return_value=_FakeViewerCtx())),
+    )
+    # Serialize to a thin object so order/name assertions don't need a full
+    # CollectionSummaryOut; the real serializer is exercised elsewhere.
+    monkeypatch.setattr(
+        images_router,
+        "collection_summary_out",
+        lambda ctx, c: SimpleNamespace(id=c.id, name=c.name),
+    )
+
+
+def _db_returning_collections(
+    img: SimpleNamespace | None, collections: list[SimpleNamespace]
+) -> AsyncMock:
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    result = MagicMock()
+    result.scalars.return_value.unique.return_value.all.return_value = collections
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+async def test_list_image_collections_admin_returns_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    # Already name-ordered by the (mocked) query; endpoint passes them through.
+    cols = [
+        _make_collection(1, "Alpha"),
+        _make_collection(2, "Beta"),
+        _make_collection(3, "Gamma"),
+    ]
+    db = _db_returning_collections(_make_image(), cols)
+
+    result = await list_image_collections(1, _make_user("admin"), db=db)
+    assert [c.name for c in result] == ["Alpha", "Beta", "Gamma"]
+
+
+async def test_list_image_collections_student_filters_private(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    cols = [
+        _make_collection(1, "Public one", visibility="public"),
+        _make_collection(2, "Private one", visibility="private"),
+    ]
+    # Uncategorized image is visible to a student (passes the image gate).
+    db = _db_returning_collections(_make_image(category_id=None), cols)
+
+    result = await list_image_collections(1, _make_user("student"), db=db)
+    assert [c.name for c in result] == ["Public one"]
+
+
+async def test_list_image_collections_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_collections(_make_image(), [])
+
+    result = await list_image_collections(1, _make_user("admin"), db=db)
+    assert result == []
+
+
+async def test_list_image_collections_missing_image_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_collections(None, [])
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(999, _make_user("admin"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
+
+
+async def test_list_image_collections_student_inactive_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_collections(_make_image(active=False), [])
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(1, _make_user("student"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
+
+
+async def test_list_image_collections_student_hidden_category_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], groups=[], parent_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+    db.execute = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(1, _make_user("student"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
+
+
+async def test_list_image_collections_flag_off_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Dark-launch guard: 404 even for an admin, before any DB access, so the
+    # endpoint is indistinguishable from an unknown route while collections
+    # are disabled.
+    _patch_collections_layer(monkeypatch, enabled=False)
+    db = _db_returning_collections(_make_image(), [_make_collection(1, "Alpha")])
+
+    with pytest.raises(HTTPException) as exc:
+        await list_image_collections(1, _make_user("admin"), db=db)
+    assert exc.value.status_code == 404
+    db.get.assert_not_called()
 
 
 async def test_create_image_success() -> None:
@@ -811,11 +1174,13 @@ def _make_upload_file(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_success(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Replacement endpoint creates SourceImage and enqueues processing."""
@@ -855,11 +1220,13 @@ async def test_replace_image_success(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_normalizes_original_filename(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """The replacement path stores a normalized client-supplied filename."""
@@ -888,12 +1255,46 @@ async def test_replace_image_normalizes_original_filename(
     assert src.original_filename == "<img src=x> .jpg"
 
 
+async def test_replace_image_rejects_oversized_file(tmp_path) -> None:
+    """A replacement streamed past UPLOAD_MAX_BYTES gets a 413 (#1432).
+
+    Same shared staging cap as the upload route; the partially written
+    staging artifact is discarded.
+    """
+    file = AsyncMock()
+    file.filename = "big.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"aa", b"bb", b"cc", b""])
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+
+    with (
+        patch("app.routers.images.settings") as mock_settings,
+        patch("app.upload_staging.UPLOAD_MAX_BYTES", 4),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await replace_image(
+                image_id=1,
+                file=file,
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+    assert exc.value.status_code == 413
+    assert "per-upload size limit" in exc.value.detail
+    assert list(tmp_path.iterdir()) == []
+
+
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_fallback_to_background_tasks(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """When arq enqueue fails, replacement falls back to BackgroundTasks."""
@@ -925,11 +1326,13 @@ async def test_replace_image_fallback_to_background_tasks(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_applies_metadata_updates(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Multipart metadata updates are applied before creating the SourceImage."""
@@ -991,11 +1394,13 @@ async def test_replace_image_applies_metadata_updates(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_rejection_preserves_metadata_and_version(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Required-mode queue rejection leaves the target image unchanged."""
@@ -1067,11 +1472,13 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
 
 @pytest.mark.parametrize("recovery_succeeds", [True, False])
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
     recovery_succeeds: bool,
 ) -> None:
@@ -1126,19 +1533,20 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
 
     recovery_db.execute.assert_awaited_once()
     recovery_db.commit.assert_awaited_once()
-    if recovery_succeeds:
-        unlink.assert_called_once()
-    else:
-        unlink.assert_not_called()
+    # The committed failed row owns stored_path, so the file is retained
+    # (#1248): an owned file must never be unlinked.
+    unlink.assert_not_called()
     background_tasks.add_task.assert_not_called()
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_unchanged_category_does_not_bump_scopes(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """Echoing the current category_id back on replace must not bump revisions."""
@@ -1171,11 +1579,13 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
 
 
 @patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
 async def test_replace_image_empty_note_clears_note(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
     """An explicit note="" on replace must erase the stored note."""
@@ -1358,3 +1768,175 @@ async def test_replace_image_reraises_non_enospc_oserror(
         )
 
     mock_unlink.assert_called_once()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_commit_failure_retains_file_unconditionally(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """Once commit is attempted the file is always retained — the server
+    may still commit after the client sees an error, so no ownership query
+    is made that could race the in-flight transaction (#1248)."""
+    cleanup = AsyncMock()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+    db.add = MagicMock()
+    db.commit = AsyncMock(side_effect=RuntimeError("ambiguous commit"))
+    db.refresh = AsyncMock()
+
+    with (
+        patch.dict("sys.modules", {
+            "app.processing": MagicMock(process_replace_image=MagicMock()),
+            "app.worker": MagicMock(),
+        }),
+        patch("app.routers.images.cleanup_unowned_final", new=cleanup),
+    ):
+        with pytest.raises(RuntimeError, match="ambiguous commit"):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+
+    cleanup.assert_not_called()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_replace: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """A failure before the commit attempt still defers deletion to the
+    ownership check — the file is never unconditionally unlinked (#1248)."""
+    cleanup = AsyncMock()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=_make_image())
+    db.add = MagicMock(side_effect=RuntimeError("pre-commit failed"))
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with (
+        patch.dict("sys.modules", {
+            "app.processing": MagicMock(process_replace_image=MagicMock()),
+            "app.worker": MagicMock(),
+        }),
+        patch("app.routers.images.cleanup_unowned_final", new=cleanup),
+    ):
+        with pytest.raises(RuntimeError, match="pre-commit failed"):
+            await replace_image(
+                image_id=1,
+                file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
+                background_tasks=MagicMock(),
+                _user=_make_user(),
+                db=db,
+            )
+
+    db.commit.assert_not_awaited()
+    cleanup.assert_awaited_once()
+    # The cleanup received the final stored path of the staged upload.
+    assert cleanup.await_args.args[0].endswith(".png")
+
+# ── Collection-member invalidation (epic #1525 / #1527 / #1619) ──
+
+
+async def test_update_image_uncategorized_member_of_collection_bumps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An uncategorized image never appears in the tree itself, but when it
+    belongs to a collection its active/thumb feed that row/tile — an edit
+    must still invalidate the browse ETag."""
+    monkeypatch.setattr(
+        images_router,
+        "image_ids_in_collections",
+        AsyncMock(return_value={1}),
+    )
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(active=False)
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    images_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_update_image_uncategorized_non_member_skips_bump() -> None:
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(name="renamed")
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    images_router.bump_browse_revision.assert_not_awaited()
+
+
+async def test_delete_image_member_of_collection_bumps() -> None:
+    """Deleting a member image shrinks a collection's image_count /
+    cover — the tree ETag must advance even though the image is
+    uncategorized."""
+    images_router.image_ids_in_collections.return_value = {1}
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_image(1, _make_user(), db=db)
+    images_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_delete_image_member_check_runs_before_delete() -> None:
+    """Ordering regression: the membership SELECT cannot run after the
+    delete autoflushes collection_images rows away."""
+    calls: list[str] = []
+    images_router.image_ids_in_collections.side_effect = (
+        lambda *a, **k: calls.append("member_check") or {1}
+    )
+    img = _make_image(id=1, category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock(side_effect=lambda *a: calls.append("delete"))
+    db.commit = AsyncMock()
+
+    await delete_image(1, _make_user(), db=db)
+    assert calls == ["member_check", "delete"]
+
+
+async def test_bulk_delete_images_member_of_collection_bumps() -> None:
+    images_router.image_ids_in_collections.return_value = {2}
+    imgs = [
+        _make_image(id=1, category_id=None),
+        _make_image(id=2, category_id=None),
+    ]
+
+    async def mock_execute(stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = imgs
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    body = ImageBulkDelete(image_ids=[1, 2])
+    await bulk_delete_images(body, _make_user(), db=db)
+    images_router.bump_browse_revision.assert_awaited_once()

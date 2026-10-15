@@ -2,8 +2,11 @@
 
 Reconciles state left behind by a previous pod crash/rollout: orphaned
 ``AdminTask`` rows, retained files-import archives past their retention
-window, orphaned ``SourceImage`` rows stuck in "processing", and orphaned
-``BulkImportJob`` rows stuck "running".
+window, orphaned ``SourceImage`` rows stuck in "processing", orphaned
+``BulkImportJob`` rows stuck "running", and aged ``.staging-*`` upload
+artifacts left by requests cancelled mid-stream (#1248). Aged final-path
+source files with no owning row are reported (not deleted) for manual
+reconciliation.
 
 This sweep has two homes depending on ``TASK_EXECUTION_MODE``:
 
@@ -24,7 +27,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from . import tile_rebuild_jobs
-from .database import get_async_session
+from .database import get_async_session, settings
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +109,30 @@ async def run_reconciliation_sweep(
             exc,
             extra={
                 "event": "bulk_import.reconcile_failed",
+                "error": str(exc),
+            },
+        )
+
+    # Remove aged upload staging artifacts (``.staging-*`` files left by
+    # requests cancelled or killed mid-stream — #1248). Staging names are
+    # never referenced by committed rows, so aged artifacts are always
+    # safe to delete. Aged *final-path* files are only reported, never
+    # deleted: an ambiguous commit can leave a row whose ownership query
+    # must not race its own transaction.
+    try:
+        from .upload_staging import (
+            list_orphaned_final_files,
+            reconcile_staging_artifacts,
+        )
+
+        await reconcile_staging_artifacts(settings.source_images_dir)
+        await list_orphaned_final_files(settings.source_images_dir)
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning(
+            "Upload staging-artifact sweep failed: %s",
+            exc,
+            extra={
+                "event": "upload.staging_reconcile_failed",
                 "error": str(exc),
             },
         )

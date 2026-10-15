@@ -3,10 +3,16 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from app.database import settings
 from app.middleware import (
     AuditMiddleware,
+    CollectionsFeatureMiddleware,
     MaintenanceMiddleware,
+    UploadBodyLimitMiddleware,
     _normalize_path_fallback,
+    _upload_body_limits,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
@@ -53,7 +59,7 @@ async def _noop_send(message: dict) -> None:
 
 
 async def _invoke(
-    middleware: AuditMiddleware | MaintenanceMiddleware,
+    middleware: AuditMiddleware | CollectionsFeatureMiddleware | MaintenanceMiddleware,
     scope: dict,
     *,
     response_status: int = 200,
@@ -108,9 +114,18 @@ def test_get_request_id_returns_set_value() -> None:
 # ── get_client_ip ─────────────────────────────────────────────────────────
 
 
-def test_get_client_ip_from_forwarded_for() -> None:
+def test_get_client_ip_default_one_hop_uses_rightmost_entry() -> None:
+    """With one trusted proxy the rightmost entry is the peer nginx saw."""
     scope = _make_scope(headers={"X-Forwarded-For": "203.0.113.50, 10.0.0.1"})
-    assert get_client_ip(scope) == "203.0.113.50"
+    assert get_client_ip(scope) == "10.0.0.1"
+
+
+def test_get_client_ip_spoofed_leftmost_entry_is_ignored() -> None:
+    """A client-supplied XFF value is appended to by nginx and never trusted."""
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "1.1.1.1, 2.2.2.2, 203.0.113.50"}
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=1) == "203.0.113.50"
 
 
 def test_get_client_ip_from_forwarded_for_single() -> None:
@@ -118,17 +133,56 @@ def test_get_client_ip_from_forwarded_for_single() -> None:
     assert get_client_ip(scope) == "203.0.113.50"
 
 
+def test_get_client_ip_two_hops_takes_second_from_right() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "9.9.9.9, 203.0.113.50, 10.244.0.5"}
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=2) == "203.0.113.50"
+
+
+def test_get_client_ip_three_hops_fleet_chain() -> None:
+    """HAProxy (overwrites) -> ingress-nginx -> frontend nginx -> uvicorn."""
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "203.0.113.50, 10.10.0.2, 10.244.0.5"}
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=3) == "203.0.113.50"
+
+
+def test_get_client_ip_short_header_falls_back_to_real_ip() -> None:
+    """Fewer XFF entries than trusted hops: use X-Real-IP, not a spoofable entry."""
+    scope = _make_scope(headers={
+        "X-Forwarded-For": "9.9.9.9",
+        "X-Real-IP": "198.51.100.7",
+    })
+    assert get_client_ip(scope, trusted_proxy_hops=2) == "198.51.100.7"
+
+
+def test_get_client_ip_short_header_without_real_ip_uses_scope_client() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "9.9.9.9"}, client=("192.168.1.1", 1)
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=2) == "192.168.1.1"
+
+
+def test_get_client_ip_zero_hops_ignores_forwarding_headers() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "9.9.9.9", "X-Real-IP": "8.8.8.8"},
+        client=("192.168.1.1", 1),
+    )
+    assert get_client_ip(scope, trusted_proxy_hops=0) == "192.168.1.1"
+
+
 def test_get_client_ip_from_real_ip() -> None:
     scope = _make_scope(headers={"X-Real-IP": "198.51.100.7"})
     assert get_client_ip(scope) == "198.51.100.7"
 
 
-def test_get_client_ip_forwarded_for_takes_precedence_over_real_ip() -> None:
-    scope = _make_scope(headers={
-        "X-Forwarded-For": "203.0.113.50",
-        "X-Real-IP": "198.51.100.7",
-    })
-    assert get_client_ip(scope) == "203.0.113.50"
+def test_get_client_ip_uses_settings_default_hops() -> None:
+    scope = _make_scope(
+        headers={"X-Forwarded-For": "203.0.113.50, 10.10.0.2, 10.244.0.5"}
+    )
+    with patch("app.middleware.settings", SimpleNamespace(trusted_proxy_hops=3)):
+        assert get_client_ip(scope) == "203.0.113.50"
 
 
 def test_get_client_ip_falls_back_to_scope_client() -> None:
@@ -142,7 +196,7 @@ def test_get_client_ip_returns_unknown_when_no_client() -> None:
 
 
 def test_get_client_ip_strips_whitespace() -> None:
-    scope = _make_scope(headers={"X-Forwarded-For": "  203.0.113.50 , 10.0.0.1"})
+    scope = _make_scope(headers={"X-Forwarded-For": "10.0.0.1 ,  203.0.113.50 "})
     assert get_client_ip(scope) == "203.0.113.50"
 
 
@@ -185,7 +239,7 @@ async def test_audit_uses_forwarded_for_ip() -> None:
         await _invoke(mw, scope)
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
-        assert extra["client_ip"] == "1.2.3.4"
+        assert extra["client_ip"] == "5.6.7.8"
 
 
 async def test_audit_extracts_session_id() -> None:
@@ -203,8 +257,8 @@ async def test_audit_extracts_session_id() -> None:
 async def test_audit_extracts_user_from_jwt() -> None:
     mw = AuditMiddleware(app=AsyncMock())
 
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode(
+    import jwt
+    token = jwt.encode(
         {"sub": "42", "email": "test@example.com", "role": "admin"},
         "test-secret",
         algorithm="HS256",
@@ -227,8 +281,8 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
     """User identity + correlation IDs are propagated to the OTEL span."""
     mw = AuditMiddleware(app=AsyncMock())
 
-    from jose import jwt as jose_jwt
-    token = jose_jwt.encode(
+    import jwt
+    token = jwt.encode(
         {"sub": "42", "email": "test@example.com", "role": "admin"},
         "test-secret",
         algorithm="HS256",
@@ -734,6 +788,54 @@ async def test_audit_respects_configured_exclude_prefixes() -> None:
             mock_logger.debug.assert_not_called()
 
 
+# ── CollectionsFeatureMiddleware ────────────────────────────────────────
+
+
+def _status(messages: list[dict]) -> int:
+    return next(m["status"] for m in messages if m["type"] == "http.response.start")
+
+
+async def test_collections_middleware_404s_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    mw = CollectionsFeatureMiddleware(app=AsyncMock())
+
+    for path in ("/api/collections", "/api/collections/", "/api/collections/7/transfer"):
+        messages = await _invoke(mw, _make_scope(path=path, method="POST"))
+        assert _status(messages) == 404, path
+
+
+async def test_collections_middleware_ignores_other_paths_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "collections_enabled", False)
+    mw = CollectionsFeatureMiddleware(app=AsyncMock())
+
+    for path in ("/api/collectionsx", "/api/features", "/api/images"):
+        messages = await _invoke(mw, _make_scope(path=path))
+        assert _status(messages) == 200, path
+
+
+async def test_collections_middleware_passes_through_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "collections_enabled", True)
+    mw = CollectionsFeatureMiddleware(app=AsyncMock())
+
+    messages = await _invoke(mw, _make_scope(path="/api/collections", method="POST"))
+    assert _status(messages) == 200
+
+
+async def test_collections_middleware_passes_through_non_http_scope() -> None:
+    inner = AsyncMock()
+    mw = CollectionsFeatureMiddleware(app=inner)
+    scope = {"type": "lifespan"}
+
+    await mw(scope, _noop_receive, _noop_send)
+    inner.assert_called_once_with(scope, _noop_receive, _noop_send)
+
+
 # ── MaintenanceMiddleware ────────────────────────────────────────────────
 
 
@@ -751,7 +853,7 @@ async def test_maintenance_returns_503_when_active() -> None:
 async def test_maintenance_allows_exempt_paths() -> None:
     mw = MaintenanceMiddleware(app=AsyncMock())
 
-    for path in ("/api/health", "/api/status", "/api/admin/maintenance"):
+    for path in ("/api/health", "/api/_probe", "/api/status", "/api/admin/maintenance"):
         scope = _make_scope(path=path)
         with patch("app.middleware.is_maintenance_mode", return_value=True):
             messages = await _invoke(mw, scope)
@@ -779,3 +881,388 @@ async def test_maintenance_passes_through_non_http_scope() -> None:
 
     await mw(scope, _noop_receive, _noop_send)
     inner.assert_called_once_with(scope, _noop_receive, _noop_send)
+
+
+# ── UploadBodyLimitMiddleware (#1432) ────────────────────────────────────
+
+
+def _list_send(sent: list[dict]):
+    async def send(message: dict) -> None:
+        sent.append(message)
+
+    return send
+
+
+def _chunked(messages: list[dict]):
+    items = iter(messages)
+
+    async def receive() -> dict:
+        return next(items)
+
+    return receive
+
+
+def _multipart_body(boundary: bytes, parts: list[bytes]) -> bytes:
+    out = b""
+    for part in parts:
+        out += (
+            b"--" + boundary + b"\r\n"
+            b'Content-Disposition: form-data; name="files"; filename="f.png"\r\n'
+            b"Content-Type: image/png\r\n\r\n" + part + b"\r\n"
+        )
+    return out + b"--" + boundary + b"--\r\n"
+
+
+def test_upload_body_limits_covers_multipart_upload_routes() -> None:
+    """Multipart upload paths carry (per-part, request) caps; others None."""
+    from app.image_validation import UPLOAD_MAX_BYTES
+    from app.task_constants import (
+        BULK_IMPORT_MAX_REQUEST_BYTES,
+        BULK_IMPORT_MAX_UPLOAD_BYTES,
+    )
+
+    single = _upload_body_limits("/api/source-images/upload")
+    assert single == (
+        UPLOAD_MAX_BYTES + 1024 * 1024,
+        UPLOAD_MAX_BYTES + 1024 * 1024,
+    )
+    assert _upload_body_limits("/api/images/123/replace") == single
+    assert _upload_body_limits("/api/admin/bulk-import/") == (
+        BULK_IMPORT_MAX_UPLOAD_BYTES + 1024 * 1024,
+        BULK_IMPORT_MAX_REQUEST_BYTES + 1024 * 1024,
+    )
+    assert _upload_body_limits("/api/images") is None
+    assert _upload_body_limits("/api/admin/tasks/123/upload") is None
+
+
+async def test_upload_body_limit_rejects_declared_length_without_reading() -> None:
+    """A Content-Length over the request cap gets a 413 before any body."""
+    sent: list[dict] = []
+
+    async def receive() -> dict:
+        raise AssertionError("body must not be consumed")
+
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+    scope = _make_scope(
+        method="POST",
+        path="/api/source-images/upload",
+        headers={"content-length": "5000"},
+    )
+
+    with (
+        patch("app.middleware.UPLOAD_MAX_BYTES", 100),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, receive, _list_send(sent))
+
+    inner.assert_not_called()
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 413
+
+
+async def test_upload_body_limit_aborts_chunked_body_over_request_cap() -> None:
+    """A chunked body (no Content-Length) is cut at the request cap.
+
+    The downstream app sees a client disconnect and its own response is
+    suppressed — exactly one response (the middleware's 413) is sent.
+    """
+    sent: list[dict] = []
+    app_saw_disconnect = False
+    chunks = _chunked(
+        [
+            {"type": "http.request", "body": b"aaaa", "more_body": True},
+            {"type": "http.request", "body": b"bbbb", "more_body": True},
+            {"type": "http.request", "body": b"cccc", "more_body": False},
+        ]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        nonlocal app_saw_disconnect
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                app_saw_disconnect = True
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"late"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(method="POST", path="/api/admin/bulk-import/")
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 100),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 8),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert len(starts) == 1
+    assert starts[0]["status"] == 413
+    assert app_saw_disconnect
+
+
+async def test_upload_body_limit_rejects_oversized_part_in_multipart() -> None:
+    """One multipart part over the per-file cap gets a 413 mid-stream."""
+    sent: list[dict] = []
+    boundary = b"testboundary"
+    body = _multipart_body(boundary, [b"x" * 50])
+    chunks = _chunked(
+        [{"type": "http.request", "body": body, "more_body": False}]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        while True:
+            if (await receive())["type"] == "http.disconnect":
+                return
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/source-images/upload",
+        headers={"content-type": 'multipart/form-data; boundary=testboundary'},
+    )
+
+    with (
+        patch("app.middleware.UPLOAD_MAX_BYTES", 20),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert len(starts) == 1
+    assert starts[0]["status"] == 413
+    bodies = [m for m in sent if m["type"] == "http.response.body"]
+    assert b"per-upload size limit" in bodies[0]["body"]
+
+
+async def test_upload_body_limit_allows_batch_over_single_file_cap() -> None:
+    """Individually valid parts are not rejected for their sum (#1432).
+
+    Two parts (≈98 B each with headers) under a 120 B per-part cap pass
+    even though the ≈200 B body exceeds that cap — the endpoint applies
+    the limit per file, so the middleware must too.
+    """
+    sent: list[dict] = []
+    boundary = b"testboundary"
+    body = _multipart_body(boundary, [b"x" * 6, b"y" * 6])
+    chunks = _chunked(
+        [{"type": "http.request", "body": body, "more_body": False}]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        await receive()
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"done"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-type": 'multipart/form-data; boundary=testboundary'},
+    )
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 120),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 10_000),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 201
+
+
+async def test_upload_body_limit_catches_boundary_split_across_chunks() -> None:
+    """A delimiter split across message chunks still resets the counter."""
+    sent: list[dict] = []
+    boundary = b"boundary"
+    full = _multipart_body(boundary, [b"a" * 30, b"b" * 30])
+    split = 40  # deliberately inside the first part's data
+    chunks = _chunked(
+        [
+            {"type": "http.request", "body": full[:split], "more_body": True},
+            {"type": "http.request", "body": full[split:], "more_body": False},
+        ]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if not message.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-type": 'multipart/form-data; boundary=boundary'},
+    )
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 40),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 10_000),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    # Each part is ~30 B of data + ~90 B of headers ≈ 120 B — over the
+    # 40 B per-part cap, so the middleware must still cut it.
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 413
+
+
+async def test_upload_body_limit_passes_through_within_cap() -> None:
+    """A body under the cap streams through to the app untouched."""
+    sent: list[dict] = []
+    chunks = _chunked(
+        [
+            {"type": "http.request", "body": b"aa", "more_body": True},
+            {"type": "http.request", "body": b"bb", "more_body": False},
+        ]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        while True:
+            message = await receive()
+            if not message.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"done"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(method="POST", path="/api/source-images/upload")
+
+    with (
+        patch("app.middleware.UPLOAD_MAX_BYTES", 100),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 201
+
+
+async def test_upload_body_limit_quoted_boundary_with_semicolon() -> None:
+    """A quoted boundary containing ``;`` is parsed like Starlette does.
+
+    Splitting Content-Type on ``;`` naively truncates a quoted boundary,
+    so delimiters would never match and a valid batch would count as one
+    giant part — a false 413. ``parse_options_header`` (the same parser
+    python-multipart uses) handles the quoting.
+    """
+    sent: list[dict] = []
+    boundary = b"abc;def"
+    body = _multipart_body(boundary, [b"x" * 6, b"y" * 6])
+    chunks = _chunked(
+        [{"type": "http.request", "body": body, "more_body": False}]
+    )
+
+    async def inner_app(scope, receive, send) -> None:
+        await receive()
+        await send({"type": "http.response.start", "status": 201, "headers": []})
+        await send({"type": "http.response.body", "body": b"done"})
+
+    mw = UploadBodyLimitMiddleware(app=inner_app)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-type": 'multipart/form-data; boundary="abc;def"'},
+    )
+
+    with (
+        patch("app.middleware.BULK_IMPORT_MAX_UPLOAD_BYTES", 120),
+        patch("app.middleware.BULK_IMPORT_MAX_REQUEST_BYTES", 10_000),
+        patch("app.middleware._MULTIPART_OVERHEAD_BYTES", 0),
+    ):
+        await mw(scope, chunks, _list_send(sent))
+
+    starts = [m for m in sent if m["type"] == "http.response.start"]
+    assert starts[0]["status"] == 201
+
+
+async def test_upload_body_limit_ignores_unrelated_paths_and_methods() -> None:
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+
+    await mw(
+        _make_scope(method="POST", path="/api/other"), _noop_receive, _noop_send
+    )
+    await mw(
+        _make_scope(method="GET", path="/api/source-images/upload"),
+        _noop_receive,
+        _noop_send,
+    )
+    await mw({"type": "lifespan"}, _noop_receive, _noop_send)
+
+    assert inner.await_count == 3
+
+
+async def test_upload_body_limit_ensures_spool_dir(tmp_path) -> None:
+    """Multipart requests re-ensure the TMPDIR spool dir before the
+    parser's first tempfile rollover — a filesystem import can remove it
+    after TMPDIR was already resolved (#1365)."""
+    source_dir = tmp_path / "source_images"
+    sent: list[dict] = []
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+    scope = _make_scope(
+        method="POST",
+        path="/api/source-images/upload",
+        headers={
+            "content-length": "10",
+            "content-type": "multipart/form-data; boundary=abc",
+        },
+    )
+
+    async def receive() -> dict:
+        return {
+            "type": "http.request",
+            "body": b"0123456789",
+            "more_body": False,
+        }
+
+    with patch("app.middleware.settings") as mock_settings:
+        mock_settings.source_images_dir = str(source_dir)
+        await mw(scope, receive, _list_send(sent))
+
+    assert (source_dir / ".staging").is_dir()
+    inner.assert_awaited_once()
+
+
+async def test_upload_body_limit_ensures_spool_dir_on_uncapped_route(
+    tmp_path,
+) -> None:
+    """The ensure is not tied to the body-limit gate: multipart routes the
+    cap doesn't cover (db import) still get it (#1365)."""
+    source_dir = tmp_path / "source_images"
+    sent: list[dict] = []
+    inner = AsyncMock()
+    mw = UploadBodyLimitMiddleware(app=inner)
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/tasks/db-import",
+        headers={
+            "content-length": "10",
+            "content-type": "multipart/form-data; boundary=abc",
+        },
+    )
+
+    async def receive() -> dict:
+        return {
+            "type": "http.request",
+            "body": b"0123456789",
+            "more_body": False,
+        }
+
+    with patch("app.middleware.settings") as mock_settings:
+        mock_settings.source_images_dir = str(source_dir)
+        await mw(scope, receive, _list_send(sent))
+
+    assert (source_dir / ".staging").is_dir()
+    inner.assert_awaited_once()

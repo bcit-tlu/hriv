@@ -10,12 +10,30 @@ The **Home** tab is the image library — the same view your students get
 - **Category tiles** group images into folders. Click one to look inside —
   categories can contain more categories.
 - **Image tiles** show a thumbnail. Click to open the viewer.
+- **Collection tiles** appear inside a category only after a curator files
+  the collection there. Unfiled collections do not appear as Browse tiles;
+  use a root-level category such as **Featured** to highlight one near the top.
+- When enabled, a bottom-left **My collections** button appears on Browse root,
+  inside categories, in the image viewer, and on the Collections pages when you
+  own a visible collection. Open the bottom
+  drawer to create or visit a collection, use **See all** for your collections
+  list, or pin it while you continue browsing. The drawer is not reorderable.
 - Use the **breadcrumbs** at the top to jump back up, or **Home** to return
   to the top level.
 - The **search icon** in the top bar searches across images by name, note,
-  and other details. Wrap words in `"quotes"` to match an exact phrase
-  instead of each word on its own — `"lung 2"` finds only the string
-  "lung 2", not everything containing "lung" or "2".
+  and other details — plus your collections by name and description. Wrap
+  words in `"quotes"` to match an exact phrase instead of each word on its
+  own — `"lung 2"` finds only the string "lung 2", not everything
+  containing "lung" or "2".
+- Search **chips** narrow the results: the type chips (Categories, Images,
+  Collections, and for staff Programs / People / Guide) keep only that kind
+  and its own fields, and the field chips (Note, Copyright, Annotation, …)
+  keep only matches in that field. A collection result opens it on its
+  collections page (Sequence or Synchronized).
+- To add several images to a collection, click **Select** next to the result
+  count, tick the image rows you want (only images can be selected), then
+  choose **Add to collection** in the footer to pick a target — see
+  [Collections](collections).
 
 ## Viewing an image
 
@@ -23,6 +41,10 @@ The **Home** tab is the image library — the same view your students get
 
 Click an image tile to open the full-screen viewer. The image is a "deep
 zoom" — you can zoom in to see fine detail without losing quality.
+
+Copyright, programs, groups, notes, dates, dimensions, original file name and
+type, and other image details are under **Image information** just below the
+viewer. Click to expand it; it stays open or closed the way you left it.
 
 ### Viewer toolbar (bottom left)
 
@@ -39,7 +61,8 @@ zoom" — you can zoom in to see fine detail without losing quality.
 
 Drag to pan. The **mini-map** in the bottom right shows where you are, and
 the number on it is the current magnification when the image has a scale
-configured.
+configured. Both the toolbar and the mini-map sit flush against the bottom
+edge of the viewer frame.
 
 ::: tip Sharing what you see
 Your zoom position stays in the address bar — copy the URL to send a link

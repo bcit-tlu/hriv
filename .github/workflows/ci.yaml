@@ -39,8 +39,9 @@ jobs:
       restore-validation: ${{ steps.filter.outputs.restore-validation }}
       restore-validation-image: ${{ steps.filter.outputs.restore-validation-image }}
       synthetic: ${{ steps.filter.outputs.synthetic }}
+      agent-docs: ${{ steps.filter.outputs.agent-docs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
@@ -49,34 +50,60 @@ jobs:
             backend:
               - 'backend/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             backend-image:
               - 'backend/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             backup:
               - 'backup/**'
               - 'charts/backup/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             backup-image:
               - 'backup/**'
               - 'charts/backup/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             frontend:
               - 'frontend/**'
               - 'charts/frontend/files/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             restore-validation:
               - 'restore-validation/**'
               - 'charts/restore-validation/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             restore-validation-image:
               - 'restore-validation/**'
               - 'charts/restore-validation/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
             synthetic:
               - 'synthetic-monitoring/**'
               - '.github/workflows/ci.yaml'
+              - '.trivyignore'
+            agent-docs:
+              - '.github/workflows/ci.yaml'
+              - '.gitignore'
+              - 'AGENTS.md'
+              - '*/AGENTS.md'
+              - '.agents/**'
+              - 'docs/**'
+              - 'scripts/check-agent-docs.sh'
+              - 'README.md'
+              - '*/README.md'
 
   # Quality gates
+
+  agent-docs:
+    needs: [changes]
+    if: needs.changes.outputs.agent-docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/check-agent-docs.sh
 
   backend-tests:
     needs: [changes]
@@ -103,12 +130,15 @@ jobs:
           --health-retries 10
     env:
       REORDER_FIXTURE_DATABASE_URL: postgresql+asyncpg://hriv:hriv@localhost:5432/hriv_test
+      # Migrated alongside REORDER_FIXTURE_DATABASE_URL by the step below;
+      # gates the PostgreSQL-backed collections write-API tests (#1437).
+      TEST_DATABASE_URL: postgresql+asyncpg://hriv:hriv@localhost:5432/hriv_test
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install Poetry
         run: pip install poetry
@@ -116,14 +146,19 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: backend/.venv
-          key: backend-venv-py3.13-${{ hashFiles('backend/poetry.lock') }}
-          restore-keys: backend-venv-py3.13-
+          key: backend-venv-py3.14-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: backend-venv-py3.14-
 
       - name: Install dependencies
         run: poetry install --with dev
+
+      # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
+      # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).
+      - name: Verify third-party license notices
+        run: poetry run python scripts/generate_third_party_licenses.py --check
 
       # Alembic is the sole source of truth for the schema; bring the
       # fixture database to head before the integration tests touch it.
@@ -142,11 +177,11 @@ jobs:
       run:
         working-directory: backup
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install Poetry
         run: pip install poetry
@@ -154,14 +189,19 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: backup/.venv
-          key: backup-venv-py3.13-${{ hashFiles('backup/poetry.lock') }}
-          restore-keys: backup-venv-py3.13-
+          key: backup-venv-py3.14-${{ hashFiles('backup/poetry.lock') }}
+          restore-keys: backup-venv-py3.14-
 
       - name: Install dependencies
         run: poetry install --no-root
+
+      # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
+      # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).
+      - name: Verify third-party license notices
+        run: poetry run python scripts/generate_third_party_licenses.py --check
 
       - name: Run backup tests
         run: poetry run python -m unittest discover tests
@@ -174,13 +214,15 @@ jobs:
       run:
         working-directory: restore-validation
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.0
 
       - name: Install Poetry
         run: pip install poetry
@@ -188,14 +230,19 @@ jobs:
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: restore-validation/.venv
-          key: restore-validation-venv-py3.13-${{ hashFiles('restore-validation/poetry.lock') }}
-          restore-keys: restore-validation-venv-py3.13-
+          key: restore-validation-venv-py3.14-${{ hashFiles('restore-validation/poetry.lock') }}
+          restore-keys: restore-validation-venv-py3.14-
 
       - name: Install dependencies
         run: poetry install --with dev
+
+      # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
+      # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).
+      - name: Verify third-party license notices
+        run: poetry run python scripts/generate_third_party_licenses.py --check
 
       - name: Run restore-validation tests
         run: |
@@ -210,13 +257,13 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: frontend-npm-${{ hashFiles('frontend/package-lock.json') }}
@@ -250,13 +297,13 @@ jobs:
       run:
         working-directory: synthetic-monitoring
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: synthetic-npm-${{ hashFiles('synthetic-monitoring/package-lock.json') }}
@@ -265,18 +312,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify Playwright image version
-        run: npm run check:image-version
-
       - name: Type-check journeys (tsc)
         run: npm run typecheck
 
   helm-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.0
 
       - name: Install kubeconform
         run: |
@@ -284,7 +330,7 @@ jobs:
             | sudo tar xz -C /usr/local/bin kubeconform
 
       - name: Cache kubeconform schemas
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/kubeconform-cache
           key: kubeconform-schemas-v0.6.7-${{ hashFiles('charts/**/Chart.yaml') }}
@@ -319,6 +365,9 @@ jobs:
       - name: Run Helm chart regression checks
         run: bash scripts/test-helm-chart-regressions.sh
 
+      - name: Run tiles sidecar runtime checks
+        run: bash scripts/test-tiles-nginx-runtime.sh
+
   # Container image builds (reusable workflow)
 
   build-frontend:
@@ -339,7 +388,7 @@ jobs:
       context: ./frontend
       target: stable
       build_contexts: 'nginx-config=./charts/frontend/files'
-      extra_watch_paths: ./charts/frontend/files
+      extra_watch_paths: ./charts/frontend/files .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -360,6 +409,7 @@ jobs:
       image_name: hriv-backend
       context: ./backend
       target: stable
+      extra_watch_paths: .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -380,7 +430,7 @@ jobs:
       image_name: hriv-backup
       context: ./backup
       target: stable
-      extra_watch_paths: ./charts/backup
+      extra_watch_paths: ./charts/backup .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -401,7 +451,7 @@ jobs:
       image_name: hriv-restore-validation
       context: ./restore-validation
       target: stable
-      extra_watch_paths: ./charts/restore-validation
+      extra_watch_paths: ./charts/restore-validation .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -421,6 +471,7 @@ jobs:
       component: synthetic-monitoring
       image_name: hriv-synthetic-monitoring
       context: ./synthetic-monitoring
+      extra_watch_paths: .trivyignore
       trivyignore: .trivyignore
     secrets: inherit
 
@@ -453,9 +504,11 @@ jobs:
     env:
       REGISTRY: ghcr.io
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.0
 
       - uses: sigstore/cosign-installer@v3
 

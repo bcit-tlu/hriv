@@ -88,6 +88,12 @@ the selected images.
 | `pyramid_detected`    | bool            | Processing                  | Whether a pyramidal structure was found |
 | `pyramid_level_count` | int             | Processing                  | Number of pyramid levels                |
 
+The synchronized collection viewer's persisted pane positions
+(`{ "<image_id>": {zoom, x, y, rotation} }`) are **not** image metadata —
+they live in `Collection.viewport_state`, a separate whole-replace JSONB
+column with its own `Collection.version` optimistic concurrency; see
+[collections.md](collections.md#synchronized-collection-viewer-1417).
+
 ### Image replacement behaviour
 
 When a source image is replaced (`process_replace_image`):
@@ -105,6 +111,19 @@ When a source image is replaced (`process_replace_image`):
 
 All pyramid-related keys are cleared first, then re-populated if the
 replacement file is also pyramidal. Version is bumped unconditionally.
+
+## Source image information
+
+`GET /api/images/{id}/source-info` returns the original filename and its
+uppercase file extension for the latest completed source image. Pending and
+failed sources are ignored. The uploader's name is included only for admin and
+instructor viewers; staff and students receive no uploader name.
+
+Migration `0036_image_file_size_backfill` fills null `Image.file_size` values
+from the latest completed source image when it has a size. It preserves existing
+image sizes and does not fall back to an older completed source when the latest
+one has no size. An admin tile rebuild fills any remaining gaps from the source
+image.
 
 ## Related code
 

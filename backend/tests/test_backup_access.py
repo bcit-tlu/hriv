@@ -395,6 +395,74 @@ def test_list_retained_backup_archives_classifies_by_manifest(
     )
 
 
+def test_list_retained_backup_archives_classifies_production_as_database(
+    monkeypatch, tmp_path
+) -> None:
+    blobs = [
+        SimpleNamespace(
+            name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
+            size=1234,
+            last_modified=datetime(2026, 1, 2, 2, 0, tzinfo=timezone.utc),
+        ),
+    ]
+    fake_container = _FakeContainer(blobs, {})
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    manifests = {
+        "hriv-backup-20260102-020000.tar.gz": {
+            "format_version": 2,
+            "backup_mode": "production",
+            "capture_boundary_lsn": "0/1A2B3C8",
+            "files": {"data/source_images/a.jpg": {"size": 20}},
+        },
+    }
+
+    with patch.object(
+        backup_access,
+        "get_snapshot_manifest",
+        side_effect=lambda snapshot_name: manifests[snapshot_name],
+    ):
+        summary = list_retained_backup_archives()
+
+    assert summary["database"]["count"] == 1
+    assert summary["filesystem"]["count"] == 1
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        # Development-mode manifest with a stray boundary field is not a
+        # CNPG-bound recovery archive.
+        {
+            "backup_mode": "development",
+            "capture_boundary_lsn": "0/1A2B3C8",
+            "files": {"data/source_images/a.jpg": {"size": 20}},
+        },
+        # Production mode alone is not enough — the binding must be a valid LSN.
+        {
+            "backup_mode": "production",
+            "capture_boundary_lsn": "invalid",
+            "files": {"data/source_images/a.jpg": {"size": 20}},
+        },
+        {
+            "backup_mode": "production",
+            "capture_boundary_lsn": 12345,
+            "files": {"data/source_images/a.jpg": {"size": 20}},
+        },
+        # Each PostgreSQL LSN half is at most eight hex digits.
+        {
+            "backup_mode": "production",
+            "capture_boundary_lsn": "123456789/0",
+            "files": {"data/source_images/a.jpg": {"size": 20}},
+        },
+    ],
+)
+def test_classify_backup_types_rejects_unbound_manifests(manifest) -> None:
+    classified = backup_access._classify_backup_types(manifest)
+    assert classified["database"] is False
+    assert classified["filesystem"] is True
+
+
 def test_list_retained_backup_archives_skips_unclassifiable_archive(
     monkeypatch, tmp_path, caplog: pytest.LogCaptureFixture
 ) -> None:

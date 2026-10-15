@@ -12,7 +12,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** authenticated user with role-based access.
 - **Key fields:** `name`; `email` (unique, **case-insensitive** via
   `ix_users_email_lower`); `password_hash` (nullable — OIDC users have none);
-  `oidc_subject` (nullable, unique); `role` (default `"student"`); `active`
+  `oidc_subject` (nullable, unique); `role` (`admin` / `instructor` / `staff` /
+  `student`, default `"student"` — free-text column, validated at the API
+  layer); `active`
   (default `true`, controls authentication eligibility);
   `last_access`; `metadata_` (JSONB, DB column `metadata`).
 - **Relationships:** `programs` (M2M via `user_programs`); `groups` (M2M via
@@ -43,6 +45,55 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   deleted.
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
+### Collection _(added in `0030_collections`; multi-owner in `0032`; `hidden` in `0033`; `cover_image_id` in `0034`; `cover_blank` in `0035`)_
+
+- **Purpose:** user- or program-owned grouping of existing images for
+  `sequence` or `synchronized` viewing; never duplicates image/category rows.
+- **Key fields:** `name`; `description` (nullable); `type` (`synchronized` /
+  `sequence`, CHECK `ck_collections_type`); `visibility` (`private` / `public` /
+  `restricted`, CHECK `ck_collections_visibility`, default `private`);
+  `hidden` (boolean, default `false` — curatorial hide/show, #1559; hides
+  the collection from students except its owners, unlike `Image.active`
+  which hides from all students);
+  `user_id` (FK to User, **SET NULL** — #1531; creator-audit only, not an
+  ownership edge); `owner_program_id` (FK to Program,
+  **SET NULL**); `category_id` (FK to Category, **SET NULL** — #1527, files
+  the collection into the Browse hierarchy; `NULL` = uncategorized root);
+  `cover_image_id` (FK to Image, **SET NULL** — pinned tile cover picked
+  from the members via `PATCH`; `NULL` = first-member fallback, and the
+  pin clears when the member leaves the collection or the image row is
+  deleted); `cover_blank` (boolean, default `false` — explicit "no
+  cover" pick from the tile cover picker: the tile renders the type-logo
+  placeholder; mutually exclusive with `cover_image_id` — a write to
+  one clears the other);
+  `sort_order` (tile-order position inside its scope); `viewport_state`
+  (JSONB, default `{}`); `version` (optimistic
+  concurrency, starts at 1). User co-ownership lives in `collection_owners`
+  (M2M); a collection with no owner rows and `owner_program_id` NULL is
+  **orphaned** (admin-only until repaired).
+- **Relationships:** `owners` (Users, M2M via `collection_owners`, eager
+  `selectin`, ordered by name); `owner_program` (Program); `image_links`
+  (ordered `CollectionImage` rows, `cascade="all, delete-orphan"`,
+  `order_by sort_order`); `programs` / `groups` (M2M via `collection_programs` /
+  `collection_groups`, eager `selectin`) — restricted-visibility scope.
+- **Deletion:** `CASCADE` to `collection_images`, `collection_programs`,
+  `collection_groups`, `collection_owners`. Deleting a user removes their
+  `collection_owners` rows, nulls the audit `user_id`, then deletes each
+  collection for which they were the sole owner (co-owned and program-owned
+  collections survive); deleting a program orphans collections that have no
+  remaining user owners; deleting an image removes it from every
+  collection and nulls any `cover_image_id` pin pointing at it; deleting a
+  category unfiles its collections (`category_id` →
+  `NULL`), the same reparenting rule as images.
+- See [Collections](collections.md).
+
+### CollectionImage _(added in `0030_collections`)_
+
+- **Purpose:** ordered membership of an Image in a Collection.
+- **Key fields:** composite PK `(collection_id, image_id)`; `sort_order`
+  (default 0); index `idx_collection_images_order (collection_id, sort_order)`.
+- **Deletion:** both FKs `CASCADE`.
+
 ### Category
 
 - **Purpose:** hierarchical folder structure for organising images.
@@ -54,6 +105,16 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `parent`; `images`; `programs` (M2M via `category_programs`, eager `selectin`);
   `groups` (M2M via `category_groups`, eager `selectin`). Programs and groups are
   **independent** restriction dimensions.
+- **`metadata.card_image_id` convention (#1609):** the tile cover pin. Must
+  reference an image in the category's own subtree (`PATCH` returns 422
+  otherwise; `POST` rejects any non-null pin since a new category has no
+  subtree images; `null` unpins). There is **no FK** — dangling values (deleted
+  image, image moved out) are tolerated at read time and resolve to
+  `card_image_id`/`card_thumb` = `null`/`null` on `CategoryOut`. Resolution
+  ignores `active`, hidden status, and program/group gates; `card_thumb` is
+  tokenized with a thumbnail-only tile token and the raw key is scrubbed from
+  student `metadata_extra` (see
+  [category-visibility-and-programs](category-visibility-and-programs.md)).
 - **Deletion:** `CASCADE` to children, `category_programs`, and `category_groups`;
   images get `category_id = NULL` (`SET NULL`).
 
@@ -195,13 +256,16 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Junction tables
 
-| Table               | Composite PK                | FK behaviour   | Constraint                                                                         |
-| ------------------- | --------------------------- | -------------- | ---------------------------------------------------------------------------------- |
-| `user_programs`     | `(user_id, program_id)`     | both `CASCADE` | —                                                                                  |
-| `category_programs` | `(category_id, program_id)` | both `CASCADE` | —                                                                                  |
-| `group_members`     | `(group_id, user_id)`       | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
-| `group_instructors` | `(group_id, user_id)`       | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
-| `category_groups`   | `(category_id, group_id)`   | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
+| Table                 | Composite PK                  | FK behaviour   | Constraint                                                                         |
+| --------------------- | ----------------------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `user_programs`       | `(user_id, program_id)`       | both `CASCADE` | —                                                                                  |
+| `category_programs`   | `(category_id, program_id)`   | both `CASCADE` | —                                                                                  |
+| `group_members`       | `(group_id, user_id)`         | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
+| `group_instructors`   | `(group_id, user_id)`         | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
+| `category_groups`     | `(category_id, group_id)`     | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
+| `collection_owners`   | `(collection_id, user_id)`    | both `CASCADE` | user co-owners; see [Collections](collections.md) — `0032`                         |
+| `collection_programs` | `(collection_id, program_id)` | both `CASCADE` | restricted-visibility scope; see [Collections](collections.md)                     |
+| `collection_groups`   | `(collection_id, group_id)`   | both `CASCADE` | restricted-visibility scope                                                        |
 
 `group_members` and `group_instructors` also carry a `created_at` timestamp.
 
@@ -213,7 +277,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   than delete the child: `images.category_id`, `source_images.category_id`,
   `source_images.image_id`, `source_images.uploaded_by`, `bulk_import_jobs.category_id`,
   `bulk_import_jobs.requested_by`, `admin_tasks.created_by`,
-  `groups.created_by_user_id`.
+  `groups.created_by_user_id`, `collections.owner_program_id`,
+  `collections.user_id` (creator audit — #1531).
 - **`active` (Image) vs `status` (Category)** are independent visibility
   mechanisms — don't conflate them.
 - **`sort_order`** exists on both `Category` and `Image` for manual ordering.
@@ -230,7 +295,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   several indexes are named explicitly in `__table_args__` to keep autogenerate
   from proposing spurious rename/drop operations.
 
-See also: [Groups](groups.md),
+See also: [Groups](groups.md), [Collections](collections.md),
 [Category visibility & program restriction](category-visibility-and-programs.md),
 [Admin import/export](admin-import-export.md),
 [agent feature map](agent-feature-map.md).

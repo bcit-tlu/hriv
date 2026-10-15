@@ -50,12 +50,42 @@ def test_export_pigz_threads_accepts_zero_and_positive_values() -> None:
     assert four.export_pigz_threads == 4
 
 
+def test_db_pool_size_rejects_zero_and_negative_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(db_pool_size=0)
+    with pytest.raises(ValidationError):
+        Settings(db_pool_size=-1)
+
+
+def test_db_pool_size_accepts_positive_values() -> None:
+    one = Settings(db_pool_size=1)
+    ten = Settings(db_pool_size=10)
+
+    assert one.db_pool_size == 1
+    assert ten.db_pool_size == 10
+
+
+def test_db_max_overflow_rejects_negative_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(db_max_overflow=-1)
+
+
+def test_db_max_overflow_accepts_zero_and_positive_values() -> None:
+    zero = Settings(db_max_overflow=0)
+    twenty = Settings(db_max_overflow=20)
+
+    assert zero.db_max_overflow == 0
+    assert twenty.db_max_overflow == 20
+
+
 def test_parallel_rebuild_scheduler_is_disabled_by_default() -> None:
     settings = Settings()
 
     assert settings.rebuild_parallel_enabled is False
     assert settings.rebuild_parallelism == 2
     assert settings.rebuild_parallelism != settings.worker_max_jobs
+    assert settings.rebuild_child_timeout_seconds == 3600
+    assert settings.rebuild_lease_seconds == 3900
     assert settings.rebuild_max_attempts == 2
     assert settings.rebuild_retry_backoff_base_seconds == 60
     assert settings.rebuild_retry_backoff_cap_seconds == 900
@@ -66,6 +96,14 @@ def test_parallel_rebuild_scheduler_requires_timeout_below_lease() -> None:
         Settings(
             rebuild_child_timeout_seconds=120,
             rebuild_lease_seconds=120,
+        )
+
+
+def test_parallel_rebuild_scheduler_caps_supported_child_timeout() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            rebuild_child_timeout_seconds=86401,
+            rebuild_lease_seconds=90000,
         )
 
 
@@ -88,3 +126,51 @@ def test_parallel_rebuild_retry_backoff_requires_valid_bounds() -> None:
             rebuild_retry_backoff_base_seconds=61,
             rebuild_retry_backoff_cap_seconds=60,
         )
+
+
+def test_collections_enabled_defaults_off() -> None:
+    settings = Settings()
+
+    assert settings.collections_enabled is False
+
+
+def test_collections_enabled_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COLLECTIONS_ENABLED", "true")
+
+    assert Settings().collections_enabled is True
+
+
+def test_probe_engine_uses_null_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The readiness-probe engine must never reuse connections (#1496)."""
+    from sqlalchemy.pool import NullPool
+
+    from app import database
+
+    monkeypatch.setattr(database, "_probe_engine", None)
+    try:
+        engine = database.get_probe_engine()
+        assert isinstance(engine.pool, NullPool)
+        assert database.get_probe_engine() is engine
+    finally:
+        monkeypatch.setattr(database, "_probe_engine", None)
+
+
+async def test_dispose_probe_engine_closes_and_clears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dispose_probe_engine disposes the cached engine exactly once."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app import database
+
+    engine = MagicMock()
+    engine.dispose = AsyncMock()
+    monkeypatch.setattr(database, "_probe_engine", engine)
+
+    await database.dispose_probe_engine()
+    engine.dispose.assert_awaited_once()
+    assert database._probe_engine is None
+
+    # Second call is a no-op when the engine was never recreated.
+    await database.dispose_probe_engine()
+    engine.dispose.assert_awaited_once()

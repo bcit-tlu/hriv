@@ -6,7 +6,9 @@ Until this page, each unauthenticated route was decided locally in the PR that
 added it; this page is now the single answer to _"who may reach this route, and
 which layer enforces that?"_
 
-Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
+Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31). Amended 2026-09-22
+for #1302 (admin task-download moved to a cookie credential; CORS wildcard +
+credentials removed as a default).
 
 ## The standing rule
 
@@ -32,8 +34,11 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 5. **Signed-credential routes** (no bearer header) are permitted when a
    browser navigation or high-volume delivery path cannot carry an
    `Authorization` header. Credentials must be short-lived, purpose-scoped,
-   and resource-bound (e.g. the admin task-download token; the tile token
+   and resource-bound (e.g. the admin task-download cookie; the tile token
    designed in #1069). Validation must not require a DB query on hot paths.
+   When a browser navigation _can_ carry a cookie, prefer that transport —
+   query-string credentials leak into access logs, trace spans, and browser
+   history (see the tile-token residual under "Gaps and owners").
 
 ### Enforcement layers
 
@@ -57,24 +62,27 @@ Audited at backend 0.48.0 / frontend 0.50.0 (2026-08-31).
 | `GET /api/status`                              | Maintenance-overlay polling (`MaintenanceBanner` via `fetchStatus`) and synthetic monitoring | Leaks version string; accepted                                                                                                                                                                                                                                                                          |
 | `GET /api/announcement/`                       | Login-screen announcement banner                                                             | Public **by design** — `LoginScreen.tsx` renders it pre-auth. Write path (`PUT`) is admin/instructor.                                                                                                                                                                                                   |
 | `GET /api/health`                              | Liveness probe                                                                               | Static response                                                                                                                                                                                                                                                                                         |
+| `GET /api/features`                            | Deployment feature flags the SPA reads at boot (`useFeatures`)                               | Booleans only (`collections`, effective `collections_home_shelf`); each flag is enforced independently by the backend (`docs/collections.md`)                                                                                                                                                           |
 | `GET /api/health/queue`                        | Queue probe                                                                                  | Returns only `ok`/`degraded`; detail lives on `/api/metrics` (see #1077)                                                                                                                                                                                                                                |
 | `GET /docs`, `GET /redoc`, `GET /openapi.json` | FastAPI auto-generated API docs/schema (defaults not disabled in `main.py`)                  | Unreachable through the frontend nginx (unprefixed paths fall into the SPA location), but exposed on any direct backend access (dev compose `:8000`, in-cluster Service). Schema reveals route surface only, no data; acceptable once the backend Service is edge/NetworkPolicy-restricted (see below). |
 
 ### FastAPI — app-credential
 
-| Route                                     | Credential                                                                                               | Notes                                                                                                                                                                                |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/admin/tasks/{task_id}/download` | Short-lived JWT in query string, `purpose=task-download`, task-bound (`routers/admin.py`)                | Query-string tokens can leak via logs/referrers; hardening tracked in a follow-up issue (see below).                                                                                 |
-| `GET /api/tiles/{source_image_id}/{path}` | Short-lived JWT in query string, `purpose=tile`, scoped to `source_image_id`                             | FastAPI fallback route added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); responses use `Cache-Control: private, max-age=2592000`.                                     |
-| `GET /api/tiles-auth`                     | Same tile token, supplied by query string, `X-Tile-Token`, or `X-Original-URI` from nginx `auth_request` | DB-free validator added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); sidecar enforcement/cache wiring added by PR [#1163](https://github.com/bcit-tlu/hriv/pull/1163). |
+| Route                                     | Credential                                                                                                                                                                                                                                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/admin/tasks/{task_id}/download` | Short-lived JWT in a path-scoped `HttpOnly` cookie, `purpose=task-download`, task-bound, 60 s TTL, cleared on successful download (`routers/admin.py`); minted by `POST /api/admin/tasks/{task_id}/download-token` (app-authz, admin)               | Cookie transport keeps the credential out of URLs — no access-log, trace-span, referer, or browser-history exposure (#1302, closing #1153). `SameSite=Strict`; `Secure` per `SECURE_COOKIES` (default `true`; docker-compose sets `false`). Requires a same-site SPA/API pair (true for the production nginx proxy and the Vite dev proxy); a cross-site `VITE_API_URL` deployment cannot carry the cookie. |
+| `GET /api/tiles/{source_image_id}/{path}` | Short-lived JWT in query string, `purpose=tile`, scoped to `source_image_id`                                                                                                                                                                        | FastAPI fallback route added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); responses use `Cache-Control: private, max-age=2592000`.                                                                                                                                                                                                                                                            |
+| `GET /api/tiles-auth`                     | Same tile token, supplied by query string, `X-Tile-Token`, or `X-Original-URI` from nginx `auth_request`                                                                                                                                            | DB-free validator added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); sidecar enforcement/cache wiring added by PR [#1163](https://github.com/bcit-tlu/hriv/pull/1163).                                                                                                                                                                                                                        |
+| `POST /api/telemetry/synthetic-result`    | `X-Synthetic-Ingest-Token` header — operator-provisioned shared static secret (Vault `synthetic-ingest` path → `SYNTHETIC_INGEST_TOKEN`), validated by constant-time compare with no database access; OR the synthetic monitor account's Bearer JWT | Dual credential added for #1495 so the monitor can publish failure results during auth/DB outages, when a user JWT cannot be obtained. Token is scoped to this endpoint only — it unlocks no user or content surface — and the path carries its own rate limit (`rate:synthetic-ingest`, 30/60 s) independent of the per-IP defaults.                                                                       |
 
 ### FastAPI — cluster-internal (edge-restricted)
 
 | Route                     | Current enforcement                                                                                                       | Status                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/metrics`        | Frontend nginx returns 404 (`default.conf.template`); scraped in-cluster via ServiceMonitor against the ClusterIP Service | ⚠ **Partial.** The app itself is unauthenticated and there is no NetworkPolicy restricting the backend Service, so any in-cluster or port-forwarded client (and dev compose on `:8000`) reads queue depth, worker heartbeat age, and execution mode. Enforcement fix: opt-in backend NetworkPolicy in PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (enable per deployment overlay). |
-| `GET /api/health/ready`   | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The readiness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the DB and storage checks.                                                                                                                                                                                                                               |
+| `GET /api/health/ready`   | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The readiness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the DB and storage checks. Its DB check establishes a _fresh_ `NullPool` connection per probe (`SELECT 1`, then close) so revoked/rotated credentials surface as unready rather than hiding behind a warm pooled session (#1496).                        |
 | `GET /api/health/storage` | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The storage liveness handler remains unauthenticated for kubelet access, but public frontend-ingress requests are blocked before they reach the storage check.                                                                                                                                                                                                                                |
+| `GET /api/_probe`         | Frontend nginx returns 404 (`default.conf.template`); kubelet probes the backend pod directly                             | The readiness canary handler remains unauthenticated for kubelet access and travels the included-router request path (#1473), but public frontend-ingress requests are blocked before they reach the DB and storage checks. Its DB check uses the same fresh `NullPool` connection per probe as `/api/health/ready` (#1496).                                                                  |
 
 ### FastAPI — mismatches (violate rule 3)
 
@@ -86,6 +94,8 @@ sidecar enforcement and private cache headers).
 All other FastAPI routes (admin, bulk-import, categories, changelog, groups,
 images, issues, programs, telemetry, tile-order, upload, users) are
 **app-authz**; `docs/TESTING.md` carries the endpoint → minimum-role table.
+(`POST /api/telemetry/synthetic-result` also lives in the app-credential table
+above — it accepts a shared ingest token _in addition to_ its user-JWT path.)
 
 ### Frontend nginx (production image / chart)
 
@@ -101,14 +111,15 @@ images, issues, programs, telemetry, tile-order, upload, users) are
 | `= /api/metrics`                    | `return 404`                                                                                                                                                                                                             | Edge restriction for the cluster-internal route above     |
 | `= /api/health/ready`               | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
 | `= /api/health/storage`             | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
+| `= /api/_probe`                     | `return 404`                                                                                                                                                                                                             | Edge restriction; kubelet probes the backend pod directly |
 
 ### Kubernetes / ingress
 
 - `charts/frontend/templates/ingress.yaml` annotations are values-driven; the
   chart itself imposes no path allowlist. The frontend nginx configuration
-  explicitly blocks `/api/health/ready` and `/api/health/storage` before the
-  generic API proxy. Kubelet probes continue to call those paths directly on
-  the backend pod.
+  explicitly blocks `/api/health/ready`, `/api/health/storage`, and
+  `/api/_probe` before the generic API proxy. Kubelet probes continue to call
+  those paths directly on the backend pod.
 - PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) adds an opt-in
   NetworkPolicy to `charts/backend` restricting ingress to the frontend proxy
   and the metrics-scraper — required for rule 4 to hold for `/api/metrics`.
@@ -126,18 +137,29 @@ Vite dev server (`:5173`) is dev-only; the production image serves via nginx.
 
 ### Cross-cutting note — CORS
 
-`backend/app/main.py` falls back to `allow_origins=["*"]` **with**
-`allow_credentials=True` when `CORS_ORIGINS` is unset, and
-`charts/backend/values.yaml` defaults `corsOrigins: ''`. Deployments must set
-it; hardening the default is tracked in a follow-up issue (see below).
+`backend/app/main.py` resolves CORS via `_resolve_cors_config` (#1302,
+closing #1154):
+
+- An explicit `CORS_ORIGINS` list is honoured with `allow_credentials=True`.
+- Unset or wildcard under `TASK_EXECUTION_MODE=required` fails fast at
+  startup — a production-shaped deployment can never silently serve
+  credentialed wildcard CORS.
+- In `local` mode an unset/wildcard value serves `*` **without** credentials
+  and logs a prominent warning, so dev compose and the Vite proxy (both
+  same-origin) keep working with zero configuration.
+
+`charts/backend` renders `CORS_ORIGINS` unconditionally on the backend pod
+from the top-level `corsOrigins` value (the nested
+`auth.openidConnect.corsOrigins` remains only as a deprecated fallback for
+existing overlays), and the chart fails to render in `required` mode with an
+empty or wildcard value.
 
 ## Gaps and owners
 
-| Gap                                                                    | Owner                                                                                            |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `/api/metrics` cluster-internal not enforced beyond frontend nginx 404 | PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (chart NetworkPolicy; enable in overlays) |
-| Admin task-download token in query string                              | #1153                                                                                            |
-| CORS wildcard + credentials default                                    | #1154                                                                                            |
+| Gap                                                                                                                                                                                            | Owner                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `/api/metrics` cluster-internal not enforced beyond frontend nginx 404                                                                                                                         | PR [#1160](https://github.com/bcit-tlu/hriv/pull/1160) (chart NetworkPolicy; enable in overlays) |
+| `tile_token` still travels in the query string — same `http.url` span / access-log exposure the admin download credential shed in #1302; deliberate for `<img>` delivery, but worth revisiting | residual follow-up to #1153                                                                      |
 
 ## Related
 

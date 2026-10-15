@@ -39,7 +39,7 @@ jobs:
             echo "match=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: steps.parse.outputs.match == 'true'
         with:
           ref: ${{ inputs.tag_name || github.event.release.tag_name }}

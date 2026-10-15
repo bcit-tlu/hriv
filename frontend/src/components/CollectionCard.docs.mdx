@@ -1,0 +1,110 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionCardStories from './CollectionCard.stories'
+
+<Meta of={CollectionCardStories} />
+
+<Title />
+
+<Subtitle>
+  Collections-page card: cover thumbnail, name, image count and visibility chip — with the type icon
+  left of the title, Move/Set-cover actions top-right, and an Edit pencil beside the title.
+</Subtitle>
+
+## When to use
+
+Use `CollectionCard` inside the collections-page grids (`CollectionsPage`) and the Browse tile
+grid to represent one `CollectionSummary`. Clicking the card body opens the collection
+(`?collection={id}`); the overlay icons call `onPickCoverImage` (member cover picker —
+`CollectionCoverPickerModal`) and `onMove`, and the title-row pencil calls
+`onEdit`. There is no card-level delete — Delete Collection lives inside the edit dialog (#1554),
+and owners/transfer management lives on the detail header and manage table, not the card.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={CollectionCardStories.Basic} />
+
+## Implementation guidance
+
+- The cover is rendered through `RenewingThumbnail` with a collection-specific renewer, so an
+  expired thumbnail token is refreshed via `GET /api/collections/{id}` rather than the image route.
+- Move and Set-cover live in a top-RIGHT cover overlay (#1559); the overlay actions use the
+  white-on-`rgba(0,0,0,0.25)` scrim convention of
+  `CategoryTile` (#1554) — Set-cover mirrors that tile's image-icon button exactly. The
+  type renders as a bare icon left of the tile
+  title — the category folder-icon spot — via the shared `CollectionTypeIcon`
+  (`titleAccess` names it for screen readers); where the type renders as a pill
+  (detail header, edit dialog, manage table) it is the shared `CollectionTypeChip` — red (primary)
+  outline and text on a white fill with the type's icon (#1567). Tiles carry no
+  owner reference at all — neither program nor user (#1567).
+  The visibility chip lives
+  in the metadata area and reuses the
+  category restriction palette — `Restricted` borrows the group-chip colours, `Public` is neutral
+  outlined, `Private` uses the muted visibility grey.
+- A curatorially hidden card (`collection.hidden`) desaturates the whole tile and adds an eye-off
+  marker beside the name — the same treatment hidden categories/images get (#1559). Only
+  non-students and the collection's owners ever see it. A card filed under a hidden category
+  (`categoryHidden` — `ImageTile`'s prop convention) desaturates the same way but renders **no**
+  marker: the eye-off glyph is reserved for the collection's own hidden flag (the `ImageTile`/
+  `CategoryTile` convention — inherited state is desaturation alone). The Browse tile grid and the
+  collections-page grid both derive it from the filed category's ancestor path.
+- Action icons are a UX gate only: Edit and Set-cover render when `permissions.canEdit` **and**
+  their handler (`onEdit` / `onPickCoverImage`) is supplied, and Move whenever
+  `onMove` is supplied (filing is curatorial — the caller role-gates to admin/instructor). The
+  backend re-checks authority on
+  every call. Overlay clicks stop propagation so they never open the card.
+- Set `titleHeadingLevel` when the card appears under a section heading; its default is `h6`.
+- `density="compact"` shrinks the tile (aspect-ratio cover, subtitle title) for the My-collections
+  drawer; `density="minimal"` goes further and drops every metadata row under the title — image
+  count, visibility pill, and scope chips — for the drawer's minimally-invasive look.
+- Without a cover the card shows the collection's type icon (sequence carousel / synchronized
+  columns) at large size on a primary-coloured block — the uncovered category tile's convention.
+  `coverBlank` (the picker's explicit **None**) forces this state even when a thumb is still
+  attached to the record.
+
+## Examples
+
+### Sequence
+
+<Canvas of={CollectionCardStories.Sequence} />
+
+### Restricted
+
+<Canvas of={CollectionCardStories.Restricted} />
+
+### Read only
+
+<Canvas of={CollectionCardStories.ReadOnly} />
+
+### Hidden
+
+<Canvas of={CollectionCardStories.Hidden} />
+
+### No cover
+
+<Canvas of={CollectionCardStories.NoCover} />
+
+### Blank cover — picker's None
+
+<Canvas of={CollectionCardStories.BlankCover} />
+
+### Minimal — drawer tile
+
+<Canvas of={CollectionCardStories.Minimal} />
+
+### Long name
+
+<Canvas of={CollectionCardStories.LongName} />
+
+## Stories
+
+<Stories includePrimary={false} />

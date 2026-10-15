@@ -352,7 +352,7 @@ class TileOrderScope(BaseModel):
 
 
 class TileOrderItemRef(BaseModel):
-    type: Literal["category", "image"]
+    type: Literal["category", "collection", "image"]
     id: int
 
 
@@ -380,8 +380,31 @@ class CategoryOut(CategoryBase):
     created_at: datetime
     updated_at: datetime
     warnings: list[CategoryWarning] = []
+    # Category tile cover (#1609): resolved server-side from
+    # ``metadata.card_image_id`` — the pinned image id when it resolves to an
+    # image in this category's subtree, plus its thumbnail URL. Resolution
+    # deliberately ignores image/category visibility so the cover still
+    # renders for students; ``card_thumb`` is tokenized with a
+    # thumbnail-only token so it cannot unlock the full tile set.
+    card_image_id: int | None = None
+    card_thumb: str | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+    @field_serializer("card_thumb")
+    def _tokenize_card_thumb(self, value: str | None) -> str | None:
+        """Tokenize the card thumbnail with the thumbnail-only purpose.
+
+        Issued only here, at serialization — after the routers' auth +
+        student-visibility filtering — and never mutates the persisted
+        ``thumb`` column. Non-tile URLs pass through unchanged. See
+        docs/tile-delivery-boundary.md.
+        """
+        if value is None:
+            return None
+        from .tile_tokens import append_thumb_token
+
+        return append_thumb_token(value)
 
     @model_validator(mode="before")
     @classmethod
@@ -397,6 +420,14 @@ class CategoryOut(CategoryBase):
             result["group_ids"] = [g.id for g in data.groups]
             result["metadata_extra"] = data.metadata_
             result["warnings"] = getattr(data, "_category_warnings", [])
+            # Routers attach the resolved card pin (and, for students, a
+            # scrubbed metadata dict without ``card_image_id``) as private
+            # attributes — same pattern as ``_category_warnings``.
+            metadata_override = getattr(data, "_metadata_extra_override", None)
+            if metadata_override is not None:
+                result["metadata_extra"] = metadata_override
+            result["card_image_id"] = getattr(data, "_card_image_id", None)
+            result["card_thumb"] = getattr(data, "_card_thumb", None)
             return result
         return data
 
@@ -404,6 +435,10 @@ class CategoryOut(CategoryBase):
 class CategoryTree(CategoryOut):
     children: list["CategoryTree"] = []
     images: list["ImageOut"] = []
+    # Collections filed into this category (epic #1525). Present only when the
+    # ``COLLECTIONS_ENABLED`` flag is on; unfiled collections are not Browse
+    # tiles and are listed separately through the unfiled queue.
+    collections: list["CollectionSummaryOut"] = []
 
 
 # ── Image ─────────────────────────────────────────────────
@@ -477,6 +512,12 @@ class ImageOut(ImageBase):
         from .tile_tokens import append_tile_token
 
         return append_tile_token(value)
+
+
+class ImageSourceInfoOut(BaseModel):
+    original_filename: str | None = None
+    file_type: str | None = None
+    uploaded_by_name: str | None = None
 
 
 # ── Source Image ─────────────────────────────────────────
@@ -678,5 +719,360 @@ class UserOut(UserBase):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
-# Rebuild forward refs for nested models
+# ── Collection ────────────────────────────────────────────
+
+class CollectionOwnerOut(BaseModel):
+    """One owner of a collection: a user (``user_id``) or the owning program
+    (``program_id``). Exactly one of the two ids is set.
+    """
+
+    user_id: int | None = None
+    program_id: int | None = None
+    name: str
+
+
+class CollectionPermissionsOut(BaseModel):
+    """Caller-specific capabilities, mirrored from ``authz``. UX hints only —
+    the backend re-checks authority on every mutation.
+    """
+
+    can_edit: bool = False
+    can_change_scope: bool = False
+    can_delete: bool = False
+    can_transfer: bool = False
+    can_hide: bool = False
+
+
+class CollectionSummaryOut(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    type: str
+    visibility: str
+    # Curatorial hide (#1559): hidden collections are invisible to students
+    # who don't own them; owners keep access.
+    hidden: bool = False
+    # Co-owners (#1531): one entry per ``collection_owners`` row, plus an
+    # entry for the owning program when set. Empty = orphaned (admin-managed).
+    owners: list[CollectionOwnerOut] = []
+    image_count: int = 0
+    cover_thumb: str | None = None
+    # Pinned cover member (``collections.cover_image_id``) when it resolves
+    # to an image visible to the caller; ``None`` means the tile uses the
+    # first-member fallback.
+    cover_image_id: int | None = None
+    # Explicit "no cover" pick: the tile renders the type-logo placeholder
+    # and ``cover_thumb`` is ``None`` even with members present.
+    cover_blank: bool = False
+    # Restriction scope rides on summaries too so Browse tiles can render the
+    # collection's own program/group chips like category tiles do (#1567).
+    # Empty unless ``visibility == "restricted"``.
+    program_ids: list[int] = []
+    group_ids: list[int] = []
+    version: int = 1
+    # Browse placement (epic #1525): the category the collection is filed in
+    # (``None`` = unfiled, not on Browse) and its tile-order position.
+    category_id: int | None = None
+    sort_order: int = 0
+    created_at: datetime
+    updated_at: datetime
+    permissions: CollectionPermissionsOut = CollectionPermissionsOut()
+
+    @field_serializer("cover_thumb")
+    def _tokenize_cover_thumb(self, value: str | None) -> str | None:
+        """Tokenize the cover thumbnail like ``ImageOut.thumb`` (issued only
+        after the router's visibility filtering; see docs/tile-delivery-boundary.md).
+        """
+        if value is None:
+            return None
+        from .tile_tokens import append_tile_token
+
+        return append_tile_token(value)
+
+
+class CollectionOut(CollectionSummaryOut):
+    images: list[ImageOut] = []
+    viewport_state: dict = {}
+    # Nominal member count for unfiltered viewers (non-students), so the
+    # detail view can distinguish "empty collection" from "all members are
+    # restricted" (epic #1525 / #1529). For students the count is clamped to
+    # ``len(images) + 1`` when members are hidden: it signals that restricted
+    # members exist — the restricted-members message intentionally reveals
+    # that — without disclosing how many. Detail-only: summaries keep the
+    # visible-only ``image_count`` so tiles never reveal hidden membership.
+    member_count: int = 0
+
+
+class CollectionGraphNodeOut(BaseModel):
+    """One collection node in a graph payload (#1628).
+
+    ``image_count`` is the count of members visible to the *caller* — the
+    same visible-only number ``CollectionSummaryOut.image_count`` reports —
+    so the graph can never disclose how many members are restricted from a
+    student.
+    """
+
+    id: int
+    name: str
+    type: str
+    image_count: int
+    hidden: bool = False
+    category_id: int | None = None
+
+
+class CollectionGraphImageOut(BaseModel):
+    """One image node: every *visible* collection containing it is listed in
+    ``collection_ids`` (edges are implied — no explicit edge list).
+
+    ``category_id`` is always populated (``None`` for uncategorized images)
+    at every order — the client does not have to special-case order 3.
+    """
+
+    id: int
+    name: str
+    collection_ids: list[int]
+    category_id: int | None = None
+
+
+class CollectionGraphCategoryOut(BaseModel):
+    """One category node (#1633). ``image_count`` counts caller-visible
+    images filed directly in the category (not descendants); ``path`` is
+    the label chain from the root for tooltips."""
+
+    id: int
+    label: str
+    path: str
+    image_count: int
+
+
+class CollectionsGraphOut(BaseModel):
+    """Hub-and-spoke graph of all viewable collections (#1628).
+
+    ``collections`` is ordered like ``GET /api/collections`` (``updated_at``
+    desc, ``id`` desc). ``images`` is populated for ``order`` ≥ 2, sorted
+    by id, each ``collection_ids`` ascending. ``categories`` is populated
+    only for ``order=3`` and contains every caller-visible category holding
+    ≥1 caller-visible image — including categories with no collection, so
+    instructors can spot collections still to create.
+    """
+
+    order: int
+    collections: list[CollectionGraphNodeOut]
+    images: list[CollectionGraphImageOut] = []
+    categories: list[CollectionGraphCategoryOut] = []
+
+
+class CollectionGraphOut(BaseModel):
+    """Single-collection perspective graph (#1628).
+
+    ``images`` are the hub collection's caller-visible members in member
+    order; ``collection_ids`` lists every visible collection containing the
+    image (just ``[collection.id]`` at ``order=1``).
+    ``related_collections`` are the other viewable collections sharing at
+    least one visible member (``order`` ≥ 2), sorted by name then id.
+    ``categories`` (``order=3`` only) is limited to the categories of the
+    hub's visible members.
+    """
+
+    order: int
+    collection: CollectionGraphNodeOut
+    images: list[CollectionGraphImageOut] = []
+    related_collections: list[CollectionGraphNodeOut] = []
+    categories: list[CollectionGraphCategoryOut] = []
+
+
+CollectionType = Literal["synchronized", "sequence"]
+CollectionVisibility = Literal["private", "public", "restricted"]
+
+# Mirrors ``models.SYNCHRONIZED_COLLECTION_MAX_IMAGES``; kept here so the
+# request schemas stay import-free of the ORM layer.
+SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
+COLLECTION_NAME_MAX_LENGTH = 255  # ``collections.name`` is ``String(255)``
+
+
+def normalize_collection_description(v: str | None) -> str | None:
+    """Strip whitespace; a blank description clears the field (``None``)."""
+    if isinstance(v, str):
+        v = v.strip()
+        return v or None
+    return v
+
+
+def validate_collection_image_ids(
+    image_ids: list[int], collection_type: str | None,
+) -> list[int]:
+    """Reject duplicate image ids and enforce the synchronized image cap.
+
+    Existence and per-caller visibility of each id are checked by the router
+    against the database; this is the request-shape half of the contract.
+    """
+    if len(set(image_ids)) != len(image_ids):
+        raise ValueError("image_ids must not contain duplicates")
+    if (
+        collection_type == "synchronized"
+        and len(image_ids) > SYNCHRONIZED_COLLECTION_MAX_IMAGES
+    ):
+        raise ValueError(
+            "synchronized collections hold at most "
+            f"{SYNCHRONIZED_COLLECTION_MAX_IMAGES} images"
+        )
+    return image_ids
+
+
+class CollectionCreate(BaseModel):
+    name: str = Field(max_length=COLLECTION_NAME_MAX_LENGTH)
+    description: str | None = None
+    type: CollectionType
+    visibility: CollectionVisibility = "private"
+    category_id: int | None = None
+    image_ids: list[int] = []
+    program_ids: list[int] = []
+    group_ids: list[int] = []
+
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
+    _validate_description = field_validator("description", mode="before")(
+        normalize_collection_description
+    )
+
+    @model_validator(mode="after")
+    def _check_images_and_scope(self) -> "CollectionCreate":
+        validate_collection_image_ids(self.image_ids, self.type)
+        if self.visibility != "restricted" and (self.program_ids or self.group_ids):
+            raise ValueError(
+                "program_ids/group_ids may only be set when visibility is 'restricted'"
+            )
+        return self
+
+
+class CollectionUpdate(BaseModel):
+    """PATCH body. ``type`` is immutable: it may be echoed back unchanged but
+    the router rejects any change with 422. ``version`` is the optimistic
+    concurrency token (must equal the collection's current version).
+    """
+
+    name: str | None = Field(None, max_length=COLLECTION_NAME_MAX_LENGTH)
+    description: str | None = None
+    type: CollectionType | None = None
+    visibility: CollectionVisibility | None = None
+    program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
+    hidden: bool | None = None
+    # Pinned tile cover: must reference a member the caller can view
+    # (``null`` restores the first-member fallback). Content field — same
+    # authority as ``name``/``description``.
+    cover_image_id: int | None = None
+    # Explicit "no cover" pick (the type-logo placeholder). ``true`` clears
+    # any pinned member; a ``cover_image_id`` write clears the flag — the
+    # two states are mutually exclusive.
+    cover_blank: bool | None = None
+    version: int
+
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+    _validate_description = field_validator("description", mode="before")(
+        normalize_collection_description
+    )
+
+
+class CollectionMove(BaseModel):
+    """POST ``/{id}/move`` body filing a collection into a category.
+
+    ``category_id`` is required but nullable: an explicit ``null`` unfiles
+    the collection so it no longer appears on Browse. ``version`` is the
+    optimistic concurrency token.
+    """
+
+    category_id: int | None
+    version: int
+
+
+class CollectionImagesUpdate(BaseModel):
+    """PUT body replacing the whole ordered image list (add/remove/reorder).
+
+    The synchronized cap is enforced by the router, which knows the
+    collection's type; duplicates are rejected here.
+    """
+
+    image_ids: list[int]
+    version: int
+
+    @field_validator("image_ids")
+    @classmethod
+    def _no_duplicates(cls, v: list[int]) -> list[int]:
+        return validate_collection_image_ids(v, None)
+
+
+class CollectionViewportUpdate(BaseModel):
+    """PUT body replacing ``viewport_state`` wholesale (never a partial merge)."""
+
+    viewport_state: dict
+    version: int
+
+
+class CollectionOwnersUpdate(BaseModel):
+    """PUT ``…/owners`` body (#1531): replace the whole user-owner set.
+    Targets may be any active user; ``version`` is the optimistic
+    concurrency token. The router 422s when the result would orphan the
+    collection (empty owner set with no program owner).
+    """
+
+    user_ids: list[int]
+    version: int
+
+    @field_validator("user_ids")
+    @classmethod
+    def _dedupe(cls, v: list[int]) -> list[int]:
+        return list(dict.fromkeys(v))
+
+
+class CollectionTransfer(BaseModel):
+    """POST ``…/transfer`` body (#1531): reassign *program* ownership.
+
+    ``program_id`` is required but nullable — an explicit ``null`` clears
+    the program owner (mirroring ``CollectionMove.category_id``), which the
+    router 422s unless user-owners remain. Setting a program clears the
+    user-owner rows; user ownership is managed wholesale through
+    ``PUT /owners`` instead.
+    """
+
+    program_id: int | None
+    version: int
+
+
+class CollectionBulkUpdate(BaseModel):
+    """PATCH ``/collections/bulk`` body (#1578): curatorial fields only.
+
+    ``hidden`` and ``category_id`` are the bulk-editable fields — both are
+    curatorial (admin/instructor) like ``POST …/move`` and a hidden-only
+    PATCH, so a single role gate covers the endpoint. ``category_id: null``
+    unfiles collections from Browse (``CollectionMove`` semantics).
+    Scope fields (``visibility``/``program_ids``/``group_ids``) are
+    deliberately absent: scope authority is per-collection (sole owner vs
+    co-owner, program membership) and ``restricted`` needs per-collection
+    attach lists. No ``version`` token — bulk writes apply like
+    ``PATCH /images/bulk`` and bump ``version`` on actually-changed rows.
+    """
+
+    collection_ids: list[int]
+    category_id: int | None = None
+    hidden: bool | None = None
+
+
+class CollectionBulkDelete(BaseModel):
+    """DELETE ``/collections/bulk`` body (#1578)."""
+
+    collection_ids: list[int]
+
+
+class FeaturesOut(BaseModel):
+    """``GET /api/features``: deployment-level feature flags the frontend
+    reads at boot to decide which surfaces to render. Flags are not secrets;
+    the backend still enforces each one independently.
+    """
+
+    collections: bool
+    collections_home_shelf: bool
+
+
+# Rebuild forward refs for nested models (``CategoryTree`` embeds
+# ``ImageOut`` and ``CollectionSummaryOut``, both defined below it).
 CategoryTree.model_rebuild()

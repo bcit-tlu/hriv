@@ -7,8 +7,23 @@
  * can drive toolbar clicks and selection-rectangle gestures directly.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { cleanup, render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+
+const hadFullscreenElementOwnProperty = Object.prototype.hasOwnProperty.call(
+  document,
+  'fullscreenElement',
+)
+const originalFullscreenElementDescriptor =
+  Object.getOwnPropertyDescriptor(document, 'fullscreenElement') ??
+  Object.getOwnPropertyDescriptor(Document.prototype, 'fullscreenElement')
+const hadExitFullscreenOwnProperty = Object.prototype.hasOwnProperty.call(
+  document,
+  'exitFullscreen',
+)
+const originalExitFullscreenDescriptor =
+  Object.getOwnPropertyDescriptor(document, 'exitFullscreen') ??
+  Object.getOwnPropertyDescriptor(Document.prototype, 'exitFullscreen')
 
 interface MockButton {
   options: {
@@ -25,6 +40,23 @@ interface MockTrackerOptions {
     originalEvent?: { shiftKey?: boolean }
   }) => void
   releaseHandler: () => void
+  preProcessEventHandler?: (event: {
+    originalEvent?: { target?: EventTarget | null }
+    preventGesture: boolean
+  }) => void
+}
+
+interface MockViewportState {
+  current: {
+    zoom: number
+    center: { x: number; y: number }
+    rotation: number
+  }
+  target: {
+    zoom: number
+    center: { x: number; y: number }
+    rotation: number
+  }
 }
 
 interface MockViewer {
@@ -33,14 +65,19 @@ interface MockViewer {
   canvas: HTMLDivElement
   navigator: { element: HTMLDivElement }
   world: { getItemAt: ReturnType<typeof vi.fn> }
+  viewportState: MockViewportState
   viewport: {
     getZoom: ReturnType<typeof vi.fn>
     getCenter: ReturnType<typeof vi.fn>
     getRotation: ReturnType<typeof vi.fn>
+    getHomeZoom: ReturnType<typeof vi.fn>
+    getHomeBounds: ReturnType<typeof vi.fn>
+    getFlip: ReturnType<typeof vi.fn>
     setRotation: ReturnType<typeof vi.fn>
     rotateTo: ReturnType<typeof vi.fn>
     zoomTo: ReturnType<typeof vi.fn>
     panTo: ReturnType<typeof vi.fn>
+    fitBounds: ReturnType<typeof vi.fn>
     pixelFromPoint: ReturnType<typeof vi.fn>
     pointFromPixel: ReturnType<typeof vi.fn>
     viewportToImageZoom: ReturnType<typeof vi.fn>
@@ -52,6 +89,8 @@ interface MockViewer {
   updateOverlay: ReturnType<typeof vi.fn>
   removeOverlay: ReturnType<typeof vi.fn>
   setMouseNavEnabled: ReturnType<typeof vi.fn>
+  isFullPage: ReturnType<typeof vi.fn>
+  setFullPage: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
   destroy: ReturnType<typeof vi.fn>
@@ -123,23 +162,53 @@ vi.mock('openseadragon', () => {
     const handlers = new Map<string, ((event: unknown) => void)[]>()
     const onceHandlers = new Map<string, ((event: unknown) => void)[]>()
     const container = document.createElement('div')
+    // Mirror OSD's ControlDock layout: per-anchor dock divs are children of the
+    // container and hold inline-block wrappers around each control element.
+    const bottomLeftDock = document.createElement('div')
+    const bottomRightDock = document.createElement('div')
+    container.appendChild(bottomLeftDock)
+    container.appendChild(bottomRightDock)
+    const navigatorElement = document.createElement('div')
+    bottomRightDock.appendChild(navigatorElement)
     const activeOverlays = new Set<HTMLElement>()
+    const homeBounds = {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      getCenter: () => ({ x: 0.5, y: 0.4 }),
+    }
+    const viewportState: MockViewportState = {
+      current: { zoom: 2, center: { x: 0.5, y: 0.4 }, rotation: 90 },
+      target: { zoom: 2, center: { x: 0.5, y: 0.4 }, rotation: 90 },
+    }
     const viewer: MockViewer = {
       element: document.createElement('div'),
       container,
       canvas: document.createElement('div'),
-      navigator: { element: document.createElement('div') },
+      navigator: { element: navigatorElement },
+      viewportState,
       world: {
         getItemAt: vi.fn(() => ({ getContentSize: () => ({ x: 1000, y: 800 }) })),
       },
       viewport: {
-        getZoom: vi.fn(() => 2),
-        getCenter: vi.fn(() => ({ x: 0.5, y: 0.4 })),
-        getRotation: vi.fn(() => 90),
+        getZoom: vi.fn((current = false) =>
+          current ? viewportState.current.zoom : viewportState.target.zoom,
+        ),
+        getCenter: vi.fn((current = false) =>
+          current ? viewportState.current.center : viewportState.target.center,
+        ),
+        getRotation: vi.fn((current = false) =>
+          current ? viewportState.current.rotation : viewportState.target.rotation,
+        ),
+        getHomeZoom: vi.fn(() => 2),
+        getHomeBounds: vi.fn(() => homeBounds),
+        getFlip: vi.fn(() => false),
         setRotation: vi.fn(),
         rotateTo: vi.fn(),
         zoomTo: vi.fn(),
         panTo: vi.fn(),
+        fitBounds: vi.fn(),
         pixelFromPoint: vi.fn((p: { x: number; y: number }) => ({ x: p.x * 100, y: p.y * 100 })),
         pointFromPixel: vi.fn((p: { x: number; y: number }) => ({ x: p.x / 100, y: p.y / 100 })),
         viewportToImageZoom: vi.fn((zoom: number) => zoom * 0.001),
@@ -150,11 +219,17 @@ vi.mock('openseadragon', () => {
       addOnceHandler: vi.fn((event: string, handler: (event: unknown) => void) => {
         onceHandlers.set(event, [...(onceHandlers.get(event) ?? []), handler])
       }),
-      addControl: vi.fn((el: HTMLElement) => container.appendChild(el)),
+      addControl: vi.fn((el: HTMLElement) => {
+        const wrapper = document.createElement('div')
+        wrapper.appendChild(el)
+        bottomLeftDock.appendChild(wrapper)
+      }),
       addOverlay: vi.fn((element: HTMLElement) => activeOverlays.add(element)),
       updateOverlay: vi.fn(),
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
+      isFullPage: vi.fn(() => false),
+      setFullPage: vi.fn(),
       open: vi.fn(() => {
         if (!viewer.preserveOverlays) activeOverlays.clear()
       }),
@@ -220,6 +295,10 @@ const buttonByTooltip = (tooltip: string) => {
 }
 const tracker = () => osdState.trackers[osdState.trackers.length - 1]
 
+function setFullscreenElement(element: Element | null) {
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: element })
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -252,9 +331,44 @@ beforeEach(() => {
   osdState.trackers.length = 0
   osdState.initError = null
   resetTileTokenRenewalCacheForTests()
+  setFullscreenElement(null)
   vi.useRealTimers()
   vi.clearAllMocks()
 })
+
+afterEach(() => {
+  cleanup()
+  if (hadFullscreenElementOwnProperty && originalFullscreenElementDescriptor) {
+    Object.defineProperty(document, 'fullscreenElement', originalFullscreenElementDescriptor)
+  } else {
+    Reflect.deleteProperty(document, 'fullscreenElement')
+  }
+  if (hadExitFullscreenOwnProperty && originalExitFullscreenDescriptor) {
+    Object.defineProperty(document, 'exitFullscreen', originalExitFullscreenDescriptor)
+  } else {
+    Reflect.deleteProperty(document, 'exitFullscreen')
+  }
+})
+
+const setViewportAtHome = (v: MockViewer) => {
+  const homeBounds = {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    getCenter: () => ({ x: 0.5, y: 0.4 }),
+  }
+  v.viewport.getHomeZoom.mockReturnValue(2)
+  v.viewport.getHomeBounds.mockReturnValue(homeBounds)
+  v.viewportState.current.zoom = 2
+  v.viewportState.current.center = { x: 0.5, y: 0.4 }
+  v.viewportState.current.rotation = 0
+  v.viewportState.target.zoom = 2
+  v.viewportState.target.center = { x: 0.5, y: 0.4 }
+  v.viewportState.target.rotation = 0
+  v.viewport.getFlip.mockReturnValue(false)
+  return homeBounds
+}
 
 describe('ImageViewer lifecycle telemetry', () => {
   it('emits view started/ready events and restores the initial viewport and overlays', () => {
@@ -287,6 +401,12 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
     expect(viewer().viewport.setRotation).toHaveBeenCalledWith(45, true)
     expect(viewer().addOverlay).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      viewer().fire('resize')
+      viewer().fire('viewport-change')
+    })
+    expect(viewer().viewport.fitBounds).not.toHaveBeenCalled()
   })
 
   it('emits failure telemetry when the image fails to open', () => {
@@ -310,6 +430,16 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
   })
 
+  it('reports the OSD instance through onViewerReady and null on unmount', () => {
+    const onViewerReady = vi.fn()
+    const { unmount } = render(
+      <ImageViewer tileSources="/tiles.dzi" imageId={7} onViewerReady={onViewerReady} />,
+    )
+    expect(onViewerReady).toHaveBeenCalledWith(viewer())
+    unmount()
+    expect(onViewerReady).toHaveBeenLastCalledWith(null)
+  })
+
   it('emits a dwell event and destroys the viewer and tracker on unmount', () => {
     const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
     const v = viewer()
@@ -322,6 +452,184 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
     expect(v.destroy).toHaveBeenCalled()
     expect(t.destroy).toHaveBeenCalled()
+  })
+
+  it('leaves full-page mode before destroying the viewer', () => {
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    v.isFullPage.mockReturnValue(true)
+
+    unmount()
+
+    expect(v.setFullPage).toHaveBeenCalledWith(false)
+    expect(v.setFullPage.mock.invocationCallOrder[0]).toBeLessThan(
+      v.destroy.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('hands full screen to the keyed replacement viewer without a second toolbar event', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    const first = viewer()
+    first.isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+    act(() => first.fire('full-page', { fullPage: true }))
+    const fullScreenActions = () =>
+      observabilityMocks.emitEvent.mock.calls.filter(
+        ([event]) => (event as { action?: string }).action === 'full_screen',
+      ).length
+    expect(fullScreenActions()).toBe(1)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
+    const second = viewer()
+    expect(second.setFullPage).toHaveBeenCalledWith(true)
+    expect(second.element.style.width).toBe('100%')
+    expect(second.element.style.height).toBe('100%')
+    expect(fullScreenActions()).toBe(1)
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('uses the latest sequence key when handing off after a collection change', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { rerender } = render(
+      <ImageViewer
+        key="current"
+        fullScreenHandoffKey="sequence:1"
+        imageId={1}
+        tileSources="/first.dzi"
+      />,
+    )
+    const first = viewer()
+
+    rerender(
+      <ImageViewer
+        key="current"
+        fullScreenHandoffKey="sequence:2"
+        imageId={1}
+        tileSources="/first.dzi"
+      />,
+    )
+    first.isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    rerender(
+      <ImageViewer
+        key="next"
+        fullScreenHandoffKey="sequence:2"
+        imageId={2}
+        tileSources="/second.dzi"
+      />,
+    )
+    expect(viewer().setFullPage).toHaveBeenCalledWith(true)
+
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('does not hand full screen to a different sequence collection', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:2" tileSources="/second.dzi" />,
+    )
+    expect(viewer().setFullPage).not.toHaveBeenCalledWith(true)
+
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
+  it('exits full screen after unmount when no viewer claims the handoff', () => {
+    vi.useFakeTimers()
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { unmount } = render(
+      <ImageViewer fullScreenHandoffKey="sequence:1" tileSources="/tiles.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    unmount()
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(0))
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+    vi.useRealTimers()
+  })
+
+  it('exits full screen immediately when a keyless viewer unmounts', () => {
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    })
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    const currentViewer = viewer()
+    currentViewer.isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    unmount()
+
+    expect(currentViewer.setFullPage).toHaveBeenCalledWith(false)
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+  })
+
+  it('restores the replacement viewer when full screen ends after a handoff', () => {
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+    setFullscreenElement(document.body)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
+    const second = viewer()
+    expect(second.setFullPage).toHaveBeenCalledWith(true)
+    second.isFullPage.mockReturnValue(true)
+
+    setFullscreenElement(null)
+    act(() => document.dispatchEvent(new Event('fullscreenchange')))
+
+    expect(second.setFullPage).toHaveBeenLastCalledWith(false)
+    expect(second.element.style.width).toBe('')
+    expect(second.element.style.height).toBe('')
+  })
+
+  it('does not enter full-page mode without a pending handoff', () => {
+    setFullscreenElement(document.body)
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+
+    expect(viewer().setFullPage).not.toHaveBeenCalled()
   })
 
   it('resets rotation on home and counts only full-page entry', () => {
@@ -349,6 +657,126 @@ describe('ImageViewer lifecycle telemetry', () => {
     act(() => viewer().fire('animation-finish'))
 
     expect(onViewportChange).toHaveBeenCalledWith({ zoom: 2, x: 0.5, y: 0.4, rotation: 90 })
+  })
+
+  it('refits the Home view after resize and persists it without home telemetry', () => {
+    const onViewportChange = vi.fn()
+    render(<ImageViewer tileSources="/tiles.dzi" onViewportChange={onViewportChange} />)
+    const v = viewer()
+    const homeBounds = setViewportAtHome(v)
+    act(() => v.fire('open'))
+    onViewportChange.mockClear()
+
+    act(() => v.fire('resize'))
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+    act(() => v.fire('viewport-change'))
+    expect(v.viewport.fitBounds).toHaveBeenCalledWith(homeBounds, true)
+    expect(onViewportChange).toHaveBeenCalledWith({ zoom: 2, x: 0.5, y: 0.4, rotation: 0 })
+    expect(observabilityMocks.emitEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ui.toolbar_action', action: 'home' }),
+    )
+  })
+
+  it('refits when resizing during an animation toward Home', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    const homeBounds = setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewportState.current.zoom = 1
+    v.viewportState.current.center = { x: 0.7, y: 0.4 }
+    v.viewportState.current.rotation = 45
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).toHaveBeenCalledWith(homeBounds, true)
+    expect(v.viewport.getZoom).toHaveBeenCalledWith(false)
+    expect(v.viewport.getCenter).toHaveBeenCalledWith(false)
+    expect(v.viewport.getRotation).toHaveBeenCalledWith(false)
+  })
+
+  it('does not refit a zoomed view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewport.getZoom.mockReturnValue(4)
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not refit a rotated view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    v.viewport.getRotation.mockReturnValue(90)
+    act(() => v.fire('open'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not refit a panned view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewport.getCenter.mockReturnValue({ x: 0.7, y: 0.4 })
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('does not refit a flipped view after resize', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    setViewportAtHome(v)
+    act(() => v.fire('open'))
+    v.viewport.getFlip.mockReturnValue(true)
+    act(() => v.fire('viewport-change'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('refits the Home view after consecutive resizes', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const v = viewer()
+    const homeBounds = setViewportAtHome(v)
+    act(() => v.fire('open'))
+
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+
+    expect(v.viewport.fitBounds).toHaveBeenCalledTimes(2)
+    expect(v.viewport.fitBounds).toHaveBeenNthCalledWith(1, homeBounds, true)
+    expect(v.viewport.fitBounds).toHaveBeenNthCalledWith(2, homeBounds, true)
   })
 
   it('renews tile sources once for a burst of failed tile loads and preserves the viewport', async () => {
@@ -411,6 +839,41 @@ describe('ImageViewer lifecycle telemetry', () => {
       true,
     )
     expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
+    act(() => {
+      v.fire('resize')
+      v.fire('viewport-change')
+    })
+    expect(v.viewport.fitBounds).not.toHaveBeenCalled()
+  })
+
+  it('preserves the live viewport across a same-image tile-source refresh (#1567)', () => {
+    // A save/refetch response re-tokenizes tile_sources — reopening the
+    // pyramid must not bounce the user back to the home position, and
+    // existing overlays survive the same-image swap.
+    const { rerender } = render(<ImageViewer tileSources="/tiles.dzi?tile_token=old" imageId={7} />)
+    const v = viewer()
+    act(() => v.fire('open'))
+    const overlay = document.createElement('div')
+    act(() => v.addOverlay(overlay))
+    v.viewport.getZoom.mockReturnValue(5)
+    v.viewport.getCenter.mockReturnValue({ x: 0.2, y: 0.3 })
+    v.viewport.getRotation.mockReturnValue(15)
+    v.viewport.zoomTo.mockClear()
+    v.viewport.panTo.mockClear()
+    v.viewport.setRotation.mockClear()
+
+    rerender(<ImageViewer tileSources="/tiles.dzi?tile_token=new" imageId={7} />)
+
+    expect(v.open).toHaveBeenCalledWith('/tiles.dzi?tile_token=new')
+    expect(v.activeOverlays.has(overlay)).toBe(true)
+
+    act(() => v.fire('open'))
+    expect(v.viewport.zoomTo).toHaveBeenLastCalledWith(5, undefined, true)
+    expect(v.viewport.panTo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ x: 0.2, y: 0.3 }),
+      true,
+    )
+    expect(v.viewport.setRotation).toHaveBeenLastCalledWith(15, true)
   })
 
   it('does not renew tile sources for non-auth loading failures', async () => {
@@ -464,7 +927,10 @@ describe('ImageViewer lifecycle telemetry', () => {
   })
 
   it('reports a non-auth open failure without attempting token renewal', async () => {
-    render(<ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} />)
+    const onError = vi.fn()
+    render(
+      <ImageViewer tileSources="/tiles.dzi?tile_token=current" imageId={7} onError={onError} />,
+    )
 
     act(() => viewer().fire('open-failed', { message: 'Malformed DZI descriptor' }))
 
@@ -474,6 +940,9 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(apiMocks.fetchImage).not.toHaveBeenCalled()
     expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
       expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: 7 }),
+    )
+    expect(onError).toHaveBeenCalledWith(
+      'This image could not be loaded. It may have been removed or you may not have access to it.',
     )
   })
 
@@ -684,6 +1153,33 @@ describe('ImageViewer selection rectangles', () => {
     expect(viewer().addOverlay).not.toHaveBeenCalled()
   })
 
+  it('marks presses inside the portaled canvas UI as preventGesture', () => {
+    // The toolbar/links are portaled into viewer.container; without this guard
+    // the tracker captures their presses to viewer.element, retargeting
+    // pointerup/click and suppressing focus — leaving the buttons inert.
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const preProcess = tracker().options.preProcessEventHandler
+    expect(preProcess).toBeDefined()
+
+    const uiRoot = document.createElement('div')
+    uiRoot.setAttribute('data-hriv-canvas-ui', '')
+    const uiButton = document.createElement('button')
+    uiRoot.appendChild(uiButton)
+
+    const uiEvent = { originalEvent: { target: uiButton }, preventGesture: false }
+    preProcess!(uiEvent)
+    expect(uiEvent.preventGesture).toBe(true)
+
+    const canvasTarget = document.createElement('div')
+    const viewerEvent = { originalEvent: { target: canvasTarget }, preventGesture: false }
+    preProcess!(viewerEvent)
+    expect(viewerEvent.preventGesture).toBe(false)
+
+    const noTarget = { originalEvent: {}, preventGesture: false }
+    preProcess!(noTarget)
+    expect(noTarget.preventGesture).toBe(false)
+  })
+
   it('clears all overlays and notifies the parent', () => {
     const onOverlaysChange = vi.fn()
     const onClearOverlays = vi.fn()
@@ -804,6 +1300,31 @@ describe('ImageViewer canvas edit mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Overlay done' }))
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
+  })
+
+  it('marks the canvas-edit button active with the standard red outline', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    const button = buttonByTooltip('Canvas annotations (add shapes, text, links)')
+
+    act(() => button.options.onClick())
+    expect(button.element.style.outline).toBe('2px solid red')
+    expect(button.element.style.outlineOffset).toBe('-2px')
+  })
+})
+
+describe('ImageViewer chrome alignment', () => {
+  it('bottom-aligns bottom-dock descendants so toolbar and minimap sit flush', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    const v = viewer()
+    const docks = Array.from(v.container.children) as HTMLElement[]
+    expect(docks.length).toBeGreaterThanOrEqual(2)
+    for (const dock of docks) {
+      const descendants = dock.querySelectorAll<HTMLElement>('*')
+      expect(descendants.length).toBeGreaterThan(0)
+      descendants.forEach((el) => expect(el.style.verticalAlign).toBe('bottom'))
+    }
+    // The navigator/minimap sits in the bottom-right dock
+    expect(v.navigator.element.style.verticalAlign).toBe('bottom')
   })
 })
 

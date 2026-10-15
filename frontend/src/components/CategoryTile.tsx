@@ -16,22 +16,19 @@ import ImageIcon from '@mui/icons-material/Image'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 
 import type { ApiImage } from '../api'
-import type { Category, Group, ImageItem, Program } from '../types'
+import { fetchCategory } from '../api'
+import type { Category, Group, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import CardImagePickerModal from './CardImagePickerModal'
 import RenewingThumbnail from './RenewingThumbnail'
 
-function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
-  for (const img of cat.images) {
-    if (img.id === imageId) return img
-  }
-  for (const child of cat.children) {
-    const found = findImageInCategory(child, imageId)
-    if (found) return found
-  }
-  return null
+/** Card-cover thumbs are keyed by category id, so an expired token is
+ *  renewed via the category record — never ``GET /api/images/{id}``, which
+ *  404s for students on images they cannot see (#1609). */
+function renewCardThumb(id: number): Promise<{ id: number; thumb: string | null }> {
+  return fetchCategory(id).then((c) => ({ id: c.id, thumb: c.card_thumb ?? null }))
 }
 
 /** Count all descendant subcategories recursively. */
@@ -48,6 +45,15 @@ function countAllImages(cat: Category): number {
   let count = cat.images.length
   for (const child of cat.children) {
     count += countAllImages(child)
+  }
+  return count
+}
+
+/** Count all collections filed in a category and its descendants (#1529). */
+function countAllCollections(cat: Category): number {
+  let count = cat.collections.length
+  for (const child of cat.children) {
+    count += countAllCollections(child)
   }
   return count
 }
@@ -77,7 +83,6 @@ function CategoryTile({
   onMove,
   onSetCardImage,
   onEditName,
-  onImageRenewed,
   programs,
   inheritedProgramIds = [],
   groups = [],
@@ -93,6 +98,7 @@ function CategoryTile({
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
   const imageCount = useMemo(() => countAllImages(category), [category])
+  const collectionCount = useMemo(() => countAllCollections(category), [category])
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -102,6 +108,9 @@ function CategoryTile({
   }
   if (imageCount > 0) {
     detailParts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
+  }
+  if (collectionCount > 0) {
+    detailParts.push(`${collectionCount} ${collectionCount === 1 ? 'collection' : 'collections'}`)
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 
@@ -127,9 +136,10 @@ function CategoryTile({
     .filter((g): g is Group => g != null)
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  const cardImage = category.cardImageId
-    ? findImageInCategory(category, category.cardImageId)
-    : null
+  // The cover comes from the server-resolved ``cardThumb`` (#1609): it is
+  // emitted even when the pinned image is inactive or under a hidden /
+  // restricted subtree, and never grants tile access beyond the thumbnail.
+  const cardThumb = category.cardThumb ?? null
   const tileHidden = parentHidden || category.status === 'hidden'
 
   const isDropTarget = onDropFiles != null
@@ -243,11 +253,11 @@ function CategoryTile({
             filter: tileHidden ? 'grayscale(100%)' : 'none',
           }}
         >
-          {cardImage ? (
+          {cardThumb ? (
             <RenewingThumbnail
-              image={cardImage}
+              image={{ id: category.id, thumb: cardThumb }}
+              renewThumb={renewCardThumb}
               alt={category.label}
-              onImageRenewed={onImageRenewed}
               sx={{
                 display: 'block',
                 width: '100%',
@@ -275,7 +285,22 @@ function CategoryTile({
               data-testid="category-tile-title-row"
               sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}
             >
-              <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+              {/* Centre the glyph on the title's first line — the h6 line
+                  box is taller than the icon, so bare flex-start leaves it
+                  floating above the text (#1567). `1lh` + the h6 typography
+                  metric keeps it centred whatever the theme. */}
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  typography: 'h6',
+                  height: '1lh',
+                  flexShrink: 0,
+                }}
+              >
+                <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+              </Box>
               <Tooltip title={category.label}>
                 <Typography
                   variant="h6"
@@ -293,13 +318,20 @@ function CategoryTile({
               </Tooltip>
               {category.status === 'hidden' && (
                 <Tooltip title="Visibility: Hidden">
-                  <span
+                  <Box
+                    component="span"
                     role="img"
                     aria-label="Visibility: Hidden"
-                    style={{ display: 'inline-flex', flexShrink: 0 }}
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      typography: 'h6',
+                      height: '1lh',
+                      flexShrink: 0,
+                    }}
                   >
                     <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                  </span>
+                  </Box>
                 </Tooltip>
               )}
               {onEditName && (

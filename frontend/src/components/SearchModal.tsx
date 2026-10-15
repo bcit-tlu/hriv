@@ -1,7 +1,9 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
+import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
@@ -11,6 +13,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CategoryIcon from '@mui/icons-material/Folder'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import ImageIcon from '@mui/icons-material/Image'
 import LinkIcon from '@mui/icons-material/Link'
@@ -21,15 +24,16 @@ import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
-import type { Category, ImageItem, Program } from '../types'
+import type { Category, CollectionSummary, ImageItem, Program } from '../types'
 import type { ApiImage, ApiUser } from '../api'
+import { describeCollectionOwners } from '../collectionUtils'
 import { buildGuideIndex, type GuideSearchSection } from '../guideSearch'
 import { parseSearchQuery } from '../searchQuery'
 import RenewingThumbnail from './RenewingThumbnail'
 
 // ── Result types ───────────────────────────────────────
 
-type ResultKind = 'category' | 'image' | 'program' | 'user' | 'guide'
+type ResultKind = 'category' | 'image' | 'program' | 'user' | 'guide' | 'collection'
 
 interface FieldMatch {
   field: string
@@ -54,7 +58,8 @@ interface SearchResult {
   /** Length of the matched query string */
   matchLength: number
   /** Extra payload needed for navigation */
-  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload
+  payload:
+    CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload | CollectionPayload
 }
 
 interface GroupedResult {
@@ -62,7 +67,8 @@ interface GroupedResult {
   entityId: number | string
   label: string
   matches: FieldMatch[]
-  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload
+  payload:
+    CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload | CollectionPayload
 }
 
 interface CategoryPayload {
@@ -93,6 +99,11 @@ interface GuidePayload {
   anchor?: string
 }
 
+interface CollectionPayload {
+  kind: 'collection'
+  collection: CollectionSummary
+}
+
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
@@ -110,33 +121,51 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
     key: 'category',
     label: 'Categories',
     icon: <CategoryIcon fontSize="small" />,
-    tooltip: 'Show only categories',
+    tooltip: 'Search only category names',
   },
   {
     key: 'image',
     label: 'Images',
     icon: <ImageIcon fontSize="small" />,
-    tooltip: 'Show only images',
+    tooltip: 'Search only image titles',
   },
   {
     key: 'program',
     label: 'Programs',
     icon: <SchoolIcon fontSize="small" />,
-    tooltip: 'Show only programs',
+    tooltip: 'Search only program names',
   },
   {
     key: 'user',
     label: 'People',
     icon: <PersonIcon fontSize="small" />,
-    tooltip: 'Show only people',
+    tooltip: 'Search only people names',
   },
   {
     key: 'guide',
     label: 'Guide',
     icon: <MenuBookIcon fontSize="small" />,
-    tooltip: 'Show only guide pages',
+    tooltip: 'Search only guide titles',
+  },
+  {
+    key: 'collection',
+    label: 'Collections',
+    icon: <CollectionsIcon fontSize="small" />,
+    tooltip: 'Search only collection names and descriptions',
   },
 ]
+
+/** Fields searched when a type chip is active and no Field chips are selected —
+ *  each type searches only the fields most closely associated with it
+ *  (e.g. Images searches image titles, Collections searches name + description). */
+const PRIMARY_FIELDS_BY_KIND: Record<ResultKind, readonly string[]> = {
+  category: ['Name'],
+  image: ['Name'],
+  program: ['Name'],
+  user: ['Name'],
+  guide: ['Title'],
+  collection: ['Name', 'Description'],
+}
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
   {
@@ -219,6 +248,8 @@ function iconForKind(kind: ResultKind) {
       return <PersonIcon sx={{ color: '#5b7a8a' }} />
     case 'guide':
       return <MenuBookIcon sx={{ color: '#8a6a5b' }} />
+    case 'collection':
+      return <CollectionsIcon sx={{ color: '#7a5b8a' }} />
   }
 }
 
@@ -234,6 +265,8 @@ function labelForKind(kind: ResultKind): string {
       return 'User'
     case 'guide':
       return 'Guide'
+    case 'collection':
+      return 'Collection'
   }
 }
 
@@ -348,6 +381,21 @@ function collectImageResults(
   }
 }
 
+/**
+ * Every image under a category subtree in registration order (#1567): the
+ * category's own images by `sortOrder`, then each child subtree in tree
+ * order. Mirrors `collectImageResults`' `excludeHidden` rule — hidden
+ * subtrees are skipped entirely.
+ */
+function collectSubtreeImages(cat: Category, excludeHidden: boolean): ImageItem[] {
+  const own = [...cat.images].sort((a, b) => a.sortOrder - b.sortOrder)
+  const nested = [...cat.children]
+    .filter((child) => !(excludeHidden && child.status === 'hidden'))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .flatMap((child) => collectSubtreeImages(child, excludeHidden))
+  return [...own, ...nested]
+}
+
 function addImageMatches(
   img: ImageItem,
   terms: string[],
@@ -421,6 +469,35 @@ function collectGuideResults(terms: string[], results: SearchResult[]): void {
   }
 }
 
+function collectCollectionResults(
+  collections: CollectionSummary[],
+  terms: string[],
+  results: SearchResult[],
+): void {
+  for (const collection of collections) {
+    const fields: { field: string; value: string | null | undefined }[] = [
+      { field: 'Name', value: collection.name },
+      { field: 'Description', value: collection.description },
+    ]
+    for (const { field, value } of fields) {
+      if (!value) continue
+      const m = findFirstTermMatch(value, terms)
+      if (m) {
+        results.push({
+          kind: 'collection',
+          entityId: collection.id,
+          label: collection.name,
+          field,
+          fieldValue: value,
+          matchIndex: m.index,
+          matchLength: m.length,
+          payload: { kind: 'collection', collection },
+        })
+      }
+    }
+  }
+}
+
 interface SearchModalProps {
   open: boolean
   onClose: () => void
@@ -428,17 +505,42 @@ interface SearchModalProps {
   uncategorizedImages: ImageItem[]
   programs: Program[]
   users: ApiUser[]
-  isStudent: boolean
+  /** The caller's visible collections — the backend list is already
+   *  access-filtered, so every row here may surface in results. */
+  collections?: CollectionSummary[]
+  /** Whether the collections feature is enabled — gates the Collections
+   *  chip, collection results, and the placeholder copy. */
+  collectionsEnabled?: boolean
+  /** Hide categories/images with a non-published status (students only). */
+  excludeHidden: boolean
+  /** Restrict results to categories/images — no program, user, or guide
+   *  result kinds and no related filters (students and staff). */
+  suppressExtendedResults: boolean
   onSelectCategory: (path: Category[]) => void
   onSelectImage: (image: ImageItem, path: Category[]) => void
   onImageRenewed?: (image: ApiImage) => void
   onSelectProgram: (programName: string) => void
   onSelectUser: (userId: number) => void
   onSelectGuide?: (slug: string, anchor?: string) => void
+  /** Navigate to a collection result (`?collection={id}`). */
+  onSelectCollection?: (collectionId: number) => void
+  /**
+   * Emits the picked images in selection (epoch/result) order when the
+   * footer's Add-to-collection action fires. The select layer only exists
+   * in picker mode — see `initialSelectMode` (#1567).
+   */
+  onAddImagesToCollection?: (images: ImageItem[]) => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
   initialTypeFilter?: TypeFilter
+  /** Launch as a collection-image picker (#1567): checkboxes and the
+   *  selection footer are on from open and there is no way to leave picker
+   *  mode except Cancel/close — the Manage Collection dialog's Add flow
+   *  stages picks (including whole categories) straight into its draft.
+   *  Requires `onAddImagesToCollection`; without it the modal behaves like
+   *  a normal search. */
+  initialSelectMode?: boolean
 }
 
 export default function SearchModal({
@@ -448,19 +550,48 @@ export default function SearchModal({
   uncategorizedImages,
   programs,
   users,
-  isStudent,
+  collections = [],
+  collectionsEnabled = false,
+  excludeHidden,
+  suppressExtendedResults,
   onSelectCategory,
   onSelectImage,
   onImageRenewed,
   onSelectProgram,
   onSelectUser,
   onSelectGuide,
+  onSelectCollection,
+  onAddImagesToCollection,
   initialQuery,
   initialTypeFilter,
+  initialSelectMode = false,
 }: SearchModalProps) {
+  // Multi-select (#1418/#1567): image and category results get checkboxes
+  // feeding a sticky footer action — but ONLY when the modal was launched
+  // as a collection-image picker (`initialSelectMode`, currently the
+  // Manage-collection dialog's Add flow). The normal search never shows
+  // the select layer.
+  const selectMode = initialSelectMode && onAddImagesToCollection != null
   const [query, setQuery] = useState('')
-  const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
+  // The picker pre-applies the Categories + Images type chips (#1567) —
+  // only addable kinds list by default; the chips stay toggleable.
+  const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(
+    () => new Set(selectMode ? ['category', 'image'] : []),
+  )
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
+  // The image rides along in each entry so picks survive a query change —
+  // the collection-add callback emits `ImageItem`s (#1567), which a stale
+  // result list could no longer supply by id alone. `direct` marks an
+  // explicit per-image pick; `pins` holds the ids of category results that
+  // claim the image — unchecking a category only removes entries it is the
+  // sole claimant of, so a hand-picked member (or one shared with another
+  // checked category's subtree) survives the uncheck.
+  const [selectedImages, setSelectedImages] = useState<
+    Map<
+      number,
+      { epoch: number; index: number; image: ImageItem; direct: boolean; pins: Set<number> }
+    >
+  >(new Map())
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
 
@@ -468,9 +599,10 @@ export default function SearchModal({
   const [prevSearchOpen, setPrevSearchOpen] = useState(open)
   const [wasSeeded, setWasSeeded] = useState(false)
   if (open && !prevSearchOpen) {
-    if (initialQuery != null || initialTypeFilter != null) {
+    if (initialQuery != null || initialTypeFilter != null || initialSelectMode) {
       if (initialQuery != null) setQuery(initialQuery)
-      if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+      if (selectMode) setTypeFilters(new Set<TypeFilter>(['category', 'image']))
+      else if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
       setFieldFilters(new Set())
       setWasSeeded(true)
     }
@@ -480,6 +612,11 @@ export default function SearchModal({
     setTypeFilters(new Set())
     setFieldFilters(new Set())
     setWasSeeded(false)
+  }
+  // Closing (or handing off to the collection dialog) always clears the
+  // multi-selection — the ids are captured by the callback before reset.
+  if (!open && prevSearchOpen) {
+    if (selectedImages.size > 0) setSelectedImages(new Map())
   }
   if (open !== prevSearchOpen) setPrevSearchOpen(open)
 
@@ -516,18 +653,23 @@ export default function SearchModal({
       const results: SearchResult[] = []
 
       // 1. Categories
-      collectCategoryResults(categories, terms, [], results, isStudent, programMap)
+      collectCategoryResults(categories, terms, [], results, excludeHidden, programMap)
 
       // 2. Images within category tree
-      collectImageResults(categories, terms, [], results, isStudent, programMap)
+      collectImageResults(categories, terms, [], results, excludeHidden, programMap)
 
       // 3. Uncategorized images
       for (const img of uncategorizedImages) {
         addImageMatches(img, terms, [], results, programMap)
       }
 
-      // 4. Programs (hidden from students)
-      if (!isStudent) {
+      // 4. Collections — visible to every role (list is server-filtered).
+      if (collectionsEnabled) {
+        collectCollectionResults(collections, terms, results)
+      }
+
+      // 5. Programs (hidden from students and staff)
+      if (!suppressExtendedResults) {
         for (const prog of programs) {
           const m = findFirstTermMatch(prog.name, terms)
           if (m) {
@@ -545,13 +687,13 @@ export default function SearchModal({
         }
       }
 
-      // 5. Guide pages (staff-only content)
-      if (!isStudent) {
+      // 6. Guide pages (editor-only content)
+      if (!suppressExtendedResults) {
         collectGuideResults(terms, results)
       }
 
-      // 6. Users (hidden from students)
-      if (!isStudent) {
+      // 7. Users (hidden from students and staff)
+      if (!suppressExtendedResults) {
         for (const user of users) {
           const userFields: { field: string; value: string }[] = [
             { field: 'Name', value: user.name },
@@ -582,7 +724,17 @@ export default function SearchModal({
 
       return results
     },
-    [categories, uncategorizedImages, programs, users, isStudent, programMap],
+    [
+      categories,
+      uncategorizedImages,
+      programs,
+      users,
+      collections,
+      collectionsEnabled,
+      excludeHidden,
+      suppressExtendedResults,
+      programMap,
+    ],
   )
 
   const allResults = useMemo(() => buildResults(query), [query, buildResults])
@@ -592,6 +744,11 @@ export default function SearchModal({
     let filtered = allResults
     if (typeFilters.size > 0) {
       filtered = filtered.filter((r) => typeFilters.has(r.kind))
+      // A type chip also scopes the query to the fields most closely
+      // associated with that type; explicit Field chips override that scope.
+      if (fieldFilters.size === 0) {
+        filtered = filtered.filter((r) => PRIMARY_FIELDS_BY_KIND[r.kind].includes(r.field))
+      }
     }
     if (fieldFilters.size > 0) {
       filtered = filtered.filter((r) => fieldFilters.has(r.field as FieldFilter))
@@ -632,7 +789,216 @@ export default function SearchModal({
     return [...groups.values()]
   }, [filteredResults])
 
-  const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
+  // Subtree image lists per category result, memoized on the result set —
+  // selection toggles re-render every row, and walking/sorting each
+  // category's subtree per row per keystroke is wasted work (#1567). Built
+  // over `groupedResults` (not just the displayed slice) so the picker
+  // filter below can consult it before capping at MAX_RESULTS.
+  const subtreeImagesByCategory = useMemo(() => {
+    const map = new Map<number, ImageItem[]>()
+    for (const result of groupedResults) {
+      if (result.payload.kind !== 'category') continue
+      const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
+      map.set(cat.id, collectSubtreeImages(cat, excludeHidden))
+    }
+    return map
+  }, [groupedResults, excludeHidden])
+
+  // Picker mode drops category results with no addable subtree images —
+  // a greyed-out checkbox can't explain why the category isn't addable,
+  // so the row simply isn't offered.
+  const pickerResults = useMemo(() => {
+    if (!selectMode) return groupedResults
+    return groupedResults.filter((result) => {
+      if (result.payload.kind !== 'category') return true
+      const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
+      return (subtreeImagesByCategory.get(cat.id) ?? []).length > 0
+    })
+  }, [groupedResults, selectMode, subtreeImagesByCategory])
+
+  const displayResults = useMemo(() => pickerResults.slice(0, MAX_RESULTS), [pickerResults])
+
+  // Each new result set bumps an epoch; a check stamps the image with the
+  // epoch and its position in that set. Emitting sorts by (epoch, index),
+  // which is result order within one query and "order encountered" across
+  // queries — selections never silently drop when the query changes.
+  const resultEpochRef = useRef(0)
+  const prevDisplayRef = useRef(displayResults)
+  if (prevDisplayRef.current !== displayResults) {
+    prevDisplayRef.current = displayResults
+    resultEpochRef.current += 1
+  }
+  const resultEpoch = resultEpochRef.current
+
+  const orderedSelectedImages = useMemo(
+    () =>
+      [...selectedImages.entries()]
+        .sort((a, b) => a[1].epoch - b[1].epoch || a[1].index - b[1].index)
+        .map(([, entry]) => entry.image),
+    [selectedImages],
+  )
+
+  const toggleImageSelected = useCallback(
+    (image: ImageItem, resultIndex: number) => {
+      const epoch = resultEpoch
+      setSelectedImages((prev) => {
+        const next = new Map(prev)
+        if (next.has(image.id)) {
+          // An explicit uncheck removes the image outright — even when a
+          // checked category pins it — so the category row can honestly go
+          // indeterminate.
+          next.delete(image.id)
+        } else {
+          next.set(image.id, {
+            epoch,
+            index: resultIndex,
+            image,
+            direct: true,
+            pins: new Set(),
+          })
+        }
+        return next
+      })
+    },
+    [resultEpoch],
+  )
+
+  // Category results are bulk-toggles (#1567): checking pins every image in
+  // the subtree (registration order — the shared (epoch, index) stamp +
+  // stable sort keeps DFS insertion order in the emitted list). Unchecking
+  // lifts this category's pin; a member only leaves the selection when no
+  // pin or direct pick still claims it — a hand-picked or
+  // other-category-covered member survives (#1567). Partially covered
+  // subtrees show indeterminate.
+  const toggleCategorySelected = useCallback(
+    (categoryId: number, images: ImageItem[], resultIndex: number) => {
+      const epoch = resultEpoch
+      setSelectedImages((prev) => {
+        const next = new Map(prev)
+        const pinned =
+          images.length > 0 && images.every((i) => next.get(i.id)?.pins.has(categoryId))
+        if (pinned) {
+          for (const img of images) {
+            const entry = next.get(img.id)
+            if (!entry) continue
+            const pins = new Set(entry.pins)
+            pins.delete(categoryId)
+            if (!entry.direct && pins.size === 0) next.delete(img.id)
+            else next.set(img.id, { ...entry, pins })
+          }
+        } else {
+          for (const image of images) {
+            const entry = next.get(image.id)
+            if (entry) next.set(image.id, { ...entry, pins: new Set(entry.pins).add(categoryId) })
+            else
+              next.set(image.id, {
+                epoch,
+                index: resultIndex,
+                image,
+                direct: false,
+                pins: new Set([categoryId]),
+              })
+          }
+        }
+        return next
+      })
+    },
+    [resultEpoch],
+  )
+
+  // The selectable rows currently listed — image results plus non-empty
+  // category subtrees — feeding the Select-all control (#1567).
+  type SelectableRow =
+    | { kind: 'image'; image: ImageItem; resultIndex: number }
+    | { kind: 'category'; categoryId: number; images: ImageItem[]; resultIndex: number }
+  const selectableRows = useMemo<SelectableRow[]>(
+    () =>
+      displayResults.flatMap((result, resultIndex): SelectableRow[] => {
+        if (result.payload.kind === 'image')
+          return [{ kind: 'image', image: result.payload.image, resultIndex }]
+        if (result.payload.kind === 'category') {
+          const cat = result.payload.categoryPath[result.payload.categoryPath.length - 1]
+          const images = subtreeImagesByCategory.get(cat.id) ?? []
+          if (images.length > 0)
+            return [{ kind: 'category', categoryId: cat.id, images, resultIndex }]
+        }
+        return []
+      }),
+    [displayResults, subtreeImagesByCategory],
+  )
+
+  const allSelectableCovered = useMemo(
+    () =>
+      selectableRows.length > 0 &&
+      selectableRows.every((row) =>
+        row.kind === 'image'
+          ? selectedImages.has(row.image.id)
+          : row.images.every((i) => selectedImages.has(i.id)),
+      ),
+    [selectableRows, selectedImages],
+  )
+
+  const toggleSelectAll = useCallback(() => {
+    const epoch = resultEpoch
+    setSelectedImages((prev) => {
+      const next = new Map(prev)
+      if (allSelectableCovered) {
+        // Unselect all: drop coverage for every listed row — image picks
+        // outright, category pins with the member only leaving when no
+        // other claim holds it.
+        for (const row of selectableRows) {
+          if (row.kind === 'image') {
+            next.delete(row.image.id)
+          } else {
+            for (const img of row.images) {
+              const entry = next.get(img.id)
+              if (!entry) continue
+              const pins = new Set(entry.pins)
+              pins.delete(row.categoryId)
+              if (!entry.direct && pins.size === 0) next.delete(img.id)
+              else next.set(img.id, { ...entry, pins })
+            }
+          }
+        }
+      } else {
+        for (const row of selectableRows) {
+          if (row.kind === 'image') {
+            const entry = next.get(row.image.id)
+            if (entry) next.set(row.image.id, { ...entry, direct: true })
+            else
+              next.set(row.image.id, {
+                epoch,
+                index: row.resultIndex,
+                image: row.image,
+                direct: true,
+                pins: new Set(),
+              })
+          } else {
+            for (const image of row.images) {
+              const entry = next.get(image.id)
+              if (entry)
+                next.set(image.id, { ...entry, pins: new Set(entry.pins).add(row.categoryId) })
+              else
+                next.set(image.id, {
+                  epoch,
+                  index: row.resultIndex,
+                  image,
+                  direct: false,
+                  pins: new Set([row.categoryId]),
+                })
+            }
+          }
+        }
+      }
+      return next
+    })
+  }, [allSelectableCovered, selectableRows, resultEpoch])
+
+  const handleAddSelected = () => {
+    if (orderedSelectedImages.length === 0) return
+    onClose()
+    onAddImagesToCollection?.(orderedSelectedImages)
+  }
 
   const handleSelect = (result: GroupedResult) => {
     onClose()
@@ -652,6 +1018,9 @@ export default function SearchModal({
       case 'guide':
         onSelectGuide?.(result.payload.slug, result.payload.anchor)
         break
+      case 'collection':
+        onSelectCollection?.(result.payload.collection.id)
+        break
     }
   }
 
@@ -661,6 +1030,7 @@ export default function SearchModal({
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      aria-label="Search"
       slotProps={{
         paper: {
           sx: {
@@ -676,9 +1046,9 @@ export default function SearchModal({
           autoFocus
           fullWidth
           placeholder={
-            isStudent
-              ? 'Search categories and images — "quotes" for exact phrases'
-              : 'Search categories, images, programs, people, the guide — "quotes" for exact phrases'
+            suppressExtendedResults
+              ? `Search ${collectionsEnabled ? 'categories, images, and collections' : 'categories and images'} — "quotes" for exact phrases`
+              : `Search ${collectionsEnabled ? 'categories, images, collections, programs, people, the guide' : 'categories, images, programs, people, the guide'} — "quotes" for exact phrases`
           }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -703,8 +1073,16 @@ export default function SearchModal({
             >
               Type:
             </Typography>
-            {TYPE_FILTERS.filter(
-              (f) => !(isStudent && (f.key === 'program' || f.key === 'user' || f.key === 'guide')),
+            {/* The picker offers only the two addable kinds — Categories and
+                Images, pre-applied — no other type or field chips (#1567). */}
+            {TYPE_FILTERS.filter((f) =>
+              selectMode
+                ? f.key === 'category' || f.key === 'image'
+                : (f.key !== 'collection' || collectionsEnabled) &&
+                  !(
+                    suppressExtendedResults &&
+                    (f.key === 'program' || f.key === 'user' || f.key === 'guide')
+                  ),
             ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
@@ -719,39 +1097,47 @@ export default function SearchModal({
                 />
               </Tooltip>
             ))}
-            <Box sx={{ mx: 0.5, borderLeft: 1, borderColor: 'divider' }} />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ alignSelf: 'center', mr: 0.5 }}
-            >
-              Field:
-            </Typography>
-            {FIELD_FILTERS.filter((f) => !(isStudent && f.key === 'Role')).map((f) => (
-              <Tooltip key={f.key} title={f.tooltip}>
-                <Chip
-                  data-testid="field-filter-chip"
-                  icon={f.icon}
-                  label={f.label}
-                  size="small"
-                  sx={{ px: 0.5 }}
-                  variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
-                  color={fieldFilters.has(f.key) ? 'primary' : 'default'}
-                  onClick={() => toggleFieldFilter(f.key)}
-                />
-              </Tooltip>
-            ))}
+            {!selectMode && (
+              <>
+                <Box sx={{ mx: 0.5, borderLeft: 1, borderColor: 'divider' }} />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ alignSelf: 'center', mr: 0.5 }}
+                >
+                  Field:
+                </Typography>
+                {FIELD_FILTERS.filter((f) => !(suppressExtendedResults && f.key === 'Role')).map(
+                  (f) => (
+                    <Tooltip key={f.key} title={f.tooltip}>
+                      <Chip
+                        data-testid="field-filter-chip"
+                        icon={f.icon}
+                        label={f.label}
+                        size="small"
+                        sx={{ px: 0.5 }}
+                        variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
+                        color={fieldFilters.has(f.key) ? 'primary' : 'default'}
+                        onClick={() => toggleFieldFilter(f.key)}
+                      />
+                    </Tooltip>
+                  ),
+                )}
+              </>
+            )}
           </Box>
         )}
 
-        <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+        {/* The results region is a flex column whose list alone scrolls —
+            the select-all/results header stays pinned above it (#1567). */}
+        <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {query.trim().length === 0 ? (
             <Box
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                height: '100%',
+                flexGrow: 1,
                 minHeight: 200,
               }}
             >
@@ -759,13 +1145,13 @@ export default function SearchModal({
                 Start typing to search&hellip;
               </Typography>
             </Box>
-          ) : groupedResults.length === 0 ? (
+          ) : pickerResults.length === 0 ? (
             <Box
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
-                height: '100%',
+                flexGrow: 1,
                 minHeight: 200,
               }}
             >
@@ -774,23 +1160,60 @@ export default function SearchModal({
               </Typography>
             </Box>
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                {groupedResults.length > MAX_RESULTS
-                  ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
-                  : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
-              </Typography>
-              {displayResults.map((result) => {
-                const chipNames = getResultProgramNames(result, programMap)
-                const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
-                const image = result.payload.kind === 'image' ? result.payload.image : null
-                return (
-                  <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
-                    <CardActionArea
-                      data-testid="search-result-action-area"
-                      onClick={() => handleSelect(result)}
-                      sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
-                    >
+            <>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5, flexShrink: 0 }}>
+                {/* Picker mode (#1567): a bulk select/unselect for every
+                    selectable row currently listed — image results and
+                    category subtrees alike. */}
+                {selectMode && selectableRows.length > 0 && (
+                  <Button
+                    size="small"
+                    data-testid="search-select-all"
+                    onClick={toggleSelectAll}
+                    sx={{ mr: 1, flexShrink: 0 }}
+                  >
+                    {allSelectableCovered ? 'Unselect all' : 'Select all'}
+                  </Button>
+                )}
+                <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+                  {pickerResults.length > MAX_RESULTS
+                    ? `Showing ${MAX_RESULTS} of ${pickerResults.length} results`
+                    : `${pickerResults.length} result${pickerResults.length !== 1 ? 's' : ''}`}
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  flexGrow: 1,
+                  minHeight: 0,
+                  overflow: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1,
+                }}
+              >
+                {displayResults.map((result, resultIndex) => {
+                  const chipNames = getResultProgramNames(result, programMap)
+                  const catPath =
+                    result.payload.kind === 'image' ? result.payload.categoryPath : null
+                  const image = result.payload.kind === 'image' ? result.payload.image : null
+                  // Categories are selectable too (#1567): checking one adds
+                  // every image in its subtree (sub-categories included) in
+                  // registration order.
+                  const resultCategory =
+                    result.payload.kind === 'category'
+                      ? result.payload.categoryPath[result.payload.categoryPath.length - 1]
+                      : null
+                  const subtreeImages = resultCategory
+                    ? (subtreeImagesByCategory.get(resultCategory.id) ?? null)
+                    : null
+                  const subtreeSelected =
+                    subtreeImages?.filter((i) => selectedImages.has(i.id)).length ?? 0
+                  // Only image/category results are selectable; in select mode
+                  // the row becomes a <label> around a real checkbox so clicking
+                  // anywhere toggles and keyboard users reach the control.
+                  const selectable = selectMode && (image != null || subtreeImages != null)
+                  const rowInner = (
+                    <>
                       {image?.thumb ? (
                         <RenewingThumbnail
                           image={image}
@@ -805,7 +1228,13 @@ export default function SearchModal({
                           }}
                         />
                       ) : result.kind !== 'program' ? (
-                        <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
+                        /* Kind icons top-align next to the title line while
+                           thumbnails and checkboxes stay row-centred (#1567). */
+                        <Box
+                          sx={{ display: 'flex', flexShrink: 0, alignSelf: 'flex-start', mt: 0.25 }}
+                        >
+                          {iconForKind(result.kind)}
+                        </Box>
                       ) : null}
                       <Box sx={{ minWidth: 0, flex: 1 }}>
                         <Box
@@ -840,7 +1269,7 @@ export default function SearchModal({
                           >
                             {labelForKind(result.kind)}
                           </Typography>
-                          {!isStudent && chipNames.length > 0 && (
+                          {!suppressExtendedResults && chipNames.length > 0 && (
                             <Box
                               sx={{
                                 display: 'flex',
@@ -927,14 +1356,126 @@ export default function SearchModal({
                             ))}
                           </Box>
                         )}
+                        {result.payload.kind === 'collection' && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ display: 'block', mt: 0.5 }}
+                          >
+                            {result.payload.collection.type === 'synchronized'
+                              ? 'Synchronized'
+                              : 'Sequence'}{' '}
+                            · {result.payload.collection.imageCount}{' '}
+                            {result.payload.collection.imageCount === 1 ? 'image' : 'images'} ·{' '}
+                            {describeCollectionOwners(result.payload.collection.owners)}
+                          </Typography>
+                        )}
                       </Box>
-                    </CardActionArea>
-                  </Card>
-                )
-              })}
-            </Box>
+                    </>
+                  )
+                  return (
+                    // Keep natural height — a shrunken card clips its content
+                    // instead of letting the list scroll (#1567).
+                    <Card
+                      key={`${result.kind}-${result.entityId}`}
+                      variant="outlined"
+                      sx={{ flexShrink: 0 }}
+                    >
+                      {selectable ? (
+                        <Box
+                          component="label"
+                          data-testid="search-select-row"
+                          sx={{
+                            p: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            cursor: 'pointer',
+                            '&:hover': { bgcolor: 'action.hover' },
+                          }}
+                        >
+                          <Checkbox
+                            data-testid="search-select-checkbox"
+                            checked={
+                              image != null
+                                ? selectedImages.has(image.id)
+                                : subtreeImages != null &&
+                                  subtreeImages.length > 0 &&
+                                  subtreeSelected === subtreeImages.length
+                            }
+                            indeterminate={
+                              subtreeImages != null &&
+                              subtreeSelected > 0 &&
+                              subtreeSelected < subtreeImages.length
+                            }
+                            disabled={subtreeImages != null && subtreeImages.length === 0}
+                            onChange={() =>
+                              image != null
+                                ? toggleImageSelected(image, resultIndex)
+                                : subtreeImages &&
+                                  resultCategory &&
+                                  toggleCategorySelected(
+                                    resultCategory.id,
+                                    subtreeImages,
+                                    resultIndex,
+                                  )
+                            }
+                            slotProps={{
+                              input: {
+                                'aria-label': `Select ${image?.name ?? result.label}`,
+                              },
+                            }}
+                            sx={{ p: 0.5 }}
+                          />
+                          {rowInner}
+                        </Box>
+                      ) : (
+                        <CardActionArea
+                          data-testid="search-result-action-area"
+                          onClick={() => handleSelect(result)}
+                          sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}
+                        >
+                          {rowInner}
+                        </CardActionArea>
+                      )}
+                    </Card>
+                  )
+                })}
+              </Box>
+            </>
           )}
         </Box>
+
+        {selectMode && (
+          <Box
+            data-testid="search-select-footer"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              pt: 1.5,
+              borderTop: 1,
+              borderColor: 'divider',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ flexGrow: 1 }}>
+              {orderedSelectedImages.length} image{orderedSelectedImages.length === 1 ? '' : 's'}{' '}
+              selected
+            </Typography>
+            <Button size="small" data-testid="search-select-cancel" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              data-testid="search-add-to-collection"
+              disabled={orderedSelectedImages.length === 0}
+              onClick={handleAddSelected}
+            >
+              Add to collection
+            </Button>
+          </Box>
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -1,5 +1,192 @@
 # Changelog
 
+## [0.67.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.66.0...backend-v0.67.0) (2026-10-10)
+
+
+### Features
+
+* add a read-only collection field to the image viewer metadata area ([#1603](https://github.com/bcit-tlu/hriv/issues/1603)) ([fb1accd](https://github.com/bcit-tlu/hriv/commit/fb1accda530dfc42ce58b6344a3052dd88e5f2cd))
+
+## [0.66.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.65.0...backend-v0.66.0) (2026-10-09)
+
+
+### Features
+
+* **collections:** blank cover option, footer-attached drawer, picker fixes ([#1600](https://github.com/bcit-tlu/hriv/issues/1600)) ([03dc2b8](https://github.com/bcit-tlu/hriv/commit/03dc2b85cede45d76d7595fa1373ef4a0a73c855))
+* **collections:** browse tile parity — edit pencil, cover picker, add flow ([#1596](https://github.com/bcit-tlu/hriv/issues/1596)) ([e6fe114](https://github.com/bcit-tlu/hriv/commit/e6fe11406aa29f24ae0ff3041cffab3bd91009db))
+* **collections:** bulk edit in the manage table ([#1578](https://github.com/bcit-tlu/hriv/issues/1578)) ([#1580](https://github.com/bcit-tlu/hriv/issues/1580)) ([a50d6ff](https://github.com/bcit-tlu/hriv/commit/a50d6ff68f22129945156c699d0c44dc469f5041))
+* **collections:** detail header rework, hidden state, nav menu ([#1559](https://github.com/bcit-tlu/hriv/issues/1559)) ([#1560](https://github.com/bcit-tlu/hriv/issues/1560)) ([ebd803e](https://github.com/bcit-tlu/hriv/commit/ebd803e66f041605556bf9eb1ea41198ff71ed71))
+* **collections:** manage-members dialog, edit-dialog filing + hide, hidden greyscale ([#1567](https://github.com/bcit-tlu/hriv/issues/1567)) ([6577def](https://github.com/bcit-tlu/hriv/commit/6577defa3ace74b2d540eb03e62ba1a51de24be1))
+* **collections:** multi-owner collections via collection_owners M2M ([#1531](https://github.com/bcit-tlu/hriv/issues/1531)) ([6eae182](https://github.com/bcit-tlu/hriv/commit/6eae182a070d581bb9adfbed645f9460e3134b8f))
+* **collections:** My collections home shelf behind COLLECTIONS_HOME_SHELF ([#1591](https://github.com/bcit-tlu/hriv/issues/1591)) ([562c4f2](https://github.com/bcit-tlu/hriv/commit/562c4f207651461ab2709930bdbee8b5ea403884))
+* **collections:** require a category on curator create, open new collections, View Collection button ([#1594](https://github.com/bcit-tlu/hriv/issues/1594)) ([83f7cf1](https://github.com/bcit-tlu/hriv/commit/83f7cf189728ec81aecd1c17c66b655b23a4953e))
+* **collections:** student caps on collection count and sequence size ([#1589](https://github.com/bcit-tlu/hriv/issues/1589)) ([23a3f9c](https://github.com/bcit-tlu/hriv/commit/23a3f9c69f47435d0d8dbc2a3060e551668aad6a))
+* **collections:** unfiled collections leave the Browse home ([#1584](https://github.com/bcit-tlu/hriv/issues/1584)) ([b58ba6a](https://github.com/bcit-tlu/hriv/commit/b58ba6a6701b879be10db6943fe458589927bb6c))
+
+## [0.65.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.5...backend-v0.65.0) (2026-10-05)
+
+
+### Features
+
+* **collections:** file collections into the Browse hierarchy ([#1527](https://github.com/bcit-tlu/hriv/issues/1527)) ([#1535](https://github.com/bcit-tlu/hriv/issues/1535)) ([d6b274d](https://github.com/bcit-tlu/hriv/commit/d6b274d285913292e45384a903acc895c2bfa4ad))
+* **collections:** make collections tile-order scope members ([#1528](https://github.com/bcit-tlu/hriv/issues/1528)) ([#1538](https://github.com/bcit-tlu/hriv/issues/1538)) ([2f4cf43](https://github.com/bcit-tlu/hriv/commit/2f4cf43b9fb787ad0486e1e4fe35b449a25fa4d7))
+* **collections:** render collections as movable Browse tiles ([#1529](https://github.com/bcit-tlu/hriv/issues/1529)) ([#1539](https://github.com/bcit-tlu/hriv/issues/1539)) ([a8e1a6f](https://github.com/bcit-tlu/hriv/commit/a8e1a6f1910af8d6a5a688943f32ee9cac5d7977))
+
+## [0.64.5](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.4...backend-v0.64.5) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend:** cap bulk-import and upload request sizes ([#1432](https://github.com/bcit-tlu/hriv/issues/1432)) ([#1513](https://github.com/bcit-tlu/hriv/issues/1513)) ([e804463](https://github.com/bcit-tlu/hriv/commit/e804463a0a9edaaf0a3f5ab7181baf857d5c0ff5))
+* **backend:** extract bulk-import zips on a worker thread ([#1511](https://github.com/bcit-tlu/hriv/issues/1511)) ([828d403](https://github.com/bcit-tlu/hriv/commit/828d4039ac938dee712f933a41ca3de28e5b0c21))
+* **backend:** recreate upload spool dir after filesystem import ([#1365](https://github.com/bcit-tlu/hriv/issues/1365)) ([#1515](https://github.com/bcit-tlu/hriv/issues/1515)) ([f8eb4d6](https://github.com/bcit-tlu/hriv/commit/f8eb4d667e8d356d545fe70e8993deff1b63257f))
+* **backend:** stage bulk-import zip spool on the source-images PVC ([#1365](https://github.com/bcit-tlu/hriv/issues/1365)) ([#1514](https://github.com/bcit-tlu/hriv/issues/1514)) ([940a191](https://github.com/bcit-tlu/hriv/commit/940a191656c76f9d068716a3e038904e6ac8f6f1))
+
+## [0.64.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.3...backend-v0.64.4) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend,monitoring:** report synthetic results without a user session ([#1507](https://github.com/bcit-tlu/hriv/issues/1507)) ([9b2ee92](https://github.com/bcit-tlu/hriv/commit/9b2ee92f62d1e2f2e862afd7a3b41dd0295d8f3f))
+* **backend:** probe readiness with a fresh NullPool connection ([#1506](https://github.com/bcit-tlu/hriv/issues/1506)) ([3958be2](https://github.com/bcit-tlu/hriv/commit/3958be24e1318bb11417903a6f89f2f37aaf5b6d))
+
+## [0.64.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.2...backend-v0.64.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* **backend:** migrate python-jose to PyJWT to drop ecdsa ([#1504](https://github.com/bcit-tlu/hriv/issues/1504)) ([b6d3609](https://github.com/bcit-tlu/hriv/commit/b6d3609e244859eb5cdc01de7711b2527bb76ae2))
+
+## [0.64.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.1...backend-v0.64.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **backend:** bump opentelemetry-* to &gt;=0.64b0 and unpin fastapi ([#1472](https://github.com/bcit-tlu/hriv/issues/1472)) ([a6819a0](https://github.com/bcit-tlu/hriv/commit/a6819a0264cb261e66f13a730d3a2b61db03b5c1))
+* **backend:** retain unseen collection members on PUT /collections/{id}/images ([#1477](https://github.com/bcit-tlu/hriv/issues/1477)) ([d1e4fd7](https://github.com/bcit-tlu/hriv/commit/d1e4fd7b1250280cb45affe752b89c67831ccec3))
+* **backend:** route readiness probe through included-router path ([#1475](https://github.com/bcit-tlu/hriv/issues/1475)) ([1f301a4](https://github.com/bcit-tlu/hriv/commit/1f301a4404397c1f25246b7f76ef63b543ddd621))
+
+## [0.64.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.64.0...backend-v0.64.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **backend:** pin fastapi &lt;0.137 to restore routed endpoints under OTel ([#1466](https://github.com/bcit-tlu/hriv/issues/1466)) ([15c0727](https://github.com/bcit-tlu/hriv/commit/15c072745c8c06cf7c456188ac283eb79b2cac2a))
+
+## [0.64.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.63.0...backend-v0.64.0) (2026-09-28)
+
+
+### Features
+
+* **backend:** add collection ownership transfer + program-delete orphan handling ([#1427](https://github.com/bcit-tlu/hriv/issues/1427)) ([96b9045](https://github.com/bcit-tlu/hriv/commit/96b9045d21481dbd9ee25131646009785b11e40e))
+* **backend:** add collections schema, migration and read API ([#1420](https://github.com/bcit-tlu/hriv/issues/1420)) ([ba85178](https://github.com/bcit-tlu/hriv/commit/ba85178f0192717cb0bc39e33638b9c6697cf7e5))
+* **backend:** add collections write API ([#1423](https://github.com/bcit-tlu/hriv/issues/1423)) ([2e38b74](https://github.com/bcit-tlu/hriv/commit/2e38b74c8bfc2ea541d5b0dccd63e615719f2c43))
+* dark-launch collections behind COLLECTIONS_ENABLED flag ([#1464](https://github.com/bcit-tlu/hriv/issues/1464)) ([a1d661b](https://github.com/bcit-tlu/hriv/commit/a1d661bda5667e9376856b1ef18e5861caa4a305))
+
+
+### Bug Fixes
+
+* **backend:** resolve client IP at trusted-proxy boundary and add account-scoped login limiter ([#1425](https://github.com/bcit-tlu/hriv/issues/1425)) ([2465336](https://github.com/bcit-tlu/hriv/commit/2465336372c010a9be0b2f2380ace84b966965dc))
+* **bulk-import:** bound zip extraction to prevent decompression-bomb DoS ([#1424](https://github.com/bcit-tlu/hriv/issues/1424)) ([4d640c3](https://github.com/bcit-tlu/hriv/commit/4d640c367a71a1c582a3408a2a712c4a1ae2d81d))
+
+
+### Documentation
+
+* prettier-format domain-model.md ([#1435](https://github.com/bcit-tlu/hriv/issues/1435)) ([1a9fd81](https://github.com/bcit-tlu/hriv/commit/1a9fd810aaad697e9f73d096cbd1c207815fbab7))
+
+## [0.63.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.62.0...backend-v0.63.0) (2026-09-25)
+
+
+### Features
+
+* **metrics:** expose SQLAlchemy connection pool gauges ([#1370](https://github.com/bcit-tlu/hriv/issues/1370)) ([27951cd](https://github.com/bcit-tlu/hriv/commit/27951cd2c1cf0248f0363b0004be6b97973f4e18))
+
+
+### Bug Fixes
+
+* **security:** update fixable Python deps and slim backup/restore-validation images ([#1374](https://github.com/bcit-tlu/hriv/issues/1374)) ([899e1fb](https://github.com/bcit-tlu/hriv/commit/899e1fbc2ad6f0c16f6f6444ea1b24e4c432de90))
+
+## [0.62.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.4...backend-v0.62.0) (2026-09-24)
+
+
+### Features
+
+* **backend-chart:** add explicit API database pool and resource profile ([#1364](https://github.com/bcit-tlu/hriv/issues/1364)) ([eb1487d](https://github.com/bcit-tlu/hriv/commit/eb1487dfbb75d7ed4f0c519c51bffda6d23efc97))
+
+## [0.61.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.3...backend-v0.61.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **backup:** make archive lock uid-agnostic and fail closed on setup errors ([#1359](https://github.com/bcit-tlu/hriv/issues/1359)) ([0c44c32](https://github.com/bcit-tlu/hriv/commit/0c44c32dce1cd0b04ae2360b19f05615373a1b0d))
+
+## [0.61.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.2...backend-v0.61.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **backend:** heartbeat admin tasks and source images through long checkpoints ([#1355](https://github.com/bcit-tlu/hriv/issues/1355)) ([abaa415](https://github.com/bcit-tlu/hriv/commit/abaa41548bcab33865c5d2cc2ef64ea78b7de763))
+
+
+### Documentation
+
+* note backupChild pin bump in release flow ([#1336](https://github.com/bcit-tlu/hriv/issues/1336)) ([6410d97](https://github.com/bcit-tlu/hriv/commit/6410d97e2290f98cc563527709b309e253da9922))
+
+## [0.61.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.1...backend-v0.61.2) (2026-09-23)
+
+
+### Documentation
+
+* split AGENTS.md into per-directory rules and modularize testing-hriv skill ([#1349](https://github.com/bcit-tlu/hriv/issues/1349)) ([c472292](https://github.com/bcit-tlu/hriv/commit/c4722924ccb04f03ffd6c2a602e7f74fb23c061e))
+
+## [0.61.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.61.0...backend-v0.61.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **upload:** stage uploads and make file cleanup ownership-safe ([#1340](https://github.com/bcit-tlu/hriv/issues/1340)) ([ee72b9b](https://github.com/bcit-tlu/hriv/commit/ee72b9b711e6f045379fc11d964c67190df7411e))
+
+## [0.61.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.2...backend-v0.61.0) (2026-09-22)
+
+
+### Features
+
+* **auth:** add staff role with read-only People access ([#1337](https://github.com/bcit-tlu/hriv/issues/1337)) ([43f1986](https://github.com/bcit-tlu/hriv/commit/43f19862babb91197e43e12cea07fceddb4a3996))
+
+
+### Bug Fixes
+
+* **rebuild:** harden scale rehearsal safety ([#1331](https://github.com/bcit-tlu/hriv/issues/1331)) ([d192db3](https://github.com/bcit-tlu/hriv/commit/d192db3fff315c364f24311e6f45ae023db0336b))
+* **rebuild:** raise measured timeout budget ([#1333](https://github.com/bcit-tlu/hriv/issues/1333)) ([b85eedf](https://github.com/bcit-tlu/hriv/commit/b85eedfdda6802555372d210f045a5cd218e2b8f))
+
+## [0.60.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.1...backend-v0.60.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* preserve successful backup sizes in metrics ([#1329](https://github.com/bcit-tlu/hriv/issues/1329)) ([a2a30b5](https://github.com/bcit-tlu/hriv/commit/a2a30b51e5c627ae35c0236dd4f9077041fe9f8e))
+
+## [0.60.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.60.0...backend-v0.60.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* report database metrics for production recovery archives ([#1325](https://github.com/bcit-tlu/hriv/issues/1325)) ([31cab2b](https://github.com/bcit-tlu/hriv/commit/31cab2b83776072e3ed01f0b82b9cb8043e4c3d3))
+
+## [0.60.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.59.0...backend-v0.60.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** instrument durable tile rebuild and add scale fixture ([#1189](https://github.com/bcit-tlu/hriv/issues/1189)) ([#1318](https://github.com/bcit-tlu/hriv/issues/1318)) ([c6faa86](https://github.com/bcit-tlu/hriv/commit/c6faa869bf6129a3fbbd8d685fa411cfbaafd0d3))
+
+## [0.59.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.58.0...backend-v0.59.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** expose durable parallel tile-rebuild controls to admins ([#1310](https://github.com/bcit-tlu/hriv/issues/1310)) ([50a8147](https://github.com/bcit-tlu/hriv/commit/50a8147fb75ff9bf3ba6ad1c0a66ad40a4e4f17a))
+
 ## [0.58.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.57.0...backend-v0.58.0) (2026-09-15)
 
 

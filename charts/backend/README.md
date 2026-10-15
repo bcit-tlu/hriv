@@ -163,12 +163,17 @@ overlays should set `required`; leave `local` everywhere else.
 `tasks.rebuild.parallelEnabled` renders `REBUILD_PARALLEL_ENABLED` on both the
 API and worker pods and defaults to `false`. Enabling it requires
 `tasks.executionMode=required`; serial admin rebuilds remain the rollback path.
-The remaining values render the independently tunable PostgreSQL-authoritative
+Following the #1189 rehearsal series, the `latest` cluster overrides this to
+`true` in its `flux-fleet` overlay (the chart default here stays `false`);
+`stable` passed a bounded validation on 2026-09-22 with the flag
+temporarily enabled via its overlay; the keep/revert decision follows a
+full `scope=all` run in a weekend window. The
+remaining values render the independently tunable PostgreSQL-authoritative
 execution window and recovery settings:
 
 - `parallelism` (`REBUILD_PARALLELISM`, default `2`);
-- `childTimeoutSeconds` (`REBUILD_CHILD_TIMEOUT_SECONDS`, default `1800`);
-- `leaseSeconds` (`REBUILD_LEASE_SECONDS`, default `2100`);
+- `childTimeoutSeconds` (`REBUILD_CHILD_TIMEOUT_SECONDS`, default `3600`, maximum `86400`);
+- `leaseSeconds` (`REBUILD_LEASE_SECONDS`, default `3900`);
 - `heartbeatSeconds` (`REBUILD_HEARTBEAT_SECONDS`, default `30`);
 - `pumpCadenceSeconds` (`REBUILD_PUMP_CADENCE_SECONDS`, default `60`);
 - `maxAttempts` (`REBUILD_MAX_ATTEMPTS`, default `2`);
@@ -181,6 +186,82 @@ execution window and recovery settings:
 Heartbeat and child timeout values must remain shorter than the lease, and the
 pump cadence must be a whole-minute interval. Retry eligibility is stored in
 PostgreSQL and the retry base must not exceed the cap.
+
+## Collections feature flag (`collections.enabled`)
+
+`collections.enabled` renders `COLLECTIONS_ENABLED` on the API pod and
+defaults to `false`. The collections epic
+([hriv#1409](https://github.com/bcit-tlu/hriv/issues/1409)) is dark-launched
+so unrelated fixes keep shipping through the normal release-please flow while
+the feature lands piecemeal: with the flag off every `/api/collections` route
+answers `404` and the frontend — which reads `GET /api/features` at boot —
+hides the Collections tab and ignores `?collection=` deep links. The `latest`
+`flux-fleet` overlay sets `collections.enabled: true`; `stable` inherits the
+chart default until the epic is promoted. Only the API pod needs the variable
+(the worker never serves the router). Flipping it is a rollout-only change
+(no migration: the collections tables are additive and already present). See
+[`docs/collections.md`](../../docs/collections.md).
+
+`collections.homeShelf` renders `COLLECTIONS_HOME_SHELF` and defaults to
+`false`. The drawer is effective only when `collections.enabled` is also true;
+the `latest` overlay may enable it independently of `stable`.
+
+## API configuration
+
+The API (backend) Deployment carries its own component profile via the
+top-level `api.*` values and `resources`, mirroring the worker profile:
+
+- `api.db.poolSize` / `api.db.maxOverflow` (defaults `10`/`20`) — rendered as
+  `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` on the API pod. The defaults match the
+  backend code defaults in `backend/app/database.py`, so adopting this chart
+  version with no overlay change is a runtime no-op; the values only become
+  visible and tunable per component.
+- `api.vipsConcurrency` (default `1`) — rendered as `VIPS_CONCURRENCY` on the
+  API pod. With `tasks.executionMode=required` (the deployed overlays) no
+  image processing ever runs in-process on the API, so the value is inert but
+  explicit; it only matters for `local`-mode installs where the in-process
+  fallback can run libvips work.
+- `resources` — the chart now ships an explicit default
+  (`requests: 250m/512Mi/128Mi`, `limits: cpu "2", memory 1Gi, eph 1Gi`)
+  instead of `{}`. Previously the API pod silently inherited the namespace
+  LimitRange; the 1Gi memory limit matches that ceiling, so the deployed
+  outcome is unchanged except for the new CPU limit of 2 and the raised,
+  honest requests. Set `resources: null` in an overlay to restore
+  LimitRange-inherited sizing (`resources: {}` is a merge no-op over the
+  chart defaults, not an override).
+
+### Database connection budget
+
+Each pod can hold at most `poolSize + maxOverflow` PostgreSQL connections.
+That per-pod ceiling assumes the stable image's single-process uvicorn
+(`--workers 1`, see `backend/Dockerfile`) — a multi-worker image would run
+one SQLAlchemy pool per worker process and multiply the ceiling. Budget the
+totals against the shared pg-core CNPG cluster, which runs the default
+`max_connections=100` across all app databases:
+
+| Component | `poolSize` | `maxOverflow` | Per-pod ceiling | Pod ceiling                   | Worst-case connections        |
+| --------- | ---------- | ------------- | --------------- | ----------------------------- | ----------------------------- |
+| API       | 10         | 20            | 30              | `replicaCount` + 1 surge      | ~60–120 at `replicaCount` 2–3 |
+| Worker    | 5          | 5             | 10              | HPA `maxReplicas` 6 + 2 surge | up to ~80                     |
+
+Combined, the theoretical ceiling is roughly 125–170 concurrent connections —
+above pg-core's shared `max_connections=100` — so treat the chart defaults as
+an upper bound to tune _down_ from, not a target. The measured peak during
+the 3,349-item rebuild rehearsal at 6 workers was only ~31 connections. The
+`flux-fleet` overlays pin tighter values than the chart defaults (e.g.
+`api.db.poolSize: 5` / `api.db.maxOverflow: 10`).
+
+Live pool occupancy is observable via the `hriv_db_pool_*` gauges — emitted
+over OTLP per pod class (`service_name` = `hriv-backend` /
+`hriv-backend-worker`) and, for the API pool only, at `/api/metrics`. The
+per-pod ceiling above is `hriv_db_pool_size + hriv_db_pool_max_overflow`
+(`hriv_db_pool_overflow` is the raw live counter, negative below `pool_size`).
+See `docs/observability-conventions.md` → Database Pool Metrics.
+
+The readiness probe's dedicated `NullPool` engine sits outside this budget by
+design (#1496): each `/api/_probe` or `/api/health/ready` call adds at most
+one transient connection, held only for the `SELECT 1` round-trip — never
+counted against `poolSize`.
 
 ## Worker configuration
 
@@ -200,6 +281,13 @@ Beyond resources, the worker Deployment exposes:
 - `redis.worker.terminationGracePeriodSeconds` (default `300`) — the
   Kubernetes default of 30s interrupts in-flight tile-generation and
   import/export jobs on every rollout.
+- `redis.worker.autoscaling.scaleDownStabilizationWindowSeconds` (default
+  `3600`) — delays HPA scale-down long enough for default-timeout tile-rebuild
+  children to drain. The #1189 `latest` rehearsal observed ordinary HPA
+  scale-down terminate workers holding active claims; PostgreSQL lease recovery
+  succeeded, but added about 39 minutes from last heartbeat to resumed execution.
+  Do not shorten this below the measured child execution/recovery horizon without
+  another worker-loss rehearsal.
 - `redis.worker.probes.liveness` (enabled by default) — an exec probe running
   `arq --check app.worker.WorkerSettings`, which verifies the arq health key
   in Redis is fresh. A wedged worker main loop gets restarted instead of
@@ -213,8 +301,19 @@ Beyond resources, the worker Deployment exposes:
 The backend pod's probe settings are configurable through `probes.backend.*`.
 The defaults are chosen to tolerate transient node or database load:
 
-- liveness: `GET /api/health`, `timeoutSeconds: 5`, `failureThreshold: 6`
-- readiness: `GET /api/health/ready`, `timeoutSeconds: 5`, `failureThreshold: 3`
+- liveness: `GET /api/health/storage`, `timeoutSeconds: 5`, `failureThreshold: 6`
+- readiness: `GET /api/_probe`, `timeoutSeconds: 5`, `failureThreshold: 3` —
+  the probe handler is registered through `app.include_router` and is not in
+  `otel.excludedUrls`, so it traverses the same instrumented middleware and
+  route-dispatch path as real endpoints; a routed-API failure marks pods
+  unready instead of passing silently (#1473). Its database check opens a
+  _fresh_ connection through a dedicated `NullPool` engine (`SELECT 1`, then
+  close) rather than borrowing the request-path pool — a pooled checkout can
+  reuse a session that authenticated before Vault rotated or revoked the
+  dynamic PostgreSQL credentials, which kept pods Ready through the
+  2026-10-02 outage while every new connection failed (#1496). Probes
+  therefore cost one extra connection round-trip per readiness interval,
+  never a held pool slot.
 
 Initial delays and periods remain the same defaults as the previous chart
 behavior, but both probes can be overridden in values if a cluster needs
@@ -231,6 +330,36 @@ These defaults are intentionally small because import staging now lives on the
 `/data` PVC. Overlays that already set worker CPU/memory continue to merge with
 the chart defaults; no overlay change is required for the new storage keys to
 take effect.
+
+## Synthetic monitoring ingest token (`syntheticMonitoring.ingestTokenSecret`)
+
+The synthetic-monitoring CronJob posts its authoritative journey result to
+`POST /api/telemetry/synthetic-result`. It authenticates with a shared static
+secret (`X-Synthetic-Ingest-Token` header) rather than the monitor account's
+user JWT, so result reports still land during auth or database outages — the
+moments the monitor exists to detect (hriv#1495). The backend validates the
+token with a constant-time compare and no database access; an
+operator-provisioned sliding-window rate limit (`rate:synthetic-ingest`,
+default 30/60s) bounds abuse of a leaked token.
+
+Set `syntheticMonitoring.ingestTokenSecret.name` (and optionally `.key`,
+default `token`) to render `SYNTHETIC_INGEST_TOKEN` from a pre-existing secret
+consumed by both the backend and the CronJob — in bcit-tlu/flux-fleet this is
+the `hriv-synthetic-ingest` VaultStaticSecret. The key reference is
+`optional: true`: a missing key degrades to JWT-only ingestion instead of
+blocking the rollout, and the stale-result metrics alert remains the designed
+detector for that misconfiguration. Leave `name` empty to disable the token
+path entirely (JWT-only, suitable for local dev).
+
+## Bootstrap admin seed (`bootstrapAdmin.*`)
+
+When `bootstrapAdmin.enabled=true` (the default), the chart renders a
+one-shot post-install Job (`templates/job-seed-admin.yaml`) that inserts a
+single admin user and bootstrap program on first install only. The Job's
+psql client image comes from `bootstrapAdmin.image` (default
+`postgres:16-alpine`), deliberately decoupled from `postgres.cluster.image`
+so installs with `postgres.enabled=false` (external database) do not pull
+the CNPG cluster image just to run psql.
 
 ## Upgrade Notes
 

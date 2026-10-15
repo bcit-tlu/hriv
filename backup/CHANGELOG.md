@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.16.6](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.5...backup-v0.16.6) (2026-09-28)
+
+
+### Documentation
+
+* prettier-format domain-model.md ([#1435](https://github.com/bcit-tlu/hriv/issues/1435)) ([1a9fd81](https://github.com/bcit-tlu/hriv/commit/1a9fd810aaad697e9f73d096cbd1c207815fbab7))
+
+## [0.16.5](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.4...backup-v0.16.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* **security:** update fixable Python deps and slim backup/restore-validation images ([#1374](https://github.com/bcit-tlu/hriv/issues/1374)) ([899e1fb](https://github.com/bcit-tlu/hriv/commit/899e1fbc2ad6f0c16f6f6444ea1b24e4c432de90))
+
+## [0.16.4](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.3...backup-v0.16.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **backup:** make archive lock uid-agnostic and fail closed on setup errors ([#1359](https://github.com/bcit-tlu/hriv/issues/1359)) ([0c44c32](https://github.com/bcit-tlu/hriv/commit/0c44c32dce1cd0b04ae2360b19f05615373a1b0d))
+
+## [0.16.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.2...backup-v0.16.3) (2026-09-23)
+
+
+### Documentation
+
+* note backupChild pin bump in release flow ([#1336](https://github.com/bcit-tlu/hriv/issues/1336)) ([6410d97](https://github.com/bcit-tlu/hriv/commit/6410d97e2290f98cc563527709b309e253da9922))
+
+## [0.16.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.1...backup-v0.16.2) (2026-09-23)
+
+
+### Documentation
+
+* split AGENTS.md into per-directory rules and modularize testing-hriv skill ([#1349](https://github.com/bcit-tlu/hriv/issues/1349)) ([c472292](https://github.com/bcit-tlu/hriv/commit/c4722924ccb04f03ffd6c2a602e7f74fb23c061e))
+
+## [0.16.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.0...backup-v0.16.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* report database metrics for production recovery archives ([#1325](https://github.com/bcit-tlu/hriv/issues/1325)) ([31cab2b](https://github.com/bcit-tlu/hriv/commit/31cab2b83776072e3ed01f0b82b9cb8043e4c3d3))
+
+## [0.16.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.15.1...backup-v0.16.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** instrument durable tile rebuild and add scale fixture ([#1189](https://github.com/bcit-tlu/hriv/issues/1189)) ([#1318](https://github.com/bcit-tlu/hriv/issues/1318)) ([c6faa86](https://github.com/bcit-tlu/hriv/commit/c6faa869bf6129a3fbbd8d685fa411cfbaafd0d3))
+
 ## [0.15.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.15.0...backup-v0.15.1) (2026-09-13)
 
 

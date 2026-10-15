@@ -21,6 +21,9 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - backend: `poetry run pytest tests/test_visibility.py tests/test_categories.py tests/test_router_images.py`
 - frontend: `npm test -- categoryUtils useBrowseData CategoryPickerSelect treeUtils`
+- Category card cover / thumbnail tokens (#1609): add
+  `poetry run pytest tests/test_tiles.py` (backend) and
+  `npm test -- CategoryTile CardImagePickerModal` (frontend).
 - See [category-visibility-and-programs.md](category-visibility-and-programs.md).
 
 ### Changed groups (membership, ownership, category attach, dual-gate visibility)
@@ -31,10 +34,73 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
   `tests/test_router_images.py`** — the images router is a separate caller that
   must pass `user_group_ids` (regression fixed in #604). See [groups.md](groups.md).
 
+### Changed collections (model, authorization, read/write API, ownership transfer, Collections pages / manage table)
+
+- backend: `poetry run pytest tests/test_collections_model.py tests/test_router_collections.py tests/test_schemas.py tests/test_authz.py tests/test_visibility.py`
+- Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
+  `tests/test_database.py tests/test_main.py` (backend) and
+  `npm test -- useFeatures` (frontend); chart: `bash scripts/test-helm-chart-regressions.sh`.
+- Ownership transfer / program-deletion orphaning (#1413, #1531) also runs
+  `tests/test_router_programs.py` (the real `DELETE /api/programs/{id}` →
+  orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips) and
+  `tests/test_router_users.py` (user deletion: sole-owned collections die,
+  co-owned survive).
+- `tests/test_router_collections_db.py` is the PostgreSQL-backed write-API
+  persistence suite — it runs when `TEST_DATABASE_URL` is set (CI sets it;
+  locally `docker compose up -d db migrate` then `export
+TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
+  otherwise it skips.
+- frontend: `npm test -- CollectionsPage CollectionsTable CollectionCard CollectionEditDialog CollectionManageDialog collectionUtils useCollectionsData api.test navigation AppShell useShareableImageState useNavigationHistory App.test`
+- Per-type pages / card overlay / manage table / dialog delete (#1554):
+  `npm test -- CollectionsPage CollectionsTable CollectionCard CollectionEditDialog navigation AppShell App.test`
+- Unified Collections page — view toggle, Table view, Graph view, view
+  preference, `?type=` filter seed (#1629; graph endpoints #1628/#1633):
+  `npm test -- CollectionsPage CollectionsTable collectionsGraphModel useCollectionsViewPreference useCollectionsData navigation AppShell App.test`
+- Collection Graph View dialog — detail-header button, perspective stack,
+  order toggle, image/collection clicks (#1630; `CollectionGraphDialog.tsx`,
+  `buildCollectionModel.ts`, `fetchCollectionGraph` in `api.ts`):
+  `npm test -- CollectionGraphDialog collectionGraphModel CollectionsGraph CollectionsPage`
+- "Add to Collection" from the image view (#1415: `AddToCollectionDialog.tsx`,
+  `useAddToCollection.ts`, the viewer action bar in `App.tsx`):
+  `npm test -- AddToCollectionDialog useAddToCollection App.test`
+- Sequence collection viewer (#1416: `SequenceCollectionViewer.tsx`,
+  `?item=` in `useShareableImageState.ts`, `reorderImages` /
+  `renewCollectionImage` in `useCollectionsData.ts`, detail mount in
+  `CollectionsPage.tsx`; #1566 member manager: `CollectionManageDialog.tsx`):
+  `npm test -- SequenceCollectionViewer CollectionManageDialog useCollectionsData useShareableImageState CollectionsPage App.test`
+- Synchronized collection viewer (#1417: `SynchronizedCollectionViewer.tsx`,
+  `onViewerReady` in `ImageViewer.tsx`, `viewportStateFromSaved` in
+  `imageViewerUtils.ts`, `saveViewport` in `useCollectionsData.ts`, detail
+  mount in `CollectionsPage.tsx`):
+  `npm test -- SynchronizedCollectionViewer useCollectionsData ImageViewer CollectionsPage App.test`
+- Ownership/admin management UI (#1419, #1531: `CollectionOwnersDialog.tsx`,
+  `transfer` + `saveOwners` in `useCollectionsData.ts`, `transferCollection` +
+  `replaceCollectionOwners` in `api.ts`, detail header + card affordances in
+  `CollectionsPage.tsx` / `CollectionCard.tsx`):
+  `npm test -- CollectionOwnersDialog CollectionsPage CollectionCard useCollectionsData api.test App.test`
+- Browse integration (#1529, #1583): filed collections in
+  `SortableTileGrid.tsx` and nested `currentCollections` from the category
+  tree only; there is no root `uncategorizedCollections` Browse loader.
+  Verify the root grid has no collection tiles, and test the separate
+  flag-controlled My collections drawer and its `{ mine: true, limit: 8 }`
+  request. Nested filed collections still render.
+  Also cover `None. Access in Collections.` picker labels,
+  unfile snackbar, private-filing warnings, and Manage Categories ordering:
+  `npm test -- SortableTileGrid useBrowseData useCategoryActions ManageCategoriesDialog manageCategoriesDialogUtils MoveCollectionDialog BulkEditCollectionsDialog CollectionEditDialog CategoryPickerSelectDialogs CollectionsPage CollectionCard MyCollectionsDrawer useMyCollectionsDrawerState useMyCollectionsShelf useFeatures CategoryTile collectionUtils useCollectionsData useShareableImageState useNavigationHistory App.test`
+  Backend placement/tile-order cases:
+  `poetry run pytest tests/test_tile_order.py tests/test_router_collections.py tests/test_router_collections_db.py tests/test_categories.py`.
+  #1530 image→collection drop-add still uses the `drop-col-` zone and
+  `onDropImageOnCollection` in `SortableTileGrid.tsx`; **Add to Collection**
+  remains available to add images to unfiled collections.
+- Storybook (stories + a11y): `npm run test:storybook -- Collection`
+- Collection visibility reuses the category dual gate — if you touched
+  `visibility.py` also run the "Changed groups" set above. See
+  [collections.md](collections.md).
+
 ### Changed image metadata / versioning (annotations, overlays, measurement)
 
 - backend: `poetry run pytest tests/test_router_images.py tests/test_images.py tests/test_schemas.py`
-- frontend: `npm test -- useCanvasAnnotations useOverlayPersistence useImageActions ImageMetadataFields measurement CanvasOverlay api.test`
+- frontend: `npm test -- useCanvasAnnotations useOverlayPersistence useImageActions ImageMetadataFields measurement CanvasOverlay ImageViewer useDraggablePosition api.test`
 
 ### Changed image upload or processing pipeline
 
@@ -51,7 +117,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - backend: `poetry run pytest tests/test_router_bulk_import.py tests/test_processing.py tests/test_worker.py`
 - frontend: `npm test -- ConfirmImportDialog UploadImageModal`
-- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (bulk import section)
+- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) → `references/upload-processing.md` (bulk import section)
 
 ### Changed drag-and-drop (SortableTileGrid)
 
@@ -60,20 +126,20 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ### Changed search modal
 
-- frontend: `npm test -- SearchModal`
+- frontend: `npm test -- SearchModal useAddToCollection`
 - See [ui-behaviour-spec.md](ui-behaviour-spec.md).
 
 ### Changed admin import/export
 
 - backend: `poetry run pytest tests/test_admin_ops.py tests/test_router_admin.py tests/test_processing.py`
 - note: include `tests/test_processing.py` when touching the rebuild-tiles task — `select_rebuild_targets` / `rebuild_source_image_tiles` live in `processing.py`.
-- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (admin export/import section)
+- skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) → `references/admin-export-import.md` (admin export/import section)
 - See [admin-import-export.md](admin-import-export.md).
 
 ### Changed durable jobs / parallel tile rebuilds
 
-- backend: `poetry run pytest tests/test_router_jobs.py tests/test_tile_rebuild_jobs.py tests/test_tile_rebuild_jobs_postgres.py tests/test_job_state.py`
-- note: `test_tile_rebuild_jobs_postgres.py` is gated on `REORDER_FIXTURE_DATABASE_URL` (real PostgreSQL); it runs in CI. Include `tests/test_worker.py` when touching pump/cron wiring.
+- backend: `poetry run pytest tests/test_router_jobs.py tests/test_tile_rebuild_jobs.py tests/test_tile_rebuild_jobs_postgres.py tests/test_job_state.py tests/test_tile_rebuild_metrics.py`
+- note: `test_tile_rebuild_jobs_postgres.py` is gated on `REORDER_FIXTURE_DATABASE_URL` (real PostgreSQL); it runs in CI. Include `tests/test_worker.py` when touching pump/cron wiring and `tests/test_metrics.py` when touching `/api/metrics` composition. `tests/test_rebuild_fixture.py` covers the `rebuild_fixture` scale seeder; its pyvips-dependent cases skip when libvips is absent.
 - frontend: `npm test -- AdminPage api` when touching the jobs panel or `api.ts` wrappers.
 - See [jobs.md](jobs.md).
 
@@ -133,6 +199,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`
 - validate: `for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done`
 - regression: `bash scripts/test-helm-chart-regressions.sh`
+- tiles sidecar runtime: `bash scripts/test-tiles-nginx-runtime.sh` (requires docker; runs the rendered nginx config against a stub validator — covers auth_request subrequest scope and verdict caching)
 
 ### Changed release / CI workflows
 

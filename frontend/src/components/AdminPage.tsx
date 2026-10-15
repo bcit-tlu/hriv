@@ -861,7 +861,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       try {
         const refreshed = await fetchAdminTask(taskId)
         if (!hasAdminTaskShape(refreshed)) {
-          throw new Error('Invalid task refresh response')
+          throw new Error('Invalid task refresh response', { cause: err })
         }
         syncTask(refreshed)
         if (isTerminalTask(refreshed)) {

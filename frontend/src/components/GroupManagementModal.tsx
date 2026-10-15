@@ -76,7 +76,7 @@ interface GroupManagementModalProps {
 type TabKey = 'students' | 'instructors'
 type GroupDialogMode = 'create' | 'rename' | null
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50]
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200]
 const DEFAULT_PAGE_SIZE = 25
 const SEARCH_DEBOUNCE_MS = 300
 

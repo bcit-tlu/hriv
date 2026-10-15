@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { TileOrderingCoordinator } from '../src/tileOrdering'
+import { TileOrderingCoordinator, mergeOrderPreservingPositions } from '../src/tileOrdering'
 import { ApiError, type TileOrderItemRef, type TileOrderResponse } from '../src/api'
 import { getTileOrder, putTileOrder } from '../src/api'
 import { subscribeReorderDiagnostics, type ReorderDiagnosticEvent } from '../src/reorderDiagnostics'
@@ -462,9 +462,33 @@ describe('TileOrderingCoordinator', () => {
     expect(state.conflictOrder).toBeNull()
   })
 
-  it('treats a 400 membership change like a conflict and refreshes via GET', async () => {
+  it('a single 400 membership change self-heals via GET, merge, and retry', async () => {
+    // The submitted order is complete against the refreshed membership, so
+    // the merge-and-retry lands the save instead of surfacing a conflict
+    // the user cannot meaningfully resolve (issue #1528).
     const current = response(4, refs(3, 1, 2))
     mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [99]'))
+    mockedGet.mockResolvedValue(current)
+    mockedPut.mockResolvedValueOnce(response(5, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.revision).toBe(5)
+    // The retry resubmits the merged order under the refreshed revision —
+    // the stale snapshot is not re-PUT verbatim.
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(2, 1, 3), expect.any(String))
+    expect(events.some((e) => e.state === 'conflicted')).toBe(false)
+  })
+
+  it('repeated 400s still conflict so drift the merge cannot settle stays explicit', async () => {
+    // Membership keeps drifting between the refresh and the retry: the
+    // second 400 must surface a conflict rather than loop forever.
+    const current = response(4, refs(3, 1, 2))
+    mockedPut.mockRejectedValue(new ApiError(400, 'Images not in scope: [99]'))
     mockedGet.mockResolvedValue(current)
 
     coordinator.reportOrder(null, refs(2, 1, 3))
@@ -474,30 +498,8 @@ describe('TileOrderingCoordinator', () => {
     expect(state.status).toBe('conflict')
     expect(state.revision).toBe(4)
     expect(state.conflictOrder).toEqual(refs(3, 1, 2))
-    // The stale snapshot is retained for explicit resolution, not re-PUT.
-    expect(state.pending).toEqual(refs(2, 1, 3))
-    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(mockedPut).toHaveBeenCalledTimes(2)
     expect(events.some((e) => e.state === 'conflicted')).toBe(true)
-  })
-
-  it('reapplyLocalOrder reconciles pending against drifted membership instead of looping', async () => {
-    // Membership drift: image 3 left the scope, image 4 arrived.
-    const current = response(4, refs(3, 1, 4))
-    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [2]'))
-    mockedGet.mockResolvedValue(current)
-    mockedPut.mockResolvedValueOnce(response(5, refs(1, 3, 4)))
-
-    coordinator.reportOrder(null, refs(2, 1, 3))
-    await flushMicrotasks()
-    expect(coordinator.getScope(null).status).toBe('conflict')
-
-    coordinator.reapplyLocalOrder(null)
-    await flushMicrotasks()
-
-    const state = coordinator.getScope(null)
-    expect(state.status).toBe('saved')
-    // Departed item dropped, local relative order kept, newcomer appended.
-    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(1, 3, 4), expect.any(String))
   })
 
   it('shows saving during seeding and emits a failed diagnostic when the seed GET fails', async () => {
@@ -863,5 +865,247 @@ describe('TileOrderingCoordinator', () => {
     expect(coordinator.getScope(null).status).toBe('saved')
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(mockedPut).toHaveBeenCalledWith(null, 1, refs(3, 2, 1), expect.any(String))
+  })
+
+  // ── Authoritative-membership merge (epic #1525 / issue #1528) ──
+  //
+  // Not every submitting surface models every member type (collection tiles
+  // are not rendered in Browse/manage grids until #1529). The coordinator
+  // merges the scope's authoritative member list into each submission so
+  // unmodelled members keep their slots instead of tripping the contract's
+  // exact-membership 400.
+
+  it('submits unmodelled scope members at their authoritative positions', async () => {
+    // Server knows a collection the caller does not render.
+    mockedGet.mockResolvedValueOnce(
+      response(1, [
+        { type: 'image', id: 1 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 3 },
+      ]),
+    )
+    mockedPut.mockResolvedValueOnce(
+      response(2, [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 1 },
+        { type: 'image', id: 2 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    // Members the caller submitted keep the local order; the unknown
+    // collection keeps its authoritative slot (index 1).
+    expect(mockedPut).toHaveBeenCalledWith(
+      null,
+      1,
+      [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 1 },
+        { type: 'image', id: 2 },
+      ],
+      expect.any(String),
+    )
+    expect(coordinator.getScope(null).status).toBe('saved')
+  })
+
+  it('merges and retries once on a membership 400 instead of conflicting', async () => {
+    // The caller's snapshot is missing a collection filed mid-session.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Missing scope collections: [9]'))
+    // The seed GET (first) still sees the old membership; the post-400 GET
+    // (second) returns the drifted membership at revision 2.
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3))).mockResolvedValueOnce(
+      response(2, [
+        { type: 'image', id: 1 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 3 },
+      ]),
+    )
+    mockedPut.mockResolvedValueOnce(
+      response(3, [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 1 },
+        { type: 'image', id: 2 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    // The retried submission carries the drifted member merged in and the
+    // freshly fetched revision.
+    expect(mockedPut).toHaveBeenLastCalledWith(
+      null,
+      2,
+      [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 1 },
+        { type: 'image', id: 2 },
+      ],
+      expect.any(String),
+    )
+    expect(events.every((e) => e.state !== 'conflicted')).toBe(true)
+  })
+
+  it('a second membership 400 falls through to the conflict path', async () => {
+    mockedPut.mockRejectedValue(new ApiError(400, 'Missing scope collections: [9]'))
+    // First GET seeds the revision; the 400 path GETs again for members.
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3))).mockResolvedValueOnce(
+      response(2, [
+        { type: 'image', id: 1 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 3 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
+  it('conflicts when membership drift hides a committed reorder', async () => {
+    // #1538 review: the recovery GET shows the continuing members'
+    // relative order changed (another editor committed a reorder alongside
+    // the membership change) — auto-retrying would silently overwrite it.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Missing scope collections: [9]'))
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3))).mockResolvedValueOnce(
+      response(3, [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 1 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(state.conflictOrder).toEqual([
+      { type: 'image', id: 3 },
+      { type: 'collection', id: 9 },
+      { type: 'image', id: 2 },
+      { type: 'image', id: 1 },
+    ])
+    expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
+  it('conflicts instead of retrying when the dragged tile departed', async () => {
+    // #1538 review: the deleted tile was the one the user dragged — the
+    // merged retry would report a successful save for a drag that went
+    // nowhere.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [2]'))
+    mockedGet
+      .mockResolvedValueOnce(response(1, refs(1, 2, 3)))
+      .mockResolvedValueOnce(response(2, refs(1, 3)))
+
+    coordinator.reportOrder(null, refs(3, 1, 2), undefined, {
+      itemType: 'image',
+      itemId: 2,
+      fromIndex: 1,
+      toIndex: 0,
+    })
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(state.conflictOrder).toEqual(refs(1, 3))
+  })
+
+  it('reuses the operation ID across the internal membership retry', async () => {
+    // #1538 review: the merge-retry is one logical save — both PUTs carry
+    // the same operation ID so telemetry records one submitted→committed
+    // lifecycle instead of an orphaned submission.
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Missing scope collections: [9]'))
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3))).mockResolvedValueOnce(
+      response(2, [
+        { type: 'image', id: 1 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 2 },
+        { type: 'image', id: 3 },
+      ]),
+    )
+    mockedPut.mockResolvedValueOnce(
+      response(3, [
+        { type: 'image', id: 3 },
+        { type: 'collection', id: 9 },
+        { type: 'image', id: 1 },
+        { type: 'image', id: 2 },
+      ]),
+    )
+
+    coordinator.reportOrder(null, refs(3, 1, 2))
+    await flushMicrotasks()
+
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(mockedPut.mock.calls[0][3]).toBe(mockedPut.mock.calls[1][3])
+    const submitted = events.filter((e) => e.state === 'submitted')
+    expect(submitted).toHaveLength(2)
+    expect(submitted[0].operationId).toBe(submitted[1].operationId)
+  })
+
+  it('submits verbatim when the order carries refs the member list lacks', async () => {
+    // Members for scope 7 seeded before a new image landed: the caller's
+    // order is a superset of the last-known members, so it submits verbatim
+    // and the server validates actual membership.
+    mockedGet.mockResolvedValueOnce(response(1, refs(1, 2, 3)))
+    mockedPut.mockResolvedValueOnce(response(2, refs(4, 5)))
+
+    coordinator.reportOrder(7, refs(4, 5))
+    await flushMicrotasks()
+
+    expect(mockedPut).toHaveBeenCalledWith(7, 1, refs(4, 5), expect.any(String))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// mergeOrderPreservingPositions
+// ---------------------------------------------------------------------------
+
+describe('mergeOrderPreservingPositions', () => {
+  const img = (id: number): TileOrderItemRef => ({ type: 'image', id })
+  const col = (id: number): TileOrderItemRef => ({ type: 'collection', id })
+
+  it('keeps unknown authoritative members in their slots', () => {
+    expect(
+      mergeOrderPreservingPositions([img(3), img(1), img(2)], [img(1), col(9), img(2), img(3)]),
+    ).toEqual([img(3), col(9), img(1), img(2)])
+  })
+
+  it('drops local refs the server no longer knows', () => {
+    expect(
+      mergeOrderPreservingPositions([img(1), img(99), img(2)], [img(1), img(2), img(3)]),
+    ).toEqual([img(1), img(2), img(3)])
+  })
+
+  it('is the identity when the caller models every member', () => {
+    expect(
+      mergeOrderPreservingPositions([img(2), col(9), img(1)], [img(1), col(9), img(2)]),
+    ).toEqual([img(2), col(9), img(1)])
+  })
+
+  it('appends nothing when the caller knows members the server does not', () => {
+    // Symmetric to "unknown members keep slots": an empty local list never
+    // fabricates an order — it adopts the authoritative one.
+    expect(mergeOrderPreservingPositions([], [img(1), col(9)])).toEqual([img(1), col(9)])
   })
 })

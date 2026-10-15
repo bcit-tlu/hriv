@@ -7,23 +7,25 @@ import uuid
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, status as http_status
+from fastapi import FastAPI, HTTPException, Request, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
 from .admin_ops import _ensure_tasks_dir
 from .auth import auth_settings
-from .database import get_db, settings
+from .database import dispose_probe_engine, get_probe_engine, settings
 from .logging_config import setup_logging
 from .metrics import render_metrics
 from .queue_metrics import queue_health
+from .rebuild_fixture import ensure_archive_lock_file
 from .reconciliation import run_reconciliation_sweep
+from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
-from .middleware import AuditMiddleware, MaintenanceMiddleware
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
     announcement,
@@ -31,11 +33,13 @@ from .routers import (
     bulk_import,
     categories,
     changelog,
+    collections,
     groups,
     images,
     issues,
     jobs,
     oidc,
+    probe,
     programs,
     telemetry,
     tile_order,
@@ -86,6 +90,39 @@ async def _check_storage_ready(timeout: float = 5.0) -> bool:
         logger.warning(
             "Storage health check timed out after %s seconds", timeout,
             extra={"event": "health.storage_timeout"},
+        )
+        return False
+
+
+async def _check_db_ready(timeout: float = 5.0) -> bool:
+    """Open a *fresh* database connection and run ``SELECT 1`` on it.
+
+    The check uses a dedicated unpooled (``NullPool``) engine rather than the
+    request-path session pool: a pooled checkout can reuse a connection that
+    authenticated before Vault revoked or rotated the dynamic PostgreSQL
+    credentials, which reported pods Ready through the 2026-10-02 outage
+    while every new connection failed authentication (#1496). Establishing a
+    new session per probe proves the app can still connect — the property
+    Kubernetes readiness actually needs.
+
+    Scope note: this check deliberately does NOT reflect request-pool
+    saturation — an exhausted pool means the pod is busy, not broken, and
+    flapping readiness under load would cascade failures. Pool occupancy is
+    monitored via the ``hriv_db_pool_*`` metrics instead.
+    """
+    async def _roundtrip() -> None:
+        engine = get_probe_engine()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(_roundtrip(), timeout=timeout)
+        return True
+    except Exception:
+        logger.warning(
+            "Database readiness check failed — cannot establish a fresh connection",
+            exc_info=True,
+            extra={"event": "health.db_unready"},
         )
         return False
 
@@ -164,6 +201,18 @@ async def lifespan(app: FastAPI):
         },
     )
 
+    # The backup service shares this lock from a different uid on the same
+    # volume; only the backend (the directory owner) can guarantee the file
+    # exists with a mode that uid can open.
+    try:
+        await asyncio.wait_for(asyncio.to_thread(ensure_archive_lock_file), timeout=5.0)
+    except (OSError, asyncio.TimeoutError):
+        logger.warning(
+            "Could not pre-create the rebuild fixture archive lock",
+            exc_info=True,
+            extra={"event": "rebuild_fixture.archive_lock_unavailable"},
+        )
+
     if settings.oidc_enabled:
         await _check_oidc_connectivity()
 
@@ -174,6 +223,22 @@ async def lifespan(app: FastAPI):
                 extra={"event": "worker.queue_unavailable"},
             )
 
+    # .strip() matches the endpoint's compare: a whitespace-only configured
+    # value is effectively unconfigured and must not suppress the warning.
+    if not settings.synthetic_ingest_token.strip():
+        log_missing_token = (
+            logger.warning
+            if settings.task_execution_mode == "required"
+            else logger.info
+        )
+        log_missing_token(
+            "SYNTHETIC_INGEST_TOKEN is not configured — the synthetic monitor "
+            "can only report results with its user JWT, which fails during "
+            "auth/DB outages exactly when the report matters (#1495). "
+            "Configure the shared ingest token for deployed environments.",
+            extra={"event": "synthetic.ingest_token_missing"},
+        )
+
     # In "required" mode a dedicated arq worker pod is guaranteed, so the
     # reconciliation sweep runs there instead (see
     # ``worker.WorkerSettings.cron_jobs``) — periodically, not just once at
@@ -183,6 +248,7 @@ async def lifespan(app: FastAPI):
         await run_reconciliation_sweep()
 
     yield
+    await dispose_probe_engine()
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
 
@@ -205,12 +271,54 @@ async def task_queue_unavailable_handler(
     )
 
 # CORS: read allowed origins from the CORS_ORIGINS env var (comma-separated).
-# Defaults to "*" for local development; production deployments should set
-# this to the actual frontend origin(s), e.g. "https://hriv.example.ca".
-_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] or [
-    "*"
-]
+# Unset or "*" is a dev convenience only — it must never carry credentials
+# (browsers reject "Access-Control-Allow-Origin: *" with credentials, so
+# Starlette mirrors the request Origin instead, silently allowing any site
+# to make credentialed requests). TASK_EXECUTION_MODE=required marks a
+# production-shaped deployment, where a concrete frontend origin is
+# mandatory; refusing to boot surfaces the misconfiguration immediately,
+# like REQUIRE_JWT_SECRET does for JWT_SECRET.
+def _resolve_cors_config(
+    cors_origins: str, task_execution_mode: str
+) -> tuple[list[str], bool]:
+    """Return ``(allow_origins, allow_credentials)`` for CORSMiddleware.
 
+    An explicit comma-separated origin list is honoured as-is (credentials
+    enabled). An empty or wildcard-containing value is dev-only: it serves
+    ``*`` *without* credentials in ``local`` mode and fails fast in
+    ``required`` mode.
+    """
+    origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+    if origins and "*" not in origins:
+        return origins, True
+    if task_execution_mode == "required":
+        raise RuntimeError(
+            "CORS_ORIGINS must name the frontend origin(s) (e.g. "
+            '"https://hriv.example.ca") when TASK_EXECUTION_MODE=required — '
+            "wildcard or empty CORS with credentials is not permitted."
+        )
+    logger.warning(
+        "CORS_ORIGINS unset or wildcard — serving wildcard CORS with "
+        "credentials DISABLED (dev mode). Set CORS_ORIGINS to the frontend "
+        "origin (e.g. http://localhost:5173) for credentialed cross-origin "
+        "requests.",
+        extra={"event": "cors.wildcard_dev"},
+    )
+    return ["*"], False
+
+
+_cors_origins, _cors_allow_credentials = _resolve_cors_config(
+    settings.cors_origins, settings.task_execution_mode
+)
+
+# Innermost custom middleware: caps the streamed upload body on the
+# multipart upload routes before python-multipart's temp-file spool can
+# absorb an oversized request (#1432). Registered first so its 413 still
+# flows back through the audit/CORS layers for logging and headers.
+app.add_middleware(UploadBodyLimitMiddleware)
+# Registered inside MaintenanceMiddleware (Starlette runs the last-added
+# middleware first) so maintenance 503s win over the collections 404.
+app.add_middleware(CollectionsFeatureMiddleware)
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
 
@@ -221,7 +329,7 @@ app.add_middleware(SessionMiddleware, secret_key=auth_settings.jwt_secret)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*", "X-Request-ID", "X-Session-ID", "If-None-Match"],
     expose_headers=["X-Request-ID", "X-Total-Count", "ETag", "X-Browse-Revision"],
@@ -233,6 +341,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcement.router, prefix="/api")
 app.include_router(changelog.router, prefix="/api")
+app.include_router(collections.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(groups.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
@@ -244,6 +353,7 @@ app.include_router(tile_order.router, prefix="/api")
 app.include_router(tiles.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(probe.router, prefix="/api")
 
 # DZI tiles are served by the authorized tiles router (token-validated
 # FileResponse) — see docs/tile-delivery-boundary.md. The previous
@@ -251,10 +361,32 @@ app.include_router(users.router, prefix="/api")
 # gone; only the directory bootstrap remains.
 os.makedirs(settings.tiles_dir, exist_ok=True)
 
+# The deployment points TMPDIR at this directory so python-multipart's
+# SpooledTemporaryFile and other tempfile artifacts land on the
+# source-images PVC instead of pod-local /tmp (#1365). It must exist
+# before the first tempfile call resolves TMPDIR, so create it at import;
+# the startup reconciliation sweep then removes aged leftovers (a dead
+# request's spool files on the shared RWX volume).
+os.makedirs(
+    os.path.join(settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+    exist_ok=True,
+)
+
 
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/api/features", response_model=FeaturesOut)
+async def features() -> FeaturesOut:
+    """Deployment feature flags (unauthenticated; see docs/collections.md)."""
+    return FeaturesOut(
+        collections=settings.collections_enabled,
+        collections_home_shelf=(
+            settings.collections_enabled and settings.collections_home_shelf
+        ),
+    )
 
 
 @app.get("/api/health/queue")
@@ -270,9 +402,13 @@ async def queue_health_endpoint():
 
 
 @app.get("/api/health/ready")
-async def readiness(db: AsyncSession = Depends(get_db)):
-    """Readiness probe: verifies the database connection and storage are alive."""
-    await db.execute(text("SELECT 1"))
+async def readiness():
+    """Readiness probe: verifies fresh DB connectivity and storage are alive."""
+    if not await _check_db_ready():
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unreachable",
+        )
     if not await _check_storage_ready():
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,

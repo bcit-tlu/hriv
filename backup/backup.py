@@ -47,7 +47,7 @@ import uuid
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import NoReturn, Protocol
+from typing import NoReturn, Protocol, TextIO
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -851,7 +851,7 @@ def _merge_attempt_history(existing: dict | None, incoming: dict) -> list[dict]:
     return ordered[:_MAX_ATTEMPT_HISTORY]
 
 
-def _merge_overlap_rejection(existing: dict | None, incoming: dict) -> dict:
+def _merge_rejected_attempt(existing: dict | None, incoming: dict) -> dict:
     if (
         isinstance(existing, dict)
         and existing.get("schema_version") == BACKUP_STATE_SCHEMA_VERSION
@@ -867,14 +867,14 @@ def _merge_overlap_rejection(existing: dict | None, incoming: dict) -> dict:
     return merged
 
 
-def _write_overlap_rejection(state: dict) -> bool:
+def _write_rejected_attempt(state: dict) -> bool:
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     return _commit_shared_json(
         local_path=_backup_state_path(),
         blob_name=_backup_state_blob_name(),
         incoming=state,
-        merge=_merge_overlap_rejection,
-        label="backup overlap rejection",
+        merge=_merge_rejected_attempt,
+        label="backup rejected attempt",
     )
 
 
@@ -1678,6 +1678,8 @@ def _tar_filter(
 
 _INCOMPLETE_NAMES = {"admin", "scratch", "maintenance", "staging", "incomplete"}
 _INCOMPLETE_SUFFIXES = (".part", ".partial", ".tmp", ".uploading")
+_REBUILD_FIXTURE_DIRNAME = "rebuild-fixture"
+_REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME = ".rebuild-fixture-archive.lock"
 _AZURE_BLOCK_SIZE = 4 * 1024 * 1024
 _MAX_LOGICAL_DUMP_BYTES = 16 * 1024 * 1024 * 1024
 
@@ -1704,7 +1706,7 @@ def _inventory_data_files(data_src: Path) -> tuple[list[dict], list[dict]]:
             is_file = path.is_file()
         except OSError as exc:
             raise RuntimeError(f"could not inventory {path}: {exc}") from exc
-        if not is_file:
+        if not is_file or path.name == _REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME:
             continue
         rel = path.relative_to(data_src).as_posix()
         if not _is_finalized_file(path, data_src):
@@ -2696,13 +2698,17 @@ def _run_backup_inner() -> Path | None:
                 archive_key=archive_key,
             )
             if BACKUP_MODE == "production":
+                # The database component has no payload of its own: CNPG owns
+                # the database backup and this archive is the recovery-bound
+                # artifact, so report the archive payload size rather than
+                # leaving the database size metric permanently empty.
                 _mark_attempt_finished(
                     backup_state,
                     "database",
                     started_at=db_started_at,
                     completed_at=completed_at,
                     success=True,
-                    size_bytes=None,
+                    size_bytes=manifest["total_bytes"],
                     archive_key=database_archive_key,
                 )
             else:
@@ -2774,6 +2780,112 @@ def _run_backup_inner() -> Path | None:
         return Path(archive_key) if not _azure_configured() else Path(archive_name)
 
 
+def _source_images_root() -> Path:
+    """Locate the source-images root that hosts the fixture archive lock.
+
+    The backend creates ``source_images`` on demand and locks a file inside
+    it, so in production mode this path must be stable even before the
+    directory exists — falling back to ``data_dir`` would lock a different
+    file than a first-time fixture seed and lose mutual exclusion.
+    """
+    data_dir = Path(DATA_DIR)
+    if (data_dir / _REBUILD_FIXTURE_DIRNAME).is_dir():
+        return data_dir
+    if BACKUP_MODE == "production":
+        return data_dir / "source_images"
+    legacy_root = data_dir / "source_images"
+    return legacy_root if legacy_root.is_dir() else data_dir
+
+
+def _rebuild_fixture_present() -> bool:
+    data_dir = Path(DATA_DIR)
+    return (data_dir / _REBUILD_FIXTURE_DIRNAME).is_dir() or (
+        data_dir / "source_images" / _REBUILD_FIXTURE_DIRNAME
+    ).is_dir()
+
+
+class ArchiveLockUnavailable(RuntimeError):
+    """The shared fixture archive lock file could not be opened."""
+
+
+def _open_rebuild_fixture_archive_lock(lock_path: Path) -> TextIO:
+    """Open the shared lock file, tolerating a read-only source directory.
+
+    The backend owns ``source_images`` and runs as a different uid, so this
+    process may be unable to create files there. ``flock`` only needs an
+    open descriptor, so an existing lock file is opened read-only when the
+    read-write path is denied. A lock file that is missing *and* cannot be
+    created is a hard failure: proceeding without the lock would silently
+    drop mutual exclusion with fixture mutation.
+    """
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        log.debug(
+            "Cannot create %s (backend-owned); opening an existing lock instead",
+            lock_path.parent,
+        )
+    try:
+        return lock_path.open("a+")
+    except PermissionError as exc:
+        if not lock_path.exists():
+            raise ArchiveLockUnavailable(
+                f"Cannot create fixture archive lock {lock_path}: {exc.strerror}"
+            ) from exc
+        try:
+            return lock_path.open("r")
+        except PermissionError as read_exc:
+            raise ArchiveLockUnavailable(
+                f"Cannot open fixture archive lock {lock_path}: {read_exc.strerror}"
+            ) from read_exc
+
+
+@contextlib.contextmanager
+def _rebuild_fixture_archive_lock() -> Iterator[None]:
+    lock_path = _source_images_root() / _REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME
+    with _open_rebuild_fixture_archive_lock(lock_path) as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _failed_attempt_state(failure_reason: str) -> dict:
+    now = datetime.now(timezone.utc)
+    state = _new_backup_state(failure_reason, _new_run_id())
+    _seed_last_success_history(state, _read_backup_state())
+    for backup_type in ("database", "filesystem"):
+        _mark_attempt_started(state, backup_type, started_at=now)
+        _mark_attempt_finished(
+            state,
+            backup_type,
+            started_at=now,
+            completed_at=now,
+            success=False,
+            size_bytes=None,
+        )
+    state["failure_reason"] = failure_reason
+    return state
+
+
+def _persist_rejected_attempt(failure_reason: str) -> tuple[dict, bool]:
+    """Record a run that never became the active one (history only)."""
+    state = _failed_attempt_state(failure_reason)
+    return state, _write_rejected_attempt(state)
+
+
+def _persist_failed_run(failure_reason: str) -> tuple[dict, bool]:
+    """Record an accepted run that failed before ``_run_backup_inner`` could.
+
+    Written through the normal state merge so the current ``database`` and
+    ``filesystem`` outcomes advance to failed (and the failure gauges flip),
+    while ``last_success_*`` and any newer concurrent publication are kept.
+    """
+    state = _failed_attempt_state(failure_reason)
+    return state, _write_backup_state(state)
+
+
 def run_backup() -> Path | None:
     """Run one backup while excluding overlapping scheduled or on-demand calls."""
     with _run_lock() as locked:
@@ -2781,29 +2893,133 @@ def run_backup() -> Path | None:
             log.error(
                 "Backup skipped because another backup run holds %s", _run_lock_path()
             )
-            now = datetime.now(timezone.utc)
-            state = _new_backup_state("overlap", _new_run_id())
-            _seed_last_success_history(state, _read_backup_state())
-            for backup_type in ("database", "filesystem"):
-                _mark_attempt_started(state, backup_type, started_at=now)
-                _mark_attempt_finished(
-                    state,
-                    backup_type,
-                    started_at=now,
-                    completed_at=now,
-                    success=False,
-                    size_bytes=None,
-                )
-            state["failure_reason"] = "overlapping_backup_run"
-            if not _write_overlap_rejection(state):
+            state, persisted = _persist_rejected_attempt(
+                "overlapping_backup_run"
+            )
+            if not persisted:
                 log.warning("Could not persist backup overlap rejection")
             log.warning(
                 "Overlap rejection was appended without changing active publication ownership",
                 extra={"event": "backup.overlap_rejected", "run_id": state["run_id"]},
             )
             return None
-        _reconcile_publications(lock_held=True)
-        return _run_backup_inner()
+        accepted_at = datetime.now(timezone.utc)
+        try:
+            with _rebuild_fixture_archive_lock():
+                return _run_backup_excluding_fixture()
+        except ArchiveLockUnavailable as exc:
+            _fail_closed("archive_lock_unavailable", exc, accepted_at)
+            raise
+        except Exception as exc:
+            _fail_closed("unexpected_error", exc, accepted_at)
+            raise
+
+
+def _run_wrote_state(existing: object, accepted_at: datetime) -> bool:
+    """True when the persisted state's newest attempt belongs to this run."""
+    return (
+        isinstance(existing, dict)
+        and existing.get("schema_version") == BACKUP_STATE_SCHEMA_VERSION
+        and _state_sort_key(existing)[1] >= accepted_at
+    )
+
+
+def _finalize_run_state(
+    existing: dict, failure_reason: str, accepted_at: datetime
+) -> dict | None:
+    """Return this run's state with every unfinished component marked failed.
+
+    Components the run already finished — a published success, say — keep
+    their outcome; the ones it started but never completed, or never started,
+    become failed so the current outcomes (and the failure gauges) reflect
+    the crash. ``None`` when every component already has an outcome, in
+    which case there is nothing to finalize and the run's record must stay
+    untouched.
+    """
+    state = copy.deepcopy(existing)
+    now = datetime.now(timezone.utc)
+    finalized = False
+    for backup_type in ("database", "filesystem"):
+        section = state.get(backup_type)
+        if not isinstance(section, dict):
+            state[backup_type] = section = {}
+        started = _parse_iso(section.get("started_at"))
+        if started is not None and started >= accepted_at:
+            if section.get("success") is not None:
+                continue
+        else:
+            started = now
+            _mark_attempt_started(state, backup_type, started_at=started)
+        _mark_attempt_finished(
+            state,
+            backup_type,
+            started_at=started,
+            completed_at=now,
+            success=False,
+            size_bytes=None,
+        )
+        finalized = True
+    if not finalized:
+        return None
+    state["failure_reason"] = failure_reason
+    return state
+
+
+def _fail_closed(
+    failure_reason: str, exc: BaseException, accepted_at: datetime
+) -> None:
+    """Persist a failed attempt for an exception that escaped a backup run.
+
+    ``_run_backup_inner`` records the outcomes it anticipates; anything that
+    fails before it starts (lock acquisition, publication reconciliation)
+    would otherwise leave no failure state behind and only surface through
+    the much later overdue alert. Once the run has written state of its own,
+    components it finished (e.g. a published success before retention
+    cleanup raised) stay authoritative and unfinished ones are marked failed;
+    if nothing was left unfinished the exception is recorded as a
+    history-only attempt so the published run's record is not rewritten.
+    """
+    try:
+        existing = _read_backup_state()
+        if not _run_wrote_state(existing, accepted_at):
+            state, persisted = _persist_failed_run(failure_reason)
+        else:
+            state = _finalize_run_state(existing, failure_reason, accepted_at)
+            if state is not None:
+                persisted = _write_backup_state(state)
+            else:
+                state, persisted = _persist_rejected_attempt(failure_reason)
+    except Exception:
+        log.exception("Could not persist failed backup attempt after %s", exc)
+        return
+    if not persisted:
+        log.warning("Could not persist failed backup attempt")
+    log.error(
+        "Backup failed: %s",
+        exc,
+        extra={
+            "event": "backup.failed_closed",
+            "run_id": state["run_id"],
+            "failure_reason": failure_reason,
+        },
+    )
+
+
+def _run_backup_excluding_fixture() -> Path | None:
+    if _rebuild_fixture_present():
+        state, persisted = _persist_rejected_attempt("rebuild_fixture_active")
+        if not persisted:
+            log.warning("Could not persist fixture-blocked backup attempt")
+        log.error(
+            "Backup blocked while the tile-rebuild scale fixture is active",
+            extra={
+                "event": "backup.rebuild_fixture_blocked",
+                "run_id": state["run_id"],
+            },
+        )
+        return None
+    _reconcile_publications(lock_held=True)
+    return _run_backup_inner()
 
 
 def _archive_is_selectable(blob) -> bool:
@@ -3730,6 +3946,20 @@ def validation_list(*, container: _ReadContainer | None = None) -> dict:
     }
 
 
+def _legacy_or_archive_size(value: object, total_bytes: int) -> bool:
+    # Markers written before the database component recorded the shared
+    # archive payload size carry None; new documents carry the integer total.
+    # Membership in ``(None, total)`` is not used because Python equality
+    # would also admit floats and booleans.
+    if value is None:
+        return True
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value == total_bytes
+    )
+
+
 def validation_select(
     snapshot_name: str | None = None, *, container: _ReadContainer | None = None
 ) -> dict:
@@ -3967,8 +4197,12 @@ def validation_select(
         filesystem.get("last_success_archive_key") != archive_blob
         or filesystem.get("last_success_size_bytes") != summary["total_bytes"]
         or marker["types"]["filesystem"].get("size_bytes") != summary["total_bytes"]
-        or database.get("last_success_size_bytes") is not None
-        or marker["types"]["database"].get("size_bytes") is not None
+        or not _legacy_or_archive_size(
+            database.get("last_success_size_bytes"), summary["total_bytes"]
+        )
+        or not _legacy_or_archive_size(
+            marker["types"]["database"].get("size_bytes"), summary["total_bytes"]
+        )
         or database.get("last_success_archive_key") != (
             f"cnpg://{manifest['database_recovery']['cluster']}?target_time="
             f"{manifest['database_recovery'].get('target_time')}"

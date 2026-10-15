@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.15](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.14...restore-validation-v0.1.15) (2026-09-28)
+
+
+### Documentation
+
+* prettier-format domain-model.md ([#1435](https://github.com/bcit-tlu/hriv/issues/1435)) ([1a9fd81](https://github.com/bcit-tlu/hriv/commit/1a9fd810aaad697e9f73d096cbd1c207815fbab7))
+
+## [0.1.14](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.13...restore-validation-v0.1.14) (2026-09-25)
+
+
+### Bug Fixes
+
+* **security:** update fixable Python deps and slim backup/restore-validation images ([#1374](https://github.com/bcit-tlu/hriv/issues/1374)) ([899e1fb](https://github.com/bcit-tlu/hriv/commit/899e1fbc2ad6f0c16f6f6444ea1b24e4c432de90))
+
+## [0.1.13](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.12...restore-validation-v0.1.13) (2026-09-24)
+
+
+### Documentation
+
+* note backupChild pin bump in release flow ([#1336](https://github.com/bcit-tlu/hriv/issues/1336)) ([6410d97](https://github.com/bcit-tlu/hriv/commit/6410d97e2290f98cc563527709b309e253da9922))
+
+## [0.1.12](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.11...restore-validation-v0.1.12) (2026-09-23)
+
+
+### Documentation
+
+* split AGENTS.md into per-directory rules and modularize testing-hriv skill ([#1349](https://github.com/bcit-tlu/hriv/issues/1349)) ([c472292](https://github.com/bcit-tlu/hriv/commit/c4722924ccb04f03ffd6c2a602e7f74fb23c061e))
+
 ## [0.1.11](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.10...restore-validation-v0.1.11) (2026-09-14)
 
 

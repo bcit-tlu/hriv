@@ -56,9 +56,42 @@ Two further rules apply on top of the dual gate, both enforced by
    descendant's own restrictions. The group gate cascades **identically** to the
    program gate.
 
-Admins and instructors **bypass** all student visibility filtering entirely
-(guarded by `if user.role == "student"` in the routers); they always see every
-category and image.
+Admins, instructors, and staff **bypass** all student visibility filtering
+entirely (guarded by `if user.role == "student"` in the routers); they always
+see every category and image, including hidden ones. Staff are read-only —
+they get unrestricted browse visibility but none of the editor routes.
+
+### Category card image exemption (#1609)
+
+The category tile "card image" is a **deliberate, narrow exception** to the
+hidden-content rules above — do not "fix" it back into the filtered set. A
+category's cover pin is stored as `metadata.card_image_id` and resolved
+**server-side** (`resolve_card_image` in `routers/categories.py`) against
+**all** images in the category's subtree — regardless of `active`, hidden
+status, or program/group gates — using the same flat result sets the tree
+already loads (no extra queries).
+
+What students receive:
+
+- `card_thumb`: a thumbnail URL tokenized with a **thumbnail-only** tile
+  token (`purpose="thumb"`, restricted to `thumbnail.jpeg` — see
+  [tile-delivery-boundary](tile-delivery-boundary.md)). It renders the cover
+  but cannot unlock `image.dzi` or `image_files/…` tiles, so students gain a
+  thumbnail, never full image access.
+- `card_image_id`: the resolved pin id (null when unresolvable). The raw
+  `card_image_id` key is **scrubbed from `metadata_extra`** in student tree,
+  list (`GET /api/categories/`), and detail (`GET /api/categories/{id}`)
+  responses so the id alone does not disclose an image they cannot list.
+- An unresolvable pin — deleted image, or an image outside the category's
+  subtree — yields `null`/`null` and the tile renders the folder icon.
+
+All four category responses (tree, list, detail, and the `POST`/`PATCH`
+return bodies) resolve the pin through the same helper, so a valid pin is
+never returned as `null`/`null`. `PATCH /api/categories/{id}` rejects (422)
+a non-null `card_image_id` that is not an int, does not exist, or points
+outside the category's subtree; `POST /api/categories/` rejects (422) any
+non-null pin because a brand-new category has no subtree images. `null`
+(unpin) is always allowed.
 
 ## Worked examples
 
@@ -108,14 +141,20 @@ Used by `App.tsx`, `ManageCategoriesDialog`, `CategoryPickerSelect`, and
 ## Tree loading & ETag caching
 
 The category tree is loaded in **exactly two database queries** regardless of
-depth (`backend/app/routers/categories.py`, `_load_tree()`):
+depth (`backend/app/routers/categories.py`, `_load_tree()`) — three when
+`COLLECTIONS_ENABLED` is on:
 
 1. Fetch **all** categories in one query.
 2. Fetch **all** images in one query.
+3. Fetch **all** collections in one query (skipped entirely when the flag is
+   off, so flag-off deployments keep the two-query shape).
 
-The tree is then assembled in memory by indexing images by `category_id` and
-categories by `parent_id`. For students, excluded categories and inactive images
-are filtered out during assembly (using `compute_excluded_category_ids`). When
+The tree is then assembled in memory by indexing images and collections by
+`category_id` and categories by `parent_id`. For students, excluded
+categories and inactive images are filtered out during assembly (using
+`compute_excluded_category_ids`), and a filed collection surfaces only when
+the collection's own visibility gate AND its category's ancestor gate both
+pass (`collection_views._ViewerContext`). When
 modifying the category/image models, keep this flat-query assembly working.
 
 The tree endpoint also supports **conditional requests**:
@@ -132,6 +171,8 @@ The tree endpoint also supports **conditional requests**:
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Dual-gate + cascade enforcement                        | `backend/app/visibility.py`                                                                                                                                                                                                               |
 | Student guards on tree/images                          | `backend/app/routers/categories.py`, `backend/app/routers/images.py`                                                                                                                                                                      |
+| Card-image exemption (#1609)                           | `backend/app/routers/categories.py` (`resolve_card_image`), `backend/app/tile_tokens.py` (thumb purpose), `frontend/src/components/CategoryTile.tsx` (`cardThumb`)                                                                        |
+| Collection visibility + category-gate (tree embed)     | `backend/app/collection_views.py` (`_ViewerContext`), `backend/app/routers/categories.py` (query 3), `backend/app/authz.py` (`can_view_collection`)                                                                                       |
 | Intersection warning                                   | `backend/app/routers/categories.py` (`_intersection_warnings`)                                                                                                                                                                            |
 | Frontend narrowing                                     | `frontend/src/categoryUtils.ts`                                                                                                                                                                                                           |
 | Frontend visibility cascade helpers                    | `frontend/src/treeUtils.ts` (`isCategoryHiddenInTree`)                                                                                                                                                                                    |
@@ -143,11 +184,14 @@ Across the frontend, restriction and visibility affordances follow two separate
 emphasis rules:
 
 - Breadcrumb/header chips show the **effective** program/group restriction for
-  the current category or image, computed with full-path narrowing. A restriction
-  ID in that effective set renders at full strength when it is attached directly
-  to the current category/path segment, or at **0.6 opacity** when it is only
-  inherited from an ancestor. Ancestor IDs narrowed away by the current category
-  do not render in the breadcrumb/header chips.
+  the current category or image, computed with full-path narrowing. The path is
+  resolved against the live category tree (not the navigation-time `path`
+  snapshot), so background refreshes — including a reparented current
+  category — keep the chips current. A restriction ID in that effective set
+  renders at full strength when it is attached directly to the current
+  category/path segment, or at **0.6 opacity** when it is only inherited from
+  an ancestor. Ancestor IDs narrowed away by the current category do not
+  render in the breadcrumb/header chips.
 - Other surfaces that need restriction provenance, such as browse tile chips,
   ManagePage restriction chips, inherited-only category dialog chips, and
   category restriction lock icons, may show direct vs inherited restrictions

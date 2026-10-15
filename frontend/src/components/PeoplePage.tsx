@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -97,7 +98,7 @@ type SortDirection = 'asc' | 'desc'
 type PeopleTableColumn =
   'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
 
-const ROLES: Role[] = ['admin', 'instructor', 'student']
+const ROLES: Role[] = ['admin', 'instructor', 'staff', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
   { key: 'id', label: 'ID' },
   { key: 'name', label: 'Name' },
@@ -129,6 +130,16 @@ const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, keyof Record<
     email: 'email',
   }
 
+/** Columns that own a FilterBar control — governs the empty-filter fallback
+ * even when a control is suppressed (e.g. no program/group options). */
+const PEOPLE_FILTERABLE_COLUMNS: ReadonlySet<PeopleTableColumn> = new Set([
+  'name',
+  'email',
+  'role',
+  'program',
+  'group',
+])
+
 type AppliedPeopleFilter =
   | { key: `name:${string}`; label: string; onDelete: () => void }
   | { key: `email:${string}`; label: string; onDelete: () => void }
@@ -139,6 +150,9 @@ type AppliedPeopleFilter =
 interface PeoplePageProps {
   programs: Program[]
   groups: Group[]
+  /** Read-only directory view (staff role): hides all mutation affordances —
+   *  selection checkboxes, Add/Edit/Delete, and bulk actions. */
+  readOnly?: boolean
   initialEditUserId?: number | null
   onEditUserHandled?: () => void
 }
@@ -146,6 +160,7 @@ interface PeoplePageProps {
 export default function PeoplePage({
   programs,
   groups,
+  readOnly = false,
   initialEditUserId,
   onEditUserHandled,
 }: PeoplePageProps) {
@@ -177,7 +192,7 @@ export default function PeoplePage({
     selectedGroups.size > 0
 
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
-  const { visibleColumns, isColumnVisible, setColumnVisible } =
+  const { visibleColumns, setColumnVisible, columnOrder, orderedVisibleColumns, setColumnOrder } =
     useTableColumnPreferences<PeopleTableColumn>({
       tableKey: 'people',
       allColumns: PEOPLE_ALL_COLUMNS,
@@ -187,6 +202,14 @@ export default function PeoplePage({
     () => PEOPLE_ALL_COLUMNS.filter((column) => visibleColumns[column]).length,
     [visibleColumns],
   )
+  // Dialog options follow the persisted column order (#1577) so drag
+  // reordering in the chooser matches the rendered table order.
+  const orderedColumnOptions = useMemo(() => {
+    const byKey = new Map(PEOPLE_COLUMN_OPTIONS.map((option) => [option.key, option]))
+    return columnOrder
+      .map((key) => byKey.get(key))
+      .filter((option): option is ColumnVisibilityOption<PeopleTableColumn> => option != null)
+  }, [columnOrder])
 
   // Pagination state (rows-per-page persists per user via localStorage)
   const [rowsPerPage, setRowsPerPage] = useRowsPerPagePreference('people')
@@ -241,9 +264,26 @@ export default function PeoplePage({
     () => programs.filter((program) => selectedPrograms.has(program.id)),
     [programs, selectedPrograms],
   )
+  // Staff don't have access to GET /api/groups/; when the groups prop is
+  // empty, derive the filter options from the group ids/names embedded in
+  // the loaded user rows instead.
+  const groupFilterOptions = useMemo(() => {
+    if (groups.length > 0) {
+      return groups.map((g) => ({ id: g.id, name: g.name }))
+    }
+    const map = new Map<number, string>()
+    for (const u of users) {
+      u.group_ids.forEach((id, i) => {
+        if (!map.has(id)) map.set(id, u.group_names[i] ?? `Group #${id}`)
+      })
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [groups, users])
   const selectedGroupOptions = useMemo(
-    () => groups.filter((group) => selectedGroups.has(group.id)),
-    [groups, selectedGroups],
+    () => groupFilterOptions.filter((group) => selectedGroups.has(group.id)),
+    [groupFilterOptions, selectedGroups],
   )
   const filterSnapshot = useMemo(
     () => buildPeopleFilterSnapshot(filters, selectedRoles, selectedPrograms, selectedGroups),
@@ -365,6 +405,7 @@ export default function PeoplePage({
   }, [loadData])
 
   useEffect(() => {
+    if (readOnly) return
     if (initialEditUserId != null && !loading && users.length > 0) {
       const target = users.find((u) => u.id === initialEditUserId)
       if (target) {
@@ -375,7 +416,7 @@ export default function PeoplePage({
       }
       onEditUserHandled?.()
     }
-  }, [initialEditUserId, loading, users, onEditUserHandled])
+  }, [initialEditUserId, loading, users, onEditUserHandled, readOnly])
 
   useEffect(() => {
     const validIds = new Set(programs.map((p) => p.id))
@@ -387,13 +428,13 @@ export default function PeoplePage({
   }, [programs])
 
   useEffect(() => {
-    const validIds = new Set(groups.map((g) => g.id))
+    const validIds = new Set(groupFilterOptions.map((g) => g.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available groups
     setSelectedGroups((prev) => {
       const pruned = new Set([...prev].filter((id) => validIds.has(id)))
       return pruned.size === prev.size ? prev : pruned
     })
-  }, [groups])
+  }, [groupFilterOptions])
 
   useEffect(() => {
     const validRoles = new Set(ROLES)
@@ -573,6 +614,7 @@ export default function PeoplePage({
   }
 
   const handleRowClick = (user: ApiUser) => {
+    if (readOnly) return
     setEditingUser(user)
     setAddEditOpen(true)
   }
@@ -827,6 +869,129 @@ export default function PeoplePage({
     )
   }
 
+  // Per-column render maps (#1577): the FilterBar controls, table headers,
+  // and row cells are rendered in the user's persisted column order via
+  // `orderedVisibleColumns` — visibility filtering happens there, so the
+  // map entries themselves render unconditionally.
+  const sortableHeaderCell = (column: PeopleTableColumn, label: string) => (
+    <TableCell sortDirection={sortColumn === column ? sortDirection : false}>
+      <TableSortLabel
+        active={sortColumn === column}
+        direction={sortColumn === column ? sortDirection : 'asc'}
+        onClick={() => handleSort(column)}
+      >
+        {label}
+      </TableSortLabel>
+    </TableCell>
+  )
+
+  const columnHeaderCells: Record<PeopleTableColumn, ReactNode> = {
+    id: sortableHeaderCell('id', 'ID'),
+    name: sortableHeaderCell('name', 'Name'),
+    email: sortableHeaderCell('email', 'Email'),
+    role: sortableHeaderCell('role', 'Role'),
+    active: sortableHeaderCell('active', 'Status'),
+    program: sortableHeaderCell('program', 'Program'),
+    group: sortableHeaderCell('group', 'Groups'),
+    last_access: sortableHeaderCell('last_access', 'Last Accessed'),
+    created_at: sortableHeaderCell('created_at', 'Created'),
+  }
+
+  const columnFilterControls: Partial<Record<PeopleTableColumn, ReactNode>> = {
+    name: (
+      <FilterPopoverButton
+        label="Name"
+        activeCount={getFilterTerms(filters['name'] ?? '').length}
+        panelWidth={260}
+      >
+        <FilterTextPanel
+          value={filters['name'] ?? ''}
+          onChange={(value) => handleFilterChange('name', value)}
+          placeholder="Search name"
+          ariaLabel="Name"
+          helperText="Separate terms with commas"
+          width={260}
+        />
+      </FilterPopoverButton>
+    ),
+    email: (
+      <FilterPopoverButton
+        label="Email"
+        activeCount={getFilterTerms(filters['email'] ?? '').length}
+        panelWidth={280}
+      >
+        <FilterTextPanel
+          value={filters['email'] ?? ''}
+          onChange={(value) => handleFilterChange('email', value)}
+          placeholder="Search email"
+          ariaLabel="Email"
+          helperText="Separate terms with commas"
+          width={280}
+        />
+      </FilterPopoverButton>
+    ),
+    role: (
+      <FilterPopoverButton label="Role" activeCount={selectedRoles.size} panelWidth={180}>
+        <FilterOptionPanel
+          options={ROLES.map((role) => ({ value: role, label: role }))}
+          selectedValues={ROLES.filter((role) => selectedRoles.has(role))}
+          onChange={(values) => {
+            setSelectedRoles(new Set(values as Role[]))
+            setCurrentPage(0)
+          }}
+        />
+      </FilterPopoverButton>
+    ),
+    // The program/group popovers hide entirely when there are no options —
+    // preserve that by omitting the entry instead of rendering an empty one.
+    ...(programs.length > 0
+      ? {
+          program: (
+            <FilterPopoverButton
+              label="Program"
+              activeCount={selectedProgramOptions.length}
+              panelWidth={280}
+            >
+              <FilterOptionPanel
+                options={programs.map((program) => ({
+                  value: String(program.id),
+                  label: program.name,
+                }))}
+                selectedValues={selectedProgramOptions.map((program) => String(program.id))}
+                onChange={(values) => {
+                  setSelectedPrograms(new Set(values.map((value) => Number(value))))
+                  setCurrentPage(0)
+                }}
+              />
+            </FilterPopoverButton>
+          ),
+        }
+      : {}),
+    ...(groupFilterOptions.length > 0
+      ? {
+          group: (
+            <FilterPopoverButton
+              label="Group"
+              activeCount={selectedGroupOptions.length}
+              panelWidth={280}
+            >
+              <FilterOptionPanel
+                options={groupFilterOptions.map((group) => ({
+                  value: String(group.id),
+                  label: group.name,
+                }))}
+                selectedValues={selectedGroupOptions.map((group) => String(group.id))}
+                onChange={(values) => {
+                  setSelectedGroups(new Set(values.map((value) => Number(value))))
+                  setCurrentPage(0)
+                }}
+              />
+            </FilterPopoverButton>
+          ),
+        }
+      : {}),
+  }
+
   return (
     <Box>
       <Box
@@ -841,7 +1006,7 @@ export default function PeoplePage({
       >
         <Typography variant="h5">People</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          {selected.size > 0 && (
+          {!readOnly && selected.size > 0 && (
             <>
               <Button
                 variant="contained"
@@ -885,9 +1050,11 @@ export default function PeoplePage({
               </Button>
             </>
           )}
-          <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpenAdd}>
-            Add Person
-          </Button>
+          {!readOnly && (
+            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpenAdd}>
+              Add Person
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -956,94 +1123,17 @@ export default function PeoplePage({
           </>
         }
       >
-        {isColumnVisible('name') && (
-          <FilterPopoverButton
-            label="Name"
-            activeCount={getFilterTerms(filters['name'] ?? '').length}
-            panelWidth={260}
-          >
-            <FilterTextPanel
-              value={filters['name'] ?? ''}
-              onChange={(value) => handleFilterChange('name', value)}
-              placeholder="Search name"
-              ariaLabel="Name"
-              helperText="Separate terms with commas"
-              width={260}
-            />
-          </FilterPopoverButton>
+        {orderedVisibleColumns.map(
+          (column) =>
+            columnFilterControls[column] != null && (
+              <Fragment key={column}>{columnFilterControls[column]}</Fragment>
+            ),
         )}
-        {isColumnVisible('email') && (
-          <FilterPopoverButton
-            label="Email"
-            activeCount={getFilterTerms(filters['email'] ?? '').length}
-            panelWidth={280}
-          >
-            <FilterTextPanel
-              value={filters['email'] ?? ''}
-              onChange={(value) => handleFilterChange('email', value)}
-              placeholder="Search email"
-              ariaLabel="Email"
-              helperText="Separate terms with commas"
-              width={280}
-            />
-          </FilterPopoverButton>
+        {!orderedVisibleColumns.some((column) => PEOPLE_FILTERABLE_COLUMNS.has(column)) && (
+          <Typography variant="body2" color="text.secondary">
+            Choose a visible filterable column to add controls here.
+          </Typography>
         )}
-        {isColumnVisible('role') && (
-          <FilterPopoverButton label="Role" activeCount={selectedRoles.size} panelWidth={180}>
-            <FilterOptionPanel
-              options={ROLES.map((role) => ({ value: role, label: role }))}
-              selectedValues={ROLES.filter((role) => selectedRoles.has(role))}
-              onChange={(values) => {
-                setSelectedRoles(new Set(values as Role[]))
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('program') && programs.length > 0 && (
-          <FilterPopoverButton
-            label="Program"
-            activeCount={selectedProgramOptions.length}
-            panelWidth={280}
-          >
-            <FilterOptionPanel
-              options={programs.map((program) => ({
-                value: String(program.id),
-                label: program.name,
-              }))}
-              selectedValues={selectedProgramOptions.map((program) => String(program.id))}
-              onChange={(values) => {
-                setSelectedPrograms(new Set(values.map((value) => Number(value))))
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {isColumnVisible('group') && groups.length > 0 && (
-          <FilterPopoverButton
-            label="Group"
-            activeCount={selectedGroupOptions.length}
-            panelWidth={280}
-          >
-            <FilterOptionPanel
-              options={groups.map((group) => ({ value: String(group.id), label: group.name }))}
-              selectedValues={selectedGroupOptions.map((group) => String(group.id))}
-              onChange={(values) => {
-                setSelectedGroups(new Set(values.map((value) => Number(value))))
-                setCurrentPage(0)
-              }}
-            />
-          </FilterPopoverButton>
-        )}
-        {!isColumnVisible('name') &&
-          !isColumnVisible('email') &&
-          !isColumnVisible('role') &&
-          !isColumnVisible('program') &&
-          !isColumnVisible('group') && (
-            <Typography variant="body2" color="text.secondary">
-              Choose a visible filterable column to add controls here.
-            </Typography>
-          )}
       </FilterBar>
 
       {users.length === 0 ? (
@@ -1057,135 +1147,31 @@ export default function PeoplePage({
               sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
             >
               <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    indeterminate={selectedInView > 0 && selectedInView < pageUsers.length}
-                    checked={pageUsers.length > 0 && selectedInView === pageUsers.length}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                  />
-                </TableCell>
-                {isColumnVisible('id') && (
-                  <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'id'}
-                      direction={sortColumn === 'id' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('id')}
-                    >
-                      ID
-                    </TableSortLabel>
+                {!readOnly && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={selectedInView > 0 && selectedInView < pageUsers.length}
+                      checked={pageUsers.length > 0 && selectedInView === pageUsers.length}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                    />
                   </TableCell>
                 )}
-                {isColumnVisible('name') && (
-                  <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'name'}
-                      direction={sortColumn === 'name' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('name')}
-                    >
-                      Name
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('email') && (
-                  <TableCell sortDirection={sortColumn === 'email' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'email'}
-                      direction={sortColumn === 'email' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('email')}
-                    >
-                      Email
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('role') && (
-                  <TableCell sortDirection={sortColumn === 'role' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'role'}
-                      direction={sortColumn === 'role' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('role')}
-                    >
-                      Role
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('active') && (
-                  <TableCell sortDirection={sortColumn === 'active' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'active'}
-                      direction={sortColumn === 'active' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('active')}
-                    >
-                      Status
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('program') && (
-                  <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'program'}
-                      direction={sortColumn === 'program' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('program')}
-                    >
-                      Program
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('group') && (
-                  <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'group'}
-                      direction={sortColumn === 'group' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('group')}
-                    >
-                      Groups
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('last_access') && (
-                  <TableCell sortDirection={sortColumn === 'last_access' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'last_access'}
-                      direction={sortColumn === 'last_access' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('last_access')}
-                    >
-                      Last Accessed
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                {isColumnVisible('created_at') && (
-                  <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
-                    <TableSortLabel
-                      active={sortColumn === 'created_at'}
-                      direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
-                      onClick={() => handleSort('created_at')}
-                    >
-                      Created
-                    </TableSortLabel>
-                  </TableCell>
-                )}
-                <TableCell align="right">Actions</TableCell>
+                {orderedVisibleColumns.map((column) => (
+                  <Fragment key={column}>{columnHeaderCells[column]}</Fragment>
+                ))}
+                {!readOnly && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
-              {pageUsers.map((user) => (
-                <TableRow
-                  key={user.id}
-                  hover
-                  selected={selected.has(user.id)}
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => handleRowClick(user)}
-                >
-                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(user.id)}
-                      onChange={(e) => handleSelectOne(user.id, e.target.checked)}
-                    />
-                  </TableCell>
-                  {isColumnVisible('id') && <TableCell>{user.id}</TableCell>}
-                  {isColumnVisible('name') && <TableCell>{user.name}</TableCell>}
-                  {isColumnVisible('email') && <TableCell>{user.email}</TableCell>}
-                  {isColumnVisible('role') && <TableCell>{user.role}</TableCell>}
-                  {isColumnVisible('active') && (
+              {pageUsers.map((user) => {
+                // Per-column cells keyed like `columnHeaderCells` (#1577);
+                // rendered below in the user's persisted column order.
+                const bodyCells: Record<PeopleTableColumn, ReactNode> = {
+                  id: <TableCell>{user.id}</TableCell>,
+                  name: <TableCell>{user.name}</TableCell>,
+                  email: <TableCell>{user.email}</TableCell>,
+                  role: <TableCell>{user.role}</TableCell>,
+                  active: (
                     <TableCell>
                       <Chip
                         label={user.active ? 'Active' : 'Inactive'}
@@ -1193,8 +1179,8 @@ export default function PeoplePage({
                         size="small"
                       />
                     </TableCell>
-                  )}
-                  {isColumnVisible('program') && (
+                  ),
+                  program: (
                     <TableCell>
                       {user.program_names.length > 0 ? (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -1212,8 +1198,8 @@ export default function PeoplePage({
                         '—'
                       )}
                     </TableCell>
-                  )}
-                  {isColumnVisible('group') && (
+                  ),
+                  group: (
                     <TableCell>
                       {user.group_names.length > 0 ? (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -1231,32 +1217,59 @@ export default function PeoplePage({
                         '—'
                       )}
                     </TableCell>
-                  )}
-                  {isColumnVisible('last_access') && (
+                  ),
+                  last_access: (
                     <TableCell>
                       {user.last_access ? new Date(user.last_access).toLocaleDateString() : '—'}
                     </TableCell>
-                  )}
-                  {isColumnVisible('created_at') && (
+                  ),
+                  created_at: (
                     <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
-                  )}
-                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={() => {
-                        setDeleteConfirmUser(user)
-                        setDeleteConfirmOpen(true)
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+                  ),
+                }
+                return (
+                  <TableRow
+                    key={user.id}
+                    hover
+                    selected={!readOnly && selected.has(user.id)}
+                    sx={readOnly ? undefined : { cursor: 'pointer' }}
+                    onClick={() => handleRowClick(user)}
+                  >
+                    {!readOnly && (
+                      <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selected.has(user.id)}
+                          onChange={(e) => handleSelectOne(user.id, e.target.checked)}
+                        />
+                      </TableCell>
+                    )}
+                    {orderedVisibleColumns.map((column) => (
+                      <Fragment key={column}>{bodyCells[column]}</Fragment>
+                    ))}
+                    {!readOnly && (
+                      <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="small"
+                          color="error"
+                          onClick={() => {
+                            setDeleteConfirmUser(user)
+                            setDeleteConfirmOpen(true)
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                )
+              })}
               {pageUsers.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={visibleColumnCount + 2} align="center" sx={{ py: 6 }}>
+                  <TableCell
+                    colSpan={visibleColumnCount + (readOnly ? 0 : 2)}
+                    align="center"
+                    sx={{ py: 6 }}
+                  >
                     <Typography variant="body2" color="text.secondary">
                       No people match the selected filters.
                     </Typography>
@@ -1283,10 +1296,11 @@ export default function PeoplePage({
       <ColumnVisibilityDialog
         open={columnDialogOpen}
         title="Choose people table columns"
-        columns={PEOPLE_COLUMN_OPTIONS}
+        columns={orderedColumnOptions}
         visibleColumns={visibleColumns}
         onClose={() => setColumnDialogOpen(false)}
         onToggleColumn={handleColumnVisibilityToggle}
+        onReorderColumns={setColumnOrder}
       />
 
       {/* Modals */}

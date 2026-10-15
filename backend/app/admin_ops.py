@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TypeVar
+from typing import TextIO, TypeVar
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
@@ -45,12 +45,22 @@ from .models import (
     Announcement,
     Category,
     ChangelogEntry,
+    Collection,
+    CollectionImage,
     Group,
     Image,
     Program,
     SourceImage,
     User,
 )
+from .rebuild_fixture import (
+    FIXTURE_ARCHIVE_LOCK_FILENAME as REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME,
+    FIXTURE_DIRNAME as REBUILD_FIXTURE_DIRNAME,
+    release_rebuild_fixture_archive_lock,
+    select_rebuild_fixture_rows,
+    try_acquire_rebuild_fixture_archive_lock,
+)
+from .upload_staging import UPLOAD_SPOOL_DIR_NAME
 from .rebuild_locks import (
     acquire_rebuild_creation_lock,
     find_active_rebuild,
@@ -93,11 +103,21 @@ FILES_IMPORT_CHECKSUM_MISMATCH_MESSAGE = (
 )
 
 
-def compute_archive_sha256(path: str | Path) -> str:
-    """Return the hex SHA-256 digest of *path*, read in chunks."""
+def compute_archive_sha256(
+    path: str | Path,
+    cancel_event: threading.Event | None = None,
+) -> str:
+    """Return the hex SHA-256 digest of *path*, read in chunks.
+
+    When *cancel_event* is provided it is checked between reads so a
+    cancelled caller can stop the pass early instead of reading the rest
+    of a multi-GB archive; :class:`TaskCancelled` is raised once set.
+    """
     digest = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
+            if cancel_event is not None and cancel_event.is_set():
+                raise TaskCancelled("Task cancelled by admin")
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -534,6 +554,28 @@ def _swap_imported_entries(
                     exc_info=True,
                 )
 
+    # The export omits the transient upload spool dir, so the restored
+    # source_images tree has none — recreate it or a running API pod whose
+    # TMPDIR still points there fails tempfile rollover (#1365). Transient
+    # filesystem errors get a bounded retry; a persistent failure is logged
+    # loudly but does not fail the import — the restore itself succeeded,
+    # and UploadBodyLimitMiddleware recreates the dir on the next upload
+    # request either way.
+    spool_dir = os.path.join(source_images_dir, UPLOAD_SPOOL_DIR_NAME)
+    for attempt in range(3):
+        try:
+            os.makedirs(spool_dir, exist_ok=True)
+            break
+        except OSError:
+            if attempt == 2:
+                logger.error(
+                    "Failed to recreate upload spool directory after import",
+                    extra={"event": "admin_task.files_import_spool_dir_failed"},
+                    exc_info=True,
+                )
+            else:
+                time.sleep(1)
+
     tiles_path = Path(tiles_dir)
     source_path = Path(source_images_dir)
     tiles_count = 0
@@ -556,7 +598,9 @@ def _swap_imported_entries(
 _STALE_TASK_THRESHOLD_SECONDS = int(
     os.environ.get("ADMIN_TASK_STALE_SECONDS", "900")
 )
-_REBUILD_HEARTBEAT_INTERVAL_SECONDS = 2
+_TASK_HEARTBEAT_INTERVAL_SECONDS = 2
+
+_T = TypeVar("_T")
 
 
 # ── Helpers ────────────────────────────────────────────────
@@ -717,11 +761,19 @@ async def _heartbeat_task(session: AsyncSession, task: AdminTask) -> None:
     await session.commit()
 
 
-async def _poll_rebuild_task(task_id: int) -> None:
-    """Heartbeat a serial rebuild and return when cancellation is requested."""
+async def _poll_task_heartbeat(task_id: int) -> None:
+    """Heartbeat an active task and return when cancellation is requested.
+
+    Used by ``_run_with_task_heartbeat`` for runners that hand a single
+    long checkpoint off to a thread (a per-image tile rebuild, an import
+    archive checksum): the poll keeps ``updated_at`` fresh on its own
+    session so the periodic reconciliation sweep does not mark the task
+    ``failed`` while real work is still in flight, and returns once the
+    task leaves the active statuses so the wrapper can abort.
+    """
     async with get_async_session()() as session:
         while True:
-            await asyncio.sleep(_REBUILD_HEARTBEAT_INTERVAL_SECONDS)
+            await asyncio.sleep(_TASK_HEARTBEAT_INTERVAL_SECONDS)
             result = await session.execute(
                 update(AdminTask)
                 .where(
@@ -737,13 +789,19 @@ async def _poll_rebuild_task(task_id: int) -> None:
                 return
 
 
-async def _run_rebuild_with_heartbeat(
+async def _run_with_task_heartbeat(
     task_id: int,
-    operation: Awaitable[None],
-) -> None:
-    """Run one serial image rebuild with independent status heartbeats."""
+    operation: Awaitable[_T],
+) -> _T:
+    """Run *operation* while heartbeating the task's ``updated_at``.
+
+    Returns the operation's result. When the task's status changes to a
+    cancellation state while *operation* is in flight, the operation is
+    cancelled (best effort: work already inside a thread may still run to
+    completion) and :class:`TaskCancelled` is raised.
+    """
     operation_task = asyncio.ensure_future(operation)
-    poll_task = asyncio.create_task(_poll_rebuild_task(task_id))
+    poll_task = asyncio.create_task(_poll_task_heartbeat(task_id))
     try:
         done, _pending = await asyncio.wait(
             [operation_task, poll_task],
@@ -751,21 +809,19 @@ async def _run_rebuild_with_heartbeat(
         )
         if operation_task in done:
             poll_task.cancel()
-            operation_task.result()
-            return
+            return operation_task.result()
 
-        if poll_task in done:
-            poll_error = (
-                poll_task.exception()
-                if not poll_task.cancelled()
-                else None
-            )
-            if not operation_task.done():
-                operation_task.cancel()
-            await asyncio.gather(operation_task, return_exceptions=True)
-            if poll_error is not None:
-                raise poll_error
-            raise TaskCancelled("Task cancelled by admin")
+        poll_error = (
+            poll_task.exception()
+            if not poll_task.cancelled()
+            else None
+        )
+        if not operation_task.done():
+            operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        if poll_error is not None:
+            raise poll_error
+        raise TaskCancelled("Task cancelled by admin")
     finally:
         if not operation_task.done():
             operation_task.cancel()
@@ -1010,6 +1066,26 @@ async def delete_files_import_archive(
 # ── Database Export ────────────────────────────────────────
 
 
+async def _acquire_fixture_archive_lock_for_task(
+    session: AsyncSession,
+    task: AdminTask,
+    source_images_dir: str | Path,
+) -> TextIO:
+    while True:
+        handle = await try_acquire_rebuild_fixture_archive_lock(
+            source_images_dir
+        )
+        if handle is not None:
+            return handle
+        await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+        await session.refresh(task, attribute_names=["status"])
+        if task.status in ("cancelling", "cancelled"):
+            raise TaskCancelled("Task cancelled by admin")
+        if task.status != "running":
+            raise RuntimeError("Task stopped while waiting for archive lock")
+        await _heartbeat_task(session, task)
+
+
 async def run_db_export(task_id: int) -> None:
     """Export all database tables to a JSON file in the background."""
     async with get_async_session()() as session:
@@ -1019,12 +1095,18 @@ async def run_db_export(task_id: int) -> None:
             return
 
         filepath: str | None = None
+        fixture_lock: TextIO | None = None
         try:
             await _update_task(
                 session, task,
                 status="running", progress=0,
                 log_line="Starting database export…",
                 check_cancelled=True,
+            )
+            fixture_lock = await _acquire_fixture_archive_lock_for_task(
+                session,
+                task,
+                settings.source_images_dir,
             )
 
             # Programs
@@ -1045,7 +1127,7 @@ async def run_db_export(task_id: int) -> None:
             # Images
             await _update_task(session, task, log_line="Exporting images…", progress=40, check_cancelled=True)
             result = await session.execute(select(Image).order_by(Image.id))
-            images = result.scalars().all()
+            all_images = list(result.scalars().all())
 
             # Users
             await _update_task(session, task, log_line="Exporting users…", progress=55, check_cancelled=True)
@@ -1055,7 +1137,32 @@ async def run_db_export(task_id: int) -> None:
             # Source images
             await _update_task(session, task, log_line="Exporting source images…", progress=65, check_cancelled=True)
             result = await session.execute(select(SourceImage).order_by(SourceImage.id))
-            source_images = result.scalars().all()
+            all_source_images = list(result.scalars().all())
+            fixture_images, fixture_source_images = select_rebuild_fixture_rows(
+                all_images,
+                all_source_images,
+            )
+            fixture_image_ids = {image.id for image in fixture_images}
+            images = [
+                image
+                for image in all_images
+                if image.id not in fixture_image_ids
+            ]
+            fixture_source_ids = {
+                source.id for source in fixture_source_images
+            }
+            source_images = [
+                source
+                for source in all_source_images
+                if source.id not in fixture_source_ids
+            ]
+
+            # Collections (image links to rebuild-fixture images are dropped
+            # because those images are not part of the export)
+            await _update_task(session, task, log_line="Exporting collections…", progress=68, check_cancelled=True)
+            result = await session.execute(select(Collection).order_by(Collection.id))
+            collections = result.scalars().all()
+            exported_image_ids = {image.id for image in images}
 
             # Changelog entries
             await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
@@ -1176,6 +1283,43 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for s in source_images
                 ],
+                "collections": [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "description": c.description,
+                        "type": c.type,
+                        "visibility": c.visibility,
+                        "hidden": c.hidden,
+                        # user_id is creator-only audit (#1531); the owning
+                        # users are the owner_ids list.
+                        "user_id": c.user_id,
+                        "owner_ids": [o.id for o in c.owners],
+                        "owner_program_id": c.owner_program_id,
+                        "category_id": c.category_id,
+                        "sort_order": c.sort_order,
+                        "viewport_state": c.viewport_state,
+                        "version": c.version,
+                        "image_ids": [
+                            link.image_id
+                            for link in c.image_links
+                            if link.image_id in exported_image_ids
+                        ],
+                        # Only meaningful while the pinned member is exported
+                        # too — otherwise the tile falls back to first member.
+                        "cover_image_id": (
+                            c.cover_image_id
+                            if c.cover_image_id in exported_image_ids
+                            else None
+                        ),
+                        "cover_blank": c.cover_blank,
+                        "program_ids": [p.id for p in c.programs],
+                        "group_ids": [g.id for g in c.groups],
+                        "created_at": dt(c.created_at),
+                        "updated_at": dt(c.updated_at),
+                    }
+                    for c in collections
+                ],
                 "changelog_entries": [
                     {
                         "id": entry.id,
@@ -1211,6 +1355,7 @@ async def run_db_export(task_id: int) -> None:
                 f"{len(dump['images'])} images, "
                 f"{len(dump['users'])} users, "
                 f"{len(dump['source_images'])} source images, "
+                f"{len(dump['collections'])} collections, "
                 f"{len(dump['changelog_entries'])} changelog entries."
             )
             await _update_task(
@@ -1260,6 +1405,9 @@ async def run_db_export(task_id: int) -> None:
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
+        finally:
+            if fixture_lock is not None:
+                await release_rebuild_fixture_archive_lock(fixture_lock)
 
 
 def _write_file(path: str, content: str) -> None:
@@ -1332,6 +1480,11 @@ async def run_db_import(task_id: int) -> None:
                 )
                 await status_session.commit()
 
+                await data_session.execute(text("DELETE FROM collection_images"))
+                await data_session.execute(text("DELETE FROM collection_programs"))
+                await data_session.execute(text("DELETE FROM collection_groups"))
+                await data_session.execute(text("DELETE FROM collection_owners"))
+                await data_session.execute(text("DELETE FROM collections"))
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM category_groups"))
@@ -1557,6 +1710,65 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(src)
                 await data_session.flush()
 
+                # Import collections (after users, programs, groups and images:
+                # owner, scope and image links all reference those rows)
+                await _update_task(status_session, task, log_line="Importing collections…", progress=68)
+                for c in dump.get("collections", []):
+                    collection = Collection(
+                        id=c["id"],
+                        name=c["name"],
+                        description=c.get("description"),
+                        type=c["type"],
+                        visibility=c.get("visibility", "private"),
+                        # Older dumps predate curatorial hide (#1559).
+                        hidden=c.get("hidden", False),
+                        user_id=c.get("user_id"),
+                        owner_program_id=c.get("owner_program_id"),
+                        category_id=c.get("category_id"),
+                        sort_order=c.get("sort_order", 0),
+                        viewport_state=c.get("viewport_state") or {},
+                        version=c.get("version", 1),
+                        created_at=_parse_dt(c.get("created_at")),
+                        updated_at=_parse_dt(c.get("updated_at")),
+                    )
+                    prog_ids = c.get("program_ids", [])
+                    if prog_ids:
+                        progs = (await data_session.execute(
+                            select(Program).where(Program.id.in_(prog_ids))
+                        )).scalars().all()
+                        collection.programs = list(progs)
+                    group_ids = c.get("group_ids", [])
+                    if group_ids:
+                        grps = (await data_session.execute(
+                            select(Group).where(Group.id.in_(group_ids))
+                        )).scalars().all()
+                        collection.groups = list(grps)
+                    collection.image_links = [
+                        CollectionImage(image_id=image_id, sort_order=position)
+                        for position, image_id in enumerate(c.get("image_ids", []))
+                    ]
+                    # Pinned cover survives only while it names an imported
+                    # member (older dumps predate the field). The explicit
+                    # "no cover" flag survives independently of members.
+                    if c.get("cover_image_id") in (c.get("image_ids") or []):
+                        collection.cover_image_id = c["cover_image_id"]
+                    collection.cover_blank = bool(c.get("cover_blank"))
+                    if collection.cover_blank:
+                        collection.cover_image_id = None
+                    # Owner rows (#1531): new-format dumps carry owner_ids;
+                    # older dumps only have the single-owner user_id, which
+                    # backfills one owner row (it also remains the creator).
+                    owner_ids = c.get("owner_ids")
+                    if owner_ids is None:
+                        owner_ids = [c["user_id"]] if c.get("user_id") is not None else []
+                    if owner_ids:
+                        owners = (await data_session.execute(
+                            select(User).where(User.id.in_(owner_ids))
+                        )).scalars().all()
+                        collection.owners = list(owners)
+                    data_session.add(collection)
+                await data_session.flush()
+
                 # Import changelog entries
                 await _update_task(status_session, task, log_line="Importing changelog entries…", progress=70)
                 for entry in dump.get("changelog_entries", []):
@@ -1589,7 +1801,7 @@ async def run_db_import(task_id: int) -> None:
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images", "collections"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -1612,6 +1824,7 @@ async def run_db_import(task_id: int) -> None:
                     f"{len(dump['images'])} images, "
                     f"{len(dump['users'])} users, "
                     f"{len(dump.get('source_images', []))} source images, "
+                    f"{len(dump.get('collections', []))} collections, "
                     f"{len(dump.get('changelog_entries', []))} changelog entries."
                 )
                 # Do NOT check_cancelled here — data_session.commit() already
@@ -1794,7 +2007,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
                             ),
                         )
                     else:
-                        await _run_rebuild_with_heartbeat(
+                        await _run_with_task_heartbeat(
                             task_id,
                             processing.rebuild_source_image_tiles(session, src),
                         )
@@ -2108,9 +2321,11 @@ def _iter_export_entries(
 ) -> Iterator[tuple[str, str, int, bool]]:
     """Yield archive entries for the filesystem export.
 
-    The traversal excludes the generated tile tree under ``tiles/`` and
-    the ``admin_tasks/`` directory so the UI export stays source-only and
-    does not duplicate prior export artefacts.
+    The traversal excludes the generated tile tree under ``tiles/``, the
+    ``admin_tasks/`` directory, and the upload spool dir under
+    ``source_images/`` so the UI export stays source-only, does not
+    duplicate prior export artefacts, and never captures a live request's
+    transient tempfile (#1365).
 
     Each yielded tuple is ``(arcname, absolute_path, size_bytes, is_dir)``.
     ``size_bytes`` is ``0`` for directory entries.  If *cancel_event* is set
@@ -2119,6 +2334,13 @@ def _iter_export_entries(
     tasks_basename = os.path.basename(_TASKS_DIR)
     staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
     tiles_basename = os.path.basename(os.path.normpath(settings.tiles_dir))
+    # The upload spool is nested under source_images_dir — resolve its
+    # path relative to the walk root so it is pruned wherever it sits.
+    spool_rel = os.path.relpath(
+        os.path.join(settings.source_images_dir, UPLOAD_SPOOL_DIR_NAME),
+        data_dir,
+    )
+    spool_parent_rel, spool_name = os.path.split(spool_rel)
 
     def _check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():
@@ -2137,12 +2359,18 @@ def _iter_export_entries(
         for excluded in (tasks_basename, staging_basename, tiles_basename):
             if excluded in dirnames:
                 dirnames.remove(excluded)
+        # The upload spool dir lives under source_images/ — same prune,
+        # one level deeper (#1365).
+        if rel == spool_parent_rel and spool_name in dirnames:
+            dirnames.remove(spool_name)
 
         arcname = os.path.join("data", rel) if rel != "." else "data"
         yield arcname, dirpath, 0, True
 
         for fname in filenames:
             _check_cancel()
+            if fname == REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME:
+                continue
             fpath = os.path.join(dirpath, fname)
             arc_fpath = os.path.join(arcname, fname)
             try:
@@ -2293,8 +2521,6 @@ def _create_tar_file(
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
 
-_T = TypeVar("_T")
-
 
 async def _run_with_cancel_poll(
     worker_task: "asyncio.Task[_T]",
@@ -2384,6 +2610,7 @@ async def run_files_export(task_id: int) -> None:
 
         filepath: str | None = None
         tmp_name: str | None = None
+        fixture_lock: TextIO | None = None
         try:
             await _update_task(
                 session, task,
@@ -2391,11 +2618,21 @@ async def run_files_export(task_id: int) -> None:
                 log_line="Starting filesystem export…",
                 check_cancelled=True,
             )
-
             data_dir = Path(settings.tiles_dir).parent  # /data
-
             if not data_dir.exists() or not any(data_dir.iterdir()):
                 raise ValueError("Data directory is empty or missing — nothing to export")
+
+            source_images_dir = data_dir / "source_images"
+            fixture_lock = await _acquire_fixture_archive_lock_for_task(
+                session,
+                task,
+                source_images_dir,
+            )
+            if (source_images_dir / REBUILD_FIXTURE_DIRNAME).is_dir():
+                raise RuntimeError(
+                    "Filesystem export is blocked while the tile-rebuild "
+                    "scale fixture is active"
+                )
 
             await _update_task(
                 session, task, progress=10,
@@ -2640,6 +2877,9 @@ async def run_files_export(task_id: int) -> None:
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
+        finally:
+            if fixture_lock is not None:
+                await release_rebuild_fixture_archive_lock(fixture_lock)
 
 
 # ── Filesystem Import ──────────────────────────────────────
@@ -2775,8 +3015,25 @@ async def run_files_import(
                 log_line="Computing archive SHA-256 for integrity verification…",
                 check_cancelled=True,
             )
-            checksum = await asyncio.to_thread(
-                compute_archive_sha256, input_path
+            # Hashing a very large archive can exceed
+            # ADMIN_TASK_STALE_SECONDS on slow storage, so the pass runs
+            # under the shared heartbeat poll; cancellation sets the
+            # event the hash loop checks between chunk reads.
+            cancel_event = threading.Event()
+            checksum = await _run_with_cancel_poll(
+                asyncio.ensure_future(
+                    asyncio.to_thread(
+                        compute_archive_sha256,
+                        input_path,
+                        cancel_event=cancel_event,
+                    )
+                ),
+                asyncio.ensure_future(_poll_task_heartbeat(task_id)),
+                cancel_event=cancel_event,
+                grace_timeout_log=(
+                    "Archive checksum did not stop within the "
+                    "shutdown grace period"
+                ),
             )
             if task.input_checksum:
                 if checksum != task.input_checksum:
@@ -2871,6 +3128,7 @@ async def run_files_import(
                     if task.status in ("cancelling", "cancelled"):
                         cancel_event.set()
                         return
+                    await _heartbeat_task(session, task)
 
             with tempfile.TemporaryDirectory(
                 prefix="hriv-import-",

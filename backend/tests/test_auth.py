@@ -51,7 +51,7 @@ async def test_get_user_from_token_returns_user(
     db = AsyncMock()
     db.get.return_value = user
 
-    result = await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+    result = await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert result is user
     db.get.assert_awaited_once()
@@ -79,7 +79,7 @@ async def test_get_user_from_token_rejects_scoped_tokens(
     db.get.return_value = SimpleNamespace(id=7, active=True)
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -100,7 +100,7 @@ async def test_get_user_from_token_rejects_missing_user(
     db.get.return_value = None
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -122,7 +122,7 @@ async def test_get_user_from_token_rejects_stale_instance_epoch(
     db.get.return_value = SimpleNamespace(id=1, active=True)
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -143,7 +143,7 @@ async def test_get_user_from_token_rejects_inactive_user(
     db.get.return_value = SimpleNamespace(id=1, active=False)
 
     with pytest.raises(HTTPException) as exc:
-        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+        await auth.get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
 
@@ -262,3 +262,26 @@ async def test_require_role_rejects_unauthorized_user() -> None:
 
     assert exc.value.status_code == 403
     assert "not permitted" in exc.value.detail
+
+
+async def test_require_role_rejects_staff_for_editor_endpoints() -> None:
+    """Staff are view-only: admin/instructor guards must reject them."""
+    editor_guard = auth.require_role("admin", "instructor")
+    admin_guard = auth.require_role("admin")
+    staff = SimpleNamespace(role="staff")
+
+    for guard in (editor_guard, admin_guard):
+        with pytest.raises(HTTPException) as exc:
+            await guard(staff)  # type: ignore[arg-type]
+        assert exc.value.status_code == 403
+        assert "not permitted" in exc.value.detail
+
+
+async def test_require_role_allows_staff_for_people_listing() -> None:
+    """The users-listing dependency admits staff (read-only People view)."""
+    guard = auth.require_role("admin", "instructor", "staff")
+    staff = SimpleNamespace(role="staff")
+
+    result = await guard(staff)  # type: ignore[arg-type]
+
+    assert result is staff

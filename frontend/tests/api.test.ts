@@ -49,12 +49,27 @@ import {
   fetchUncategorizedImages,
   updateImage,
   deleteImage,
+  fetchImageSourceInfo,
   bulkUpdateImages,
   bulkDeleteImages,
   getTileOrder,
   putTileOrder,
   tileOrderConflictCurrent,
   type TileOrderResponse,
+  fetchCollections,
+  fetchCollectionsPaged,
+  fetchCollectionOwners,
+  fetchCollection,
+  fetchImageCollections,
+  createCollection,
+  updateCollection,
+  deleteCollection,
+  replaceCollectionImages,
+  saveCollectionViewport,
+  moveCollection,
+  replaceCollectionOwners,
+  transferCollection,
+  collectionConflictCurrent,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -108,6 +123,7 @@ import {
   fetchBulkImportJob,
   reportIssue,
   fetchVersions,
+  fetchFeatures,
   fetchFrontendVersion,
   downloadAdminTaskResult,
   startDbExport,
@@ -140,6 +156,7 @@ import {
 } from '../src/api'
 
 import { setClientSyntheticMode } from '../src/syntheticMode'
+import { makeApiCollection, makeApiCollectionSummary } from './helpers/fixtures'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -355,6 +372,12 @@ describe('userMessage', () => {
   it('returns a clear message for 413 detail', () => {
     const err = new ApiError(413, '<!DOCTYPE html><html>error page</html>')
     expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
+  })
+
+  it('returns the backend detail for 413 zip-limit rejections', () => {
+    const detail = "Zip archive 'batch.zip' contains more than 2000 image files"
+    const err = new ApiError(413, detail)
+    expect(userMessage(err, 'Too large')).toBe(detail)
   })
 
   it('returns a clear message for 413 without usable detail', () => {
@@ -762,6 +785,25 @@ describe('Image API', () => {
     expect(result).toEqual(IMAGE_FIXTURE)
   })
 
+  it('fetchImageSourceInfo maps the source-info response to camel case', async () => {
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({
+        original_filename: 'scan.tif',
+        file_type: 'TIF',
+        uploaded_by_name: 'Image Uploader',
+      }),
+    )
+
+    const result = await fetchImageSourceInfo(1)
+
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/images/1/source-info')
+    expect(result).toEqual({
+      originalFilename: 'scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Image Uploader',
+    })
+  })
+
   it('fetchImages without category sends GET to /api/images/', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse([IMAGE_FIXTURE]))
     await fetchImages()
@@ -935,6 +977,329 @@ describe('Tile order API', () => {
     expect(tileOrderConflictCurrent(new ApiError(409, 'stale revision', {}))).toBeNull()
     expect(tileOrderConflictCurrent(new Error('boom'))).toBeNull()
     expect(tileOrderConflictCurrent(undefined)).toBeNull()
+  })
+})
+
+// ── Collections (#1414) ──────────────────────────────────────────────────
+
+describe('Collections API', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('fetchCollections with no filters hits /api/collections without a query string', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([makeApiCollectionSummary()]))
+    const result = await fetchCollections()
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections')
+    expect(init.method ?? 'GET').toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer jwt')
+    expect(result).toHaveLength(1)
+  })
+
+  it('fetchCollections keeps the unfiled-queue filter as a query param', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollections({
+      type: 'sequence',
+      mine: true,
+      owner_user_id: 7,
+      owner_program_id: 3,
+      limit: 5,
+      orphaned: true,
+      uncategorized: true,
+    })
+    const [url] = mockFetch.mock.calls[0]
+    const qs = new URL(url, 'http://x').searchParams
+    expect(qs.get('type')).toBe('sequence')
+    expect(qs.get('mine')).toBe('true')
+    expect(qs.get('owner_user_id')).toBe('7')
+    expect(qs.get('owner_program_id')).toBe('3')
+    expect(qs.get('limit')).toBe('5')
+    expect(qs.get('orphaned')).toBe('true')
+    expect(qs.get('uncategorized')).toBe('true')
+  })
+
+  it('fetchCollections omits falsy boolean filters (never sends mine=false / orphaned=false)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollections({ mine: false, orphaned: false })
+    const [url] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections')
+  })
+
+  it('fetchCollections serializes the search/sort/page params with repeated list values (#1631)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollections({
+      q: 'skull',
+      visibility: ['public', 'private'],
+      category_ids: [10, 12],
+      sort: 'name',
+      direction: 'asc',
+      page: 2,
+      page_size: 25,
+    })
+    const [url] = mockFetch.mock.calls[0]
+    const qs = new URL(url, 'http://x').searchParams
+    expect(qs.get('q')).toBe('skull')
+    expect(qs.getAll('visibility')).toEqual(['public', 'private'])
+    expect(qs.getAll('category_id')).toEqual(['10', '12'])
+    expect(qs.get('sort')).toBe('name')
+    expect(qs.get('direction')).toBe('asc')
+    expect(qs.get('page')).toBe('2')
+    expect(qs.get('page_size')).toBe('25')
+  })
+
+  it('fetchCollectionsPaged returns the X-Total-Count header total (#1631)', async () => {
+    const rows = [makeApiCollectionSummary({ id: 1 })]
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: (k: string) => (k === 'X-Total-Count' ? '42' : null) },
+        json: () => Promise.resolve(rows),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+    const result = await fetchCollectionsPaged({ page: 1, page_size: 5 })
+    expect(result.items).toEqual(rows)
+    expect(result.total).toBe(42)
+    expect(result.notModified).toBe(false)
+    expect(result.etag).toBeNull()
+    const qs = new URL(mockFetch.mock.calls[0][0] as string, 'http://x').searchParams
+    expect(qs.get('page')).toBe('1')
+    expect(qs.get('page_size')).toBe('5')
+  })
+
+  it('fetchCollectionsPaged defaults to no-store and returns the ETag (#1619)', async () => {
+    const rows = [makeApiCollectionSummary({ id: 1 })]
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          get: (k: string) =>
+            k === 'X-Total-Count'
+              ? '1'
+              : k.toLowerCase() === 'etag'
+                ? 'W/"collections-7-abc"'
+                : null,
+        },
+        json: () => Promise.resolve(rows),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+    const result = await fetchCollectionsPaged()
+    expect(result.etag).toBe('W/"collections-7-abc"')
+    expect(result.notModified).toBe(false)
+    const init = mockFetch.mock.calls[0][1] as RequestInit
+    expect(init.cache).toBe('no-store')
+    expect((init.headers as Record<string, string>)['if-none-match']).toBeUndefined()
+  })
+
+  it('fetchCollectionsPaged sends If-None-Match and maps a 304 (#1619)', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 304,
+        statusText: 'Not Modified',
+        headers: {
+          get: (k: string) => (k.toLowerCase() === 'etag' ? 'W/"collections-8-def"' : null),
+        },
+        json: () => Promise.reject(new Error('no body')),
+        text: () => Promise.resolve(''),
+      }),
+    )
+    const result = await fetchCollectionsPaged({}, undefined, {
+      ifNoneMatch: 'W/"collections-8-def"',
+    })
+    expect(result).toEqual({
+      items: [],
+      total: 0,
+      etag: 'W/"collections-8-def"',
+      notModified: true,
+    })
+    const init = mockFetch.mock.calls[0][1] as RequestInit
+    expect((init.headers as Record<string, string>)['if-none-match']).toBe('W/"collections-8-def"')
+  })
+
+  it('fetchCollectionsPaged falls back to the row count when the header is absent or NaN (#1631)', async () => {
+    const rows = [makeApiCollectionSummary({ id: 1 }), makeApiCollectionSummary({ id: 2 })]
+    mockFetch.mockReturnValueOnce(jsonResponse(rows))
+    expect((await fetchCollectionsPaged()).total).toBe(2)
+
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: (k: string) => (k === 'X-Total-Count' ? 'bogus' : null) },
+        json: () => Promise.resolve(rows),
+        text: () => Promise.resolve(JSON.stringify(rows)),
+      }),
+    )
+    expect((await fetchCollectionsPaged()).total).toBe(2)
+  })
+
+  it('fetchCollectionOwners hits /api/collections/owners with an optional type (#1631)', async () => {
+    const owners = [
+      { user_id: 7, name: 'Zed' },
+      { program_id: 3, name: 'Anatomy' },
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(owners))
+    const result = await fetchCollectionOwners()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/collections/owners')
+    expect(result).toEqual(owners)
+
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCollectionOwners('sequence')
+    const qs = new URL(mockFetch.mock.calls[1][0] as string, 'http://x').searchParams
+    expect(qs.get('type')).toBe('sequence')
+  })
+
+  it('fetchCollection hits /api/collections/{id}', async () => {
+    const fixture = makeApiCollection({ id: 42 })
+    mockFetch.mockReturnValueOnce(jsonResponse(fixture))
+    const result = await fetchCollection(42)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/collections/42')
+    expect(result).toEqual(fixture)
+  })
+
+  it('fetchImageCollections hits /api/images/{id}/collections and returns the array (#1586)', async () => {
+    const rows = [
+      makeApiCollectionSummary({ id: 1, name: 'Alpha' }),
+      makeApiCollectionSummary({ id: 2, name: 'Beta' }),
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(rows))
+    const result = await fetchImageCollections(7)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/images/7/collections')
+    expect(init.method ?? 'GET').toBe('GET')
+    expect(init.headers.Authorization).toBe('Bearer jwt')
+    expect(result.map((c) => c.name)).toEqual(['Alpha', 'Beta'])
+  })
+
+  it('createCollection POSTs the body verbatim (empty image_ids allowed)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection(), 201))
+    await createCollection({
+      name: 'New',
+      description: null,
+      type: 'sequence',
+      visibility: 'restricted',
+      image_ids: [],
+      program_ids: [1],
+      group_ids: [2],
+    })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({
+      name: 'New',
+      description: null,
+      type: 'sequence',
+      visibility: 'restricted',
+      image_ids: [],
+      program_ids: [1],
+      group_ids: [2],
+    })
+  })
+
+  it('updateCollection PATCHes with version in the body (not If-Match)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection({ version: 3 })))
+    await updateCollection(5, { name: 'Renamed', version: 2 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ name: 'Renamed', version: 2 })
+    expect(init.headers['If-Match']).toBeUndefined()
+  })
+
+  it('deleteCollection sends DELETE and resolves on 204', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await expect(deleteCollection(5)).resolves.toBeUndefined()
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('replaceCollectionImages PUTs the whole ordered list with version', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection()))
+    await replaceCollectionImages(5, { image_ids: [3, 1, 2], version: 4 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/images')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ image_ids: [3, 1, 2], version: 4 })
+  })
+
+  it('saveCollectionViewport PUTs viewport_state with version', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(makeApiCollection()))
+    await saveCollectionViewport(5, { viewport_state: { zoom: 2 }, version: 4 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/viewport')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ viewport_state: { zoom: 2 }, version: 4 })
+  })
+
+  it('moveCollection POSTs category_id with version (null = root)', async () => {
+    mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
+    await moveCollection(5, { category_id: 12, version: 4 })
+    let [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/move')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ category_id: 12, version: 4 })
+
+    await moveCollection(5, { category_id: null, version: 5 })
+    ;[url, init] = mockFetch.mock.calls[1]
+    expect(url).toBe('/api/collections/5/move')
+    expect(JSON.parse(init.body)).toEqual({ category_id: null, version: 5 })
+  })
+
+  it('transferCollection POSTs the program owner with version (#1531)', async () => {
+    mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
+    await transferCollection(5, { program_id: 3, version: 4 })
+    let [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/transfer')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ program_id: 3, version: 4 })
+
+    // `null` clears the program owner back to user ownership.
+    await transferCollection(5, { program_id: null, version: 5 })
+    ;[url, init] = mockFetch.mock.calls[1]
+    expect(url).toBe('/api/collections/5/transfer')
+    expect(JSON.parse(init.body)).toEqual({ program_id: null, version: 5 })
+  })
+
+  it('replaceCollectionOwners PUTs the user-owner set with version (#1531)', async () => {
+    mockFetch.mockReturnValue(jsonResponse(makeApiCollection()))
+    await replaceCollectionOwners(5, { user_ids: [7, 9], version: 4 })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/collections/5/owners')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ user_ids: [7, 9], version: 4 })
+  })
+
+  it('a stale-version 409 exposes the current CollectionOut via collectionConflictCurrent', async () => {
+    const current = makeApiCollection({ version: 9, name: 'Renamed elsewhere' })
+    mockFetch.mockReturnValueOnce(errorResponse(409, JSON.stringify({ detail: current })))
+    let caught: unknown
+    try {
+      await updateCollection(1, { name: 'Mine', version: 1 })
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(ApiError)
+    expect((caught as ApiError).status).toBe(409)
+    expect(collectionConflictCurrent(caught)).toEqual(current)
+  })
+
+  it('collectionConflictCurrent returns null for non-409, non-collection, and non-ApiError values', () => {
+    expect(collectionConflictCurrent(new ApiError(400, 'bad', makeApiCollection()))).toBeNull()
+    expect(collectionConflictCurrent(new ApiError(409, 'stale', { id: 1, version: 2 }))).toBeNull()
+    expect(collectionConflictCurrent(new ApiError(409, 'stale', 'Conflict'))).toBeNull()
+    expect(collectionConflictCurrent(new Error('boom'))).toBeNull()
+    expect(collectionConflictCurrent(undefined)).toBeNull()
   })
 })
 
@@ -1380,6 +1745,13 @@ describe('Version API', () => {
     expect(result).toEqual({ backend: '1.0.0', backup: '1.0.0' })
   })
 
+  it('fetchFeatures sends GET to /api/features', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ collections: true }))
+    const result = await fetchFeatures()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/features')
+    expect(result).toEqual({ collections: true })
+  })
+
   it('fetchFrontendVersion sends GET to /version (not /api/version)', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ frontend: '1.0.0' }))
     const result = await fetchFrontendVersion()
@@ -1410,8 +1782,9 @@ describe('downloadAdminTaskResult', () => {
   })
   afterEach(() => setToken(null))
 
-  it('fetches download token then navigates to download URL', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ token: 'dl-token-abc' }))
+  it('mints the download cookie then navigates to the cookie-authed URL', async () => {
+    // POST returns 204 — the credential is an HttpOnly cookie, not a body.
+    mockFetch.mockReturnValueOnce(noContentResponse())
 
     const originalLocation = window.location
     let assignedHref = ''
@@ -1435,7 +1808,9 @@ describe('downloadAdminTaskResult', () => {
       const [url, init] = mockFetch.mock.calls[0]
       expect(url).toBe('/api/admin/tasks/42/download-token')
       expect(init.method).toBe('POST')
-      expect(assignedHref).toBe('/api/admin/tasks/42/download?token=dl-token-abc')
+      expect(init.credentials).toBe('include')
+      // No token in the URL — the credential never enters logs/history
+      expect(assignedHref).toBe('/api/admin/tasks/42/download')
     } finally {
       Object.defineProperty(window, 'location', {
         value: originalLocation,

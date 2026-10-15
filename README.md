@@ -22,34 +22,86 @@ All seed users share the password `password`.
 | --------------------- | ---------------------------- | ------------ | ---------- |
 | Haruki Tanaka         | admin@example.ca             | password     | admin      |
 | Carlos Henrique Souza | instructor@example.ca        | password     | instructor |
+| Devon Staff           | staff@example.ca             | password     | staff      |
 | Mira Patel            | student@example.ca           | password     | student    |
 | Synthetic Student     | synthetic.student@example.ca | password     | student    |
 
 ### Role Capabilities
 
-| Capability                      | Admin | Instructor | Student |
-| ------------------------------- | ----- | ---------- | ------- |
-| Browse categories & view images | Yes   | Yes        | Yes     |
-| Create/update categories        | Yes   | Yes        | No      |
-| Delete categories               | Yes   | Yes        | No      |
-| Manage page (image table)       | Yes   | Yes        | No      |
-| Bulk import images              | Yes   | Yes        | No      |
-| Manage programs                 | Yes   | No         | No      |
-| Manage groups                   | Yes   | Yes\*      | No      |
-| Restrict categories to groups   | Yes   | Yes\*      | No      |
-| Manage announcement             | Yes   | Yes        | No      |
-| View changelog notifications    | Yes   | Yes        | No      |
-| View component versions (About) | Yes   | Yes        | No      |
-| Manage changelog entries        | Yes   | No         | No      |
-| Admin tab (changelog + backups) | Yes   | No         | No      |
-| User management (add/delete)    | Yes   | No         | No      |
-| List users                      | Yes   | Yes        | No      |
+| Capability                               | Admin | Instructor | Staff | Student |
+| ---------------------------------------- | ----- | ---------- | ----- | ------- |
+| Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
+| View image uploader name                 | Yes   | Yes        | No    | No      |
+| View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
+| Create collections‖                      | Yes   | Yes        | Yes   | Yes     |
+| Edit co-owned collections‖               | Yes   | Yes        | Yes   | Yes     |
+| Delete own collections‖                  | Yes   | Yes        | Yes\* | Yes\*   |
+| Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
+| Manage collection owners‖                | Yes   | Yes\*      | No    | No      |
+| Hide/show collections‖                   | Yes   | Yes        | No    | No      |
+| Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
+| Create/update categories                 | Yes   | Yes        | No    | No      |
+| Delete categories                        | Yes   | Yes        | No    | No      |
+| Manage page (image table)                | Yes   | Yes        | No    | No      |
+| Bulk import images                       | Yes   | Yes        | No    | No      |
+| Manage programs                          | Yes   | No         | No    | No      |
+| Manage groups                            | Yes   | Yes\*      | No    | No      |
+| Restrict categories to groups            | Yes   | Yes\*      | No    | No      |
+| Manage announcement                      | Yes   | Yes        | No    | No      |
+| View changelog notifications             | Yes   | Yes        | No    | No      |
+| View component versions (About)          | Yes   | Yes        | No    | No      |
+| Manage changelog entries                 | Yes   | No         | No    | No      |
+| Admin tab (changelog + backups)          | Yes   | No         | No    | No      |
+| User management (add/delete)             | Yes   | No         | No    | No      |
+| People tab (view users)                  | Yes   | No         | Yes‡  | No      |
+| List users (API)                         | Yes   | Yes§       | Yes‡  | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
 they manage; admins manage and attach any group. Inherited program and group
 restrictions are treated as pre-existing when an instructor creates a child
 category, so carrying an ancestor restriction does not require new attach
 authority. See [docs/groups.md](docs/groups.md).
+
+† Students are subject to the program/group dual-gate visibility filter.
+
+¶ Students see collections they co-own, public collections, and restricted
+collections that pass both the program and group gates — except
+curatorially hidden ones, which drop out of student view unless the student
+co-owns them; images they cannot
+open are omitted from collection responses. Admins, instructors and staff see
+every collection. Edit/delete/owner-management authority (admin, co-owner, or
+instructor in the owning program) is described in
+[docs/collections.md](docs/collections.md).
+
+‖ Collections support multiple user co-owners plus, or instead of, a program
+owner. Every role may create collections (the creator becomes the first user
+owner). Students may own at most 10 collections of each type and may add at
+most 20 images to a sequence collection; synchronized collections keep the
+four-image cap for every role. Admins and instructors may edit/delete
+collections they co-own or whose owning program they belong to; students and
+staff share one rule —
+they may edit collections they co-own, but may change scope or delete only
+when they are the sole user owner and no program owns the collection (`*`
+on the student delete cell; staff follow the same rule). Staff also see
+every collection like instructors, and create collections like students.
+Instructor authority is program-bound (the `*` rows):
+an instructor may restrict a collection to programs/groups only when they
+belong to the program or manage the group, and may manage owners only for a
+collection they co-own or one owned by a program they belong to — and may
+assign only a program they belong to. Only admins can reassign collections
+**orphaned** by a program deletion (no user owners and no program owner).
+Staff and students can never manage the owner set, even on their own
+collections. See [docs/collections.md](docs/collections.md).
+
+‡ Staff are a mostly view-only role for authenticated non-students. They see
+all content (no program/group visibility filter) and get a **read-only**
+People tab — the full user list with filters, but no add/edit/delete, bulk
+actions, or selection controls. They cannot be group members or group
+instructors. Collections are the exception: staff create them and hold the
+same owner rights as students (see ‖).
+
+§ Instructors list only students and other instructors, with a minimal
+projection (no metadata/last_access) — enough to populate group pickers.
 
 ### Programs
 
@@ -110,6 +162,7 @@ reconciliation model for both environments.
 | Doc                                                                                  | Covers                                                                           |
 | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                 |
+| [docs/collections.md](docs/collections.md)                                           | Collections model, ownership, visibility/authorization rules, and API surface    |
 | [docs/user-deactivation.md](docs/user-deactivation.md)                               | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
 | [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy               |
@@ -137,6 +190,8 @@ reconciliation model for both environments.
 | [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                       | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                                |
+| [docs/security-scanning.md](docs/security-scanning.md)                               | Trivy code-scanning sources, `.trivyignore` review, Dependabot PR handling       |
+| [docs/deployment-proxy-chain.md](docs/deployment-proxy-chain.md)                     | Proxy chain, `TRUSTED_PROXY_HOPS` client-IP resolution, login rate-limit buckets |
 | [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard            |
 | [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist      |
 | [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load      |

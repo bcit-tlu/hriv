@@ -17,6 +17,7 @@ describe('buildGuideIndex', () => {
       'categories',
       'images',
       'groups',
+      'collections',
       'announcements',
       'help',
     ]) {

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import * as fabric from 'fabric'
+import { ArrowLine, arrowHeadLength, drawArrowhead, type ArrowStyle } from './arrowLine'
 import { wrapCanvasText } from './canvasText'
 import { emitEvent } from '../observability'
 import Box from '@mui/material/Box'
@@ -28,6 +30,8 @@ import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import PaletteIcon from '@mui/icons-material/Palette'
 import LineWeightIcon from '@mui/icons-material/LineWeight'
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
+import { useDraggablePosition } from '../useDraggablePosition'
 
 /** Serialisable annotation stored in image metadata */
 export interface CanvasAnnotation {
@@ -77,7 +81,21 @@ const MIN_TEXTBOX_WIDTH = 40
 const DEFAULT_TEXTBOX_WIDTH = 180
 const DEFAULT_LINK_TEXTBOX_WIDTH = 240
 
-type ArrowStyle = 'none' | 'standard' | 'triangle' | 'circle'
+/**
+ * Selection chrome for editable annotation objects — dark, filled border and
+ * handles that stay legible over imagery. Applied at every creation site:
+ * fabric's defaults (light-blue 1px border, translucent corners) are too
+ * faint against image content.
+ */
+const ANNOTATION_SELECTION_STYLE = {
+  borderColor: '#000000',
+  borderScaleFactor: 2,
+  cornerColor: '#263238',
+  cornerStrokeColor: '#ffffff',
+  cornerSize: 10,
+  transparentCorners: false,
+}
+
 type FillMode = 'outlined' | 'filled'
 type Tool = 'select' | 'rect' | 'circle' | 'arrow' | 'text' | 'link'
 
@@ -178,9 +196,16 @@ function annotationObjectDimensions(obj: fabric.FabricObject): { width: number; 
       Math.abs(((obj.x2 ?? 0) - (obj.x1 ?? 0)) * scaleX) || Math.abs((obj.width ?? 0) * scaleX)
     const lineHeight =
       Math.abs(((obj.y2 ?? 0) - (obj.y1 ?? 0)) * scaleY) || Math.abs((obj.height ?? 0) * scaleY)
+    // Arrows paint a head past the shaft's extents; grow the guide by the
+    // same amount the selection box grows so the dashed box wraps the whole
+    // glyph (#1363).
+    const headPad =
+      obj instanceof ArrowLine && (obj as AnnotatedObject)._arrowStyle !== 'none'
+        ? arrowHeadLength(obj.strokeWidth ?? 1) * 2
+        : 0
     return {
-      width: Math.max(1, lineWidth),
-      height: Math.max(1, lineHeight),
+      width: Math.max(1, lineWidth + headPad * scaleX),
+      height: Math.max(1, lineHeight + headPad * scaleY),
     }
   }
 
@@ -194,17 +219,25 @@ function createAnnotationGuide(obj: AnnotatedObject): fabric.Rect | null {
   if (!obj._annotationId) return null
 
   const { width, height } = annotationObjectDimensions(obj)
+  // Expand the guide by the object's rendered stroke so the dashed box wraps
+  // the visible annotation edge rather than sitting inside it. Centre-origin
+  // placement keeps the guide aligned when the object is rotated (the source
+  // object's left/top are post-rotation origin coordinates).
+  const sw = obj.stroke ? (obj.strokeWidth ?? 0) : 0
+  const swX = obj.strokeUniform ? sw : sw * Math.abs(obj.scaleX ?? 1)
+  const swY = obj.strokeUniform ? sw : sw * Math.abs(obj.scaleY ?? 1)
+  const centre = obj.getPointByOrigin('center', 'center')
   const guide = new fabric.Rect({
-    originX: 'left',
-    originY: 'top',
-    left: obj.left ?? 0,
-    top: obj.top ?? 0,
-    width,
-    height,
+    originX: 'center',
+    originY: 'center',
+    left: centre.x,
+    top: centre.y,
+    width: width + swX,
+    height: height + swY,
     angle: obj.angle ?? 0,
     fill: 'transparent',
-    stroke: '#455a64',
-    strokeWidth: 1.5,
+    stroke: '#000000',
+    strokeWidth: 2.5,
     strokeDashArray: [5, 3],
     strokeUniform: true,
     selectable: false,
@@ -244,87 +277,6 @@ function createAnnotationTextbox(
 /** Generate a short random ID */
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
-}
-
-/**
- * Draw an arrowhead at the end of a line on a plain canvas context.
- */
-function drawArrowhead(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  headLen: number,
-  color: string,
-  style: ArrowStyle,
-  lineWidth: number,
-) {
-  if (style === 'none') return
-  const angle = Math.atan2(y2 - y1, x2 - x1)
-
-  if (style === 'circle') {
-    const radius = headLen / 2
-    ctx.beginPath()
-    ctx.arc(x2, y2, radius, 0, 2 * Math.PI)
-    ctx.fillStyle = color
-    ctx.fill()
-    return
-  }
-
-  // 'standard' = open V, 'triangle' = filled triangle
-  ctx.beginPath()
-  ctx.moveTo(x2, y2)
-  ctx.lineTo(
-    x2 - headLen * Math.cos(angle - Math.PI / 6),
-    y2 - headLen * Math.sin(angle - Math.PI / 6),
-  )
-  if (style === 'triangle') {
-    ctx.lineTo(
-      x2 - headLen * Math.cos(angle + Math.PI / 6),
-      y2 - headLen * Math.sin(angle + Math.PI / 6),
-    )
-    ctx.closePath()
-    ctx.fillStyle = color
-    ctx.fill()
-  } else {
-    // standard: draw both prongs as stroked lines
-    ctx.moveTo(x2, y2)
-    ctx.lineTo(
-      x2 - headLen * Math.cos(angle + Math.PI / 6),
-      y2 - headLen * Math.sin(angle + Math.PI / 6),
-    )
-    ctx.strokeStyle = color
-    ctx.lineWidth = lineWidth
-    ctx.stroke()
-  }
-}
-
-/**
- * Line that renders its arrowhead on the fabric edit canvas, matching the
- * view-mode canvas rendering. Caching is disabled by the creation sites so
- * the head (which extends beyond the line's bounding box) is not clipped.
- */
-class ArrowLine extends fabric.Line {
-  override _render(ctx: CanvasRenderingContext2D) {
-    super._render(ctx)
-    const style = (this as AnnotatedObject)._arrowStyle ?? 'standard'
-    if (style === 'none') return
-    const p = this.calcLinePoints()
-    const sw = this.strokeWidth ?? 1
-    const headLen = Math.max(24, sw * 12)
-    drawArrowhead(
-      ctx,
-      p.x1,
-      p.y1,
-      p.x2,
-      p.y2,
-      headLen,
-      typeof this.stroke === 'string' ? this.stroke : '#000000',
-      style,
-      Math.max(1, sw),
-    )
-  }
 }
 
 export default function CanvasOverlay({
@@ -368,6 +320,46 @@ export default function CanvasOverlay({
   const clipboardRef = useRef<CanvasAnnotation[]>([])
   const snapshotRef = useRef<CanvasAnnotation[]>([])
   const dirtyRef = useRef(false)
+
+  // Close transient menus/dialogs — used when a toolbar drag starts and when
+  // OSD full-page reparents the viewer (body-portaled popovers would be
+  // hidden or left at stale anchor positions).
+  const closeTransientUi = useCallback(() => {
+    setRectAnchor(null)
+    setCircleAnchor(null)
+    setArrowAnchor(null)
+    setLineWidthAnchor(null)
+    setColorPickerAnchor(null)
+    setLinkDialogOpen(false)
+    setDiscardDialogOpen(false)
+  }, [])
+
+  const {
+    targetRef: toolbarRef,
+    position: toolbarPos,
+    dragging: toolbarDragging,
+    handleProps: toolbarHandleProps,
+    reclamp: reclampToolbar,
+  } = useDraggablePosition({
+    cacheKey: 'canvas-annotation-toolbar',
+    onDragStart: closeTransientUi,
+  })
+
+  // Hide popovers/dialogs that MUI portals to document.body when the viewer
+  // enters/exits full-page mode, and re-clamp the toolbar to the new bounds
+  // once the element has been reparented and resized.
+  useEffect(() => {
+    let timer = 0
+    const handleFullPage = () => {
+      closeTransientUi()
+      timer = window.setTimeout(reclampToolbar, 0)
+    }
+    viewer.addHandler('full-page', handleFullPage)
+    return () => {
+      window.clearTimeout(timer)
+      viewer.removeHandler('full-page', handleFullPage)
+    }
+  }, [viewer, closeTransientUi, reclampToolbar])
 
   const refreshBoundingGuides = useCallback(
     (canvas: fabric.Canvas | null = fabricCanvasRef.current) => {
@@ -445,7 +437,7 @@ export default function CanvasOverlay({
         ctx.lineWidth = Math.max(1, sw)
         ctx.stroke()
         // Arrowhead: 3x larger default
-        const headLen = Math.max(24, sw * 12)
+        const headLen = arrowHeadLength(sw)
         const arrowStyle = ann.arrowStyle ?? 'standard'
         const arrowLineWidth = Math.max(1, sw)
         drawArrowhead(
@@ -890,6 +882,7 @@ export default function CanvasOverlay({
     (commitTextEditing = true) => {
       const annotations = collectAnnotations(commitTextEditing)
       dirtyRef.current = JSON.stringify(annotations) !== JSON.stringify(snapshotRef.current)
+      annotationsRef.current = annotations
       console.debug(LOG_PREFIX, 'emitAnnotations:', annotations.length, 'objects')
       onAnnotationsChange(annotations)
     },
@@ -922,20 +915,14 @@ export default function CanvasOverlay({
       height: h,
       selection: true,
     })
-    fc.selectionBorderColor = '#263238'
-    fc.selectionLineWidth = 2
+    fc.selectionBorderColor = '#000000'
+    fc.selectionLineWidth = 3
     fabricCanvasRef.current = fc
 
     for (const ann of annotationsRef.current) {
       const obj = annotationToFabric(ann)
       if (obj) {
-        obj.set({
-          borderColor: '#263238',
-          cornerColor: '#263238',
-          cornerStrokeColor: '#ffffff',
-          cornerSize: 10,
-          transparentCorners: false,
-        })
+        obj.set(ANNOTATION_SELECTION_STYLE)
         fc.add(obj)
       }
     }
@@ -1013,6 +1000,7 @@ export default function CanvasOverlay({
           }
           const obj = annotationToFabric(shifted)
           if (obj) {
+            obj.set(ANNOTATION_SELECTION_STYLE)
             fc.add(obj)
             newObjs.push(obj)
           }
@@ -1053,6 +1041,12 @@ export default function CanvasOverlay({
     fc.on('text:editing:exited', handleTextEditingExited)
 
     const handleSelectionChanged = () => {
+      // The multi-select group box is created internally by fabric and keeps
+      // its faint default chrome — restyle it to match single-object borders.
+      const active = fc.getActiveObject()
+      if (active instanceof fabric.ActiveSelection) {
+        active.set(ANNOTATION_SELECTION_STYLE)
+      }
       refreshBoundingGuides(fc)
       fc.renderAll()
     }
@@ -1217,7 +1211,7 @@ export default function CanvasOverlay({
       isDrawingRef.current = false
       const obj = drawObjRef.current
       if (obj) {
-        obj.set({ selectable: true, evented: true })
+        obj.set({ selectable: true, evented: true, ...ANNOTATION_SELECTION_STYLE })
         obj.setCoords()
         refreshBoundingGuides(fc)
         if (activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') {
@@ -1276,6 +1270,116 @@ export default function CanvasOverlay({
     }
   }, [editMode, emitAnnotations, refreshBoundingGuides])
 
+  // Keep the edit canvas aligned with the image across viewer resizes
+  // (window resize, OSD full-page entry/exit, layout shifts). Fabric object
+  // coords are pixels, so the draft is re-projected from viewport-space
+  // annotations at the new size. The canvas instance — and every handler
+  // bound to it — is preserved; only object geometry is replaced.
+  //
+  // Timing: OSD observes viewer.container with its own ResizeObserver but
+  // only sets a needsResize flag there — the actual viewport resize runs
+  // later on its update loop, and its 'resize'/'after-resize' events fire
+  // mid-update with a mixed transform. This observer therefore runs while
+  // the OLD pixel→viewport transform is still in effect: stash the draft as
+  // viewport-space annotations, then re-project them in a rAF, which runs
+  // after OSD's update tick under the NEW transform.
+  useEffect(() => {
+    if (!editMode) return
+    let draft: CanvasAnnotation[] | null = null
+    // In-progress text edit captured before collectAnnotations commits it, so
+    // the session can be restored on the recreated object.
+    let editingState: { id: string; start?: number; end?: number } | null = null
+    let raf = 0
+    const reproject = () => {
+      const fc = fabricCanvasRef.current
+      const annotations = draft
+      const editing = editingState
+      draft = null
+      editingState = null
+      if (!fc || !viewer.viewport || !annotations) return
+      const container = viewer.container
+      fc.setDimensions({ width: container.clientWidth, height: container.clientHeight })
+      fc.discardActiveObject()
+      for (const obj of [...fc.getObjects()]) fc.remove(obj)
+      for (const ann of annotations) {
+        const obj = annotationToFabric(ann)
+        if (obj) {
+          obj.set(ANNOTATION_SELECTION_STYLE)
+          fc.add(obj)
+        }
+      }
+      if (editing) {
+        const target = fc
+          .getObjects()
+          .find(
+            (o): o is fabric.IText =>
+              o instanceof fabric.IText && (o as AnnotatedObject)._annotationId === editing.id,
+          )
+        if (target) {
+          fc.setActiveObject(target)
+          target.enterEditing()
+          if (editing.start != null) target.selectionStart = editing.start
+          if (editing.end != null) target.selectionEnd = editing.end
+        }
+      }
+      refreshBoundingGuides(fc)
+      // The canvas may have moved in the document (full-page reparent);
+      // refresh fabric's cached pointer offset.
+      fc.calcOffset()
+      fc.renderAll()
+      reclampToolbar()
+    }
+    // The observer fires once on observe() with the current size — nothing
+    // has moved yet, so skip that first delivery.
+    let firstDelivery = true
+    const observer = new ResizeObserver(() => {
+      if (firstDelivery) {
+        firstDelivery = false
+        return
+      }
+      const fc = fabricCanvasRef.current
+      if (!fc || !viewer.viewport) return
+      // A resize changes the canvas pixel space mid-gesture and the shape's
+      // remaining geometry depends on live pointer deltas from the old anchor,
+      // so it can't be reprojected — cancel the draw like Escape does.
+      if (isDrawingRef.current && drawObjRef.current) {
+        fc.remove(drawObjRef.current)
+        isDrawingRef.current = false
+        drawStartRef.current = null
+        drawObjRef.current = null
+      }
+      // Capture the active text-editing session before collectAnnotations
+      // commits it — reproject() restores it on the recreated object.
+      editingState = null
+      const active = fc.getActiveObject()
+      if (active instanceof fabric.IText && active.isEditing) {
+        const editingId = (active as AnnotatedObject)._annotationId
+        if (editingId) {
+          editingState = {
+            id: editingId,
+            start: active.selectionStart,
+            end: active.selectionEnd,
+          }
+        }
+      }
+      draft = collectAnnotations()
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(reproject)
+    })
+    observer.observe(viewer.container)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+    }
+  }, [
+    editMode,
+    viewer,
+    collectAnnotations,
+    annotationToFabric,
+    refreshBoundingGuides,
+    reclampToolbar,
+  ])
+
   // Tool actions
 
   const handleAddText = useCallback(() => {
@@ -1295,6 +1399,7 @@ export default function CanvasOverlay({
     const aObj = text as AnnotatedObject
     aObj._annotationId = uid()
     aObj._annotationType = 'text'
+    text.set(ANNOTATION_SELECTION_STYLE)
     fc.add(text)
     fc.setActiveObject(text)
     refreshBoundingGuides(fc)
@@ -1330,6 +1435,7 @@ export default function CanvasOverlay({
     aObj._annotationId = uid()
     aObj._annotationType = 'link'
     aObj._linkUrl = linkUrl
+    text.set(ANNOTATION_SELECTION_STYLE)
     fc.add(text)
     fc.setActiveObject(text)
     refreshBoundingGuides(fc)
@@ -1472,11 +1578,20 @@ export default function CanvasOverlay({
 
   if (!editMode && annotations.length === 0) return null
 
-  return (
+  // Portal into the OSD container so the overlay (view canvas, fabric edit
+  // canvas, toolbar, status label) travels with the viewer when OSD full-page
+  // mode reparents viewer.element to document.body. Positioned children anchor
+  // to viewer.container, which is position:relative and viewport-sized.
+  // Each top-level child carries data-hriv-canvas-ui: ImageViewer's selection
+  // tracker must not capture/preventDefault presses inside them — doing so
+  // retargets pointerup/click to viewer.element and suppresses focus, leaving
+  // toolbar buttons and link annotations inert.
+  return createPortal(
     <>
       {/* View-mode canvas */}
       {!editMode && (
         <Box
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             top: 0,
@@ -1516,6 +1631,7 @@ export default function CanvasOverlay({
       {editMode && (
         <Box
           ref={wrapperRef}
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             top: 0,
@@ -1533,11 +1649,10 @@ export default function CanvasOverlay({
       {/* Edit-mode toolbar */}
       {editMode && (
         <Box
+          ref={toolbarRef}
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
-            top: 8,
-            left: '50%',
-            transform: 'translateX(-50%)',
             zIndex: 20,
             display: 'flex',
             alignItems: 'center',
@@ -1547,8 +1662,30 @@ export default function CanvasOverlay({
             px: 1,
             py: 0.5,
             pointerEvents: flushing ? 'none' : 'auto',
+            userSelect: toolbarDragging ? 'none' : undefined,
+            // Default: flush against the top edge, horizontally centred.
+            // Once dragged, an explicit px position replaces the transform.
+            ...(toolbarPos
+              ? { left: toolbarPos.x, top: toolbarPos.y, transform: 'none' }
+              : { top: 0, left: '50%', transform: 'translateX(-50%)' }),
           }}
         >
+          <Tooltip title="Drag to move toolbar — arrow keys nudge, double-click resets">
+            <IconButton
+              aria-label="Move annotation toolbar"
+              {...toolbarHandleProps}
+              sx={{
+                color: 'white',
+                p: 0.5,
+                cursor: toolbarDragging ? 'grabbing' : 'grab',
+                touchAction: 'none',
+                flexShrink: 0,
+              }}
+            >
+              <DragIndicatorIcon sx={{ fontSize: 24 }} />
+            </IconButton>
+          </Tooltip>
+          <Divider orientation="vertical" flexItem sx={{ borderColor: 'rgba(255,255,255,0.3)' }} />
           {/* Rectangle with fill-mode submenu */}
           <Tooltip title="Rectangle">
             <IconButton
@@ -1947,6 +2084,7 @@ export default function CanvasOverlay({
       {editMode && (
         <Typography
           variant="caption"
+          data-hriv-canvas-ui
           sx={{
             position: 'absolute',
             bottom: 48,
@@ -2015,6 +2153,7 @@ export default function CanvasOverlay({
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+    </>,
+    viewer.container,
   )
 }

@@ -42,6 +42,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import HomeIcon from '@mui/icons-material/Home'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import FolderIcon from '@mui/icons-material/Folder'
 import SchoolIcon from '@mui/icons-material/School'
 import GroupsIcon from '@mui/icons-material/Groups'
@@ -67,14 +68,19 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page = 'browse' | 'manage' | 'people' | 'admin' | 'guide'
+export type Page = 'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide'
 
 export interface AppShellProps {
   page: Page
+  /** Let a viewer page fill the viewport while retaining min-content sizing. */
+  fillViewport?: boolean
   onTabChange: (page: Page) => void
   onHomeClick: () => void
   canEditContent: boolean
   canManageUsers: boolean
+  canViewPeople: boolean
+  /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
+  collectionsEnabled: boolean
   currentUser: {
     name: string
     email: string
@@ -105,6 +111,13 @@ export interface AppShellProps {
   backendVersion: string | null
   backupVersion: string | null
   onReportIssue: () => void
+  /** Keep the footer dock (footer plus `footerDockSlot`) stuck to the
+   *  viewport bottom while the page is taller than the viewport. */
+  stickyFooter?: boolean
+  /** Rendered inside the footer dock, directly above `FooterBar`, so it
+   *  shares the footer's sticky position and moves with it on overscroll
+   *  (the My collections sheet). */
+  footerDockSlot?: ReactNode
   notificationSlot?: ReactNode
   // Children (main content)
   children: ReactNode
@@ -117,6 +130,8 @@ export default function AppShell(props: AppShellProps) {
     onHomeClick,
     canEditContent,
     canManageUsers,
+    canViewPeople,
+    collectionsEnabled,
     currentUser,
     announcement,
     annMessage,
@@ -137,6 +152,9 @@ export default function AppShell(props: AppShellProps) {
     backendVersion,
     backupVersion,
     onReportIssue,
+    stickyFooter = false,
+    fillViewport = false,
+    footerDockSlot,
     notificationSlot,
     children,
   } = props
@@ -144,11 +162,17 @@ export default function AppShell(props: AppShellProps) {
   const [navDrawerOpen, setNavDrawerOpen] = useState(false)
   const theme = useTheme()
   // Collapse the nav tabs into a hamburger menu when the viewport is too
-  // narrow to show them inline. Guarded by tab count so a single-tab
-  // (student) layout keeps its inline Home tab instead of a lone hamburger.
+  // narrow to show them inline. Guarded by tab count so the universal tabs
+  // (Home + Collections when enabled — the whole student layout) stay inline
+  // instead of hiding behind a lone hamburger.
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
-  const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
-  const collapseNav = isCompactViewport && navTabCount > 1
+  const navTabCount =
+    1 +
+    (collectionsEnabled ? 1 : 0) +
+    (canEditContent ? 2 : 0) +
+    (canViewPeople ? 1 : 0) +
+    (canManageUsers ? 1 : 0)
+  const collapseNav = isCompactViewport && navTabCount > 2
   // Reset the breakpoint-specific menus on a viewport transition so a resize
   // round-trip doesn't leave one open against an unmounted trigger:
   //  - desktop → the drawer can't apply, so close it;
@@ -198,6 +222,7 @@ export default function AppShell(props: AppShellProps) {
     const iconFor = (icon: NavigationIcon): ReactNode => {
       const icons: Record<NavigationIcon, ReactNode> = {
         home: <HomeIcon fontSize="small" />,
+        collections: <CollectionsIcon fontSize="small" />,
         images: <PhotoLibraryIcon fontSize="small" />,
         categories: <FolderIcon fontSize="small" />,
         programs: <SchoolIcon fontSize="small" />,
@@ -235,8 +260,10 @@ export default function AppShell(props: AppShellProps) {
         }
       }
 
+      const selected = item.page === page
+
       return (
-        <MenuItem key={item.id} selected={item.page === page} onClick={closeThen(handleClick)}>
+        <MenuItem key={item.id} selected={selected} onClick={closeThen(handleClick)}>
           <ListItemIcon sx={{ minWidth: 36 }}>{iconFor(item.icon)}</ListItemIcon>
           <ListItemText>{item.label}</ListItemText>
         </MenuItem>
@@ -244,7 +271,12 @@ export default function AppShell(props: AppShellProps) {
     }
 
     const sections = new Map<string, ReactNode[]>()
-    for (const item of getNavigationItems({ canEditContent, canManageUsers })) {
+    for (const item of getNavigationItems({
+      canEditContent,
+      canManageUsers,
+      canViewPeople,
+      collectionsEnabled,
+    })) {
       const section = sections.get(item.section) ?? []
       section.push(makeItem(item))
       sections.set(item.section, section)
@@ -278,10 +310,16 @@ export default function AppShell(props: AppShellProps) {
 
   return (
     <Box
+      data-fill-viewport={fillViewport ? 'true' : undefined}
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '100vh',
+        ...(fillViewport
+          ? {
+              height: { md: '100dvh' },
+              minHeight: { xs: '100vh', md: 'min-content' },
+            }
+          : { minHeight: '100vh' }),
       }}
     >
       {/* App bar */}
@@ -318,10 +356,16 @@ export default function AppShell(props: AppShellProps) {
             <Box sx={{ flexGrow: 1 }} />
           ) : (
             <Tabs
-              // 'guide' has no AppBar tab — it is opened via the notification menu.
+              // 'guide' has no AppBar tab — it opens via the notification menu.
               value={page === 'guide' ? false : page}
               onChange={(_, v: Page) => {
-                if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
+                if (
+                  v === 'browse' ||
+                  v === 'collections' ||
+                  v === 'manage' ||
+                  v === 'people' ||
+                  v === 'admin'
+                ) {
                   onTabChange(v)
                 }
               }}
@@ -342,6 +386,21 @@ export default function AppShell(props: AppShellProps) {
                   }
                 }}
               />
+              {collectionsEnabled && (
+                // A real tab since #1629 — the Sequence/Synchronized sub-menu
+                // became the page's Type filter facet.
+                <Tab
+                  label="Collections"
+                  value="collections"
+                  onClick={() => {
+                    // Re-click while already on collections (list or an open
+                    // detail) resets to the list — the Home tab pattern.
+                    if (page === 'collections') {
+                      onTabChange('collections')
+                    }
+                  }}
+                />
+              )}
               {canEditContent && <Tab label="Images" value="manage" />}
               {canEditContent && (
                 <Tab
@@ -350,7 +409,7 @@ export default function AppShell(props: AppShellProps) {
                   onClick={(e) => setManageMenuAnchor(e.currentTarget)}
                 />
               )}
-              {canManageUsers && <Tab label="People" value="people" />}
+              {canViewPeople && <Tab label="People" value="people" />}
               {canManageUsers && <Tab label="Admin" value="admin" />}
             </Tabs>
           )}
@@ -360,14 +419,16 @@ export default function AppShell(props: AppShellProps) {
               open={Boolean(manageMenuAnchor)}
               onClose={() => setManageMenuAnchor(null)}
             >
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenCategories()
-                }}
-              >
-                Categories
-              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenCategories()
+                  }}
+                >
+                  Categories
+                </MenuItem>
+              )}
               {canManageUsers && (
                 <MenuItem
                   onClick={() => {
@@ -378,22 +439,26 @@ export default function AppShell(props: AppShellProps) {
                   Programs
                 </MenuItem>
               )}
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenGroups()
-                }}
-              >
-                Groups
-              </MenuItem>
-              <MenuItem
-                onClick={() => {
-                  setManageMenuAnchor(null)
-                  onOpenAnnouncement()
-                }}
-              >
-                Announcement
-              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenGroups()
+                  }}
+                >
+                  Groups
+                </MenuItem>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenAnnouncement()
+                  }}
+                >
+                  Announcement
+                </MenuItem>
+              )}
             </Menu>
           )}
           {collapseNav && (
@@ -618,13 +683,28 @@ export default function AppShell(props: AppShellProps) {
       {/* Main content */}
       {children}
 
-      <FooterBar
-        canManageUsers={canManageUsers}
-        frontendVersion={frontendVersion || undefined}
-        backendVersion={backendVersion ?? undefined}
-        backupVersion={backupVersion ?? undefined}
-        onReportIssue={onReportIssue}
-      />
+      {/* Footer dock: the footer and anything docked above it (the My
+        collections sheet) form one in-flow block, so when the dock is
+        sticky they stick together and rubber-band overscroll moves both. */}
+      <Box
+        data-testid="footer-dock"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '0 0 auto',
+          zIndex: (theme) => theme.zIndex.appBar,
+          ...(stickyFooter ? { position: 'sticky', bottom: 0 } : { position: 'relative' }),
+        }}
+      >
+        {footerDockSlot}
+        <FooterBar
+          canManageUsers={canManageUsers}
+          frontendVersion={frontendVersion || undefined}
+          backendVersion={backendVersion ?? undefined}
+          backupVersion={backupVersion ?? undefined}
+          onReportIssue={onReportIssue}
+        />
+      </Box>
     </Box>
   )
 }

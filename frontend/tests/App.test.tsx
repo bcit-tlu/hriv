@@ -1,9 +1,10 @@
 import { createRef, useEffect, useState, type ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
+  ApiError,
   createGroup,
   createProgram,
   deleteGroup,
@@ -13,15 +14,24 @@ import {
   fetchVersions,
   updateGroup,
   updateProgram,
+  type ApiImage,
 } from '../src/api'
+import { makeApiCollection, makeApiCollectionSummary, makeCollection } from './helpers/fixtures'
 
 const apiMocks = vi.hoisted(() => ({
   fetchUsers: vi.fn(),
   fetchVersions: vi.fn(),
+  fetchFeatures: vi.fn(),
+  fetchCollections: vi.fn(),
+  fetchCollectionsPaged: vi.fn(),
+  fetchCollectionOwners: vi.fn(),
+  fetchCollection: vi.fn(),
   fetchFrontendVersion: vi.fn(),
+  fetchImageSourceInfo: vi.fn(),
   createProgram: vi.fn(),
   updateProgram: vi.fn(),
   deleteProgram: vi.fn(),
+  fetchImage: vi.fn(),
   createGroup: vi.fn(),
   updateGroup: vi.fn(),
   deleteGroup: vi.fn(),
@@ -80,6 +90,7 @@ let authState = {
   logout: vi.fn(),
   canManageUsers: false,
   canEditContent: true,
+  canViewPeople: false,
 }
 
 const mockGroups = [
@@ -148,7 +159,25 @@ function resetFixtures() {
   vi.resetAllMocks()
   apiMocks.fetchUsers.mockResolvedValue([])
   apiMocks.fetchVersions.mockResolvedValue({ backend: '1.0.0', backup: '1.0.0' })
+  apiMocks.fetchFeatures.mockResolvedValue({
+    collections: true,
+    collections_home_shelf: false,
+  })
+  apiMocks.fetchCollections.mockResolvedValue([])
+  apiMocks.fetchCollectionsPaged.mockResolvedValue({
+    items: [],
+    total: 0,
+    etag: null,
+    notModified: false,
+  })
+  apiMocks.fetchCollectionOwners.mockResolvedValue([])
+  apiMocks.fetchCollection.mockResolvedValue(makeApiCollection({ type: 'sequence' }))
   apiMocks.fetchFrontendVersion.mockResolvedValue({ frontend: '1.0.0' })
+  apiMocks.fetchImageSourceInfo.mockResolvedValue({
+    originalFilename: null,
+    fileType: null,
+    uploadedByName: null,
+  })
   apiMocks.createProgram.mockResolvedValue({})
   apiMocks.updateProgram.mockResolvedValue({})
   apiMocks.deleteProgram.mockResolvedValue(undefined)
@@ -171,10 +200,23 @@ function resetFixtures() {
     logout: vi.fn(),
     canManageUsers: false,
     canEditContent: true,
+    canViewPeople: false,
   }
   mockInitialPath = []
+  localStorage.removeItem('hrivpref:my-collections-drawer:pinned:user:anonymous')
+  collectionsDataMocks.filters = { type: 'all', mine: false, owner: 'any' }
+  collectionsDataMocks.useRealHook = false
   visibleJobsMock = []
   processingJobsMock.rehydrateFailedJobs.mockResolvedValue(undefined)
+  // Individual tests push extra programs (Radiology, Histology); restore the
+  // shared fixture so the leak can't reach later tests.
+  mockPrograms.splice(0, mockPrograms.length, {
+    id: 1,
+    name: 'Pathology',
+    oidc_group: null,
+    created_at: '',
+    updated_at: '',
+  })
   mockCategories.splice(0, mockCategories.length, {
     id: 1,
     label: 'Slides',
@@ -337,6 +379,7 @@ const categoryActionsMock = {
     inheritedProgramIds: [],
     freshGroupIds: [],
     inheritedGroupIds: [],
+    freshChildren: [],
   },
   addCategoryInline: vi.fn(),
   deleteCategoryInline: vi.fn(),
@@ -349,6 +392,13 @@ const categoryActionsMock = {
   handleRequestMoveCategory: vi.fn(),
   handleDropImageOnCategory: vi.fn(),
   handleDropCategoryOnCategory: vi.fn(),
+  handleDropCollectionOnCategory: vi.fn(),
+  moveCollectionOpen: false,
+  setMoveCollectionOpen: vi.fn(),
+  movingCollection: null,
+  setMovingCollection: vi.fn(),
+  handleRequestMoveCollection: vi.fn(),
+  handleMoveCollection: vi.fn(),
   handleSetCardImage: vi.fn(),
 }
 
@@ -364,8 +414,13 @@ vi.mock('../src/components/AppShell', () => ({
     frontendVersion,
     backendVersion,
     onReportIssue,
+    collectionsEnabled,
+    fillViewport,
+    footerDockSlot,
   }: {
     children: ReactNode
+    footerDockSlot?: ReactNode
+    fillViewport?: boolean
     onTabChange: (v: string) => void
     onHomeClick: () => void
     onSearchOpen: () => void
@@ -375,22 +430,30 @@ vi.mock('../src/components/AppShell', () => ({
     frontendVersion: string | null
     backendVersion: string | null
     onReportIssue: () => void
+    collectionsEnabled: boolean
   }) => (
-    <div>
+    <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
+      <div data-testid="shell-collections-enabled">{String(collectionsEnabled)}</div>
       <button type="button" onClick={onReportIssue}>
         Shell report issue
       </button>
       <button type="button" onClick={() => onTabChange('admin')}>
         Shell tab admin
       </button>
+      <button type="button" onClick={() => onTabChange('people')}>
+        Shell tab people
+      </button>
       <button type="button" onClick={() => onTabChange('manage')}>
         Shell tab manage
       </button>
       <button type="button" onClick={() => onTabChange('browse')}>
         Shell tab browse
+      </button>
+      <button type="button" onClick={() => onTabChange('collections')}>
+        Shell tab collections
       </button>
       <button type="button" onClick={onHomeClick}>
         Shell home
@@ -408,6 +471,7 @@ vi.mock('../src/components/AppShell', () => ({
         Shell logout
       </button>
       {children}
+      {footerDockSlot}
     </div>
   ),
 }))
@@ -418,6 +482,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     currentCategories,
     onImageClick,
     onCategoryClick,
+    onCollectionClick,
     onFilesDrop,
     fileDragActive,
     onDragActiveChange,
@@ -426,6 +491,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     currentCategories: typeof mockCategories
     onImageClick: (img: typeof mockImage) => void
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
+    onCollectionClick?: (collection: { id: number }) => void
     onFilesDrop: (files: File[]) => void
     fileDragActive: boolean
     onDragActiveChange?: (active: boolean) => void
@@ -449,6 +515,11 @@ vi.mock('../src/components/SortableTileGrid', () => ({
       <button type="button" onClick={() => onDragActiveChange?.(false)}>
         End browse drag
       </button>
+      {onCollectionClick && (
+        <button type="button" onClick={() => onCollectionClick({ id: 5 })}>
+          Open collection tile
+        </button>
+      )}
       {currentImages.map((image, index) => (
         <button key={image.id} type="button" onClick={() => onImageClick(image)}>
           {index === 0 ? 'Open image' : `Open image ${image.id}`}
@@ -525,9 +596,191 @@ vi.mock('../src/components/ManageCategoriesDialog', () => ({
     </>
   ),
 }))
-vi.mock('../src/components/AdminPage', () => ({ default: () => null }))
-vi.mock('../src/components/PeoplePage', () => ({ default: () => null }))
+vi.mock('../src/components/AdminPage', () => ({
+  default: () => <div data-testid="admin-page" />,
+}))
+vi.mock('../src/components/PeoplePage', () => ({
+  default: ({ readOnly }: { readOnly?: boolean }) => (
+    <div data-testid="people-page" data-readonly={String(readOnly)} />
+  ),
+}))
+const collectionsPageProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
+}))
+vi.mock('../src/components/CollectionsPage', () => ({
+  default: (props: Record<string, unknown>) => {
+    collectionsPageProps.current = props
+    const {
+      selectedCollectionId,
+      selectedCollectionItemId,
+      onOpenCollection,
+      onCloseCollection,
+      onOpenImage,
+      onSelectCollectionItem,
+    } = props as {
+      selectedCollectionId: number | null
+      selectedCollectionItemId: number | null
+      onOpenCollection: (id: number) => void
+      onCloseCollection: () => void
+      onOpenImage: (image: typeof mockImage) => void
+      onSelectCollectionItem: (imageId: number) => void
+    }
+    return (
+      <div
+        data-testid="collections-page"
+        data-selected={String(selectedCollectionId)}
+        data-item={String(selectedCollectionItemId)}
+      >
+        <button type="button" onClick={() => onOpenCollection(5)}>
+          Open collection 5
+        </button>
+        <button type="button" onClick={onCloseCollection}>
+          Close collection
+        </button>
+        <button type="button" onClick={() => onOpenImage(mockImage)}>
+          Open collection image
+        </button>
+        <button type="button" onClick={() => onSelectCollectionItem(99)}>
+          Select item 99
+        </button>
+      </div>
+    )
+  },
+}))
+const collectionsDataMocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  transfer: vi.fn(),
+  move: vi.fn(),
+  saveOwners: vi.fn(),
+  setHidden: vi.fn(),
+  filters: {
+    type: 'all' as string,
+    mine: false,
+    owner: 'any' as string,
+    q: '',
+    visibility: [] as string[],
+    categoryIds: [] as number[],
+  },
+  setFilters: vi.fn(),
+  useRealHook: false,
+}))
+vi.mock('../src/useCollectionsData', async () => {
+  const actual = await vi.importActual<typeof import('../src/useCollectionsData')>(
+    '../src/useCollectionsData',
+  )
+  return {
+    ...actual,
+    useCollectionsData: (options: Parameters<typeof actual.useCollectionsData>[0]) => {
+      const realData = actual.useCollectionsData({
+        ...options,
+        enabled: collectionsDataMocks.useRealHook && options.enabled,
+      })
+      if (collectionsDataMocks.useRealHook) return realData
+      return {
+        collections: [],
+        loading: false,
+        error: null,
+        filters: collectionsDataMocks.filters,
+        setFilters: collectionsDataMocks.setFilters,
+        ownerOptions: [],
+        // Server-side sort/page surface (#1631) — stubbed the same way the
+        // rest of the hook is so the Collections page wiring renders.
+        total: 0,
+        sort: { key: 'updated', direction: 'desc' },
+        setSort: vi.fn(),
+        page: 0,
+        setPage: vi.fn(),
+        pageSize: 25,
+        setPageSize: vi.fn(),
+        listMode: 'paged',
+        reload: vi.fn(),
+        detail: null,
+        detailLoading: false,
+        detailError: null,
+        loadCollection: vi.fn(),
+        create: collectionsDataMocks.create,
+        update: vi.fn(),
+        remove: vi.fn(),
+        reorderImages: vi.fn(),
+        saveViewport: vi.fn(),
+        transfer: collectionsDataMocks.transfer,
+        saveOwners: collectionsDataMocks.saveOwners,
+        move: collectionsDataMocks.move,
+        setHidden: collectionsDataMocks.setHidden,
+        setCoverImage: vi.fn(),
+        // App routes adds/removes through the data hook now (#1566) — delegate
+        // to the same spy so the assertions below still observe the payload.
+        addImages: (id: number, imageIds: number[], role?: string) =>
+          role == null
+            ? addToCollectionMocks.addImagesToCollection(id, imageIds)
+            : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
+        removeImages: vi.fn(),
+        renewCollectionImage: vi.fn(),
+      }
+    },
+  }
+})
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
+const addToCollectionMocks = vi.hoisted(() => ({
+  addImagesToCollection: vi.fn(),
+  createCollectionWithImages: vi.fn(),
+}))
+const searchCollectionMocks = vi.hoisted(() => ({
+  collections: [] as { id: number; name: string }[],
+}))
+vi.mock('../src/useAddToCollection', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/useAddToCollection')>()),
+  ...addToCollectionMocks,
+  useEditableCollections: () => ({ collections: [], loading: false, error: null, reload: vi.fn() }),
+  useVisibleCollections: (enabled: boolean) => ({
+    collections: enabled ? searchCollectionMocks.collections : [],
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}))
+vi.mock('../src/components/AddToCollectionDialog', () => ({
+  default: ({
+    open,
+    imageIds,
+    onClose,
+    onAdd,
+    onCreate,
+  }: {
+    open: boolean
+    imageIds: number[]
+    onClose: () => void
+    onAdd: (collection: { id: number; name: string }) => Promise<boolean>
+    onCreate: (values: unknown) => Promise<void>
+  }) =>
+    open ? (
+      <div data-testid="add-to-collection-dialog" data-image-ids={imageIds.join(',')}>
+        <button
+          type="button"
+          onClick={() => {
+            void onAdd({ id: 9, name: 'Skull set' }).then((done) => {
+              if (done) onClose()
+            })
+          }}
+        >
+          Pick collection
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void onCreate({ name: 'Fresh' })
+              .then(onClose)
+              .catch(() => undefined)
+          }}
+        >
+          Create collection
+        </button>
+        <button type="button" onClick={onClose}>
+          Close add dialog
+        </button>
+      </div>
+    ) : null,
+}))
 vi.mock('../src/components/LoginScreen', () => ({ default: () => null }))
 vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/ProgramManagementModal', () => ({
@@ -599,21 +852,34 @@ vi.mock('../src/components/SearchModal', () => ({
   default: ({
     open,
     users,
+    collections,
     onClose,
     onSelectImage,
+    onSelectCollection,
+    onAddImagesToCollection,
   }: {
     open: boolean
     users: unknown[]
+    collections?: { id: number; name: string }[]
     onClose: () => void
     onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
+    onSelectCollection?: (collectionId: number) => void
+    onAddImagesToCollection?: (images: { id: number }[]) => void
   }) => (
     <>
       {open && <div>search users: {users.length}</div>}
+      {open && <div data-testid="search-collection-count">{collections?.length ?? 0}</div>}
       <button type="button" onClick={onClose}>
         Close search
       </button>
       <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
         Select second image from search
+      </button>
+      <button type="button" onClick={() => onSelectCollection?.(5)}>
+        Select collection 5
+      </button>
+      <button type="button" onClick={() => onAddImagesToCollection?.([{ id: 10 }, { id: 11 }])}>
+        Add selected images to collection
       </button>
     </>
   ),
@@ -632,28 +898,58 @@ vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
 
-vi.mock('../src/useBrowseData', () => ({
-  useBrowseData: () => ({
-    categories: mockCategories,
-    categoriesLoading: false,
-    setCategories: vi.fn(),
-    uncategorizedImages: [],
-    uncategorizedLoaded: true,
-    setUncategorizedImages: vi.fn(),
-    programs: mockPrograms,
-    groups: mockGroups,
-    ...browseDataFns,
-    currentImages: currentImagesMock,
-    getPathRestriction: () => [1],
-    ancestorProgramIds: [1],
-    getPathGroupRestriction: () => [10],
-    ancestorGroupIds: [10],
-    currentCategories: mockCategories,
-  }),
-}))
+vi.mock('../src/useBrowseData', async () => {
+  const { narrowGroupIds, narrowProgramIds } =
+    await vi.importActual<typeof import('../src/categoryUtils')>('../src/categoryUtils')
+  const { findLiveCategoryPath } =
+    await vi.importActual<typeof import('../src/treeUtils')>('../src/treeUtils')
+  return {
+    // Mirror the hook: resolve the leaf's live ancestry in the mock tree.
+    useBrowseData: ({ path }: { path: MockCategory[] }) => {
+      const liveCategoryPath = findLiveCategoryPath(mockCategories, path)
+      return {
+        categories: mockCategories,
+        categoriesLoading: false,
+        setCategories: vi.fn(),
+        uncategorizedImages: [],
+        uncategorizedLoaded: true,
+        setUncategorizedImages: vi.fn(),
+        currentCollections: [],
+        programs: mockPrograms,
+        groups: mockGroups,
+        ...browseDataFns,
+        currentImages: currentImagesMock,
+        liveCategoryPath,
+        ancestorProgramIds: path.length > 0 ? narrowProgramIds(liveCategoryPath) : [1],
+        ancestorGroupIds: path.length > 0 ? narrowGroupIds(liveCategoryPath) : [10],
+        currentCategories: mockCategories,
+      }
+    },
+  }
+})
+
+const pushNavStateMock = vi.fn()
+let popStateHandler:
+  | ((
+      page: string,
+      catIds: number[],
+      imageId: number | null,
+      traversal?: { collectionFromBrowse?: boolean },
+    ) => boolean)
+  | null = null
 
 vi.mock('../src/useNavigationHistory', () => ({
-  useNavigationHistory: () => ({ pushNavState: vi.fn() }),
+  useNavigationHistory: (
+    onPopState: (
+      page: string,
+      catIds: number[],
+      imageId: number | null,
+      traversal?: { collectionFromBrowse?: boolean },
+    ) => boolean,
+  ) => {
+    popStateHandler = onPopState
+    return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
+  },
   buildNavHistoryState: vi.fn(),
 }))
 
@@ -824,6 +1120,7 @@ describe('App breadcrumbs', () => {
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
 
     const categoryBreadcrumb = screen.getByLabelText('category breadcrumb').closest('div')
     expect(categoryBreadcrumb).not.toBeNull()
@@ -842,6 +1139,7 @@ describe('App breadcrumbs', () => {
     mockImage.active = false
 
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
@@ -912,8 +1210,8 @@ describe('App breadcrumbs', () => {
           parentId: 1,
           children: [],
           images: [],
-          programIds: [],
-          groupIds: [],
+          programIds: [1],
+          groupIds: [10],
           status: 'active',
           sortOrder: 0,
           version: 1,
@@ -933,6 +1231,8 @@ describe('App breadcrumbs', () => {
     mockImage.categoryId = 2
 
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
@@ -1092,6 +1392,125 @@ describe('App breadcrumbs', () => {
     expect(within(imageBreadcrumb as HTMLElement).queryByText('Radiology')).not.toBeInTheDocument()
   })
 
+  it('derives breadcrumb chips from the live tree after a category is reparented', async () => {
+    mockPrograms.push({
+      id: 3,
+      name: 'Histology',
+      oidc_group: null,
+      created_at: '',
+      updated_at: '',
+    })
+    // Navigation-time snapshot: the leaf was at root when it was opened. The
+    // live tree has since reparented it, so the stored path ids can no longer
+    // be walked — chips must come from the leaf's live ancestry instead.
+    mockInitialPath = [
+      {
+        ...mockCategories[0],
+        id: 2,
+        label: 'Leaf',
+        parentId: null,
+        programIds: [3],
+        groupIds: [],
+      },
+    ]
+    mockCategories.splice(0, mockCategories.length, {
+      id: 1,
+      label: 'Parent',
+      parentId: null,
+      children: [
+        {
+          id: 2,
+          label: 'Leaf',
+          parentId: 1,
+          children: [],
+          images: [],
+          programIds: [3],
+          groupIds: [],
+          status: 'active',
+          sortOrder: 0,
+          version: 1,
+          cardImageId: null,
+          metadataExtra: null,
+        },
+      ],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    })
+
+    render(<App />)
+
+    const categoryBreadcrumb = (await screen.findByLabelText('category breadcrumb')).closest(
+      'div',
+    ) as HTMLElement
+    const programChip = within(categoryBreadcrumb)
+      .getByText('Histology')
+      .closest('[data-testid="program-chip"]')
+    expectEffectiveOpacity(programChip, '1')
+    // Neither the stale-walk program chip nor an unrelated group chip survives.
+    expect(within(categoryBreadcrumb).queryByText('Pathology')).not.toBeInTheDocument()
+    expect(within(categoryBreadcrumb).queryByText('Lab A2')).not.toBeInTheDocument()
+  })
+
+  it('drives the visibility control from the live category after a refresh hides it', async () => {
+    // Snapshot was taken while the category was active; the live tree now has it hidden.
+    mockInitialPath = [{ ...mockCategories[0] }]
+    mockCategories[0].status = 'hidden'
+
+    render(<App />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Visibility: Show category' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Visibility: Hide category' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Category' })).toBeInTheDocument()
+  })
+
+  it('labels the Browse toolbar collection button "New collection"', async () => {
+    mockInitialPath = [{ ...mockCategories[0] }]
+
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: 'New collection' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Collection' })).not.toBeInTheDocument()
+  })
+
+  it('rebases child navigation onto the live ancestry after a reparent', async () => {
+    const base = { ...mockCategories[0], children: [], programIds: [], groupIds: [] }
+    const leaf = { ...base, id: 3, label: 'Leaf', parentId: 2 }
+    // Navigation-time snapshot: the user was viewing Old Parent (id 1).
+    mockInitialPath = [{ ...base, id: 1, label: 'Old Parent' }]
+    mockCategories.splice(
+      0,
+      mockCategories.length,
+      { ...base, id: 2, label: 'New Parent', children: [leaf] },
+      { ...base, id: 1, label: 'Old Parent' },
+    )
+
+    render(<App />)
+    await screen.findByLabelText('category breadcrumb')
+    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
+
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [2, 3])
+  })
+
+  it('hides category controls when the viewed category left the live tree', async () => {
+    mockInitialPath = [{ ...mockCategories[0], id: 99, label: 'Deleted' }]
+
+    render(<App />)
+
+    await screen.findByLabelText('category breadcrumb')
+    expect(screen.queryByRole('button', { name: /^Visibility: / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
+  })
+
   it('resets expanded note state when selecting another image', () => {
     mockImage.note = 'A'.repeat(350)
     mockSecondImage.note = 'B'.repeat(350)
@@ -1099,6 +1518,7 @@ describe('App breadcrumbs', () => {
 
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
 
     fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
     expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
@@ -1224,6 +1644,54 @@ describe('App failure notifications', () => {
   })
 })
 
+describe('App image information accordion', () => {
+  const preferenceKey = 'hrivpref:image-info-expanded:user:1'
+  let storedUser: string | null = null
+
+  beforeEach(() => {
+    resetFixtures()
+    Object.assign(mockImage, { copyright: 'Educational use only' })
+    storedUser = localStorage.getItem('hriv_user')
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.removeItem(preferenceKey)
+  })
+
+  afterEach(() => {
+    Object.assign(mockImage, { copyright: null })
+    localStorage.removeItem(preferenceKey)
+    if (storedUser === null) {
+      localStorage.removeItem('hriv_user')
+    } else {
+      localStorage.setItem('hriv_user', storedUser)
+    }
+  })
+
+  it('renders collapsed and reveals image information when expanded', async () => {
+    apiMocks.fetchImageSourceInfo.mockResolvedValueOnce({
+      originalFilename: 'specimen-scan.tif',
+      fileType: 'TIF',
+      uploadedByName: 'Image Uploader',
+    })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const summary = screen.getByRole('button', { name: 'Image information' })
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
+
+    fireEvent.click(summary)
+
+    const copyright = screen.getByText('Copyright:', { exact: true }).parentElement
+    expect(copyright).toHaveTextContent('Copyright: Educational use only')
+    const originalFile = await screen.findByText('Original file:', { exact: true })
+    expect(originalFile.parentElement).toHaveTextContent('Original file: specimen-scan.tif')
+    const fileType = screen.getByText('File type:', { exact: true })
+    expect(fileType.parentElement).toHaveTextContent('File type: TIF')
+    const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
+    expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
+  })
+})
+
 describe('App shell interactions', () => {
   beforeEach(resetFixtures)
 
@@ -1307,6 +1775,72 @@ describe('App shell interactions', () => {
 
     await waitFor(() => expect(fetchFrontendVersion).toHaveBeenCalledOnce())
     expect(screen.getByText('versions: null/1.0.0')).toBeInTheDocument()
+  })
+
+  it('renders PeoplePage read-only for staff', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'staff' },
+      canEditContent: false,
+      canManageUsers: false,
+      canViewPeople: true,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab people' }))
+    const page = screen.getByTestId('people-page')
+    expect(page).toHaveAttribute('data-readonly', 'true')
+  })
+
+  it('does not render PeoplePage for students (no canViewPeople)', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' },
+      canEditContent: false,
+      canManageUsers: false,
+      canViewPeople: false,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab people' }))
+    expect(screen.queryByTestId('people-page')).not.toBeInTheDocument()
+  })
+
+  it('does not render AdminPage for staff (no canManageUsers)', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'staff' },
+      canEditContent: false,
+      canManageUsers: false,
+      canViewPeople: true,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab admin' }))
+    expect(screen.queryByTestId('admin-page')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('people-page')).not.toBeInTheDocument()
+  })
+
+  it('redirects ?page=manage-collections to the Collections table view', async () => {
+    window.history.replaceState(null, '', '/?page=manage-collections')
+    render(<App />)
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument()
+    expect(collectionsPageProps.current?.initialView).toBe('table')
+    expect(new URLSearchParams(window.location.search).get('page')).toBe('collections')
+    window.history.replaceState(null, '', '/')
+  })
+
+  it('renders PeoplePage editable for admins', () => {
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'admin' },
+      canManageUsers: true,
+      canViewPeople: true,
+    }
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab people' }))
+    expect(screen.getByTestId('people-page')).toHaveAttribute('data-readonly', 'false')
   })
 })
 
@@ -1520,5 +2054,1048 @@ describe('App breadcrumb navigation links', () => {
 
     fireEvent.click(within(screen.getByLabelText('image breadcrumb')).getByText('Home'))
     expect(shareableImageStateMock.clearImage).toHaveBeenCalled()
+  })
+})
+
+describe('App collections deep links (#1414)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  /** The Collections surface only mounts once `GET /api/features` resolves on. */
+  async function renderWithCollectionsEnabled() {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+  }
+
+  it('shows the drawer Fab at the Browse root and opens its cards', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([
+      makeApiCollectionSummary({ name: 'Sequence overview' }),
+    ])
+
+    render(<App />)
+
+    await screen.findByRole('button', { name: 'My collections' })
+    expect(document.querySelector('[data-fill-viewport="true"]')).not.toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('0px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('68.5px')
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
+    // No heading — the always-mounted trigger button doubles as the
+    // sheet's accessible name.
+    expect(await screen.findByRole('dialog', { name: 'My collections' })).toBeInTheDocument()
+    expect(screen.getByText('Sequence overview')).toBeInTheDocument()
+    expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
+  })
+
+  it('does not fetch or show the drawer when its flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: false,
+    })
+
+    render(<App />)
+
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+  })
+
+  it('shows the drawer Fab inside a category', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    mockInitialPath = [mockCategories[0]]
+
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 })
+  })
+
+  it('does not show the drawer when the owned feed is empty', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([])
+
+    render(<App />)
+
+    await waitFor(() =>
+      expect(apiMocks.fetchCollections).toHaveBeenCalledWith({ mine: true, limit: 8 }),
+    )
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the drawer visible in the image viewer (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open image' }))
+    expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
+  })
+
+  it('shows the drawer on the Collections list page', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+
+    expect(screen.getByTestId('collections-page')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+  })
+
+  it('shows the drawer on an open collection detail (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    window.history.replaceState(null, '', '/?collection=12')
+
+    await renderWithCollectionsEnabled()
+
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'My collections' })).toBeInTheDocument()
+    expect(getComputedStyle(screen.getByTestId('my-collections-frame')).height).toBe('64.5px')
+    expect(getComputedStyle(screen.getByRole('main')).paddingBottom).toBe('4px')
+  })
+
+  it('hides the drawer on the Manage and Admin pages', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    authState = { ...authState, canManageUsers: true }
+    window.history.replaceState(null, '', '/?page=manage')
+
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalledWith({ mine: true, limit: 8 })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab admin' }))
+    expect(screen.getByTestId('admin-page')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+  })
+
+  it('opens a collection from the drawer on the Collections page without Browse context (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    window.history.replaceState(null, '', '/?page=collections')
+
+    await renderWithCollectionsEnabled()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
+    fireEvent.click(await screen.findByText('Skull comparison'))
+
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '1')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '1' },
+      { collectionFromBrowse: false },
+    )
+  })
+
+  it('refetches the shelf feed when navigating between Browse and Collections (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    const shelfCalls = () =>
+      apiMocks.fetchCollections.mock.calls.filter(([arg]) => arg?.mine === true && arg?.limit === 8)
+        .length
+
+    await renderWithCollectionsEnabled()
+    await waitFor(() => expect(shelfCalls()).toBe(1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await waitFor(() => expect(shelfCalls()).toBe(2))
+  })
+
+  it('creates a collection from the drawer on a Collections page without Browse context (#1608)', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+    collectionsDataMocks.create.mockResolvedValue(
+      makeCollection({ id: 42, name: 'Drawer collection', categoryId: null }),
+    )
+    window.history.replaceState(null, '', '/?page=collections')
+
+    await renderWithCollectionsEnabled()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'New collection' }))
+    fireEvent.change(await screen.findByLabelText('Collection name'), {
+      target: { value: 'Drawer collection' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    // The detail opens without Browse context — Close returns to the
+    // Collections list — and the shelf refetches so the new card appears.
+    await waitFor(() =>
+      expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '42'),
+    )
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '42' },
+      { collectionFromBrowse: false },
+    )
+    const shelfCalls = apiMocks.fetchCollections.mock.calls.filter(
+      ([arg]) => arg?.mine === true && arg?.limit === 8,
+    )
+    expect(shelfCalls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('creates a collection from the drawer and opens its collection page', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_home_shelf: true,
+    })
+    apiMocks.fetchCollections.mockResolvedValue([makeApiCollectionSummary()])
+    authState = {
+      ...authState,
+      currentUser: { ...mockCurrentUser, role: 'student' as const },
+      canEditContent: false,
+    }
+    collectionsDataMocks.create.mockResolvedValue(
+      makeCollection({ id: 42, name: 'Drawer collection', categoryId: null }),
+    )
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'My collections' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New collection' }))
+    fireEvent.change(await screen.findByLabelText('Collection name'), {
+      target: { value: 'Drawer collection' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(collectionsDataMocks.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Drawer collection', type: 'sequence' }),
+      ),
+    )
+    expect(await screen.findByTestId('collections-page')).toHaveAttribute('data-selected', '42')
+  })
+
+  it('opens the Collections tab from the shell for a student', async () => {
+    authState = { ...authState, canEditContent: false, canViewPeople: false }
+    await renderWithCollectionsEnabled()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('restores ?collection={id} on load and selects that collection', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+  })
+
+  it('returns to the Collections list when the tab is clicked from a detail', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('opens the Collections list from ?page=collections', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('seeds the Type filter from ?type=sequence and revalidates on tab re-click (#1629)', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=sequence')
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    // Cards is the default view — the paged endpoint carries the type
+    // filter plus the default sort/page params (#1631).
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'sequence', page: 1 }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(2))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'sequence' }),
+    )
+  })
+
+  it('revalidates the list when Back restores it from collection detail', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=sequence')
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5'),
+    )
+    await waitFor(() => expect(apiMocks.fetchCollection).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1)
+
+    window.history.replaceState(null, '', '/?page=collections&type=sequence')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(2))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'sequence' }),
+    )
+  })
+
+  it('requests only the selected type for the ?type=synchronized deep link (#1629)', async () => {
+    window.history.replaceState(null, '', '/?page=collections&type=synchronized')
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalledTimes(1))
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'synchronized' }),
+    )
+  })
+
+  it('applies ?type= restored by Back as the Type filter (#1629)', async () => {
+    collectionsDataMocks.useRealHook = true
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalled())
+    apiMocks.fetchCollectionsPaged.mockClear()
+
+    window.history.replaceState(null, '', '/?page=collections&type=synchronized')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    await waitFor(() => expect(apiMocks.fetchCollectionsPaged).toHaveBeenCalled())
+    expect(apiMocks.fetchCollectionsPaged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'synchronized' }),
+    )
+  })
+
+  it('pushes ?collection={id} history when a collection is opened and ?page=collections when closed', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+    // No `type` param while the Type filter is 'all' (#1629).
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, undefined)
+  })
+
+  it('opens a member image in the normal ?image= view from the collection detail', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection image' }))
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByText(/Image Viewer 101/)).toBeInTheDocument()
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1], 101)
+  })
+
+  it('ignores a graph image fetch that resolves after the collection changed (#1638)', async () => {
+    let resolveImage: (img: ApiImage) => void = () => {}
+    apiMocks.fetchImage.mockReturnValue(
+      new Promise<ApiImage>((res) => {
+        resolveImage = res
+      }),
+    )
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+
+    const onOpenImageById = collectionsPageProps.current?.onOpenImageById as (id: number) => void
+    act(() => onOpenImageById(10))
+    await waitFor(() => expect(apiMocks.fetchImage).toHaveBeenCalledWith(10))
+
+    // Switching the collection detail before the fetch lands must
+    // invalidate the stale result (#1638 review).
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    await act(async () => {
+      resolveImage({
+        id: 10,
+        name: 'Graph image',
+        thumb: '/t.jpg',
+        tile_sources: '/t.dzi',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: 1,
+        height: 1,
+        file_size: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      })
+    })
+
+    expect(screen.queryByText(/Image Viewer/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+  })
+
+  it('fills the viewport on the collections page when the graph view is reported (#1630)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    // Cards/table do not fill.
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeNull()
+
+    act(() => {
+      ;(collectionsPageProps.current?.onViewChange as (v: string) => void)('graph')
+    })
+    expect(document.querySelector('[data-fill-viewport="true"]')).not.toBeNull()
+
+    act(() => {
+      ;(collectionsPageProps.current?.onViewChange as (v: string) => void)('cards')
+    })
+    expect(document.querySelector('[data-fill-viewport="true"]')).toBeNull()
+  })
+
+  it('restores the selected collection from the URL on back/forward', async () => {
+    await renderWithCollectionsEnabled()
+    expect(popStateHandler).not.toBeNull()
+
+    window.history.replaceState(null, '', '/?collection=12')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    window.history.replaceState(null, '', '/?page=collections')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+
+    window.history.replaceState(null, '', '/')
+    act(() => {
+      popStateHandler!('browse', [], null)
+    })
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('restores ?collection={id}&item={image_id} on load (#1416)', async () => {
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('forwards collection transfer calls to collectionsData.transfer (#1531)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    const onTransfer = collectionsPageProps.current?.onTransfer as (
+      id: number,
+      programId: number | null,
+    ) => Promise<unknown>
+    await act(async () => {
+      await onTransfer(5, 2)
+    })
+    expect(collectionsDataMocks.transfer).toHaveBeenCalledWith(5, 2)
+  })
+
+  it('forwards owner saves to collectionsData.saveOwners (#1531)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    const onSaveOwners = collectionsPageProps.current?.onSaveOwners as (
+      id: number,
+      userIds: number[],
+    ) => Promise<unknown>
+    await act(async () => {
+      await onSaveOwners(5, [7, 9])
+    })
+    expect(collectionsDataMocks.saveOwners).toHaveBeenCalledWith(5, [7, 9])
+  })
+
+  it('ignores ?item= without a collection param', async () => {
+    window.history.replaceState(null, '', '/?item=99')
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+  })
+
+  it('pushes ?collection={id}&item={image_id} history when the sequence position changes', async () => {
+    window.history.replaceState(null, '', '/?collection=5')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      {
+        collection: '5',
+        item: '99',
+      },
+      { collectionFromBrowse: false },
+    )
+  })
+
+  it('restores the sequence position from the URL on back/forward', async () => {
+    window.history.replaceState(null, '', '/?collection=5')
+    await renderWithCollectionsEnabled()
+
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+
+    window.history.replaceState(null, '', '/?collection=5')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+
+  it('clears the sequence position when the collection is closed or another opens', async () => {
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    window.history.replaceState(null, '', '/?collection=5&item=99')
+    act(() => {
+      popStateHandler!('collections', [], null)
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+})
+
+describe('App collection browse context (#1529)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  async function renderWithCollectionsEnabled() {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+  }
+
+  it('opens a collection tile from a nested scope with ?cat context and returns to it on close', async () => {
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection tile' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [1],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: true,
+      },
+    )
+    // The detail breadcrumb handler jumps to the filed Browse scope (#1559).
+    expect(collectionsPageProps.current?.onNavigateCategory).toBeTypeOf('function')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('wires breadcrumb navigation and hide/show props for the detail header (#1559)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
+    expect(collectionsPageProps.current?.onNavigateCategory).toBeTypeOf('function')
+    expect(collectionsPageProps.current?.onToggleHidden).toBeTypeOf('function')
+    expect(collectionsPageProps.current?.categories).toBeDefined()
+  })
+
+  it('refreshes Browse data after a hide/show toggle so tiles are not stale (#1559)', async () => {
+    window.history.replaceState(null, '', '/?page=collections')
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+
+    collectionsDataMocks.setHidden.mockResolvedValue({ id: 5 })
+    browseDataFns.refreshCategories.mockClear()
+
+    const onToggleHidden = collectionsPageProps.current?.onToggleHidden as (c: {
+      id: number
+      hidden: boolean
+    }) => Promise<unknown>
+    await act(() => onToggleHidden({ id: 5, hidden: false }))
+    expect(collectionsDataMocks.setHidden).toHaveBeenCalledWith(5, true)
+    expect(browseDataFns.refreshCategories).toHaveBeenCalled()
+  })
+
+  it('restores the browse context for a collection entry on back/forward', async () => {
+    await renderWithCollectionsEnabled()
+    expect(popStateHandler).not.toBeNull()
+
+    window.history.replaceState(null, '', '/?collection=12&cat=1')
+    act(() => {
+      popStateHandler!('collections', [1], null, { collectionFromBrowse: true })
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    // The detail breadcrumb clears the detail and navigates Browse to the
+    // collection's filed location (#1559).
+    const onNavigateCategory = collectionsPageProps.current?.onNavigateCategory as (
+      p: MockCategory[],
+    ) => void
+    act(() => onNavigateCategory([{ ...mockCategories[0], id: 7 }]))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [7])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+})
+
+describe('App collections feature flag (COLLECTIONS_ENABLED)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  it('tells the shell collections are enabled once GET /api/features says so', async () => {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(apiMocks.fetchFeatures).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports collections disabled to the shell when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    await act(async () => {})
+    expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('false')
+  })
+
+  it('treats a failed /api/features request as every flag off', async () => {
+    apiMocks.fetchFeatures.mockRejectedValue(new Error('boom'))
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    await act(async () => {})
+    expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('false')
+  })
+
+  it('falls back to browse from ?collection={id} when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    // Never renders the Collections page against a 404 API, even before the
+    // flags resolve.
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+  })
+
+  it('falls back to browse from ?page=collections when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    window.history.replaceState(null, '', '/?page=collections')
+    render(<App />)
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+  })
+
+  it('falls back to browse from ?page=manage-collections when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    window.history.replaceState(null, '', '/?page=manage-collections')
+    render(<App />)
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+  })
+
+  it('still honours ?collection={id} once the flag resolves on', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+  })
+})
+
+describe('App "Add to Collection" from the image view (#1415)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+    addToCollectionMocks.addImagesToCollection.mockReset()
+    addToCollectionMocks.createCollectionWithImages.mockReset()
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  async function openImageWithCollectionsEnabled() {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    return screen.getByRole('button', { name: 'Add to Collection' })
+  }
+
+  it('shows the button next to Share View for a student when the flag is on', async () => {
+    authState = { ...authState, canEditContent: false, canViewPeople: false }
+    const button = await openImageWithCollectionsEnabled()
+    expect(button).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Edit Details' })).not.toBeInTheDocument()
+    expect(screen.getByText('Share View').closest('button')).toBeInTheDocument()
+  })
+
+  it('hides the button when the collections flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    expect(screen.getByText('Share View').closest('button')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to Collection' })).not.toBeInTheDocument()
+  })
+
+  it('disables the button while canvas edit mode is active', async () => {
+    const button = await openImageWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    expect(button).toBeDisabled()
+    expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument()
+  })
+
+  it('desaturates the button when the image is inactive', async () => {
+    mockImage.active = false
+    const button = await openImageWithCollectionsEnabled()
+    expect(button).toHaveStyle({ filter: 'grayscale(100%)' })
+  })
+
+  it('opens the dialog for the selected image and shows a View collection action on success', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'added',
+      collection: { id: 9, name: 'Skull set' },
+      addedCount: 1,
+    })
+    const button = await openImageWithCollectionsEnabled()
+    fireEvent.click(button)
+    expect(screen.getByTestId('add-to-collection-dialog')).toHaveAttribute(
+      'data-image-ids',
+      String(mockImage.id),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [mockImage.id]),
+    )
+    expect(await screen.findByText('Added to "Skull set".')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument(),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '9')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '9' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
+  })
+
+  it('reports an already-present image as an informational no-op and closes', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'already',
+      collection: { id: 9, name: 'Skull set' },
+    })
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    expect(await screen.findByText('This image is already in "Skull set".')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('button', { name: 'View collection' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the dialog open with an error when a synchronized collection is full', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'full',
+      collection: { id: 9, name: 'Skull set', type: 'synchronized' },
+    })
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    expect(
+      await screen.findByText(
+        'Adding this selection to "Skull set" would exceed the 4-image limit for synchronized collections.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
+  })
+
+  it('routes API failures to the error snackbar and keeps the dialog open', async () => {
+    addToCollectionMocks.addImagesToCollection.mockRejectedValue(
+      new ApiError(409, 'Collection was modified by another user'),
+    )
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    expect(
+      await screen.findByText(
+        'This item was modified by another user. Please refresh and try again.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
+  })
+
+  it('creates a new collection with the image preset and offers to view it', async () => {
+    addToCollectionMocks.createCollectionWithImages.mockResolvedValue({
+      id: 11,
+      name: 'Fresh',
+    })
+    fireEvent.click(await openImageWithCollectionsEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Create collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.createCollectionWithImages).toHaveBeenCalledWith(
+        { name: 'Fresh' },
+        [mockImage.id],
+      ),
+    )
+    expect(await screen.findByText('Added to "Fresh".')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View collection' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '11')
+  })
+})
+
+describe('App search collections integration (#1418)', () => {
+  const originalUrl = `${window.location.pathname}${window.location.search}`
+
+  beforeEach(() => {
+    resetFixtures()
+    popStateHandler = null
+    addToCollectionMocks.addImagesToCollection.mockReset()
+    addToCollectionMocks.createCollectionWithImages.mockReset()
+    searchCollectionMocks.collections = []
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', originalUrl)
+  })
+
+  it("passes the caller's visible collections to the search modal when the flag is on", async () => {
+    searchCollectionMocks.collections = [{ id: 5, name: 'Skull set' }]
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    expect(await screen.findByTestId('search-collection-count')).toHaveTextContent('1')
+  })
+
+  it('passes no collections to the search modal when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: false })
+    searchCollectionMocks.collections = [{ id: 5, name: 'Skull set' }]
+    render(<App />)
+    await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    expect(await screen.findByTestId('search-collection-count')).toHaveTextContent('0')
+  })
+
+  it('navigates to ?collection={id} when a collection result is selected', async () => {
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: false,
+      },
+    )
+  })
+
+  it('opens Add to Collection with the multi-selected image ids even with no image open', async () => {
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'added',
+      collection: { id: 9, name: 'Skull set' },
+      addedCount: 2,
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    // No image is open — selection came from search results.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+
+    expect(screen.getByTestId('add-to-collection-dialog')).toHaveAttribute(
+      'data-image-ids',
+      '10,11',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
+    )
+    expect(await screen.findByText('Added 2 images to "Skull set".')).toBeInTheDocument()
+  })
+
+  it('reports a genuinely overflowing synchronized add with a count-neutral message', async () => {
+    // Under-cap rows stay clickable (membership dedupe is authoritative), so
+    // a 'full' result can arrive from a collection holding fewer than four.
+    addToCollectionMocks.addImagesToCollection.mockResolvedValue({
+      status: 'full',
+      collection: { id: 9, name: 'Skull set', type: 'synchronized' },
+    })
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Shell search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pick collection' }))
+
+    await waitFor(() =>
+      expect(addToCollectionMocks.addImagesToCollection).toHaveBeenCalledWith(9, [10, 11]),
+    )
+    expect(
+      await screen.findByText(
+        'Adding this selection to "Skull set" would exceed the 4-image limit for synchronized collections.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('add-to-collection-dialog')).toBeInTheDocument()
+  })
+
+  it('routes Manage-dialog search adds to the dialog draft when Search closes first (#1567)', async () => {
+    // SearchModal fires onClose() before onAddImagesToCollection — the manage
+    // target must survive that ordering (it resets on open, not on close).
+    // Picks stage into the dialog's draft via `stageAdd`; nothing persists
+    // until the dialog's Done commits (#1567).
+    render(<App />)
+    await waitFor(() =>
+      expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('true'),
+    )
+    // Mount the collections page in THIS App instance — the props capture can
+    // still hold a previous test's stale callbacks otherwise.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab collections' }))
+    await screen.findByTestId('collections-page')
+    const requestSearch = collectionsPageProps.current?.onRequestCollectionImageSearch as (
+      c: { id: number; name: string },
+      stageAdd: (images: { id: number }[]) => { status: string; addedCount: number },
+    ) => void
+    const stageAdd = vi.fn().mockReturnValue({ status: 'added', addedCount: 2 })
+    await act(async () => requestSearch({ id: 7, name: 'Managed set' }, stageAdd))
+    // The real SearchModal order: close fires first, then the add callback.
+    fireEvent.click(screen.getByRole('button', { name: 'Close search' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected images to collection' }))
+
+    await waitFor(() =>
+      expect(stageAdd).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 10 }),
+        expect.objectContaining({ id: 11 }),
+      ]),
+    )
+    // Nothing hits the API — the dialog commits on Done.
+    expect(addToCollectionMocks.addImagesToCollection).not.toHaveBeenCalled()
+    // The generic picker is skipped — the manage dialog already named the target.
+    expect(screen.queryByTestId('add-to-collection-dialog')).not.toBeInTheDocument()
+    expect(
+      await screen.findByText('Staged 2 images for "Managed set" — press Done to apply.'),
+    ).toBeInTheDocument()
   })
 })

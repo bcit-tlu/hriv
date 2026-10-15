@@ -299,6 +299,122 @@ hashes, and request IDs stay in logs/traces. Client-side, the equivalent
 poll-outcome counters are dev-mode only (`window.__hrivBrowseStats`,
 `docs/drag-and-drop.md` → Instrumentation) — they are not telemetry events.
 
+`GET /api/collections` short-circuits on the same revision (#1619) and emits
+the equivalent pair:
+
+- `hriv.collections_list.requests` — counter, `outcome` ∈
+  `full` | `not_modified`.
+- `hriv.collections_list.build.duration` — histogram (seconds), recorded
+  only on the non-short-circuited path.
+
+`outcome` remains the only label.
+
+## Tile Rebuild Metrics
+
+The durable parallel tile-rebuild scheduler (issue #1189) emits the
+`hriv.tile_rebuild.*` instrument contract from `tile_rebuild_metrics.py`.
+Counters and histograms are recorded in whichever process runs the code path —
+the arq worker for pump and child execution, the API for creation and
+cancellation — and exported via OTLP. Durable-state gauges are rendered at
+`/api/metrics` from PostgreSQL so worker-side execution is visible on the API
+pod's scrape endpoint.
+
+OTel instruments:
+
+- `hriv.tile_rebuild.item.duration` — histogram (seconds), execution
+  reservation to terminal outcome.
+- `hriv.tile_rebuild.item.queue_wait` — histogram (seconds), claim commit
+  (`job_items.metadata.claimed_at`) to execution reservation.
+- `hriv.tile_rebuild.supervisor.duration` — histogram (seconds), supervisor
+  start to terminal status.
+- `hriv.tile_rebuild.cancellation.latency` — histogram (seconds),
+  `jobs.metadata.cancel_requested_at` to `cancelled` status.
+- `hriv.tile_rebuild.items.completed` — counter; `outcome` ∈ `completed` |
+  `skipped` | `failed` | `cancelled`.
+- `hriv.tile_rebuild.item.retries` — counter; `reason` ∈ `transient` |
+  `lease_expired` | `dispatch` | `manual`.
+- `hriv.tile_rebuild.item.timeouts` — counter; failures whose exception chain
+  contains a timeout.
+- `hriv.tile_rebuild.lease.reclaims` — counter; `state` ∈ `claimed` |
+  `started`.
+- `hriv.tile_rebuild.pump.runs` — counter; `outcome` ∈ `dispatched` | `idle` |
+  `locked` | `failed`.
+- `hriv.tile_rebuild.enqueue.failures` — counter; `reason` ∈
+  `queue_unavailable` | `submission_error`.
+- `hriv.tile_rebuild.duplicate_deliveries` — counter; deliveries that found
+  their claim already superseded.
+
+`/api/metrics` gauges (PostgreSQL-derived, `NaN` on read failure):
+
+- `hriv_tile_rebuild_jobs_active` — active supervisors.
+- `hriv_tile_rebuild_active_children` — executing items (`running` with a
+  stamped `started_at`) under active supervisors; the effective parallelism
+  gauge.
+- `hriv_tile_rebuild_queued_items` — items under active supervisors that are
+  queued or claimed but not yet delivered (`running` with `started_at`
+  still NULL).
+
+Structured-log events (`rebuild.*`): `rebuild.job_created`,
+`rebuild.job_terminal`, `rebuild.cancel_requested`,
+`rebuild.items_bulk_cancelled`, `rebuild.retry_requested`,
+`rebuild.item_reserved`, `rebuild.item_terminal`, `rebuild.leases_reclaimed`,
+`rebuild.duplicate_delivery`.
+
+Rules:
+
+- Metric labels carry only the bounded `outcome`/`reason`/`state` values
+  above. Job IDs, item IDs, source-image IDs, and filenames belong in
+  `rebuild.*` log events and span attributes — never in metric labels.
+- Throughput (images/hour) and per-item percentiles are derived dashboard
+  values from `hriv.tile_rebuild.items.completed` and
+  `hriv.tile_rebuild.item.duration`, not dedicated instruments.
+- Terminal metrics and durable state-transition events are emitted only after
+  the owning transaction commits. Hooks scoped to HRIV's required `AppSession`
+  emit callbacks only on the outer commit, discard all callbacks on an outer
+  rollback, and remove only savepoint-scoped callbacks on a nested rollback;
+  rebuild helpers reject independent plain `AsyncSession` factories.
+
+## Database Pool Metrics
+
+Each backend pod owns one SQLAlchemy `QueuePool` behind `database.get_engine()`
+— the API Deployment (`api.db.*` chart values) and the arq worker Deployment
+(`redis.worker.db.*`) are independent pools. `db_pool_metrics.py` (issue #1072)
+exposes both through OpenTelemetry observable gauges exported via OTLP, so the
+`service_name` resource label (`hriv-backend` vs `hriv-backend-worker`)
+distinguishes them.
+
+OTel instruments (no metric labels beyond resource attributes):
+
+- `hriv.db.pool.size` — configured `pool_size` capacity.
+- `hriv.db.pool.checked_out` — connections currently lent out.
+- `hriv.db.pool.overflow` — raw live `QueuePool` overflow counter
+  (`open_connections − pool_size`): positive counts connections open beyond
+  `pool_size`; negative means fewer than `pool_size` connections exist yet.
+  Note `size + overflow` equals _currently open_ connections, not the ceiling —
+  use `max_overflow` for the ceiling.
+- `hriv.db.pool.checked_in` — idle connections held by the pool.
+- `hriv.db.pool.max_overflow` — _configured_ `max_overflow`
+  (`settings.db_max_overflow`), a static ceiling component. The real per-pod
+  connection ceiling is `size + max_overflow`; saturation is `checked_out`
+  approaching that sum.
+
+In Prometheus these remote-write as `hriv_db_pool_size`,
+`hriv_db_pool_checked_out`, `hriv_db_pool_overflow`, `hriv_db_pool_checked_in`,
+and `hriv_db_pool_max_overflow`.
+
+`/api/metrics` also renders the same `hriv_db_pool_*` names as scrape-time
+gauges — cheap redundancy for the API pod's own pool when the OTLP collector
+path is down. The worker Deployment does not serve the scrape endpoint, so
+those series carry no component label and never cover the worker pool. Gauges
+report `NaN` until the pod's lazily created engine exists (first DB use) or if
+pool introspection fails; the OTel observers simply emit nothing then.
+
+There is deliberately no checkout-wait histogram: SQLAlchemy's `checkout` pool
+event fires only _after_ the pool grants a connection, and no checkout-requested
+hook precedes it, so queueing latency cannot be measured from pool events.
+Pool exhaustion instead surfaces in logs and span errors as
+`TimeoutError: QueuePool limit ... reached`.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:
@@ -487,6 +603,19 @@ Published backup gauges:
 - `hriv_backup_archives_retained{backup_type}`
 - `hriv_backup_oldest_archive_timestamp_seconds{backup_type}`
 - `hriv_backup_newest_archive_timestamp_seconds{backup_type}`
+
+`hriv_backup_last_size_bytes` reports the latest successful size rather than
+the latest attempt's size, so a failed or interrupted attempt does not erase a
+previous success from the dashboard. In production mode the database component
+has no payload of its own — CNPG owns the database backup and the published
+archive is bound to that recovery point — so the database series reports the
+shared recovery archive's payload size. For markers written before that size
+was recorded, the exporter uses the filesystem success size only when both
+components have the same completion time and the database success is CNPG-bound.
+The retained success fields provide this evidence independently of the latest
+attempt's top-level mode. Retained-archive classification counts CNPG-bound (format-2,
+`capture_boundary_lsn`) archives toward both `database` and `filesystem` even
+though they contain no `db.sql` member.
 
 `hriv_backup_archive_listing_last_refresh_timestamp_seconds` records when the
 retained-archive classification cache was last refreshed successfully, and

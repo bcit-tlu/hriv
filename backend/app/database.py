@@ -8,7 +8,15 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.pool import NullPool, Pool
+
+
+MAX_REBUILD_CHILD_TIMEOUT_SECONDS = 86400
+
+
+class AppSession(Session):
+    pass
 
 
 class Settings(BaseSettings):
@@ -20,8 +28,8 @@ class Settings(BaseSettings):
     azure_read_sas_url: str = ""
     azure_backup_prefix: str = ""
     cors_origins: str = "*"
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
+    db_pool_size: int = Field(default=10, ge=1)
+    db_max_overflow: int = Field(default=20, ge=0)
 
     # Redis URL for task queue (Phase 5 — arq worker) and rate limiting
     redis_url: str = "redis://redis:6379"
@@ -29,13 +37,25 @@ class Settings(BaseSettings):
     worker_max_jobs: int = Field(default=4, ge=2)
     rebuild_parallel_enabled: bool = False
     rebuild_parallelism: int = Field(default=2, ge=1)
-    rebuild_child_timeout_seconds: int = Field(default=1800, ge=60)
-    rebuild_lease_seconds: int = Field(default=2100, ge=120)
+    rebuild_child_timeout_seconds: int = Field(
+        default=3600,
+        ge=60,
+        le=MAX_REBUILD_CHILD_TIMEOUT_SECONDS,
+    )
+    rebuild_lease_seconds: int = Field(default=3900, ge=120)
     rebuild_heartbeat_seconds: int = Field(default=30, ge=5)
     rebuild_pump_cadence_seconds: int = Field(default=60, ge=60, le=3600)
     rebuild_max_attempts: int = Field(default=2, ge=1)
     rebuild_retry_backoff_base_seconds: int = Field(default=60, ge=1)
     rebuild_retry_backoff_cap_seconds: int = Field(default=900, ge=1)
+
+    # Dark-launch flag for the collections feature (epic #1409). When off the
+    # collections router answers 404 and the frontend hides the tab; the chart
+    # defaults it off and the `latest` overlay turns it on (docs/collections.md).
+    collections_enabled: bool = False
+
+    # My collections Browse shelf (#1583), gated by collections_enabled.
+    collections_home_shelf: bool = False
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
@@ -44,7 +64,7 @@ class Settings(BaseSettings):
     # that prefix. Intended for high-volume, low-signal endpoints (container
     # healthchecks, tile serving, Prometheus scrapes, etc.). Operators can
     # extend the list per deployment by setting the AUDIT_EXCLUDE_PREFIXES env var.
-    audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics"
+    audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics,/api/_probe"
 
     # Retention policy for retained filesystem-import archives. Applied after
     # a successful files import and once at startup. Count keeps only the
@@ -54,9 +74,31 @@ class Settings(BaseSettings):
     files_import_archive_retention_count: int = Field(default=0, ge=0)
     files_import_archive_retention_days: int = Field(default=0, ge=0)
 
-    # Login rate limiting (Phase 5)
+    # Number of trusted reverse proxies that append to X-Forwarded-For before
+    # a request reaches the backend. The client IP is taken this many entries
+    # from the RIGHT of the header (the leftmost entry is client-controlled).
+    # 1 = frontend nginx only (docker compose). The fleet deployment chain is
+    # HAProxy gateway (overwrites XFF with the client IP) -> ingress-nginx
+    # (appends) -> frontend nginx (appends) -> uvicorn, i.e. 3. 0 = ignore
+    # forwarding headers and use the direct connection address.
+    # See docs/deployment-proxy-chain.md.
+    trusted_proxy_hops: int = Field(default=1, ge=0)
+
+    # Set the ``Secure`` flag on cookies the backend issues (admin download
+    # token). Deployments always serve over TLS at the edge, so this defaults
+    # on and is only switched off for plain-http docker-compose development.
+    secure_cookies: bool = True
+
+    # Login rate limiting (Phase 5). Two sliding-window budgets: a
+    # per-(client IP, email) budget so one shared campus NAT does not lock
+    # out unrelated users, and a longer account-scoped per-email budget that
+    # does not depend on the client IP at all, bounding password guessing
+    # against a single account even if the caller can vary its apparent
+    # source address.
     rate_limit_login_max: int = 5
     rate_limit_login_window: int = 60  # seconds
+    rate_limit_login_email_max: int = 20
+    rate_limit_login_email_window: int = 900  # seconds
 
     # Telemetry ingestion rate limiting. Batches are small and best-effort, so
     # the window is generous; this only guards against a misbehaving or
@@ -68,6 +110,23 @@ class Settings(BaseSettings):
     rate_limit_telemetry_max: int = 60
     rate_limit_telemetry_user_max: int = 600
     rate_limit_telemetry_window: int = 60  # seconds
+
+    # Shared static credential accepted by POST /api/telemetry/synthetic-result
+    # as an alternative to the monitor account's user JWT. The same secret is
+    # delivered to the synthetic-monitoring CronJob and the backend (flux-fleet
+    # ``hriv-synthetic-ingest`` VaultStaticSecret). Validation is a
+    # constant-time compare requiring no database access, so failure reports
+    # still land during authentication/database outages (#1495) — precisely
+    # when a user JWT cannot be obtained. Empty disables the token path so
+    # only JWT-authenticated synthetic accounts may report (local dev).
+    synthetic_ingest_token: str = ""
+
+    # Sliding-window rate limit for the synthetic-result ingest endpoint,
+    # enforced identically for both credential paths. The monitor posts at
+    # most a few results per CronJob run, so the budget only bounds abuse of
+    # a leaked ingest token or a misbehaving monitor.
+    rate_limit_synthetic_ingest_max: int = 30
+    rate_limit_synthetic_ingest_window: int = 60  # seconds
 
     # OIDC / OAuth settings (Phase 3 — Identity)
     oidc_enabled: bool = False
@@ -143,12 +202,57 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
+def get_engine_pool() -> Pool | None:
+    """Return the shared engine's connection pool, or ``None`` before first use.
+
+    Unlike :func:`get_engine`, this never creates the engine — telemetry
+    observers use it so that reporting metrics cannot itself create the
+    resource being observed.
+    """
+    return _engine.pool if _engine is not None else None
+
+
+_probe_engine = None
+
+
+def get_probe_engine() -> AsyncEngine:
+    """Return the dedicated unpooled engine used by readiness probes.
+
+    ``NullPool`` means every ``connect()`` establishes a brand-new PostgreSQL
+    session and closes it on release. Probes must test *connection
+    establishment* — a pooled checkout can silently reuse a session that
+    authenticated before database credentials were revoked or rotated, which
+    reported pods Ready through the 2026-10-02 dynamic-credential outage
+    while every new connection failed (#1496).
+    """
+    global _probe_engine
+    if _probe_engine is None:
+        _probe_engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+            poolclass=NullPool,
+        )
+    return _probe_engine
+
+
+async def dispose_probe_engine() -> None:
+    """Close the probe engine if it was ever created (app shutdown)."""
+    global _probe_engine
+    if _probe_engine is not None:
+        engine = _probe_engine
+        _probe_engine = None
+        await engine.dispose()
+
+
 def get_async_session() -> async_sessionmaker[AsyncSession]:
     """Return the session factory, creating it on first call."""
     global _async_session
     if _async_session is None:
         _async_session = async_sessionmaker(
-            get_engine(), class_=AsyncSession, expire_on_commit=False
+            get_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False,
+            sync_session_class=AppSession,
         )
     return _async_session
 

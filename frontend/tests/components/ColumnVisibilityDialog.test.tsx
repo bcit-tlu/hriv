@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import ColumnVisibilityDialog from '../../src/components/ColumnVisibilityDialog'
+import type { DragEndEvent } from '@dnd-kit/react'
+import ColumnVisibilityDialog, {
+  resolveReorderedKeys,
+} from '../../src/components/ColumnVisibilityDialog'
 
 type TestColumn = 'name' | 'email' | 'role'
 
@@ -115,5 +118,173 @@ describe('ColumnVisibilityDialog', () => {
     expect(nameCheckbox).toBeChecked()
     expect(nameCheckbox).toBeDisabled()
     expect(onToggleColumn).not.toHaveBeenCalled()
+  })
+
+  it('renders a drag handle for each column when onReorderColumns is provided', () => {
+    render(
+      <ColumnVisibilityDialog<TestColumn>
+        open
+        title="Choose columns"
+        columns={columns}
+        visibleColumns={{ name: true, email: false, role: true }}
+        onClose={vi.fn()}
+        onToggleColumn={vi.fn()}
+        onReorderColumns={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'Reorder Name column' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reorder Email column' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reorder Role column' })).toBeInTheDocument()
+    expect(screen.getByText(/Drag to reorder columns/)).toBeInTheDocument()
+  })
+
+  it('does not render drag handles when onReorderColumns is omitted', () => {
+    render(
+      <ColumnVisibilityDialog<TestColumn>
+        open
+        title="Choose columns"
+        columns={columns}
+        visibleColumns={{ name: true, email: false, role: true }}
+        onClose={vi.fn()}
+        onToggleColumn={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: /Reorder .* column/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Drag to reorder columns/)).not.toBeInTheDocument()
+  })
+
+  it('still toggles column visibility in reorderable mode', async () => {
+    const user = userEvent.setup()
+    const onToggleColumn = vi.fn()
+
+    render(
+      <ColumnVisibilityDialog<TestColumn>
+        open
+        title="Choose columns"
+        columns={columns}
+        visibleColumns={{ name: true, email: false, role: true }}
+        onClose={vi.fn()}
+        onToggleColumn={onToggleColumn}
+        onReorderColumns={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('checkbox', { name: 'Email' }))
+
+    expect(onToggleColumn).toHaveBeenCalledWith('email')
+  })
+
+  it('calls onReorderColumns with the new order after a keyboard reorder', async () => {
+    const user = userEvent.setup()
+    const onReorderColumns = vi.fn()
+
+    render(
+      <ColumnVisibilityDialog<TestColumn>
+        open
+        title="Choose columns"
+        columns={columns}
+        visibleColumns={{ name: true, email: false, role: true }}
+        onClose={vi.fn()}
+        onToggleColumn={vi.fn()}
+        onReorderColumns={onReorderColumns}
+      />,
+    )
+
+    // jsdom rects are all 0×0, and @dnd-kit's keyboard plugin skips
+    // zero-size drop targets — give each sortable row deterministic
+    // geometry so ArrowDown can resolve the row below it. Ancestors get
+    // stubbed too: getVisibleBoundingRectangle clips rows against any
+    // non-visible-overflow ancestor (e.g. the scrollable DialogContent),
+    // whose zero rect would otherwise collapse the row rect.
+    const stubRect = (el: Element, rect: Omit<DOMRect, 'toJSON'>) =>
+      vi.spyOn(el as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+        ...rect,
+        toJSON: () => rect,
+      } as DOMRect)
+    const ancestorRect = {
+      top: 0,
+      bottom: 500,
+      left: 0,
+      right: 500,
+      width: 500,
+      height: 500,
+      x: 0,
+      y: 0,
+    }
+    const handles = ['Name', 'Email', 'Role'].map((label) =>
+      screen.getByRole('button', { name: `Reorder ${label} column` }),
+    )
+    handles.forEach((handle, index) => {
+      const row = handle.parentElement!
+      stubRect(row, {
+        top: index * 40,
+        bottom: index * 40 + 40,
+        left: 0,
+        right: 400,
+        width: 400,
+        height: 40,
+        x: 0,
+        y: index * 40,
+      })
+      for (
+        let el = row.parentElement;
+        el && el !== document.documentElement;
+        el = el.parentElement
+      ) {
+        stubRect(el, ancestorRect)
+      }
+    })
+
+    // Enter is one of @dnd-kit's start/end keyCodes (userEvent's {Space}
+    // descriptor emits code 'Unknown', so a literal space can't be used).
+    handles[0].focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+
+    expect(onReorderColumns).toHaveBeenCalledWith(['email', 'name', 'role'])
+  })
+})
+
+describe('resolveReorderedKeys', () => {
+  const ids = ['name', 'email', 'role'] as const
+
+  const dragEvent = (operation: object, canceled = false) =>
+    ({ canceled, operation }) as unknown as DragEndEvent
+
+  it('commits the projected order on a targetless drop (#1577 review)', () => {
+    // Pointer reflowed Name to index 1, then left every row before release —
+    // the source's projected index still describes the on-screen preview.
+    const event = dragEvent({
+      source: { id: 'name', index: 1, initialIndex: 0 },
+      target: undefined,
+    })
+    expect(resolveReorderedKeys([...ids], event)).toEqual(['email', 'name', 'role'])
+  })
+
+  it('ignores a targetless drop that projected no movement', () => {
+    const event = dragEvent({
+      source: { id: 'name', index: 0, initialIndex: 0 },
+      target: undefined,
+    })
+    expect(resolveReorderedKeys([...ids], event)).toBeNull()
+  })
+
+  it('ignores targetless drops without numeric index info', () => {
+    const event = dragEvent({
+      source: { id: 'name' },
+      target: undefined,
+    })
+    expect(resolveReorderedKeys([...ids], event)).toBeNull()
+  })
+
+  it('ignores canceled drags', () => {
+    const event = dragEvent(
+      { source: { id: 'name', index: 2, initialIndex: 0 }, target: undefined },
+      true,
+    )
+    expect(resolveReorderedKeys([...ids], event)).toBeNull()
   })
 })

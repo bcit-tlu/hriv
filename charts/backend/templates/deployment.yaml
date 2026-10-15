@@ -13,6 +13,13 @@
 {{- if and .Values.tasks.rebuild.parallelEnabled (ne .Values.tasks.executionMode "required") }}
 {{- fail "tasks.rebuild.parallelEnabled requires tasks.executionMode=required" }}
 {{- end }}
+{{- if gt (.Values.tasks.rebuild.childTimeoutSeconds | int) 86400 }}
+{{- fail "tasks.rebuild.childTimeoutSeconds must not exceed 86400 seconds" }}
+{{- end }}
+{{- $corsOrigins := .Values.corsOrigins | default .Values.auth.openidConnect.corsOrigins -}}
+{{- if and (eq .Values.tasks.executionMode "required") (or (not $corsOrigins) (contains "*" $corsOrigins)) }}
+{{- fail "tasks.executionMode=required requires a concrete corsOrigins value naming the frontend origin (e.g. https://hriv.example.ca) — empty or wildcard CORS is not permitted in production" }}
+{{- end }}
 {{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
 {{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
 {{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}
@@ -111,12 +118,20 @@ spec:
                   key: uri
             - name: SOURCE_IMAGES_DIR
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
+            # Land every tempfile — including python-multipart's upload
+            # spool — on the source-images PVC, not the pod's 1 GiB
+            # ephemeral-storage budget (#1365). $(SOURCE_IMAGES_DIR)
+            # expands the env var defined just above.
+            - name: TMPDIR
+              value: "$(SOURCE_IMAGES_DIR)/.staging"
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
             - name: EXPORT_PIGZ_THREADS
               value: {{ .Values.env.EXPORT_PIGZ_THREADS | quote }}
             - name: AZURE_BACKUP_PREFIX
               value: {{ .Values.env.AZURE_BACKUP_PREFIX | quote }}
+            - name: TRUSTED_PROXY_HOPS
+              value: {{ .Values.env.TRUSTED_PROXY_HOPS | quote }}
             - name: AZURE_READ_SAS_URL
               valueFrom:
                 secretKeyRef:
@@ -242,6 +257,10 @@ spec:
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
             {{- end }}
+            - name: COLLECTIONS_ENABLED
+              value: {{ .Values.collections.enabled | quote }}
+            - name: COLLECTIONS_HOME_SHELF
+              value: {{ .Values.collections.homeShelf | quote }}
             - name: TASK_EXECUTION_MODE
               value: {{ .Values.tasks.executionMode | quote }}
             - name: REBUILD_PARALLEL_ENABLED
@@ -266,6 +285,36 @@ spec:
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
+            # API-side libvips and database pool profile, mirroring the
+            # worker-only redis.worker.* profile so each pod class
+            # carries an explicit connection budget.  VIPS_CONCURRENCY
+            # only matters on the API when local-mode in-process fallback
+            # runs image processing; tasks.executionMode=required never
+            # executes it here.
+            - name: VIPS_CONCURRENCY
+              value: {{ .Values.api.vipsConcurrency | quote }}
+            - name: DB_POOL_SIZE
+              value: {{ .Values.api.db.poolSize | quote }}
+            - name: DB_MAX_OVERFLOW
+              value: {{ .Values.api.db.maxOverflow | quote }}
+            # Rendered unconditionally (not via the OIDC-gated ConfigMap)
+            # so non-OIDC deployments can also pin explicit CORS origins.
+            # Empty is only legal in tasks.executionMode=local (dev); the
+            # backend fails fast in required mode without a concrete value.
+            - name: CORS_ORIGINS
+              value: {{ $corsOrigins | quote }}
+            {{- if .Values.syntheticMonitoring.ingestTokenSecret.name }}
+            # Shared static credential for the synthetic monitor's result
+            # posts; validates without DB access so failure reports land
+            # during auth/DB outages (hriv#1495). optional=true degrades a
+            # missing key to JWT-only ingestion rather than blocking rollout.
+            - name: SYNTHETIC_INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.syntheticMonitoring.ingestTokenSecret.name | quote }}
+                  key: {{ .Values.syntheticMonitoring.ingestTokenSecret.key | quote }}
+                  optional: true
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -304,7 +353,7 @@ spec:
             failureThreshold: {{ get $backendLivenessProbe "failureThreshold" | default 6 }}
           readinessProbe:
             httpGet:
-              path: {{ get $backendReadinessProbe "path" | default "/api/health/ready" | quote }}
+              path: {{ get $backendReadinessProbe "path" | default "/api/_probe" | quote }}
               port: http
             initialDelaySeconds: {{ get $backendReadinessProbe "initialDelaySeconds" | default 5 }}
             periodSeconds: {{ get $backendReadinessProbe "periodSeconds" | default 10 }}

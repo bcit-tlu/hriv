@@ -6,7 +6,7 @@
  * and useBrowseData.
  */
 
-import type { Category, ImageItem } from './types'
+import type { Category, CollectionSummary, ImageItem } from './types'
 
 /**
  * Walk an ordered (top-down) list of ancestors applying narrowing semantics:
@@ -257,20 +257,22 @@ export function findIncompatibleDescendantsByGroup(
 
 /**
  * Walk the category tree along `path` and return the children/images
- * at the terminal node.
+ * at the terminal node. `cols` are the collections filed into the terminal
+ * category (#1529); the root scope's collections are NOT part of the tree
+ * (unfiled collections are not Browse tiles), so `cols` is `[]` at root.
  */
 export function resolvePathNode(
   categories: Category[],
   path: Category[],
-): { cats: Category[]; imgs: ImageItem[] } {
+): { cats: Category[]; imgs: ImageItem[]; cols: CollectionSummary[] } {
   let node = categories
   for (const segment of path) {
     const found = node.find((c) => c.id === segment.id)
-    if (!found) return { cats: [], imgs: [] }
+    if (!found) return { cats: [], imgs: [], cols: [] }
     node = found.children
     if (segment === path[path.length - 1]) {
-      return { cats: found.children, imgs: found.images }
+      return { cats: found.children, imgs: found.images, cols: found.collections }
     }
   }
-  return { cats: node, imgs: [] }
+  return { cats: node, imgs: [], cols: [] }
 }

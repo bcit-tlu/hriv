@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
+from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .auth_events import actor_log_fields
 from .models import Image, SourceImage, User
@@ -376,6 +377,63 @@ class TileGenerationCancellation:
             image.set_kill(True)
 
 
+async def _flush_tracker_progress(
+    source_image_id: int,
+    tracker: ProgressTracker,
+    stop_event: asyncio.Event,
+    *,
+    flush_failed_event: str,
+) -> None:
+    """Write tracker progress to the database until *stop_event* is set.
+
+    Progress and status message are only persisted when they change, but
+    every poll still touches ``updated_at`` so a long flat-progress
+    stretch — a single huge image whose mapped percent does not tick, a
+    pyvips build without progress signals, or the multi-GB source
+    checksum that follows generation — cannot let a live row age past
+    ``_STALE_SOURCE_IMAGE_SECONDS`` and be reconciled to ``failed``
+    while work is still in flight.
+    """
+    last_progress = 0
+    last_message = ""
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=1.5)
+            break  # event was set
+        except asyncio.TimeoutError:
+            pass  # normal timeout -- check progress
+
+        current_progress, current_message = tracker.get()
+        changed = (
+            current_progress != last_progress
+            or current_message != last_message
+        )
+        try:
+            async with async_session() as progress_db:
+                progress_src = await progress_db.get(
+                    SourceImage, source_image_id,
+                )
+                if progress_src is not None:
+                    if changed:
+                        progress_src.progress = current_progress
+                        if current_message:
+                            progress_src.status_message = current_message
+                    else:
+                        progress_src.updated_at = datetime.now(timezone.utc)
+                    await progress_db.commit()
+            if changed:
+                last_progress = current_progress
+                last_message = current_message
+        except Exception:
+            logger.debug(
+                "Progress flush failed (non-critical)",
+                extra={
+                    "event": flush_failed_event,
+                    "source_image_id": source_image_id,
+                },
+            )
+
+
 def _estimate_tile_count(width: int, height: int, tile_size: int = DZI_TILE_SIZE) -> int:
     """Estimate the total number of DZI tiles across all pyramid levels."""
     total = 0
@@ -643,64 +701,40 @@ async def process_source_image(source_image_id: int) -> None:
             tracker.set(10, "Generating tiles")
             stop_event = asyncio.Event()
 
-            async def _flush_progress() -> None:
-                """Periodically write tracker progress to the database."""
-                last_progress = 0
-                last_message = ""
-                while not stop_event.is_set():
-                    try:
-                        await asyncio.wait_for(stop_event.wait(), timeout=1.5)
-                        break  # event was set
-                    except asyncio.TimeoutError:
-                        pass  # normal timeout -- check progress
-
-                    current_progress, current_message = tracker.get()
-                    if current_progress != last_progress or current_message != last_message:
-                        try:
-                            async with async_session() as progress_db:
-                                progress_src = await progress_db.get(
-                                    SourceImage, source_image_id,
-                                )
-                                if progress_src is not None:
-                                    progress_src.progress = current_progress
-                                    if current_message:
-                                        progress_src.status_message = current_message
-                                    await progress_db.commit()
-                            last_progress = current_progress
-                            last_message = current_message
-                        except Exception:
-                            logger.debug(
-                                "Progress flush failed (non-critical)",
-                                extra={
-                                    "event": "processing.progress_flush_failed",
-                                    "source_image_id": source_image_id,
-                                },
-                            )
-
-            # Run tile generation and progress flusher concurrently
-            progress_task = asyncio.create_task(_flush_progress())
+            # Run tile generation and progress flusher concurrently. The
+            # flusher stays alive through the provenance checksum below so
+            # a slow multi-GB hash keeps heartbeating ``updated_at``.
+            progress_task = asyncio.create_task(
+                _flush_tracker_progress(
+                    source_image_id,
+                    tracker,
+                    stop_event,
+                    flush_failed_event="processing.progress_flush_failed",
+                )
+            )
             try:
                 with tracer.start_as_current_span("generate_tiles"):
                     dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
                         generate_tiles, src.stored_path, output_dir, tracker,
                     )
+
+                t_tiles = time.monotonic()
+                span.set_attribute("tiles.duration_ms", round((t_tiles - t_start) * 1000))
+
+                # Mark tile generation completed
+                src.progress = 80
+                src.status_message = "Tiles generated"
+                await db.commit()
+
+                # Compute the provenance checksum now, while the session is
+                # in a committed (idle) state. This reads the full source
+                # file (multi-GB for histology slides), so doing it here
+                # keeps that I/O out of the later flush→commit window and
+                # avoids holding a transaction open.
+                source_checksum = await _best_effort_source_checksum(src.stored_path)
             finally:
                 stop_event.set()
                 await progress_task
-
-            t_tiles = time.monotonic()
-            span.set_attribute("tiles.duration_ms", round((t_tiles - t_start) * 1000))
-
-            # Mark tile generation completed
-            src.progress = 80
-            src.status_message = "Tiles generated"
-            await db.commit()
-
-            # Compute the provenance checksum now, while the session is in a
-            # committed (idle) state. This reads the full source file (multi-GB
-            # for histology slides), so doing it here keeps that I/O out of the
-            # later flush→commit window and avoids holding a transaction open.
-            source_checksum = await _best_effort_source_checksum(src.stored_path)
 
             logger.info(
                 "Tile generation completed",
@@ -778,8 +812,13 @@ async def process_source_image(source_image_id: int) -> None:
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
-                # Only images that are attached to a category appear in the tree.
-                if img.category_id is not None:
+                # Images attached to a category appear in the tree; an
+                # uncategorized image may still sit on any collection's
+                # tile (cover/count) — see #1527.
+                if (
+                    img.category_id is not None
+                    or await image_ids_in_collections(db, {img.id})
+                ):
                     await bump_browse_revision(db)
                 await db.commit()
 
@@ -959,60 +998,36 @@ async def process_replace_image(
             tracker.set(10, "Generating tiles")
             stop_event = asyncio.Event()
 
-            async def _flush_progress() -> None:
-                last_progress = 0
-                last_message = ""
-                while not stop_event.is_set():
-                    try:
-                        await asyncio.wait_for(stop_event.wait(), timeout=1.5)
-                        break
-                    except asyncio.TimeoutError:
-                        pass
-                    current_progress, current_message = tracker.get()
-                    if current_progress != last_progress or current_message != last_message:
-                        try:
-                            async with async_session() as progress_db:
-                                progress_src = await progress_db.get(
-                                    SourceImage, source_image_id,
-                                )
-                                if progress_src is not None:
-                                    progress_src.progress = current_progress
-                                    if current_message:
-                                        progress_src.status_message = current_message
-                                    await progress_db.commit()
-                            last_progress = current_progress
-                            last_message = current_message
-                        except Exception:
-                            logger.debug(
-                                "Progress flush failed (non-critical)",
-                                extra={
-                                    "event": "replace.progress_flush_failed",
-                                    "source_image_id": source_image_id,
-                                },
-                            )
-
-            progress_task = asyncio.create_task(_flush_progress())
+            progress_task = asyncio.create_task(
+                _flush_tracker_progress(
+                    source_image_id,
+                    tracker,
+                    stop_event,
+                    flush_failed_event="replace.progress_flush_failed",
+                )
+            )
             try:
                 with tracer.start_as_current_span("generate_tiles"):
                     dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
                         generate_tiles, src.stored_path, output_dir, tracker,
                     )
+
+                t_tiles = time.monotonic()
+                span.set_attribute("tiles.duration_ms", round((t_tiles - t_start) * 1000))
+
+                src.progress = 80
+                src.status_message = "Tiles generated"
+                await db.commit()
+
+                # Compute the provenance checksum now, while the session is
+                # in a committed (idle) state. This reads the full source
+                # file (multi-GB for histology slides), so doing it here
+                # keeps that I/O out of the later flush/commit window and
+                # avoids holding a transaction open.
+                source_checksum = await _best_effort_source_checksum(src.stored_path)
             finally:
                 stop_event.set()
                 await progress_task
-
-            t_tiles = time.monotonic()
-            span.set_attribute("tiles.duration_ms", round((t_tiles - t_start) * 1000))
-
-            src.progress = 80
-            src.status_message = "Tiles generated"
-            await db.commit()
-
-            # Compute the provenance checksum now, while the session is in a
-            # committed (idle) state. This reads the full source file (multi-GB
-            # for histology slides), so doing it here keeps that I/O out of the
-            # later flush/commit window and avoids holding a transaction open.
-            source_checksum = await _best_effort_source_checksum(src.stored_path)
 
             # Capture old tile directory path before updating Image record
             old_tile_dir: str | None = None
@@ -1087,8 +1102,13 @@ async def process_replace_image(
                 src.status = "completed"
                 src.progress = 100
                 src.status_message = "Completed"
-                # Only images that are attached to a category appear in the tree.
-                if img.category_id is not None:
+                # Images attached to a category appear in the tree; an
+                # uncategorized image may still sit on any collection's
+                # tile (cover/count) — see #1527.
+                if (
+                    img.category_id is not None
+                    or await image_ids_in_collections(db, {img.id})
+                ):
                     await bump_browse_revision(db)
                 await db.commit()
 
@@ -1589,12 +1609,17 @@ async def promote_source_image_tile_rebuild(
         src.tiles_generated_at = datetime.now(timezone.utc)
 
         if img is not None:
+            if img.file_size is None:
+                img.file_size = _source_image_file_size_bytes(src)
             img.tile_sources = f"/api/tiles/{src.id}/{prepared.dzi_rel}"
             img.thumb = f"/api/tiles/{src.id}/{prepared.thumb_rel}"
             img.width = prepared.image_width
             img.height = prepared.image_height
             img.version = img.version + 1
-            if img.category_id is not None:
+            if (
+                img.category_id is not None
+                or await image_ids_in_collections(session, {img.id})
+            ):
                 await bump_browse_revision(session)
     except (Exception, asyncio.CancelledError):
         await rollback_promoted_tile_rebuild(promoted)

@@ -17,24 +17,36 @@ export interface ImageItem {
   fileSize?: number | null
 }
 
+export interface ImageSourceInfo {
+  originalFilename: string | null
+  fileType: string | null
+  uploadedByName: string | null
+}
+
 export interface Category {
   id: number
   label: string
   parentId: number | null
   children: Category[]
   images: ImageItem[]
+  /** Collections filed into this category (#1527); `[]` when the flag is off. */
+  collections: CollectionSummary[]
   programIds: number[]
   groupIds: number[]
   status?: string | null
   sortOrder: number
   version: number
   cardImageId?: number | null
+  /** Server-resolved cover thumbnail (#1609): tokenized with a
+   *  thumbnail-only tile token, so it renders for students even when the
+   *  pinned image is inactive or hidden from them. Null → folder icon. */
+  cardThumb?: string | null
   metadataExtra?: Record<string, unknown> | null
 }
 
 export const MAX_DEPTH = 6
 
-export type Role = 'admin' | 'instructor' | 'student'
+export type Role = 'admin' | 'instructor' | 'staff' | 'student'
 
 export interface User {
   id: number
@@ -67,4 +79,83 @@ export interface Group {
   instructorIds: number[]
   createdAt: string
   updatedAt: string
+}
+
+// ── Deployment feature flags (GET /api/features) ──────────
+
+/**
+ * Flags a deployment turns on per environment (chart values). Unknown flags
+ * are read as ``false`` so a frontend that ships ahead of the backend hides
+ * the surface rather than rendering it against a 404 API.
+ */
+export interface Features {
+  /** Collections tab + ``?collection=`` deep links (epic #1409). */
+  collections: boolean
+  /** My collections drawer on Browse (#1583). */
+  collectionsHomeShelf: boolean
+}
+
+export const DEFAULT_FEATURES: Features = { collections: false, collectionsHomeShelf: false }
+
+// ── Collections (docs/collections.md) ─────────────────────
+
+export type CollectionType = 'synchronized' | 'sequence'
+
+export type CollectionVisibility = 'private' | 'public' | 'restricted'
+
+/** One owner of a collection (#1531): a user co-owner or the owning program. */
+export type CollectionOwner =
+  | { kind: 'user'; userId: number; name: string }
+  | { kind: 'program'; programId: number; name: string }
+
+/** UX hints from the API — the backend re-checks authority on every write. */
+export interface CollectionPermissions {
+  canEdit: boolean
+  canDelete: boolean
+  /** Whether the caller may change visibility/program/group scope (#1531). */
+  canChangeScope: boolean
+  canTransfer: boolean
+  /** Curatorial hide/unhide — admins and instructors only (#1559). */
+  canHide: boolean
+}
+
+export interface CollectionSummary {
+  id: number
+  name: string
+  description: string | null
+  type: CollectionType
+  visibility: CollectionVisibility
+  /** Curatorial hide (#1559): hidden collections are invisible to students
+   * who don't own them; owners keep access. */
+  hidden: boolean
+  /** User co-owners plus the optional program owner; empty means orphaned (#1531). */
+  owners: CollectionOwner[]
+  imageCount: number
+  coverThumb: string | null
+  /** Pinned cover member id; `null` = first-member fallback. */
+  coverImageId: number | null
+  /** Explicit "no cover" pick — the tile renders the type-logo placeholder. */
+  coverBlank: boolean
+  version: number
+  /** Category the collection is filed into (null = unfiled, not on Browse). */
+  categoryId: number | null
+  /** Tile-order position inside its filed category scope. */
+  sortOrder: number
+  /** Restriction scope (empty unless `visibility === 'restricted'`); carried
+   *  on summaries so tiles can render program/group chips (#1567). */
+  programIds: number[]
+  groupIds: number[]
+  createdAt: string
+  updatedAt: string
+  permissions: CollectionPermissions
+}
+
+export interface Collection extends CollectionSummary {
+  /** Ordered member images (only those visible to the caller). */
+  images: ImageItem[]
+  viewportState: Record<string, unknown>
+  /** Nominal member count for unfiltered viewers; for students the backend
+   * clamps it to `imageCount + 1` when members are hidden, so it signals
+   * "restricted members exist" without revealing how many (#1529). */
+  memberCount: number
 }

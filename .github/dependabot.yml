@@ -1,0 +1,235 @@
+# Dependabot configuration for the HRIV monorepo.
+#
+# Weekly (Monday, America/Vancouver) update PRs for base images, Python and
+# npm dependencies, and GitHub Actions. Minor + patch updates are grouped per
+# component so one PR lands per ecosystem per week; majors open individually.
+#
+# PR titles use conventional-commit prefixes (`chore(deps)`, `ci(deps)`).
+# pr-title-lint.yaml skips bot-authored PRs, and release-please does not add
+# `chore` commits to component changelogs.
+#
+# See docs/security-scanning.md for how to handle these PRs.
+#
+# Node images and `@types/node` follow the even-numbered LTS line; all
+# majors are ignored so the runtime only changes through a deliberate LTS
+# move (edit the ignores when moving). Frontend toolchain majors whose peers
+# cannot follow yet (typescript 7 vs typescript-eslint, storybook 11
+# prereleases, vitest 5 vs @storybook/addon-vitest) are ignored until those
+# peers catch up; revisit each ignore when the blocking peer publishes support.
+
+version: 2
+
+updates:
+  # ── Docker base images ─────────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /backup
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /restore-validation
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  # The synthetic-monitoring image is a plain `node:` base; Playwright's
+  # version is pinned by `@playwright/test` in package.json only (the
+  # Dockerfile installs the matching Chromium at build time).
+  - package-ecosystem: docker
+    directory: /synthetic-monitoring
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies, docker]
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
+
+  # ── Python (Poetry) ────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /backup
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /restore-validation
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, python]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  # ── npm ────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, javascript]
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # typescript-eslint peer range is `<6.1.0`.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # Core is pinned to the 10.x beta line; 11 is alpha only, and addons
+      # (incl. ones already published at 11.x) must move together with core.
+      - dependency-name: storybook
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@storybook/*'
+        update-types: ['version-update:semver-major']
+      # @storybook/addon-vitest 10.x peers on vitest/@vitest/browser 3–4.
+      - dependency-name: vitest
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@vitest/*'
+        update-types: ['version-update:semver-major']
+      # MUI 9 is a coordinated migration PR.
+      - dependency-name: '@mui/*'
+        update-types: ['version-update:semver-major']
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  # `@playwright/test` (and `playwright`) sit in their own group so a browser
+  # bump (the Dockerfile installs the matching Chromium at build time) is
+  # obvious from the PR title.
+  - package-ecosystem: npm
+    directory: /synthetic-monitoring
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels: [dependencies, javascript]
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+    groups:
+      playwright:
+        patterns:
+          - '@playwright/*'
+          - playwright
+      npm-minor-patch:
+        exclude-patterns:
+          - '@playwright/*'
+          - playwright
+        update-types: [minor, patch]
+
+  # ── GitHub Actions ─────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: America/Vancouver
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(deps)
+    labels: [dependencies, github-actions]
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: [minor, patch]

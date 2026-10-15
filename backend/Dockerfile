@@ -7,7 +7,7 @@
 # Because ``builder`` depends on this stage, BuildKit AND non-BuildKit
 # Docker both treat it as a real dependency rather than a leaf — no
 # wasted build work even when targeting ``stable`` directly.
-FROM python:3.13-slim AS poetry-tools
+FROM python:3.14-slim AS poetry-tools
 # No WORKDIR here: this stage only ships a venv at /opt/poetry-venv that is
 # consumed by ``builder`` via COPY --from=poetry-tools, and by the
 # ``backend_poetry`` docker-compose service which sets its own
@@ -29,7 +29,7 @@ RUN python -m venv /opt/poetry-venv \
 # libtiff internally) — every one of those codecs is unreachable, so
 # the only way to remove the CVE surface is to rebuild libvips with
 # those delegates compiled out.
-FROM python:3.13-slim AS libvips-build
+FROM python:3.14-slim AS libvips-build
 ARG VIPS_VERSION=8.18.2
 ARG VIPS_SHA256=a30d4aede16f1c2899c1a2241870f8a7409feafa38484bcdcdac113d6d6f8ff5
 RUN apt-get update \
@@ -74,11 +74,11 @@ RUN meson setup build --prefix=/usr/local --libdir=lib --buildtype=release \
     && DESTDIR=/tmp/vips meson install -C build
 
 # ── Stage 1b: Python dependency builder (discarded) ──────
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 WORKDIR /app
 
 # ``apt-get -y upgrade`` before the install chain picks up any
-# trixie-security patches published since the ``python:3.13-slim``
+# trixie-security patches published since the ``python:3.14-slim``
 # base-image digest was built.  The builder stage is discarded, but
 # upgrading here keeps the pip-built wheels linked against the same
 # library versions the runtime ``base`` stage will use.  pyvips is a
@@ -100,11 +100,11 @@ RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requir
     && pip install --no-cache-dir -r requirements.txt
 
 # ── Stage 2: Runtime base (slim, no compiler or dev headers) ─
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 WORKDIR /app
 
 # ``apt-get -y upgrade`` pulls any trixie-security deltas that have
-# landed since the ``python:3.13-slim`` base digest was built, so the
+# landed since the ``python:3.14-slim`` base digest was built, so the
 # runtime image is at least as current as the Debian security mirror
 # at build time rather than as current as the last docker-library
 # python rebuild.
@@ -132,7 +132,7 @@ RUN apt-get update \
 COPY --from=libvips-build /tmp/vips/usr/local /usr/local
 RUN ldconfig
 
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/alembic /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 
 COPY app ./app
@@ -182,17 +182,24 @@ ENV OTEL_TRACES_EXPORTER=none \
 
 # ── Stage 3: Development (hot-reload, used by docker compose)
 FROM base AS dev
-RUN pip install --no-cache-dir 'pytest>=8.3.3,<9' 'pytest-asyncio>=0.24.0,<0.25' 'pytest-cov>=5.0.0,<6'
+RUN pip install --no-cache-dir 'pytest>=9.1.1,<10' 'pytest-asyncio>=1.4.0,<2' 'pytest-cov>=7.1.0,<8'
 # Wrap with ``opentelemetry-instrument`` for parity with the stable stage so
 # developers can exercise the OTel auto-instrumentation pipeline locally
 # just by overriding ``OTEL_TRACES_EXPORTER``/``OTEL_EXPORTER_OTLP_ENDPOINT``
 # in their ``backend/.env``.  The base stage pins all exporters to
 # ``none`` (see above), so the wrapper is a true no-op at startup and adds
 # no runtime overhead until the developer opts in.
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ── Stage 4: Stable ─────────────────────────────────
 FROM base AS stable
+# pip is only needed to install packages (done in ``builder``/``dev``);
+# nothing in the stable image invokes it.  Its vendored copies of
+# msgpack/setuptools (pip/_vendor/vendor.txt) carry open Trivy CRITICAL/HIGH
+# findings that pip upgrades cannot clear (the newest pip still vendors
+# them), so we drop pip from the shipped image entirely.  The ``dev``
+# stage keeps pip — it needs it for the pytest install.
+RUN python -m pip uninstall -y pip
 EXPOSE 8000
 # Run uvicorn in single-process mode (--workers 1) and scale horizontally
 # via Kubernetes replicas (charts/backend/values.yaml: replicaCount)
@@ -210,9 +217,9 @@ EXPOSE 8000
 # corrupt gRPC/HTTP exporter connections and produce duplicate or lost
 # telemetry.  --workers 1 avoids the problem by never forking.
 #
-# --proxy-headers + --forwarded-allow-ips '*': trust X-Forwarded-For /
-# X-Forwarded-Proto from all upstream proxies.  The backend is never
-# directly exposed to the internet (HAProxy → nginx-ingress → frontend
-# nginx → here), so accepting proxy headers from any direct peer is safe
-# and ensures scope["client"] reflects the real client IP.
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# No --proxy-headers: uvicorn's proxy-header handling would rewrite
+# scope["client"] from the client-controlled leftmost X-Forwarded-For
+# entry.  The application resolves the client IP itself at the trusted
+# proxy boundary (app.middleware.get_client_ip / TRUSTED_PROXY_HOPS; see
+# docs/deployment-proxy-chain.md).
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

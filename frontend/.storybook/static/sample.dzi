@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Storybook fixture: a parseable DZI descriptor so OpenSeadragon mounts a
+     real viewer in stories. Tile requests under /sample_files/ 404, which OSD
+     tolerates (the panes stay blank) — only descriptor failures are fatal. -->
+<Image xmlns="http://schemas.microsoft.com/deepzoom/2008" TileSize="256" Overlap="1" Format="jpg">
+  <Size Width="1024" Height="768" />
+</Image>

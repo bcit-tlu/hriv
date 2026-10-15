@@ -1,4 +1,4 @@
-import { errors, type Page } from '@playwright/test'
+import { errors, request, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -128,24 +128,56 @@ export class SyntheticJourneyRecorder {
     }
   }
 
-  async submit(page: Page, success: boolean): Promise<void> {
+  async submit(page: Page, success: boolean, baseURL?: string): Promise<void> {
     const payload = this.buildPayload(success)
-    // The app authenticates API calls with a Bearer JWT persisted in
-    // localStorage; Playwright's APIRequestContext only replays cookies, so we
-    // must forward the token explicitly or the endpoint rejects the submission
-    // as unauthenticated (401).
-    const token = await page.evaluate(() => window.localStorage.getItem('hriv_token'))
-    const response = await page.request.post('/api/telemetry/synthetic-result', {
-      data: payload,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      failOnStatusCode: false,
-    })
 
-    if (!response.ok()) {
-      const body = await response.text()
-      throw new Error(
-        `Synthetic result submission failed: ${response.status()} ${response.statusText()} ${body}`,
-      )
+    // Result reporting must not depend on the journey having authenticated:
+    // during an auth or database outage the login step fails and no user JWT
+    // exists — exactly when the failure report matters (#1495). The shared
+    // ingest token validates server-side without touching the database.
+    const headers: Record<string, string> = {}
+    const ingestToken = process.env.SYNTHETIC_INGEST_TOKEN?.trim()
+    if (ingestToken) {
+      headers['X-Synthetic-Ingest-Token'] = ingestToken
+    } else {
+      // Local/dev fallback: the endpoint also accepts the monitor account's
+      // Bearer JWT persisted in localStorage. Reading it needs a live page,
+      // so tolerate failure — the post is still attempted below and a 401
+      // marks the attempt as a failed report rather than a silent skip.
+      try {
+        const token = await page.evaluate(() => window.localStorage.getItem('hriv_token'))
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+      } catch {
+        // Page or browser context already torn down; submit unauthenticated.
+      }
+    }
+
+    // A standalone APIRequestContext is not bound to the browser context, so
+    // the post still runs when Playwright tears the browser down on a hard
+    // journey timeout (page.request previously died before finally ran). The
+    // X-Synthetic-Test marker mirrors the browser context's extraHTTPHeaders
+    // so backend request logs keep identifying monitor traffic.
+    const context = await request.newContext({
+      baseURL: baseURL ?? process.env.BASE_URL,
+      extraHTTPHeaders: { 'X-Synthetic-Test': '1' },
+    })
+    try {
+      const response = await context.post('/api/telemetry/synthetic-result', {
+        data: payload,
+        headers,
+        failOnStatusCode: false,
+      })
+
+      if (!response.ok()) {
+        const body = await response.text()
+        throw new Error(
+          `Synthetic result submission failed: ${response.status()} ${response.statusText()} ${body}`,
+        )
+      }
+    } finally {
+      await context.dispose()
     }
 
     console.log(

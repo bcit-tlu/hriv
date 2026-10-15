@@ -156,6 +156,7 @@ function AddEditPersonForm({
           <Select value={role} label="Role" onChange={handleRoleChange}>
             <MenuItem value="admin">Admin</MenuItem>
             <MenuItem value="instructor">Instructor</MenuItem>
+            <MenuItem value="staff">Staff</MenuItem>
             <MenuItem value="student">Student</MenuItem>
           </Select>
         </FormControl>
@@ -197,7 +198,9 @@ function AddEditPersonForm({
           <FormHelperText>
             {role === 'student'
               ? 'Select one or more programs to restrict access'
-              : 'Instructors and admins can see all content regardless of program assignment'}
+              : role === 'staff'
+                ? 'Programs do not restrict staff — staff can view all content'
+                : 'Instructors and admins can see all content regardless of program assignment'}
           </FormHelperText>
         </FormControl>
         <FormControlLabel

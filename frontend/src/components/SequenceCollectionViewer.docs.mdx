@@ -1,0 +1,94 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as SequenceCollectionViewerStories from './SequenceCollectionViewer.stories'
+
+<Meta of={SequenceCollectionViewerStories} />
+
+<Title />
+
+<Subtitle>
+  The read-only viewer for sequence collections: a thumbnail filmstrip above the image, one image at
+  a time with edge-overlay Previous/Next buttons (revealed on pointer activity), a caption row with
+  the member name, position readout, and Open image action, and focused arrow-key support. Member
+  management (reorder, add, remove) lives in the collection page's Manage dialog.
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` mounts `SequenceCollectionViewer` when the open collection's `type` is
+`sequence`. It replaces the member list with a real viewer surface: the current image renders
+in `ImageViewer` with `canEditContent={false}`, and the canvas annotations, locked overlays,
+and measurement metadata stored on the image are shown read-only.
+
+The viewer is presentational. `App` owns the selected image (`?collection={id}&item={image_id}`)
+and passes it in through `CollectionsPage`, so the position is shareable and participates in
+browser history.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={SequenceCollectionViewerStories.Basic} />
+
+## Implementation guidance
+
+- **Read-only.** `ImageViewer` is mounted with `canEditContent={false}` and no annotation
+  mutation callbacks; "Open image" sends the user to the normal `?image={id}` browse view,
+  where annotations can be edited with the usual permissions.
+- **Per-image reset.** The viewer is keyed by image id, so switching items remounts it — no
+  viewport state bleeds between images.
+- **Layout.** The thumbnail filmstrip sits _above_ the viewer (#1564); the member name,
+  position readout (`x of y`, `aria-live`), and **Open image** form a caption row under the
+  viewport — the same pattern the synchronized panes use.
+- **Navigation.** Lightbox-style Previous/Next chevrons overlay the viewport's left/right
+  edges (#1561), fading in on pointer activity over the frame and back out after ~2 s idle
+  or on leave — like the OSD toolbar's `autoHideControls`; keyboard focus reveals them too
+  (the buttons stay mounted, only opacity and pointer-events toggle). Strip thumbnails
+  (`Go to {name}` buttons) and ←/→ arrow keys also change the current item. Arrow keys are
+  handled by a document-level keydown-capture listener (#1567) — they step the sequence
+  regardless of where focus sits, so closing a dialog or clicking a control can't strand
+  them — while OpenSeadragon's own keyboard panning still never sees them. Editable targets
+  (inputs, textareas, selects, textboxes) are ignored, and open dialogs/menus/listboxes own
+  their arrows.
+- **Autofocus.** The viewer region (`tabIndex={-1}`) focuses itself when a collection opens
+  (#1564), which reveals the edge nav as the ←/→ cue; the guard is per
+  collection id, so switching images never steals focus back.
+- **Strip highlight.** The current thumbnail's ring is an `outline` pulled _inside_ the
+  thumbnail box with a negative `outline-offset` — an outward outline was clipped
+  asymmetrically by the strip's `overflow-x` scroll port, cropping the highlight (#1561).
+- **Fallback states.** An empty editable collection prompts use of **Manage Images**; a
+  read-only empty collection says "This collection has no images." If the current image's
+  tiles fail mid-session the viewer reports the error, dims that thumbnail, and skips to the
+  nearest still-available image. When every image has failed, an error alert replaces the
+  viewer.
+- **Member management.** Reordering, adding, and removing members moved out of this viewer
+  into `CollectionManageDialog` — a mini-Browse grid on the collection page (#1566). The
+  strip here is strictly navigation; a `hidden` prop desaturates it for hidden collections.
+- **Token renewal.** `onTileSourceRenewed` forwards the viewer's refreshed `ApiImage` to
+  `onImageRenewed`, and `RenewingThumbnail` does the same for strip thumbnails, so short-lived
+  tile/thumb tokens keep working.
+
+## Examples
+
+### Single image
+
+<Canvas of={SequenceCollectionViewerStories.SingleImage} />
+
+### Read-only member
+
+<Canvas of={SequenceCollectionViewerStories.ReadOnlyMember} />
+
+### Empty sequence
+
+<Canvas of={SequenceCollectionViewerStories.EmptySequence} />
+
+## Stories
+
+<Stories includePrimary={false} />

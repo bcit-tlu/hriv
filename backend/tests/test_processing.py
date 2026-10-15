@@ -30,6 +30,7 @@ from app.processing import (
     _detect_tiff_pyramid,
     _estimate_tile_count,
     _extract_tiff_resolution,
+    _flush_tracker_progress,
     _get_float_field,
     _processing_failure_message,
     _tile_source_id_from_url,
@@ -47,6 +48,18 @@ from app.processing import (
     select_rebuild_targets,
     tiles_present_on_disk,
 )
+
+
+@pytest.fixture(autouse=True)
+def _patch_collection_membership(monkeypatch: pytest.MonkeyPatch) -> None:
+    """image_ids_in_collections runs a real SELECT (#1527); unit tests
+    mock the session, so default it to "no membership" — a test that wants a
+    member image installs its own return value."""
+    monkeypatch.setattr(
+        "app.processing.image_ids_in_collections",
+        AsyncMock(return_value=set()),
+    )
+
 
 # ── ProgressTracker tests ────────────────────────────────
 
@@ -76,6 +89,70 @@ def test_progress_tracker_empty_message_preserves_previous() -> None:
     progress, message = tracker.get()
     assert progress == 50
     assert message == "Loading"
+
+
+async def test_flush_tracker_progress_writes_changed_progress() -> None:
+    """Changed tracker values are persisted to the SourceImage row."""
+    src = SimpleNamespace(
+        progress=0, status_message="", updated_at=None,
+    )
+    progress_db = AsyncMock()
+    progress_db.get = AsyncMock(return_value=src)
+    progress_db.commit = AsyncMock()
+    progress_db.__aenter__ = AsyncMock(return_value=progress_db)
+    progress_db.__aexit__ = AsyncMock(return_value=False)
+
+    tracker = ProgressTracker()
+    tracker.set(42, "Generating tiles")
+    stop_event = asyncio.Event()
+
+    with patch("app.processing.async_session", return_value=progress_db):
+        flusher = asyncio.create_task(
+            _flush_tracker_progress(
+                1, tracker, stop_event,
+                flush_failed_event="processing.progress_flush_failed",
+            )
+        )
+        await asyncio.sleep(1.7)  # allow one flush interval to run
+        stop_event.set()
+        assert (await flusher) is None
+
+    assert src.progress == 42
+    assert src.status_message == "Generating tiles"
+    progress_db.commit.assert_awaited()
+
+
+async def test_flush_tracker_progress_heartbeats_unchanged_progress() -> None:
+    """Flat progress still bumps updated_at so the row never goes stale."""
+    src = SimpleNamespace(
+        progress=10, status_message="Generating tiles", updated_at=None,
+    )
+    progress_db = AsyncMock()
+    progress_db.get = AsyncMock(return_value=src)
+    progress_db.commit = AsyncMock()
+    progress_db.__aenter__ = AsyncMock(return_value=progress_db)
+    progress_db.__aexit__ = AsyncMock(return_value=False)
+
+    # Tracker matches the flusher's initial last-seen values, so every
+    # poll takes the heartbeat-only path.
+    tracker = ProgressTracker()
+    stop_event = asyncio.Event()
+
+    with patch("app.processing.async_session", return_value=progress_db):
+        flusher = asyncio.create_task(
+            _flush_tracker_progress(
+                1, tracker, stop_event,
+                flush_failed_event="processing.progress_flush_failed",
+            )
+        )
+        await asyncio.sleep(1.7)  # allow one flush interval to run
+        stop_event.set()
+        assert (await flusher) is None
+
+    assert src.updated_at is not None
+    assert src.progress == 10
+    assert src.status_message == "Generating tiles"
+    progress_db.commit.assert_awaited()
 
 
 def test_progress_tracker_thread_safety() -> None:
@@ -1534,17 +1611,25 @@ async def test_discard_prepared_tile_rebuild_removes_temporary_tree() -> None:
 
 
 @pytest.mark.parametrize("category_id", [42, None])
+@pytest.mark.parametrize(
+    ("image_file_size", "expected_file_size"),
+    [(None, 123456), (321, 321)],
+)
 async def test_promote_source_image_tile_rebuild_stages_without_commit(
     category_id: int | None,
+    image_file_size: int | None,
+    expected_file_size: int,
 ) -> None:
     """Promotion swaps artifacts and mutates provenance without committing."""
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+        file_size=123456,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3, category_id=category_id,
+        version=3, category_id=category_id, file_size=image_file_size,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1572,6 +1657,7 @@ async def test_promote_source_image_tile_rebuild_stages_without_commit(
     assert img.thumb == "/api/tiles/5/thumbnail.jpeg"
     assert img.width == 1024
     assert img.height == 768
+    assert img.file_size == expected_file_size
     assert img.version == 4
     session.get.assert_awaited_once_with(
         Image,
@@ -1642,10 +1728,12 @@ async def test_promote_source_image_tile_rebuild_restores_on_swap_failure() -> N
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+        file_size=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3, category_id=None,
+        version=3, category_id=None, file_size=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1677,10 +1765,12 @@ async def test_promote_source_image_tile_rebuild_restores_on_update_failure() ->
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+        file_size=123456,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=None,
+        version=None, file_size=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1833,10 +1923,12 @@ async def test_rebuild_source_image_tiles_success() -> None:
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+        file_size=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3, category_id=None,
+        version=3, category_id=None, file_size=None,
     )
     events = []
     session = AsyncMock()
@@ -1879,10 +1971,12 @@ async def test_rebuild_source_image_tiles_restores_on_commit_failure() -> None:
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+        file_size=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3, category_id=None,
+        version=3, category_id=None, file_size=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)
@@ -1925,10 +2019,12 @@ async def test_rebuild_source_image_tiles_restores_on_commit_cancellation() -> N
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+        file_size=None,
     )
     img = SimpleNamespace(
+        id=10,
         tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
-        version=3, category_id=None,
+        version=3, category_id=None, file_size=None,
     )
     session = AsyncMock()
     session.get = AsyncMock(return_value=img)

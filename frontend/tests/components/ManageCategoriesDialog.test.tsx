@@ -1172,8 +1172,16 @@ describe('ManageCategoriesDialog — drag-and-drop reorder', () => {
 
   it('reorders interleaved images alongside categories on a successful drop', async () => {
     const onReorderTiles = vi.fn().mockResolvedValue(undefined)
+    // Real sort_order positions: the image leads at 0, categories follow —
+    // the canonical tie-break puts a tied category ahead of an image, so
+    // distinct positions are what keep an image first (issue #1528).
+    const cats = [
+      makeCategory({ id: 1, label: 'Alpha', sortOrder: 1 }),
+      makeCategory({ id: 2, label: 'Beta', sortOrder: 2 }),
+      makeCategory({ id: 3, label: 'Gamma', sortOrder: 3 }),
+    ]
     renderDialog({
-      categories: rootCategories(),
+      categories: cats,
       uncategorizedImages: [makeImage({ id: 100, sortOrder: 0 })],
       onReorderTiles,
     })

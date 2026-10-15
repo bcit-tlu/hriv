@@ -47,22 +47,80 @@ rebuild is already active), bounded keyset-paginated item inspection at
 the parallel endpoint only when `GET /api/jobs/rebuild-tiles` reports the
 capability enabled. The serial `AdminTask` endpoint is unchanged.
 
+Issue #1189 added the scale-validation observability contract and rehearsal
+tooling:
+
+- `tile_rebuild_metrics.py` emits `hriv.tile_rebuild.*` OTel instruments
+  (item duration and queue-wait histograms, supervisor duration,
+  cancellation latency, outcome/reason/state-labelled counters for item
+  terminals, retries, timeouts, lease reclaims, pump runs, enqueue failures,
+  and duplicate deliveries) plus PostgreSQL-derived `/api/metrics` gauges
+  for active supervisors, running children, and queued items. Job, item, and
+  source-image IDs stay in structured `rebuild.*` log events and span
+  attributes; metric labels carry only bounded `outcome`/`reason`/`state`
+  values.
+- `rebuild_fixture.py` is a deterministic seeder (`python -m
+app.rebuild_fixture --count N` / `--purge`) that creates N linked
+  completed `SourceImage`/`Image` pairs backed by tiny valid TIFFs under a
+  reserved `TRF-`/`rebuild-fixture` namespace. Cleanup recognizes them by the
+  exact `metadata.rebuild_fixture=true` image marker plus linked source path,
+  never by name or ID range alone. Seeding and purging refuse to run while a
+  rebuild is active so in-flight children never lose their rows or files. It
+  pads an environment to production item count so pump batching, lease churn, and aggregate updates
+  are measured at scale; real throughput percentiles still come from real
+  sources.
+- The production-shaped rehearsal procedure and its measurement record
+  template live in
+  [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal).
+
 Current scheduler controls are:
 
-| Setting                         | Default | Purpose                                      |
-| ------------------------------- | ------- | -------------------------------------------- |
-| `REBUILD_PARALLEL_ENABLED`      | `false` | Gates creation of durable parallel rebuilds  |
-| `REBUILD_PARALLELISM`           | `2`     | Independent PostgreSQL-derived child window  |
-| `REBUILD_CHILD_TIMEOUT_SECONDS` | `1800`  | Per-child arq timeout                        |
-| `REBUILD_LEASE_SECONDS`         | `2100`  | Ownership recovery horizon                   |
-| `REBUILD_HEARTBEAT_SECONDS`     | `30`    | Lease renewal cadence during tile generation |
-| `REBUILD_PUMP_CADENCE_SECONDS`  | `60`    | Periodic missed-trigger recovery cadence     |
+| Setting                         | Default | Purpose                                                                                                                                   |
+| ------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `REBUILD_PARALLEL_ENABLED`      | `false` | Gates creation of durable parallel rebuilds. Chart default; `latest` overrides to `true` via `flux-fleet` since 2026-09-19 (issue #1189). |
+| `REBUILD_PARALLELISM`           | `2`     | Independent PostgreSQL-derived child window                                                                                               |
+| `REBUILD_CHILD_TIMEOUT_SECONDS` | `3600`  | Persisted timeout; maximum 24 hours                                                                                                       |
+| `REBUILD_LEASE_SECONDS`         | `3900`  | Ownership recovery horizon                                                                                                                |
+| `REBUILD_HEARTBEAT_SECONDS`     | `30`    | Lease renewal cadence during tile generation                                                                                              |
+| `REBUILD_PUMP_CADENCE_SECONDS`  | `60`    | Periodic missed-trigger recovery cadence                                                                                                  |
 
 `WORKER_MAX_JOBS` remains the worker's overall arq capacity and does not
 silently define rebuild parallelism.
 
-Cancellation/retry controls, public admin creation and item controls, scale
-rehearsal, measurement-based tuning, and default enablement remain later waves.
+Cancellation/retry controls and the public admin creation and item controls
+shipped in #1188/#1191; scale-rehearsal tooling and instrumentation shipped in
+#1189.
+
+The first production-shaped `latest` rehearsal on 2026-09-18 did **not** clear
+the rollout gate. It found and corrected an invalid embedded fixture TIFF,
+measured about 8 completed images/hour at parallelism 2 across the sampled real
+source mix, observed 3.2 GiB peak worker RSS under the 4 GiB limit, and proved
+lease recovery after the worker HPA removed pods holding active claims. Recovery
+resumed one item about 39 minutes after its last heartbeat (about four minutes
+after lease expiry), but that delay and HPA behavior were not acceptable as the
+deployed default. Parallel creation was therefore disabled again in `latest`;
+the persisted job was not converted or rolled back. The worker HPA now defaults
+to a 3600-second scale-down stabilization window. A successful repeat rehearsal
+with that protection deployed remained required before re-enablement. The repeat
+rehearsal confirmed that the HPA protection prevents involuntary worker loss, but
+two representative sources exceeded the prior 1800-second child timeout. The
+next candidate therefore used a 3600-second timeout and a 3900-second lease at
+parallelism 2, kept the feature flag off, and required re-testing the two
+timed-out representative sources before enabling.
+
+A third rehearsal on 2026-09-19 re-ran that candidate configuration end to end.
+Both previously timed-out representative sources completed on their first
+attempt (one using about 93% of the new 3600-second budget), zero items
+reached a terminal `failed` state across the ~2h9m observation, and the HPA
+again held steady with no involuntary worker loss. This cleared both the HPA
+safety gate and the timeout/RTO gate. `REBUILD_PARALLEL_ENABLED` was enabled
+as the deployed default for `latest` on 2026-09-19 via the `flux-fleet`
+cluster overlay; the chart-level default in this repository remains `false`,
+`stable` passed its bounded validation pass on 2026-09-22 (see the
+recorded stable bounded validation table in the runbook); a full `scope=all`
+run is scheduled for a weekend window and the overlay decision follows it. See
+[backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal)
+for the full three-rehearsal measurement record.
 
 ## Problem
 
@@ -139,8 +197,11 @@ each short-lived and independently retryable:
   `SELECT ... FOR UPDATE SKIP LOCKED`, enqueue, repeat). This bounds both
   Redis queue depth and libvips memory/CPU pressure independently of
   `max_jobs`.
-- Child jobs are plain arq functions with a per-image `job_timeout` (e.g.
-  30 min) instead of the batch-wide 2 h bound.
+- Child jobs enforce the persisted per-image timeout (e.g. 30 min) through the
+  durable completion commit so timeouts finalize correctly. Retained-tree
+  cleanup runs after that deadline and cannot reclassify committed success; arq
+  retains a fixed 25-hour safety ceiling above the supported 24-hour child
+  maximum, so rollout setting changes cannot preempt existing jobs.
 - Worker isolation: a crashing/OOMing image kills one child job, not the
   batch. The item is marked `failed` with `attempts` incremented; the
   supervisor continues.
@@ -221,13 +282,13 @@ The serial runner stays the default until the parallel path is validated:
 
 ## Phased implementation breakdown (follow-on sub-issues)
 
-| Phase | Scope                                                                                                                                        | Outcome                                          |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| 1     | `rebuild_work_items` schema + Alembic migration; serial runner records items; items read endpoint                                            | Persistence + observability, no execution change |
-| 2     | Per-image arq job + supervisor claim/fan-out loop behind `REBUILD_PARALLELISM_ENABLED`; bounded by `REBUILD_MAX_PARALLELISM`; retry/attempts | Parallel execution path, flagged off             |
-| 3     | Cancellation/resume endpoints wired to work items; UI details drawer + per-item retry                                                        | Operator control surface                         |
-| 4     | Scale rehearsal fixture + staging drill; tune defaults; flip flag on                                                                         | Validated defaults, enabled                      |
-| 5     | Cleanup: remove flag, fold serial loop into Redis-less fallback docs                                                                         | Steady state                                     |
+| Phase | Scope                                                                                                                                        | Outcome                                              |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 1     | `rebuild_work_items` schema + Alembic migration; serial runner records items; items read endpoint                                            | Persistence + observability, no execution change     |
+| 2     | Per-image arq job + supervisor claim/fan-out loop behind `REBUILD_PARALLELISM_ENABLED`; bounded by `REBUILD_MAX_PARALLELISM`; retry/attempts | Parallel execution path, flagged off                 |
+| 3     | Cancellation/resume endpoints wired to work items; UI details drawer + per-item retry                                                        | Operator control surface                             |
+| 4     | Scale rehearsal fixture + staging drill; tune defaults; flip flag on                                                                         | Validated defaults, enabled on `latest` (2026-09-19) |
+| 5     | Cleanup: remove flag, fold serial loop into Redis-less fallback docs                                                                         | Steady state                                         |
 
 Each phase is independently shippable and reversible; phases 1–2 are
 backend-only.

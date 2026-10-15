@@ -11,6 +11,8 @@ import pytest
 from fastapi import FastAPI, HTTPException, Response
 
 import app.auth as auth
+import jwt
+from app.models import Category, Image
 from app.routers import categories as categories_router
 from app.routers.categories import (
     _load_tree,
@@ -21,7 +23,7 @@ from app.routers.categories import (
     delete_category,
     get_category_tree,
 )
-from app.schemas import CategoryCreate, CategoryUpdate
+from app.schemas import CategoryCreate, CategoryOut, CategoryUpdate
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +34,76 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         categories_router, "bump_browse_revision", AsyncMock(return_value=1)
     )
+    monkeypatch.setattr(categories_router, "bump_scopes", AsyncMock())
+
+
+def _make_collection(
+    id: int,
+    category_id: int | None = None,
+    visibility: str = "public",
+    user_id: int | None = 10,
+    owner_program_id: int | None = None,
+    images: list | None = None,
+    programs: list | None = None,
+    groups: list | None = None,
+    sort_order: int = 0,
+    type: str = "sequence",
+    hidden: bool = False,
+) -> SimpleNamespace:
+    now = datetime.now(timezone.utc)
+    return SimpleNamespace(
+        id=id,
+        name=f"coll{id}",
+        description=None,
+        type=type,
+        visibility=visibility,
+        hidden=hidden,
+        user_id=user_id,
+        owner_program_id=owner_program_id,
+        owner=SimpleNamespace(id=user_id, name=f"u{user_id}") if user_id else None,
+        owner_program=(
+            SimpleNamespace(id=owner_program_id, name=f"P{owner_program_id}")
+            if owner_program_id
+            else None
+        ),
+        category_id=category_id,
+        sort_order=sort_order,
+        cover_image_id=None,
+        cover_blank=False,
+        viewport_state={},
+        version=1,
+        # Multi-owner rows (#1531): user_id is creator-only audit; ``owners``
+        # carries the authority/display set.
+        owners=[SimpleNamespace(id=user_id, name=f"u{user_id}")] if user_id else [],
+        created_at=now,
+        updated_at=now,
+        programs=[SimpleNamespace(id=p) for p in (programs or [])],
+        groups=[SimpleNamespace(id=g) for g in (groups or [])],
+        image_links=[
+            SimpleNamespace(sort_order=i, image_id=img.id, image=img)
+            for i, img in enumerate(images or [])
+        ],
+    )
+
+
+def _mock_db3(categories: list, images: list, collections: list) -> AsyncMock:
+    """Three-query mock: categories, images, then collections (flag on)."""
+    db = AsyncMock()
+
+    def _res(rows):
+        r = MagicMock()
+        sc = MagicMock()
+        sc.unique.return_value.all.return_value = rows
+        r.scalars.return_value = sc
+        return r
+
+    responses = iter([_res(categories), _res(images), _res(collections)])
+
+    async def _execute(stmt):
+        return next(responses)
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
 
 
 def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
@@ -47,6 +119,7 @@ def _make_category(
     programs: list | None = None,
     groups: list | None = None,
     version: int = 1,
+    metadata_: dict | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -58,7 +131,7 @@ def _make_category(
         status=status,
         sort_order=sort_order,
         version=version,
-        metadata_=None,
+        metadata_=metadata_,
         created_at=now,
         updated_at=now,
     )
@@ -80,12 +153,13 @@ def _make_image(
     category_id: int | None,
     active: bool = True,
     sort_order: int = 0,
+    thumb: str = "/thumb.jpg",
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
         id=id,
         name=name,
-        thumb="/thumb.jpg",
+        thumb=thumb,
         tile_sources="/tiles/img",
         category_id=category_id,
         copyright=None,
@@ -246,6 +320,25 @@ async def test_load_tree_admin_sees_all_images() -> None:
 
     tree = await _load_tree(db, None, user_role="admin")
 
+    assert len(tree[0].images) == 2
+
+
+async def test_load_tree_staff_sees_hidden_and_inactive() -> None:
+    """Staff take the unrestricted (non-student) path: hidden categories
+    and inactive images are visible."""
+    cats = [
+        _make_category(1, "Visible"),
+        _make_category(2, "Hidden", status="hidden"),
+    ]
+    imgs = [
+        _make_image(10, "active-img", category_id=1, active=True),
+        _make_image(11, "inactive-img", category_id=1, active=False),
+    ]
+    db = _mock_db(cats, imgs)
+
+    tree = await _load_tree(db, None, user_role="staff")
+
+    assert len(tree) == 2
     assert len(tree[0].images) == 2
 
 
@@ -918,6 +1011,42 @@ async def test_list_categories_admin_sees_all() -> None:
     assert len(result) == 2
 
 
+async def test_list_categories_staff_sees_all() -> None:
+    """Staff are not filtered by program/group restrictions or hidden status."""
+    prog = _make_program(10)
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "Restricted", programs=[prog]),
+    ]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = cats
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_categories(_make_user("staff"), parent_id=None, db=db)
+    assert len(result) == 2
+
+
+async def test_get_category_staff_sees_hidden() -> None:
+    """Staff can fetch hidden categories — visibility is unrestricted."""
+    cat = _make_category(1, "Hidden", status="hidden")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    result = await get_category(1, _make_user("staff"), db=db)
+    assert result.label == "Hidden"
+
+
+async def test_get_category_staff_sees_program_restricted() -> None:
+    cat = _make_category(1, "Restricted", programs=[_make_program(10)])
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    result = await get_category(1, _make_user("staff"), db=db)
+    assert result.label == "Restricted"
+
+
 async def test_get_category_student_hidden() -> None:
     cat = _make_category(1, "Hidden", status="hidden")
     db = AsyncMock()
@@ -1222,3 +1351,445 @@ async def test_load_tree_student_in_group_sees_category() -> None:
         user_group_ids={50},
     )
     assert [c.label for c in tree] == ["GroupOnly"]
+
+
+# ── Collections in the tree (epic #1525 / #1527) ──────────
+
+
+async def test_load_tree_embeds_collections_when_flag_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    cats = [_make_category(1, "Alpha"), _make_category(2, "Beta")]
+    colls = [
+        _make_collection(
+            10, category_id=1, sort_order=0,
+            images=[_make_image(5, "a", 1)],
+        ),
+        _make_collection(11, category_id=1, sort_order=1),
+        _make_collection(12, category_id=2),
+        # Uncategorized collections are not embedded — like uncategorized
+        # images they are fetched separately at the Browse root.
+        _make_collection(13, category_id=None),
+    ]
+    db = _mock_db3(cats, [], colls)
+    tree = await _load_tree(
+        db, None, user=_make_user("admin"), user_role="admin"
+    )
+    assert [c.id for c in tree[0].collections] == [10, 11]
+    assert [c.id for c in tree[1].collections] == [12]
+    s = tree[0].collections[0]
+    assert s.image_count == 1 and s.cover_thumb == "/thumb.jpg"
+    assert s.category_id == 1 and s.sort_order == 0
+    assert s.permissions.can_edit is True
+
+
+async def test_load_tree_flag_off_omits_collections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", False
+    )
+    cats = [_make_category(1, "Alpha")]
+    db = _mock_db(cats, [])
+    tree = await _load_tree(
+        db, None, user=_make_user("admin"), user_role="admin"
+    )
+    assert tree[0].collections == []
+    # Exactly the two original queries — no collection SELECT ran.
+    assert db.execute.await_count == 2
+
+
+async def test_load_tree_student_collection_visibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    student = _make_user(
+        "student", programs=[_make_program(1)], groups=[SimpleNamespace(id=5)]
+    )
+    cat = _make_category(1, "Visible")
+    colls = [
+        _make_collection(10, 1, "private", user_id=99),      # not theirs
+        _make_collection(11, 1, "private", user_id=1),       # own
+        _make_collection(12, 1, "public", user_id=99),
+        _make_collection(  # dual gate satisfied
+            13, 1, "restricted", user_id=99, programs=[1], groups=[5]
+        ),
+        _make_collection(  # program leg fails
+            14, 1, "restricted", user_id=99, programs=[2], groups=[5]
+        ),
+    ]
+    db = _mock_db3([cat], [], colls)
+    tree = await _load_tree(
+        db, None, user=student, user_role="student",
+        user_program_ids={1}, user_group_ids={5},
+    )
+    assert [c.id for c in tree[0].collections] == [11, 12, 13]
+    perms = tree[0].collections[0].permissions
+    assert perms.can_edit is True and perms.can_transfer is False
+
+
+async def test_load_tree_student_collection_member_filtering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image_count/cover reflect only images the student may view."""
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    student = _make_user("student")
+    cat = _make_category(1, "Visible")
+    colls = [
+        _make_collection(
+            10, 1, "public",
+            images=[
+                _make_image(5, "on", 1, active=True),
+                _make_image(6, "off", 1, active=False),
+            ],
+        )
+    ]
+    db = _mock_db3([cat], [], colls)
+    tree = await _load_tree(
+        db, None, user=student, user_role="student",
+        user_program_ids=set(), user_group_ids=set(),
+    )
+    [s] = tree[0].collections
+    assert s.image_count == 1 and s.cover_thumb == "/thumb.jpg"
+
+
+async def test_load_tree_collection_in_excluded_category_is_pruned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A public collection inside a hidden category must not surface: the
+    category ancestor gate applies on top of the collection gate."""
+    monkeypatch.setattr(
+        categories_router.settings, "collections_enabled", True
+    )
+    student = _make_user(
+        "student", programs=[_make_program(1)], groups=[SimpleNamespace(id=5)]
+    )
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "RestrictedCat", programs=[_make_program(9)]),
+    ]
+    colls = [
+        _make_collection(10, 1, "public"),
+        _make_collection(11, 2, "public"),  # inside the hidden category
+    ]
+    db = _mock_db3(cats, [], colls)
+    tree = await _load_tree(
+        db, None, user=student, user_role="student",
+        user_program_ids={1}, user_group_ids={5},
+    )
+    assert [c.label for c in tree] == ["Open"]
+    assert [c.id for c in tree[0].collections] == [10]
+
+
+async def test_delete_category_bumps_parent_and_root_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cat = _make_category(5, "Sub", parent_id=2)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+    await delete_category(5, _make_user(), db=db)
+    categories_router.bump_scopes.assert_awaited_once()
+    # Parent scope loses the tile; root gains images reparented by ON DELETE
+    # SET NULL. Collections become unfiled, not root-scope members.
+    assert categories_router.bump_scopes.call_args.args[1] == {2, 0}
+
+
+# ── Category card image (issue #1609) ─────────────────────
+
+CARD_THUMB_URL = "/api/tiles/10/thumbnail.jpeg"
+
+
+def _decode_tile_token(url: str) -> dict:
+    token = url.split("tile_token=", 1)[1]
+    return jwt.decode(
+        token,
+        auth.auth_settings.jwt_secret,
+        algorithms=[auth.auth_settings.jwt_algorithm],
+    )
+
+
+async def test_load_tree_card_image_inactive_image_student() -> None:
+    """The pinned image may be inactive — the cover still resolves for
+    students, with a thumbnail-only token and a scrubbed metadata_extra."""
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 10})
+    img = _make_image(
+        10, "cover", category_id=1, active=False, thumb=CARD_THUMB_URL
+    )
+    db = _mock_db([cat], [img])
+
+    tree = await _load_tree(db, None, user_role="student")
+
+    node = tree[0]
+    assert node.card_image_id == 10
+    # ``field_serializer`` tokenizes at dump time (API-response shape).
+    dumped = node.model_dump()
+    assert dumped["card_thumb"].startswith(f"{CARD_THUMB_URL}?tile_token=")
+    payload = _decode_tile_token(dumped["card_thumb"])
+    assert payload["purpose"] == "thumb"
+    assert payload["sid"] == 10
+    assert "card_image_id" not in dumped["metadata_extra"]
+
+
+async def test_load_tree_card_image_in_hidden_child_student() -> None:
+    """A pin pointing into a hidden child subtree still resolves — the
+    student sees the cover even though the child itself is excluded."""
+    cats = [
+        _make_category(1, "Parent", metadata_={"card_image_id": 10}),
+        _make_category(2, "Hidden", parent_id=1, status="hidden"),
+    ]
+    img = _make_image(10, "cover", category_id=2, thumb=CARD_THUMB_URL)
+    db = _mock_db(cats, [img])
+
+    tree = await _load_tree(db, None, user_role="student")
+
+    assert len(tree) == 1
+    assert tree[0].children == []
+    assert tree[0].card_image_id == 10
+    card_thumb = tree[0].model_dump()["card_thumb"]
+    assert _decode_tile_token(card_thumb)["purpose"] == "thumb"
+
+
+async def test_load_tree_card_image_in_restricted_child_student() -> None:
+    """A pin into a child restricted to a program the student lacks still
+    resolves — visibility gates do not apply to the card cover."""
+    cats = [
+        _make_category(1, "Parent", metadata_={"card_image_id": 10}),
+        _make_category(
+            2, "Restricted", parent_id=1, programs=[_make_program(20)]
+        ),
+    ]
+    img = _make_image(10, "cover", category_id=2, thumb=CARD_THUMB_URL)
+    db = _mock_db(cats, [img])
+
+    tree = await _load_tree(
+        db, None, user_role="student",
+        user_program_ids={10}, user_group_ids=set(),
+    )
+
+    assert tree[0].children == []
+    assert tree[0].card_image_id == 10
+
+
+async def test_load_tree_card_image_dangling_pin_is_null() -> None:
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 999})
+    db = _mock_db([cat], [])
+
+    tree = await _load_tree(db, None, user_role="admin")
+
+    assert tree[0].card_image_id is None
+    assert tree[0].card_thumb is None
+
+
+async def test_load_tree_card_image_outside_subtree_is_null() -> None:
+    """A pin on an image that does not live in the category subtree does
+    not resolve."""
+    cats = [
+        _make_category(1, "Cat", metadata_={"card_image_id": 10}),
+        _make_category(2, "Other"),
+    ]
+    img = _make_image(10, "cover", category_id=2, thumb=CARD_THUMB_URL)
+    db = _mock_db(cats, [img])
+
+    tree = await _load_tree(db, None, user_role="admin")
+    by_label = {c.label: c for c in tree}
+
+    assert by_label["Cat"].card_image_id is None
+    assert by_label["Cat"].card_thumb is None
+
+
+async def test_load_tree_card_image_admin_keeps_metadata() -> None:
+    """Editors keep the raw ``card_image_id`` in metadata_extra."""
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 10})
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+    db = _mock_db([cat], [img])
+
+    tree = await _load_tree(db, None, user_role="admin")
+
+    assert tree[0].metadata_extra == {"card_image_id": 10}
+    assert tree[0].card_image_id == 10
+
+
+async def test_get_category_resolves_card_image() -> None:
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 10})
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+    db = AsyncMock()
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: {Category: cat, Image: img}[model]
+    )
+
+    result = await get_category(1, _make_user("admin"), db=db)
+    out = categories_router.CategoryOut.model_validate(result).model_dump()
+
+    assert out["card_image_id"] == 10
+    assert out["card_thumb"].startswith(f"{CARD_THUMB_URL}?tile_token=")
+    assert _decode_tile_token(out["card_thumb"])["purpose"] == "thumb"
+
+
+async def test_update_category_card_image_nonexistent_rejected() -> None:
+    cat = _make_category(1, "Cat")
+    body = CategoryUpdate(metadata_extra={"card_image_id": 999})
+    db = AsyncMock()
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: cat if model is Category else None
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await update_category(1, body, _mock_request(), MagicMock(), db=db)
+    assert exc.value.status_code == 422
+
+
+async def test_update_category_card_image_outside_subtree_rejected() -> None:
+    cat = _make_category(1, "Cat")
+    other = _make_category(2, "Other")
+    img = _make_image(10, "cover", category_id=2, thumb=CARD_THUMB_URL)
+    body = CategoryUpdate(metadata_extra={"card_image_id": 10})
+    by_id = {1: cat, 2: other}
+    db = AsyncMock()
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else by_id.get(id_)
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await update_category(1, body, _mock_request(), MagicMock(), db=db)
+    assert exc.value.status_code == 422
+    assert "card_image_id" in exc.value.detail
+
+
+async def test_update_category_card_image_unpin_allowed() -> None:
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 10})
+    body = CategoryUpdate(metadata_extra={"card_image_id": None})
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    resp = await update_category(1, body, _mock_request(), MagicMock(), db=db)
+    data = _json.loads(resp.body)
+    assert data["metadata_extra"] == {"card_image_id": None}
+
+
+async def test_list_categories_student_card_scrubbed_and_resolved() -> None:
+    """F3: the list endpoint resolves the cover for students while
+    scrubbing ``card_image_id`` out of ``metadata_extra`` — same contract
+    as the tree."""
+    cat = _make_category(
+        1, "Cat", metadata_={"card_image_id": 10, "note": "x"}
+    )
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+
+    vis_result = MagicMock()
+    vis_result.scalars.return_value.unique.return_value.all.return_value = [
+        cat
+    ]
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [cat]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[vis_result, list_result])
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else cat
+    )
+
+    result = await list_categories(
+        _make_user("student"), parent_id=None, db=db
+    )
+    out = CategoryOut.model_validate(result[0]).model_dump()
+
+    assert out["card_image_id"] == 10
+    assert out["card_thumb"].startswith(f"{CARD_THUMB_URL}?tile_token=")
+    assert _decode_tile_token(out["card_thumb"])["purpose"] == "thumb"
+    assert out["metadata_extra"] == {"note": "x"}
+
+
+async def test_list_categories_admin_keeps_raw_metadata() -> None:
+    """Editors keep ``card_image_id`` in metadata_extra; resolved fields
+    are still populated."""
+    cat = _make_category(1, "Cat", metadata_={"card_image_id": 10})
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [cat]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=list_result)
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else cat
+    )
+
+    result = await list_categories(
+        _make_user("admin"), parent_id=None, db=db
+    )
+    out = CategoryOut.model_validate(result[0]).model_dump()
+
+    assert out["metadata_extra"] == {"card_image_id": 10}
+    assert out["card_image_id"] == 10
+    assert _decode_tile_token(out["card_thumb"])["purpose"] == "thumb"
+
+
+async def test_update_category_valid_pin_response_carries_card_fields() -> None:
+    """F4: a valid PATCH response carries the resolved pin and a
+    thumbnail-scoped token — not nulls."""
+    cat = _make_category(1, "Cat")
+    img = _make_image(10, "cover", category_id=1, thumb=CARD_THUMB_URL)
+    body = CategoryUpdate(metadata_extra={"card_image_id": 10})
+    db = AsyncMock()
+    db.get = AsyncMock(
+        side_effect=lambda model, id_: img if model is Image else cat
+    )
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    resp = await update_category(1, body, _mock_request(), MagicMock(), db=db)
+    data = _json.loads(resp.body)
+
+    assert data["card_image_id"] == 10
+    assert data["card_thumb"].startswith(f"{CARD_THUMB_URL}?tile_token=")
+    payload = _decode_tile_token(data["card_thumb"])
+    assert payload["purpose"] == "thumb"
+    assert payload["sid"] == 10
+
+
+async def test_create_category_non_null_pin_rejected() -> None:
+    """A new category has no subtree images, so any non-null pin is a 422."""
+    body = CategoryCreate(
+        label="Cat", parent_id=None,
+        metadata_={"card_image_id": 10},
+    )
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, _make_user("admin"), db=db)
+    assert exc.value.status_code == 422
+    assert "card_image_id" in exc.value.detail
+
+
+async def test_create_category_null_pin_allowed() -> None:
+    """``None`` unpins and is always allowed on create."""
+    body = CategoryCreate(
+        label="Cat", parent_id=None,
+        metadata_={"card_image_id": None},
+    )
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(body, _make_user("admin"), db=db)
+    assert result._card_image_id is None
+    assert result._card_thumb is None
+    db.add.assert_called_once()

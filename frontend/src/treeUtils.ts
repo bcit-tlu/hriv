@@ -1,4 +1,4 @@
-import type { Category, ImageItem } from './types'
+import type { Category, CollectionSummary, ImageItem } from './types'
 
 /** Search the category tree for an image by ID, returning the image and its category path. */
 export function findImageInTree(
@@ -24,6 +24,40 @@ export function findCategoryPath(
   for (const cat of tree) {
     if (cat.id === categoryId) return [...path, cat]
     const found = findCategoryPath(cat.children, categoryId, [...path, cat])
+    if (found) return found
+  }
+  return null
+}
+
+/**
+ * Resolve the live ancestry of a navigation path's leaf. `path` entries are
+ * navigation-time snapshots; searching the whole tree for the leaf by id
+ * survives renames, restriction edits, and reparents of the leaf or its
+ * ancestors. Returns `[]` at root and when the leaf has left the tree.
+ */
+export function findLiveCategoryPath(
+  tree: Category[],
+  path: ReadonlyArray<{ id: number }>,
+): Category[] {
+  if (path.length === 0) return []
+  return findCategoryPath(tree, path[path.length - 1].id) ?? []
+}
+
+/**
+ * Search the category tree for a filed collection by ID, returning the
+ * collection summary and the category path it is filed under (#1529).
+ * Unfiled collections are not in the Browse tree.
+ */
+export function findCollectionInTree(
+  tree: Category[],
+  collectionId: number,
+  path: Category[] = [],
+): { collection: CollectionSummary; path: Category[] } | null {
+  for (const cat of tree) {
+    for (const col of cat.collections) {
+      if (col.id === collectionId) return { collection: col, path: [...path, cat] }
+    }
+    const found = findCollectionInTree(cat.children, collectionId, [...path, cat])
     if (found) return found
   }
   return null

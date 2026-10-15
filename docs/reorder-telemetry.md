@@ -103,7 +103,7 @@ synthetic reorder volume.
 `reorder.operation` events carry (all optional except `operation_id` and
 `state`; bounded/coerced server-side in `backend/app/routers/telemetry.py`):
 
-- `operation_id`, `state`, `item_type` (`category`/`image`/`mixed`)
+- `operation_id`, `state`, `item_type` (`category`/`collection`/`image`/`mixed`)
 - `category_id` (ordering scope: parent category, absent for the root scope)
 - `item_id` (the dragged tile's ID, regardless of `item_type` — including
   `mixed` scopes and category moves)
@@ -113,7 +113,7 @@ synthetic reorder volume.
   Manage Categories move, `-1` marks the side where the dragged category is
   absent — `to_index: -1` in the source scope it left, `from_index: -1` in the
   destination scope it joined)
-- `category_count`, `image_count` (items in the persisted scope)
+- `category_count`, `collection_count`, `image_count` (items in the persisted scope)
 - `queue_depth` (coordinator coalescing depth; capped at 1 because a newer queued snapshot replaces the older one)
 - `local_revision` (the client's ordering revision for the scope at submission time)
 - `duration_ms` (for terminal states)

@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import MenuIcon from '@mui/icons-material/Menu'
 import Box from '@mui/material/Box'
@@ -23,7 +23,7 @@ import { getNavigationItems } from './navigation'
 type DrawerVariant = 'temporary' | 'persistent' | 'permanent'
 type DrawerAnchor = 'left' | 'right' | 'top' | 'bottom'
 type DrawerContent = 'navigation' | 'settings' | 'long content'
-type DrawerRole = 'admin' | 'instructor' | 'student'
+type DrawerRole = 'admin' | 'instructor' | 'staff' | 'student'
 
 interface DrawerStoryArgs {
   drawerVariant: DrawerVariant
@@ -60,8 +60,10 @@ export function DrawerContentExample({
   const navigation =
     content === 'navigation'
       ? getNavigationItems({
-          canEditContent: role !== 'student',
+          canEditContent: role === 'admin' || role === 'instructor',
           canManageUsers: role === 'admin',
+          canViewPeople: role === 'admin' || role === 'staff',
+          collectionsEnabled: true,
         })
       : []
   const items = Array.from({ length: 8 }, (_, index) => `Menu item ${index + 1}`)
@@ -273,7 +275,7 @@ const meta = {
     },
     role: {
       control: 'inline-radio',
-      options: ['admin', 'instructor', 'student'],
+      options: ['admin', 'instructor', 'staff', 'student'],
       description: 'Role used to determine which shared navigation items are visible.',
     },
     onOpen: {
@@ -317,7 +319,9 @@ export const Basic: Story = {
     await expect(args.onOpen).toHaveBeenCalledTimes(1)
 
     await userEvent.click(documentBody.getByRole('button', { name: 'Close drawer' }))
-    await expect(documentBody.queryByRole('heading', { name: 'Navigation' })).toBeNull()
+    await waitFor(() =>
+      expect(documentBody.queryByRole('heading', { name: 'Navigation' })).toBeNull(),
+    )
     await expect(args.onClose).toHaveBeenCalledTimes(1)
   },
 }

@@ -15,8 +15,9 @@ from ..authz import (
     can_attach_group_to_category,
     can_attach_program_to_category,
 )
-from ..database import get_db
-from ..models import Category, Group, Image, Program, User
+from ..collection_views import _ViewerContext, collection_summary_out
+from ..database import get_db, settings
+from ..models import Category, Collection, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
     CategoryUpdate,
@@ -50,6 +51,105 @@ _browse_tree_build_duration = _meter.create_histogram(
 )
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+def _card_image_pin(metadata_: dict | None) -> int | None:
+    """Raw ``card_image_id`` pin from category metadata, if it is an int."""
+    pin = (metadata_ or {}).get("card_image_id")
+    return pin if isinstance(pin, int) and not isinstance(pin, bool) else None
+
+
+def resolve_card_image(
+    cat: Category,
+    images_by_id: dict[int, Image],
+    categories_by_id: dict[int, Category],
+) -> Image | None:
+    """Resolve a category's ``metadata.card_image_id`` pin to an Image.
+
+    The pin resolves only when the image exists and lives in this category
+    or a descendant (parent chain walked up to ``cat.id``; a visited set
+    guards against cycles). Resolution deliberately ignores ``active``,
+    hidden status, and program/group gates — the whole point of #1609 is
+    that the card cover still resolves when the pinned image is not
+    otherwise visible to the caller.
+    """
+    pin = _card_image_pin(cat.metadata_)
+    if pin is None:
+        return None
+    image = images_by_id.get(pin)
+    if image is None:
+        return None
+    seen: set[int] = set()
+    current = image.category_id
+    while current is not None and current not in seen:
+        if current == cat.id:
+            return image
+        seen.add(current)
+        parent = categories_by_id.get(current)
+        current = parent.parent_id if parent is not None else None
+    return None
+
+
+async def _resolve_card_image_db(
+    db: AsyncSession, cat_id: int, metadata_: dict | None,
+) -> Image | None:
+    """DB-backed variant of :func:`resolve_card_image` for single-category
+    endpoints (``GET``/``PATCH /api/categories/{id}``). Depth is bounded by
+    the frontend's MAX_DEPTH; the visited set still guards against cycles.
+    """
+    pin = _card_image_pin(metadata_)
+    if pin is None:
+        return None
+    image = await db.get(Image, pin)
+    if image is None:
+        return None
+    seen: set[int] = set()
+    current = image.category_id
+    while current is not None and current not in seen:
+        if current == cat_id:
+            return image
+        seen.add(current)
+        parent = await db.get(Category, current)
+        current = parent.parent_id if parent is not None else None
+    return None
+
+
+def _scrub_card_image_id(metadata_: dict | None) -> dict | None:
+    """Copy of category metadata without ``card_image_id``, so students do
+    not learn the id of an image they cannot otherwise see (#1609)."""
+    if not isinstance(metadata_, dict) or "card_image_id" not in metadata_:
+        return metadata_
+    return {k: v for k, v in metadata_.items() if k != "card_image_id"}
+
+
+async def _attach_card_fields(
+    db: AsyncSession, cat: Category, user: User,
+) -> Category:
+    """Attach the resolved card pin (and, for students, a scrubbed metadata
+    dict) as private attrs read by ``CategoryOut.extract_program_ids``."""
+    card_image = await _resolve_card_image_db(db, cat.id, cat.metadata_)
+    cat._card_image_id = card_image.id if card_image else None
+    cat._card_thumb = card_image.thumb if card_image else None
+    if user.role == "student":
+        cat._metadata_extra_override = _scrub_card_image_id(cat.metadata_)
+    return cat
+
+
+async def _validate_card_image_pin(
+    db: AsyncSession, category_id: int, metadata_: dict | None,
+) -> None:
+    """422 when ``metadata.card_image_id`` is present and non-null but does
+    not resolve to an image in the category subtree (#1609). ``None``
+    (unpin) is always allowed."""
+    if not isinstance(metadata_, dict):
+        return
+    if metadata_.get("card_image_id") is None:
+        return
+    if await _resolve_card_image_db(db, category_id, metadata_) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="card_image_id must reference an image in this category or its sub-categories",
+        )
 
 
 def _viewer_etag_fragment(
@@ -217,13 +317,15 @@ async def _load_tree(
     db: AsyncSession,
     parent_id: int | None,
     *,
+    user: User | None = None,
     user_role: str = "admin",
     user_program_ids: set[int] | None = None,
     user_group_ids: set[int] | None = None,
 ) -> list[CategoryTree]:
     """Build the full category tree using two flat queries instead of
     recursive per-level SELECTs.  This reduces the number of DB round-trips
-    from O(depth) to exactly 2 regardless of tree depth.
+    from O(depth) to exactly 2 regardless of tree depth (3 when collections
+    are embedded — see below).
 
     When *user_role* is ``"student"`` and *user_program_ids* is provided,
     categories with program restrictions are filtered to only those matching
@@ -231,6 +333,14 @@ async def _load_tree(
     restrictions (empty ``programs``) are visible to everyone.  Filtering
     cascades: if a parent category is hidden from a student, its entire
     subtree is also hidden—even if children have no program restrictions.
+
+    When ``settings.collections_enabled`` is on and *user* is provided, each
+    category node also embeds the collections filed into it
+    (``CategoryTree.collections``), filtered by the same visibility rules as
+    ``GET /api/collections`` — a collection is embedded only when its own
+    visibility gate AND the category's ancestor gate both pass. With the
+    flag off (or no caller context) the query is skipped so flag-off
+    deployments never leak collection data into the tree.
     """
 
     # ── Query 1: all categories in one shot ──
@@ -253,12 +363,32 @@ async def _load_tree(
     for cat in all_categories:
         children_by_parent.setdefault(cat.parent_id, []).append(cat)
 
+    # ── By-id indexes for card-image pin resolution (#1609) — no new
+    # queries; built from the two flat result sets above. ──
+    images_by_id = {img.id: img for img in all_images}
+    categories_by_id = {cat.id: cat for cat in all_categories}
+
     # ── Compute excluded category IDs for students ──
     excluded: set[int] = set()
     if user_role == "student":
         excluded = compute_excluded_category_ids(
             all_categories, user_program_ids or set(), user_group_ids or set(),
         )
+
+    # ── Query 3: all collections in one shot (flag- and user-gated) ──
+    collections_by_cat: dict[int, list[Collection]] = {}
+    coll_ctx: _ViewerContext | None = None
+    if settings.collections_enabled and user is not None:
+        coll_result = await db.execute(
+            select(Collection).order_by(Collection.sort_order, Collection.id)
+        )
+        all_collections = coll_result.scalars().unique().all()
+        coll_ctx = _ViewerContext(
+            user, excluded if user_role == "student" else None
+        )
+        for coll in all_collections:
+            if coll.category_id is not None and coll_ctx.can_view(coll):
+                collections_by_cat.setdefault(coll.category_id, []).append(coll)
 
     # ── Recursive assembly (in-memory only, no DB calls) ──
     def _assemble(pid: int | None) -> list[CategoryTree]:
@@ -269,6 +399,17 @@ async def _load_tree(
             cat_images = images_by_cat.get(cat.id, [])
             if user_role == "student":
                 cat_images = [img for img in cat_images if img.active]
+            # Card cover (#1609): resolves even when the pinned image is
+            # inactive or lives in a subtree hidden from this viewer.
+            card_image = resolve_card_image(cat, images_by_id, categories_by_id)
+            # Students get metadata with ``card_image_id`` scrubbed (the id
+            # would disclose an image they cannot list); editors keep the
+            # raw pin.
+            metadata_extra = (
+                _scrub_card_image_id(cat.metadata_)
+                if user_role == "student"
+                else cat.metadata_
+            )
             tree.append(CategoryTree(
                 id=cat.id,
                 label=cat.label,
@@ -278,13 +419,19 @@ async def _load_tree(
                 status=cat.status,
                 sort_order=cat.sort_order,
                 version=cat.version,
-                metadata_extra=cat.metadata_,
+                metadata_extra=metadata_extra,
+                card_image_id=card_image.id if card_image else None,
+                card_thumb=card_image.thumb if card_image else None,
                 created_at=cat.created_at,
                 updated_at=cat.updated_at,
                 children=_assemble(cat.id),
                 images=[
                     ImageOut.model_validate(img)
                     for img in cat_images
+                ],
+                collections=[
+                    collection_summary_out(coll_ctx, coll)
+                    for coll in collections_by_cat.get(cat.id, [])
                 ],
             ))
         return tree
@@ -336,6 +483,7 @@ async def get_category_tree(
     build_started = time.monotonic()
     tree = await _load_tree(
         db, None,
+        user=_user,
         user_role=_user.role,
         user_program_ids=user_program_ids,
         user_group_ids=user_group_ids,
@@ -366,7 +514,13 @@ async def list_categories(
             stmt = stmt.where(~Category.id.in_(excluded))
     stmt = stmt.order_by(Category.sort_order, Category.label)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    cats = result.scalars().all()
+    # Resolve each row's card pin (and scrub student metadata) so the list
+    # response honours #1609 like the tree does. Bounded: categories with
+    # no pin short-circuit before any DB access.
+    for cat in cats:
+        await _attach_card_fields(db, cat, _user)
+    return cats
 
 
 @router.get("/{category_id}", response_model=CategoryOut)
@@ -385,7 +539,9 @@ async def get_category(
             db, category_id, user_program_ids, user_group_ids,
         ):
             raise HTTPException(status_code=404, detail="Category not found")
-    return cat
+    # Resolve the card-image pin for the tile cover (#1609). Private attrs
+    # ride into CategoryOut like ``_category_warnings``.
+    return await _attach_card_fields(db, cat, _user)
 
 
 @router.post("/", response_model=CategoryOut, status_code=201)
@@ -418,6 +574,16 @@ async def create_category(
         db, _user, body.group_ids, inherited_group_ids,
     )
 
+    # A brand-new category has no subtree images, so any non-null
+    # card_image_id pin is invalid (#1609). ``None`` is allowed.
+    if isinstance(body.metadata_extra, dict) and body.metadata_extra.get(
+        "card_image_id"
+    ) is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="card_image_id must reference an image in this category or its sub-categories",
+        )
+
     cat = Category(
         label=body.label,
         parent_id=body.parent_id,
@@ -432,6 +598,9 @@ async def create_category(
     await db.commit()
     await db.refresh(cat)
     cat._category_warnings = _intersection_warnings(progs, grps)
+    # New categories have no subtree images, so the pin resolves to null —
+    # attach anyway so the response shape matches the other endpoints.
+    await _attach_card_fields(db, cat, _user)
     return cat
 
 
@@ -514,6 +683,13 @@ async def update_category(
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
 
+    # Card-image pin (#1609): validate before the dirty/version logic. ``None``
+    # unpins and is always allowed; anything else must resolve to an image in
+    # this category or its sub-categories.
+    new_metadata = update_data.get("metadata_")
+    if isinstance(new_metadata, dict):
+        await _validate_card_image_pin(db, category_id, new_metadata)
+
     # Only bump the entity version and the global browse revision when the edit
     # actually changes data. No-op saves from the edit dialog should not stale
     # the client's If-Match copy or invalidate every viewer's tree cache.
@@ -570,6 +746,7 @@ async def update_category(
     cat._category_warnings = _intersection_warnings(
         list(cat.programs), list(cat.groups)
     )
+    await _attach_card_fields(db, cat, _user)
     response = Response(
         content=CategoryOut.model_validate(cat).model_dump_json(),
         media_type="application/json",
@@ -590,6 +767,16 @@ async def delete_category(
         raise HTTPException(status_code=404, detail="Category not found")
     category_id_value = cat.id
     category_label = cat.label
+    # Deleting a category removes its tile from the parent scope. Images in
+    # the subtree reparent to root via ON DELETE SET NULL, so the root still
+    # needs invalidation. Collections likewise become unfiled via SET NULL,
+    # but are not root-scope members. Bump both scopes first
+    # (revision-then-rows lock order), then delete the row, then bump the
+    # browse revision last so the row lock precedes browse_state as in PATCH
+    # /categories.
+    await bump_scopes(
+        db, {scope_key_for(cat.parent_id), scope_key_for(None)}
+    )
     await db.delete(cat)
     await bump_browse_revision(db)
     await db.commit()

@@ -65,7 +65,9 @@ Use this skill for administrator-facing operations and long-running task flows.
 - `run_db_import` uses separate status and data sessions so progress commits
   while destructive data import remains atomic.
 - Keep DB import delete/insert ordering aligned with foreign keys, groups,
-  categories, images, source images, changelog entries, and announcements.
+  categories, images, source images, collections (and their image/program/group
+  junctions, deleted first and inserted after `source_images`), changelog
+  entries, and announcements.
 - Reset PostgreSQL sequences after import.
 - `reconcile_stale_tasks` must remain multi-replica safe by using freshness on
   `updated_at`.
@@ -85,7 +87,28 @@ Use this skill for administrator-facing operations and long-running task flows.
 rebuilds` section polls `GET /api/jobs/` every 2 s only while a rebuild job
   is active and lazy-loads failed items 50 per page. The serial
   `POST /api/admin/tasks/rebuild-tiles` path is unchanged and remains the
-  fallback. See `../../../docs/jobs.md`.
+  fallback. Durable rebuilds emit the `hriv.tile_rebuild.*` metrics and
+  `rebuild.*` log events documented in `../../../docs/jobs.md`; the
+  deterministic scale seeder is `python -m app.rebuild_fixture --count N`
+  (`--purge` to remove; both refuse while any rebuild is active). Seeding first
+  decodes the embedded TIFF with runtime libvips and must fail before mutation if
+  the payload is invalid. Admin JSON exports omit its rows, and fixture mutation,
+  filesystem export, and backup inventory share an exclusive source-volume lock
+  and fail closed while its source directory exists. See
+  `../../../docs/jobs.md` and
+  `../../../docs/backup-restore-runbook.md`.
+- Production-shaped rebuild rehearsals must treat worker HPA scale-down as a
+  worker-loss scenario. The chart's 3600-second scale-down stabilization
+  window and the 3600-second child timeout / 3900-second lease (raised from
+  1800/2100 in #1333 after the repeat rehearsal exhausted the shorter
+  timeout) both passed the third #1189 rehearsal (2026-09-19) with zero
+  terminal failures and no involuntary worker loss across a ~2h9m
+  observation. `REBUILD_PARALLEL_ENABLED` is now the deployed default for
+  `latest` via the `flux-fleet` cluster overlay (chart default remains
+  `false`; `stable` passed a bounded validation 2026-09-22 and awaits a
+  weekend `scope=all` run before the overlay decision). Do not
+  shorten the HPA window or the timeout/lease pair below these measured
+  values without another worker-loss/timeout rehearsal.
 
 ## Validation
 

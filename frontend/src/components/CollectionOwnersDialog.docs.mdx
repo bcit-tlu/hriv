@@ -1,0 +1,89 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as CollectionOwnersDialogStories from './CollectionOwnersDialog.stories'
+
+<Meta of={CollectionOwnersDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Manage a collection's user co-owners and program ownership, within the role's authority (#1531).
+</Subtitle>
+
+## When to use
+
+`CollectionsPage` opens this dialog from the **Owners** action on a card or the detail
+header — both gated on `collection.permissions.canTransfer`. It is also the admin flow for
+reassigning an **orphaned** collection found via the owner filter's _No owner (orphaned)_
+option.
+
+## Interactive example
+
+Use the `role` control to compare the admin and instructor pickers.
+
+<Primary />
+
+<Controls of={CollectionOwnersDialogStories.Basic} />
+
+## Implementation guidance
+
+- **Two endpoints, two panes.** A **Program / User** radio row picks the surface.
+  `PUT /api/collections/{id}/owners` wholesale-replaces the user-owner set
+  (`user_ids` + `version`); `POST …/transfer` reassigns program ownership
+  (`program_id` + `version`, `null` clears). Each pane commits only its own
+  endpoint — one save, one call.
+- **Program mode = single-select chips.** The program list renders as outlined
+  chips (instructors see only their own programs, the boundary the backend
+  403s across). Clicking a chip makes it the staged owner — filled variant
+  with a delete icon; the icon reverts it to outlined. Assigning a program
+  clears the `collection_owners` rows server-side, and the pane hints at that
+  while a chip is active.
+- **User mode = the Groups member table.** A checkbox table over a debounced,
+  paged `fetchUsersPaged` list — Checkbox, Name, Email, Program columns — with
+  the role scope moved into a **Role** popover button beside the Search and
+  Program filter buttons (admins get a third **Everyone** option; Program
+  narrows the Students scope only). The checked set _is_ the replacement
+  owner set: current owners come pre-checked in a **CURRENT OWNERS** section
+  (an Owner chip marks them), and **Change Owner(s)** PUTs it. Instructors
+  automatically get the mini user projection — students and instructors only,
+  with admin/staff/`Admin`-program accounts excluded by the endpoint.
+  Inactive accounts are filtered out — the backend 422s them anyway.
+- **Orphan guard lives in the enable rule.** The confirm stays disabled until
+  the pane's staged value differs and the result keeps at least one owner —
+  clearing the program chip needs surviving user owners, and an empty user
+  selection needs an existing program owner.
+- **Errors stay in the dialog.** 403 (outside your authority), 409 (stale
+  `version`), and 422 (unknown/inactive/orphan targets) surface via
+  `userMessage`; the dialog stays open so a retry sends the conflict-merged
+  fresh version.
+- **Orphaned collections** show an info hint — assigning an owner restores
+  normal management.
+
+## Examples
+
+### Instructor program list narrowed
+
+<Canvas of={CollectionOwnersDialogStories.InstructorProgramsOnly} />
+
+### Orphaned reassign
+
+<Canvas of={CollectionOwnersDialogStories.OrphanedReassign} />
+
+### Program-owned
+
+<Canvas of={CollectionOwnersDialogStories.ProgramOwned} />
+
+### Conflict error
+
+<Canvas of={CollectionOwnersDialogStories.ConflictError} />
+
+## Stories
+
+<Stories includePrimary={false} />

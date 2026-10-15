@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkEditImagesModal from '../../src/components/BulkEditImagesModal'
+import { makeCategory } from '../helpers/fixtures'
 
 function renderModal(overrides: Partial<Parameters<typeof BulkEditImagesModal>[0]> = {}) {
   const onClose = overrides.onClose ?? vi.fn()
@@ -53,6 +54,28 @@ describe('BulkEditImagesModal – delete error toast', () => {
     await waitFor(() => {
       expect(screen.getByText('Failed to save changes. Please try again.')).toBeInTheDocument()
     })
+  })
+
+  it('drops a pending visibility toggle when the chosen category is hidden', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderModal({
+      onSave,
+      categories: [
+        makeCategory({ id: 10, label: 'Anatomy', status: 'hidden' }),
+        makeCategory({ id: 11, label: 'Histology' }),
+      ],
+    })
+
+    await user.click(screen.getByRole('switch', { name: /visible to students/i }))
+    await user.click(screen.getByRole('combobox'))
+    const listbox = await screen.findByRole('listbox')
+    await user.click(within(listbox).getByRole('option', { name: /^Anatomy/ }))
+    expect(screen.getByRole('switch', { name: /hidden by category/i })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+    // The locked switch's earlier toggle must not leak — only the refile.
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ category_id: 10 }))
   })
 
   it('omits a blank note so bulk edits preserve existing notes', async () => {

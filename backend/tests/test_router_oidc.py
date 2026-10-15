@@ -1,7 +1,9 @@
 """Tests for the OIDC router helper functions and endpoints."""
 
+import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from urllib.parse import urlparse
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -72,6 +74,29 @@ def test_resolve_role_priority_across_multiple_groups() -> None:
         assert _resolve_role(["employees", "instructors"]) == "instructor"
         # only student
         assert _resolve_role(["employees"]) == "student"
+
+
+def test_resolve_role_staff_group() -> None:
+    """A mapped staff group resolves to the staff role."""
+    mapping = {"employees": "staff", "students": "student"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        assert _resolve_role(["employees"]) == "staff"
+
+
+def test_resolve_role_staff_beats_student() -> None:
+    """Staff outranks student — a user in both groups is staff."""
+    mapping = {"employees": "staff", "students": "student"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        assert _resolve_role(["students", "employees"]) == "staff"
+        assert _resolve_role(["employees", "students"]) == "staff"
+
+
+def test_resolve_role_admin_and_instructor_beat_staff() -> None:
+    """Staff never overrides admin or instructor membership."""
+    mapping = {"employees": "staff", "instructors": "instructor", "admins": "admin"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        assert _resolve_role(["employees", "admins"]) == "admin"
+        assert _resolve_role(["employees", "instructors"]) == "instructor"
 
 
 def test_resolve_role_invalid_role_skipped() -> None:
@@ -831,7 +856,18 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
                 result = await oidc_callback(request, db)
 
     assert result.status_code == 200
-    assert "frontend.example.com" in result.body.decode()
+    # The response is an HTML page whose script redirects to
+    # ``http://frontend.example.com/#jwt`` — extract that target and
+    # validate it structurally rather than substring-checking the body.
+    match = re.search(
+        r'window\.location\.replace\("([^"]+)"\)',
+        result.body.decode(),
+    )
+    assert match is not None
+    parsed = urlparse(match.group(1))
+    assert parsed.scheme == "http"
+    assert parsed.hostname == "frontend.example.com"
+    assert parsed.fragment == "oidc_token=jwt"
 
 
 # ── _resolve_programs / _sync_programs helpers ───────────

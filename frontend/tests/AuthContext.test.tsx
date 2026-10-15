@@ -79,6 +79,7 @@ function AuthConsumer({ onContext }: { onContext: (ctx: AuthContextValue) => voi
       <span data-testid="user">{ctx.currentUser?.email ?? 'none'}</span>
       <span data-testid="canManage">{String(ctx.canManageUsers)}</span>
       <span data-testid="canEdit">{String(ctx.canEditContent)}</span>
+      <span data-testid="canViewPeople">{String(ctx.canViewPeople)}</span>
       <span data-testid="oidcError">{ctx.oidcError ?? 'none'}</span>
     </div>
   )
@@ -172,6 +173,49 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('user').textContent).toBe('admin@example.ca')
     expect(screen.getByTestId('canManage').textContent).toBe('true')
     expect(screen.getByTestId('canEdit').textContent).toBe('true')
+  })
+
+  it('grants staff canViewPeople without manage or edit capabilities', async () => {
+    currentToken = 'stored-jwt'
+    storage['hriv_user'] = JSON.stringify({
+      id: 5,
+      name: 'Staff',
+      email: 'staff@example.ca',
+      role: 'staff',
+    })
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          id: 5,
+          name: 'Staff',
+          email: 'staff@example.ca',
+          role: 'staff',
+          active: true,
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+          metadata_extra: null,
+        }),
+    })
+
+    render(
+      <AuthProvider>
+        <AuthConsumer onContext={() => {}} />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+    expect(screen.getByTestId('user').textContent).toBe('staff@example.ca')
+    expect(screen.getByTestId('canViewPeople').textContent).toBe('true')
+    expect(screen.getByTestId('canManage').textContent).toBe('false')
+    expect(screen.getByTestId('canEdit').textContent).toBe('false')
   })
 
   it('preserves metadata_extra from /auth/me on currentUser', async () => {

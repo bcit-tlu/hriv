@@ -34,6 +34,12 @@ const preview: Preview = {
     }),
   ],
   parameters: {
+    a11y: {
+      // Run axe after each story's play function in `test:storybook` runs.
+      // 'error' fails the run on violations; use 'todo' to surface without
+      // failing while the inventory is being cleaned up.
+      test: 'error',
+    },
     options: {
       storySort: {
         order: ['Foundations', ['Theme', 'Typography'], 'Components'],

@@ -21,6 +21,7 @@ from .database import settings
 
 _CHUNK_SIZE = 1024 * 1024
 _SNAPSHOT_NAME_RE = re.compile(r"(?P<stamp>\d{8}-\d{6})")
+_LSN_RE = re.compile(r"[0-9A-Fa-f]{1,8}/[0-9A-Fa-f]{1,8}\Z")
 _BACKUP_TYPES = ("database", "filesystem")
 logger = logging.getLogger(__name__)
 
@@ -271,8 +272,19 @@ def _classify_backup_types(manifest: dict) -> dict[str, bool]:
     if not isinstance(files, dict):
         raise BackupSnapshotManifestError("Manifest is missing the files map")
 
+    # Production archives contain no db.sql: CNPG owns the database backup and
+    # the archive is bound to that recovery point, so a manifest declaring
+    # production mode with a syntactically valid capture boundary LSN still
+    # counts as a database archive for retention purposes.
+    capture_lsn = manifest.get("capture_boundary_lsn")
+    database_bound = "db.sql" in files or (
+        manifest.get("backup_mode") == "production"
+        and isinstance(capture_lsn, str)
+        and _LSN_RE.match(capture_lsn) is not None
+    )
+
     return {
-        "database": "db.sql" in files,
+        "database": database_bound,
         "filesystem": any(
             isinstance(member, str) and member.startswith("data/") for member in files
         ),

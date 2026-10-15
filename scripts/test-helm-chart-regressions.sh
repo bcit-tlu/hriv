@@ -91,6 +91,12 @@ assert_contains "$backend_explicit_tiles_pvc" "- ReadWriteMany" \
 assert_not_contains "$backend_explicit_tiles_pvc" "- ReadWriteOnce" \
   "backend tiles PVC should not fall back to the legacy flat accessModes when an explicit split-PVC tiles access mode is set"
 
+backend_tiles_configmap="$(extract_yaml_doc "$backend_legacy_manifest" "ConfigMap" "test-hriv-backend-nginx-tiles")"
+assert_contains "$backend_tiles_configmap" 'proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"' \
+  "tiles auth verdict cache key must include the thumb-vs-tiles path class so a thumbnail verdict is never replayed for tile paths (#1609)"
+assert_contains "$backend_tiles_configmap" 'map $request_uri $tile_path_class_from_uri' \
+  "tiles config should classify requests into thumb vs tiles cache classes"
+
 backup_legacy_manifest="$(helm template test charts/backup \
   --set persistence.data.enabled=true \
   --set persistence.data.existingClaim=hriv-backend-data)"
@@ -443,7 +449,7 @@ backend_zone_aa_manifest="$(helm template test charts/backend \
   --set persistence.sourceImages.accessModes[0]=ReadWriteMany \
   --set persistence.tiles.accessModes[0]=ReadWriteMany)"
 
-backend_zone_aa_deployment="$(extract_yaml_doc "$backend_zone_aa_manifest" "Deployment" "test-hriv-backend")"
+backend_zone_aa_deployment="$(extract_top_level_yaml_doc "$backend_zone_aa_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_zone_aa_deployment" "type: RollingUpdate" \
   "backend deployment should use RollingUpdate when hard zone anti-affinity is enabled with multiple replicas"
 assert_contains "$backend_zone_aa_deployment" "maxSurge: 0" \
@@ -456,16 +462,20 @@ backend_rwo_manifest="$(helm template test charts/backend \
   --set persistence.sourceImages.accessModes[0]=ReadWriteOnce \
   --set persistence.tiles.accessModes[0]=ReadWriteOnce)"
 
-backend_rwo_deployment="$(extract_yaml_doc "$backend_rwo_manifest" "Deployment" "test-hriv-backend")"
+backend_rwo_deployment="$(extract_top_level_yaml_doc "$backend_rwo_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_rwo_deployment" "type: Recreate" \
   "backend deployment should force Recreate when ReadWriteOnce persistence is enabled"
 
 backend_default_manifest="$(helm template test charts/backend \
   --set replicaCount=1)"
 
-backend_default_deployment="$(extract_yaml_doc "$backend_default_manifest" "Deployment" "test-hriv-backend")"
+backend_default_deployment="$(extract_top_level_yaml_doc "$backend_default_manifest" "Deployment" "test-hriv-backend")"
 assert_not_contains "$backend_default_deployment" "strategy:" \
   "backend deployment should omit strategy when no rollout override is needed"
+
+backend_default_readiness="$(grep -F -A2 "readinessProbe:" <<<"$backend_default_deployment")"
+assert_contains "$backend_default_readiness" 'path: "/api/_probe"' \
+  "backend readiness probe should target the routed /api/_probe canary (#1473)"
 
 backend_override_manifest="$(helm template test charts/backend \
   --set scheduling.zoneAntiAffinity.enabled=true \
@@ -475,7 +485,7 @@ backend_override_manifest="$(helm template test charts/backend \
   --set persistence.tiles.accessModes[0]=ReadWriteMany \
   --set-json 'updateStrategy={"type":"Recreate"}')"
 
-backend_override_deployment="$(extract_yaml_doc "$backend_override_manifest" "Deployment" "test-hriv-backend")"
+backend_override_deployment="$(extract_top_level_yaml_doc "$backend_override_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_override_deployment" "type: Recreate" \
   "backend deployment should honour an explicit Recreate override"
 assert_not_contains "$backend_override_deployment" "type: RollingUpdate" \
@@ -510,7 +520,7 @@ assert_contains "$backend_worker_deployment" 'name: WORKER_IMAGE_TAG' \
   "backend worker deployment should surface the worker image tag for build-info metrics"
 
 backend_mode_default_manifest="$(helm template test charts/backend)"
-backend_mode_default_deployment="$(extract_yaml_doc "$backend_mode_default_manifest" "Deployment" "test-hriv-backend")"
+backend_mode_default_deployment="$(extract_top_level_yaml_doc "$backend_mode_default_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_mode_default_deployment" 'name: TASK_EXECUTION_MODE' \
   "backend deployment should always render TASK_EXECUTION_MODE"
 assert_contains "$backend_mode_default_deployment" 'value: "local"' \
@@ -520,6 +530,14 @@ assert_contains "$backend_mode_default_deployment" 'name: REBUILD_PARALLEL_ENABL
 backend_default_rebuild_enabled="$(grep -F -A1 'name: REBUILD_PARALLEL_ENABLED' <<<"$backend_mode_default_deployment")"
 assert_contains "$backend_default_rebuild_enabled" 'value: "false"' \
   "backend deployment should default durable parallel rebuilding to disabled"
+assert_contains "$backend_mode_default_deployment" 'name: COLLECTIONS_ENABLED' \
+  "backend deployment should render the collections dark-launch flag"
+backend_default_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_collections_enabled" 'value: "false"' \
+  "backend deployment should default collections to disabled"
+backend_default_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_home_shelf" 'value: "false"' \
+  "backend deployment should default COLLECTIONS_HOME_SHELF to false"
 assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
   "backend deployment should render WORKER_MAX_JOBS for the in-process fallback concurrency"
 assert_not_contains "$backend_mode_default_deployment" 'name: WORKER_TOTAL_SLOTS' \
@@ -535,7 +553,7 @@ backend_feedback_security_manifest="$(helm template test charts/backend \
   --set feedback.provider=email \
   --set feedback.email.existingSecret=hriv-feedback-smtp-relay \
   --set feedback.email.smtpSecurity=none)"
-backend_feedback_security_deployment="$(extract_yaml_doc "$backend_feedback_security_manifest" "Deployment" "test-hriv-backend")"
+backend_feedback_security_deployment="$(extract_top_level_yaml_doc "$backend_feedback_security_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_feedback_security_deployment" 'name: FEEDBACK_EMAIL_SMTP_SECURITY' \
   "backend deployment should render FEEDBACK_EMAIL_SMTP_SECURITY when feedback.email.smtpSecurity is set"
 assert_contains "$backend_feedback_security_deployment" 'value: "none"' \
@@ -544,7 +562,7 @@ assert_contains "$backend_feedback_security_deployment" 'value: "none"' \
 backend_feedback_secret_to_from_manifest="$(helm template test charts/backend \
   --set feedback.provider=email \
   --set feedback.email.existingSecret=hriv-feedback-smtp-relay)"
-backend_feedback_secret_to_from_deployment="$(extract_yaml_doc "$backend_feedback_secret_to_from_manifest" "Deployment" "test-hriv-backend")"
+backend_feedback_secret_to_from_deployment="$(extract_top_level_yaml_doc "$backend_feedback_secret_to_from_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_feedback_secret_to_from_deployment" 'name: FEEDBACK_EMAIL_TO' \
   "backend deployment should render FEEDBACK_EMAIL_TO when an existingSecret is set"
 assert_contains "$backend_feedback_secret_to_from_deployment" 'key: to' \
@@ -561,7 +579,7 @@ backend_feedback_values_to_from_manifest="$(helm template test charts/backend \
   --set feedback.email.existingSecret=hriv-feedback-smtp-relay \
   --set feedback.email.to=override@example.com \
   --set feedback.email.from=sender@example.com)"
-backend_feedback_values_to_from_deployment="$(extract_yaml_doc "$backend_feedback_values_to_from_manifest" "Deployment" "test-hriv-backend")"
+backend_feedback_values_to_from_deployment="$(extract_top_level_yaml_doc "$backend_feedback_values_to_from_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_feedback_values_to_from_deployment" 'value: "override@example.com"' \
   "backend deployment should use chart value for FEEDBACK_EMAIL_TO"
 assert_contains "$backend_feedback_values_to_from_deployment" 'value: "sender@example.com"' \
@@ -576,11 +594,16 @@ backend_required_manifest="$(helm template test charts/backend \
   --set tasks.rebuild.parallelEnabled=true \
   --set tasks.rebuild.parallelism=3 \
   --set tasks.rebuild.pumpCadenceSeconds=120 \
+  --set collections.enabled=true \
+  --set collections.homeShelf=true \
   --set redis.enabled=true \
   --set redis.worker.enabled=true \
-  --set redis.worker.totalSlots=8)"
+  --set redis.worker.totalSlots=8 \
+  --set corsOrigins=https://hriv.example.ca)"
 
-backend_required_api="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend")"
+# extract_top_level_yaml_doc anchors `  name:` exactly — the loose variant
+# would substring-match test-hriv-backend-worker (rendered first) instead.
+backend_required_api="$(extract_top_level_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend")"
 assert_contains "$backend_required_api" 'value: "required"' \
   "backend deployment should render TASK_EXECUTION_MODE=required"
 assert_contains "$backend_required_api" 'name: REBUILD_PARALLEL_ENABLED' \
@@ -588,6 +611,12 @@ assert_contains "$backend_required_api" 'name: REBUILD_PARALLEL_ENABLED' \
 backend_required_rebuild_enabled="$(grep -F -A1 'name: REBUILD_PARALLEL_ENABLED' <<<"$backend_required_api")"
 assert_contains "$backend_required_rebuild_enabled" 'value: "true"' \
   "backend deployment should permit durable rebuilding in required mode"
+backend_required_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <<<"$backend_required_api")"
+assert_contains "$backend_required_collections_enabled" 'value: "true"' \
+  "backend deployment should render COLLECTIONS_ENABLED=true when collections.enabled is set"
+backend_required_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_required_api")"
+assert_contains "$backend_required_home_shelf" 'value: "true"' \
+  "backend deployment should render COLLECTIONS_HOME_SHELF=true when collections.homeShelf is set"
 assert_contains "$backend_required_api" 'name: REBUILD_PARALLELISM' \
   "backend deployment should render the durable rebuild execution window"
 backend_required_rebuild_parallelism="$(grep -F -A1 'name: REBUILD_PARALLELISM' <<<"$backend_required_api")"
@@ -600,8 +629,13 @@ assert_contains "$backend_required_rebuild_cadence" 'value: "120"' \
   "backend deployment should render the configured pump cadence"
 assert_not_contains "$backend_required_api" 'name: WORKER_TOTAL_SLOTS' \
   "backend deployment should not render deprecated WORKER_TOTAL_SLOTS"
+assert_contains "$backend_required_api" 'name: CORS_ORIGINS' \
+  "backend deployment should render CORS_ORIGINS"
+backend_required_cors="$(grep -F -A1 'name: CORS_ORIGINS' <<<"$backend_required_api")"
+assert_contains "$backend_required_cors" 'value: "https://hriv.example.ca"' \
+  "backend deployment should render the configured corsOrigins value"
 
-backend_required_worker="$(extract_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend-worker")"
+backend_required_worker="$(extract_top_level_yaml_doc "$backend_required_manifest" "Deployment" "test-hriv-backend-worker")"
 assert_contains "$backend_required_worker" 'name: TASK_EXECUTION_MODE' \
   "worker deployment should render TASK_EXECUTION_MODE"
 assert_contains "$backend_required_worker" 'value: "required"' \
@@ -635,6 +669,67 @@ backend_worker_no_probe="$(extract_yaml_doc "$backend_worker_no_probe_manifest" 
 assert_not_contains "$backend_worker_no_probe" 'livenessProbe:' \
   "worker deployment should omit the liveness probe when redis.worker.probes.liveness.enabled=false"
 
+# ── API component profile (#1072) ───────────────────────────
+# The API Deployment carries its own DB pool / libvips / resource profile
+# via api.* values, independent of the worker-only redis.worker.* profile.
+backend_api_profile_manifest="$(helm template test charts/backend)"
+backend_api_profile_deployment="$(extract_top_level_yaml_doc \
+  "$backend_api_profile_manifest" "Deployment" "test-hriv-backend")"
+backend_api_pool_size="$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_api_profile_deployment")"
+assert_contains "$backend_api_pool_size" 'value: "10"' \
+  "backend deployment should render the api.db.poolSize default matching the backend code default"
+backend_api_max_overflow="$(grep -F -A1 'name: DB_MAX_OVERFLOW' <<<"$backend_api_profile_deployment")"
+assert_contains "$backend_api_max_overflow" 'value: "20"' \
+  "backend deployment should render the api.db.maxOverflow default matching the backend code default"
+backend_api_vips="$(grep -F -A1 'name: VIPS_CONCURRENCY' <<<"$backend_api_profile_deployment")"
+assert_contains "$backend_api_vips" 'value: "1"' \
+  "backend deployment should render the api.vipsConcurrency default for local-mode in-process fallback"
+assert_contains "$backend_api_profile_deployment" "resources:" \
+  "backend deployment should render an explicit resources block by default"
+assert_contains "$backend_api_profile_deployment" "memory: 1Gi" \
+  "backend deployment should render the 1Gi memory limit matching the prior namespace LimitRange ceiling"
+
+# api.* overrides must only affect the API Deployment, never the worker.
+backend_api_tuned_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set api.db.poolSize=3)"
+backend_api_tuned_api="$(extract_top_level_yaml_doc "$backend_api_tuned_manifest" "Deployment" "test-hriv-backend")"
+backend_api_tuned_worker="$(extract_top_level_yaml_doc "$backend_api_tuned_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_api_tuned_api")" 'value: "3"' \
+  "api.db.poolSize should tune the backend deployment DB_POOL_SIZE"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_api_tuned_worker")" 'value: "5"' \
+  "api.db.poolSize must not change the worker deployment DB_POOL_SIZE"
+
+# redis.worker.db.* overrides must only affect the worker Deployment.
+backend_worker_tuned_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set redis.worker.db.poolSize=7)"
+backend_worker_tuned_api="$(extract_top_level_yaml_doc "$backend_worker_tuned_manifest" "Deployment" "test-hriv-backend")"
+backend_worker_tuned_worker="$(extract_top_level_yaml_doc "$backend_worker_tuned_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_worker_tuned_worker")" 'value: "7"' \
+  "redis.worker.db.poolSize should tune the worker deployment DB_POOL_SIZE"
+assert_contains "$(grep -F -A1 'name: DB_POOL_SIZE' <<<"$backend_worker_tuned_api")" 'value: "10"' \
+  "redis.worker.db.poolSize must not change the backend deployment DB_POOL_SIZE"
+
+# Explicitly nulling resources must still render cleanly — the
+# `with .Values.resources` guard preserves the pre-#1072 opt-out path
+# for overlays that prefer LimitRange-inherited sizing.
+backend_api_null_resources_deployment="$(extract_top_level_yaml_doc \
+  "$(helm template test charts/backend --set-json 'resources=null')" \
+  "Deployment" "test-hriv-backend")"
+assert_not_contains "$backend_api_null_resources_deployment" "resources:" \
+  "backend deployment should omit the resources block when resources=null"
+
+# An explicit empty map is a merge no-op over the chart defaults (not an
+# override), so it must still render cleanly with the default profile.
+backend_api_empty_resources_deployment="$(extract_top_level_yaml_doc \
+  "$(helm template test charts/backend --set-json 'resources={}')" \
+  "Deployment" "test-hriv-backend")"
+assert_contains "$backend_api_empty_resources_deployment" "memory: 1Gi" \
+  "backend deployment should keep the default resources when resources={} merges over the defaults"
+
 if backend_required_no_redis_output="$(helm template test charts/backend \
   --set tasks.executionMode=required 2>&1)"; then
   fail "expected tasks.executionMode=required without redis.enabled to be rejected"
@@ -650,12 +745,72 @@ fi
 assert_contains "$backend_required_no_worker_output" "requires redis.worker.enabled" \
   "backend chart should explain that required execution mode needs the worker Deployment"
 
+if backend_required_no_cors_output="$(helm template test charts/backend \
+  --set tasks.executionMode=required \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true 2>&1)"; then
+  fail "expected tasks.executionMode=required without corsOrigins to be rejected"
+fi
+assert_contains "$backend_required_no_cors_output" "requires a concrete corsOrigins" \
+  "backend chart should explain that required execution mode needs corsOrigins"
+
+if backend_required_wildcard_cors_output="$(helm template test charts/backend \
+  --set tasks.executionMode=required \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set 'corsOrigins=*' 2>&1)"; then
+  fail "expected tasks.executionMode=required with wildcard corsOrigins to be rejected"
+fi
+assert_contains "$backend_required_wildcard_cors_output" "requires a concrete corsOrigins" \
+  "backend chart should explain that wildcard corsOrigins is rejected in required mode"
+
+backend_local_manifest="$(helm template test charts/backend)"
+backend_local_api="$(extract_top_level_yaml_doc "$backend_local_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_local_api" 'name: CORS_ORIGINS' \
+  "backend deployment should render CORS_ORIGINS even in local mode"
+backend_local_cors="$(grep -F -A1 'name: CORS_ORIGINS' <<<"$backend_local_api")"
+assert_contains "$backend_local_cors" 'value: ""' \
+  "backend deployment should render empty CORS_ORIGINS by default in local mode"
+
+backend_oidc_cors_manifest="$(helm template test charts/backend \
+  --set auth.openidConnect.enabled=true \
+  --set auth.openidConnect.corsOrigins=https://legacy-oidc-value.example.ca)"
+backend_oidc_cors_api="$(extract_top_level_yaml_doc "$backend_oidc_cors_manifest" "Deployment" "test-hriv-backend")"
+backend_oidc_cors_env="$(grep -F -A1 'name: CORS_ORIGINS' <<<"$backend_oidc_cors_api")"
+assert_contains "$backend_oidc_cors_env" 'value: "https://legacy-oidc-value.example.ca"' \
+  "backend deployment should fall back to auth.openidConnect.corsOrigins when corsOrigins is unset"
+
+# ── Synthetic result ingest token (#1495) ───────────────────
+# Disabled by default (JWT-only ingestion); enabled by naming a secret.
+assert_not_contains "$backend_local_api" 'name: SYNTHETIC_INGEST_TOKEN' \
+  "backend deployment should not render SYNTHETIC_INGEST_TOKEN without syntheticMonitoring.ingestTokenSecret.name"
+
+backend_ingest_manifest="$(helm template test charts/backend \
+  --set syntheticMonitoring.ingestTokenSecret.name=hriv-synthetic-ingest)"
+backend_ingest_api="$(extract_top_level_yaml_doc "$backend_ingest_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_ingest_api" 'name: SYNTHETIC_INGEST_TOKEN' \
+  "backend deployment should render SYNTHETIC_INGEST_TOKEN when ingestTokenSecret.name is set"
+backend_ingest_env="$(grep -F -A6 'name: SYNTHETIC_INGEST_TOKEN' <<<"$backend_ingest_api")"
+assert_contains "$backend_ingest_env" 'name: "hriv-synthetic-ingest"' \
+  "backend deployment should reference the configured ingest-token secret"
+assert_contains "$backend_ingest_env" 'key: "token"' \
+  "backend deployment should reference the default ingest-token key"
+assert_contains "$backend_ingest_env" 'optional: true' \
+  "ingest-token secretKeyRef must be optional so a missing key cannot block backend rollout"
+
 if backend_rebuild_local_output="$(helm template test charts/backend \
   --set tasks.rebuild.parallelEnabled=true 2>&1)"; then
   fail "expected durable rebuilding in local execution mode to be rejected"
 fi
 assert_contains "$backend_rebuild_local_output" "requires tasks.executionMode=required" \
   "backend chart should require durable rebuilding to use the dedicated worker"
+
+if backend_rebuild_timeout_output="$(helm template test charts/backend \
+  --set tasks.rebuild.childTimeoutSeconds=86401 2>&1)"; then
+  fail "expected a rebuild child timeout above the safety ceiling to be rejected"
+fi
+assert_contains "$backend_rebuild_timeout_output" "must not exceed 86400 seconds" \
+  "backend chart should explain the rebuild child-timeout ceiling"
 
 if backend_low_max_jobs_output="$(helm template test charts/backend \
   --set redis.worker.maxJobs=1 2>&1)"; then
@@ -722,6 +877,11 @@ assert_contains "$frontend_default_manifest" "location = /api/health/storage {" 
 frontend_health_storage_location="$(grep -F -A2 "location = /api/health/storage {" <<<"$frontend_default_manifest")"
 assert_contains "$frontend_health_storage_location" "return 404;" \
   "frontend nginx should block the backend storage probe endpoint"
+assert_contains "$frontend_default_manifest" "location = /api/_probe {" \
+  "frontend nginx should intercept the routed readiness canary endpoint"
+frontend_probe_location="$(grep -F -A2 "location = /api/_probe {" <<<"$frontend_default_manifest")"
+assert_contains "$frontend_probe_location" "return 404;" \
+  "frontend nginx should block the routed readiness canary endpoint"
 assert_contains "$frontend_default_manifest" "location = /runtime-config.js {" \
   "frontend nginx should serve the runtime configuration script"
 assert_contains "$frontend_default_manifest" 'otelEndpointBase64:"${OTEL_BROWSER_TRACE_ENDPOINT_B64}"' \
@@ -749,6 +909,23 @@ assert_not_contains "$frontend_override_deployment" "type: RollingUpdate" \
   "frontend deployment should not render RollingUpdate when updateStrategy explicitly requests Recreate"
 assert_not_contains "$frontend_override_deployment" "maxSurge:" \
   "frontend deployment should not render rollingUpdate settings when updateStrategy explicitly requests Recreate"
+
+backend_seed_admin_job="$(extract_yaml_doc \
+  "$(helm template test charts/backend)" "Job" "test-hriv-backend-seed-admin")"
+assert_contains "$backend_seed_admin_job" "image: postgres:16-alpine" \
+  "seed-admin job should default to the dedicated bootstrapAdmin.image psql client"
+assert_not_contains "$backend_seed_admin_job" "cloudnative-pg" \
+  "seed-admin job should not use the CNPG cluster image by default"
+
+backend_seed_admin_override_job="$(extract_yaml_doc \
+  "$(helm template test charts/backend \
+    --set bootstrapAdmin.image=registry.example/psql:17 \
+    --set postgres.cluster.image=registry.example/cnpg:17)" \
+  "Job" "test-hriv-backend-seed-admin")"
+assert_contains "$backend_seed_admin_override_job" "image: registry.example/psql:17" \
+  "seed-admin job should honour the bootstrapAdmin.image override"
+assert_not_contains "$backend_seed_admin_override_job" "registry.example/cnpg:17" \
+  "seed-admin job should stay decoupled from postgres.cluster.image"
 
 # #1251 core plus simplified #1253 operational scheduling and fixed egress.
 # These are schema-valid representative reviewed values; operational mode is tested separately.
@@ -978,7 +1155,7 @@ for image_value in images.orchestrator images.backupChild images.postgresql; do
     --set-string "${image_value}=registry.example/unpinned:latest" 2>&1)"; then
     fail "expected ${image_value} without a sha256 digest to be rejected"
   fi
-  if ! grep -Eq 'must be digest-pinned|tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
+  if ! grep -Eiq 'must be digest-pinned|tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_image_output"; then
     fail "restore-validation chart should explain the digest requirement for ${image_value}"
   fi
 done
@@ -998,7 +1175,7 @@ for bad_postgres_image in "${restore_validation_bad_postgres_images[@]}"; do
     --set-string "images.postgresql=${bad_postgres_image}" 2>&1)"; then
     fail "expected invalid images.postgresql to be rejected: ${bad_postgres_image}"
   fi
-  if ! grep -Eq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_postgres_output"; then
+  if ! grep -Eiq 'tag plus sha256 digest|does not match (the )?pattern|doesn.t match (the )?pattern' <<<"$restore_validation_bad_postgres_output"; then
     fail "restore-validation chart should explain the PostgreSQL tag requirement"
   fi
 done

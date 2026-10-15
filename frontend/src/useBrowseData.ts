@@ -5,13 +5,17 @@ import {
   fetchPrograms as apiFetchPrograms,
   fetchGroups as apiFetchGroups,
 } from './api'
-import type { ApiCategoryTree, ApiImage, CategoryTreeHeaders } from './api'
-import type { Category, Group, ImageItem, Program, User } from './types'
+import type { ApiCategoryTree, ApiCollectionSummary, ApiImage, CategoryTreeHeaders } from './api'
+import type { Category, CollectionSummary, Group, ImageItem, Program, User } from './types'
 import { narrowProgramIds, narrowGroupIds, resolvePathNode } from './categoryUtils'
+import { findCategoryPath } from './treeUtils'
+import { apiCollectionSummaryToSummary } from './collectionUtils'
 import { apiGroupToGroup } from './groupUtils'
 import { tileOrderingCoordinator } from './tileOrdering'
 import { recordBrowseTreePoll } from './dndInstrumentation'
 import { useBackgroundRefresh } from './useBackgroundRefresh'
+
+export const BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS = 10_000
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
@@ -46,12 +50,17 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
     parentId: node.parent_id,
     children: node.children.map(apiTreeToCategory),
     images: node.images.map(apiImageToItem),
+    collections: (node.collections ?? []).map(apiCollectionSummaryToSummary),
     programIds: node.program_ids ?? [],
     groupIds: node.group_ids ?? [],
     status: node.status,
     sortOrder: node.sort_order,
     version: node.version,
-    cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+    // Card cover is resolved server-side (#1609): metadata_extra is not a
+    // fallback — the backend scrubs the pin for students and nulls
+    // unresolvable pins for everyone.
+    cardImageId: node.card_image_id ?? null,
+    cardThumb: node.card_thumb ?? null,
     metadataExtra: meta ?? null,
   }
 }
@@ -61,7 +70,9 @@ interface StableCaches {
   imageById: Map<number, ImageItem>
   categoryByKey: Map<string, Category>
   categoryById: Map<number, Category>
-  itemToKey: WeakMap<Category | ImageItem, string>
+  collectionByKey: Map<string, CollectionSummary>
+  collectionById: Map<number, CollectionSummary>
+  itemToKey: WeakMap<Category | ImageItem | CollectionSummary, string>
 }
 
 function createStableCaches(): StableCaches {
@@ -70,6 +81,8 @@ function createStableCaches(): StableCaches {
     imageById: new Map(),
     categoryByKey: new Map(),
     categoryById: new Map(),
+    collectionByKey: new Map(),
+    collectionById: new Map(),
     itemToKey: new WeakMap(),
   }
 }
@@ -114,7 +127,6 @@ function categoryIdentityKey(
   imageKeys: string[],
 ): string {
   const meta = node.metadata_extra as Record<string, unknown> | null
-  const cardImageId = typeof meta?.card_image_id === 'number' ? meta.card_image_id : null
   return stableStringify([
     node.id,
     node.version,
@@ -122,12 +134,16 @@ function categoryIdentityKey(
     node.parent_id,
     node.label,
     node.status,
-    cardImageId,
+    node.card_image_id ?? null,
+    node.card_thumb ?? null,
     meta,
     [...(node.program_ids ?? [])].sort((a, b) => a - b),
     [...(node.group_ids ?? [])].sort((a, b) => a - b),
     childKeys,
     imageKeys,
+    // Collection tiles on this node contribute to identity (#1527): a
+    // summary change (membership, name, cover, sort) must rebuild the node.
+    node.collections ?? [],
     node.created_at,
     node.updated_at,
   ])
@@ -168,9 +184,56 @@ function stableApiImageToItem(img: ApiImage, caches: StableCaches): ImageItem {
   return item
 }
 
+function collectionIdentityKey(api: ApiCollectionSummary): string {
+  return stableStringify([
+    api.id,
+    api.version,
+    api.sort_order,
+    api.category_id,
+    api.name,
+    api.description,
+    api.type,
+    api.visibility,
+    api.owners,
+    api.image_count,
+    api.cover_thumb,
+    api.cover_image_id,
+    api.cover_blank,
+    api.hidden,
+    api.program_ids,
+    api.group_ids,
+    api.permissions,
+    api.created_at,
+    api.updated_at,
+  ])
+}
+
+function stableApiCollectionSummaryToSummary(
+  api: ApiCollectionSummary,
+  caches: StableCaches,
+): CollectionSummary {
+  const key = collectionIdentityKey(api)
+  const cached = caches.collectionByKey.get(key)
+  if (cached) return cached
+
+  const item = apiCollectionSummaryToSummary(api)
+  caches.collectionByKey.set(key, item)
+  const existing = caches.collectionById.get(item.id)
+  if (existing) {
+    const oldKey = caches.itemToKey.get(existing)
+    if (oldKey) caches.collectionByKey.delete(oldKey)
+  }
+  caches.collectionById.set(item.id, item)
+  caches.itemToKey.set(item, key)
+  return item
+}
+
 function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): Category {
   const childCategories = node.children.map((child) => stableApiTreeToCategory(child, caches))
   const imageItems = node.images.map((img) => stableApiImageToItem(img, caches))
+  const collectionItems = (node.collections ?? []).map((c) =>
+    stableApiCollectionSummaryToSummary(c, caches),
+  )
   const childKeys = childCategories.map((c) => caches.itemToKey.get(c) ?? '')
   const imageKeys = imageItems.map((i) => caches.itemToKey.get(i) ?? '')
 
@@ -184,12 +247,14 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
       parentId: node.parent_id,
       children: childCategories,
       images: imageItems,
+      collections: collectionItems,
       programIds: [...(node.program_ids ?? [])],
       groupIds: [...(node.group_ids ?? [])],
       status: node.status,
       sortOrder: node.sort_order,
       version: node.version,
-      cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+      cardImageId: node.card_image_id ?? null,
+      cardThumb: node.card_thumb ?? null,
       metadataExtra: meta ?? null,
     }
     caches.categoryByKey.set(key, category)
@@ -204,6 +269,8 @@ function stableApiTreeToCategory(node: ApiCategoryTree, caches: StableCaches): C
   return category
 }
 
+const EMPTY_PATH_NODE: ReturnType<typeof resolvePathNode> = { cats: [], imgs: [], cols: [] }
+
 function arraysReferentiallyEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i])
 }
@@ -212,9 +279,16 @@ export interface UseBrowseDataDeps {
   path: Category[]
   currentUser: User | null
   dragActive?: boolean
+  /** Feature flag — filed category-scope collections only appear when on. */
+  collectionsEnabled?: boolean
 }
 
-export function useBrowseData({ path, currentUser, dragActive = false }: UseBrowseDataDeps) {
+export function useBrowseData({
+  path,
+  currentUser,
+  dragActive = false,
+  collectionsEnabled = false,
+}: UseBrowseDataDeps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
@@ -276,6 +350,8 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     etag: null,
     revision: null,
   })
+  const lastTreeCheckAt = useRef(0)
+  const authoritativeTreeRefreshInFlight = useRef(0)
   // The stored ETag/revision is updated only when a category-tree response is
   // actually committed to React state, so an aborted or out-of-order response
   // can never leave a newer ETag paired with stale displayed data.
@@ -286,7 +362,6 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
   useEffect(() => {
     uncategorizedRef.current = uncategorizedImages
   }, [uncategorizedImages])
-
   // Loaders resolve `true` only when fresh data was actually applied, so
   // callers can gate cache invalidation on authoritative data having landed.
   const loadCategories = useCallback(
@@ -341,6 +416,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return true
         }
         if (effectiveSignal?.aborted || gen !== categoriesReadGen.current) return false
@@ -360,6 +436,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
             revision: receivedHeaders.revision,
           }
         }
+        lastTreeCheckAt.current = Date.now()
         return true
       } catch (err) {
         if (effectiveSignal?.aborted || isAbortError(err) || gen !== categoriesReadGen.current) {
@@ -450,6 +527,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     // aborted read has already claimed a generation), THEN claim ours, so
     // this refresh is guaranteed to hold the newest generation and commit.
     invalidateRef.current?.()
+    authoritativeTreeRefreshInFlight.current += 1
     // Authoritative refresh: claim the newest generation and abort any older
     // read for the same data.
     const gen = ++categoriesReadGen.current
@@ -495,6 +573,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
                 revision: receivedHeaders.revision,
               }
             }
+            lastTreeCheckAt.current = Date.now()
             return categoriesRef.current
           }
           const newest = categoriesRefreshRef.current
@@ -521,6 +600,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
               revision: receivedHeaders.revision,
             }
           }
+          lastTreeCheckAt.current = Date.now()
           return cats
         }
         // Superseded while the response was in flight: hand back the
@@ -539,6 +619,8 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
           return categoriesRef.current
         }
         throw err
+      } finally {
+        authoritativeTreeRefreshInFlight.current -= 1
       }
     })()
     const record = { gen, promise: run, settled: false }
@@ -645,53 +727,56 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     uncategorizedRefreshAbortRef.current?.abort()
   }, [dragActive])
 
-  // Resolve the live children/images from the categories state tree
-  // so newly added categories appear immediately.
-  const { cats: resolvedCategories, imgs: currentImages } = useMemo(
-    () => resolvePathNode(categories, path),
-    [categories, path],
+  // `path` holds navigation-time snapshots; derive everything from the
+  // leaf's live ancestry so a background refresh that renames, re-restricts,
+  // or reparents the leaf or an ancestor is reflected without re-navigating.
+  const pathLeafId = path.length > 0 ? path[path.length - 1].id : null
+  const previousPathLeafId = useRef(pathLeafId)
+  useEffect(() => {
+    const previousLeafId = previousPathLeafId.current
+    previousPathLeafId.current = pathLeafId
+    if (previousLeafId === pathLeafId || pathLeafId == null) return
+    if (
+      Date.now() - lastTreeCheckAt.current < BROWSE_TREE_NAVIGATION_REFRESH_THROTTLE_MS ||
+      authoritativeTreeRefreshInFlight.current > 0
+    )
+      return
+    if (tileOrderingCoordinator.hasUnsavedChanges()) return
+    if (dragActive || currentUser == null) return
+    void loadCategories({ silent: true }) // eslint-disable-line react-hooks/set-state-in-effect -- category-navigation revalidation
+  }, [pathLeafId, dragActive, currentUser, loadCategories])
+
+  const liveCategoryPath = useMemo(
+    () => (pathLeafId == null ? [] : (findCategoryPath(categories, pathLeafId) ?? [])),
+    [categories, pathLeafId],
   )
 
-  // Walk the categories tree along the given path segments applying narrowing
-  // (intersection) semantics. `depth` controls how many path segments to
-  // traverse (defaults to all).
-  const getPathRestriction = useCallback(
-    (depth?: number): number[] => {
-      const ancestors: Category[] = []
-      let node = categories
-      const limit = depth ?? path.length
-      for (let i = 0; i < limit; i++) {
-        const found = node.find((c) => c.id === path[i].id)
-        if (!found) break
-        ancestors.push(found)
-        node = found.children
-      }
-      return narrowProgramIds(ancestors)
-    },
-    [categories, path],
+  // Resolve the live children/images/collections from the categories state
+  // tree so newly added members appear immediately. A leaf that has left the
+  // tree (deleted, or no longer visible) resolves to an empty scope, not root.
+  const {
+    cats: resolvedCategories,
+    imgs: currentImages,
+    cols: pathCollections,
+  } = useMemo(
+    () =>
+      pathLeafId != null && liveCategoryPath.length === 0
+        ? EMPTY_PATH_NODE
+        : resolvePathNode(categories, liveCategoryPath),
+    [categories, liveCategoryPath, pathLeafId],
   )
 
-  const ancestorProgramIds = useMemo(() => getPathRestriction(), [getPathRestriction])
-
-  // Group analogue of getPathRestriction: walk the path applying the same
-  // ancestor-narrowing semantics to the (independent) group dimension.
-  const getPathGroupRestriction = useCallback(
-    (depth?: number): number[] => {
-      const ancestors: Category[] = []
-      let node = categories
-      const limit = depth ?? path.length
-      for (let i = 0; i < limit; i++) {
-        const found = node.find((c) => c.id === path[i].id)
-        if (!found) break
-        ancestors.push(found)
-        node = found.children
-      }
-      return narrowGroupIds(ancestors)
-    },
-    [categories, path],
+  // Collections are Browse tiles only when filed in a category.
+  const currentCollections = useMemo(
+    () => (collectionsEnabled && path.length > 0 ? pathCollections : []),
+    [path.length, collectionsEnabled, pathCollections],
   )
 
-  const ancestorGroupIds = useMemo(() => getPathGroupRestriction(), [getPathGroupRestriction])
+  // Effective restrictions for the current scope: narrowing (intersection)
+  // over the live ancestry, leaf included. Callers needing ancestors-only
+  // (e.g. editing the breadcrumb leaf) slice `liveCategoryPath` themselves.
+  const ancestorProgramIds = useMemo(() => narrowProgramIds(liveCategoryPath), [liveCategoryPath])
+  const ancestorGroupIds = useMemo(() => narrowGroupIds(liveCategoryPath), [liveCategoryPath])
 
   // Filter out hidden categories for students in browse mode
   const isStudent = currentUser?.role === 'student'
@@ -708,6 +793,7 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
+    currentCollections,
     programs,
     groups,
     setGroups,
@@ -718,9 +804,8 @@ export function useBrowseData({ path, currentUser, dragActive = false }: UseBrow
     refreshCategories,
     refreshUncategorizedImages,
     currentImages,
-    getPathRestriction,
+    liveCategoryPath,
     ancestorProgramIds,
-    getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
   }

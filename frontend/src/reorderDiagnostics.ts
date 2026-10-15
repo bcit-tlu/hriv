@@ -49,15 +49,16 @@ export interface ReorderDiagnosticEvent {
   /**
    * Dragged item type for `ignored` events. For `submitted` and later
    * states it reflects the persisted scope: 'mixed' whenever the scope
-   * contains both categories and images (persistence re-indexes the whole
+   * contains more than one member kind (persistence re-indexes the whole
    * scope), regardless of which single tile was dragged.
    */
-  itemType?: 'category' | 'image' | 'mixed'
+  itemType?: 'category' | 'collection' | 'image' | 'mixed'
   /** Moved item ID (single-item moves only). */
   itemId?: number
   fromIndex?: number
   toIndex?: number
   categoryCount?: number
+  collectionCount?: number
   imageCount?: number
   queueDepth?: number
   localRevision?: number
@@ -129,6 +130,7 @@ export function emitReorderDiagnostic(event: ReorderDiagnosticEvent): void {
     from_index: event.fromIndex,
     to_index: event.toIndex,
     category_count: event.categoryCount,
+    collection_count: event.collectionCount,
     image_count: event.imageCount,
     queue_depth: event.queueDepth,
     local_revision: event.localRevision,

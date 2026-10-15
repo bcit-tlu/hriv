@@ -58,6 +58,124 @@ The on-disk copy is named from a UUID plus a bounded suffix
 (`storage_extension()`); a client suffix longer than 32 bytes falls back to
 `.bin`, so an over-long display name cannot produce an invalid path component.
 
+## Staged writes and orphan prevention
+
+Single uploads and image replacements stream the request body to a
+`.staging-<uuid>.<ext>` sibling of the final stored path
+(`backend/app/upload_staging.py`), then atomically rename it into place just
+before the `SourceImage` row commits. Because staging names are never
+persisted, a request cancelled or killed mid-stream can only leave a staging
+artifact — never a final-path file that looks like a committed upload (#1248).
+
+The rename deliberately precedes the commit so a committed row always has its
+file. Failures before the commit attempt (metadata bumps, queue work staged
+in the same transaction) are handled by `cleanup_unowned_final()`, which
+deletes the final-path file only after a fresh-session query proves no
+committed `SourceImage.stored_path` owns it. Once `commit()` has been
+attempted the outcome is ambiguous — the server can still commit after the
+client sees an error — and a fresh ownership query could race that in-flight
+transaction, so the file is retained unconditionally. An orphaned file is
+recoverable; a wrongly deleted owned file is not. Queue rejections follow
+the same rule: once the bookkeeping row is committed with `status="failed"`,
+that row owns the file, so it stays on disk and consistent with the record.
+
+The shared reconciliation sweep (`run_reconciliation_sweep`) removes
+`.staging-*` artifacts whose mtime is older than four hours
+(`STAGING_MAX_AGE_SECONDS` — deliberately above the 7200-second ingress
+upload timeout so a stalled but still-connected request can never outlive
+the bound); an in-flight upload refreshes its staging file's mtime on every
+chunk write, so only dead requests age out. The same sweep also _reports_
+aged final-path files that no `SourceImage` row owns
+(`upload.unowned_final_detected`) for operator reconciliation — it never
+deletes them automatically.
+
+The deployment also sets `TMPDIR=<source_images_dir>/.staging/` on the API
+container, so python-multipart's `SpooledTemporaryFile` upload spool and
+every other tempfile consumer land on the source-images PVC instead of the
+pod's 1 GiB ephemeral-storage budget (#1365). The directory is created at
+startup (next to the `tiles_dir` bootstrap in `app/main.py`); the sweep
+provisions it too and removes files inside it once their mtime ages past
+`STAGING_MAX_AGE_SECONDS`. On a shared RWX mount a sibling pod's in-flight
+spool can be listed, so the age bound is what keeps the sweep from
+deleting a live request's file — everything inside `.staging/` is a
+transient artifact never referenced by a committed row.
+
+## Bulk-import zip extraction limits
+
+Bulk import (`POST /admin/bulk-import/`, admin/instructor only) expands
+uploaded `.zip` archives into `source_images_dir` before any `SourceImage`
+rows exist. Extraction is bounded by a single `_ZipExtractBudget`
+(`backend/app/routers/bulk_import.py`) shared by every archive in the request,
+so a crafted archive — or the same payload split across several archives —
+cannot exhaust the data volume:
+
+- each eligible entry is pre-screened from its central-directory metadata —
+  declared `file_size` over `BULK_IMPORT_MAX_ENTRY_BYTES` (2 GiB), running
+  total over `BULK_IMPORT_MAX_TOTAL_BYTES` (20 GiB), or a
+  `file_size / compress_size` ratio above `BULK_IMPORT_MAX_COMPRESSION_RATIO`
+  (100:1) rejects the archive before the entry is opened;
+- entries are copied with a bounded read loop that re-checks the per-entry and
+  cumulative caps against the bytes actually decompressed, so a forged header
+  gains nothing;
+- more than `BULK_IMPORT_MAX_ENTRIES` (2000) image entries rejects the
+  archive;
+- a single archive with more than `BULK_IMPORT_MAX_ARCHIVE_ENTRIES`
+  (10,000) total entries — images and non-images alike — is rejected from
+  the end-of-central-directory record (with ZIP64 fallback) before
+  `ZipFile` allocates the `ZipInfo` list, and re-checked on the parsed
+  total after open, so an archive flooded with tiny non-image entries
+  cannot charge unbounded parse cost against the API
+  (`BULK_IMPORT_MAX_ENTRIES` only counts eligible image entries);
+- free space on `source_images_dir` must stay above
+  `BULK_IMPORT_MIN_FREE_BYTES` (1 GiB), checked before each entry and every
+  512 MiB written (the same pattern as the filesystem-import staging check).
+
+The raw request body is also bounded: the ingress accepts unlimited
+bodies, so `UploadBodyLimitMiddleware` (pure ASGI) watches the streamed
+body on the multipart upload paths and answers 413 the moment a cap is
+crossed, before python-multipart's temp-file spool can absorb it. It
+tracks two counters: bytes since the last multipart `--boundary`
+delimiter — a per-part cap matching the endpoint's per-file limit
+(`BULK_IMPORT_MAX_UPLOAD_BYTES` / `UPLOAD_MAX_BYTES`, plus 1 MiB of
+framing slack), so a batch of individually valid files is never rejected
+for its combined size — and total body bytes against a whole-request
+ceiling that bounds the spool (`BULK_IMPORT_MAX_REQUEST_BYTES`,
+80 GiB by default, on bulk import; the per-part cap plus slack on the
+single-file routes). The endpoint read loops re-apply the per-part cap to
+each uploaded part (zip archives are consumed in place from the spooled
+upload file — no second archive copy — and plain images stream to
+`source_images_dir`), and `write_upload_to_staging` enforces
+`UPLOAD_MAX_BYTES` for single uploads and replacements; exceeding a cap
+returns 413 and removes the partial file.
+
+The limits are validated at import time (`_validate_zip_limits`): non-positive
+values, or a non-finite / sub-1 compression ratio, fail startup rather than
+silently disabling a guard. Limit violations return HTTP 413 (free-space
+exhaustion returns 507) with a message naming the archive/entry (basenames
+truncated to 40 characters so the reason fits the frontend's 200-character
+display cutoff) and the limit, and every file already
+extracted for that request is unlinked before the response is sent. The
+frontend surfaces the 413 detail verbatim in the upload modal
+(`userMessage()` in `frontend/src/api.ts`). Defaults are listed in
+`backend/README.md`.
+
+Zip parts never get a second archive copy: the endpoint rewinds the
+already-spooled `UploadFile.file` and hands it straight to `zipfile`
+(#1365), so an archive larger than pod-local ephemeral storage — up to
+`BULK_IMPORT_MAX_UPLOAD_BYTES` — imports under the default chart profile.
+Combined with `TMPDIR` pointing at the PVC, a cancelled or crashed import
+leaves nothing on pod-local storage at all; a dead request's spool file
+ages out under the sweep described above.
+
+Central-directory parsing and the bounded extraction loop run on a worker
+thread via `asyncio.to_thread` (`_extract_zip_image_entries`), so a large
+archive does not stall the API worker's event loop; the budget and the
+400/413/507 error mapping are unchanged. A request cancelled
+mid-extraction cannot interrupt the thread, so the endpoint keeps waiting
+on the worker's done-event for it to finish and then unlinks every path
+the worker staged — plus everything staged earlier in the request —
+rather than leaving unowned files on the data volume.
+
 ## Status transitions
 
 | Status       | Progress | Description                                          |
@@ -83,9 +201,14 @@ polls the source image and shows that message in the processing snackbar; for
 bulk imports the per-file entries of `BulkImportJob.errors` are listed instead.
 
 Progress values in the 10-78% range come from pyvips eval signal
-callbacks mapped via `ProgressTracker`. The async `_flush_progress()`
+callbacks mapped via `ProgressTracker`. The async `_flush_tracker_progress()`
 coroutine writes tracker state to the database every 1.5 seconds
-without blocking tile generation.
+without blocking tile generation. Polls whose tracker values are
+unchanged still touch `SourceImage.updated_at`, and the flusher stays
+alive through the provenance checksum pass, so a live `processing` row
+never ages past the stale-source-image cutoff during one flat-progress
+stretch (a huge single image, a pyvips build without progress signals,
+or a slow multi-GB source hash).
 
 ## Worker configuration
 
@@ -209,8 +332,9 @@ as unreasonable for microscopy.
 5. Removes old tile directory from disk **after** the DB commit succeeds
 
 In `required` task-execution mode, a queue rejection marks the replacement
-source as failed and removes its staged file, but applies no metadata or
-version changes to the target image.
+source as failed and retains its file (the committed failed row owns the
+path — see the staged-writes section), but applies no metadata or version
+changes to the target image.
 
 See [image-metadata-and-versioning.md](image-metadata-and-versioning.md)
 for the full metadata preservation/clearing rules.

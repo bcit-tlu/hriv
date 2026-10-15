@@ -15,16 +15,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user, require_role
 from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
+from ..collection_views import (
+    _ViewerContext,
+    collection_summary_out,
+    image_ids_in_collections,
+)
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
-from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
-from ..models import Category, Image, SourceImage, User
+from ..image_validation import is_valid_image
+from ..image_source_info import build_image_source_info
+from ..upload_staging import (
+    UploadTooLargeError,
+    cleanup_unowned_final,
+    discard_staging,
+    staging_path_for,
+    write_upload_to_staging,
+)
+from ..models import Collection, CollectionImage, Image, SourceImage, User
 from ..schemas import (
     MAX_NOTE_LENGTH,
+    CollectionSummaryOut,
     ImageBulkDelete,
     ImageBulkUpdate,
     ImageCreate,
     ImageOut,
+    ImageSourceInfoOut,
     ImageUpdate,
     SourceImageOut,
     normalize_note_value,
@@ -74,19 +89,67 @@ async def get_image(
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
+    return await _get_visible_image(db, _user, image_id)
+
+
+async def _get_visible_image(db: AsyncSession, user: User, image_id: int) -> Image:
     img = await db.get(Image, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
-    if _user.role == "student":
+    if user.role == "student":
         if not img.active:
             raise HTTPException(status_code=404, detail="Image not found")
-        user_program_ids = {p.id for p in _user.programs}
-        user_group_ids = {g.id for g in _user.groups}
+        user_program_ids = {p.id for p in user.programs}
+        user_group_ids = {g.id for g in user.groups}
         if not await is_category_visible_to_student(
             db, img.category_id, user_program_ids, user_group_ids
         ):
             raise HTTPException(status_code=404, detail="Image not found")
     return img
+
+
+@router.get("/{image_id}/source-info", response_model=ImageSourceInfoOut)
+async def get_image_source_info(
+    image_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+) -> ImageSourceInfoOut:
+    await _get_visible_image(db, user, image_id)
+    return await build_image_source_info(db, image_id, user)
+
+
+@router.get("/{image_id}/collections", response_model=list[CollectionSummaryOut])
+async def list_image_collections(
+    image_id: int,
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Collections the given image belongs to that the caller may view (#1586).
+
+    Self-gated by ``COLLECTIONS_ENABLED``: the ``CollectionsFeatureMiddleware``
+    prefix only covers ``/api/collections``, so this ``/images`` path checks the
+    flag here or it would leak collection names while the feature is dark-launched
+    off. The image is behind the same 404 gate as ``GET /api/images/{id}`` (a
+    hidden/inactive image is indistinguishable from a missing one), then the
+    collection set is filtered through ``_ViewerContext.can_view`` so a student
+    never learns a private/restricted collection exists.
+    """
+    if not settings.collections_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    await _get_visible_image(db, _user, image_id)
+
+    stmt = (
+        select(Collection)
+        .join(CollectionImage, CollectionImage.collection_id == Collection.id)
+        .where(CollectionImage.image_id == image_id)
+        .order_by(Collection.name.asc(), Collection.id.asc())
+    )
+    collections = (await db.execute(stmt)).scalars().unique().all()
+
+    ctx = await _ViewerContext.build(db, _user)
+    visible = [c for c in collections if ctx.can_view(c)]
+    return [collection_summary_out(ctx, c) for c in visible]
 
 
 @router.post("/", response_model=ImageOut, status_code=201)
@@ -176,6 +239,15 @@ async def bulk_update_images(
                 for key, value in update_data.items():
                     setattr(img, key, value)
                 img.version = img.version + 1
+            if not browse_dirty:
+                # Uncategorized-staying images can still affect the list
+                # rows / tree via collections that render their
+                # thumb/active state.
+                root_ids = [
+                    img.id for img in changed_images if img.category_id is None
+                ]
+                if root_ids and await image_ids_in_collections(db, root_ids):
+                    browse_dirty = True
             if browse_dirty:
                 await bump_browse_revision(db)
             await db.commit()
@@ -249,7 +321,13 @@ async def update_image(
             # cache.
             is_dirty = any(getattr(img, key) != value for key, value in update_data.items())
             browse_affects_tree = (
-                img.category_id is not None or new_category_id is not None
+                img.category_id is not None
+                or new_category_id is not None
+                # An uncategorized image can still render on a collection's
+                # row/tile (cover/count), filed or not — see #1527, #1619.
+                or bool(
+                    await image_ids_in_collections(db, {img.id})
+                )
             )
             browse_dirty = browse_affects_tree and is_dirty
 
@@ -388,17 +466,21 @@ async def replace_image(
             ext = storage_extension(original_filename)
             unique_name = f"{uuid.uuid4().hex}{ext}"
             stored_path = os.path.join(settings.source_images_dir, unique_name)
+            staging_path = staging_path_for(stored_path)
 
+            # Stream to a staging name that is never committed to the
+            # database: a request cancelled or killed mid-stream leaves a
+            # sweepable artifact, not an apparently authoritative file
+            # (#1248). The rename precedes the commit so a committed row
+            # always has its file.
             try:
-                with open(stored_path, "wb") as f:
-                    while True:
-                        chunk = await file.read(UPLOAD_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+                file_size = await write_upload_to_staging(file, staging_path)
+                os.replace(staging_path, stored_path)
+            except UploadTooLargeError as exc:
+                discard_staging(staging_path)
+                raise HTTPException(status_code=413, detail=exc.detail)
             except OSError as exc:
-                with contextlib.suppress(OSError):
-                    os.unlink(stored_path)
+                discard_staging(staging_path)
                 if exc.errno == errno.ENOSPC:
                     logger.error(
                         "Replace upload failed: no space left on device",
@@ -414,8 +496,10 @@ async def replace_image(
                         detail="Insufficient storage \u2014 the data volume is full",
                     )
                 raise
-
-            file_size = os.path.getsize(stored_path)
+            except BaseException:
+                # Cancellation or any other non-OSError exit mid-stream.
+                discard_staging(staging_path)
+                raise
 
             metadata_snapshot = {
                 "name": img.name,
@@ -427,52 +511,79 @@ async def replace_image(
                 "version": img.version,
             }
 
-            # Apply metadata before creating the SourceImage so the target
-            # update and source-image insert remain one transaction.
-            if has_metadata:
-                if category_id is not None and parsed_cat != img.category_id:
-                    # A category move changes scope membership: invalidate
-                    # both scopes' tile-order revisions so clients holding
-                    # older revisions get a 409 instead of silently
-                    # overwriting (same rule as PATCH /images/{id}).
-                    await bump_scopes(
-                        db,
-                        {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
-                    )
-                if category_id is not None:
-                    img.category_id = parsed_cat
-                if name is not None:
-                    img.name = name
-                if copyright is not None:
-                    img.copyright = copyright if copyright != "" else None
-                if note is not None:
-                    img.note = parsed_note
-                if active is not None:
-                    img.active = active.lower() in ("true", "1")
-                if metadata_extra is not None:
-                    img.metadata_ = parsed_metadata
-                img.version = img.version + 1
+            # Everything below runs after the staged file was renamed to
+            # its final path; failures before the commit attempt may only
+            # remove the file when no committed row owns it, and once
+            # commit is attempted the file is always retained — a commit
+            # error does not prove the server rolled back (#1248).
+            commit_attempted = False
+            try:
+                # Apply metadata before creating the SourceImage so the target
+                # update and source-image insert remain one transaction.
+                if has_metadata:
+                    if category_id is not None and parsed_cat != img.category_id:
+                        # A category move changes scope membership: invalidate
+                        # both scopes' tile-order revisions so clients holding
+                        # older revisions get a 409 instead of silently
+                        # overwriting (same rule as PATCH /images/{id}).
+                        await bump_scopes(
+                            db,
+                            {scope_key_for(img.category_id), scope_key_for(parsed_cat)},
+                        )
+                    if category_id is not None:
+                        img.category_id = parsed_cat
+                    if name is not None:
+                        img.name = name
+                    if copyright is not None:
+                        img.copyright = copyright if copyright != "" else None
+                    if note is not None:
+                        img.note = parsed_note
+                    if active is not None:
+                        img.active = active.lower() in ("true", "1")
+                    if metadata_extra is not None:
+                        img.metadata_ = parsed_metadata
+                    img.version = img.version + 1
 
-            src = SourceImage(
-                original_filename=original_filename,
-                stored_path=stored_path,
-                status="pending",
-                name=img.name,
-                category_id=img.category_id,
-                copyright=img.copyright,
-                note=img.note,
-                active=img.active,
-                file_size=file_size,
-                uploaded_by=_user.id,
-                image_id=image_id,
-            )
-            db.add(src)
-            if has_metadata and (
-                metadata_snapshot["category_id"] is not None or img.category_id is not None
-            ):
-                await bump_browse_revision(db)
-            await db.commit()
-            await db.refresh(src)
+                src = SourceImage(
+                    original_filename=original_filename,
+                    stored_path=stored_path,
+                    status="pending",
+                    name=img.name,
+                    category_id=img.category_id,
+                    copyright=img.copyright,
+                    note=img.note,
+                    active=img.active,
+                    file_size=file_size,
+                    uploaded_by=_user.id,
+                    image_id=image_id,
+                )
+                db.add(src)
+                if has_metadata and (
+                    metadata_snapshot["category_id"] is not None
+                    or img.category_id is not None
+                    or await image_ids_in_collections(db, {img.id})
+                ):
+                    await bump_browse_revision(db)
+                commit_attempted = True
+                await db.commit()
+                await db.refresh(src)
+            except BaseException:
+                if commit_attempted:
+                    # Same rule as the upload route: retain the file
+                    # unconditionally once COMMIT may have reached the
+                    # server; an ownership query can race the in-flight
+                    # transaction.
+                    logger.warning(
+                        "Replace commit outcome unknown; retaining file",
+                        extra={
+                            "event": "replace.commit_outcome_unknown",
+                            "stored_path": stored_path,
+                            "image_id": image_id,
+                        },
+                    )
+                else:
+                    await cleanup_unowned_final(stored_path)
+                raise
 
             span.set_attribute("source_image.id", src.id)
             span.set_attribute("image.enqueued", False)
@@ -498,7 +609,6 @@ async def replace_image(
                     target_image_id,
                 )
             except TaskQueueUnavailableError:
-                bookkeeping_committed = False
                 try:
                     src.status = "failed"
                     src.status_message = "Failed"
@@ -506,7 +616,6 @@ async def replace_image(
                         "Task queue unavailable; image replacement was not started."
                     )
                     await db.commit()
-                    bookkeeping_committed = True
                 except Exception:
                     logger.exception(
                         "Failed to mark replacement source image after queue rejection",
@@ -536,7 +645,6 @@ async def replace_image(
                                 )
                             )
                             await recovery_db.commit()
-                            bookkeeping_committed = True
                     except Exception:
                         logger.exception(
                             "Fresh-session replacement source-image bookkeeping failed",
@@ -566,15 +674,19 @@ async def replace_image(
                         )
                         if restore_result.rowcount == 1:
                             # The restore reverts any browse-visible fields (name,
-                            # copyright, note, active, metadata) on a categorized image,
-                            # so the tree content can change. Bump the browse revision
-                            # whenever the image was or becomes categorized, matching
-                            # the forward-apply condition.
+                            # copyright, note, active, metadata) on a categorized image
+                            # or a collection member, so the tree/list content can
+                            # change. Bump the browse revision whenever the image was
+                            # or becomes categorized or is a member, matching the
+                            # forward-apply condition.
                             new_category_id = img.category_id
                             db.expire(img)
                             if (
                                 metadata_snapshot["category_id"] is not None
                                 or new_category_id is not None
+                                or await image_ids_in_collections(
+                                    db, {target_image_id}
+                                )
                             ):
                                 await bump_browse_revision(db)
                             await db.commit()
@@ -598,9 +710,8 @@ async def replace_image(
                                 "target_image_id": target_image_id,
                             },
                         )
-                if bookkeeping_committed:
-                    with contextlib.suppress(OSError):
-                        os.unlink(stored_path)
+                # The committed failed row owns stored_path, so the file
+                # is retained to keep row and file consistent (#1248).
                 raise
             span.set_attribute("image.enqueued", enqueue_result.queued)
             if not enqueue_result.queued:
@@ -633,7 +744,13 @@ async def bulk_delete_images(
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
             deleted_images = [(img.id, img.name, img.category_id) for img in images]
-            browse_dirty = any(category_id is not None for _, _, category_id in deleted_images)
+            browse_dirty = any(
+                category_id is not None for _, _, category_id in deleted_images
+            ) or bool(
+                await image_ids_in_collections(
+                    db, {image_id for image_id, _, _ in deleted_images}
+                )
+            )
             for img in images:
                 await db.delete(img)
             if browse_dirty:
@@ -671,8 +788,14 @@ async def delete_image(
                 raise HTTPException(status_code=404, detail="Image not found")
             image_name = img.name
             category_id = img.category_id
+            # Read collection membership before the delete: the delete
+            # cascades collection_images rows away (and the check's own
+            # SELECT would autoflush it), so this must run first.
+            member_of_collection = bool(
+                await image_ids_in_collections(db, {image_id})
+            )
             await db.delete(img)
-            if category_id is not None:
+            if category_id is not None or member_of_collection:
                 await bump_browse_revision(db)
             await db.commit()
             logger.info(

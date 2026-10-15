@@ -13,6 +13,9 @@ spec:
     name: {{ include "hriv-backend.fullname" . }}-worker
   minReplicas: {{ .Values.redis.worker.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.redis.worker.autoscaling.maxReplicas }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.redis.worker.autoscaling.scaleDownStabilizationWindowSeconds }}
   metrics:
     {{- if .Values.redis.worker.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource

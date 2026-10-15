@@ -141,6 +141,19 @@ describe('AddEditPersonModal', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows staff-specific helper text when role is staff', async () => {
+    const user = userEvent.setup()
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
+
+    const selects = screen.getAllByRole('combobox')
+    await user.click(selects[0])
+    await user.click(screen.getByRole('option', { name: 'Staff' }))
+
+    expect(
+      screen.getByText(/Programs do not restrict staff — staff can view all content/),
+    ).toBeInTheDocument()
+  })
+
   it('shows non-restrictive helper text when role is admin', async () => {
     const user = userEvent.setup()
     render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)

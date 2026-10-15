@@ -144,6 +144,12 @@ server {
         return 404;
     }
 
+    # /api/_probe is the routed readiness canary the backend readinessProbe
+    # targets; same direct-to-pod access pattern as the health endpoints.
+    location = /api/_probe {
+        return 404;
+    }
+
     # Default API proxy — sane body-size cap for JSON/metadata routes.
     location /api/ {
         # Re-resolve the backend hostname on every request so that nginx

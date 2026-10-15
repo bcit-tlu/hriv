@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getStoredUserScope } from './userScope'
 
-export const ROWS_PER_PAGE_OPTIONS = [5, 10, 25, 50] as const
+export const ROWS_PER_PAGE_OPTIONS = [5, 10, 25, 50, 100, 200] as const
 
-function loadStoredRowsPerPage(storageKey: string, defaultRowsPerPage: number): number {
+export function loadStoredRowsPerPage(storageKey: string, defaultRowsPerPage: number): number {
   try {
     const stored = localStorage.getItem(storageKey)
     if (stored === null) return defaultRowsPerPage

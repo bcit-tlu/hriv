@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
@@ -53,6 +53,7 @@ function findCategoryById(nodes: Category[], id: number): Category | null {
 
 // Sentinel value so MUI fires onChange even when external value is already null
 const ROOT_VALUE = '__root__'
+const ADD_ROOT_VALUE = '__add_root__'
 
 interface CategoryPickerSelectProps {
   categories: Category[]
@@ -61,6 +62,8 @@ interface CategoryPickerSelectProps {
   label?: string
   excludeCategoryId?: number
   includeRoot?: boolean
+  /** Text for the null/root filing option. */
+  rootLabel?: string
   /** Text shown in the collapsed select when value is null. Works with both includeRoot={true} (e.g. BulkEditImagesModal — placeholder shows initially, root option still available in dropdown) and includeRoot={false} (null means "no selection" only). */
   placeholder?: string
   /** When provided, a "+" button appears on each menu item to add a child category. */
@@ -95,6 +98,7 @@ export default function CategoryPickerSelect({
   label = 'Category',
   excludeCategoryId,
   includeRoot = true,
+  rootLabel = 'None (root level)',
   placeholder,
   onAddCategory,
   onDeleteCategory,
@@ -103,6 +107,7 @@ export default function CategoryPickerSelect({
   programs,
   groups,
 }: CategoryPickerSelectProps) {
+  const labelId = useId()
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
   const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
@@ -226,6 +231,7 @@ export default function CategoryPickerSelect({
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
+    if (val === ADD_ROOT_VALUE) return
     onChange(val === '' || val === ROOT_VALUE ? null : Number(val))
   }
 
@@ -271,20 +277,28 @@ export default function CategoryPickerSelect({
   return (
     <>
       <FormControl fullWidth variant="outlined">
-        <InputLabel shrink={value != null || includeRoot || !!placeholder || undefined}>
+        <InputLabel
+          id={labelId}
+          shrink={value != null || includeRoot || !!placeholder || undefined}
+        >
           {label}
         </InputLabel>
         <Select
           value={selectValue}
           onChange={handleChange}
           label={label}
+          labelId={labelId}
           displayEmpty={includeRoot || !!placeholder}
           renderValue={(selected) => {
+            if (selected === ADD_ROOT_VALUE) {
+              if (placeholder) return <em>{placeholder}</em>
+              return ''
+            }
             if (selected === '') {
               if (placeholder) return <em>{placeholder}</em>
               return ''
             }
-            if (selected === ROOT_VALUE) return <em>None (root level)</em>
+            if (selected === ROOT_VALUE) return <em>{rootLabel}</em>
             const opt = options.find((o) => String(o.id) === selected)
             return opt?.label ?? selected
           }}
@@ -300,7 +314,7 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  <em>None (root level)</em>
+                  <em>{rootLabel}</em>
                 </ListItemText>
                 {onAddCategory && (
                   <Tooltip title="Add child category">
@@ -317,7 +331,17 @@ export default function CategoryPickerSelect({
               </Box>
             </MenuItem>
           )}
-          {visibleOptions.length === 0 && (
+          {!includeRoot && onAddCategory && (
+            <MenuItem
+              value={ADD_ROOT_VALUE}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => handleAddClick(e, null)}
+            >
+              <AddIcon fontSize="small" sx={{ mr: 1 }} />
+              <ListItemText>New top-level category</ListItemText>
+            </MenuItem>
+          )}
+          {visibleOptions.length === 0 && (includeRoot || !onAddCategory) && (
             <MenuItem disabled>
               <ListItemText>
                 <Typography variant="body2" color="text.secondary">

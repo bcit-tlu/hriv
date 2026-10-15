@@ -1,4 +1,6 @@
 .git
+.worktrees/
+.devin/*.local.json
 
 frontend/node_modules
 frontend/dist

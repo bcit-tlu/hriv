@@ -150,3 +150,259 @@ A cross-environment restore replaces the `users` table. Your current session
 may immediately start returning `401/403` after the restore commits because
 your JWT no longer matches the new user row. The restore still completes on the
 server; log back in and check Recent Tasks to confirm it finished.
+
+## 4) Tile-rebuild scale rehearsal (opt-in, issue #1189)
+
+This is the documented production-shaped rehearsal that validates the durable
+parallel rebuild scheduler before `REBUILD_PARALLEL_ENABLED` is flipped on for
+an environment. As of the third rehearsal (2026-09-19), the flag is enabled as
+the deployed default for `latest` via the `flux-fleet` cluster overlay;
+`stable` ran a bounded validation pass on 2026-09-22 (recorded below) and
+awaits a full `scope=all` run in a weekend window before the overlay
+decision. It is
+**opt-in and disruptive**: it force-rebuilds every
+linked source image and adds a large fixture population. Run it only on
+`latest` (or another non-production environment) inside a change window, with
+the serial rebuild path verified healthy first.
+
+The fixture is deliberately excluded from recoverable artifacts. Admin JSON
+exports omit only images carrying the exact `metadata.rebuild_fixture=true`
+marker and their linked sources inside the fixture directory; fixture mutation, admin filesystem export, and
+the backup service share an exclusive source-volume lock that closes the
+check/inventory race. Exports and backups fail closed before creating an archive
+while `source_images/rebuild-fixture/` exists, and blocked backup attempts are
+persisted for both components with `failure_reason=rebuild_fixture_active`.
+Confirm no
+backup is already running before seeding; backup attempts during the rehearsal
+will fail with `backup.rebuild_fixture_blocked` and must not be treated as
+recovery points.
+
+### Prepare the population
+
+1. Record the real linked-source count — these provide the real libvips
+   throughput measurements:
+
+   ```bash
+   kubectl -n hriv exec deploy/hriv-backend -- python - <<'PY'
+   import asyncio
+   from sqlalchemy import func, select
+   from app.database import get_async_session
+   from app.models import SourceImage
+   async def main():
+       async with get_async_session()() as s:
+           n = await s.scalar(select(func.count()).select_from(SourceImage).where(
+               SourceImage.status == "completed", SourceImage.image_id.is_not(None)))
+           print("real linked sources:", n)
+   asyncio.run(main())
+   PY
+   ```
+
+2. Top up to the target item count with the deterministic fixture (choose
+   `--count` so real + fixture ≥ 3,400; each fixture source is a tiny valid
+   TIFF under `source_images/rebuild-fixture/`):
+
+   ```bash
+   kubectl -n hriv exec deploy/hriv-backend -- \
+     python -m app.rebuild_fixture --count 2900
+   ```
+
+3. Verify disk headroom on the tile PVC before starting (each rebuilt source
+   materializes a full DZI tree plus the retained prior tree during
+   promotion).
+
+### Measure
+
+1. **Serial baseline** — run the serial `POST /api/admin/tasks/rebuild-tiles`
+   on a representative subset (`image_ids`) and record images/hour. Full
+   serial runs are allowed but expensive; the baseline exists to anchor the
+   parallel speedup, not to exhaust the environment.
+2. **Parallel candidates** — run `POST /api/jobs/rebuild-tiles` with
+   `scope=all` at `REBUILD_PARALLELISM=1`, then `2`, then `4` where worker
+   resources permit. Between runs, cancel or let each job reach a terminal
+   state before creating the next (only one rebuild may be active).
+3. **Fault drills** — during one candidate run each:
+   - delete the worker pod mid-run and confirm in-flight items are reclaimed
+     after their leases expire and retried by a replacement pod;
+   - restart Redis and confirm committed claims resume through
+     reconciliation (committed-before-enqueue gaps repump);
+   - request `POST /api/jobs/{id}/cancel` mid-run and confirm pending items
+     cancel while started children drain;
+   - retry failed items through `POST /api/jobs/{id}/retry-failed`.
+4. **Correctness invariants** — after every run verify:
+   - every `job_items` row is in exactly one terminal state;
+   - no duplicated logical rebuilds (each source's `image.dzi` reflects one
+     promotion);
+   - `hriv_tile_rebuild_queued_items` returns to 0 and
+     `hriv_tile_rebuild_active_children` returns to 0;
+   - the tile PVC contains no orphaned `.rebuild-*` temp trees.
+
+### Metrics to read
+
+- `histogram_quantile` over `hriv.tile_rebuild.item.duration` → p50/p95/p99
+  child duration.
+- `rate(hriv.tile_rebuild.items.completed[1h])` → images/hour.
+- `hriv.tile_rebuild.item.queue_wait` → scheduler handoff latency.
+- `hriv_tile_rebuild_active_children` → effective parallelism.
+- `hriv.tile_rebuild.cancellation.latency` → time to drain after cancel.
+- `hriv.tile_rebuild.lease.reclaims` → recovery after worker loss.
+- Platform dashboards → worker CPU/memory peaks, DB connections, Redis depth.
+- `hriv.tile_rebuild.item.timeouts`, `hriv.tile_rebuild.item.retries`,
+  `hriv.tile_rebuild.enqueue.failures` → failure/retry accounting.
+
+### Rehearsal record
+
+Append one row per run to the rehearsal log in the change ticket or a
+confluence attachment; copy this table:
+
+| Field                        | Value |
+| ---------------------------- | ----- |
+| Deployment version           |       |
+| Environment                  |       |
+| Fixture/source count + scope |       |
+| Worker CPU/memory limits     |       |
+| Database + Redis limits      |       |
+| Child timeout                |       |
+| Lease / heartbeat            |       |
+| Retry backoff                |       |
+| Parallelism                  |       |
+| Start / end (UTC)            |       |
+| Images/hour                  |       |
+| Item p50 / p95 / p99         |       |
+| Resource peaks               |       |
+| Failures / reclaims          |       |
+| Cancellation latency         |       |
+| Reclaim/recovery time        |       |
+| Selected next setting        |       |
+
+#### Recorded rehearsal: `latest`, 2026-09-18
+
+| Field                        | Value                                                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.60.2-rc.20260918144214.gc109ed9` (the serial preflight began on `0.60.1-rc` and was interrupted by this rollout) |
+| Environment                  | `latest` / cluster03                                                                                                        |
+| Fixture/source count + scope | 2,875 fixture + 525 real linked sources; 3,399 authoritative `scope=all` targets                                            |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6                                                                          |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                    |
+| Child timeout                | 1,800 seconds                                                                                                               |
+| Lease / heartbeat            | 2,100 / 30 seconds                                                                                                          |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                              |
+| Parallelism                  | 2                                                                                                                           |
+| Start / end (UTC)            | 2026-09-18 15:28:41 / cancellation terminal 17:09:20                                                                        |
+| Images/hour                  | About 8 overall during the 90-minute observation window                                                                     |
+| Item p50 / p95 / p99         | Not accepted: the short, heterogeneous sample and interrupted claims were insufficient for representative percentiles       |
+| Resource peaks               | Worker 743m CPU / 3.2 GiB RSS; DB 30 connections; Redis queue depth 2 and ~2 MiB; tile PVC 18%                              |
+| Failures / reclaims          | No terminal failures; 2 retried items after HPA scale-down removed workers with active claims                               |
+| Cancellation latency         | About 9 minutes; 13 completed + 3,386 cancelled = 3,399                                                                     |
+| Reclaim/recovery time        | One item resumed ~39m25s after last heartbeat, ~4m25s after lease expiry                                                    |
+| Selected next setting        | Roll back new parallel creation; deploy 3,600-second HPA scale-down stabilization and repeat rehearsal before re-enabling   |
+
+This run is a **failed rollout gate**, not evidence to enable parallel mode. It
+also exposed an invalid embedded fixture TIFF; corrected fixture tooling now
+verifies the payload with runtime libvips before seeding. Do not repeat using a
+backend image older than the fix.
+
+#### Recorded repeat rehearsal: `latest`, 2026-09-18
+
+| Field                        | Value                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.60.3-rc.20260918174419.gd192db3`                                                                                           |
+| Environment                  | `latest` / cluster03                                                                                                                  |
+| Fixture/source count + scope | 2,875 fixture + 525 real linked sources; 3,399 authoritative `scope=all` targets                                                      |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6 with 3,600-second scale-down stabilization                                         |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                              |
+| Child timeout                | 1,800 seconds (superseded candidate: 3,600 seconds)                                                                                   |
+| Lease / heartbeat            | 2,100 / 30 seconds (superseded candidate lease: 3,900 seconds)                                                                        |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                                        |
+| Parallelism                  | 2                                                                                                                                     |
+| Start / end (UTC)            | 2026-09-18 17:49:24 / cancellation terminal 20:42:46                                                                                  |
+| Images/hour                  | About 14 during the 90-minute undisturbed observation                                                                                 |
+| Item p50 / p95 / p99         | Not accepted: insufficient completed heterogeneous sources for representative percentiles                                             |
+| Resource peaks               | Worker 998m CPU / 2.8 GiB RSS; DB 27–31 connections; Redis queue depth 2–3 and ~2 MiB; tile PVC 19%                                   |
+| Failures / reclaims          | Worker-loss reclaim 36 seconds after lease expiry; two representative sources exhausted their second 1,800-second attempt             |
+| Cancellation latency         | About 7 minutes; 23 completed + 2 failed + 3,374 cancelled = 3,399                                                                    |
+| Reclaim/recovery time        | Controlled worker loss resumed in 37m37s from deletion; Redis accepted connections ~40 seconds after restart                          |
+| Selected next setting        | Retain parallelism 2 and HPA stabilization; test child timeout 3,600 seconds and lease 3,900 seconds with the flag otherwise disabled |
+
+The HPA/resource gate passed in this repeat run: it scaled up without
+involuntarily removing a worker during the 90-minute observation and all sampled
+resource ceilings remained within limits. The timeout/RTO gate remains open;
+the next candidate must show that the 3,600-second timeout eliminates these
+representative-source failures and establish its RTO improvement against serial.
+
+#### Recorded rehearsal 3: `latest`, 2026-09-18/19 — rollout gate cleared
+
+| Field                        | Value                                                                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.60.3-rc.20260918215608.gb85eedf` (PR #1333 merge commit)                                                                                                                                                     |
+| Environment                  | `latest` / cluster03                                                                                                                                                                                                    |
+| Fixture/source count + scope | 2,825 fixture + 575 real linked sources; 3,349 authoritative `scope=all` targets                                                                                                                                        |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6 with 3,600-second scale-down stabilization                                                                                                                           |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                                                                                                                |
+| Child timeout                | 3,600 seconds                                                                                                                                                                                                           |
+| Lease / heartbeat            | 3,900 / 30 seconds                                                                                                                                                                                                      |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                                                                                                                          |
+| Parallelism                  | 2                                                                                                                                                                                                                       |
+| Start / end (UTC)            | 2026-09-18 22:00:02 / cancellation terminal 2026-09-19 00:13:40                                                                                                                                                         |
+| Images/hour                  | About 14–20 across the ~2h9m observation                                                                                                                                                                                |
+| Item p50 / p95 / p99         | Not accepted: insufficient completed heterogeneous sources for representative percentiles                                                                                                                               |
+| Resource peaks               | Worker ~1062m CPU / ~2.64 GiB RSS; DB 30–31 connections; Redis memory ~1.9 MiB, dbsize 15→46; tile PVC 14%                                                                                                              |
+| Failures / reclaims          | Zero terminal failures. The two representative sources that exhausted both attempts in the repeat rehearsal (source ids 106/109) both completed on their first attempt — one after ~56 minutes (~93% of the new budget) |
+| Cancellation latency         | About 4 minutes; 27 completed + 0 failed + 3,322 cancelled = 3,349                                                                                                                                                      |
+| Reclaim/recovery time        | Not exercised this round (no fault drills; focus was the timeout regression test)                                                                                                                                       |
+| Selected next setting        | Both rollout gates cleared. `REBUILD_PARALLEL_ENABLED` enabled as the deployed default for `latest` via the `flux-fleet` overlay; `stable` bounded-validated 2026-09-22, full run pending                               |
+
+This run cleared both outstanding rollout gates. The two direct regression
+items for the prior timeout failures completed cleanly, one using nearly the
+full new timeout budget, and no new failure modes appeared across zero worker
+restarts, a steady 6/6 HPA plateau, and flat DB/Redis/PVC metrics. Throughput
+remains modest (~14–20 images/hour at parallelism 2); raising parallelism is a
+follow-up candidate for improving DR-RTO, not a blocker for this rollout.
+
+#### Recorded stable bounded validation: `stable`, 2026-09-22 — bounded pass
+
+| Field                        | Value                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment version           | Backend `0.61.x` (post-#1333 chart defaults: timeout 3,600 s, lease 3,900 s)                                                                                                                      |
+| Environment                  | `stable` / cluster04; `tasks.executionMode=required` + `rebuild.parallelEnabled=true` deployed temporarily via `flux-fleet` overlay for this validation                                           |
+| Fixture/source count + scope | No fixtures; 10 largest real linked sources by on-disk size, `scope=all` + bounded `image_ids` (images 3917, 3911, 3903, 3906, 3904, 662, 3857, 3922, 3852, 3916; ~2.1–7.9 GB each, ~53 GB total) |
+| Worker CPU/memory limits     | Request `250m` / `2Gi`; limit `2` / `4Gi`; HPA 1–6 with 3,600-second scale-down stabilization                                                                                                     |
+| Database + Redis limits      | PostgreSQL 100 connections; Redis 256 MiB `maxmemory`, 512 MiB pod limit                                                                                                                          |
+| Child timeout                | 3,600 seconds                                                                                                                                                                                     |
+| Lease / heartbeat            | 3,900 / 30 seconds                                                                                                                                                                                |
+| Retry backoff                | 60–900 seconds; max 2 attempts                                                                                                                                                                    |
+| Parallelism                  | 2                                                                                                                                                                                                 |
+| Start / end (UTC)            | Job 1 started 2026-09-22 06:05:42 / completed 07:56:14 — 110.5-minute wall clock                                                                                                                  |
+| Images/hour                  | ~5.4 over the bounded set (large-source-only population; not comparable to the fixture-dominated latest rate)                                                                                     |
+| Item durations               | 7.3–33.5 min, all first attempt; longest (7.88 GB) used ~56% of the 3,600-second budget                                                                                                           |
+| Failures / reclaims          | Zero terminal failures, zero retries, zero involuntary worker loss (HPA scaled 1→6 on load, 0 restarts); no 5xx/queue-submission failures in the API log during the run                           |
+| Resource peaks               | Worker ~292m CPU / ~603 MiB RSS observed; Redis ~1.9 MiB, dbsize 13                                                                                                                               |
+| Selected next setting        | Bounded gate cleared. Full `stable` `scope=all` deferred to a weekend change window (multi-hour runtime at parallelism 2 vs. ~3,800 linked sources); keep/revert decision on the overlay pending  |
+
+Stable's largest sources comfortably fit the rehearsal-3 timeout/lease
+settings — the biggest input finished with ~44% headroom under the
+3,600-second budget — with no new failure modes on the production
+population. The run also exercised `TASK_EXECUTION_MODE=required` on
+stable end-to-end (enqueue → arq pump → child completion) with zero
+submission failures.
+
+### Teardown
+
+```bash
+kubectl -n hriv exec deploy/hriv-backend -- \
+  python -m app.rebuild_fixture --purge
+```
+
+Both seeding and `--purge` refuse to run while a serial or durable rebuild
+is active, so fixture rows and tile trees are never deleted underneath
+in-flight children — let any running rebuild finish or cancel it first.
+
+This removes only exact `metadata.rebuild_fixture=true` images, their linked
+sources whose stored paths are inside `rebuild-fixture`, and tile/temp/`.old-*`
+trees for those exact source IDs. The fixture directory itself is swept of
+unreferenced files (including orphans left when fixture rows vanished without
+a purge, e.g. after a database import) and removed once empty; files still
+referenced by retained rows are preserved. Fixture filesystem work
+runs off the CLI event loop so thousands of small files do not block database
+or cancellation progress. Trigger or wait for the next scheduled backup after
+purge and confirm it succeeds; do not retain or use any failed backup attempt
+from the fixture window.

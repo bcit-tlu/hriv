@@ -1,0 +1,336 @@
+# Collections
+
+Collections gather a handful of images into a named set — for example, the
+four views of one specimen, or a sequence that tells a story over time.
+
+Open the **Collections** tab in the app bar to see every collection you can
+view, both types together; use the **Type** filter to show only
+**Sequence** or **Synchronized** collections. Everyone who is signed in,
+including students, can see the tab; admins, instructors, staff and students
+can all create their own collections (staff see every collection and, like
+students, edit the ones they own or co-own). (If
+your HRIV instance doesn't show a Collections tab yet, the feature hasn't
+been switched on there — ask your administrator.)
+
+## Two kinds of collection
+
+- **Synchronized** – up to four images shown together; pan and zoom move
+  all of them together. The four-image limit applies to every role.
+- **Sequence** – images in a fixed order, stepped through one at a time.
+  Students can add up to 20 images; other roles have no sequence limit.
+
+You choose the type when you create a collection and can't change it later —
+create a new collection instead.
+
+## Viewing a synchronized collection
+
+Open a synchronized collection and you get read-only viewers for every
+image in it — two side by side for a pair, a 2×2 grid for three or four —
+with annotations and measurement markings visible on each.
+
+- Pan, zoom or rotate any pane and the others follow, keeping their
+  relative positions — handy when the views highlight different spots.
+- Each pane's caption shows the image name and an **Open image** link to
+  the normal image view.
+- The **link** icon at the top-right of each pane keeps it synced with the
+  others — panes start linked. Click it to unlink a pane and adjust it on
+  its own (the icon switches to link-off); click again to re-link, which
+  keeps the new relative positions.
+- **Restore view** returns every pane to the saved view. It stays
+  unavailable until someone has saved a view for the collection.
+- On a phone held upright the panes are replaced by a hint to rotate to
+  landscape — your view is still there when you rotate back.
+
+::: tip Saving the view
+If you can edit the collection, a **Save view** button stores every pane's
+current position for everyone — next time the collection opens, it lands
+exactly there. Anyone can pan and zoom freely; only saving changes what
+others see. Use the saved positions to line the images up around
+different highlights.
+:::
+
+## Viewing a sequence collection
+
+Open a sequence collection and you get a read-only viewer that shows one
+image at a time — annotations and measurement markings on each image are
+visible but can't be changed here.
+
+- Step through with the **‹** and **›** buttons that appear on the viewer's
+  left and right edges when you point at it (they fade away when idle, like
+  the image toolbar), click a thumbnail in the strip above the viewer, or
+  press the ← and → arrow keys — they step the sequence from anywhere on
+  the page, so they keep working after a dialog closes or a button click
+  moves focus elsewhere.
+- The caption under the viewer shows the image name, the position
+  (`n of N` — part of the page link, so copying the URL shares the exact
+  image you're looking at), and **Open image**, which jumps to the normal
+  image view where you can edit annotations with the usual permissions.
+- If you can edit the collection, a **Manage Images** button in the
+  top-right header opens the **Manage Collection Images** dialog — a
+  miniature
+  Browse view of thumbnails. Drag
+  thumbnails to reorder, or click a thumbnail's corner remove icon to take
+  it out of the collection. To remove several at once,
+  click **Multi-select** in the dialog header: thumbnails gain checkboxes —
+  tick the ones you want gone and click the **Remove N Selected Images**
+  button at the bottom. Click **Choose images** to pick
+  through search — the search opens as a picker with checkboxes already on:
+  tick individual images or a whole category (its images, and its
+  sub-categories' images, are added in their order in the category), or use
+  **Select all** above the results. The footer shows how many images are
+  selected; **Cancel** returns to the dialog and **Add to collection**
+  stages the picks. Changes
+  apply inside the dialog only — **Done** saves them all at once, and
+  closing without Done asks before discarding. This works for synchronized
+  collections too.
+
+The breadcrumb at the top of the page shows where the collection lives in
+Browse — for example _Home : Hematology : MLSC-3200 : Lab 3_ — and each
+link jumps to that spot in Browse. An unfiled collection's breadcrumb has no
+category segment; it may show **Home**, but the collection itself is not a
+Browse tile.
+
+## Create a collection
+
+1. Click **New collection**.
+2. Give it a name (a description is optional).
+   Admins and instructors also choose a category; students' and staff
+   collections remain unfiled until a curator files them.
+3. Pick the **type** and who it's **visible to**:
+   - **Private** – only you.
+   - **Public** – everyone who can sign in.
+   - **Restricted** – only students in the programs or groups you pick.
+     Instructors can choose from the programs they belong to and the groups
+     they manage; this option isn't offered to students or staff.
+4. Click **Create**.
+
+Students can own up to 10 collections of each type. Co-owned collections
+count toward the limit. On a Collections type page, **New collection** stays
+available until both type limits are reached. In the create form, a capped type
+is disabled and the other type is selected when the page's default type is
+capped. The 10-collection count and 20-image sequence limits do not apply to
+admins, instructors, or staff, and existing collections are not removed when a
+limit is reached.
+
+## Add an image to a collection
+
+While viewing an image, click **Add to Collection** (next to **Share View**)
+and pick one of your collections — or one owned by a program you teach in.
+Type in the filter box to narrow a long list.
+
+- The image is added to the end of the collection. If it is already there,
+  nothing changes and a note tells you so.
+- A synchronized collection that already holds four images is greyed out;
+  hover it to see why.
+- For students, a sequence collection holding 20 images is also greyed out.
+  Existing over-cap sequences can still be reordered or have images removed,
+  but students cannot add images while the collection remains over its limit.
+- Use **New collection…** in the dialog to create a collection that starts
+  with this image.
+- After adding, the message at the bottom offers **View collection** to jump
+  straight to it. Your browser's back button returns you to the image.
+
+The button is unavailable while you are editing annotations on the canvas —
+finish or cancel that first.
+
+### Add several images at once (search picker)
+
+From the collection's **Manage Images** dialog, click **Choose images** —
+the search opens
+as a picker with checkboxes already on. Only the **Categories** and
+**Images** filter chips are shown — both on to start; untick a chip to
+narrow further, or untick both to search every kind.
+Tick each image you want, or tick a
+**category** to select every image inside it — including its sub-categories —
+in the order they're registered; unticking removes them again, and images
+you ticked by hand stay picked. **Select all** above the results covers
+every listed row. The footer counts how many images are selected,
+**Cancel** returns you to the dialog, and **Add to
+collection** stages the picks. You can keep selecting across searches —
+images picked under an earlier query still count, and they are added in
+the order they appeared in your results. Collections and other result
+kinds still open when you click them and are never selected.
+
+### Add an image from Browse (drag onto the tile)
+
+On the **Browse** page, an editable collection's tile doubles as a drop
+zone: drag an image tile onto its highlighted half and the image is
+appended. The tile is a drop zone only when you can edit the collection —
+you co-own it or teach in its program — and image dragging itself needs
+admin/instructor rights, so this gesture is for instructors adding to
+collections they manage. The same rules as the dialog above apply (dedupe,
+the four-image cap on synchronized collections). An **Undo** action in the
+message at the bottom removes the image again.
+
+## Collections in Browse
+
+Collections appear on **Browse** only after a curator files them into a
+category. An unfiled collection is not a Browse tile; it remains available in
+the Collections tab and collection-management views. Open a filed tile to
+view the collection; its breadcrumb shows the filed location and links back
+into Browse. To feature a collection near the top of Browse, file it into a
+root-level category such as **Featured**.
+
+- Tiles keep a fixed width and can be dragged to reorder them among the
+  images and categories in the same folder; the order is shared for every
+  viewer.
+- Admins and instructors can **file** a collection into a category or choose
+  **None. Access in Collections.** to unfile it, using the card's **Move** action (the
+  folder icon in the cover's top-right corner), the **Category** picker in
+  the collection's edit dialog, or by dragging a filed tile
+  onto a category tile's _Move here_ zone. Filing is curatorial, not
+  ownership-bound — any admin/instructor can file any collection.
+- Filing a private collection shows a warning: only its owners and staff,
+  instructors, and admins can see its Browse tile — not other students.
+- **Add to Collection** remains available for adding images to unfiled
+  collections. The former root-tile drag-add path is no longer available to
+  students adding images to their own unfiled collections.
+- A category tile's detail line counts the collections inside its subtree
+  (`N collections`).
+- When `COLLECTIONS_ENABLED` is off, collection tiles disappear from Browse
+  entirely — existing placements are kept and return with the flag.
+
+## Hide or show a collection (instructors and admins)
+
+Curators can hide a collection with the **Hide collection** link at the top
+right of the collection page or the **Hide Collection** link in the edit
+dialog's title row — like hiding an image or a category. A hidden
+collection:
+
+- disappears from students' lists, Browse tiles, and search results —
+  **except for its owners**, who keep full access to their own work;
+- stays visible to admins, instructors and staff, shown desaturated with an
+  eye-off marker on cards and in the Collections table (the page
+  itself greys its controls — no separate marker);
+- keeps its place in the category structure and tile order — nothing moves.
+
+Click **Show collection** in the same spot to make it visible again. Hiding
+is curatorial, not ownership-bound: any admin or instructor can hide any
+collection, and owners can't hide or unhide their own collections.
+
+## Find a collection
+
+Use the filter bar above the collections — it applies to the Cards, Table
+and Graph views alike:
+
+- **Name** – matches name, description or owner.
+- **Type** – **Sequence** or **Synchronized** only.
+- **Owner** – **My collections** (just the ones you co-own), or collections
+  co-owned by a particular person or owned by a program (named owners are
+  not shown to students).
+- **Visibility** – private, public or restricted.
+- **Category** – collections filed in a category or anywhere beneath it.
+
+Filtering, sorting and paging happen on the server in the Cards and Table
+views — changing a filter or the sort returns you to the first page, and a
+pagination footer under the list lets you pick the page size and move
+between pages. In the Graph view the same facets only highlight matches.
+
+Each card shows the cover image, how many images it holds, a type icon
+beside the name (carousel for a sequence, columns for a synchronized
+collection), and a visibility chip.
+
+Collections also appear in the top-bar **Search** — both name and
+description are searched, and the **Collections** chip narrows results to
+just collections. Choosing a result opens it here.
+
+## Edit or delete
+
+If you co-own a collection (or teach in the program that owns it), the card
+shows a **pencil** icon next to its name and the collection page shows a
+**pencil** at the end of its breadcrumb — either one opens the editor. A
+collection can have several user co-owners plus, or instead of, a program
+owner.
+
+- **Edit** lets you change the name, description, visibility, and — for
+  restricted collections — the programs and groups. Admins and instructors
+  also get a **Category** picker that refiles the collection in Browse.
+  Student co-owners can
+  change the name, description and images, but the visibility, category and
+  program / group scope stay locked (they can only change those on a
+  collection they own alone).
+- **Delete Collection** lives inside the edit dialog, at the bottom — click
+  once to arm, then again to confirm. Deleting a collection never deletes
+  the images in it. Co-owned and program-owned collections can't be deleted
+  by a student co-owner — ask an instructor or administrator.
+
+::: tip Changed elsewhere?
+If someone else edited the collection while your dialog was open, saving
+shows a "modified by another user" message with a **Reload** button. Reload
+picks up their changes so you can re-apply yours.
+:::
+
+## Manage owners
+
+If a collection shows an owners affordance (the **Owners** action in the
+card's cover overlay, the transfer icon beside the "Managed by" line on the
+collection page, or **Manage owners** in its Collections table row
+menu),
+you can manage who owns it — administrators for any
+collection, instructors for collections they co-own or that belong to a
+program they teach:
+
+The dialog starts with a **Program / User** choice:
+
+- **User owners** — a checkbox table of people, the same list used when
+  managing groups. Use the **Role** filter to show **Students** or
+  **Instructors** (administrators also get **Everyone**), plus **Search**
+  and **Program** filters to narrow the list. Current
+  owners start checked. Instructors only ever see students and fellow
+  instructors; administrator and staff accounts can only be added by an
+  administrator. Check the people you want, then click **Change
+  Owner(s)**. A collection can have several co-owners of any role,
+  including students. The last user owner can't be removed unless a
+  program owns the collection.
+- **Program owner** — click a program chip to make that program the owner;
+  click the ✕ on the selected chip to clear it. Administrators can pick
+  any program; instructors only a program they belong to. Assigning a
+  program makes it the sole owner — the user-owner list clears. Clearing
+  a program hands the collection back to its user owners, so there must
+  be at least one first.
+
+Confirm to save — the collection keeps its images and visibility; only who
+manages it changes. If the collection was edited by someone else while the
+dialog was open, you'll see the "modified by another user" message — reopen
+the dialog and try again.
+
+::: tip Orphaned collections
+When a collection's last user owner and its program owner are gone (both
+deleted), the collection becomes _orphaned_. Administrators can find these
+with the **Owner** filter's _No owner (orphaned)_ option and assign owners
+with **Owners**.
+:::
+
+## Collections table
+
+Switch the **Collections** tab to its **Table** view to list every
+collection you can see — both types together — in sortable columns (all
+except Cover, Programs and Groups; sorting and paging are server-side, so
+a column click re-orders the whole list, not just the page shown). The
+filter bar above (name, type, owner, visibility, and category) applies to
+every view. (This replaces the old **Manage → Collections** page.) The **Category** column links into
+Browse at that location; the **Programs** and **Groups** columns show each
+collection's restriction scope (including scope inherited from its filed
+category, shown dimmed), and **Created**/**Updated** show how long ago, with
+the exact date on hover. Admins and instructors also get a **Visibility**
+switch that hides or shows a collection to students. Hidden rows, and rows
+filed under a hidden category, render greyscale, just like the Manage
+Images table. Clicking a row opens the collection itself.
+
+Use **Choose columns** to show or hide columns — the choice is remembered
+between sessions, as on the Manage Images table. Like that table, only a
+compact set shows by default (cover, name, type, category, images, owner,
+updated, plus visibility for admins and instructors); opt the rest in as
+you need them. Rows offer actions through a single **actions** (⋮) menu
+where you have permission: **View**, **Edit**, and **Manage owners**.
+Categorizing lives in the edit dialog's Category picker, and delete stays
+inside the edit dialog. Tick rows to **Bulk Edit** them: admins and
+instructors can categorize or hide any selection; anyone can delete
+collections they could delete one by one.
+
+## Share a link
+
+The address bar shows `?collection=…` while a collection is open. Copy it to
+share; anyone who can see the collection lands straight on it. Your browser's
+back and forward buttons move between the library, images, and collections as
+usual.

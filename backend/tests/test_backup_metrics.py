@@ -35,11 +35,12 @@ def _state(
     db_completed_at: str = "2026-07-13T08:00:42+00:00",
     fs_started_at: str = "2026-07-13T08:01:00+00:00",
     fs_completed_at: str = "2026-07-13T08:09:00+00:00",
-    db_size: int | None = 12345678,
-    fs_size: int | None = 987654321,
+    db_size: object = 12345678,
+    fs_size: object = 987654321,
 ) -> dict:
     return {
         "schema_version": 2,
+        "backup_mode": "production",
         "database": {
             "started_at": db_started_at,
             "completed_at": db_completed_at,
@@ -50,6 +51,7 @@ def _state(
             "last_success_completed_at": db_completed_at if db_success else "2026-07-12T08:00:42+00:00",
             "last_success_duration_seconds": 42,
             "last_success_size_bytes": db_size,
+            "last_success_archive_key": "cnpg://pg-core?target_lsn=1/2",
         },
         "filesystem": {
             "started_at": fs_started_at,
@@ -61,6 +63,7 @@ def _state(
             "last_success_completed_at": fs_completed_at if fs_success else "2026-07-11T08:09:00+00:00",
             "last_success_duration_seconds": 480,
             "last_success_size_bytes": fs_size,
+            "last_success_archive_key": "hriv-backups/snapshot.tar.gz",
         },
     }
 
@@ -146,6 +149,48 @@ async def test_render_backup_metrics_exposes_split_backup_state() -> None:
     assert b'hriv_restore_last_duration_seconds{purpose="test",restore_type="database"} 30.0' in content
 
 
+async def test_render_backup_metrics_uses_legacy_production_archive_size_for_database() -> None:
+    completed_at = "2026-07-13T08:09:00+00:00"
+    state = _state(db_size=None, db_completed_at=completed_at, fs_completed_at=completed_at)
+
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
+        patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
+    ):
+        content, _ = backup_metrics.render_backup_metrics()
+
+    assert b'hriv_backup_last_size_bytes{backup_type="database"} 9.87654321e+08' in content
+
+
+def test_legacy_database_size_fallback_requires_coherent_success_state() -> None:
+    completed_at = "2026-07-13T08:09:00+00:00"
+
+    state = _state(db_size=None, db_completed_at=completed_at, fs_completed_at=completed_at)
+    state["backup_mode"] = "development"
+    assert backup_metrics._last_success_size(state, "database") == 987654321
+
+    state = _state(db_size=None, db_completed_at=completed_at, fs_completed_at=completed_at)
+    state["database"]["last_success_archive_key"] = "hriv-backups/database.sql"
+    assert backup_metrics._last_success_size(state, "database") is None
+
+    state = _state(db_size=None)
+    assert backup_metrics._last_success_size(state, "database") is None
+
+    for invalid_database_size in (True, float("nan"), float("inf"), "12345678"):
+        state = _state(
+            db_size=invalid_database_size,
+            db_completed_at=completed_at,
+            fs_completed_at=completed_at,
+        )
+        assert backup_metrics._last_success_size(state, "database") is None
+
+    for invalid_size in (True, float("nan"), float("inf"), "987654321"):
+        state = _state(db_size=None, db_completed_at=completed_at, fs_completed_at=completed_at)
+        state["filesystem"]["last_success_size_bytes"] = invalid_size
+        assert backup_metrics._last_success_size(state, "database") is None
+
+
 async def test_render_backup_metrics_marks_in_flight_attempt_in_progress() -> None:
     state = _state(db_success=None, fs_success=False)
 
@@ -179,6 +224,7 @@ async def test_render_backup_metrics_in_progress_requires_started_attempt() -> N
 
 async def test_render_backup_metrics_preserves_failed_attempt_with_older_success() -> None:
     state = _state(db_success=True, fs_success=False)
+    state["filesystem"]["size_bytes"] = None
 
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=state),
@@ -189,6 +235,7 @@ async def test_render_backup_metrics_preserves_failed_attempt_with_older_success
 
     assert b'hriv_backup_last_outcome{backup_type="filesystem"} 0.0' in content
     assert b'hriv_backup_last_success_timestamp_seconds{backup_type="filesystem"}' in content
+    assert b'hriv_backup_last_size_bytes{backup_type="filesystem"} 9.87654321e+08' in content
 
 
 async def test_marker_cache_avoids_repeated_calls() -> None:

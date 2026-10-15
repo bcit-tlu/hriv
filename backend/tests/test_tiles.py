@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
-from jose import jwt
+import jwt
 
 import app.auth as auth
 from app.routers import images as images_router
@@ -22,7 +22,9 @@ from app.schemas import ImageOut
 from app.tile_tokens import (
     TileTokenError,
     append_tile_token,
+    append_thumb_token,
     issue_tile_token,
+    issue_thumb_token,
     source_image_id_from_tile_url,
     validate_tile_token,
 )
@@ -540,6 +542,160 @@ async def test_tiles_auth_non_tile_uri_returns_403(auth_app: FastAPI) -> None:
             "/api/tiles-auth",
             headers={
                 "X-Original-URI": f"/api/admin/export?tile_token={token}"
+            },
+        )
+    assert resp.status_code == 403
+
+
+# ── Thumbnail-only tokens (issue #1609) ───────────────────
+#
+# ``purpose="thumb"`` tokens are issued for category card covers so the
+# thumbnail renders even when the pinned image is hidden from the viewer.
+# They must authorize ``thumbnail.jpeg`` only — never ``image.dzi`` or
+# ``image_files/...`` tiles.
+
+
+def test_thumb_token_validates_thumbnail_path() -> None:
+    token = issue_thumb_token(42)
+    validate_tile_token(token, 42, "thumbnail.jpeg")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "image.dzi",
+        "image_files/0/0_0.jpeg",
+        "thumbnail.jpeg.dzi",
+        "image_files/0/thumbnail.jpega",
+        # Exact-match rule: nested paths ending in thumbnail.jpeg are tile
+        # paths, not the thumbnail.
+        "foo/thumbnail.jpeg",
+        "image_files/0/thumbnail.jpeg",
+    ],
+)
+def test_thumb_token_rejects_tile_paths_with_403(path: str) -> None:
+    token = issue_thumb_token(42)
+    with pytest.raises(TileTokenError) as exc:
+        validate_tile_token(token, 42, path)
+    assert exc.value.status_code == 403
+
+
+def test_thumb_token_rejects_missing_path_with_403() -> None:
+    token = issue_thumb_token(42)
+    with pytest.raises(TileTokenError) as exc:
+        validate_tile_token(token, 42)
+    assert exc.value.status_code == 403
+
+
+def test_thumb_token_wrong_image_id_returns_403() -> None:
+    token = issue_thumb_token(42)
+    with pytest.raises(TileTokenError) as exc:
+        validate_tile_token(token, 43, "thumbnail.jpeg")
+    assert exc.value.status_code == 403
+
+
+def test_tile_token_still_validates_all_paths() -> None:
+    token = issue_tile_token(42)
+    validate_tile_token(token, 42, "thumbnail.jpeg")
+    validate_tile_token(token, 42, "image.dzi")
+    validate_tile_token(token, 42, "image_files/0/0_0.jpeg")
+    validate_tile_token(token, 42)  # path optional for tile tokens
+
+
+def test_append_thumb_token_issues_thumb_purpose() -> None:
+    url = append_thumb_token("/api/tiles/42/thumbnail.jpeg")
+    assert url.startswith("/api/tiles/42/thumbnail.jpeg?tile_token=")
+    token = url.split("tile_token=", 1)[1]
+    payload = jwt.decode(
+        token,
+        auth.auth_settings.jwt_secret,
+        algorithms=[auth.auth_settings.jwt_algorithm],
+    )
+    assert payload["purpose"] == "thumb"
+    assert payload["sid"] == 42
+    validate_tile_token(token, 42, "thumbnail.jpeg")
+
+
+def test_append_thumb_token_leaves_non_tile_urls_unchanged() -> None:
+    assert append_thumb_token("/thumb.jpg") == "/thumb.jpg"
+    assert append_thumb_token("/tiles/reorder-fixture/1") == "/tiles/reorder-fixture/1"
+
+
+async def test_tile_route_thumb_token_serves_thumbnail(
+    tiles_app: FastAPI,
+) -> None:
+    token = issue_thumb_token(42)
+    async with _client(tiles_app) as client:
+        resp = await client.get(
+            f"/api/tiles/42/thumbnail.jpeg?tile_token={token}"
+        )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+
+
+async def test_tile_route_thumb_token_rejects_dzi(tiles_app: FastAPI) -> None:
+    token = issue_thumb_token(42)
+    async with _client(tiles_app) as client:
+        resp = await client.get(f"/api/tiles/42/image.dzi?tile_token={token}")
+    assert resp.status_code == 403
+
+
+async def test_tile_route_thumb_token_rejects_image_files(
+    tiles_app: FastAPI,
+) -> None:
+    token = issue_thumb_token(42)
+    async with _client(tiles_app) as client:
+        resp = await client.get(
+            f"/api/tiles/42/image_files/0/0_0.jpeg?tile_token={token}"
+        )
+    assert resp.status_code == 403
+
+
+async def test_tile_route_thumb_token_rejects_nested_thumbnail(
+    tiles_app: FastAPI,
+) -> None:
+    """A nested ``.../thumbnail.jpeg`` is a tile path — exact match only."""
+    token = issue_thumb_token(42)
+    async with _client(tiles_app) as client:
+        resp = await client.get(
+            f"/api/tiles/42/image_files/0/thumbnail.jpeg?tile_token={token}"
+        )
+    assert resp.status_code == 403
+
+
+async def test_tiles_auth_thumb_token_allows_thumbnail(
+    auth_app: FastAPI,
+) -> None:
+    token = issue_thumb_token(42)
+    async with _client(auth_app) as client:
+        resp = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/42/thumbnail.jpeg?tile_token={token}"
+                )
+            },
+        )
+    assert resp.status_code == 204
+
+
+@pytest.mark.parametrize(
+    "uri_path",
+    [
+        "/api/tiles/42/image.dzi",
+        "/api/tiles/42/image_files/0/0_0.jpeg",
+        "/api/tiles/42/image_files/0/thumbnail.jpeg",
+    ],
+)
+async def test_tiles_auth_thumb_token_rejects_tile_paths(
+    auth_app: FastAPI, uri_path: str
+) -> None:
+    token = issue_thumb_token(42)
+    async with _client(auth_app) as client:
+        resp = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": f"{uri_path}?tile_token={token}"
             },
         )
     assert resp.status_code == 403

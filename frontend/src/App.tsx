@@ -21,6 +21,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CloseIcon from '@mui/icons-material/Close'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
@@ -29,15 +30,26 @@ import Visibility from '@mui/icons-material/Visibility'
 import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
+import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
+import ImageInfoAccordion from './components/ImageInfoAccordion'
 import SortableTileGrid from './components/SortableTileGrid'
+import MyCollectionsDrawer, {
+  MY_COLLECTIONS_ROW_CONTENT_GAP_PX,
+  MY_COLLECTIONS_TRIGGER_CLEARANCE_PX,
+} from './components/MyCollectionsDrawer'
 import ReorderSnackbar from './components/ReorderSnackbar'
-import NoteDisplay from './components/NoteDisplay'
+import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
 import type { Page } from './components/AppShell'
 import AddEditPersonModal from './components/AddEditPersonModal'
+import CollectionsPage from './components/CollectionsPage'
+import type { CollectionsView } from './useCollectionsViewPreference'
+import AddToCollectionDialog from './components/AddToCollectionDialog'
+import CollectionEditDialog, { type CollectionFormValues } from './components/CollectionEditDialog'
+import CollectionCoverPickerModal from './components/CollectionCoverPickerModal'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
@@ -59,8 +71,27 @@ import {
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
+import {
+  apiCollectionSummaryToSummary,
+  apiImageToItem,
+  collectionFullMessage,
+  parseCollectionIdParam,
+  parseCollectionItemParam,
+  studentTypesAtCap,
+} from './collectionUtils'
+import type { StageAddImages } from './components/CollectionManageDialog'
+import { toCollectionPatch, useCollectionsData } from './useCollectionsData'
+import {
+  createCollectionWithImages,
+  useEditableCollections,
+  useVisibleCollections,
+} from './useAddToCollection'
+import { useFeatures } from './useFeatures'
+import { useImageInfoExpandedPreference } from './useImageInfoExpandedPreference'
+import { useImageSourceInfo } from './useImageSourceInfo'
+import { useMyCollectionsShelf } from './useMyCollectionsShelf'
+import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
 import { isAcceptedFile } from './fileUtils'
-import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
 import {
   fetchImage as apiFetchImage,
@@ -76,11 +107,17 @@ import {
   createGroup,
   updateGroup,
   deleteGroup,
+  fetchCollections,
+  fetchImageCollections,
+  bulkUpdateCollections,
+  bulkDeleteCollections,
+  ApiError,
   userMessage,
 } from './api'
-import type { ApiImage, ApiUser } from './api'
+import type { ApiCollectionSummary, ApiImage, ApiUser } from './api'
 import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
+import MoveCollectionDialog from './components/MoveCollectionDialog'
 import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import FailedUploadsDialog from './components/FailedUploadsDialog'
 import {
@@ -90,7 +127,14 @@ import {
   useProcessingJobs,
 } from './useProcessingJobs'
 import type { ProcessingJob } from './useProcessingJobs'
-import type { Category, Group, ImageItem } from './types'
+import type {
+  Category,
+  Collection,
+  CollectionSummary,
+  CollectionType,
+  Group,
+  ImageItem,
+} from './types'
 import { MAX_DEPTH } from './types'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
@@ -98,7 +142,6 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce, setTelemetryPage } from './observability'
 import type { FrontendPage, TelemetryNavDirection } from './observability'
-import { narrowGroupIds, narrowProgramIds } from './categoryUtils'
 import { formatCategoryItemCountsForCategory } from './components/categoryOptionUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -115,6 +158,9 @@ import { tileOrderingCoordinator } from './tileOrdering'
 import { logDrag } from './dndInstrumentation'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
+const EMPTY_COLLECTION_TYPES: ReadonlySet<CollectionType> = new Set()
+/** Retired `?page=` value — Manage → Collections merged into the Collections Table view. */
+const LEGACY_MANAGE_COLLECTIONS_PAGE = 'manage-collections'
 
 function listFailedSourceImages() {
   return listSourceImages({ status: 'failed', limit: MAX_REHYDRATED_FAILURES })
@@ -144,13 +190,51 @@ export default function App() {
     logout,
     canManageUsers,
     canEditContent,
+    canViewPeople,
   } = useAuth()
+  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference(
+    currentUser?.id ?? null,
+  )
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
+  // Deployment flags (`GET /api/features`). Collections are dark-launched:
+  // the tab and `?collection=` deep links only exist once the flag is on.
+  const features = useFeatures()
+  const collectionsEnabled = features?.collections === true
+
+  // `?collection={id}` implies the Collections page (deep link, #1414);
+  // `&item={image_id}` is the sequence viewer position (#1416).
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
+    parseCollectionIdParam(window.location.search),
+  )
+  const [selectedCollectionItemId, setSelectedCollectionItemId] = useState<number | null>(() =>
+    parseCollectionItemParam(window.location.search),
+  )
+  // Whether the open collection detail was reached from a Browse tile
+  // (#1529): close/back then returns to the Browse scope in `path` rather
+  // than the Collections list. Deep links carrying `?cat=` start true.
+  const [collectionFromBrowse, setCollectionFromBrowse] = useState<boolean>(() => {
+    if (parseCollectionIdParam(window.location.search) == null) return false
+    return new URLSearchParams(window.location.search).get('cat') != null
+  })
+  // `?type=` deep links / popstate seed the Collections page's Type filter
+  // (#1629 — one unified page; the filter state owns it after the seed).
+  // The nonce re-applies the seed on every collections popstate, even when
+  // the popped `?type=` value equals the current one or is absent.
+  const [collectionTypeParam, setCollectionTypeParam] = useState<CollectionType | 'all'>(() => {
+    const t = new URLSearchParams(window.location.search).get('type')
+    return t === 'sequence' || t === 'synchronized' ? t : 'all'
+  })
+  const [collectionTypeSeedNonce, setCollectionTypeSeedNonce] = useState(0)
+  const [collectionsRefreshToken, setCollectionsRefreshToken] = useState(0)
   const [page, setPage] = useState<Page>(() => {
+    if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
-    if (p === 'manage' || p === 'people' || p === 'admin' || p === 'guide') return p
+    // Manage → Collections merged into the Collections Table view.
+    if (p === LEGACY_MANAGE_COLLECTIONS_PAGE) return 'collections'
+    if (p === 'collections' || p === 'manage' || p === 'people' || p === 'admin' || p === 'guide')
+      return p
     return 'browse'
   })
 
@@ -160,9 +244,21 @@ export default function App() {
   const effectivePage: FrontendPage =
     (page === 'guide' || page === 'manage') && !canEditContent
       ? 'browse'
-      : (page === 'admin' || page === 'people') && !canManageUsers
+      : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
-        : page
+        : page === 'collections' && features != null && !features.collections
+          ? 'browse'
+          : page
+
+  // A collections deep link on a deployment with the flag off falls back to
+  // browse once the flags are known (the page renders nothing until then).
+  useEffect(() => {
+    if (features == null || features.collections || page !== 'collections') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
+    setPage('browse')
+    setSelectedCollectionId(null)
+    setCollectionFromBrowse(false)
+  }, [features, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
@@ -224,11 +320,78 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  const imageSourceInfo = useImageSourceInfo(
+    selectedImage?.id ?? null,
+    selectedImage?.version ?? 0,
+    imageInfoExpanded,
+  )
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
     selectedImageRef.current = selectedImage
   })
+  // #1586: collections the viewed image belongs to, shown in the metadata row.
+  // Server-filtered to those the caller may view. The result is tagged with the
+  // image id it was fetched for; a late response for a previously-viewed image
+  // is dropped by the `cancelled` guard in the effect below.
+  const [imageCollectionsResult, setImageCollectionsResult] = useState<{
+    imageId: number
+    rows: ApiCollectionSummary[]
+  } | null>(null)
+  // Invalidate the stored result the instant the viewed image changes (React's
+  // "adjust state during render" reset pattern). Without this, re-opening an
+  // image whose memberships have since changed would keep showing the old names
+  // whenever every refresh attempt fails — the stale result still matches the
+  // id. Resetting here makes a failed refresh fall back to "no row", not stale
+  // data, and also avoids flashing the previous image's collections.
+  const [collectionsResultImageId, setCollectionsResultImageId] = useState<number | null>(null)
+  if ((selectedImage?.id ?? null) !== collectionsResultImageId) {
+    setCollectionsResultImageId(selectedImage?.id ?? null)
+    setImageCollectionsResult(null)
+  }
+  useEffect(() => {
+    const imageId = selectedImage?.id
+    // Skip entirely when collections are dark-launched off: no point adding a
+    // guaranteed-404 request to every image view on flag-off deployments.
+    if (imageId == null || !collectionsEnabled) return
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const run = () => {
+      void fetchImageCollections(imageId)
+        .then((rows) => {
+          if (!cancelled) setImageCollectionsResult({ imageId, rows })
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          // A 404 is the definitive answer — the image is hidden/inactive/not
+          // viewable — so record an empty result (no row). A transient failure
+          // (network error or 5xx) must NOT be cached as empty, or it would
+          // falsely claim the image is in no collections; retry a couple of
+          // times with backoff, then leave the row hidden without asserting it.
+          if (err instanceof ApiError && err.status === 404) {
+            setImageCollectionsResult({ imageId, rows: [] })
+          } else if (attempts < 2) {
+            attempts += 1
+            retryTimer = setTimeout(run, 1500 * attempts)
+          }
+        })
+    }
+    run()
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [selectedImage?.id, collectionsEnabled])
+  const selectedImageCollections =
+    imageCollectionsResult && imageCollectionsResult.imageId === selectedImage?.id
+      ? imageCollectionsResult.rows
+      : []
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [myCollectionsCreateOpen, setMyCollectionsCreateOpen] = useState(false)
+  const [myCollectionsCapState, setMyCollectionsCapState] = useState<{
+    userId: number
+    types: ReadonlySet<CollectionType>
+  } | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [fileDropCategoryId, setFileDropCategoryId] = useState<number | null>(null)
   const [droppedFiles, setDroppedFiles] = useState<File[]>([])
@@ -249,11 +412,14 @@ export default function App() {
   const [successSnack, setSuccessSnack] = useState<{
     message: string
     trackingUrl?: string | null
+    action?: { label: string; onClick: () => void }
   } | null>(null)
+  const [infoSnack, setInfoSnack] = useState<string | null>(null)
   const [warnSnack, setWarnSnack] = useState<string | null>(null)
   const [moveSnack, setMoveSnack] = useState<{
     message: string
     onUndo: () => void
+    onView?: () => void
   } | null>(null)
   const [reorderCount, setReorderCount] = useState(0)
   // Report issue modal state
@@ -272,7 +438,7 @@ export default function App() {
   const [frontendVersion, setFrontendVersion] = useState<string | null>(null)
   const [changelogVersion, setChangelogVersion] = useState(0)
 
-  // Browse data (categories, images, programs, background refresh)
+  // Browse data (categories, images, collections, programs, background refresh)
   const {
     categories,
     categoriesLoading,
@@ -280,6 +446,7 @@ export default function App() {
     uncategorizedImages,
     uncategorizedLoaded,
     setUncategorizedImages,
+    currentCollections,
     programs,
     groups,
     setGroups,
@@ -290,12 +457,166 @@ export default function App() {
     refreshCategories,
     refreshUncategorizedImages,
     currentImages,
-    getPathRestriction,
+    liveCategoryPath,
     ancestorProgramIds,
-    getPathGroupRestriction,
     ancestorGroupIds,
     currentCategories,
-  } = useBrowseData({ path, currentUser, dragActive })
+  } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
+
+  // Reported upward by CollectionsPage — the list graph fills the viewport
+  // like the image/collection viewers (#1630 feedback). Declared before the
+  // data hook because it selects the list fetch mode: Graph needs the full
+  // visible set, Cards/Table one server-paged result (#1631).
+  const [collectionsListView, setCollectionsListView] = useState<CollectionsView>('cards')
+
+  // Collections data (#1414). The list fetch runs only while the tab is
+  // active; the `move`/`loadCollection` actions are mounted unconditionally
+  // so filed Browse collection moves (#1529) keep list/detail state in sync.
+  const collectionsData = useCollectionsData({
+    enabled: collectionsEnabled && page === 'collections' && currentUser != null,
+    currentUser,
+    selectedCollectionId,
+    type: collectionTypeParam,
+    typeSeedNonce: collectionTypeSeedNonce,
+    refreshToken: collectionsRefreshToken,
+    backgroundRefresh: page === 'collections' && selectedCollectionId == null,
+    listMode: collectionsListView === 'graph' ? 'full' : 'paged',
+  })
+
+  const myCollectionsShelfEnabled =
+    features?.collectionsHomeShelf === true &&
+    currentUser != null &&
+    (page === 'browse' || page === 'collections')
+  const { collections: myCollectionsShelf, reload: reloadMyCollectionsShelf } =
+    useMyCollectionsShelf(myCollectionsShelfEnabled)
+  // Drawer-originated collection opens keep the caller's origin: from Browse
+  // or the image viewer Close returns to the Browse scope; from a
+  // Collections page it returns to the Collections list (#1529, #1608).
+  const myCollectionsOriginFromBrowse = page === 'browse'
+  // The shelf now lives on both Browse and Collections pages, so moving
+  // between them (not just mount, and not arriving from a page where the
+  // hook's own `enabled` flip already refetches) re-primes the owned feed
+  // (#1608).
+  const previousPageRef = useRef(page)
+  useEffect(() => {
+    const previousPage = previousPageRef.current
+    previousPageRef.current = page
+    if (
+      previousPage !== page &&
+      myCollectionsShelfEnabled &&
+      (previousPage === 'browse' || previousPage === 'collections')
+    )
+      reloadMyCollectionsShelf()
+  }, [page, myCollectionsShelfEnabled, reloadMyCollectionsShelf])
+
+  // Collections Table bulk edit (#1578): the API applies the diff
+  // atomically; a category move also invalidates every affected tile-order
+  // scope so a cached revision can't falsely 409 a reorder.
+  const handleBulkUpdateCollections = useCallback(
+    async (
+      ids: number[],
+      data: { category_id?: number | null; hidden?: boolean },
+      rows: CollectionSummary[],
+    ) => {
+      await bulkUpdateCollections({ collection_ids: ids, ...data })
+      if (data.category_id !== undefined) {
+        const selected = new Set(ids)
+        const affected = new Set<number | null>()
+        // `rows` carries the selection — paged list state only holds the
+        // current page, so selected rows may be off-page (#1631).
+        for (const c of rows) {
+          if (selected.has(c.id) && (c.categoryId ?? null) !== data.category_id) {
+            affected.add(c.categoryId ?? null)
+            affected.add(data.category_id)
+          }
+        }
+        for (const scope of affected) tileOrderingCoordinator.invalidateRevision(scope)
+      }
+      await collectionsData.reload()
+      refreshCategories()
+      reloadMyCollectionsShelf()
+    },
+    [collectionsData, refreshCategories, reloadMyCollectionsShelf],
+  )
+  const handleBulkDeleteCollections = useCallback(
+    async (ids: number[]) => {
+      await bulkDeleteCollections({ collection_ids: ids })
+      await collectionsData.reload()
+      refreshCategories()
+      reloadMyCollectionsShelf()
+    },
+    [collectionsData, refreshCategories, reloadMyCollectionsShelf],
+  )
+  const {
+    open: myCollectionsDrawerOpen,
+    setOpen: setMyCollectionsDrawerOpen,
+    pinned: myCollectionsDrawerPinned,
+    setPinned: setMyCollectionsDrawerPinned,
+  } = useMyCollectionsDrawerState(currentUser?.id != null ? String(currentUser.id) : 'anonymous')
+  const myCollectionsDrawerVisible =
+    myCollectionsShelfEnabled && myCollectionsShelf != null && myCollectionsShelf.length > 0
+  // Old Manage → Collections links open the Collections page on its Table
+  // view; cleared once the user leaves Collections so later visits open on
+  // Cards as usual.
+  const [collectionsInitialView, setCollectionsInitialView] = useState<CollectionsView | undefined>(
+    () =>
+      new URLSearchParams(window.location.search).get('page') === LEGACY_MANAGE_COLLECTIONS_PAGE
+        ? 'table'
+        : undefined,
+  )
+  if (collectionsInitialView != null && page !== 'collections') {
+    setCollectionsInitialView(undefined)
+  }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('page') !== LEGACY_MANAGE_COLLECTIONS_PAGE) return
+    params.set('page', 'collections')
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}?${params.toString()}`,
+    )
+  }, [])
+  const onViewerPage =
+    (page === 'browse' && selectedImage != null) ||
+    (page === 'collections' && (selectedCollectionId != null || collectionsListView === 'graph'))
+  const myCollectionsTypesAtLimit =
+    currentUser?.role === 'student' && myCollectionsCapState?.userId === currentUser.id
+      ? myCollectionsCapState.types
+      : EMPTY_COLLECTION_TYPES
+
+  useEffect(() => {
+    if (
+      !myCollectionsDrawerVisible ||
+      !myCollectionsDrawerOpen ||
+      currentUser?.role !== 'student'
+    ) {
+      return
+    }
+
+    let cancelled = false
+    void fetchCollections({ mine: true })
+      .then((rows) => {
+        if (!cancelled) {
+          setMyCollectionsCapState({
+            userId: currentUser.id,
+            types: studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser),
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMyCollectionsCapState({ userId: currentUser.id, types: new Set() })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser, myCollectionsDrawerOpen, myCollectionsDrawerVisible])
+
+  // One Collections page since #1629: the old detail-driven type-page sync
+  // is gone — a detail no longer needs to switch the list's type filter.
 
   // Navigation-safe reorder coordinator for the current Browse scope
   // (epic #975, issue #979).
@@ -314,7 +635,12 @@ export default function App() {
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
     [categories, selectedImage?.categoryId],
   )
-  const currentCategoryHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
+  // Derive from the live ancestry, not the navigation-time `path` snapshots,
+  // so a background refresh that hides or reparents an ancestor is reflected.
+  const currentCategoryHiddenState = useMemo(
+    () => getCategoryHiddenStateFromPath(liveCategoryPath),
+    [liveCategoryPath],
+  )
   const imageViewerHiddenByCategory = useMemo(
     () => selectedImageCategoryHidden.hidden || currentCategoryHiddenState.hidden,
     [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],
@@ -347,10 +673,9 @@ export default function App() {
     [imageViewerHiddenByCategory],
   )
   const breadcrumbProgramItems = useMemo(() => {
-    const leafProgramIds = path[path.length - 1]?.programIds ?? []
+    const leafProgramIds = liveCategoryPath[liveCategoryPath.length - 1]?.programIds ?? []
     const leafProgramIdSet = new Set(leafProgramIds)
-    const effectiveProgramIds = path.length > 0 ? narrowProgramIds(path) : ancestorProgramIds
-    return effectiveProgramIds
+    return ancestorProgramIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafProgramIdSet.has(id) }))
       .map((item) => {
         const program = programs.find((p) => p.id === item.id)
@@ -358,12 +683,11 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorProgramIds, path, programs])
+  }, [ancestorProgramIds, liveCategoryPath, path.length, programs])
   const breadcrumbGroupItems = useMemo(() => {
-    const leafGroupIds = path[path.length - 1]?.groupIds ?? []
+    const leafGroupIds = liveCategoryPath[liveCategoryPath.length - 1]?.groupIds ?? []
     const leafGroupIdSet = new Set(leafGroupIds)
-    const effectiveGroupIds = path.length > 0 ? narrowGroupIds(path) : ancestorGroupIds
-    return effectiveGroupIds
+    return ancestorGroupIds
       .map((id) => ({ id, inherited: path.length > 0 && !leafGroupIdSet.has(id) }))
       .map((item) => {
         const group = groups.find((g) => g.id === item.id)
@@ -371,7 +695,7 @@ export default function App() {
       })
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [ancestorGroupIds, groups, path])
+  }, [ancestorGroupIds, groups, liveCategoryPath, path.length])
   const bumpChangelogVersion = useCallback(() => {
     setChangelogVersion((version) => version + 1)
   }, [])
@@ -516,6 +840,11 @@ export default function App() {
     uncategorizedLoaded,
     page,
     path,
+    collectionId: selectedCollectionId,
+    collectionItemId: selectedCollectionItemId,
+    collectionFromBrowse,
+    collectionTypeFilter:
+      collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
     setPath,
     setSelectedImage,
   })
@@ -585,6 +914,7 @@ export default function App() {
       catIds: number[],
       imageId: number | null,
       traversal?: { historyIndex?: number },
+      poppedCollectionFromBrowse?: boolean,
     ) => {
       if (canvasSavingRef.current && traversal) {
         setErrorSnack('Please wait for the annotation save to finish.')
@@ -602,10 +932,50 @@ export default function App() {
       }
       setCanvasEditActive(false)
       const validPage = (
-        ['browse', 'manage', 'people', 'admin', 'guide'].includes(popPage) ? popPage : 'browse'
+        popPage === LEGACY_MANAGE_COLLECTIONS_PAGE
+          ? 'collections'
+          : ['browse', 'collections', 'manage', 'people', 'admin', 'guide'].includes(popPage)
+            ? popPage
+            : 'browse'
       ) as Page
       setPage(validPage)
+      if (popPage === LEGACY_MANAGE_COLLECTIONS_PAGE) setCollectionsInitialView('table')
+      // The collection id lives in the URL (`?collection=`), which the browser
+      // has already restored by the time popstate fires. `?item=` (sequence
+      // position) and `?type=` (type page, #1554) are restored the same way.
+      const poppedCollectionId =
+        validPage === 'collections' ? parseCollectionIdParam(window.location.search) : null
+      setSelectedCollectionId(poppedCollectionId)
+      if (validPage === 'collections') {
+        const poppedType = new URLSearchParams(window.location.search).get('type')
+        setCollectionTypeParam(
+          poppedType === 'sequence' || poppedType === 'synchronized' ? poppedType : 'all',
+        )
+        setCollectionTypeSeedNonce((n) => n + 1)
+        if (poppedCollectionId == null) {
+          setCollectionsRefreshToken((n) => n + 1)
+        }
+      }
+      setSelectedCollectionItemId(
+        validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
+      )
 
+      if (validPage === 'collections') {
+        // A collection entry pushed from a Browse tile restores the Browse
+        // scope behind it (#1529): `?cat=` rides in the popped URL and the
+        // state flag marks entries where the scope was the (param-less) root.
+        const fromBrowse =
+          poppedCollectionFromBrowse === true ||
+          new URLSearchParams(window.location.search).get('cat') != null
+        setCollectionFromBrowse(fromBrowse)
+        setPath(fromBrowse ? resolveCategoryPath(categoriesRef.current, catIds) : [])
+        setSelectedImage(null)
+        setViewportState(undefined)
+        setOverlays([])
+        return true
+      }
+
+      setCollectionFromBrowse(false)
       if (validPage !== 'browse') {
         setPath([])
         setSelectedImage(null)
@@ -649,6 +1019,7 @@ export default function App() {
         catIds,
         imageId,
         traversal ? { historyIndex: traversal.toIndex } : undefined,
+        traversal?.collectionFromBrowse,
       ),
   )
 
@@ -740,6 +1111,7 @@ export default function App() {
       lastEmittedCategoryRef.current = null
       lastEmittedPathIdsRef.current = []
       setPage('browse')
+      setSelectedCollectionId(null)
       setPath([])
       setSelectedImage(null)
       setViewportState(undefined)
@@ -1070,6 +1442,11 @@ export default function App() {
 
   const isStudent = currentUser?.role === 'student'
 
+  // Stable refs for the snackbar "View" action: the real callbacks are
+  // declared below this hook call site, so the hook invokes them via refs.
+  const moveSnackNavigateRef = useRef<(categoryPath: Category[]) => void>(() => {})
+  const moveSnackOpenCollectionRef = useRef<(id: number) => void>(() => {})
+
   // Category CRUD, reorder, move, drag-and-drop (extracted to useCategoryActions hook)
   const {
     moveCatOpen,
@@ -1088,6 +1465,15 @@ export default function App() {
     handleRequestMoveCategory,
     handleDropImageOnCategory,
     handleDropCategoryOnCategory,
+    moveCollectionOpen,
+    setMoveCollectionOpen,
+    movingCollection,
+    setMovingCollection,
+    handleRequestMoveCollection,
+    handleMoveCollection,
+    moveCollectionTo,
+    handleDropCollectionOnCategory,
+    handleDropImageOnCollection,
     handleSetCardImage,
     pendingMoveConfirm,
     confirmPendingMove,
@@ -1097,17 +1483,28 @@ export default function App() {
     uncategorizedImages,
     loadCategories,
     loadUncategorizedImages,
+    moveCollectionApi: collectionsEnabled ? collectionsData.move : undefined,
+    addImagesToCollectionApi: collectionsEnabled
+      ? (id, imageIds, role) => collectionsData.addImages(id, imageIds, role)
+      : undefined,
+    removeImagesFromCollectionApi: collectionsEnabled ? collectionsData.removeImages : undefined,
     currentCategories,
+    currentUserRole: currentUser?.role,
     ancestorProgramIds,
-    getPathRestriction,
     ancestorGroupIds,
-    getPathGroupRestriction,
+    liveCategoryPath,
     path,
     setPath,
     editNameCategory,
     setErrorSnack,
     setWarningSnack: setWarnSnack,
+    setInfoSnack,
     setMoveSnack,
+    navigateToCategory: (categoryId: number | null) =>
+      moveSnackNavigateRef.current(
+        categoryId == null ? [] : (findCategoryPath(categories, categoryId) ?? []),
+      ),
+    openCollection: (id: number) => moveSnackOpenCollectionRef.current(id),
   })
 
   // Coordinate a single bottom-right reorder snackbar across the browsed
@@ -1225,12 +1622,18 @@ export default function App() {
 
   const handleCategoryTileClick = useCallback(
     (cat: Category) => {
+      // Rebase onto the live ancestry so a reparent since the last
+      // navigation doesn't carry obsolete ancestor ids into `path`/the URL.
+      const nextPath = findCategoryPath(categories, cat.id) ?? [...path, cat]
       runCanvasNavigation(() => {
-        setPath((prev) => [...prev, cat])
-        pushNavState('browse', [...path.map((c) => c.id), cat.id])
+        setPath(nextPath)
+        pushNavState(
+          'browse',
+          nextPath.map((c) => c.id),
+        )
       })
     },
-    [path, pushNavState, runCanvasNavigation],
+    [categories, path, pushNavState, runCanvasNavigation],
   )
 
   const handleManageCategoryNavigate = useCallback(
@@ -1409,17 +1812,33 @@ export default function App() {
   const handleTabChange = useCallback(
     (v: Page) => {
       runCanvasNavigation(() => {
+        if (v === 'collections') setCollectionsRefreshToken((n) => n + 1)
         setPage(v)
+        setSelectedCollectionId(null)
+        setCollectionFromBrowse(false)
         clearImage()
         setPath([])
-        pushNavState(v)
+        // `?type=` rides along only while a type filter is active (#1629);
+        // the URL-sync effect keeps it in step with the filter afterwards.
+        const typeParam =
+          v === 'collections' && collectionsData.filters.type !== 'all'
+            ? { type: collectionsData.filters.type }
+            : undefined
+        pushNavState(v, [], null, typeParam)
         if (v === 'browse') {
           loadCategories()
           loadUncategorizedImages()
         }
       })
     },
-    [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation],
+    [
+      clearImage,
+      pushNavState,
+      loadCategories,
+      loadUncategorizedImages,
+      runCanvasNavigation,
+      collectionsData.filters.type,
+    ],
   )
 
   // Called only when already on browse (AppShell gates the click);
@@ -1433,6 +1852,439 @@ export default function App() {
       pushNavState('browse')
     })
   }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages, runCanvasNavigation])
+
+  const handleOpenCollection = useCallback(
+    (id: number, opts?: { fromBrowse?: boolean }) => {
+      runCanvasNavigation(() => {
+        const fromBrowse = opts?.fromBrowse === true
+        setPage('collections')
+        setSelectedCollectionId(id)
+        setSelectedCollectionItemId(null)
+        clearImage()
+        // From a Browse tile the detail sits "on top of" the current scope:
+        // `path` keeps the Browse location, the URL carries `?cat=` so the
+        // deep link restores it, and Close returns to Browse (#1529).
+        setCollectionFromBrowse(fromBrowse)
+        if (!fromBrowse) setPath([])
+        pushNavState(
+          'collections',
+          fromBrowse ? path.map((c) => c.id) : [],
+          null,
+          { collection: String(id) },
+          { collectionFromBrowse: fromBrowse },
+        )
+      })
+    },
+    [clearImage, path, pushNavState, runCanvasNavigation],
+  )
+
+  const handleCloseCollection = useCallback(() => {
+    setSelectedCollectionId(null)
+    setSelectedCollectionItemId(null)
+    if (collectionFromBrowse) {
+      // `path` still holds the Browse scope the tile was opened from (#1529).
+      setCollectionFromBrowse(false)
+      setPage('browse')
+      pushNavState(
+        'browse',
+        path.map((c) => c.id),
+      )
+      return
+    }
+    setCollectionsRefreshToken((n) => n + 1)
+    pushNavState(
+      'collections',
+      [],
+      null,
+      collectionsData.filters.type === 'all' ? undefined : { type: collectionsData.filters.type },
+    )
+  }, [collectionFromBrowse, path, pushNavState, collectionsData.filters.type])
+
+  // Detail-header breadcrumb (#1559): jump from the open collection to its
+  // filed Browse scope (or the root for `Home`). Clears the detail like
+  // `handleCloseCollection`, then navigates Browse to the target path.
+  const handleNavigateBrowseFromCollection = useCallback(
+    (categoryPath: Category[]) => {
+      runCanvasNavigation(() => {
+        setSelectedCollectionId(null)
+        setSelectedCollectionItemId(null)
+        setCollectionFromBrowse(false)
+        setPath(categoryPath)
+        setPage('browse')
+        pushNavState(
+          'browse',
+          categoryPath.map((c) => c.id),
+        )
+      })
+    },
+    [pushNavState, runCanvasNavigation],
+  )
+
+  // Keep the move-snackbar refs pointing at the live callbacks.
+  useEffect(() => {
+    moveSnackNavigateRef.current = handleNavigateBrowseFromCollection
+  }, [handleNavigateBrowseFromCollection])
+  useEffect(() => {
+    moveSnackOpenCollectionRef.current = (id: number) =>
+      handleOpenCollection(id, { fromBrowse: false })
+  }, [handleOpenCollection])
+
+  // Browse collection editor (#1525 UX): the tile title's edit pencil opens
+  // the shared CollectionEditDialog — the same form the Collections pages
+  // use — and "+ New collection" opens it in create mode seeded with the
+  // current Browse category. `editing` carries the full record (summaries
+  // omit program/group scope), matching CollectionsPage.openEdit.
+  const [collEditorOpen, setCollEditorOpen] = useState(false)
+  const [collEditing, setCollEditing] = useState<Collection | null>(null)
+  const [collCreateCategoryId, setCollCreateCategoryId] = useState<number | null>(null)
+  const collEditRequestRef = useRef(0)
+  // Navigation epoch: a pending detail fetch must not open the editor or
+  // cover picker over a view the user already left — page changes, Browse
+  // drill-downs, and opening an image all count. Keyed on the ID sequence
+  // rather than object identity so a same-scope `setPath` refresh (e.g.
+  // toggling category visibility) does not read as navigation.
+  const collNavEpochRef = useRef(0)
+  const collNavKey = `${page}/${path.map((c) => c.id).join('/')}/${selectedImage?.id ?? ''}`
+  useEffect(() => {
+    collNavEpochRef.current += 1
+  }, [collNavKey])
+  const {
+    loadCollection: loadCollectionDetail,
+    create: createCollection,
+    update: updateCollection,
+    remove: removeCollection,
+    setCoverImage: setCollectionCoverImage,
+  } = collectionsData
+
+  const openBrowseCollectionEdit = useCallback(
+    async (summary: { id: number }) => {
+      // Only the most recent Edit click may open the form — and only while
+      // the user hasn't navigated away since the click.
+      const request = ++collEditRequestRef.current
+      const navEpoch = collNavEpochRef.current
+      try {
+        const full = await loadCollectionDetail(summary.id)
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
+        setCollEditing(full)
+        setCollEditorOpen(true)
+      } catch (err) {
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
+        setErrorSnack(userMessage(err, 'Failed to load collection.'))
+      }
+    },
+    [loadCollectionDetail],
+  )
+
+  const openBrowseCollectionCreate = useCallback(() => {
+    // Supersede any Edit fetch still in flight so it cannot replace this form.
+    collEditRequestRef.current++
+    setCollEditing(null)
+    setCollCreateCategoryId(liveCategoryPath.length > 0 ? liveCategoryPath.at(-1)!.id : null)
+    setCollEditorOpen(true)
+  }, [liveCategoryPath])
+
+  const handleBrowseCollectionSave = useCallback(
+    async (values: CollectionFormValues, version: number | null, baseline: Collection | null) => {
+      if (collEditing && version != null) {
+        // PATCH only real field diffs — a version-only body is a content
+        // write the backend 403s for filing-only curators (CollectionsPage's
+        // convention). A hidden-only diff still PATCHes.
+        const updated = Object.keys(toCollectionPatch(values, baseline, version)).some(
+          (k) => k !== 'version',
+        )
+          ? await updateCollection(collEditing.id, values, version, baseline)
+          : // Filing-only save: the dialog's baseline may have been reloaded
+            // past collEditing after a conflict — post the move against the
+            // freshest record we have or the move 409s again.
+            (baseline ?? collEditing)
+        setCollEditing(updated)
+        // Category filing is a move, not a PATCH (#1566) — apply it after
+        // the metadata save so the move posts the just-refreshed version.
+        // `canEditContent`-gated like CollectionsPage: a student's filing
+        // pick is inert (filing is curatorial, not owner-scoped).
+        if (canEditContent && values.categoryId !== (baseline?.categoryId ?? null)) {
+          const moved = await moveCollectionTo?.(updated, values.categoryId)
+          if (moved instanceof Error) throw moved
+          void loadCollectionDetail(collEditing.id).catch(() => {})
+        }
+      } else {
+        const created = await createCollection(values)
+        handleOpenCollection(created.id, { fromBrowse: true })
+      }
+      await refreshCategories()
+      reloadMyCollectionsShelf()
+    },
+    [
+      collEditing,
+      updateCollection,
+      createCollection,
+      loadCollectionDetail,
+      canEditContent,
+      moveCollectionTo,
+      handleOpenCollection,
+      refreshCategories,
+      reloadMyCollectionsShelf,
+    ],
+  )
+
+  const handleBrowseCollectionDelete = useCallback(async () => {
+    if (!collEditing) return
+    await removeCollection(collEditing.id)
+    setCollEditorOpen(false)
+    await refreshCategories()
+    reloadMyCollectionsShelf()
+  }, [collEditing, removeCollection, refreshCategories, reloadMyCollectionsShelf])
+
+  // Tile cover picker (CollectionCard's ImageIcon overlay — CategoryTile's
+  // "Set card image" convention). The summary carries no member list, so
+  // clicking loads the full record first — same pattern as the edit
+  // pencil. Saving pins a member (or clears back to the first-member
+  // fallback), then refreshes the tree so the tile repaints.
+  const [coverPickerFor, setCoverPickerFor] = useState<Collection | null>(null)
+
+  const openBrowseCoverPicker = useCallback(
+    async (summary: { id: number }) => {
+      const request = ++collEditRequestRef.current
+      const navEpoch = collNavEpochRef.current
+      try {
+        const full = await loadCollectionDetail(summary.id)
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
+        setCoverPickerFor(full)
+      } catch (err) {
+        if (request !== collEditRequestRef.current || navEpoch !== collNavEpochRef.current) return
+        setErrorSnack(userMessage(err, 'Failed to load collection images.'))
+      }
+    },
+    [loadCollectionDetail],
+  )
+
+  const handleSetCollectionCoverImage = useCallback(
+    (collection: { id: number }, imageId: number | null, blank = false) => {
+      void setCollectionCoverImage(collection.id, imageId, blank)
+        .then(() => {
+          refreshCategories()
+          reloadMyCollectionsShelf()
+        })
+        .catch((err: unknown) => setErrorSnack(userMessage(err, 'Failed to set cover image.')))
+    },
+    [setCollectionCoverImage, refreshCategories, reloadMyCollectionsShelf],
+  )
+
+  // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
+  // shareable and in history, so back steps through viewed items (#1416).
+  const handleSelectCollectionItem = useCallback(
+    (imageId: number) => {
+      setSelectedCollectionItemId(imageId)
+      if (selectedCollectionId != null) {
+        pushNavState(
+          'collections',
+          collectionFromBrowse ? path.map((c) => c.id) : [],
+          null,
+          {
+            collection: String(selectedCollectionId),
+            item: String(imageId),
+          },
+          { collectionFromBrowse },
+        )
+      }
+    },
+    [collectionFromBrowse, path, pushNavState, selectedCollectionId],
+  )
+
+  // Drop an `?item=` that does not resolve to a visible member (deleted image,
+  // or one hidden from this user); the URL sync effect then silently rewrites
+  // the link to the bare `?collection={id}`.
+  useEffect(() => {
+    const detail = collectionsData.detail
+    if (
+      detail == null ||
+      selectedCollectionItemId == null ||
+      detail.images.some((img) => img.id === selectedCollectionItemId)
+    ) {
+      return
+    }
+    setSelectedCollectionItemId(null)
+  }, [collectionsData.detail, selectedCollectionItemId])
+
+  // "Add to Collection" from the image view (#1415) and from search
+  // multi-select (#1418) — both paths set the target image ids before opening.
+  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
+  const [addToCollectionImageIds, setAddToCollectionImageIds] = useState<number[]>([])
+  const addToCollectionActive =
+    collectionsEnabled &&
+    addToCollectionOpen &&
+    addToCollectionImageIds.length > 0 &&
+    currentUser != null
+  const editableCollections = useEditableCollections(addToCollectionActive)
+
+  // Visible collections indexed by the search modal (#1418); the backend
+  // list is already access-filtered for the caller.
+  const searchableCollections = useVisibleCollections(
+    collectionsEnabled && searchOpen && currentUser != null,
+  )
+
+  // Filed collections are provided from the category tree through
+  // `useBrowseData`; the personal drawer stays outside the sortable tile grid.
+
+  // The collection Manage dialog's "+" (#1566): records the target so search
+  // picks go straight into that collection instead of the picker dialog.
+  // The target is set/cleared when Search *opens* — never on close — because
+  // SearchModal calls onClose() before onAddImagesToCollection, so a close-
+  // time clear would drop the target before the add callback reads it (#1567).
+  // `stageAdd` is the dialog's staging channel — Manage commits membership
+  // once on Done, so picks land in its draft rather than persisting here.
+  const manageSearchTarget = useRef<{
+    collection: Collection
+    stageAdd: StageAddImages
+  } | null>(null)
+  // Manage-dialog adds open the modal with Select already on (#1567).
+  const [searchInitialSelectMode, setSearchInitialSelectMode] = useState(false)
+  const openSearch = useCallback(() => {
+    manageSearchTarget.current = null
+    setSearchInitialSelectMode(false)
+    setSearchOpen(true)
+  }, [])
+  const requestCollectionImageSearch = useCallback(
+    (collection: Collection, stageAdd: StageAddImages) => {
+      manageSearchTarget.current = { collection, stageAdd }
+      setSearchInitialSelectMode(true)
+      setSearchOpen(true)
+    },
+    [],
+  )
+
+  const reportAddedToCollection = useCallback(
+    (collection: { id: number; name: string }, addedCount: number) => {
+      setSuccessSnack({
+        message:
+          addedCount === 1
+            ? `Added to "${collection.name}".`
+            : `Added ${addedCount} images to "${collection.name}".`,
+        action: {
+          label: 'View collection',
+          onClick: () => {
+            setSuccessSnack(null)
+            handleOpenCollection(collection.id)
+          },
+        },
+      })
+    },
+    [handleOpenCollection],
+  )
+
+  const handleAddToCollection = useCallback(
+    async (
+      collection: { id: number; name: string },
+      imageIdsOverride?: number[],
+    ): Promise<boolean> => {
+      const imageIds = imageIdsOverride ?? addToCollectionImageIds
+      if (imageIds.length === 0) return true
+      try {
+        // collectionsData.addImages merges the result into the open detail,
+        // so a Manage dialog left open behind the search modal updates live.
+        const result = await collectionsData.addImages(collection.id, imageIds)
+        if (result.status === 'added') {
+          reportAddedToCollection(result.collection, result.addedCount)
+          return true
+        }
+        if (result.status === 'already') {
+          setInfoSnack(`This image is already in "${result.collection.name}".`)
+          return true
+        }
+        setErrorSnack(
+          collectionFullMessage(result.collection.name, result.collection.type, 'selection'),
+        )
+        return false
+      } catch (err) {
+        setErrorSnack(userMessage(err, 'Failed to add to collection.'))
+        return false
+      }
+    },
+    [addToCollectionImageIds, collectionsData, reportAddedToCollection],
+  )
+
+  const handleSearchAddToCollection = useCallback((images: ImageItem[]) => {
+    const target = manageSearchTarget.current
+    manageSearchTarget.current = null
+    if (target) {
+      // Skip the picker — the manage dialog already identified the target.
+      // Picks stage into its draft; Done persists them in the same
+      // whole-replace PUT as any staged reorder/removal (#1567).
+      const result = target.stageAdd(images)
+      if (result.status === 'added') {
+        setInfoSnack(
+          result.addedCount === 1
+            ? `Staged 1 image for "${target.collection.name}" — press Done to apply.`
+            : `Staged ${result.addedCount} images for "${target.collection.name}" — press Done to apply.`,
+        )
+      } else if (result.status === 'already') {
+        setInfoSnack(
+          images.length === 1
+            ? `This image is already in "${target.collection.name}".`
+            : `Those images are already in "${target.collection.name}".`,
+        )
+      } else {
+        setErrorSnack(
+          collectionFullMessage(target.collection.name, target.collection.type, 'selection'),
+        )
+      }
+      return
+    }
+    setAddToCollectionImageIds(images.map((img) => img.id))
+    setAddToCollectionOpen(true)
+  }, [])
+
+  const handleCreateCollectionWithImage = useCallback(
+    async (values: CollectionFormValues) => {
+      const created = await createCollectionWithImages(values, addToCollectionImageIds)
+      if (created.categoryId != null) refreshCategories()
+      reloadMyCollectionsShelf()
+      reportAddedToCollection(created, addToCollectionImageIds.length)
+    },
+    [addToCollectionImageIds, refreshCategories, reloadMyCollectionsShelf, reportAddedToCollection],
+  )
+
+  // "Open image" from the collection detail placeholder → the regular
+  // `?image={id}` viewer, so back returns to the collection.
+  const handleOpenCollectionImage = useCallback(
+    (img: ImageItem) => {
+      runCanvasNavigation(() => {
+        setSelectedImage(img)
+        const catPath = img.categoryId != null ? findCategoryPath(categories, img.categoryId) : null
+        setPath(catPath ?? [])
+        setSelectedCollectionId(null)
+        setCollectionFromBrowse(false)
+        setPage('browse')
+        pushNavState('browse', catPath?.map((c) => c.id) ?? [], img.id)
+      })
+    },
+    [categories, pushNavState, runCanvasNavigation],
+  )
+
+  // "Open image" from the collections graph (#1629): the graph only carries
+  // image ids, so fetch the record first, then take the same `?image={id}`
+  // viewer path as the collection detail. The epoch ref guards the async
+  // hop (#1636 review): navigating anywhere, clicking another node, or
+  // switching the collection detail before the fetch lands must not be
+  // overwritten by the stale result (#1638 review).
+  const graphImageEpoch = useRef(0)
+  useEffect(() => {
+    graphImageEpoch.current += 1
+  }, [page, selectedCollectionId])
+  const handleOpenGraphImage = useCallback(
+    (imageId: number) => {
+      const epoch = ++graphImageEpoch.current
+      void apiFetchImage(imageId)
+        .then((api) => {
+          if (epoch === graphImageEpoch.current) handleOpenCollectionImage(apiImageToItem(api))
+        })
+        .catch((err) => {
+          if (epoch === graphImageEpoch.current)
+            setErrorSnack(userMessage(err, 'Failed to load the image.'))
+        })
+    },
+    [handleOpenCollectionImage],
+  )
 
   // Show loading spinner while users are loading
   if (usersLoading) {
@@ -1461,10 +2313,13 @@ export default function App() {
   return (
     <AppShell
       page={page}
+      fillViewport={onViewerPage}
       onTabChange={handleTabChange}
       onHomeClick={handleHomeClick}
       canEditContent={canEditContent}
       canManageUsers={canManageUsers}
+      canViewPeople={canViewPeople}
+      collectionsEnabled={collectionsEnabled}
       currentUser={currentUser}
       announcement={announcement}
       annMessage={annMessage}
@@ -1479,12 +2334,36 @@ export default function App() {
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
       onOpenAnnouncement={openAnnModal}
-      onSearchOpen={() => setSearchOpen(true)}
+      onSearchOpen={openSearch}
       mode={mode}
       frontendVersion={frontendVersion}
       backendVersion={backendVersion}
       backupVersion={backupVersion}
       onReportIssue={() => setReportIssueOpen(true)}
+      stickyFooter={myCollectionsShelfEnabled}
+      footerDockSlot={
+        myCollectionsDrawerVisible ? (
+          <MyCollectionsDrawer
+            collections={myCollectionsShelf ?? []}
+            categories={categories}
+            programs={programs}
+            groups={groups}
+            open={myCollectionsDrawerOpen}
+            pinned={myCollectionsDrawerPinned}
+            reserveTriggerRow={onViewerPage}
+            onOpenChange={setMyCollectionsDrawerOpen}
+            onPinnedChange={setMyCollectionsDrawerPinned}
+            onOpen={(collection) => {
+              if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
+              handleOpenCollection(collection.id, { fromBrowse: myCollectionsOriginFromBrowse })
+            }}
+            onEdit={(collection) => void openBrowseCollectionEdit(collection)}
+            onPickCoverImage={(collection) => void openBrowseCoverPicker(collection)}
+            onNewCollection={() => setMyCollectionsCreateOpen(true)}
+            newCollectionDisabled={myCollectionsTypesAtLimit.size === 2}
+          />
+        ) : null
+      }
       notificationSlot={
         currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
           <NotificationMenu
@@ -1508,17 +2387,124 @@ export default function App() {
         component="main"
         sx={{
           flexGrow: 1,
+          ...(onViewerPage
+            ? {
+                display: { md: 'flex' },
+                flexDirection: { md: 'column' },
+                flex: { md: '1 1 0' },
+              }
+            : {}),
           py: 3,
+          pb: myCollectionsDrawerVisible
+            ? onViewerPage
+              ? `${MY_COLLECTIONS_ROW_CONTENT_GAP_PX}px`
+              : `${MY_COLLECTIONS_TRIGGER_CLEARANCE_PX}px`
+            : 3,
           bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
         }}
       >
-        <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+        <Container
+          maxWidth={false}
+          sx={{
+            px: { xs: 2, sm: 3, lg: '72px', xl: '120px' },
+            ...(onViewerPage
+              ? {
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flex: { md: '1 1 0' },
+                }
+              : {}),
+          }}
+        >
           {page === 'guide' && canEditContent ? (
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
-          ) : page === 'people' && canManageUsers ? (
+          ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
+            <CollectionsPage
+              currentUser={currentUser}
+              programs={programs}
+              groups={groups}
+              collections={collectionsData.collections}
+              loading={collectionsData.loading}
+              error={collectionsData.error}
+              filters={collectionsData.filters}
+              onFiltersChange={collectionsData.setFilters}
+              ownerOptions={collectionsData.ownerOptions}
+              total={collectionsData.total}
+              sort={collectionsData.sort}
+              onSortChange={collectionsData.setSort}
+              page={collectionsData.page}
+              onPageChange={collectionsData.setPage}
+              pageSize={collectionsData.pageSize}
+              onPageSizeChange={collectionsData.setPageSize}
+              listMode={collectionsData.listMode}
+              selectedCollectionId={selectedCollectionId}
+              detail={collectionsData.detail}
+              detailLoading={collectionsData.detailLoading}
+              detailError={collectionsData.detailError}
+              onOpenCollection={handleOpenCollection}
+              onCloseCollection={handleCloseCollection}
+              onOpenImage={handleOpenCollectionImage}
+              onOpenImageById={handleOpenGraphImage}
+              selectedCollectionItemId={selectedCollectionItemId}
+              onSelectCollectionItem={handleSelectCollectionItem}
+              onReorderImages={collectionsData.reorderImages}
+              onCollectionImageRenewed={collectionsData.renewCollectionImage}
+              onViewerError={setErrorSnack}
+              onViewChange={setCollectionsListView}
+              onSaveViewport={collectionsData.saveViewport}
+              loadCollection={collectionsData.loadCollection}
+              onCreate={async (values) => {
+                const created = await collectionsData.create(values)
+                if (created.categoryId != null) refreshCategories()
+                reloadMyCollectionsShelf()
+                return created
+              }}
+              onUpdate={async (id, values, version, baseline) => {
+                const updated = await collectionsData.update(id, values, version, baseline)
+                reloadMyCollectionsShelf()
+                return updated
+              }}
+              onDelete={async (id) => {
+                await collectionsData.remove(id)
+                reloadMyCollectionsShelf()
+              }}
+              onSaveOwners={async (id, userIds) => {
+                const updated = await collectionsData.saveOwners(id, userIds)
+                reloadMyCollectionsShelf()
+                return updated
+              }}
+              onTransfer={async (id, programId) => {
+                const updated = await collectionsData.transfer(id, programId)
+                reloadMyCollectionsShelf()
+                return updated
+              }}
+              onPickCoverImage={(col) => void openBrowseCoverPicker(col)}
+              onMoveCollection={canEditContent ? handleRequestMoveCollection : undefined}
+              onMoveCollectionToCategory={canEditContent ? moveCollectionTo : undefined}
+              onRequestCollectionImageSearch={requestCollectionImageSearch}
+              categories={categories}
+              onAddCategory={addCategoryInline}
+              onEditCategory={editCategoryInline}
+              onToggleCategoryVisibility={toggleCategoryVisibility}
+              onNavigateCategory={handleNavigateBrowseFromCollection}
+              onBulkUpdate={handleBulkUpdateCollections}
+              onBulkDelete={handleBulkDeleteCollections}
+              initialView={collectionsInitialView}
+              onToggleHidden={(collection) =>
+                collectionsData.setHidden(collection.id, !collection.hidden).then((updated) => {
+                  // Filed collection tiles live in the category tree, so
+                  // refresh it to update the hidden marker.
+                  refreshCategories()
+                  reloadMyCollectionsShelf()
+                  return updated
+                })
+              }
+            />
+          ) : page === 'people' && canViewPeople ? (
             <PeoplePage
+              readOnly={!canManageUsers}
               programs={programs}
               groups={groups}
               initialEditUserId={editUserId}
@@ -1587,7 +2573,7 @@ export default function App() {
               onSearchProgram={(programName) => {
                 setSearchInitialQuery(programName)
                 setSearchInitialTypeFilter('program')
-                setSearchOpen(true)
+                openSearch()
               }}
               initialProgramFilter={manageProgramFilter}
               onInitialProgramFilterConsumed={clearManageProgramFilter}
@@ -1604,6 +2590,7 @@ export default function App() {
                   flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
+                  flexShrink: 0,
                 }}
               >
                 <Box
@@ -1770,6 +2757,30 @@ export default function App() {
                         </Button>
                       )
                     })()}
+                  {collectionsEnabled && (
+                    <Tooltip
+                      title={
+                        canvasEditActive
+                          ? 'Exit canvas edit mode first'
+                          : 'Add this image to a collection'
+                      }
+                    >
+                      <span>
+                        <Button
+                          variant="outlined"
+                          startIcon={<PlaylistAddIcon />}
+                          onClick={() => {
+                            setAddToCollectionImageIds([selectedImage.id])
+                            setAddToCollectionOpen(true)
+                          }}
+                          disabled={canvasEditActive}
+                          sx={inactiveViewerActionSx}
+                        >
+                          Add to Collection
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  )}
                   {canEditContent && (
                     <Tooltip title={canvasEditActive ? 'Exit canvas edit mode first' : ''}>
                       <span>
@@ -1798,9 +2809,21 @@ export default function App() {
                 </Box>
               </Box>
 
-              <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
+              <Paper
+                data-testid="image-viewer-frame"
+                elevation={3}
+                sx={{
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flex: { md: '1 1 0' },
+                  minHeight: { md: 320 },
+                }}
+              >
                 <ImageViewer
                   key={selectedImage.id}
+                  height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
@@ -1824,106 +2847,29 @@ export default function App() {
                 />
               </Paper>
 
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control
-                  the view. On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right
-                  corner shows your current viewport.
-                </Typography>
-              </Box>
-
-              {/* Image metadata */}
-              <Box
-                sx={{
-                  mt: 2,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 0,
-                  '& > span': { mr: '2em' },
-                }}
-              >
-                {selectedImage.copyright && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Copyright:</strong> {selectedImage.copyright}
-                  </Typography>
+              <ImageInfoAccordion
+                image={selectedImage}
+                programNames={ancestorProgramIds.map(
+                  (pid) => programs.find((program) => program.id === pid)?.name ?? String(pid),
                 )}
-                {ancestorProgramIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Program
-                      {ancestorProgramIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorProgramIds
-                      .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                      .join(', ')}
-                  </Typography>
+                groupNames={ancestorGroupIds.map(
+                  (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                 )}
-                {ancestorGroupIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Group
-                      {ancestorGroupIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorGroupIds
-                      .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
-                      .join(', ')}
-                  </Typography>
-                )}
-                {selectedImage.note && (
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 1,
-                      mt: 1,
-                      width: '100%',
-                    }}
-                  >
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      component="div"
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      <strong>Note:&nbsp;</strong>
-                    </Typography>
-                    <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
-                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
-                    </Box>
-                  </Box>
-                )}
-                {selectedImage.createdAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Created:</strong> {new Date(selectedImage.createdAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.updatedAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Modified:</strong> {new Date(selectedImage.updatedAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.width != null && selectedImage.height != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Dimensions:</strong> {selectedImage.width} &times;{' '}
-                    {selectedImage.height}
-                  </Typography>
-                )}
-                {selectedImage.fileSize != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Size:</strong> {formatFileSize(selectedImage.fileSize)}
-                  </Typography>
-                )}
-                {selectedImageMeasurement && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Measurement:</strong>{' '}
-                    {selectedImageMeasurement.scale && selectedImageMeasurement.unit
-                      ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
-                      : selectedImageMeasurement.scale
-                        ? `${selectedImageMeasurement.scale} px`
-                        : (selectedImageMeasurement.unit ?? '')}
-                  </Typography>
-                )}
-              </Box>
+                measurement={selectedImageMeasurement}
+                sourceInfo={imageSourceInfo}
+                collections={
+                  selectedImageCollections.length > 0 ? (
+                    <ImageCollectionsList
+                      key={selectedImage.id}
+                      collections={selectedImageCollections}
+                      hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
+                      onOpenCollection={handleOpenCollection}
+                    />
+                  ) : null
+                }
+                expanded={imageInfoExpanded}
+                onExpandedChange={setImageInfoExpanded}
+              />
             </>
           ) : (
             /* ---- Browse mode ---- */
@@ -2092,14 +3038,12 @@ export default function App() {
                           alignItems: 'center',
                         }}
                       >
-                        {path.length > 0 &&
+                        {liveCategoryPath.length > 0 &&
                           (() => {
-                            const current = path[path.length - 1]
-                            const isDirectlyHidden = current.status === 'hidden'
-                            const ancestorHidden = path
-                              .slice(0, -1)
-                              .some((p) => p.status === 'hidden')
-                            const inheritedHidden = !isDirectlyHidden && ancestorHidden
+                            const current = liveCategoryPath[liveCategoryPath.length - 1]
+                            const isDirectlyHidden = currentCategoryHiddenState.directlyHidden
+                            const inheritedHidden =
+                              !isDirectlyHidden && currentCategoryHiddenState.hiddenByAncestor
                             if (inheritedHidden) {
                               return (
                                 <Button
@@ -2141,16 +3085,27 @@ export default function App() {
                               </Button>
                             )
                           })()}
-                        {path.length < MAX_DEPTH && (
+                        {collectionsEnabled && (
                           <Button
                             variant="outlined"
-                            startIcon={<CreateNewFolderIcon />}
-                            onClick={() => setAddCatOpen(true)}
+                            startIcon={<AddIcon />}
+                            onClick={openBrowseCollectionCreate}
                             sx={categoryPageHiddenSx}
                           >
-                            Add Category
+                            New collection
                           </Button>
                         )}
+                        {(path.length === 0 || liveCategoryPath.length > 0) &&
+                          liveCategoryPath.length < MAX_DEPTH && (
+                            <Button
+                              variant="outlined"
+                              startIcon={<CreateNewFolderIcon />}
+                              onClick={() => setAddCatOpen(true)}
+                              sx={categoryPageHiddenSx}
+                            >
+                              Add Category
+                            </Button>
+                          )}
                         <Button
                           variant="contained"
                           startIcon={<AddPhotoAlternateIcon />}
@@ -2170,6 +3125,7 @@ export default function App() {
                 currentCategories={currentCategories}
                 currentImages={currentImages}
                 uncategorizedImages={uncategorizedImages}
+                currentCollections={currentCollections}
                 path={path}
                 canEditContent={canEditContent}
                 fileDragActive={fileDragActive}
@@ -2181,6 +3137,12 @@ export default function App() {
                 onEditCategoryName={setEditNameCategory}
                 onDropImageOnCategory={handleDropImageOnCategory}
                 onDropCategoryOnCategory={handleDropCategoryOnCategory}
+                onDropCollectionOnCategory={handleDropCollectionOnCategory}
+                onDropImageOnCollection={handleDropImageOnCollection}
+                onCollectionClick={(col) => handleOpenCollection(col.id, { fromBrowse: true })}
+                onEditCollection={(col) => void openBrowseCollectionEdit(col)}
+                onPickCollectionCover={(col) => void openBrowseCoverPicker(col)}
+                onMoveCollection={handleRequestMoveCollection}
                 onDropFilesOnCategory={handleFilesDropOnCategory}
                 onImageClick={handleImageClick}
                 onEditImageDetails={setBrowseEditImage}
@@ -2224,6 +3186,7 @@ export default function App() {
               ) : (
                 currentCategories.length === 0 &&
                 currentImages.length === 0 &&
+                currentCollections.length === 0 &&
                 (path.length > 0 || uncategorizedImages.length === 0) && (
                   <Typography
                     variant="body1"
@@ -2268,6 +3231,69 @@ export default function App() {
         }}
         onMove={handleMoveCategory}
         category={movingCategory}
+        categories={categories}
+        onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
+        programs={programs}
+        groups={groups}
+      />
+
+      {/* Collection edit/create dialog opened from Browse — the tile
+          title's edit pencil and the toolbar's "+ New collection". Shares
+          the Collections pages' form; filing and hide ride the same
+          picker/link conventions (#1566). */}
+      <CollectionEditDialog
+        open={collEditorOpen}
+        onClose={() => setCollEditorOpen(false)}
+        collection={collEditing}
+        defaultCategoryId={collEditing == null ? collCreateCategoryId : null}
+        programs={programs}
+        groups={groups}
+        onSave={handleBrowseCollectionSave}
+        onDelete={collEditing?.permissions.canDelete ? handleBrowseCollectionDelete : undefined}
+        categories={categories}
+        onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
+        onViewCollection={
+          collEditing && collEditing.id !== selectedCollectionId
+            ? () => {
+                setCollEditorOpen(false)
+                handleOpenCollection(collEditing.id, { fromBrowse: true })
+              }
+            : undefined
+        }
+      />
+
+      {/* Tile cover picker — the summary carries no members, so the card's
+          overlay button loads the detail record via openBrowseCoverPicker
+          and this modal radios over its `images`. */}
+      {coverPickerFor && (
+        <CollectionCoverPickerModal
+          open
+          onClose={() => setCoverPickerFor(null)}
+          onSave={(imageId, blank) => {
+            const target = coverPickerFor
+            setCoverPickerFor(null)
+            handleSetCollectionCoverImage(target, imageId, blank)
+          }}
+          images={coverPickerFor.images}
+          currentImageId={coverPickerFor.coverImageId}
+          currentBlank={coverPickerFor.coverBlank}
+        />
+      )}
+
+      {/* Move collection dialog (#1529) — files a collection into a Browse
+          category or removes it from Browse; admin/instructor entry points only. */}
+      <MoveCollectionDialog
+        open={moveCollectionOpen}
+        onClose={() => {
+          setMoveCollectionOpen(false)
+          setMovingCollection(null)
+        }}
+        onMove={handleMoveCollection}
+        collection={movingCollection}
         categories={categories}
         onAddCategory={addCategoryInline}
         onEditCategory={editCategoryInline}
@@ -2457,7 +3483,7 @@ export default function App() {
         categoryStatus={editNameCategory?.status}
         ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
         categoryId={editNameCategory?.id}
-        childCategories={editNameCategory?.children}
+        childCategories={editCategoryContext.freshChildren}
       />
 
       {/* Self-edit profile modal */}
@@ -2538,6 +3564,49 @@ export default function App() {
         onGroupUpdated={handleGroupUpdated}
       />
 
+      {collectionsEnabled && currentUser && (
+        <AddToCollectionDialog
+          open={addToCollectionOpen}
+          onClose={() => setAddToCollectionOpen(false)}
+          imageIds={addToCollectionImageIds}
+          collections={editableCollections.collections}
+          loading={editableCollections.loading}
+          error={editableCollections.error}
+          programs={programs}
+          groups={groups}
+          categories={categories}
+          onAddCategory={addCategoryInline}
+          onEditCategory={editCategoryInline}
+          onToggleVisibility={toggleCategoryVisibility}
+          onAdd={handleAddToCollection}
+          onCreate={handleCreateCollectionWithImage}
+        />
+      )}
+
+      {collectionsEnabled && currentUser && (
+        <CollectionEditDialog
+          open={myCollectionsCreateOpen}
+          onClose={() => setMyCollectionsCreateOpen(false)}
+          collection={null}
+          defaultType="sequence"
+          typesAtLimit={myCollectionsTypesAtLimit}
+          programs={programs}
+          groups={groups}
+          categories={categories}
+          onAddCategory={addCategoryInline}
+          onEditCategory={editCategoryInline}
+          onToggleVisibility={toggleCategoryVisibility}
+          onSave={async (values) => {
+            const created = await collectionsData.create(values)
+            if (created.categoryId != null) refreshCategories()
+            reloadMyCollectionsShelf()
+            setMyCollectionsCreateOpen(false)
+            if (!myCollectionsDrawerPinned) setMyCollectionsDrawerOpen(false)
+            handleOpenCollection(created.id, { fromBrowse: myCollectionsOriginFromBrowse })
+          }}
+        />
+      )}
+
       {/* Report issue modal */}
       <ReportIssueModal
         open={reportIssueOpen}
@@ -2557,14 +3626,24 @@ export default function App() {
           setSearchOpen(false)
           setSearchInitialQuery(undefined)
           setSearchInitialTypeFilter(undefined)
+          setSearchInitialSelectMode(false)
+          // The manage-dialog add target intentionally survives close —
+          // SearchModal fires onClose() before onAddImagesToCollection (#1567),
+          // and every generic opener resets it via openSearch().
         }}
         initialQuery={searchInitialQuery}
         initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}
+        initialSelectMode={searchInitialSelectMode}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
         programs={programs}
         users={searchUsers}
-        isStudent={isStudent}
+        collections={searchableCollections.collections}
+        collectionsEnabled={collectionsEnabled}
+        onSelectCollection={handleOpenCollection}
+        onAddImagesToCollection={handleSearchAddToCollection}
+        excludeHidden={isStudent}
+        suppressExtendedResults={isStudent || currentUser?.role === 'staff'}
         onSelectCategory={(catPath) => {
           runCanvasNavigation(() => {
             setPage('browse')
@@ -2651,9 +3730,31 @@ export default function App() {
           onClose={() => setMoveSnack(null)}
           variant="filled"
           action={
-            <Button color="inherit" size="small" onClick={moveSnack?.onUndo} aria-label="Undo move">
-              Undo
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {moveSnack?.onView && (
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    moveSnack.onView?.()
+                    setMoveSnack(null)
+                  }}
+                  aria-label="View"
+                >
+                  View
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                color="inherit"
+                size="small"
+                onClick={moveSnack?.onUndo}
+                aria-label="Undo move"
+              >
+                Undo
+              </Button>
+            </Box>
           }
         >
           {moveSnack?.message}
@@ -2702,7 +3803,11 @@ export default function App() {
           onClose={() => setSuccessSnack(null)}
           variant="filled"
           action={
-            successSnack?.trackingUrl ? (
+            successSnack?.action ? (
+              <Button size="small" color="inherit" onClick={successSnack.action.onClick}>
+                {successSnack.action.label}
+              </Button>
+            ) : successSnack?.trackingUrl ? (
               <Button
                 size="small"
                 color="inherit"
@@ -2716,6 +3821,22 @@ export default function App() {
           }
         >
           {successSnack?.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Info snackbar (e.g. no-op "already in collection") */}
+      <Snackbar
+        open={infoSnack !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setInfoSnack(null)
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ zIndex: 1500 }}
+      >
+        <Alert severity="info" onClose={() => setInfoSnack(null)} variant="filled">
+          {infoSnack}
         </Alert>
       </Snackbar>
 

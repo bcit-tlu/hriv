@@ -37,6 +37,8 @@ import {
   type FlatCategoryOption,
 } from './categoryOptionUtils'
 import {
+  collectCategorySortOrders,
+  collectCollectionsByParent,
   collectImagesByParent,
   diffParentMoves,
   interleavedTileOrders,
@@ -506,11 +508,14 @@ export default function ManageCategoriesDialog({
         ]
 
         const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
+        const collectionsByParent = collectCollectionsByParent(categories)
         const moves = diffParentMoves(newList, options)
         const scopes = interleavedTileOrders(
           newList,
           options,
           imagesByParent,
+          collectionsByParent,
+          collectCategorySortOrders(categories),
           (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
           dragId,
         )

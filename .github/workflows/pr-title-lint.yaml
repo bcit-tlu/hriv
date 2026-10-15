@@ -20,7 +20,7 @@ jobs:
     if: github.event.pull_request.user.type != 'Bot'
     steps:
       - id: lint
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -127,7 +127,7 @@ jobs:
 
       - name: Post scope mismatch warning
         if: steps.scope-check.outputs.mismatch == 'true'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: scope-mismatch
           message: |
@@ -141,14 +141,14 @@ jobs:
 
       - name: Clear scope mismatch warning
         if: always() && steps.scope-check.outcome == 'success' && steps.scope-check.outputs.mismatch != 'true'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: scope-mismatch
           delete: true
 
       - name: Post failure explainer comment
         if: failure() && steps.lint.outcome == 'failure'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: pr-title-lint
           message: |
@@ -174,7 +174,7 @@ jobs:
 
       - name: Clear failure explainer on success
         if: always() && steps.lint.outcome == 'success'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: pr-title-lint
           delete: true

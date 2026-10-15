@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..authz import can_manage_group, user_has_admin_program
+from ..browse_state import bump_browse_revision
 from ..database import get_db
 from ..models import Group, User
 from ..schemas import (
@@ -183,6 +184,11 @@ async def delete_group(
             },
         )
     await db.delete(group)
+    # Deleting cascades ``collection_groups`` rows: ``group_ids`` in
+    # ``CollectionSummaryOut`` changes and a formerly restricted collection
+    # may become list-visible — the collections-list ETag must invalidate
+    # (#1619).
+    await bump_browse_revision(db)
     await db.commit()
 
 

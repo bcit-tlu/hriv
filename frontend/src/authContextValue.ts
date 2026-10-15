@@ -18,6 +18,9 @@ export interface AuthContextValue {
   refreshUsers: () => void
   canManageUsers: boolean
   canEditContent: boolean
+  // True for admin and staff — grants read access to the People page.
+  // Mutations on that page remain gated by canManageUsers.
+  canViewPeople: boolean
   // Short, stable error code returned by the backend OIDC callback
   // (via ``#oidc_error=<code>`` in the URL fragment). ``null`` when the
   // last callback succeeded or no callback has run this session.

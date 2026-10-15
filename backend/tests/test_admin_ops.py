@@ -54,7 +54,7 @@ from app.admin_ops import (
     run_rebuild_tiles,
 )
 from app.database import settings
-from app.models import AdminTask
+from app.models import AdminTask, User
 from app.worker import EnqueueResult, TaskQueueUnavailableError
 
 # ── Helper unit tests ──────────────────────────────────────
@@ -928,8 +928,8 @@ async def test_reconcile_stale_tasks_no_stale_returns_zero() -> None:
     session.commit.assert_awaited_once()
 
 
-async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
-    """Serial rebuild liveness uses its own session and active status."""
+async def test_poll_task_heartbeat_heartbeats_until_cancellation() -> None:
+    """Task liveness heartbeat uses its own session and active status."""
     session = AsyncMock()
     result = MagicMock()
     result.scalar_one_or_none = MagicMock(
@@ -945,7 +945,7 @@ async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
         patch("app.admin_ops.get_async_session", return_value=factory),
         patch("app.admin_ops.asyncio.sleep", new=AsyncMock()),
     ):
-        await admin_ops._poll_rebuild_task(17)
+        await admin_ops._poll_task_heartbeat(17)
 
     assert session.execute.await_count == 2
     stmt = session.execute.await_args.args[0]
@@ -957,8 +957,8 @@ async def test_poll_rebuild_task_heartbeats_until_cancellation() -> None:
     assert session.commit.await_count == 2
 
 
-async def test_run_rebuild_with_heartbeat_prefers_completed_operation() -> None:
-    """A completed rebuild wins a simultaneous cancellation poll."""
+async def test_run_with_task_heartbeat_prefers_completed_operation() -> None:
+    """A completed operation wins a simultaneous cancellation poll."""
     operation = AsyncMock()
     poll = AsyncMock()
 
@@ -967,13 +967,29 @@ async def test_run_rebuild_with_heartbeat_prefers_completed_operation() -> None:
         return set(tasks), set()
 
     with (
-        patch("app.admin_ops._poll_rebuild_task", poll),
+        patch("app.admin_ops._poll_task_heartbeat", poll),
         patch("app.admin_ops.asyncio.wait", side_effect=complete_both),
     ):
-        await admin_ops._run_rebuild_with_heartbeat(17, operation())
+        await admin_ops._run_with_task_heartbeat(17, operation())
 
     operation.assert_awaited_once()
     poll.assert_awaited_once_with(17)
+
+
+async def test_run_with_task_heartbeat_returns_operation_result() -> None:
+    """The shared heartbeat wrapper returns the operation's result."""
+    operation = AsyncMock(return_value="sha256-digest")
+
+    async def never(task_id: int) -> None:
+        await asyncio.Event().wait()
+
+    poll = AsyncMock(side_effect=never)
+    with patch("app.admin_ops._poll_task_heartbeat", new=poll):
+        result = await admin_ops._run_with_task_heartbeat(17, operation())
+
+    assert result == "sha256-digest"
+    operation.assert_awaited_once()
+    poll.assert_called_once_with(17)
 
 
 async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
@@ -1033,7 +1049,36 @@ async def test_run_db_export_success(tmp_path) -> None:
         ),
     ]
     categories = []
-    images = []
+    images = [
+        SimpleNamespace(
+            id=9_400_000,
+            name="TRF-Image-00000",
+            thumb="/api/tiles/9300000/thumbnail.jpeg",
+            tile_sources="/api/tiles/9300000/image.dzi",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            sort_order=0,
+            metadata_={"rebuild_fixture": True},
+            created_at=now,
+            updated_at=now,
+        ),
+        SimpleNamespace(
+            id=9_400_005,
+            name="TRF-study",
+            thumb="/api/tiles/812/thumbnail.jpeg",
+            tile_sources="/api/tiles/812/image.dzi",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            sort_order=1,
+            metadata_={},
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
     users = [SimpleNamespace(
         id=1, name="Admin", email="admin@test.com", password_hash="hash",
         oidc_subject=None, role="admin", active=False, programs=[], last_access=None,
@@ -1060,7 +1105,49 @@ async def test_run_db_export_success(tmp_path) -> None:
             tiles_generated_at=None,
             created_at=now,
             updated_at=now,
-        )
+        ),
+        SimpleNamespace(
+            id=9_300_000,
+            original_filename="TRF-00000.tif",
+            stored_path="/data/source_images/rebuild-fixture/TRF-00000.tif",
+            status="completed",
+            progress=100,
+            error_message=None,
+            name="TRF-Image-00000",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            image_id=9_400_000,
+            uploaded_by=None,
+            file_size=1024,
+            source_checksum="fixture",
+            tile_settings_hash="fixture",
+            tiles_generated_at=None,
+            created_at=now,
+            updated_at=now,
+        ),
+        SimpleNamespace(
+            id=812,
+            original_filename="TRF-study.tif",
+            stored_path="/data/source_images/TRF-study.tif",
+            status="completed",
+            progress=100,
+            error_message=None,
+            name="TRF-study",
+            category_id=None,
+            copyright=None,
+            note=None,
+            active=True,
+            image_id=9_400_005,
+            uploaded_by=1,
+            file_size=2048,
+            source_checksum="real",
+            tile_settings_hash="real",
+            tiles_generated_at=now,
+            created_at=now,
+            updated_at=now,
+        ),
     ]
     changelog_entries = [
         SimpleNamespace(
@@ -1075,6 +1162,34 @@ async def test_run_db_export_success(tmp_path) -> None:
     announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
 
     groups = []
+    collections = [
+        SimpleNamespace(
+            id=1,
+            name="Compare",
+            description=None,
+            type="synchronized",
+            visibility="restricted",
+            hidden=True,
+            user_id=1,
+            owner_program_id=None,
+            category_id=2,
+            sort_order=1,
+            cover_image_id=9_400_005,
+            cover_blank=False,
+            viewport_state={"offsets": []},
+            version=2,
+            owners=[SimpleNamespace(id=1), SimpleNamespace(id=2)],
+            # 9_400_000 is a rebuild-fixture image (not exported) → dropped.
+            image_links=[
+                SimpleNamespace(image_id=9_400_005, sort_order=0),
+                SimpleNamespace(image_id=9_400_000, sort_order=1),
+            ],
+            programs=[SimpleNamespace(id=2)],
+            groups=[],
+            created_at=now,
+            updated_at=now,
+        )
+    ]
     call_count = 0
 
     async def mock_execute(stmt):
@@ -1083,9 +1198,9 @@ async def test_run_db_export_success(tmp_path) -> None:
         result = MagicMock()
         data_map = {
             1: programs, 2: groups, 3: categories, 4: images,
-            5: users, 6: source_images, 7: changelog_entries,
+            5: users, 6: source_images, 7: collections, 8: changelog_entries,
         }
-        if call_count <= 7:
+        if call_count <= 8:
             result.scalars.return_value.all.return_value = data_map[call_count]
         else:
             result.scalar_one_or_none.return_value = announcement
@@ -1104,6 +1219,14 @@ async def test_run_db_export_success(tmp_path) -> None:
     with (
         patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch(
+            "app.admin_ops._acquire_fixture_archive_lock_for_task",
+            AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.admin_ops.release_rebuild_fixture_archive_lock",
+            new_callable=AsyncMock,
+        ),
     ):
         await run_db_export(1)
 
@@ -1128,7 +1251,34 @@ async def test_run_db_export_success(tmp_path) -> None:
     by_id = {p["id"]: p for p in dump["programs"]}
     assert set(by_id) == {1, 2}
     assert "parent_program_id" not in by_id[1]
+    assert [image["id"] for image in dump["images"]] == [9_400_005]
+    assert [source["id"] for source in dump["source_images"]] == [1, 812]
     assert dump["source_images"][0]["uploaded_by"] == 1
+    assert dump["collections"] == [
+        {
+            "id": 1,
+            "name": "Compare",
+            "description": None,
+            "type": "synchronized",
+            "visibility": "restricted",
+            "hidden": True,
+            "user_id": 1,
+            "owner_program_id": None,
+            "category_id": 2,
+            "sort_order": 1,
+            "viewport_state": {"offsets": []},
+            "version": 2,
+            "owner_ids": [1, 2],
+            "image_ids": [9_400_005],
+            "cover_image_id": 9_400_005,
+            "cover_blank": False,
+            "program_ids": [2],
+            "group_ids": [],
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    ]
+    assert "1 collections" in task.log
     assert dump["changelog_entries"] == [
         {
             "id": 1,
@@ -1314,6 +1464,45 @@ def _full_dump() -> dict:
                 "uploaded_by": 1,
             }
         ],
+        "collections": [
+            {
+                "id": 7,
+                "name": "Seq",
+                "type": "sequence",
+                "visibility": "public",
+                "hidden": True,
+                "user_id": 1,
+                "owner_ids": [1, 2],
+                "category_id": 2,
+                "sort_order": 4,
+                "image_ids": [2, 1],
+                "cover_image_id": 2,
+                "cover_blank": False,
+                "program_ids": [1],
+                "group_ids": [],
+                "viewport_state": {},
+                "version": 3,
+            },
+            {
+                # Orphaned (program deleted) — both owner columns NULL.
+                "id": 8,
+                "name": "Orphan",
+                "type": "synchronized",
+                "image_ids": [],
+                # A pinned cover that is not an imported member is dropped;
+                # the blank flag survives independently of members.
+                "cover_image_id": 99,
+                "cover_blank": True,
+            },
+            {
+                # Legacy dump shape: user_id only → backfills one owner row.
+                "id": 9,
+                "name": "Legacy",
+                "type": "sequence",
+                "user_id": 2,
+                "image_ids": [],
+            },
+        ],
         "changelog_entries": [
             {
                 "id": 1,
@@ -1335,6 +1524,34 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     task = _make_import_task(str(input_file))
 
     mock_session, factory = _make_import_session(task)
+    # The owner-rows rebuild selects User rows — answer with the imported
+    # users; every other SELECT resolves to an empty set (#1531).
+    imported = {
+        u["id"]: User(
+            id=u["id"],
+            name=u["name"],
+            email=u["email"],
+            role=u.get("role", "student"),
+        )
+        for u in _full_dump()["users"]
+    }
+
+    async def _exec(stmt, *_args, **_kwargs):
+        result = MagicMock()
+        entity = getattr(stmt, "column_descriptions", [{}])[0].get("entity")
+        rows = []
+        if entity is User:
+            # Honour the ``id IN (...)`` bound values so each collection's
+            # owner_ids resolves to exactly its own owners.
+            wanted: set = set()
+            for value in stmt.compile().params.values():
+                if isinstance(value, (list, tuple)):
+                    wanted.update(value)
+            rows = [u for u in imported.values() if u.id in wanted]
+        result.scalars.return_value.all.return_value = rows
+        return result
+
+    mock_session.execute = AsyncMock(side_effect=_exec)
 
     with patch("app.admin_ops.get_async_session", return_value=factory):
         await run_db_import(1)
@@ -1354,6 +1571,47 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     imported_sources = [obj for obj in add_calls if type(obj).__name__ == "SourceImage"]
     assert len(imported_sources) == 1
     assert imported_sources[0].uploaded_by == 1
+    imported_collections = {
+        obj.id: obj for obj in add_calls if type(obj).__name__ == "Collection"
+    }
+    assert set(imported_collections) == {7, 8, 9}
+    seq = imported_collections[7]
+    assert seq.type == "sequence" and seq.visibility == "public"
+    # Curatorial hide round-trips (#1559) — export carries `hidden`.
+    assert seq.hidden is True
+    assert seq.user_id == 1 and seq.version == 3
+    assert seq.category_id == 2 and seq.sort_order == 4
+    assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
+    # Pinned cover round-trips when it names an imported member.
+    assert seq.cover_image_id == 2
+    # owner_ids [1, 2] → two owner rows on the collection (#1531).
+    assert sorted(o.id for o in seq.owners) == [1, 2]
+    orphan = imported_collections[8]
+    assert orphan.user_id is None and orphan.owner_program_id is None
+    assert orphan.visibility == "private" and orphan.viewport_state == {}
+    assert orphan.category_id is None and orphan.sort_order == 0
+    assert orphan.image_links == [] and list(orphan.owners) == []
+    assert orphan.cover_image_id is None
+    assert orphan.cover_blank is True
+    legacy = imported_collections[9]
+    # Legacy dump: user_id doubles as the sole owner row, and pre-#1559
+    # dumps carry no `hidden` — the import default is False.
+    assert legacy.user_id == 2 and [o.id for o in legacy.owners] == [2]
+    assert legacy.hidden is False
+    assert legacy.cover_blank is False
+    executed_sql = [
+        str(c.args[0]) for c in mock_session.execute.call_args_list
+    ]
+    assert executed_sql.index(
+        "DELETE FROM collection_owners"
+    ) < executed_sql.index("DELETE FROM collections")
+    assert executed_sql.index("DELETE FROM collection_images") < executed_sql.index(
+        "DELETE FROM images"
+    )
+    assert executed_sql.index("DELETE FROM collections") < executed_sql.index(
+        "DELETE FROM users"
+    )
+    assert any("collections_id_seq" in sql for sql in executed_sql)
     # The importer unlinks the uploaded file on the `finally` branch.
     assert not input_file.exists()
 
@@ -1558,6 +1816,51 @@ async def test_run_files_export_empty_data_dir(tmp_path) -> None:
     assert "empty or missing" in (task.error_message or "")
 
 
+async def test_run_files_export_blocks_rebuild_fixture(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    fixture_dir = data_dir / "source_images" / "rebuild-fixture"
+    fixture_dir.mkdir(parents=True)
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(
+        return_value=mock_session
+    )
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    lock_handle = MagicMock()
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch(
+            "app.admin_ops.try_acquire_rebuild_fixture_archive_lock",
+            AsyncMock(side_effect=[None, lock_handle]),
+        ) as try_lock,
+        patch(
+            "app.admin_ops.release_rebuild_fixture_archive_lock",
+            new_callable=AsyncMock,
+        ) as release_lock,
+        patch("app.admin_ops.asyncio.sleep", new_callable=AsyncMock),
+        patch(
+            "app.admin_ops._heartbeat_task",
+            new_callable=AsyncMock,
+        ) as heartbeat,
+    ):
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        await run_files_export(1)
+
+    assert task.status == "failed"
+    assert "scale fixture is active" in (task.error_message or "")
+    assert try_lock.await_count == 2
+    heartbeat.assert_awaited_once_with(mock_session, task)
+    release_lock.assert_awaited_once_with(lock_handle)
+
+
 async def test_run_files_export_success(tmp_path) -> None:
     data_dir = tmp_path / "data"
     source_dir = data_dir / "source_images"
@@ -1690,6 +1993,27 @@ def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:
 
     names = {os.path.basename(p): sz for p, sz in results}
     assert names == {"a.bin": 10}
+
+
+def test_iter_export_files_skips_upload_spool_dir(tmp_path) -> None:
+    """``.staging/`` under source_images is never exported (#1365)."""
+    data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    spool = source / ".staging"
+    spool.mkdir(parents=True)
+    (source / "committed.bin").write_bytes(b"0123456789")
+    (spool / "tmp-spooled-upload").write_bytes(b"live-spool")
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")),
+        patch("app.admin_ops.settings") as mock_settings,
+    ):
+        mock_settings.source_images_dir = str(source)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        results = list(_iter_export_files(str(data_dir)))
+
+    names = {os.path.basename(p): sz for p, sz in results}
+    assert names == {"committed.bin": 10}
 
 
 async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
@@ -2308,11 +2632,113 @@ def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
     assert not (data_source / "old.tiff").exists()
 
 
+def test_swap_imported_entries_recreates_upload_spool_dir(tmp_path) -> None:
+    """The export omits ``.staging``, so the swap must recreate it or the
+    running API's TMPDIR points at a missing directory (#1365)."""
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    (data_source / "old.tiff").write_text("old")
+    (data_source / ".staging").mkdir()  # present before the restore
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
+def _extracted_and_data_dirs(
+    tmp_path: Path,
+) -> tuple[Path, Path, Path]:
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    return extracted_dir, data_dir, data_source
+
+
+def test_swap_imported_entries_survives_spool_recreate_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A persistent makedirs failure logs an error but does not fail the
+    import — the restore succeeded, and the upload middleware recreates
+    the spool dir on the next request (#1365)."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    monkeypatch.setattr(
+        "app.admin_ops.os.makedirs",
+        MagicMock(side_effect=OSError("fs offline")),
+    )
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / "new.tiff").read_text() == "new"
+
+
+def test_swap_imported_entries_retries_transient_spool_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """A transient makedirs error retries before the swap reports success."""
+    extracted_dir, data_dir, data_source = _extracted_and_data_dirs(tmp_path)
+
+    real_makedirs = os.makedirs
+    calls = []
+
+    def _flaky_makedirs(path, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise OSError("transient")
+        return real_makedirs(path, **kwargs)
+
+    monkeypatch.setattr("app.admin_ops.os.makedirs", _flaky_makedirs)
+    monkeypatch.setattr("app.admin_ops.time.sleep", lambda _s: None)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(data_dir / "tiles"),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / ".staging").is_dir()
+
+
 def test_compute_archive_sha256(tmp_path) -> None:
     payload = b"archive-bytes" * 1000
     archive = tmp_path / "a.tar.gz"
     archive.write_bytes(payload)
     assert compute_archive_sha256(archive) == hashlib.sha256(payload).hexdigest()
+
+
+def test_compute_archive_sha256_cancel_event_aborts(tmp_path) -> None:
+    """A set cancel event stops the hash pass instead of finishing the file."""
+    archive = tmp_path / "a.tar.gz"
+    archive.write_bytes(b"archive-bytes" * 1000)
+    cancel_event = threading.Event()
+    cancel_event.set()
+    with pytest.raises(TaskCancelled):
+        compute_archive_sha256(archive, cancel_event=cancel_event)
 
 
 def _files_import_task_env(tmp_path):
@@ -2393,6 +2819,52 @@ async def test_run_files_import_rejects_checksum_mismatch(tmp_path) -> None:
         task.error_message or ""
     )
     assert not (source_dir / "new.tiff").exists()
+
+
+async def test_run_files_import_heartbeats_checksum_pass(tmp_path) -> None:
+    """The archive SHA-256 pass runs under the task heartbeat wrapper."""
+    data_dir, tiles_dir, source_dir, tasks_dir, archive = _files_import_task_env(
+        tmp_path
+    )
+    task = SimpleNamespace(
+        id=1, task_type="files_import", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=archive,
+        input_checksum=None, error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = 99
+    exec_result.scalars.return_value.first.return_value = None
+    mock_session.execute.return_value = exec_result
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    async def pending_poll(task_id: int) -> None:
+        await asyncio.Event().wait()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
+        patch(
+            "app.admin_ops._poll_task_heartbeat",
+            new=AsyncMock(side_effect=pending_poll),
+        ) as poll,
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "completed"
+    poll.assert_called_once_with(1)
+    assert task.input_checksum == compute_archive_sha256(archive)
 
 
 async def test_list_files_import_archives_returns_retained_uploads(tmp_path) -> None:
@@ -2767,8 +3239,8 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [changelog_entry]}
-        if call_count <= 7:
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [changelog_entry]}
+        if call_count <= 8:
             rows = data_map[call_count]
             result.scalars.return_value.all.return_value = rows
             result.scalars.return_value.unique.return_value.all.return_value = rows
@@ -2788,6 +3260,14 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
     with (
         patch("app.admin_ops.get_async_session", return_value=factory),
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch(
+            "app.admin_ops._acquire_fixture_archive_lock_for_task",
+            AsyncMock(return_value=MagicMock()),
+        ),
+        patch(
+            "app.admin_ops.release_rebuild_fixture_archive_lock",
+            new_callable=AsyncMock,
+        ),
     ):
         await run_db_export(1)
 
@@ -2929,7 +3409,7 @@ async def test_run_rebuild_tiles_heartbeats_during_long_image() -> None:
             side_effect=rebuild_source_image_tiles,
         ),
         patch(
-            "app.admin_ops._poll_rebuild_task",
+            "app.admin_ops._poll_task_heartbeat",
             side_effect=poll_rebuild_task,
         ) as poll,
     ):

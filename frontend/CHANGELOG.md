@@ -1,5 +1,135 @@
 # Changelog
 
+## [0.67.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.66.0...frontend-v0.67.0) (2026-10-08)
+
+
+### Features
+
+* **collections:** add "None" cover option and clarify unfiled picker label ([#1597](https://github.com/bcit-tlu/hriv/issues/1597)) ([6ded8a0](https://github.com/bcit-tlu/hriv/commit/6ded8a0b3cb17fa5d952a3ae0b4577a9847c8d2f))
+* **collections:** blank cover option, footer-attached drawer, picker fixes ([#1600](https://github.com/bcit-tlu/hriv/issues/1600)) ([03dc2b8](https://github.com/bcit-tlu/hriv/commit/03dc2b85cede45d76d7595fa1373ef4a0a73c855))
+* **collections:** browse tile parity — edit pencil, cover picker, add flow ([#1596](https://github.com/bcit-tlu/hriv/issues/1596)) ([e6fe114](https://github.com/bcit-tlu/hriv/commit/e6fe11406aa29f24ae0ff3041cffab3bd91009db))
+* **collections:** bulk edit in the manage table ([#1578](https://github.com/bcit-tlu/hriv/issues/1578)) ([#1580](https://github.com/bcit-tlu/hriv/issues/1580)) ([a50d6ff](https://github.com/bcit-tlu/hriv/commit/a50d6ff68f22129945156c699d0c44dc469f5041))
+* **collections:** detail header rework, hidden state, nav menu ([#1559](https://github.com/bcit-tlu/hriv/issues/1559)) ([#1560](https://github.com/bcit-tlu/hriv/issues/1560)) ([ebd803e](https://github.com/bcit-tlu/hriv/commit/ebd803e66f041605556bf9eb1ea41198ff71ed71))
+* **collections:** edge-overlay sequence nav, filmstrip ring, 4-pane sync ([#1561](https://github.com/bcit-tlu/hriv/issues/1561)) ([#1563](https://github.com/bcit-tlu/hriv/issues/1563)) ([fe8a3c6](https://github.com/bcit-tlu/hriv/commit/fe8a3c6a0ae946bbe58795fbe7bd8c62c214acf2))
+* **collections:** filmstrip-above, image-view header, per-pane pins, autofocus ([#1564](https://github.com/bcit-tlu/hriv/issues/1564)) ([#1565](https://github.com/bcit-tlu/hriv/issues/1565)) ([c9ceb70](https://github.com/bcit-tlu/hriv/commit/c9ceb70afc0d31525f23b960d7fe8543b72a2a99))
+* **collections:** manage-members dialog, edit-dialog filing + hide, hidden greyscale ([#1567](https://github.com/bcit-tlu/hriv/issues/1567)) ([6577def](https://github.com/bcit-tlu/hriv/commit/6577defa3ace74b2d540eb03e62ba1a51de24be1))
+* **collections:** multi-owner collections via collection_owners M2M ([#1531](https://github.com/bcit-tlu/hriv/issues/1531)) ([6eae182](https://github.com/bcit-tlu/hriv/commit/6eae182a070d581bb9adfbed645f9460e3134b8f))
+* **collections:** My collections home shelf behind COLLECTIONS_HOME_SHELF ([#1591](https://github.com/bcit-tlu/hriv/issues/1591)) ([562c4f2](https://github.com/bcit-tlu/hriv/commit/562c4f207651461ab2709930bdbee8b5ea403884))
+* **collections:** redesign owners dialog with Program/User panes ([#1599](https://github.com/bcit-tlu/hriv/issues/1599)) ([4556c69](https://github.com/bcit-tlu/hriv/commit/4556c693b55f5c1387de0bd75da8d155cf9eeb86))
+* **collections:** replace the My collections shelf with a bottom drawer ([#1595](https://github.com/bcit-tlu/hriv/issues/1595)) ([2a9bed9](https://github.com/bcit-tlu/hriv/commit/2a9bed974ba2730c7c5a20612cb1faa4f2b2c180))
+* **collections:** require a category on curator create, open new collections, View Collection button ([#1594](https://github.com/bcit-tlu/hriv/issues/1594)) ([83f7cf1](https://github.com/bcit-tlu/hriv/commit/83f7cf189728ec81aecd1c17c66b655b23a4953e))
+* **collections:** student caps on collection count and sequence size ([#1589](https://github.com/bcit-tlu/hriv/issues/1589)) ([23a3f9c](https://github.com/bcit-tlu/hriv/commit/23a3f9c69f47435d0d8dbc2a3060e551668aad6a))
+* **collections:** type-split pages, manage table, tile action rework ([#1554](https://github.com/bcit-tlu/hriv/issues/1554)) ([#1556](https://github.com/bcit-tlu/hriv/issues/1556)) ([e5e129e](https://github.com/bcit-tlu/hriv/commit/e5e129eb3b2730ac74689312f1046151515ca324))
+* **collections:** unfiled collections leave the Browse home ([#1584](https://github.com/bcit-tlu/hriv/issues/1584)) ([b58ba6a](https://github.com/bcit-tlu/hriv/commit/b58ba6a6701b879be10db6943fe458589927bb6c))
+* **frontend:** reorderable table columns in Choose columns ([#1577](https://github.com/bcit-tlu/hriv/issues/1577)) ([#1579](https://github.com/bcit-tlu/hriv/issues/1579)) ([3ec5bbc](https://github.com/bcit-tlu/hriv/commit/3ec5bbc40c83a2717e2b25aff0ea047b270676c2))
+
+
+### Bug Fixes
+
+* **collections:** dock the My collections drawer above the sticky footer ([#1602](https://github.com/bcit-tlu/hriv/issues/1602)) ([dbef92a](https://github.com/bcit-tlu/hriv/commit/dbef92adc691f578154339f6be32c24ea859ae51))
+* **collections:** show category-hidden collections as hidden in manage table ([#1581](https://github.com/bcit-tlu/hriv/issues/1581)) ([55074d4](https://github.com/bcit-tlu/hriv/commit/55074d489bf94b85aa56d325261e26daa5757b72))
+
+## [0.66.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.65.0...frontend-v0.66.0) (2026-10-05)
+
+
+### Features
+
+* **collections:** add image tiles to collections via Browse drop zone ([#1530](https://github.com/bcit-tlu/hriv/issues/1530)) ([#1540](https://github.com/bcit-tlu/hriv/issues/1540)) ([bff06ea](https://github.com/bcit-tlu/hriv/commit/bff06eafe7bbd184426b593ad38f54cc31e3533e))
+
+## [0.65.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.64.0...frontend-v0.65.0) (2026-10-05)
+
+
+### Features
+
+* **collections:** file collections into the Browse hierarchy ([#1527](https://github.com/bcit-tlu/hriv/issues/1527)) ([#1535](https://github.com/bcit-tlu/hriv/issues/1535)) ([d6b274d](https://github.com/bcit-tlu/hriv/commit/d6b274d285913292e45384a903acc895c2bfa4ad))
+* **collections:** make collections tile-order scope members ([#1528](https://github.com/bcit-tlu/hriv/issues/1528)) ([#1538](https://github.com/bcit-tlu/hriv/issues/1538)) ([2f4cf43](https://github.com/bcit-tlu/hriv/commit/2f4cf43b9fb787ad0486e1e4fe35b449a25fa4d7))
+* **collections:** match Collections tab tile grid to Browse parameters ([#1534](https://github.com/bcit-tlu/hriv/issues/1534)) ([be44cfd](https://github.com/bcit-tlu/hriv/commit/be44cfd57a04262fab4854bea319f7a4bbb56120))
+* **collections:** render collections as movable Browse tiles ([#1529](https://github.com/bcit-tlu/hriv/issues/1529)) ([#1539](https://github.com/bcit-tlu/hriv/issues/1539)) ([a8e1a6f](https://github.com/bcit-tlu/hriv/commit/a8e1a6f1910af8d6a5a688943f32ee9cac5d7977))
+
+## [0.64.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.63.0...frontend-v0.64.0) (2026-10-04)
+
+
+### Features
+
+* **frontend:** add the sequence collection viewer ([#1520](https://github.com/bcit-tlu/hriv/issues/1520)) ([cb5d6a9](https://github.com/bcit-tlu/hriv/commit/cb5d6a9588a1ee38b92e279f3313015be7a84f93))
+* **frontend:** add the synchronized collection viewer ([#1521](https://github.com/bcit-tlu/hriv/issues/1521)) ([dab64b5](https://github.com/bcit-tlu/hriv/commit/dab64b5f2d4d2b852029ce3e4dd5c3706a0dd296))
+* **frontend:** collection ownership transfer and admin management UI ([#1523](https://github.com/bcit-tlu/hriv/issues/1523)) ([fccfaff](https://github.com/bcit-tlu/hriv/commit/fccfaff417a85c67aaa2115dbbf4ab10dd0a12cf))
+* **frontend:** surface collections in search and add image multi-select ([#1522](https://github.com/bcit-tlu/hriv/issues/1522)) ([da186d3](https://github.com/bcit-tlu/hriv/commit/da186d3e99961871eaf351e731cbc76e92bd2aac))
+
+
+### Bug Fixes
+
+* **frontend:** include arrowhead in canvas arrow bounding box ([#1363](https://github.com/bcit-tlu/hriv/issues/1363)) ([#1516](https://github.com/bcit-tlu/hriv/issues/1516)) ([7ae6302](https://github.com/bcit-tlu/hriv/commit/7ae630228abd1ccda6e9d8321a702ab00e299d34))
+
+## [0.63.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.62.0...frontend-v0.63.0) (2026-09-29)
+
+
+### Features
+
+* **frontend:** add "Add to Collection" action to the image view ([#1476](https://github.com/bcit-tlu/hriv/issues/1476)) ([c08ca78](https://github.com/bcit-tlu/hriv/commit/c08ca78310e94e6ff16f3cca85ffc37954e2f504))
+
+## [0.62.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.61.1...frontend-v0.62.0) (2026-09-28)
+
+
+### Features
+
+* dark-launch collections behind COLLECTIONS_ENABLED flag ([#1464](https://github.com/bcit-tlu/hriv/issues/1464)) ([a1d661b](https://github.com/bcit-tlu/hriv/commit/a1d661bda5667e9376856b1ef18e5861caa4a305))
+* **frontend:** add collections tab and CRUD ([#1440](https://github.com/bcit-tlu/hriv/issues/1440)) ([d7c93f5](https://github.com/bcit-tlu/hriv/commit/d7c93f5e3590a0b68327a16a5d892137d0706531))
+
+
+### Bug Fixes
+
+* **backend:** resolve client IP at trusted-proxy boundary and add account-scoped login limiter ([#1425](https://github.com/bcit-tlu/hriv/issues/1425)) ([2465336](https://github.com/bcit-tlu/hriv/commit/2465336372c010a9be0b2f2380ace84b966965dc))
+* **bulk-import:** bound zip extraction to prevent decompression-bomb DoS ([#1424](https://github.com/bcit-tlu/hriv/issues/1424)) ([4d640c3](https://github.com/bcit-tlu/hriv/commit/4d640c367a71a1c582a3408a2a712c4a1ae2d81d))
+
+## [0.61.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.61.0...frontend-v0.61.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **frontend:** bump nginx alpine base to 1.30 to clear HIGH CVEs ([#1373](https://github.com/bcit-tlu/hriv/issues/1373)) ([5744c92](https://github.com/bcit-tlu/hriv/commit/5744c926ad01bb440740b4ddfff66e976a23a579))
+
+## [0.61.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.60.0...frontend-v0.61.0) (2026-09-24)
+
+
+### Features
+
+* **frontend:** scope search type filters to their primary metadata field ([#1367](https://github.com/bcit-tlu/hriv/issues/1367)) ([d139752](https://github.com/bcit-tlu/hriv/commit/d13975297437468362f7d0bc584f0bdea511fe57))
+
+## [0.60.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.59.0...frontend-v0.60.0) (2026-09-22)
+
+
+### Features
+
+* **frontend:** gate Storybook tests on axe accessibility checks ([#1346](https://github.com/bcit-tlu/hriv/issues/1346)) ([ad94c16](https://github.com/bcit-tlu/hriv/commit/ad94c16fcc318f8d015e412c6b2d1df043a276a1))
+
+## [0.59.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.58.0...frontend-v0.59.0) (2026-09-22)
+
+
+### Features
+
+* **auth:** add staff role with read-only People access ([#1337](https://github.com/bcit-tlu/hriv/issues/1337)) ([43f1986](https://github.com/bcit-tlu/hriv/commit/43f19862babb91197e43e12cea07fceddb4a3996))
+
+## [0.58.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.57.0...frontend-v0.58.0) (2026-09-17)
+
+
+### Features
+
+* **frontend:** add 100 and 200 rows-per-page options to table paginators ([#1321](https://github.com/bcit-tlu/hriv/issues/1321)) ([0e6e6b4](https://github.com/bcit-tlu/hriv/commit/0e6e6b4d8be9dad4f8e3a44bb922bc401c0cf979))
+
+## [0.57.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.56.0...frontend-v0.57.0) (2026-09-17)
+
+
+### Features
+
+* **jobs:** expose durable parallel tile-rebuild controls to admins ([#1310](https://github.com/bcit-tlu/hriv/issues/1310)) ([50a8147](https://github.com/bcit-tlu/hriv/commit/50a8147fb75ff9bf3ba6ad1c0a66ad40a4e4f17a))
+* **viewer:** movable annotation toolbar and fullscreen canvas editing ([#1315](https://github.com/bcit-tlu/hriv/issues/1315)) ([8650cbe](https://github.com/bcit-tlu/hriv/commit/8650cbeaf7cab1e94aefaeacf82874162e47aca0))
+
+
+### Bug Fixes
+
+* **frontend:** show disabled-account message for inactive user login ([#1316](https://github.com/bcit-tlu/hriv/issues/1316)) ([f36dd19](https://github.com/bcit-tlu/hriv/commit/f36dd19a1bf4f6e003329c2f1752b560cffc9f96))
+
 ## [0.56.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.55.0...frontend-v0.56.0) (2026-09-15)
 
 

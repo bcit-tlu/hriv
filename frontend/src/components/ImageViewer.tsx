@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import type { ResponsiveStyleValue } from '@mui/system'
 import {
   emitEvent,
   emitEventNow,
@@ -23,13 +24,36 @@ import {
   type OverlayRect,
 } from './imageViewerUtils'
 
+let pendingFullScreenHandoff: string | number | null = null
+
+const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
+  const { viewport } = viewer
+  const homeZoom = viewport.getHomeZoom()
+  const homeBounds = viewport.getHomeBounds()
+  if (!Number.isFinite(homeZoom) || homeZoom <= 0 || homeBounds.width <= 0) return false
+
+  const homeCenter = homeBounds.getCenter()
+  const center = viewport.getCenter(false)
+  const rotation = ((viewport.getRotation(false) % 360) + 360) % 360
+  const rotationDistance = Math.min(rotation, 360 - rotation)
+  const centerTolerance = homeBounds.width * 1e-3
+  return (
+    Math.abs(viewport.getZoom(false) - homeZoom) <= homeZoom * 1e-3 &&
+    Math.abs(center.x - homeCenter.x) <= centerTolerance &&
+    Math.abs(center.y - homeCenter.y) <= centerTolerance &&
+    rotationDistance <= 1e-3 &&
+    !viewport.getFlip()
+  )
+}
+
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
   /** Id of the image's category; emitted as a structured telemetry field. */
   categoryId?: number
-  height?: string
+  fullScreenHandoffKey?: string | number
+  height?: ResponsiveStyleValue<string | number>
   initialViewport?: ViewportState
   onViewportChange?: (state: ViewportState) => void
   measurement?: MeasurementConfig
@@ -61,6 +85,12 @@ interface ImageViewerProps {
   onTileSourceRenewed?: (image: ApiImage) => void
   /** Surface unrecoverable viewer errors through the app's existing error UI. */
   onError?: (message: string) => void
+  /**
+   * Receives the OpenSeadragon instance once mounted (and `null` before
+   * destroy) so parents like the synchronized collection viewer can attach
+   * raw `viewport-change` handlers and drive the viewport imperatively.
+   */
+  onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
 }
 
 interface DragState {
@@ -74,6 +104,7 @@ export default function ImageViewer({
   tileSources,
   imageId,
   categoryId,
+  fullScreenHandoffKey,
   height = '70vh',
   initialViewport,
   onViewportChange,
@@ -92,6 +123,7 @@ export default function ImageViewer({
   onCanvasEditModeChange,
   onTileSourceRenewed,
   onError,
+  onViewerReady,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -113,6 +145,11 @@ export default function ImageViewer({
   const imageIdRef = useRef(imageId)
   const categoryIdRef = useRef(categoryId)
   const tileSourcesRef = useRef(tileSources)
+  const fullScreenHandoffKeyRef = useRef(fullScreenHandoffKey)
+  // Which image the open tile sources belong to — lets the prop-change
+  // reopen below tell a same-image refresh (re-tokenized URLs, e.g. a
+  // save-response refetch) from a different image arriving mid-life (#1567).
+  const openSourcesImageIdRef = useRef(imageId)
   const renewalTimerRef = useRef<number | null>(null)
   const renewalInFlightRef = useRef(false)
   const renewedTileSourceKeysRef = useRef(new Set<string>())
@@ -120,8 +157,10 @@ export default function ImageViewer({
   const renewalAttemptsRef = useRef(0)
   const renewalGenerationRef = useRef(0)
   const pendingRenewalViewportRef = useRef<ViewportState | null>(null)
+  const homeViewportAtLastSettledStateRef = useRef<boolean | null>(null)
   const onTileSourceRenewedRef = useRef(onTileSourceRenewed)
   const onErrorRef = useRef(onError)
+  const onViewerReadyRef = useRef(onViewerReady)
   const onCanvasEditModeChangeRef = useRef(onCanvasEditModeChange)
   const getCurrentTileSources = useEffectEvent(() => tileSources)
   const resetRenewalState = useCallback(() => {
@@ -145,11 +184,17 @@ export default function ImageViewer({
     categoryIdRef.current = categoryId
   }, [categoryId])
   useEffect(() => {
+    fullScreenHandoffKeyRef.current = fullScreenHandoffKey
+  }, [fullScreenHandoffKey])
+  useEffect(() => {
     onTileSourceRenewedRef.current = onTileSourceRenewed
   }, [onTileSourceRenewed])
   useEffect(() => {
     onErrorRef.current = onError
   }, [onError])
+  useEffect(() => {
+    onViewerReadyRef.current = onViewerReady
+  }, [onViewerReady])
   useEffect(() => {
     onCanvasEditModeChangeRef.current = onCanvasEditModeChange
   }, [onCanvasEditModeChange])
@@ -252,6 +297,7 @@ export default function ImageViewer({
     if (viewportToRestore.rotation) {
       viewer.viewport.setRotation(viewportToRestore.rotation, true)
     }
+    homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
   }, [])
 
   const runTileSourceRenewal = useCallback(async () => {
@@ -367,6 +413,8 @@ export default function ImageViewer({
   )
 
   useEffect(() => {
+    homeViewportAtLastSettledStateRef.current = null
+    const handoffKey = fullScreenHandoffKeyRef.current
     if (!containerRef.current) return
 
     const initialTileSources = getCurrentTileSources()
@@ -480,6 +528,24 @@ export default function ImageViewer({
     }
 
     const viewer = viewerRef.current
+    const initialViewerWidth = viewer.element.style.width
+    const initialViewerHeight = viewer.element.style.height
+    let pendingHomeResize: boolean | null = null
+    const claimedHandoff = handoffKey != null && pendingFullScreenHandoff === handoffKey
+    if (claimedHandoff) pendingFullScreenHandoff = null
+    let handleFullscreenChange: (() => void) | null = null
+    if (claimedHandoff && document.fullscreenElement) {
+      viewer.setFullPage(true)
+      viewer.element.style.width = '100%'
+      viewer.element.style.height = '100%'
+      handleFullscreenChange = () => {
+        if (document.fullscreenElement || !viewer.isFullPage()) return
+        viewer.setFullPage(false)
+        viewer.element.style.width = initialViewerWidth
+        viewer.element.style.height = initialViewerHeight
+      }
+      document.addEventListener('fullscreenchange', handleFullscreenChange)
+    }
 
     // --- Measurement label container (lives inside the OSD canvas) ---
     const labelContainer = document.createElement('div')
@@ -599,6 +665,18 @@ export default function ImageViewer({
 
     const selectionTracker = new OpenSeadragon.MouseTracker({
       element: viewer.element,
+      // CanvasOverlay portals its UI (edit toolbar, link annotations, fabric
+      // canvas) into viewer.container, inside this tracker's element. Without
+      // this guard the tracker would capture every such press to
+      // viewer.element — retargeting pointerup/click away from the real target
+      // — and preventDefault the pointerdown, which suppresses focus and
+      // breaks the toolbar's arrow-key nudge. preventGesture skips both.
+      preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
+        const target = event.originalEvent?.target
+        if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
+          event.preventGesture = true
+        }
+      },
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
         if (!selectionModeRef.current || !event.position) return
         const overlayElement = document.createElement('div')
@@ -785,7 +863,7 @@ export default function ImageViewer({
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
           onCanvasEditModeChangeRef.current?.(entering)
-          canvasEditButton.element.style.outline = entering ? '2px solid #2196F3' : 'none'
+          canvasEditButton.element.style.outline = entering ? '2px solid red' : 'none'
           canvasEditButton.element.style.outlineOffset = entering ? '-2px' : ''
         },
       })
@@ -796,7 +874,7 @@ export default function ImageViewer({
 
       // Allow external code (e.g. CanvasOverlay "Done" button) to update the button outline
       updateCanvasEditUiRef.current = (active: boolean) => {
-        canvasEditButton.element.style.outline = active ? '2px solid #2196F3' : 'none'
+        canvasEditButton.element.style.outline = active ? '2px solid red' : 'none'
         canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
       }
     }
@@ -834,6 +912,20 @@ export default function ImageViewer({
       viewer.navigator.element.appendChild(magBadge)
     }
 
+    // OSD wraps each control in an inline-block wrapper that sits on a text
+    // baseline; the line-box strut leaves a few px of dead space under the
+    // bottom-anchored chrome. Bottom-align every element in the bottom docks so
+    // the toolbar and navigator sit flush with the bottom edge of the frame.
+    let navigatorAnchor: HTMLElement | null = viewer.navigator?.element ?? null
+    while (navigatorAnchor && navigatorAnchor.parentElement !== viewer.container) {
+      navigatorAnchor = navigatorAnchor.parentElement
+    }
+    for (const dock of [toolbarAnchor, navigatorAnchor]) {
+      dock?.querySelectorAll<HTMLElement>('*').forEach((el) => {
+        el.style.verticalAlign = 'bottom'
+      })
+    }
+
     const updateMagnification = () => {
       if (!viewer.viewport) return
       const imageZoom = viewer.viewport.viewportToImageZoom(viewer.viewport.getZoom())
@@ -858,6 +950,7 @@ export default function ImageViewer({
 
     // Expose viewer instance to React state for child components
     setViewerInstance(viewer)
+    onViewerReadyRef.current?.(viewer)
 
     // Restore viewport state and initial overlays after the image has loaded
     viewer.addOnceHandler('open', () => {
@@ -902,6 +995,7 @@ export default function ImageViewer({
         updateLockIcon()
       }
       updateMagnification()
+      homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
     })
 
     viewer.addHandler('open-failed', (event) => {
@@ -927,6 +1021,12 @@ export default function ImageViewer({
         imageId: imageIdRef.current,
         categoryId: categoryIdRef.current,
       })
+      // Non-auth open failures (deleted image, dead tile host) used to only
+      // emit telemetry — surface them so hosts can react (the sequence
+      // viewer skips the broken member; the image view shows a snackbar).
+      onErrorRef.current?.(
+        'This image could not be loaded. It may have been removed or you may not have access to it.',
+      )
     })
 
     viewer.addHandler('tile-load-failed', (event) => {
@@ -944,6 +1044,18 @@ export default function ImageViewer({
     viewer.addHandler('full-page', (event) => {
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
+    })
+    viewer.addHandler('resize', () => {
+      pendingHomeResize = homeViewportAtLastSettledStateRef.current
+    })
+    viewer.addHandler('viewport-change', () => {
+      const refitHome = pendingHomeResize
+      pendingHomeResize = null
+      if (refitHome) {
+        viewer.viewport.fitBounds(viewer.viewport.getHomeBounds(), true)
+        emitViewport()
+      }
+      homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
     })
 
     const pinchRotationTracker = createPinchRotationTracker()
@@ -971,8 +1083,12 @@ export default function ImageViewer({
       viewer.viewport.rotateTo(viewer.viewport.getRotation(true) + rotationDelta, pivot, true)
     })
 
-    // Report viewport changes after animations finish
-    viewer.addHandler('animation-finish', emitViewport)
+    viewer.addHandler('animation-finish', () => {
+      if (pendingHomeResize == null) {
+        homeViewportAtLastSettledStateRef.current = isViewportAtHome(viewer)
+      }
+      emitViewport()
+    })
 
     return () => {
       const dwellMs = viewStartTimeRef.current
@@ -998,6 +1114,28 @@ export default function ImageViewer({
         renewalTimerRef.current = null
       }
       selectionTracker.destroy()
+      onViewerReadyRef.current?.(null)
+      if (handleFullscreenChange) {
+        document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      }
+      const cleanupHandoffKey = fullScreenHandoffKeyRef.current
+      if (viewer.isFullPage()) {
+        viewer.setFullPage(false)
+        if (document.fullscreenElement) {
+          if (cleanupHandoffKey == null) {
+            void document.exitFullscreen().catch(() => {})
+          } else {
+            pendingFullScreenHandoff = cleanupHandoffKey
+            window.setTimeout(() => {
+              if (pendingFullScreenHandoff !== cleanupHandoffKey) return
+              pendingFullScreenHandoff = null
+              if (document.fullscreenElement) {
+                void document.exitFullscreen().catch(() => {})
+              }
+            }, 0)
+          }
+        }
+      }
       viewer.destroy()
       viewerRef.current = null
     }
@@ -1015,9 +1153,24 @@ export default function ImageViewer({
     const viewer = viewerRef.current
     if (!viewer || tileSourceKey(tileSourcesRef.current) === tileSourceKey(tileSources)) return
 
+    // A same-image refresh re-opens the pyramid — keep the live viewport
+    // and overlays across the reopen (same trick as the token-renewal
+    // path) so a save/refetch can't reset the user's position (#1567).
+    const sameImage = openSourcesImageIdRef.current === imageId
+    openSourcesImageIdRef.current = imageId
+    if (sameImage) {
+      pendingRenewalViewportRef.current = currentViewportState()
+      viewer.addOnceHandler('open', restorePendingRenewalViewport)
+    }
     tileSourcesRef.current = tileSources
-    viewer.open(tileSources as unknown as OpenSeadragon.TileSourceSpecifier)
-  }, [tileSourceKey, tileSources])
+    const previousPreserveOverlays = viewer.preserveOverlays
+    viewer.preserveOverlays = sameImage
+    try {
+      viewer.open(tileSources as unknown as OpenSeadragon.TileSourceSpecifier)
+    } finally {
+      viewer.preserveOverlays = previousPreserveOverlays
+    }
+  }, [tileSourceKey, tileSources, imageId, currentViewportState, restorePendingRenewalViewport])
 
   // Reactively update lock/clear button UI when overlaysLocked prop changes
   useEffect(() => {

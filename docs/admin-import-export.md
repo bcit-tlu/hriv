@@ -78,8 +78,17 @@ This means a mid-import failure rolls back _all_ data changes (via
 
 **Export** (`run_db_export`) writes a JSON document containing: `programs`,
 `groups`, `categories` (with `program_ids` and `group_ids`), `images`,
-`source_images`, `users` (with program memberships), `changelog_entries`, and
-the `announcement`.
+`source_images`, `users` (with program memberships), `collections`,
+`changelog_entries`, and the `announcement`.
+
+Each exported **collection** carries `name`, `description`, `type`,
+`visibility`, `user_id` (creator audit — may be `null`),
+`owner_program_id`, `owner_ids` (the user-owner id list; both empty for an
+orphaned collection), `viewport_state`, `version`, ordered `image_ids`,
+`program_ids` and `group_ids`. Legacy dumps carrying only `user_id` import
+that creator as the sole owner. Links to rebuild-fixture images are dropped
+because those images are not part of the export. See
+[Collections](collections.md).
 
 Each exported **group** carries `name`, `description`, `created_by_user_id`,
 `member_ids`, and `instructor_ids`.
@@ -95,6 +104,8 @@ matters because of foreign keys.
 - **Delete order** (junctions before parents):
 
   ```
+  collection_images → collection_programs → collection_groups →
+  collection_owners → collections →
   source_images → images → category_groups → category_programs → categories →
   group_members → group_instructors → groups → user_programs → users →
   changelog_entries → announcements → programs
@@ -105,14 +116,15 @@ matters because of foreign keys.
 
   ```
   programs → users → groups → categories (restoring category↔program and
-  category↔group links) → images → source_images → changelog_entries →
-  announcement
+  category↔group links) → images → source_images → collections (with
+  collection_images / collection_owners / collection_programs /
+  collection_groups) → changelog_entries → announcement
   ```
 
 - **Sequence reset.** After import, PostgreSQL sequences are reset to
   `max(id) + 1` so subsequent inserts don't collide. Sequences reset:
   `programs`, `groups`, `categories`, `images`, `users`, `announcements`,
-  `changelog_entries`, `source_images`.
+  `changelog_entries`, `source_images`, `collections`.
 
 ## Filesystem export/import
 
@@ -124,8 +136,9 @@ walking millions of generated tile files.
 
 - **Export contents:** source images and other authoritative filesystem data.
 - **Excluded:** the tile pyramid (`image_files/`, `image.dzi`,
-  `thumbnail.jpeg`, and other derived tile artifacts) plus `admin_tasks/`
-  scratch files.
+  `thumbnail.jpeg`, and other derived tile artifacts), `admin_tasks/`
+  scratch files, and `source_images/.staging/` — the `TMPDIR` upload
+  spool (#1365), whose contents are transient and unowned.
 - **Import behavior:** filesystem imports restore the source files only. After a
   successful files import, a **Rebuild Tiles** task is queued automatically; it
   regenerates missing or stale DZI pyramids from the restored source images. The
@@ -236,6 +249,15 @@ Because entries are moved into place with `os.rename`, `IMPORT_STAGING_DIR`
 this). If it is overridden to a different volume, the import fails fast at the
 preflight with a clear error rather than surfacing a cryptic cross-device
 (`EXDEV`) failure part-way through the swap.
+
+The swap replaces `source_images/` wholesale, and exports omit its transient
+`.staging/` upload-spool subdirectory — so after the swap the import recreates
+`<source_images_dir>/.staging` (#1365). A running API pod's `TMPDIR` keeps
+pointing there; without this step the next multipart upload would fail on
+tempfile rollover. Creation retries briefly for transient filesystem errors;
+a persistent failure is logged but does not fail the import (the restore
+itself succeeded) — `UploadBodyLimitMiddleware` re-ensures the directory on
+every upload request, so the next upload self-heals in any execution mode.
 
 The admin UI's "Previously uploaded import archives" list shows cumulative
 storage usage (for example, "3 retained archives using 87.4 GiB") so operators
@@ -396,6 +418,23 @@ the flag is off, the button keeps using the serial endpoint and the section
 notes that parallel rebuilds are disabled; already-running durable jobs still
 run to completion.
 
+Durable rebuilds emit the `hriv.tile_rebuild.*` metrics contract and
+`rebuild.*` structured events documented in
+[jobs.md](jobs.md#observability); `/api/metrics` exposes the
+PostgreSQL-derived `hriv_tile_rebuild_jobs_active`,
+`hriv_tile_rebuild_active_children`, and `hriv_tile_rebuild_queued_items`
+gauges. For a production-shaped scale rehearsal, `python -m
+app.rebuild_fixture --count N` seeds deterministic `TRF-` linked sources
+backed by tiny valid TIFFs (`--purge` removes their rows, source files, generated
+tiles, and rebuild temporary trees). Purge and database JSON export identify
+fixtures only through `metadata.rebuild_fixture=true`, the linked source, and its
+confined stored path; user-controlled `TRF-` names or high IDs alone never
+qualify. Fixture seeding/purging refuses to run while a rebuild is active.
+Filesystem exports and scheduled backups use a shared source-volume
+lock and fail closed while the fixture directory exists; the full procedure and
+measurement record live in
+[backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal-opt-in-issue-1189).
+
 ## Per-file backup restore
 
 The admin area also exposes a manifest-browsing restore flow for restoring a
@@ -423,6 +462,18 @@ tasks whose runner process died (pod crash, OOM, rollout) so they don't block th
 The freshness check on `updated_at` makes this **multi-replica safe**: a
 sibling pod actively running a task keeps writing progress to `updated_at`, so a
 newly starting pod won't clobber it.
+
+Runners also keep `updated_at` fresh through individual checkpoints that
+cannot write progress themselves. A shared `_poll_task_heartbeat` poll in
+`admin_ops.py` heartbeats from a separate session while observing
+cancellation: the serial per-image tile rebuild runs it via
+`_run_with_task_heartbeat`, and the filesystem import's archive SHA-256
+pass runs it via `_run_with_cancel_poll` so a cancel request also signals
+the `threading.Event` the hash loop checks between chunk reads (the
+thread exits promptly instead of reading the rest of a large archive).
+The remaining long spans (archive scanning/extraction, per-file restore)
+use dedicated cancellation pollers that call `_heartbeat_task` on the
+same cadence.
 
 ## Tests to run after touching this area
 
