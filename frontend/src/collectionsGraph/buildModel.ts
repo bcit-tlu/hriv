@@ -121,7 +121,9 @@ export function buildGraphModel(
         kind: 'image',
         id: img.id,
         label: img.name,
-        r: isShared ? 4 : 2.5,
+        // one radius for every image — the shared ring is drawn inset
+        // so the footprint is identical (#1656 follow-up)
+        r: 4,
         // start on a small ring around the first collection — the sim
         // begins near the solution instead of exploding images outward
         x: (first?.x ?? 0) + Math.cos(a) * rr,

@@ -737,7 +737,9 @@ Invalid stored values fall back to defaults:
   is sized on the same scale with its label falling beside the node when
   it does not fit inside, #1653), synchronized
   collections are filled primary-light with no ring, shared images share
-  the plain image fill with a primary (red) outline (#1656), fit runs once
+  the plain image fill with a primary (red) outline (#1656) — image nodes
+  share one radius and the shared-image ring is inset so the footprint is
+  identical — fit runs once
   after synchronous
   pre-ticks per model build (resize and view switches redraw without
   refitting; the **Fit graph** button refits explicitly), node labels are

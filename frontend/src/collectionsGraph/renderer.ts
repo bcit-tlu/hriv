@@ -233,6 +233,13 @@ export class GraphRenderer {
       ctx.moveTo(n.x + n.r / Math.sqrt(k), n.y)
       ctx.arc(n.x, n.y, n.r / Math.sqrt(k), 0, 7)
     }
+    // Inset ring: the stroke's outer edge coincides with the fill's edge,
+    // so a shared image keeps the same footprint as a plain one (#1656).
+    const innerCirc = (n: GraphNode, lw: number) => {
+      const rr = Math.max(0.5 / Math.sqrt(k), n.r / Math.sqrt(k) - lw / 2)
+      ctx.moveTo(n.x + rr, n.y)
+      ctx.arc(n.x, n.y, rr, 0, 7)
+    }
 
     // ---- edges, batched by style; viewport-culled (graph coords) ----
     const vx0 = -t.x / k - 40
@@ -313,18 +320,22 @@ export class GraphRenderer {
     ctx.fill()
     ctx.strokeStyle = palette.imageSharedStroke
     // 2 screen px at k=1 scaling like the node radius (√k) — matches the
-    // 12px/2px legend swatch ratio.
-    ctx.lineWidth = 2 / Math.sqrt(k)
+    // 12px/2px legend swatch ratio. Inset ring: shared images keep the
+    // same footprint as plain images.
+    const sharedLw = 2 / Math.sqrt(k)
+    ctx.lineWidth = sharedLw
     // dimmed shared images keep a faded outline to match their fill
     ctx.globalAlpha = 0.15
     ctx.beginPath()
     for (const n of model.nodes)
-      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && dim(n)) circ(n)
+      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && dim(n))
+        innerCirc(n, sharedLw)
     ctx.stroke()
     ctx.globalAlpha = 1
     ctx.beginPath()
     for (const n of model.nodes)
-      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
+      if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n))
+        innerCirc(n, sharedLw)
     ctx.stroke()
 
     // ---- collection nodes: synchronized fill differs from sequenced

@@ -63,6 +63,9 @@ describe('buildGraphModel', () => {
     const n11 = m.nodes.find((n) => n.kind === 'image' && n.id === 11)!
     const n12 = m.nodes.find((n) => n.kind === 'image' && n.id === 12)!
     expect(n10.shared).toBe(true)
+    // Shared and plain images share one radius — the ring is inset in the
+    // renderer, so the footprint is identical (#1656 follow-up).
+    expect(n10.r).toBe(n11.r)
     expect(n10.imageCollectionIds).toEqual([1, 2])
     expect(n11.shared).toBe(false)
     // 99 is not a surviving collection — trimmed, so 12 is not shared.
