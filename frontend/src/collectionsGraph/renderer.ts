@@ -34,9 +34,9 @@ const LABEL_CAP = 200
 /** App minimum text size (MUI caption, 0.75rem) — labels never shrink below it. */
 const LABEL_MIN_PX = 12
 /** Cap so fully zoomed-in (k=24) labels stay readable rather than huge. */
-const LABEL_MAX_PX = 32
+const LABEL_MAX_PX = 26
 /** Base sizes at k=1; scale by √k like node radii. */
-const LABEL_BASE_PX = { collection: 13, image: 12, category: 12, hub: 13 } as const
+const LABEL_BASE_PX = { collection: 12, image: 12, category: 12, hub: 12 } as const
 export function labelPx(base: number, k: number): number {
   return Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, base * Math.sqrt(k)))
 }
@@ -115,7 +115,7 @@ export function adjacency(model: GraphModel, focus: GraphNode): Set<GraphNode> {
  * Canvas 2D renderer for a `GraphModel` — ports the prototype's `draw`
  * faithfully (#1629): one `setTransform(dpr·k, …)` per frame, edges and
  * nodes batched by style into single paths, viewport culling, screen-space
- * labels sized ∝ √k between 12px and 32px with per-frame overlap-skipping
+ * labels sized ∝ √k between 12px and 26px with per-frame overlap-skipping
  * and a cap, and a lazily rebuilt
  * hit-test quadtree (≤ every 150 ms while warm, immediately once cooled).
  */
@@ -312,7 +312,9 @@ export class GraphRenderer {
       if (n.kind === 'image' && n.shared && !hid(n) && inV(n.x, n.y, n.r) && !dim(n)) circ(n)
     ctx.fill()
     ctx.strokeStyle = palette.imageSharedStroke
-    ctx.lineWidth = 1.2 / k
+    // 2 screen px at k=1 scaling like the node radius (√k) — matches the
+    // 12px/2px legend swatch ratio.
+    ctx.lineWidth = 2 / Math.sqrt(k)
     // dimmed shared images keep a faded outline to match their fill
     ctx.globalAlpha = 0.15
     ctx.beginPath()
@@ -378,7 +380,7 @@ export class GraphRenderer {
       }
     }
 
-    // ---- labels in screen space: ∝ √k (12–32px), overlap-skip, cap ----
+    // ---- labels in screen space: ∝ √k (12–26px), overlap-skip, cap ----
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const drawn: { x: number; y: number; w: number; h: number }[] = []
     const cands: {

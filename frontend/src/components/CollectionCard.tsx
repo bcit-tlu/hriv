@@ -307,9 +307,8 @@ export default function CollectionCard({
               <Tooltip title={COLLECTION_TYPE_LABELS[collection.type]}>
                 <CollectionTypeIcon
                   type={collection.type}
-                  fontSize="small"
                   color="primary"
-                  sx={{ flexShrink: 0 }}
+                  sx={{ flexShrink: 0, fontSize: 22 }}
                 />
               </Tooltip>
             </Box>

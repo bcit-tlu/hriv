@@ -299,7 +299,7 @@ function CategoryTile({
                   flexShrink: 0,
                 }}
               >
-                <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+                <FolderOutlinedIcon color="primary" sx={{ flexShrink: 0, fontSize: 22 }} />
               </Box>
               <Tooltip title={category.label}>
                 <Typography

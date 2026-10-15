@@ -412,8 +412,8 @@ describe('GraphRenderer hub label placement', () => {
     const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
     expect(hub.align).toBe('right')
     expect(hub.x).toBe(783)
-    // baseline = sy + hfs/3 = 300 + 13/3
-    expect(hub.y).toBe(300 + 13 / 3)
+    // baseline = sy + hfs/3 = 300 + 12/3
+    expect(hub.y).toBe(300 + 12 / 3)
   })
 
   it('keeps the label on the right when it fits there', () => {
@@ -434,10 +434,10 @@ describe('GraphRenderer hub label placement', () => {
 
 describe('labelPx', () => {
   it('scales by √k between the 12px floor and the 32px cap', () => {
-    expect(labelPx(13, 1)).toBe(13)
+    expect(labelPx(12, 1)).toBe(12)
     expect(labelPx(12, 0.25)).toBe(12) // floor
-    expect(labelPx(13, 4)).toBe(26)
-    expect(labelPx(13, 24)).toBe(32) // cap
+    expect(labelPx(12, 4)).toBe(24)
+    expect(labelPx(12, 24)).toBe(26) // cap
     expect(labelPx(12, 0.1)).toBe(12)
   })
 })
@@ -501,7 +501,7 @@ describe('GraphRenderer label zoom scaling', () => {
   }
 
   it('grows the collection label font with √k', () => {
-    expect(drawFont(zoomIdentity)).toBe('13px Roboto,Arial')
-    expect(drawFont(zoomIdentity.scale(4))).toBe('26px Roboto,Arial')
+    expect(drawFont(zoomIdentity)).toBe('12px Roboto,Arial')
+    expect(drawFont(zoomIdentity.scale(4))).toBe('24px Roboto,Arial')
   })
 })

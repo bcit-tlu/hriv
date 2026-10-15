@@ -38,7 +38,7 @@ collection-page graph dialog (#1630) reuses this component with a different mode
 - Physics and rendering port the locked prototype design (#1627): soft links, firm collisions,
   charge on hub/collections/categories only, rAF-coalesced batched canvas drawing, viewport
   culling, label cap, and a lazily rebuilt hit-test quadtree. Node labels are drawn in
-  screen space at 12–32px, scaling ∝ √k with zoom.
+  screen space at 12–26px, scaling ∝ √k with zoom.
 - The view fits once after synchronous pre-ticks per model build; resize and view switches
   redraw without refitting — the outlined **Fit graph** toolbar button refits explicitly.
   Optional `fitOnRebuild` also refits (animated) when a rebuilt model arrives under a kept

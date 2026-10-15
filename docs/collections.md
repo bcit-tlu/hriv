@@ -741,7 +741,7 @@ Invalid stored values fall back to defaults:
   after synchronous
   pre-ticks per model build (resize and view switches redraw without
   refitting; the **Fit graph** button refits explicitly), node labels are
-  drawn in screen space at 12–32px scaling ∝ √k with zoom (#1656
+  drawn in screen space at 12–26px scaling ∝ √k with zoom (#1656
   follow-up), drag uses pointer-space
   subjects and only reheats after real movement, and zoom (0.1–24×) yields
   to drag over a node. Graph state survives view switches and collection
