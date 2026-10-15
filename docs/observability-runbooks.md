@@ -255,10 +255,13 @@ viewer experience.
 
 **First checks:**
 
-1. Open `HRIV Usage and Experience`.
-2. Check whether the failures cluster by browser family, device class, or
+1. Read the `Image-view failure messages` panel (or the Loki query below) for
+   the OpenSeadragon `error_message`, e.g. `HTTP 404 …` vs a malformed
+   descriptor.
+2. Open `HRIV Usage and Experience`.
+3. Check whether the failures cluster by browser family, device class, or
    viewport bucket.
-3. Cross-check tile and API health for the same time window.
+4. Cross-check tile and API health for the same time window.
 
 **Dashboard links:** `HRIV Usage and Experience`, then `HRIV Service Health`.
 
@@ -266,6 +269,7 @@ viewer experience.
 
 - Loki: `{event_name="image.view.failed"}`
 - Loki: `{event_name="frontend.error"}`
+- Loki: `{service_name="hriv-backend"} | event_name="frontend.error" | error_code="image_viewer_open_failed" | error_message!=""`
 - TraceQL: `{ span.http.route =~ "/api/images/.*|/api/tiles/.*" }`
 
 **Kubernetes commands:** Usually none are needed first; start with dashboards

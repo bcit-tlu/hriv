@@ -265,6 +265,73 @@ describe('observability', () => {
     })
   })
 
+  it('sanitizes diagnostic messages', async () => {
+    const { MAX_ERROR_MESSAGE_LENGTH, sanitizeDiagnosticMessage } =
+      await import('../src/observability')
+
+    expect(
+      sanitizeDiagnosticMessage(
+        'HTTP 404 attempting to load TileSource: https://hriv.example/api/tiles/abc.dzi?tile_token=secret\nextra',
+      ),
+    ).toBe('HTTP 404 attempting to load TileSource: [url] extra')
+    expect(sanitizeDiagnosticMessage('Failed at /api/tiles/x.dzi')).toBe('Failed at [url]')
+    expect(sanitizeDiagnosticMessage('Failed at ./cache/x.dzi')).toBe('Failed at [url]')
+    expect(sanitizeDiagnosticMessage('Failed at ../cache/x.dzi')).toBe('Failed at [url]')
+    expect(sanitizeDiagnosticMessage('Request key=value failed')).toBe('Request [url] failed')
+    expect(sanitizeDiagnosticMessage('line\n\tbreak')).toBe('line break')
+
+    const capped = sanitizeDiagnosticMessage('x'.repeat(MAX_ERROR_MESSAGE_LENGTH + 1))
+    expect(capped).toBe(`${'x'.repeat(MAX_ERROR_MESSAGE_LENGTH - 1)}…`)
+    expect(capped).toHaveLength(MAX_ERROR_MESSAGE_LENGTH)
+
+    expect(sanitizeDiagnosticMessage(42)).toBeUndefined()
+    expect(sanitizeDiagnosticMessage(null)).toBeUndefined()
+    expect(sanitizeDiagnosticMessage('')).toBeUndefined()
+    expect(sanitizeDiagnosticMessage(' \n\t ')).toBeUndefined()
+    expect(sanitizeDiagnosticMessage('Malformed DZI descriptor')).toBe('Malformed DZI descriptor')
+  })
+
+  it('sends sanitized frontend error messages without changing deduplication', async () => {
+    const { emitFrontendError } = await import('../src/observability')
+
+    emitFrontendError({
+      action: 'image_viewer_open',
+      error: 'image_viewer',
+      errorCode: 'image_viewer_open_failed',
+      message: 'Unable to load TileSource: https://hriv.example/tiles/x.dzi?token=secret',
+      imageId: 7,
+    })
+    emitFrontendError({
+      action: 'image_viewer_open',
+      error: 'image_viewer',
+      errorCode: 'image_viewer_open_failed',
+      message: 'A different message',
+      imageId: 7,
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'frontend.error',
+      error_message: 'Unable to load TileSource: [url]',
+    })
+  })
+
+  it('omits diagnostic messages that are empty after sanitization', async () => {
+    const { emitEvent } = await import('../src/observability')
+
+    emitEvent({ event: 'image.view.failed', error_message: ' \n\t ' })
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events[0]).not.toHaveProperty('error_message')
+  })
+
   it('emits a session-start event only once per tab session', async () => {
     const { emitSessionStartedOnce } = await import('../src/observability')
 

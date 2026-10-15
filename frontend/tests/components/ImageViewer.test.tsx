@@ -953,8 +953,18 @@ describe('ImageViewer lifecycle telemetry', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 150))
     })
     expect(apiMocks.fetchImage).not.toHaveBeenCalled()
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'image.view.failed',
+        error_message: 'Malformed DZI descriptor',
+      }),
+    )
     expect(observabilityMocks.emitFrontendError).toHaveBeenCalledWith(
-      expect.objectContaining({ errorCode: 'image_viewer_open_failed', imageId: 7 }),
+      expect.objectContaining({
+        errorCode: 'image_viewer_open_failed',
+        imageId: 7,
+        message: 'Malformed DZI descriptor',
+      }),
     )
     expect(onError).toHaveBeenCalledWith(
       'This image could not be loaded. It may have been removed or you may not have access to it.',

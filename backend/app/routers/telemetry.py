@@ -90,6 +90,11 @@ _ALLOWED_EVENTS = frozenset({
 # or larger client batches will be rejected wholesale with a 422.
 _MAX_EVENTS_PER_REQUEST = 10
 _MAX_ATTRIBUTE_LENGTH = 1000
+_MAX_ERROR_MESSAGE_LENGTH = 256
+
+_ERROR_MESSAGE_EVENTS = frozenset({"frontend.error", "image.view.failed"})
+_ERROR_MESSAGE_WHITESPACE_RE = re.compile(r"[\s\x00-\x1f\x7f]+")
+_ERROR_MESSAGE_URL_PATH_RE = re.compile(r"\S*(?:://|[?=])\S*|(?<!\S)\.{0,2}/\S*")
 
 # Bounded allowlists for client-environment buckets. Anything outside these
 # sets is coerced to "other" so metrics/dashboards stay low-cardinality and a
@@ -125,6 +130,25 @@ _ERROR_CODES = frozenset({
     "window_runtime_error",
     "other",
 })
+
+
+def _sanitize_error_message(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    normalized = _ERROR_MESSAGE_WHITESPACE_RE.sub(" ", value).strip()
+    if not normalized:
+        return None
+
+    redacted = _ERROR_MESSAGE_URL_PATH_RE.sub("[url]", normalized)
+    if not redacted:
+        return None
+
+    return (
+        redacted[: _MAX_ERROR_MESSAGE_LENGTH - 1] + "…"
+        if len(redacted) > _MAX_ERROR_MESSAGE_LENGTH
+        else redacted
+    )
 
 
 def _bounded(value: str | None, allowed: frozenset[str]) -> str | None:
@@ -178,6 +202,7 @@ class TelemetryEvent(BaseModel):
     duration_ms: float | None = None
     error: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     error_code: str | None = Field(None, max_length=64)
+    error_message: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     action: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     page: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     from_page: str | None = Field(None, max_length=32)
@@ -354,6 +379,10 @@ async def ingest_telemetry_events(
         error_code = _bounded(event.error_code, _ERROR_CODES)
         if error_code is not None:
             extra["error.code"] = error_code
+        if event.event in _ERROR_MESSAGE_EVENTS:
+            error_message = _sanitize_error_message(event.error_message)
+            if error_message is not None:
+                extra["error.message"] = error_message
         if event.image_id is not None:
             extra["image.id"] = event.image_id
             image_name = image_names.get(event.image_id)
