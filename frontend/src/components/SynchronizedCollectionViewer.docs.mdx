@@ -43,12 +43,12 @@ Two to four read-only OpenSeadragon panes for `synchronized` collections, mounte
 `collection.viewport_state` maps `"<image_id>"` to `{ zoom, x, y, rotation }` — each pane's
 absolute position. Entries that don't match the shape are ignored.
 
-- **Save view** (editors only) writes every pane's current viewport through
+- **Set as default view** (editors only) writes every pane's current viewport through
   `PUT /api/collections/{id}/viewport` (whole-replace, optimistic-concurrency `version`), so the
   saved layout restores exactly on reload and through `?collection={id}` share links. Saving
   doesn't move the viewer — the response's refreshed tile sources re-open each pane but
   `ImageViewer` carries the live viewport across the reopen (#1567).
-- **Restore view** (everyone) re-applies the saved positions then re-arms the baselines; it is
+- **Restore default view** (everyone) re-applies the saved positions then re-arms the baselines; it is
   disabled until a view has been saved for a rendered pane (#1567).
 - Non-editors receive the saved view on load and may pan/zoom freely without persisting anything.
 

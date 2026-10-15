@@ -1446,7 +1446,7 @@ detaches one pane's navigation entirely (it neither leads nor follows),
 and re-linking re-captures the baselines at the current positions (it does
 not snap the pane back to where it left).
 
-**Persisted view.** **Save view** (editors only,
+**Persisted view.** **Set as default view** (#1610; editors only,
 `permissions.can_edit`) writes every pane's current viewport as
 `{ "<image_id>": {zoom, x, y, rotation} }` through
 `useCollectionsData.saveViewport` → `PUT …/viewport` (whole-replace +
@@ -1456,7 +1456,7 @@ not snap the pane back to where it left).
 consume each other's version. The save stays put — a tile-source refresh
 from the response re-opens the pyramid but preserves the live viewport
 (`ImageViewer` snapshots it before `open`, same as the token-renewal
-path). **Restore view** (everyone) re-applies the saved
+path). **Restore default view** (everyone) re-applies the saved
 positions and re-arms the baselines; it is disabled until a viewport has
 been saved for at least one rendered pane (#1567). Saved entries that do
 not match the shape are ignored by
@@ -1718,8 +1718,8 @@ the shared group-chip palette.
   directions, no write-back/oscillation, leader→followers mirroring and
   per-pane offsets for three/four panes, per-pane link toggles (default
   linked, unlinked leader/follower detachment, re-link re-arms at current
-  positions), Save view payload for all panes, Restore gated on a saved
-  view, portrait
+  positions), Set as default view payload for all panes, restore gated on
+  a saved view, portrait
   hint, `< 2`
   fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
   slide-up, editor-only Save;
