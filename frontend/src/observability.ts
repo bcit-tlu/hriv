@@ -31,6 +31,9 @@ export const TELEMETRY_SCHEMA_VERSION = 2
 
 export const MAX_ERROR_MESSAGE_LENGTH = 256
 
+const DIAGNOSTIC_ATTRIBUTE_RE =
+  /^[("'\x5b]?(?:TileSize|Overlap|Format|Width|Height)=[A-Za-z0-9]{1,16}[)"'\x5d,;.:]?$/i
+
 /**
  * Event names currently accepted by the authenticated backend ingestion
  * endpoint. Keep this in lockstep with `backend/app/routers/telemetry.py`.
@@ -274,7 +277,7 @@ export function sanitizeDiagnosticMessage(raw: unknown): string | undefined {
 
   const redacted = normalized.replace(
     /\S*(?::\/\/|[?=])\S*|(?<![^\s"'(\x5b<{:,])\.{0,2}\/\S*/g,
-    '[url]',
+    (token) => (DIAGNOSTIC_ATTRIBUTE_RE.test(token) ? token : '[url]'),
   )
   if (!redacted) return undefined
 

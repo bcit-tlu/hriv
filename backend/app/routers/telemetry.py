@@ -94,6 +94,10 @@ _MAX_ERROR_MESSAGE_LENGTH = 256
 
 _ERROR_MESSAGE_EVENTS = frozenset({"frontend.error", "image.view.failed"})
 _ERROR_MESSAGE_WHITESPACE_RE = re.compile(r"[\s\x00-\x1f\x7f]+")
+_ERROR_MESSAGE_ATTRIBUTE_RE = re.compile(
+    r"""[("'\[]?(?:TileSize|Overlap|Format|Width|Height)=[A-Za-z0-9]{1,16}[)"'\],;.:]?""",
+    re.IGNORECASE,
+)
 _ERROR_MESSAGE_URL_PATH_RE = re.compile(
     r"""\S*(?::\/\/|[?=])\S*|(?<![^\s"'(\[<{:,])\.{0,2}\/\S*"""
 )
@@ -142,7 +146,14 @@ def _sanitize_error_message(value: str | None) -> str | None:
     if not normalized:
         return None
 
-    redacted = _ERROR_MESSAGE_URL_PATH_RE.sub("[url]", normalized)
+    redacted = _ERROR_MESSAGE_URL_PATH_RE.sub(
+        lambda match: (
+            match.group(0)
+            if _ERROR_MESSAGE_ATTRIBUTE_RE.fullmatch(match.group(0))
+            else "[url]"
+        ),
+        normalized,
+    )
     if not redacted:
         return None
 

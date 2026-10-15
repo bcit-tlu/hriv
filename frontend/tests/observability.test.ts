@@ -286,6 +286,22 @@ describe('observability', () => {
     expect(sanitizeDiagnosticMessage('HTTP/1.1 error and/or image/jpeg')).toBe(
       'HTTP/1.1 error and/or image/jpeg',
     )
+    expect(sanitizeDiagnosticMessage('Malformed DZI: TileSize=0 Overlap=2')).toBe(
+      'Malformed DZI: TileSize=0 Overlap=2',
+    )
+    expect(sanitizeDiagnosticMessage('Bad descriptor (Format=webp)')).toBe(
+      'Bad descriptor (Format=webp)',
+    )
+    expect(sanitizeDiagnosticMessage('Size Width=1024, Height=768.')).toBe(
+      'Size Width=1024, Height=768.',
+    )
+    expect(sanitizeDiagnosticMessage('tilesize=256')).toBe('tilesize=256')
+    expect(sanitizeDiagnosticMessage('user_id=123')).toBe('[url]')
+    expect(sanitizeDiagnosticMessage('tile_token=abcdef')).toBe('[url]')
+    expect(sanitizeDiagnosticMessage('TileSize=0&tile_token=abc')).toBe('[url]')
+    expect(sanitizeDiagnosticMessage('TileSize=0?tile_token=abc')).toBe('[url]')
+    expect(sanitizeDiagnosticMessage('Width=')).toBe('[url]')
+    expect(sanitizeDiagnosticMessage(`TileSize=${'1'.repeat(17)}`)).toBe('[url]')
     expect(sanitizeDiagnosticMessage('Request key=value failed')).toBe('Request [url] failed')
     expect(sanitizeDiagnosticMessage('line\n\tbreak')).toBe('line break')
 

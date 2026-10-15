@@ -70,6 +70,20 @@ def _allow_rate_limit():
         ("Failed (https://h/a.dzi?tile_token=abc)", "Failed [url]"),
         ("HTTP/1.1 error and/or image/jpeg", "HTTP/1.1 error and/or image/jpeg"),
         ("Malformed DZI descriptor", "Malformed DZI descriptor"),
+        (
+            "Malformed DZI: TileSize=0 Overlap=2",
+            "Malformed DZI: TileSize=0 Overlap=2",
+        ),
+        ("Bad descriptor (Format=webp)", "Bad descriptor (Format=webp)"),
+        ("Size Width=1024, Height=768.", "Size Width=1024, Height=768."),
+        ("tilesize=256", "tilesize=256"),
+        ("user_id=123", "[url]"),
+        ("tile_token=abcdef", "[url]"),
+        ("TileSize=0&tile_token=abc", "[url]"),
+        ("TileSize=0?tile_token=abc", "[url]"),
+        ("Width=", "[url]"),
+        ("TileSize=" + "1" * 17, "[url]"),
+        ("Request key=value failed", "Request [url] failed"),
     ],
 )
 def test_sanitize_error_message_redacts_paths_after_opening_punctuation(
