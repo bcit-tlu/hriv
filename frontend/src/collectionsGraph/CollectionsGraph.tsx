@@ -744,7 +744,7 @@ function TooltipBody({
           {node.category.label}
         </Typography>
         <Typography variant="caption" color="text.secondary" display="block">
-          {node.category.path}
+          {categoryTooltipLine(node.category)}
         </Typography>
         <Typography variant="caption" color="text.secondary" display="block">
           {node.category.image_count} {node.category.image_count === 1 ? 'image' : 'images'}
@@ -756,6 +756,15 @@ function TooltipBody({
     )
   }
   return null
+}
+
+/**
+ * Second tooltip line for a category: the full path for nested categories,
+ * "Top-level category" when path === label (a root has no ancestors, so the
+ * path would just repeat the name).
+ */
+export function categoryTooltipLine(category: { label: string; path: string }): string {
+  return category.path === category.label ? 'Top-level category' : category.path
 }
 
 /** "shares N images with M collections" for a collection tooltip. */

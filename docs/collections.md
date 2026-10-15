@@ -752,7 +752,9 @@ Invalid stored values fall back to defaults:
   on `model.view`. Collection clicks open the collection; image clicks
   fetch the record (`GET /api/images/{id}`) and take the normal `?image=`
   viewer path; category clicks navigate to the category's Browse page;
-  hub clicks are inert. The bottom-left legend
+  hub clicks are inert. Category tooltips show the full path — top-level
+  categories read "Top-level category" instead of repeating their name.
+  The bottom-left legend
   is always open (#1656): a "Node size reflects image count" subtitle
   under the **Legend** caption, then rows for the hub, sequence and
   synchronized collections, images, shared images (order ≥ 2) and

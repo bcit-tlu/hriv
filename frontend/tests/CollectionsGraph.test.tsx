@@ -292,6 +292,35 @@ describe('CollectionsGraph', () => {
     expect(second).toHaveBeenCalledWith(7)
   })
 
+  it('labels top-level category tooltips instead of repeating the name', () => {
+    const p3: ApiCollectionsGraph = {
+      order: 3,
+      collections: PAYLOAD.collections,
+      images: [],
+      categories: [
+        { id: 7, label: 'Bones', path: 'Bones', image_count: 1 },
+        { id: 8, label: 'Femur', path: 'Bones › Femur', image_count: 1 },
+      ],
+    }
+    const m = buildGraphModel(p3, new Set([1, 2]), false)
+    render(
+      <CollectionsGraph
+        model={m}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        simulate={false}
+      />,
+    )
+    const findSpy = vi.spyOn(GraphRenderer.prototype, 'findNode')
+    findSpy.mockReturnValue(m.nodes.find((n) => n.kind === 'category' && n.id === 7)!)
+    fireEvent.mouseMove(canvas())
+    expect(screen.getByTestId('graph-tooltip')).toHaveTextContent('Top-level category')
+    expect(screen.getByTestId('graph-tooltip')).not.toHaveTextContent('Bones › Bones')
+    findSpy.mockReturnValue(m.nodes.find((n) => n.kind === 'category' && n.id === 8)!)
+    fireEvent.mouseMove(canvas())
+    expect(screen.getByTestId('graph-tooltip')).toHaveTextContent('Bones › Femur')
+  })
+
   it('does nothing when the click lands on empty space', () => {
     const { onOpenCollection, onOpenImage } = renderGraph()
     vi.spyOn(GraphRenderer.prototype, 'findNode').mockReturnValue(null)
