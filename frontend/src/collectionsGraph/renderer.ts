@@ -36,7 +36,7 @@ const LABEL_MIN_PX = 12
 /** Cap so fully zoomed-in (k=24) labels stay readable rather than huge. */
 const LABEL_MAX_PX = 26
 /** Base sizes at k=1; scale by √k like node radii. */
-const LABEL_BASE_PX = { collection: 12, image: 12, category: 12, hub: 12 } as const
+const LABEL_BASE_PX = { collection: 12, image: 12, category: 12, hub: 14 } as const
 export function labelPx(base: number, k: number): number {
   return Math.max(LABEL_MIN_PX, Math.min(LABEL_MAX_PX, base * Math.sqrt(k)))
 }

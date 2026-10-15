@@ -412,8 +412,8 @@ describe('GraphRenderer hub label placement', () => {
     const hub = drawn.find((d) => d.lbl === 'A very long collection name')!
     expect(hub.align).toBe('right')
     expect(hub.x).toBe(783)
-    // baseline = sy + hfs/3 = 300 + 12/3
-    expect(hub.y).toBe(300 + 12 / 3)
+    // baseline = sy + hfs/3 = 300 + 14/3
+    expect(hub.y).toBe(300 + 14 / 3)
   })
 
   it('keeps the label on the right when it fits there', () => {
