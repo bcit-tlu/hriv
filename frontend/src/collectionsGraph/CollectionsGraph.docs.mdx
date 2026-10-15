@@ -61,6 +61,6 @@ collection-page graph dialog (#1630) reuses this component with a different mode
   the simulation; category nodes are never hidden.
 - Node clicks: collections call `onOpenCollection`, images call `onOpenImage(imageId)` — the
   page fetches the record and takes the normal `?image={id}` viewer path; hub and category
-  clicks are inert.
+  clicks navigate to the category's Browse page via `onOpenCategory`; hub clicks are inert.
 
 <Stories />

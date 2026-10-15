@@ -732,8 +732,9 @@ Invalid stored values fall back to defaults:
   (U without a collection)" at 3rd order, where U counts category nodes
   with no image edge — the isolated "not yet transitioned" nodes. Physics,
   rendering and interaction port the locked prototype design (#1627):
-  collection radius follows a floored log curve 6→14 (categories 7→16,
-  flat past 64 images; the page hub is r=20, and the Graph View dialog hub
+  collection radius follows a floored log curve 6→14 (categories share the
+  collection curve, flat past 64 images; the page hub is r=20, and the
+  Graph View dialog hub
   is sized on the same scale with its label falling beside the node when
   it does not fit inside, #1653), synchronized
   collections are filled primary-light with no ring, shared images share
@@ -750,7 +751,8 @@ Invalid stored values fall back to defaults:
   round-trips because positions live on the model and the transform rides
   on `model.view`. Collection clicks open the collection; image clicks
   fetch the record (`GET /api/images/{id}`) and take the normal `?image=`
-  viewer path; hub and category clicks are inert. The bottom-left legend
+  viewer path; category clicks navigate to the category's Browse page;
+  hub clicks are inert. The bottom-left legend
   is always open (#1656): a "Node size reflects image count" subtitle
   under the **Legend** caption, then rows for the hub, sequence and
   synchronized collections, images, shared images (order ≥ 2) and

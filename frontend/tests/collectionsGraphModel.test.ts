@@ -211,8 +211,9 @@ describe('collectionRadius', () => {
 })
 
 describe('categoryRadius', () => {
-  it('is the same curve shifted up: 7 → 16', () => {
-    expect(categoryRadius(0)).toBe(7)
-    expect(categoryRadius(64)).toBe(16)
+  it('shares the collection curve so sizes compare across kinds', () => {
+    expect(categoryRadius(0)).toBe(6)
+    expect(categoryRadius(64)).toBe(14)
+    expect(categoryRadius(10)).toBe(collectionRadius(10))
   })
 })

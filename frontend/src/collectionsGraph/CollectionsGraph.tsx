@@ -35,6 +35,8 @@ export interface CollectionsGraphProps {
   onOpenCollection: (id: number) => void
   /** Opens the image viewer for an image id (#1629). */
   onOpenImage?: (imageId: number) => void
+  /** Opens the Browse page for a category node — mirrors image/collection clicks. */
+  onOpenCategory?: (categoryId: number) => void
   /** Active search text — matching collections stay lit, others dim. */
   searchQuery?: string
   /** Page-level matcher for the shared search filter. */
@@ -89,6 +91,7 @@ export default function CollectionsGraph({
   model,
   onOpenCollection,
   onOpenImage,
+  onOpenCategory,
   searchQuery = '',
   matchesSearch,
   filterActive = false,
@@ -311,6 +314,8 @@ export default function CollectionsGraph({
         onOpenCollection(nd.id)
       } else if (nd.kind === 'image' && onOpenImage) {
         onOpenImage(nd.id)
+      } else if (nd.kind === 'category' && onOpenCategory) {
+        onOpenCategory(nd.id)
       }
     }
     canvas.addEventListener('mousemove', onMove)

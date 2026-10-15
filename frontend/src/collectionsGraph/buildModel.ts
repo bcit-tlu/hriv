@@ -34,9 +34,13 @@ export function collectionRadius(imageCount: number): number {
   return scaledRadius(imageCount, 6, 14)
 }
 
-/** Category node radius: 7 → 16 (same curve, slightly larger — they are sparse). */
+/**
+ * Category node radius: same curve as collections so sizes compare
+ * across kinds — a small category must never look bigger than a larger
+ * collection.
+ */
 export function categoryRadius(imageCount: number): number {
-  return scaledRadius(imageCount, 7, 16)
+  return scaledRadius(imageCount, 6, 14)
 }
 
 /**

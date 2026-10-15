@@ -255,6 +255,27 @@ describe('CollectionGraphDialog', () => {
     expect(screen.getByTestId('collection-graph-crumbs')).not.toHaveTextContent('Pelvis set')
   })
 
+  it('category click closes the dialog and navigates via onOpenCategory', async () => {
+    const p3: ApiCollectionGraph = {
+      order: 3,
+      collection: collNode(1, 'Skull atlas'),
+      images: [{ id: 10, name: 'Skull atlas Image 1', collection_ids: [1], category_id: 7 }],
+      related_collections: [],
+      categories: [{ id: 7, label: 'Bones', path: 'Bones', image_count: 1 }],
+    }
+    const onOpenCategory = vi.fn()
+    const fetchGraph = vi.fn<FetchGraph>().mockResolvedValue(p3)
+    const { props } = renderDialog(fetchGraph, { onOpenCategory })
+    await waitFor(() => expect(fetchGraph).toHaveBeenCalled())
+
+    spyFind((n) => n.kind === 'category' && n.id === 7)
+    await waitFor(() => {
+      fireEvent.click(screen.getByTestId('collections-graph-canvas'))
+      expect(onOpenCategory).toHaveBeenCalledWith(7)
+    })
+    expect(props.onClose).toHaveBeenCalled()
+  })
+
   it('image click closes the dialog and opens the image via the page handler', async () => {
     const fetchGraph = vi.fn<FetchGraph>().mockResolvedValue(PAYLOAD1)
     const { props } = renderDialog(fetchGraph)
