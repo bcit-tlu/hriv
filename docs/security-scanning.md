@@ -97,6 +97,10 @@ peers cannot follow yet. Each ignore has a comment naming the blocker; when it
 clears, delete the ignore and take the bump as a co-ordinated PR (all peers
 together) rather than via single-package Dependabot PRs.
 
+The restore-validation `kubernetes` Python client is also held at its current
+major: each client major targets one Kubernetes minor, and the clusters stay on
+Kubernetes 1.35. Drop the ignore and bump the client by hand when they upgrade.
+
 Checklist when merging one:
 
 - **Runtime Python/npm dependency changed?** `dependabot-licenses.yaml`
