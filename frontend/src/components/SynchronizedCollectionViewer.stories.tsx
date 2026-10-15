@@ -174,7 +174,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Two to four read-only OpenSeadragon panes with linked pan/zoom/rotation (side-by-side for a pair, 2×2 grid for three or four). A persisted per-image viewport restores the layout around different highlights; editors can save the current alignment, anyone can reset the views or unpin a pane to navigate it independently, and a portrait overlay asks users to rotate instead of unmounting the viewers.',
+          'Two to four read-only OpenSeadragon panes with linked pan/zoom/rotation (side-by-side for a pair, 2×2 grid for three or four). A persisted per-image viewport restores the layout around different highlights; editors can set the current alignment as the default view, anyone can restore the default view or unpin a pane to navigate it independently, and a portrait overlay asks users to rotate instead of unmounting the viewers.',
       },
     },
   },

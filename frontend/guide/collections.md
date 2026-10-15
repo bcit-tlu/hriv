@@ -36,16 +36,17 @@ with annotations and measurement markings visible on each.
   others — panes start linked. Click it to unlink a pane and adjust it on
   its own (the icon switches to link-off); click again to re-link, which
   keeps the new relative positions.
-- **Restore view** returns every pane to the saved view. It stays
-  unavailable until someone has saved a view for the collection.
+- **Restore default view** returns every pane to the default view. It
+  stays unavailable until someone has set a default view for the
+  collection.
 - On a phone held upright the panes are replaced by a hint to rotate to
   landscape — your view is still there when you rotate back.
 
-::: tip Saving the view
-If you can edit the collection, a **Save view** button stores every pane's
-current position for everyone — next time the collection opens, it lands
-exactly there. Anyone can pan and zoom freely; only saving changes what
-others see. Use the saved positions to line the images up around
+::: tip Setting the default view
+If you can edit the collection, a **Set as default view** button stores
+every pane's current position as the default for everyone — next time
+the collection opens, it lands exactly there. Anyone can pan and zoom
+freely; only setting the default changes what others see. Use the saved positions to line the images up around
 different highlights.
 :::
 
