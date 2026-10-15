@@ -567,6 +567,15 @@ vi.mock('../src/components/ImageViewer', () => ({
         >
           Enter canvas edit
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setInternalEditMode(false)
+            onCanvasEditModeChange?.(false)
+          }}
+        >
+          Exit canvas edit
+        </button>
         <button type="button" onClick={() => onCanvasAnnotationsChange?.([])}>
           Change canvas annotations
         </button>
@@ -1713,6 +1722,47 @@ describe('App image details drawer', () => {
       expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
     })
     expect(screen.getByRole('button', { name: 'Image details' })).toBeDisabled()
+  })
+
+  it('stays closed when returning to the same image after leaving it', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    // Leave the image via browser back, then reopen the same image.
+    act(() => {
+      popStateHandler!('browse', [], null)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    expect(screen.getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('button', { name: 'Close image details' })).not.toBeInTheDocument()
+  })
+
+  it('stays closed when canvas edit mode exits', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exit canvas edit' }))
+
+    expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
   })
 })
 

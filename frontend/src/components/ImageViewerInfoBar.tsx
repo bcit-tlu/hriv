@@ -23,7 +23,7 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
       >
         <strong>{label}</strong>
       </Typography>
-      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+      <Box sx={{ flex: 1, minWidth: 0, typography: 'body2' }}>{children}</Box>
     </Box>
   )
 }

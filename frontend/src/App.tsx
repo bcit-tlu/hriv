@@ -317,14 +317,21 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
-  // "Image details" drawer open state, keyed by image id so it resets on every
-  // image change without an effect. `canvasEditActive` forces it closed in the
-  // derived `imageDetailsOpen` below.
-  const [imageDetailsOpenFor, setImageDetailsOpenFor] = useState<number | null>(null)
+  // "Image details" drawer open state; closed on every image change
+  // (including leave -> return to the same image) and on canvas edit entry.
+  const [imageDetailsOpen, setImageDetailsOpen] = useState(false)
+  const [imageDetailsImageId, setImageDetailsImageId] = useState<number | null>(null)
+  const currentImageId = selectedImage?.id ?? null
+  if (currentImageId !== imageDetailsImageId) {
+    // React "adjust state when a prop changes" pattern: closes on every image
+    // change, including leaving and coming back to the same image.
+    setImageDetailsImageId(currentImageId)
+    setImageDetailsOpen(false)
+  }
   const imageSourceInfo = useImageSourceInfo(
     selectedImage?.id ?? null,
     selectedImage?.version ?? 0,
-    selectedImage != null && imageDetailsOpenFor === selectedImage.id,
+    imageDetailsOpen,
   )
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
@@ -883,9 +890,6 @@ export default function App() {
 
   // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
   const [canvasEditActive, setCanvasEditActive] = useState(false)
-  // The drawer closes while canvas edit mode is active (it would cover the edit toolbar).
-  const imageDetailsOpen =
-    selectedImage != null && imageDetailsOpenFor === selectedImage.id && !canvasEditActive
   const canvasDraftDirtyRef = useRef(false)
   const canvasSavingRef = useRef(false)
   const pendingPopStateRef = useRef<{
@@ -2847,7 +2851,10 @@ export default function App() {
                   onCanvasAnnotationsChange={handleCanvasAnnotationsChangeForViewer}
                   onSaveCanvasAnnotations={handleSaveCanvasAnnotations}
                   canvasDraftDirty={canvasDraftDirty}
-                  onCanvasEditModeChange={setCanvasEditActive}
+                  onCanvasEditModeChange={(active) => {
+                    setCanvasEditActive(active)
+                    if (active) setImageDetailsOpen(false)
+                  }}
                   viewportOverlay={
                     <ImageDetailsDrawer
                       image={selectedImage}
@@ -2861,9 +2868,7 @@ export default function App() {
                       measurement={selectedImageMeasurement}
                       sourceInfo={imageSourceInfo}
                       open={imageDetailsOpen}
-                      onOpenChange={(next) =>
-                        setImageDetailsOpenFor(next ? selectedImage.id : null)
-                      }
+                      onOpenChange={setImageDetailsOpen}
                       disabled={canvasEditActive}
                     />
                   }
