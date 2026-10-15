@@ -185,10 +185,12 @@ export default function ImageViewer({
     }
   }, [])
   useEffect(() => {
-    if (viewerMountReady) return
+    const canClaimFullScreenHandoff =
+      fullScreenHandoffKey != null && pendingFullScreenHandoff === fullScreenHandoffKey
+    if (viewerMountReady || canClaimFullScreenHandoff) return
     const timer = window.setTimeout(() => setViewerMountReady(true), 0)
     return () => window.clearTimeout(timer)
-  }, [viewerMountReady])
+  }, [fullScreenHandoffKey, viewerMountReady])
 
   useEffect(() => {
     imageIdRef.current = imageId
@@ -430,7 +432,8 @@ export default function ImageViewer({
   useEffect(() => {
     homeViewportAtLastSettledStateRef.current = null
     const handoffKey = fullScreenHandoffKeyRef.current
-    if (!viewerMountReady || !containerRef.current) return
+    const canClaimFullScreenHandoff = handoffKey != null && pendingFullScreenHandoff === handoffKey
+    if ((!viewerMountReady && !canClaimFullScreenHandoff) || !containerRef.current) return
 
     const initialTileSources = getCurrentTileSources()
     tileSourcesRef.current = initialTileSources
