@@ -505,3 +505,108 @@ describe('GraphRenderer label zoom scaling', () => {
     expect(drawFont(zoomIdentity.scale(4))).toBe('24px Roboto,Arial')
   })
 })
+
+describe('GraphRenderer shared-image ring', () => {
+  const palette = paletteFrom('light', getThemePalette('light'))
+
+  // Recording ctx: captures each arc() with the strokeStyle/lineWidth in
+  // effect — both are set before beginPath, so the arc-time values are the
+  // stroke-time values for the batch.
+  function recordingCtx() {
+    const arcs: { x: number; y: number; r: number; strokeStyle: string; lineWidth: number }[] = []
+    const state: { strokeStyle: string; lineWidth: number } = {
+      strokeStyle: '',
+      lineWidth: 1,
+    }
+    const ctx = new Proxy(state, {
+      get(t, prop) {
+        if (prop === 'measureText') return () => ({ width: 10 })
+        if (prop === 'arc')
+          return (x: number, y: number, r: number) =>
+            arcs.push({ x, y, r, strokeStyle: t.strokeStyle, lineWidth: t.lineWidth })
+        if (prop in t) return t[prop as keyof typeof t]
+        return () => undefined
+      },
+      set(t, prop, v) {
+        ;(t as Record<string | symbol, unknown>)[prop] = v
+        return true
+      },
+    })
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, arcs }
+  }
+
+  const SHARED = { x: 30, y: 30 }
+  const PLAIN = { x: -30, y: -30 }
+  const model = {
+    nodes: [
+      { i: 0, kind: 'hub' as const, id: Number.NaN, label: 'Hub', r: 4, x: 0, y: 0 },
+      { i: 1, kind: 'collection' as const, id: 2, label: 'Coll 2', r: 6, x: 50, y: 50 },
+      {
+        i: 2,
+        kind: 'image' as const,
+        id: 10,
+        label: 'shared',
+        r: 4,
+        x: SHARED.x,
+        y: SHARED.y,
+        shared: true,
+        imageCollectionIds: [2, 3],
+      },
+      {
+        i: 3,
+        kind: 'image' as const,
+        id: 11,
+        label: 'plain',
+        r: 4,
+        x: PLAIN.x,
+        y: PLAIN.y,
+        shared: false,
+        imageCollectionIds: [2],
+      },
+    ],
+    edges: [],
+    stats: {
+      collections: 1,
+      images: 2,
+      shared: 1,
+      categories: 0,
+      unconnectedCategories: 0,
+      order: 1,
+    },
+  }
+
+  function drawArcs(t: ReturnType<typeof zoomIdentity.scale>) {
+    const { ctx, arcs } = recordingCtx()
+    const canvas = {
+      getContext: () => ctx,
+      clientWidth: 800,
+      clientHeight: 600,
+    } as unknown as HTMLCanvasElement
+    const r = new GraphRenderer(canvas, model, palette)
+    r.draw({
+      transform: t,
+      hover: null,
+      selected: null,
+      selectedId: null,
+      searchDim: new Set(),
+      searchMatch: new Set(),
+      searchActive: false,
+    })
+    return arcs.filter((a) => a.strokeStyle === palette.imageSharedStroke)
+  }
+
+  it.each([1, 4])('draws an inset ring only under the shared image at k=%i', (k) => {
+    const ringArcs = drawArcs(zoomIdentity.scale(k))
+    const lw = 8 / 6 / Math.sqrt(k)
+
+    // (a) shared image: inset ring, outer edge coincides with the fill edge.
+    const shared = ringArcs.filter((a) => a.x === SHARED.x && a.y === SHARED.y)
+    expect(shared).toHaveLength(1)
+    expect(shared[0].r).toBeCloseTo(4 / Math.sqrt(k) - lw / 2, 5)
+    expect(shared[0].r + shared[0].lineWidth / 2).toBeCloseTo(4 / Math.sqrt(k), 5)
+    expect(shared[0].lineWidth).toBeCloseTo(lw, 5)
+
+    // (b) plain image: no arc under the shared-stroke style at all.
+    expect(ringArcs.filter((a) => a.x === PLAIN.x && a.y === PLAIN.y)).toHaveLength(0)
+  })
+})
