@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
-import Paper from '@mui/material/Paper'
 import Popover from '@mui/material/Popover'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
@@ -19,8 +18,14 @@ export interface ImageViewerInfoBarProps {
 interface InfoCellProps {
   label: string
   children: ReactNode
-  /** Preserve newlines (notes) in both the clamp and the popover. */
+  /** Preserve newlines (notes) in the popover body. */
   preWrap?: boolean
+  /**
+   * What the popover shows; defaults to `children`. The note cell flattens
+   * newlines for the clamp so "…more" sits right after the cut-off text,
+   * while the popover keeps the original `pre-wrap` text.
+   */
+  fullContent?: ReactNode
   /** Accessible name for the "more" link (the visible text is just "more"). */
   moreAriaLabel: string
 }
@@ -31,7 +36,7 @@ interface InfoCellProps {
  * second line opens a Popover with the full content (body-portaled — the bar
  * lives outside OSD).
  */
-function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellProps) {
+function InfoCell({ label, children, preWrap = false, fullContent, moreAriaLabel }: InfoCellProps) {
   const [cellEl, setCellEl] = useState<HTMLDivElement | null>(null)
   const valueRef = useRef<HTMLDivElement>(null)
   const [overflowing, setOverflowing] = useState(false)
@@ -40,7 +45,16 @@ function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellP
   useLayoutEffect(() => {
     const el = valueRef.current
     if (!el) return
-    const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1)
+    const measure = () => {
+      setOverflowing(el.scrollHeight > el.clientHeight + 1)
+      // Links clipped below the fold of the clamp must leave the tab order.
+      // Their offsetParent is this Box (it is position: relative).
+      for (const node of el.querySelectorAll<HTMLElement>('a[href], button')) {
+        if (node.hasAttribute('data-info-more')) continue
+        if (node.offsetTop >= el.clientHeight) node.setAttribute('tabindex', '-1')
+        else node.removeAttribute('tabindex')
+      }
+    }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measure)
@@ -73,7 +87,8 @@ function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellP
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-            ...(preWrap ? { whiteSpace: 'pre-wrap' } : {}),
+            // Long unbroken strings wrap so the clamp — and "…more" — engage.
+            overflowWrap: 'anywhere',
           }}
         >
           {children}
@@ -86,7 +101,7 @@ function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellP
                 position: 'absolute',
                 right: 0,
                 bottom: 0,
-                bgcolor: 'background.paper',
+                bgcolor: 'background.default',
                 pl: 0.5,
                 typography: 'body2',
               }}
@@ -97,6 +112,7 @@ function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellP
                 type="button"
                 variant="body2"
                 underline="hover"
+                data-info-more
                 aria-label={moreAriaLabel}
                 aria-haspopup="dialog"
                 aria-expanded={popoverOpen}
@@ -129,10 +145,11 @@ function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellP
             sx={{
               typography: 'body2',
               color: 'text.secondary',
+              overflowWrap: 'anywhere',
               ...(preWrap ? { whiteSpace: 'pre-wrap' } : {}),
             }}
           >
-            {children}
+            {fullContent ?? children}
           </Box>
         </Box>
       </Popover>
@@ -144,8 +161,9 @@ function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellP
  * Always-visible info row below the regular image viewer (#1677): Notes and
  * Collections side by side at `md`+ in a 3fr 2fr split (notes get priority; a
  * lone cell spans the full width), stacking below `md`. Each value is clamped
- * to two lines with an "…more" popover for the full content. Renders nothing when both are absent — the
- * viewer instructions now live in the ImageDetailsDrawer footer.
+ * to two lines with an "…more" popover for the full content. Renders nothing
+ * when both are absent — the viewer instructions now live in the
+ * ImageDetailsDrawer footer. No background: the bar sits directly on the page.
  */
 export default function ImageViewerInfoBar({
   imageId,
@@ -157,16 +175,12 @@ export default function ImageViewerInfoBar({
   if (!hasNote && !hasCollections) return null
 
   return (
-    <Paper
-      variant="outlined"
+    <Box
       data-testid="image-viewer-info-bar"
       sx={{
         mt: 2,
-        borderRadius: 2,
-        bgcolor: 'background.paper',
         flexShrink: 0,
-        px: 2,
-        py: 1.5,
+        py: 1,
         display: { xs: 'flex', md: 'grid' },
         flexDirection: 'column',
         gap: { xs: 1.5, md: 0 },
@@ -175,8 +189,14 @@ export default function ImageViewerInfoBar({
       }}
     >
       {hasNote && (
-        <InfoCell key={`note-${imageId}`} label="Note:" preWrap moreAriaLabel="Show full note">
-          {note}
+        <InfoCell
+          key={`note-${imageId}`}
+          label="Notes:"
+          preWrap
+          fullContent={note}
+          moreAriaLabel="Show full note"
+        >
+          {note.replace(/\s*\n\s*/g, ' ')}
         </InfoCell>
       )}
       {hasCollections && (
@@ -188,6 +208,6 @@ export default function ImageViewerInfoBar({
           {collections}
         </InfoCell>
       )}
-    </Paper>
+    </Box>
   )
 }

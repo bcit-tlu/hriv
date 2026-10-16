@@ -49,7 +49,7 @@ describe('ImageViewerInfoBar', () => {
       />,
     )
 
-    expect(screen.getByText('Note:', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('Notes:', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('Handle with care')).toBeInTheDocument()
     expect(screen.getByText('Collections:', { exact: true })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skull comparison' })).toBeInTheDocument()
@@ -58,11 +58,11 @@ describe('ImageViewerInfoBar', () => {
 
   it('renders a single cell when only one kind of content is present', () => {
     const { rerender } = render(<ImageViewerInfoBar imageId={7} note="A note" />)
-    expect(screen.getByText('Note:', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('Notes:', { exact: true })).toBeInTheDocument()
     expect(screen.queryByText('Collections:', { exact: true })).not.toBeInTheDocument()
 
     rerender(<ImageViewerInfoBar imageId={7} collections={collections(['One'])} />)
-    expect(screen.queryByText('Note:', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('Notes:', { exact: true })).not.toBeInTheDocument()
     expect(screen.getByText('Collections:', { exact: true })).toBeInTheDocument()
   })
 
@@ -81,7 +81,7 @@ describe('ImageViewerInfoBar', () => {
     )
 
     for (const [label, value] of [
-      ['Note:', screen.getByText('A note')],
+      ['Notes:', screen.getByText('A note')],
       ['Collections:', screen.getByTestId('collections-slot')],
     ] as const) {
       const labelEl = screen.getByText(label, { exact: true })
@@ -108,12 +108,19 @@ describe('ImageViewerInfoBar', () => {
 
     const popover = screen.getByRole('presentation')
     expect(showMore).toHaveAttribute('aria-expanded', 'true')
-    expect(within(popover).getByText('Note')).toBeInTheDocument()
+    expect(within(popover).getByText('Notes')).toBeInTheDocument()
     expect(within(popover).getByText(/First line/)).toBeInTheDocument()
+
+    // The clamped cell flattens newlines; the popover keeps them.
+    const bar = screen.getByTestId('image-viewer-info-bar')
+    const cell = within(bar).getByText(/First line Second line/)
+    expect(cell.textContent).toContain('First line Second line Third line Fourth line')
+    const popoverBody = within(popover).getByText(/First line/)
+    expect(popoverBody.textContent).toContain('First line\nSecond line\nThird line\nFourth line')
 
     fireEvent.keyDown(popover, { key: 'Escape' })
     await waitFor(() => {
-      expect(screen.queryByText('Note', { selector: 'h3' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Notes', { selector: 'h3' })).not.toBeInTheDocument()
     })
   })
 
@@ -142,6 +149,47 @@ describe('ImageViewerInfoBar', () => {
     const popover = screen.getByRole('presentation')
     for (const name of ['One', 'Two', 'Three', 'Four']) {
       expect(within(popover).getByRole('button', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('removes clipped collection links from the tab order', () => {
+    stubOverflow()
+    // Fake the geometry: links past the 40px clamp get offsetTop 50.
+    const tops: Record<string, number> = { Three: 50, Four: 50 }
+    const originalOffsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop')
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
+      configurable: true,
+      get() {
+        return tops[this.textContent ?? ''] ?? 0
+      },
+    })
+    try {
+      render(
+        <ImageViewerInfoBar
+          imageId={7}
+          collections={
+            <ImageCollectionsList
+              collections={['One', 'Two', 'Three', 'Four'].map((name, i) => ({
+                id: i + 1,
+                name,
+              }))}
+              limit={4}
+              onOpenCollection={() => {}}
+            />
+          }
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'One' })).not.toHaveAttribute('tabindex')
+      expect(screen.getByRole('button', { name: 'Two' })).not.toHaveAttribute('tabindex')
+      expect(screen.getByRole('button', { name: 'Three' })).toHaveAttribute('tabindex', '-1')
+      expect(screen.getByRole('button', { name: 'Four' })).toHaveAttribute('tabindex', '-1')
+    } finally {
+      if (originalOffsetTop) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetTop', originalOffsetTop)
+      } else {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)['offsetTop']
+      }
     }
   })
 

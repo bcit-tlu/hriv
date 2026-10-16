@@ -127,9 +127,11 @@ images> / Empty` format used on category tiles.
   Modified, Dimensions, Size, Measurement, Original file, File type, and (for
   admins and instructors) Uploaded by. Empty fields are omitted; "No details
   available." shows when none render. The field list is the only scroll
-  region; the viewer instructions sit in a footer pinned to the bottom of
-  the drawer and wrap without widening the panel. The panel does not contain
-  notes or collections.
+  region; the viewer instructions (one paragraph per sentence) sit under a
+  "Viewer controls" heading in a footer pinned to the bottom of the drawer
+  and wrap without widening the panel. Created and Modified show
+  the long-form date (e.g. "October 15, 2026"); their `title` keeps the
+  exact timestamp. The panel does not contain notes or collections.
 - **When** the drawer opens, **Then** focus moves to its close button; it
   closes via the ✕ button, the "i" button, or Escape, returning focus to the
   trigger. It does not close on viewport clicks, so users can keep panning.
@@ -141,8 +143,8 @@ images> / Empty` format used on category tiles.
   returning to the same image (no persisted preference). In canvas edit mode
   the "i" button is disabled and an open drawer closes; it stays closed when
   edit mode exits.
-- The info bar shows Notes and Collections rows with their label to the left
-  (the Collections label is always plural). At `md` and up the two cells sit
+- The info bar is a plain row (no background) showing Notes and Collections
+  cells with their label to the left (both labels are plural). At `md` and up the two cells sit
   side by side in a 60/40 split favouring the note (`3fr 2fr`); a lone cell
   spans the full width, below `md` they stack, and
   when both are absent the bar renders nothing. Each value is clamped to two

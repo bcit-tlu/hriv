@@ -1550,19 +1550,19 @@ describe('App breadcrumbs', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
       fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
-      expect(screen.getByText('Note', { selector: 'h3' })).toBeInTheDocument()
+      expect(screen.getByText('Notes', { selector: 'h3' })).toBeInTheDocument()
 
       // The popover is a modal; close it before interacting with the page.
       fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' })
       await waitFor(() => {
-        expect(screen.queryByText('Note', { selector: 'h3' })).not.toBeInTheDocument()
+        expect(screen.queryByText('Notes', { selector: 'h3' })).not.toBeInTheDocument()
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
 
       // The second image's cell still overflows and offers its own popover.
       expect(screen.getByRole('button', { name: 'Show full note' })).toBeInTheDocument()
-      expect(screen.queryByText('Note', { selector: 'h3' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Notes', { selector: 'h3' })).not.toBeInTheDocument()
     } finally {
       if (originalScrollHeight) {
         Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)

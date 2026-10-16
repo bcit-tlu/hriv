@@ -30,7 +30,8 @@ const meta = {
   } satisfies Partial<ImageViewerInfoBarProps>,
   decorators: [
     (Story) => (
-      <Box sx={{ width: 1100, maxWidth: '100%' }}>
+      // The bar has no background of its own — match the app's page surface.
+      <Box sx={{ width: 1100, maxWidth: '100%', bgcolor: 'background.default', p: 1 }}>
         <Story />
       </Box>
     ),
@@ -66,7 +67,7 @@ export const LongNote: Story = {
     const showMore = canvas.getByRole('button', { name: 'Show full note' })
     await userEvent.click(showMore)
     const popover = await within(document.body).findByRole('presentation')
-    await expect(within(popover).getByText('Note')).toBeInTheDocument()
+    await expect(within(popover).getByText('Notes')).toBeInTheDocument()
     await expect(within(popover).getByText(/stained-glass windows/)).toBeInTheDocument()
   },
 }

@@ -24,9 +24,9 @@ export interface ImageDetailsDrawerProps {
   disabled?: boolean
 }
 
-function DetailField({ label, value }: { label: string; value: string }) {
+function DetailField({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <Typography variant="body2" color="text.secondary" noWrap title={`${label} ${value}`}>
+    <Typography variant="body2" color="text.secondary" noWrap title={title ?? `${label} ${value}`}>
       <strong>{label}</strong> {value}
     </Typography>
   )
@@ -55,7 +55,7 @@ export default function ImageDetailsDrawer({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  const fields: { label: string; value: string }[] = []
+  const fields: { label: string; value: string; title?: string }[] = []
   if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
   if (programNames.length > 0)
     fields.push({
@@ -67,10 +67,27 @@ export default function ImageDetailsDrawer({
       label: `Group${groupNames.length > 1 ? 's' : ''}:`,
       value: groupNames.join(', '),
     })
+  // Dates show the long-form date; the native title keeps the exact timestamp.
   if (image.createdAt)
-    fields.push({ label: 'Created:', value: new Date(image.createdAt).toLocaleString() })
+    fields.push({
+      label: 'Created:',
+      value: new Date(image.createdAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+      title: `Created: ${new Date(image.createdAt).toLocaleString()}`,
+    })
   if (image.updatedAt)
-    fields.push({ label: 'Modified:', value: new Date(image.updatedAt).toLocaleString() })
+    fields.push({
+      label: 'Modified:',
+      value: new Date(image.updatedAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+      title: `Modified: ${new Date(image.updatedAt).toLocaleString()}`,
+    })
   if (image.width != null && image.height != null)
     fields.push({ label: 'Dimensions:', value: `${image.width} × ${image.height}` })
   if (image.fileSize != null) fields.push({ label: 'Size:', value: formatFileSize(image.fileSize) })
@@ -185,7 +202,12 @@ export default function ImageDetailsDrawer({
                 </Typography>
               ) : (
                 fields.map((field) => (
-                  <DetailField key={field.label} label={field.label} value={field.value} />
+                  <DetailField
+                    key={field.label}
+                    label={field.label}
+                    value={field.value}
+                    title={field.title}
+                  />
                 ))
               )}
             </Stack>
@@ -202,9 +224,17 @@ export default function ImageDetailsDrawer({
               contain: 'inline-size',
             }}
           >
+            <Typography variant="subtitle2" component="h3" sx={{ mb: 0.5 }}>
+              Viewer controls
+            </Typography>
             <Typography variant="body2" color="text.secondary">
-              Scroll or tap to zoom, and drag to move/pan. Buttons in the bottom left control the
-              view. The mini-map in the bottom-right shows your current view.
+              Scroll or tap to zoom, and drag to move/pan.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Buttons in the bottom left control the view.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              The mini-map in the bottom-right shows your current view.
             </Typography>
           </Box>
         </Paper>

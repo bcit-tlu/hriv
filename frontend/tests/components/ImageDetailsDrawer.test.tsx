@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import ImageDetailsDrawer, {
   type ImageDetailsDrawerProps,
@@ -81,8 +81,16 @@ describe('ImageDetailsDrawer', () => {
     expectField('Copyright:', '© Museum archive')
     expectField('Programs:', 'Fine Art, History')
     expectField('Group:', 'Curators')
-    expect(screen.getByText('Created:', { exact: true })).toBeInTheDocument()
-    expect(screen.getByText('Modified:', { exact: true })).toBeInTheDocument()
+    for (const [label, iso] of [
+      ['Created:', populatedProps.image.createdAt],
+      ['Modified:', populatedProps.image.updatedAt],
+    ] as const) {
+      const field = screen.getByText(label, { exact: true }).parentElement as HTMLElement
+      expect(field).toHaveTextContent(
+        `${label} ${new Date(iso as string).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`,
+      )
+      expect(field).toHaveAttribute('title', `${label} ${new Date(iso as string).toLocaleString()}`)
+    }
     expectField('Dimensions:', '2400 × 1600')
     expectField('Size:', '1.5 KB')
     expectField('Measurement:', '4 px/mm')
@@ -177,9 +185,13 @@ describe('ImageDetailsDrawer', () => {
     const panel = document.getElementById('image-details-drawer') as HTMLElement
     expect(panel).not.toHaveTextContent('Note:')
     expect(panel).not.toHaveTextContent('Collections:')
-    expect(panel).toHaveTextContent(
-      'Scroll or tap to zoom, and drag to move/pan. Buttons in the bottom left control the view. The mini-map in the bottom-right shows your current view.',
-    )
+    for (const sentence of [
+      'Scroll or tap to zoom, and drag to move/pan.',
+      'Buttons in the bottom left control the view.',
+      'The mini-map in the bottom-right shows your current view.',
+    ]) {
+      expect(panel).toHaveTextContent(sentence)
+    }
   })
 
   it('pins the instructions footer outside the scrolling field list', async () => {
@@ -192,6 +204,11 @@ describe('ImageDetailsDrawer', () => {
     const scrollRegion = field.parentElement?.parentElement as HTMLElement
     expect(scrollRegion).toContainElement(field)
     expect(scrollRegion).not.toContainElement(instructions)
+
+    // The footer carries a "Viewer controls" heading above the instructions.
+    const footer = instructions.parentElement as HTMLElement
+    expect(within(footer).getByRole('heading', { name: 'Viewer controls' })).toBeInTheDocument()
+    expect(scrollRegion).not.toContainElement(footer)
   })
 
   it('closes via the ✕ button and returns focus to the trigger', async () => {
