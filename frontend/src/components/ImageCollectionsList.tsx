@@ -3,6 +3,8 @@ import type { MouseEvent } from 'react'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 
 export interface ImageCollectionsListItem {
   id: number
@@ -116,8 +118,12 @@ export interface FittedCollectionsProps {
  *
  * Fit is measured with an `aria-hidden` clone of plain text spans (nothing
  * focusable) laid out off-screen: label + names + the worst-case suffix are
- * summed against the cell's `clientWidth`. In environments with no layout
- * (jsdom, zero widths) every name is shown, so behaviour stays accessible.
+ * summed against the space the cell may take — 30% of the caption row at
+ * `md` and up, the full row below `md`. Measuring against the row (the
+ * cell's parent) rather than the cell keeps the fit independent of the
+ * content shown, so it re-grows when the row widens. In environments with no
+ * layout (jsdom, zero widths) every name is shown, so behaviour stays
+ * accessible.
  */
 export function FittedCollections({
   collections,
@@ -129,6 +135,8 @@ export function FittedCollections({
   const cellRef = useRef<HTMLDivElement | null>(null)
   const cloneRef = useRef<HTMLDivElement | null>(null)
   const [fitCount, setFitCount] = useState(collections.length)
+  const theme = useTheme()
+  const isMdUp = useMediaQuery(theme.breakpoints.up('md'))
   const n = collections.length
   const suffixText = `… + ${n} more`
 
@@ -136,8 +144,10 @@ export function FittedCollections({
     const cell = cellRef.current
     const clone = cloneRef.current
     if (!cell || !clone) return
+    // The row is the ImageCaptionRow root — the cell's flex parent.
+    const row = cell.parentElement ?? cell
     const measure = () => {
-      const available = cell.clientWidth
+      const available = isMdUp ? row.clientWidth * 0.3 : row.clientWidth
       const spans = [...clone.querySelectorAll<HTMLElement>('span')]
       const widths = spans.map((s) => s.getBoundingClientRect().width)
       // No layout (jsdom, hidden) — show everything.
@@ -150,22 +160,25 @@ export function FittedCollections({
       const nameWidths = rest.slice(0, n)
       const suffixWidth = rest[n] ?? 0
       const namesWidth = (k: number) => nameWidths.slice(0, k).reduce((a, w) => a + w, 0)
-      if (labelWidth + namesWidth(n) <= available) {
+      // The flex gaps between label ↔ names and names ↔ suffix count too.
+      const gapPx = parseFloat(window.getComputedStyle(cell).columnGap) || 0
+      if (labelWidth + gapPx + namesWidth(n) <= available) {
         setFitCount(n)
         return
       }
       // Largest prefix whose names + label + suffix fit; at least one name
       // always shows (it ellipsizes when it cannot fit).
       let k = 1
-      while (k < n && labelWidth + namesWidth(k + 1) + suffixWidth <= available) k += 1
+      while (k < n && labelWidth + gapPx + namesWidth(k + 1) + gapPx + suffixWidth <= available)
+        k += 1
       setFitCount(k)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(measure)
-    ro.observe(cell)
+    ro.observe(row)
     return () => ro.disconnect()
-  }, [n, collections])
+  }, [n, collections, isMdUp])
 
   if (n === 0) return null
 
@@ -187,6 +200,8 @@ export function FittedCollections({
         whiteSpace: 'nowrap',
         justifyContent: { xs: 'flex-start', md: 'flex-end' },
         position: 'relative',
+        // Safety net: never render wider than the 30% cap.
+        overflow: 'hidden',
       }}
     >
       <Typography
@@ -197,7 +212,20 @@ export function FittedCollections({
       >
         Collections:
       </Typography>
-      <Typography color="text.secondary" component="span" variant="body2" sx={{ minWidth: 0 }}>
+      {/* Names shrink inside this box; the suffix sits outside it so it can
+          never be clipped by the cell's overflow net. */}
+      <Typography
+        color="text.secondary"
+        component="span"
+        variant="body2"
+        sx={{
+          minWidth: 0,
+          flex: '0 1 auto',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
         {shown.map((collection, index) => {
           const href = hrefForCollection?.(collection.id)
           const linkProps = href ? { href } : ({ component: 'button', type: 'button' } as const)
@@ -233,24 +261,29 @@ export function FittedCollections({
             </Fragment>
           )
         })}
-        {hiddenCount > 0 && (
-          <>
-            {' … '}
-            <Link
-              component="button"
-              type="button"
-              underline="hover"
-              variant="body2"
-              aria-label={`Show all ${n} collections`}
-              aria-haspopup="dialog"
-              aria-expanded={dialogOpen}
-              onClick={onShowCollections}
-            >
-              {`+ ${hiddenCount} more`}
-            </Link>
-          </>
-        )}
       </Typography>
+      {hiddenCount > 0 && (
+        <Typography
+          color="text.secondary"
+          component="span"
+          variant="body2"
+          sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+        >
+          {' … '}
+          <Link
+            component="button"
+            type="button"
+            underline="hover"
+            variant="body2"
+            aria-label={`Show all ${n} collections`}
+            aria-haspopup="dialog"
+            aria-expanded={dialogOpen}
+            onClick={onShowCollections}
+          >
+            {`+ ${hiddenCount} more`}
+          </Link>
+        </Typography>
+      )}
       {/* Off-screen clone used to measure name/suffix widths: plain spans,
           nothing focusable. */}
       <Box

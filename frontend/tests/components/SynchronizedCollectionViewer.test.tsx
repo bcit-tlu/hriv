@@ -945,20 +945,25 @@ describe('caption note', () => {
     HTMLElement.prototype,
     'clientHeight',
   )
+  const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth')
+  const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+  // The caption clamp is 1 line: it overflows horizontally (scrollWidth).
   function stubOverflow() {
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 500,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get: () => 100,
-    })
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-      configurable: true,
-      get: () => 40,
     })
   }
   afterEach(() => {
     for (const [prop, descriptor] of [
       ['scrollHeight', originalScrollHeight],
       ['clientHeight', originalClientHeight],
+      ['scrollWidth', originalScrollWidth],
+      ['clientWidth', originalClientWidth],
     ] as const) {
       if (descriptor) {
         Object.defineProperty(HTMLElement.prototype, prop, descriptor)

@@ -1527,22 +1527,23 @@ describe('App breadcrumbs', () => {
     mockImage.note = 'A'.repeat(350)
     mockSecondImage.note = 'B'.repeat(350)
     currentImagesMock = [mockImage, mockSecondImage]
-    // jsdom can't measure line clamping, so force the overflow detection on.
-    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    // jsdom can't measure line clamping, so force the 1-line clamp's
+    // horizontal overflow detection on.
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
-      'scrollHeight',
+      'scrollWidth',
     )
-    const originalClientHeight = Object.getOwnPropertyDescriptor(
+    const originalClientWidth = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
-      'clientHeight',
+      'clientWidth',
     )
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 500,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get: () => 100,
-    })
-    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-      configurable: true,
-      get: () => 40,
     })
 
     try {
@@ -1564,11 +1565,11 @@ describe('App breadcrumbs', () => {
       expect(screen.getByRole('button', { name: 'Show full note' })).toBeInTheDocument()
       expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
     } finally {
-      if (originalScrollHeight) {
-        Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)
+      if (originalScrollWidth) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth)
       }
-      if (originalClientHeight) {
-        Object.defineProperty(HTMLElement.prototype, 'clientHeight', originalClientHeight)
+      if (originalClientWidth) {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
       }
     }
   })

@@ -28,15 +28,18 @@ export interface ViewportDialogProps {
  */
 export default function ViewportDialog({ open, title, onClose, children }: ViewportDialogProps) {
   const closeRef = useRef<HTMLButtonElement | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const lastFocusedRef = useRef<Element | null>(null)
   const titleId = 'viewport-dialog-title'
 
   // Track the last element that held focus anywhere in the document — the
   // element focused when the dialog opens is the one to restore to on close.
   // (A listener records it before TrapFocus moves focus into the dialog;
-  // recording activeElement in the open effect would be too late.)
+  // recording activeElement in the open effect would be too late.) Focus
+  // landing inside the dialog is skipped — that element unmounts with it.
   useEffect(() => {
     const record = () => {
+      if (rootRef.current?.contains(document.activeElement)) return
       lastFocusedRef.current = document.activeElement
     }
     document.addEventListener('focusin', record)
@@ -57,6 +60,7 @@ export default function ViewportDialog({ open, title, onClose, children }: Viewp
   return (
     <Fade in={open} mountOnEnter unmountOnExit>
       <Box
+        ref={rootRef}
         role="presentation"
         data-hriv-canvas-ui
         onClick={(e) => {

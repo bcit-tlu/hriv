@@ -36,17 +36,22 @@ export default function ClampedContent({
 }: ClampedContentProps) {
   const [clampEl, setClampEl] = useState<HTMLDivElement | null>(null)
   const [overflowing, setOverflowing] = useState(false)
+  const singleLine = lines === 1
 
   useLayoutEffect(() => {
     const el = clampEl
     if (!el) return
     const measure = () => {
-      setOverflowing(el.scrollHeight > el.clientHeight + 1)
+      // A 1-line clamp is a nowrap ellipsis: it overflows horizontally.
+      setOverflowing(
+        singleLine ? el.scrollWidth > el.clientWidth + 1 : el.scrollHeight > el.clientHeight + 1,
+      )
       // Links clipped below the fold of the clamp must leave the tab order.
       // getClientRects() gives one rect per line fragment, so a link that
       // wraps stays tabbable while part of it is visible. An empty list
       // (jsdom) means we can't measure, so the node stays tabbable too.
-      const fold = el.getBoundingClientRect().top + el.clientHeight
+      const elRect = el.getBoundingClientRect()
+      const fold = elRect.top + el.clientHeight
       const overlay = el.querySelector('[data-info-more]')?.parentElement
       const overlayRect = overlay?.getBoundingClientRect()
       for (const node of el.querySelectorAll<HTMLElement>('a[href], button')) {
@@ -57,6 +62,8 @@ export default function ClampedContent({
           fragments.every(
             (f) =>
               f.top >= fold ||
+              // Past the right edge of a 1-line clamp.
+              f.left >= elRect.right ||
               // Covered by the "…more" overlay on the last visible line.
               (overlayRect != null && f.right > overlayRect.left && f.bottom > overlayRect.top),
           )
@@ -70,7 +77,7 @@ export default function ClampedContent({
     ro.observe(el)
     return () => ro.disconnect()
     // `overflowing` is a dep so measure re-runs once the overlay renders.
-  }, [children, overflowing, clampEl])
+  }, [children, overflowing, clampEl, singleLine])
 
   return (
     <Box
@@ -80,12 +87,19 @@ export default function ClampedContent({
           typography: 'body2',
           color: 'text.secondary',
           position: 'relative',
-          display: '-webkit-box',
-          WebkitLineClamp: lines,
-          WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
-          // Long unbroken strings wrap so the clamp — and "…more" — engage.
-          overflowWrap: 'anywhere',
+          // One line clamps with a nowrap ellipsis that reaches the right
+          // edge — where the "…more" overlay sits — instead of the native
+          // line-clamp ellipsis, which lands mid-text.
+          ...(singleLine
+            ? { display: 'block', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }
+            : {
+                display: '-webkit-box',
+                WebkitLineClamp: lines,
+                WebkitBoxOrient: 'vertical',
+                // Long unbroken strings wrap so the clamp — and "…more" — engage.
+                overflowWrap: 'anywhere',
+              }),
         },
         ...(Array.isArray(sx) ? sx : [sx]),
       ]}

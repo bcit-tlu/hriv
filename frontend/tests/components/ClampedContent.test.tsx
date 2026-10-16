@@ -14,6 +14,8 @@ const defaultProps = {
 
 const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
 const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth')
+const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
 
 /** Fake vertical overflow: every element measures 100 tall inside a 40 box. */
 function stubOverflow() {
@@ -27,11 +29,25 @@ function stubOverflow() {
   })
 }
 
+/** Fake horizontal overflow: every element measures 500 wide inside 100. */
+function stubHorizontalOverflow() {
+  Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+    configurable: true,
+    get: () => 500,
+  })
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get: () => 100,
+  })
+}
+
 afterEach(() => {
   vi.clearAllMocks()
   for (const [prop, descriptor] of [
     ['scrollHeight', originalScrollHeight],
     ['clientHeight', originalClientHeight],
+    ['scrollWidth', originalScrollWidth],
+    ['clientWidth', originalClientWidth],
   ] as const) {
     if (descriptor) {
       Object.defineProperty(HTMLElement.prototype, prop, descriptor)
@@ -76,6 +92,19 @@ describe('ClampedContent', () => {
     expect(more).toHaveAttribute('aria-haspopup', 'dialog')
     fireEvent.click(more)
     expect(onMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses a nowrap ellipsis on one line and detects horizontal overflow', () => {
+    stubHorizontalOverflow()
+    render(
+      <ClampedContent {...defaultProps} lines={1}>
+        Long content
+      </ClampedContent>,
+    )
+    const box = screen.getByText('Long content')
+    expect(box).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' })
+    expect(box).not.toHaveStyle({ display: '-webkit-box' })
+    expect(screen.getByRole('button', { name: 'Show full note' })).toBeInTheDocument()
   })
 
   it('reflects the caller dialog state on the link', () => {

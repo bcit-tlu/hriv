@@ -37,36 +37,37 @@ describe('ViewportDialog', () => {
   })
 
   it('focuses the close button on open and restores focus on close', () => {
-    const { rerender, unmount } = render(
+    const onClose = vi.fn()
+    const tree = (open: boolean) => (
       <div>
         <button>Opener</button>
-        <ViewportDialog open={false} title="Notes" onClose={vi.fn()}>
+        <ViewportDialog open={open} title="Notes" onClose={onClose}>
           <div>Body</div>
         </ViewportDialog>
-      </div>,
+      </div>
     )
+    const { rerender, unmount } = render(tree(false))
     const opener = screen.getByRole('button', { name: 'Opener' })
     opener.focus()
 
-    rerender(
-      <div>
-        <button>Opener</button>
-        <ViewportDialog open={true} title="Notes" onClose={vi.fn()}>
-          <div>Body</div>
-        </ViewportDialog>
-      </div>,
-    )
+    rerender(tree(true))
     expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
 
-    rerender(
-      <div>
-        <button>Opener</button>
-        <ViewportDialog open={false} title="Notes" onClose={vi.fn()}>
-          <div>Body</div>
-        </ViewportDialog>
-      </div>,
-    )
-    expect(document.activeElement).toBe(opener)
+    // Focus moving inside the dialog (as Tab would) must not be recorded —
+    // that element unmounts with the dialog.
+    const scrollBody = screen.getByRole('dialog').querySelector<HTMLElement>('[tabindex="0"]')
+    scrollBody?.focus()
+
+    // Closing with the ✕ restores focus to the trigger.
+    rerender(tree(false))
+    expect(opener).toHaveFocus()
+
+    // Reopening and closing with Escape restores it again.
+    rerender(tree(true))
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    rerender(tree(false))
+    expect(opener).toHaveFocus()
     unmount()
   })
 

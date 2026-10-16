@@ -80,8 +80,9 @@ const meta = {
   } satisfies Partial<ImageViewerInfoBarProps>,
   decorators: [
     (Story) => (
-      // The bar has no background of its own — match the app's page surface.
-      <Box sx={{ width: 1100, maxWidth: '100%', bgcolor: 'background.default', p: 1 }}>
+      // The bar has no background of its own — match the app's page surface
+      // and let the row span the full container like the viewer Paper does.
+      <Box sx={{ bgcolor: 'background.default', p: 1 }}>
         <Story />
       </Box>
     ),
