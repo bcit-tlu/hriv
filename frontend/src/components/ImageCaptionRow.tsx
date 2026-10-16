@@ -53,7 +53,7 @@ export default function ImageCaptionRow({
         title={name}
         sx={
           noteText !== ''
-            ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%' }
+            ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%', mr: 4 }
             : { flex: 1, minWidth: 0 }
         }
       >

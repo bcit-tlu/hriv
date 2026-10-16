@@ -237,15 +237,24 @@ export default function ImageDetailsDrawer({
             >
               Viewer controls
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Scroll or tap to zoom, and drag to move/pan.
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Buttons in the bottom left control the view.
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              The mini-map in the bottom-right shows your current view.
-            </Typography>
+            <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+              {[
+                'Scroll or tap to zoom',
+                'Drag to move/pan',
+                'Bottom left buttons control view',
+                'Bottom right mini-map shows current view',
+              ].map((item) => (
+                <Typography
+                  key={item}
+                  component="li"
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ '& + li': { mt: 0.5 } }}
+                >
+                  {item}
+                </Typography>
+              ))}
+            </Box>
           </Box>
         </Paper>
       </Slide>

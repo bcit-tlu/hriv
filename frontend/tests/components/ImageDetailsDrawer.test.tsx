@@ -185,13 +185,17 @@ describe('ImageDetailsDrawer', () => {
     const panel = document.getElementById('image-details-drawer') as HTMLElement
     expect(panel).not.toHaveTextContent('Note:')
     expect(panel).not.toHaveTextContent('Collections:')
-    for (const sentence of [
-      'Scroll or tap to zoom, and drag to move/pan.',
-      'Buttons in the bottom left control the view.',
-      'The mini-map in the bottom-right shows your current view.',
-    ]) {
-      expect(panel).toHaveTextContent(sentence)
-    }
+    const list = within(screen.getByRole('region', { name: 'Viewer controls' })).getByRole('list')
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual([
+      'Scroll or tap to zoom',
+      'Drag to move/pan',
+      'Bottom left buttons control view',
+      'Bottom right mini-map shows current view',
+    ])
   })
 
   it('pins the instructions footer outside the scrolling field list', async () => {
@@ -206,12 +210,11 @@ describe('ImageDetailsDrawer', () => {
     expect(scrollRegion).not.toContainElement(instructions)
 
     // The footer is its own labelled, scrollable region (short viewports).
-    const footer = instructions.parentElement as HTMLElement
-    expect(footer).toHaveStyle({ overflowY: 'auto' })
     const region = screen.getByRole('region', { name: 'Viewer controls' })
+    expect(region).toHaveStyle({ overflowY: 'auto' })
     expect(region).toContainElement(instructions)
-    expect(within(footer).getByRole('heading', { name: 'Viewer controls' })).toBeInTheDocument()
-    expect(scrollRegion).not.toContainElement(footer)
+    expect(within(region).getByRole('heading', { name: 'Viewer controls' })).toBeInTheDocument()
+    expect(scrollRegion).not.toContainElement(region)
   })
 
   it('closes via the ✕ button and returns focus to the trigger', async () => {

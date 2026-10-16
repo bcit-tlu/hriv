@@ -54,6 +54,23 @@ describe('ImageCaptionRow', () => {
     expect(screen.getByText('Line one. Line two.')).toBeInTheDocument()
   })
 
+  it('widens the gap between the title and the note only when a note shows', () => {
+    const { unmount } = render(
+      <ImageCaptionRow name="Slice A" note="A note" onShowNote={vi.fn()} />,
+    )
+    expect(screen.getByRole('heading', { level: 2 })).toHaveStyle({ marginRight: '32px' })
+    unmount()
+
+    for (const note of [undefined, '', '  \n  ']) {
+      const { unmount: done } = render(
+        <ImageCaptionRow name="Slice A" note={note} onShowNote={vi.fn()} />,
+      )
+      const title = screen.getByRole('heading', { level: 2 })
+      expect(title).not.toHaveStyle({ marginRight: '32px' })
+      done()
+    }
+  })
+
   it('treats a whitespace-only note as absent', () => {
     render(<ImageCaptionRow name="Slice A" note={'  \n  '} onShowNote={vi.fn()} />)
     expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()

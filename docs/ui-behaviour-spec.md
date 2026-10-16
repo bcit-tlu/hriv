@@ -127,7 +127,9 @@ images> / Empty` format used on category tiles.
   Modified, Dimensions, Size, Measurement, Original file, File type, and (for
   admins and instructors) Uploaded by. Empty fields are omitted; "No details
   available." shows when none render. The field list is the only scroll
-  region; the viewer instructions (one paragraph per sentence) sit under a
+  region; the viewer instructions (a bulleted list: "Scroll or tap to
+  zoom", "Drag to move/pan", "Bottom left buttons control view", "Bottom
+  right mini-map shows current view") sit under a
   "Viewer controls" heading in a footer pinned to the bottom of the drawer
   and wrap without widening the panel. Created and Modified show
   the long-form date (e.g. "October 15, 2026"); their `title` keeps the

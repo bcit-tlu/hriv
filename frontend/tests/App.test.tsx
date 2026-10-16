@@ -1724,7 +1724,7 @@ describe('App image details drawer', () => {
     expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
     // The viewer instructions live in the drawer footer.
     const panel = document.getElementById('image-details-drawer') as HTMLElement
-    expect(panel).toHaveTextContent(/Scroll or tap to zoom, and drag to move\/pan/)
+    expect(panel).toHaveTextContent(/Scroll or tap to zoom/)
   })
 
   it('closes the drawer when another image is selected', async () => {
