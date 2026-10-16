@@ -322,10 +322,6 @@ function PositionSlotTile({
             sx={{
               ...slotCornerSx,
               p: 0,
-              bgcolor: 'background.paper',
-              borderRadius: 0.5,
-              border: 1,
-              borderColor: 'divider',
               pointerEvents: 'none',
             }}
           />
@@ -484,10 +480,6 @@ function SortableMemberTile({
             left: 14,
             zIndex: 1,
             p: 0,
-            bgcolor: 'background.paper',
-            borderRadius: 0.5,
-            border: 1,
-            borderColor: 'divider',
             pointerEvents: 'none',
           }}
         />
