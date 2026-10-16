@@ -979,9 +979,13 @@ describe('caption note', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Skull — lateral' })).toBeInTheDocument()
   })
 
-  it('shows the flattened note in the caption row', () => {
+  it('does not render the note inline in the caption row', () => {
     renderViewer({ collection: noted() })
-    expect(screen.getByText('Frontal suture intact. No asymmetry detected.')).toBeInTheDocument()
+    expect(
+      screen.queryByText('Frontal suture intact. No asymmetry detected.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
   })
 
   it('offers no "Show full note" control without a note', () => {
@@ -999,14 +1003,36 @@ describe('caption note', () => {
       }),
     })
     expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Show notes for / })).not.toBeInTheDocument()
     expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+  })
+
+  it('shows a Notes link per pane only when the note is non-blank, and opens its dialog', () => {
+    renderViewer({ collection: noted() })
+
+    // The noted pane gets the link; the blank-note pane does not.
+    const link = screen.getByRole('button', { name: 'Show notes for Skull — frontal' })
+    expect(link).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByRole('button', { name: 'Show notes for Skull — lateral' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.click(link)
+    const dialog = screen.getByRole('dialog', { name: 'Notes' })
+    const viewers = screen.getAllByTestId('image-viewer')
+    const viewer = viewers.find((v) => v.getAttribute('data-image-id') === '1')!
+    expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBe(dialog)
+    expect(link).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('opens the notes dialog inside the matching pane on overflow', () => {
     stubOverflow()
     renderViewer({ collection: noted() })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    // The inline note (and its …more control) is gone even when it would
+    // overflow; the Notes link is the only way into the dialog.
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show notes for Skull — frontal' }))
     // Exactly one dialog opens, inside the noted image's viewer pane.
     const dialog = screen.getByRole('dialog', { name: 'Notes' })
     const viewers = screen.getAllByTestId('image-viewer')

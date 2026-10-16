@@ -1717,7 +1717,7 @@ export default function CanvasOverlay({
                   setRectAnchor(null)
                 }}
                 sx={{
-                  color: activeFillMode === 'outlined' ? '#90caf9' : 'white',
+                  color: 'white',
                   display: 'block',
                 }}
               >
@@ -1731,7 +1731,7 @@ export default function CanvasOverlay({
                   setActiveTool('rect')
                   setRectAnchor(null)
                 }}
-                sx={{ color: activeFillMode === 'filled' ? '#90caf9' : 'white', display: 'block' }}
+                sx={{ color: 'white', display: 'block' }}
               >
                 <Box sx={{ width: 20, height: 20, bgcolor: 'currentColor', borderRadius: '2px' }} />
               </IconButton>
@@ -1769,7 +1769,7 @@ export default function CanvasOverlay({
                   setCircleAnchor(null)
                 }}
                 sx={{
-                  color: activeFillMode === 'outlined' ? '#90caf9' : 'white',
+                  color: 'white',
                   display: 'block',
                 }}
               >
@@ -1783,7 +1783,7 @@ export default function CanvasOverlay({
                   setActiveTool('circle')
                   setCircleAnchor(null)
                 }}
-                sx={{ color: activeFillMode === 'filled' ? '#90caf9' : 'white', display: 'block' }}
+                sx={{ color: 'white', display: 'block' }}
               >
                 <Box sx={{ width: 20, height: 20, bgcolor: 'currentColor', borderRadius: '50%' }} />
               </IconButton>
@@ -1820,7 +1820,7 @@ export default function CanvasOverlay({
                   setActiveTool('arrow')
                   setArrowAnchor(null)
                 }}
-                sx={{ color: activeArrowStyle === 'none' ? '#90caf9' : 'white', display: 'block' }}
+                sx={{ color: 'white', display: 'block' }}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24">
                   <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" />
@@ -1835,7 +1835,7 @@ export default function CanvasOverlay({
                   setArrowAnchor(null)
                 }}
                 sx={{
-                  color: activeArrowStyle === 'standard' ? '#90caf9' : 'white',
+                  color: 'white',
                   display: 'block',
                 }}
               >
@@ -1858,7 +1858,7 @@ export default function CanvasOverlay({
                   setArrowAnchor(null)
                 }}
                 sx={{
-                  color: activeArrowStyle === 'triangle' ? '#90caf9' : 'white',
+                  color: 'white',
                   display: 'block',
                 }}
               >
@@ -1876,7 +1876,7 @@ export default function CanvasOverlay({
                   setArrowAnchor(null)
                 }}
                 sx={{
-                  color: activeArrowStyle === 'circle' ? '#90caf9' : 'white',
+                  color: 'white',
                   display: 'block',
                 }}
               >

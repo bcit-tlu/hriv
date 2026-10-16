@@ -92,6 +92,7 @@ interface MockViewer {
   removeOverlay: ReturnType<typeof vi.fn>
   setMouseNavEnabled: ReturnType<typeof vi.fn>
   isFullPage: ReturnType<typeof vi.fn>
+  fullPageButton: MockButton
   setFullPage: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
@@ -237,6 +238,10 @@ vi.mock('openseadragon', () => {
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
       isFullPage: vi.fn(() => false),
+      fullPageButton: new OSDButton({
+        tooltip: 'Full screen',
+        onClick: () => {},
+      }),
       setFullPage: vi.fn(),
       open: vi.fn(() => {
         if (!viewer.preserveOverlays) activeOverlays.clear()
@@ -750,6 +755,24 @@ describe('ImageViewer lifecycle telemetry', () => {
     )
   })
 
+  it('swaps the full-page button to inward arrows while full screen', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const fpButton = viewer().fullPageButton
+    const img = fpButton.element.querySelector('img') as HTMLImageElement
+
+    expect(img.src).toContain('fullpage_rest.svg')
+
+    viewer().isFullPage.mockReturnValue(true)
+    act(() => viewer().fire('full-page', { fullPage: true }))
+    expect(img.src).toContain('exitfullpage_rest.svg')
+    expect(fpButton.element.title).toBe('Exit full screen')
+
+    viewer().isFullPage.mockReturnValue(false)
+    act(() => viewer().fire('full-page', { fullPage: false }))
+    expect(img.src).toContain('fullpage_rest.svg')
+    expect(fpButton.element.title).toBe('Full screen')
+  })
+
   it('reports viewport state after animations finish', () => {
     const onViewportChange = vi.fn()
     render(<ImageViewer tileSources="/tiles.dzi" onViewportChange={onViewportChange} />)
@@ -1170,11 +1193,11 @@ describe('ImageViewer selection rectangles', () => {
 
     act(() => button.options.onClick())
     expect(viewer().setMouseNavEnabled).toHaveBeenCalledWith(false)
-    expect(button.element.style.outline).toBe('2px solid red')
+    expect(button.element.querySelector('img')?.src).toContain('selection_active_rest.svg')
 
     act(() => button.options.onClick())
     expect(viewer().setMouseNavEnabled).toHaveBeenCalledWith(true)
-    expect(button.element.style.outline).toBe('none')
+    expect(button.element.querySelector('img')?.src).toContain('selection_rest.svg')
   })
 
   it('draws a rectangle and notifies the parent of the overlay set', () => {
@@ -1324,6 +1347,70 @@ describe('ImageViewer selection rectangles', () => {
 
     expect(onClearOverlays).not.toHaveBeenCalled()
   })
+
+  it('hides the clear button until it can be used', () => {
+    const onLockOverlays = vi.fn()
+    const { rerender } = render(
+      <ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={onLockOverlays} />,
+    )
+    const clearWrapper = buttonByTooltip('Clear all selection rectangles').element
+      .parentElement as HTMLElement
+
+    // Hidden before any rectangle exists.
+    expect(clearWrapper.style.display).toBe('none')
+
+    // Visible once a rectangle is drawn.
+    drawRect()
+    expect(clearWrapper.style.display).toBe('inline-block')
+
+    // Hidden again after a clear empties the overlay list.
+    act(() => buttonByTooltip('Clear all selection rectangles').options.onClick())
+    expect(clearWrapper.style.display).toBe('none')
+
+    // Hidden while the overlays are locked.
+    drawRect()
+    expect(clearWrapper.style.display).toBe('inline-block')
+    rerender(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        canEditContent
+        overlaysLocked
+        onLockOverlays={onLockOverlays}
+      />,
+    )
+    expect(clearWrapper.style.display).toBe('none')
+  })
+
+  it('hides the lock button until it can be used', () => {
+    const { rerender } = render(
+      <ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={vi.fn()} />,
+    )
+    const lockWrapper = buttonByTooltip('Lock selection rectangles').element
+      .parentElement as HTMLElement
+
+    // Hidden before any rectangle exists.
+    expect(lockWrapper.style.display).toBe('none')
+
+    // Visible once a rectangle is drawn.
+    drawRect()
+    expect(lockWrapper.style.display).toBe('inline-block')
+
+    // Hidden again after a clear empties the overlay list.
+    act(() => buttonByTooltip('Clear all selection rectangles').options.onClick())
+    expect(lockWrapper.style.display).toBe('none')
+
+    // Visible while the overlays are locked.
+    drawRect()
+    rerender(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        canEditContent
+        overlaysLocked
+        onLockOverlays={vi.fn()}
+      />,
+    )
+    expect(lockWrapper.style.display).toBe('inline-block')
+  })
 })
 
 describe('ImageViewer overlay locking', () => {
@@ -1412,13 +1499,12 @@ describe('ImageViewer canvas edit mode', () => {
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
   })
 
-  it('marks the canvas-edit button active with the standard red outline', () => {
+  it('marks the canvas-edit button active with the solid primary icon', () => {
     render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
     const button = buttonByTooltip('Canvas annotations (add shapes, text, links)')
 
     act(() => button.options.onClick())
-    expect(button.element.style.outline).toBe('2px solid red')
-    expect(button.element.style.outlineOffset).toBe('-2px')
+    expect(button.element.querySelector('img')?.src).toContain('canvas_edit_active_rest.svg')
   })
 })
 

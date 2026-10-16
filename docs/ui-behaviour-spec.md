@@ -234,9 +234,19 @@ images> / Empty` format used on category tiles.
   with the bottom edge of the frame: `ImageViewer` applies
   `vertical-align: bottom` to bottom-dock descendants to counter the
   inline-block baseline strut that otherwise lifts them a few px.
-- The canvas-edit pencil button uses the same state styling as the other OSD
-  toolbar icons: translucent dark rest/hover backgrounds, a red pressed
-  background, and a red `2px` outline while canvas edit mode is active.
+- Active and pressed toolbar buttons show a solid `primary.main` red icon
+  instead of a pressed tint or outline: every `*_pressed` background is solid
+  `primary.main` (#A74A4A), and the selection and canvas-edit toggles swap to
+  dedicated `*_active_*` icon sets (`primary.main` rest, `primary.dark`
+  hover/pressed) while their mode is on. The lock button shows the locked
+  state with the same filled-red scheme (`primary.main` rest, `primary.dark`
+  hover/pressed); the lock and clear-overlays buttons are hidden entirely
+  until unlocked rectangles exist for them to act on (the lock stays
+  visible while locked so it can be unlocked). The fullscreen button swaps
+  to inward `exitfullpage_*` arrows while full-page mode is on. In the
+  canvas toolbar's tool popovers the fill-mode and arrowhead sub-items all
+  render white — the colour swatch border and line-width highlight still
+  show the current values.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:
@@ -671,11 +681,11 @@ measurement metadata.
 
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
-  three or four (each pane captioned with the member name as an `h2`, its
-  note clamped to one line behind a visible **Notes:** label — "…more"
-  opens a **Notes** `ViewportDialog` centered over that pane — and an
-  **Open image** → `?image={id}` action) — and, when more than four are
-  stored, a "Showing _N_ of _M_" note appears.
+  three or four (each pane captioned with the member name as an `h2`, a
+  **Notes** link when the member has a note — it opens a **Notes**
+  `ViewportDialog` centered over that pane; no note text renders inline —
+  and an **Open image** → `?image={id}` action) — and, when more than
+  four are stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other
   pane follows with `immediately=true`, shifted by that pane's offset from
   the armed baseline, and followers never lead the sync (no oscillation).

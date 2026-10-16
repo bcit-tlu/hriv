@@ -344,23 +344,38 @@ async def update_image(
 
             # Optimistic concurrency: if the client sends If-Match, verify the
             # version has not changed since the client last read the resource.
-            # The version check is performed atomically via a single
-            # UPDATE … WHERE version = :client_version statement; the version
-            # is only incremented when the request actually changes data, so
-            # no-op saves do not stale the client's If-Match copy.
+            # When the request changes data the check is performed atomically
+            # via a single UPDATE … WHERE version = :client_version statement;
+            # when it is a no-op the current version is re-read with a plain
+            # SELECT — no UPDATE fires and nothing is expired or refreshed. The
+            # version is only incremented when the request actually changes
+            # data, so no-op saves do not stale the client's If-Match copy,
+            # and a stale If-Match still fails with 409 either way.
             if client_version is not None:
-                new_version = client_version + (1 if is_dirty else 0)
-                cas = await db.execute(
-                    sql_update(Image)
-                    .where(Image.id == image_id, Image.version == client_version)
-                    .values(version=new_version)
-                )
-                if cas.rowcount == 0:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Resource has been modified by another client",
+                if is_dirty:
+                    new_version = client_version + 1
+                    cas = await db.execute(
+                        sql_update(Image)
+                        .where(Image.id == image_id, Image.version == client_version)
+                        .values(version=new_version)
                     )
-                img.version = new_version
+                    if cas.rowcount == 0:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Resource has been modified by another client",
+                        )
+                    img.version = new_version
+                else:
+                    current_version = await db.scalar(
+                        select(Image.version).where(Image.id == image_id)
+                    )
+                    if current_version is None:
+                        raise HTTPException(status_code=404, detail="Image not found")
+                    if current_version != client_version:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Resource has been modified by another client",
+                        )
             elif is_dirty:
                 img.version = img.version + 1
 

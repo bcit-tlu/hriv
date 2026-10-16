@@ -58,8 +58,8 @@ link that opens the full text over the viewer.
 | **Arrows**         | Toggle fullscreen (press `Esc` to exit)                                   |
 | **Curved arrows**  | Rotate the image left / right                                             |
 | **Selection tool** | Draw measurement boxes — see [Measuring](images#measuring-on-an-image)    |
-| **Padlock**        | Lock or unlock the boxes you've drawn                                     |
-| **X**              | Clear all boxes                                                           |
+| **Padlock**        | Lock or unlock the boxes you've drawn (shown only when boxes exist)       |
+| **X**              | Clear all boxes (shown only when boxes exist)                             |
 | **Pencil**         | Open the annotation canvas — see [Annotating](images#annotating-an-image) |
 
 Drag to pan. The **mini-map** in the bottom right shows where you are, and

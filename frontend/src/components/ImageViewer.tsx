@@ -621,6 +621,14 @@ export default function ImageViewer({
 
     // --- Toolbar buttons ---
     const prefix = '/openseadragon-svg-icons/'
+    const suffixes = ['rest', 'grouphover', 'hover', 'pressed']
+    const setButtonIcons = (button: OpenSeadragon.Button, base: string) => {
+      button.element.querySelectorAll('img').forEach((img, i) => {
+        if (i < suffixes.length) {
+          img.src = prefix + base + '_' + suffixes[i] + '.svg'
+        }
+      })
+    }
 
     // --- Clear overlays toolbar button ---
     const clearButton = new OpenSeadragon.Button({
@@ -656,6 +664,7 @@ export default function ImageViewer({
       const locked = overlaysLockedRef.current
       const empty = overlaysRef.current.length === 0
       const disabled = locked || empty
+      clearWrapper.style.display = disabled ? 'none' : 'inline-block'
       clearButton.element.style.opacity = disabled ? '0.3' : '1'
       clearButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
       clearWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'
@@ -677,8 +686,7 @@ export default function ImageViewer({
         selectionModeRef.current = !selectionModeRef.current
         emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
         viewer.setMouseNavEnabled(!selectionModeRef.current)
-        selectionButton.element.style.outline = selectionModeRef.current ? '2px solid red' : 'none'
-        selectionButton.element.style.outlineOffset = selectionModeRef.current ? '-2px' : ''
+        setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
       },
     })
     selectionButton.element.style.lineHeight = '0'
@@ -775,8 +783,7 @@ export default function ImageViewer({
         currentRect = null
         selectionModeRef.current = false
         viewer.setMouseNavEnabled(true)
-        selectionButton.element.style.outline = 'none'
-        selectionButton.element.style.outlineOffset = ''
+        setButtonIcons(selectionButton, 'selection')
       },
     })
 
@@ -805,17 +812,12 @@ export default function ImageViewer({
       const locked = overlaysLockedRef.current
       const empty = overlaysRef.current.length === 0
       const state = locked ? 'lock_closed' : 'lock_open'
-      const imgs = lockButton.element.querySelectorAll('img')
-      const suffixes = ['rest', 'grouphover', 'hover', 'pressed']
-      imgs.forEach((img, i) => {
-        if (i < suffixes.length) {
-          img.src = prefix + state + '_' + suffixes[i] + '.svg'
-        }
-      })
-      lockButton.element.style.outline = locked ? '2px solid red' : 'none'
-      lockButton.element.style.outlineOffset = locked ? '-2px' : ''
+      setButtonIcons(lockButton, state)
+      // The closed-lock icon fills red; no extra outline is needed.
+      lockButton.element.style.outline = 'none'
       // Disable when not locked and no rectangles exist
       const disabled = !locked && empty
+      if (lockWrapper) lockWrapper.style.display = disabled ? 'none' : 'inline-block'
       lockButton.element.style.opacity = disabled ? '0.3' : '1'
       lockButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
       if (lockWrapper) {
@@ -863,11 +865,16 @@ export default function ImageViewer({
       updateLockIcon()
     }
 
-    // Add clear button to toolbar (created above, before selection tracker)
-    updateClearButtonState()
+    // Add clear button to toolbar (created above, before selection tracker).
+    // updateClearButtonState must run AFTER addControl: OSD's ControlDock
+    // sets element.style.display = 'inline-block' on every added control,
+    // which would undo the initial hidden state. Nothing else writes the
+    // element's display later (setControlsEnabled/setVisible only touch the
+    // OSD-created wrapper), so the reorder alone keeps it hidden.
     viewer.addControl(clearWrapper, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
+    updateClearButtonState()
 
     // --- Canvas edit mode toolbar button (visible to admin/instructor) ---
     if (canEditContentRef.current) {
@@ -889,8 +896,7 @@ export default function ImageViewer({
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
           onCanvasEditModeChangeRef.current?.(entering)
-          canvasEditButton.element.style.outline = entering ? '2px solid red' : 'none'
-          canvasEditButton.element.style.outlineOffset = entering ? '-2px' : ''
+          setButtonIcons(canvasEditButton, entering ? 'canvas_edit_active' : 'canvas_edit')
         },
       })
       canvasEditButton.element.style.lineHeight = '0'
@@ -898,10 +904,9 @@ export default function ImageViewer({
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
 
-      // Allow external code (e.g. CanvasOverlay "Done" button) to update the button outline
+      // Allow external code (e.g. CanvasOverlay "Done" button) to update the button state
       updateCanvasEditUiRef.current = (active: boolean) => {
-        canvasEditButton.element.style.outline = active ? '2px solid red' : 'none'
-        canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
+        setButtonIcons(canvasEditButton, active ? 'canvas_edit_active' : 'canvas_edit')
       }
     }
 
@@ -1096,10 +1101,22 @@ export default function ImageViewer({
       emitToolbarAction('home')
       viewer.viewport.setRotation(0)
     })
+    // Swap the fullscreen button between outward and inward arrows.
+    const syncFullPageIcon = () => {
+      const fullPageButton = viewer.fullPageButton
+      if (!fullPageButton) return
+      const fullPage = viewer.isFullPage()
+      setButtonIcons(fullPageButton, fullPage ? 'exitfullpage' : 'fullpage')
+      fullPageButton.element.title = fullPage ? 'Exit full screen' : 'Full screen'
+    }
     viewer.addHandler('full-page', (event) => {
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
+      syncFullPageIcon()
     })
+    // Run once now: a setFullPage(true) from the fullscreen handoff path can
+    // fire 'full-page' before this handler is registered.
+    syncFullPageIcon()
     viewer.addHandler('resize', () => {
       pendingHomeResize = homeViewportAtLastSettledStateRef.current
     })

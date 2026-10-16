@@ -60,6 +60,15 @@ export const LongNote: Story = {
     const more = await canvas.findByRole('button', { name: 'Show full note' })
     await userEvent.click(more)
     await expect(args.onShowNote).toHaveBeenCalled()
+
+    // The …more→end gap matches the title→Notes gap (within 2px).
+    const titleRect = canvas.getByRole('heading', { level: 2 }).getBoundingClientRect()
+    const notesLabel = canvas.getByText('Notes:').getBoundingClientRect()
+    const endFirst = canvas.getByText('2 of 6').getBoundingClientRect()
+    const moreRect = more.getBoundingClientRect()
+    const titleGap = notesLabel.left - titleRect.right
+    const moreGap = endFirst.left - moreRect.right
+    await expect(Math.abs(titleGap - moreGap)).toBeLessThanOrEqual(2)
   },
 }
 

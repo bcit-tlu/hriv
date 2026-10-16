@@ -322,11 +322,23 @@ function PositionSlotTile({
             sx={{
               ...slotCornerSx,
               p: 0,
-              bgcolor: 'background.paper',
-              borderRadius: 0.5,
-              border: 1,
-              borderColor: 'divider',
               pointerEvents: 'none',
+              // Native-checkbox look: opaque white inside the outline.
+              // Checked flips the inner fill so the text.primary tick reads
+              // in both themes (dark box/white tick light, inverse dark).
+              color: 'grey.700',
+              '&.Mui-checked': {
+                color: 'text.primary',
+                '&::before': { bgcolor: 'background.paper' },
+              },
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                inset: 3,
+                bgcolor: 'common.white',
+                borderRadius: '2px',
+              },
+              '& .MuiSvgIcon-root': { position: 'relative', zIndex: 1 },
             }}
           />
         ) : (
@@ -484,11 +496,23 @@ function SortableMemberTile({
             left: 14,
             zIndex: 1,
             p: 0,
-            bgcolor: 'background.paper',
-            borderRadius: 0.5,
-            border: 1,
-            borderColor: 'divider',
             pointerEvents: 'none',
+            // Native-checkbox look: opaque white inside the outline.
+            // Checked flips the inner fill so the text.primary tick reads
+            // in both themes (dark box/white tick light, inverse dark).
+            color: 'grey.700',
+            '&.Mui-checked': {
+              color: 'text.primary',
+              '&::before': { bgcolor: 'background.paper' },
+            },
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              inset: 3,
+              bgcolor: 'common.white',
+              borderRadius: '2px',
+            },
+            '& .MuiSvgIcon-root': { position: 'relative', zIndex: 1 },
           }}
         />
       ) : (

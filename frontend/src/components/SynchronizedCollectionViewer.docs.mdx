@@ -15,8 +15,8 @@ Two to four read-only OpenSeadragon panes for `synchronized` collections, mounte
   annotations/locked overlays/measurement from `metadataExtra` pass through without edit
   callbacks). A member count above the pane cap produces a "Showing _N_ of _M_" note.
 - Each pane has a caption with the member name (plus an _inactive_ marker) as an `h2`; when the
-  image has a note it renders next to the name via `ClampedContent` (one line, "…more" popover,
-  title capped at min(468px, 40%)), and an **Open image**
+  image has a note a **Notes** link opens the pane's notes dialog (no inline note text),
+  and an **Open image**
   action that navigates to the regular `?image={id}` view where annotations can be edited.
 - A **link** button sits at the top-right of each pane's viewport (#1564, #1567). Panes start
   linked; unlinking detaches that pane so it pans/zooms/rotates independently, and the link vs

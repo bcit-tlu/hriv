@@ -20,6 +20,8 @@ declare module 'openseadragon' {
   interface Viewer {
     /** Preserve existing overlays when open() synchronously closes the current source. */
     preserveOverlays: boolean
+    /** Toolbar fullscreen Button created by showFullPageControl. */
+    fullPageButton?: Button
   }
 
   /**

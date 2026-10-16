@@ -69,6 +69,8 @@ export default function ImageCaptionRow({
             display: 'flex',
             gap: 0.5,
             alignItems: 'baseline',
+            // Match the title→Notes gap before the end slot.
+            ...(end != null ? { mr: 4 } : {}),
           }}
         >
           <Typography
