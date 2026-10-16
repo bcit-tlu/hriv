@@ -32,7 +32,9 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
-import ImageInfoAccordion from './components/ImageInfoAccordion'
+import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
+import ImageViewerInfoBar from './components/ImageViewerInfoBar'
+import ViewportDialog from './components/ViewportDialog'
 import SortableTileGrid from './components/SortableTileGrid'
 import MyCollectionsDrawer, {
   MY_COLLECTIONS_ROW_CONTENT_GAP_PX,
@@ -87,7 +89,6 @@ import {
   useVisibleCollections,
 } from './useAddToCollection'
 import { useFeatures } from './useFeatures'
-import { useImageInfoExpandedPreference } from './useImageInfoExpandedPreference'
 import { useImageSourceInfo } from './useImageSourceInfo'
 import { useMyCollectionsShelf } from './useMyCollectionsShelf'
 import { useMyCollectionsDrawerState } from './useMyCollectionsDrawerState'
@@ -192,9 +193,6 @@ export default function App() {
     canEditContent,
     canViewPeople,
   } = useAuth()
-  const [imageInfoExpanded, setImageInfoExpanded] = useImageInfoExpandedPreference(
-    currentUser?.id ?? null,
-  )
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
@@ -320,10 +318,26 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  // "Image details" drawer open state; closed on every image change
+  // (including leave -> return to the same image) and on canvas edit entry.
+  const [imageDetailsOpen, setImageDetailsOpen] = useState(false)
+  const imageDetailsTriggerRef = useRef<HTMLButtonElement>(null)
+  const [imageDetailsImageId, setImageDetailsImageId] = useState<number | null>(null)
+  // Which dialog is open over the image viewport (notes / collections).
+  // Closed on image change and on canvas edit entry.
+  const [viewerDialog, setViewerDialog] = useState<'note' | 'collections' | null>(null)
+  const currentImageId = selectedImage?.id ?? null
+  if (currentImageId !== imageDetailsImageId) {
+    // React "adjust state when a prop changes" pattern: closes on every image
+    // change, including leaving and coming back to the same image.
+    setImageDetailsImageId(currentImageId)
+    setImageDetailsOpen(false)
+    setViewerDialog(null)
+  }
   const imageSourceInfo = useImageSourceInfo(
     selectedImage?.id ?? null,
     selectedImage?.version ?? 0,
-    imageInfoExpanded,
+    imageDetailsOpen,
   )
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
@@ -2843,32 +2857,95 @@ export default function App() {
                   onCanvasAnnotationsChange={handleCanvasAnnotationsChangeForViewer}
                   onSaveCanvasAnnotations={handleSaveCanvasAnnotations}
                   canvasDraftDirty={canvasDraftDirty}
-                  onCanvasEditModeChange={setCanvasEditActive}
+                  onCanvasEditModeChange={(active) => {
+                    setCanvasEditActive(active)
+                    if (active) {
+                      setImageDetailsOpen(false)
+                      setViewerDialog(null)
+                    }
+                  }}
+                  viewportControl={
+                    <ImageDetailsTrigger
+                      open={imageDetailsOpen}
+                      onOpenChange={setImageDetailsOpen}
+                      disabled={canvasEditActive}
+                      triggerRef={imageDetailsTriggerRef}
+                    />
+                  }
+                  viewportOverlay={
+                    <>
+                      <ImageDetailsDrawer
+                        image={selectedImage}
+                        programNames={ancestorProgramIds.map(
+                          (pid) =>
+                            programs.find((program) => program.id === pid)?.name ?? String(pid),
+                        )}
+                        groupNames={ancestorGroupIds.map(
+                          (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
+                        )}
+                        measurement={selectedImageMeasurement}
+                        sourceInfo={imageSourceInfo}
+                        open={imageDetailsOpen}
+                        onOpenChange={setImageDetailsOpen}
+                        triggerRef={imageDetailsTriggerRef}
+                      />
+                      <ViewportDialog
+                        open={viewerDialog === 'note'}
+                        title="Notes"
+                        onClose={() => setViewerDialog(null)}
+                      >
+                        <Box
+                          sx={{
+                            typography: 'body2',
+                            whiteSpace: 'pre-wrap',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {selectedImage.note}
+                        </Box>
+                      </ViewportDialog>
+                      <ViewportDialog
+                        open={viewerDialog === 'collections'}
+                        title="Collections"
+                        onClose={() => setViewerDialog(null)}
+                      >
+                        {/* A collection link also closes the dialog. */}
+                        <Box
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('a, button')) {
+                              setViewerDialog(null)
+                            }
+                          }}
+                        >
+                          <ImageCollectionsList
+                            key={selectedImage.id}
+                            collections={selectedImageCollections}
+                            limit={selectedImageCollections.length}
+                            hrefForCollection={(id) =>
+                              `${window.location.pathname}?collection=${id}`
+                            }
+                            onOpenCollection={handleOpenCollection}
+                          />
+                        </Box>
+                      </ViewportDialog>
+                    </>
+                  }
                 />
               </Paper>
 
-              <ImageInfoAccordion
-                image={selectedImage}
-                programNames={ancestorProgramIds.map(
-                  (pid) => programs.find((program) => program.id === pid)?.name ?? String(pid),
-                )}
-                groupNames={ancestorGroupIds.map(
-                  (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
-                )}
-                measurement={selectedImageMeasurement}
-                sourceInfo={imageSourceInfo}
-                collections={
-                  selectedImageCollections.length > 0 ? (
-                    <ImageCollectionsList
-                      key={selectedImage.id}
-                      collections={selectedImageCollections}
-                      hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
-                      onOpenCollection={handleOpenCollection}
-                    />
-                  ) : null
-                }
-                expanded={imageInfoExpanded}
-                onExpandedChange={setImageInfoExpanded}
+              <ImageViewerInfoBar
+                key={`info-bar-${selectedImage.id}`}
+                imageId={selectedImage.id}
+                name={selectedImage.name}
+                active={selectedImage.active}
+                note={selectedImage.note}
+                collections={selectedImageCollections}
+                onOpenCollection={handleOpenCollection}
+                hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
+                noteDialogOpen={viewerDialog === 'note'}
+                collectionsDialogOpen={viewerDialog === 'collections'}
+                onShowNote={() => setViewerDialog('note')}
+                onShowCollections={() => setViewerDialog('collections')}
               />
             </>
           ) : (

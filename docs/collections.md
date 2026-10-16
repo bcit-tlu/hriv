@@ -1253,11 +1253,12 @@ visibility, duplicates and the synchronized cap on every write.
 
 ### Collection membership in the image view (#1586)
 
-**Where.** `App.tsx` (metadata row + fetch effect),
-`components/ImageCollectionsList.tsx`, `fetchImageCollections` in `api.ts`.
+**Where.** `App.tsx` (info bar wiring + fetch effect),
+`components/ImageViewerInfoBar.tsx`, `components/ImageCollectionsList.tsx`,
+`fetchImageCollections` in `api.ts`.
 
-**What.** A read-only **Collections** row inside the **Image information**
-accordion's first classification row (after Groups) lists the collections the
+**What.** A read-only **Collections** cell in the info bar directly below the
+viewer (`ImageViewerInfoBar`) lists the collections the
 current image belongs to, so a viewer can see where else it is used. It is
 informational only — distinct from the single-parent category and from the "Add
 to Collection" write flow above.
@@ -1275,10 +1276,16 @@ left click opens the collection in-app (`onOpenCollection` → `handleOpenCollec
 → `?collection={id}`); because each name is a real anchor (`hrefForCollection`
 builds `?collection={id}`), a modifier- or middle-click opens it in a new tab.
 Every link is safe to follow — the list is already visibility-filtered
-server-side, so it only ever contains collections the caller may open. It shows
-up to three names, then truncates with an inline "… and N more" link that expands
-the rest (reset per image via a `key`). The label pluralizes ("Collection" /
-"Collections") like the Program/Group rows.
+server-side, so it only ever contains collections the caller may open. In the
+info bar a `FittedCollections` cell (capped at 30% of the row at `md`, a
+full-width line below it) shows the largest prefix of names that fits,
+measured against an `aria-hidden` clone; a trailing "… + N more" link opens
+a `ViewportDialog` centered over the viewport listing every collection
+(`ImageCollectionsList` with `limit` = the full count), and following a
+collection link also closes the dialog. The always-plural "Collections:"
+label is rendered by the fitted cell;
+`ImageCollectionsList` renders only the links and still supports `limit`
+(default 3) for its inline "… and N more" affordance elsewhere.
 
 ### Sequence collection viewer (#1416)
 
@@ -1296,8 +1303,12 @@ render read-only via `canvasAnnotationsFromMetadata` /
 (`components/imageViewerUtils.ts`). **Open image** navigates to the normal
 `?image={id}` view where annotations can be edited.
 
-**Caption.** A caption row under the viewport — the same pattern the
-synchronized panes use (#1564) — holds the member name (left) and, at the
+**Caption.** A caption row under the viewport — the same `ImageCaptionRow`
+the synchronized panes and the image-view info bar use — holds the member
+name as an `h2` (left), then, when the image has a note, a visible
+**Notes:** label plus the note clamped to one line (`ClampedContent`) with
+an "…more" link that opens a `ViewportDialog` over the viewer with the full
+note (the title is capped at min(468px, 40%) when a note is present) and, at the
 right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
@@ -1412,8 +1423,11 @@ render as panes — a side-by-side row for two, a 2×2 grid for three or four
 (#1561) — each a read-only `ImageViewer` with the same prop set as the
 sequence viewer (`canEditContent={false}`; stored annotations, locked
 overlays and measurement metadata pass through from `metadataExtra`). A
-caption under each pane shows the member name (plus an _inactive_ marker)
-and an **Open image** action → `?image={id}`. A member count above the pane
+caption under each pane shows the member name (plus an _inactive_ marker),
+then — when the image has a note — a **Notes:** label plus the note clamped
+to one line, "…more" opening a `ViewportDialog` centered over that pane
+(title capped at min(468px, 40%)), and an
+**Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
 surviving) members shows a fallback alert with the ordered member list and
 per-row **Open image** buttons; members whose tiles fail mid-session are

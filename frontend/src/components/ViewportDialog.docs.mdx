@@ -1,0 +1,35 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ViewportDialogStories from './ViewportDialog.stories'
+
+<Meta of={ViewportDialogStories} />
+
+<Title />
+
+<Subtitle>A small dialog centred over the OpenSeadragon viewport.</Subtitle>
+
+## When to use
+
+`ViewportDialog` shows short content (the full note, the full collections list) centred over the
+image viewport. It is **not** an MUI `Modal` — those are `position: fixed` and cover the whole
+page. Callers render it through `ImageViewer`'s `viewportOverlay` portal, so it lives inside
+`viewer.container` and stays put in OSD full-page mode.
+
+Focus is trapped while open, the close button takes focus on open, focus returns to the opener on
+close, and Escape or a backdrop click closes it. Pointer and wheel events are stopped at the root
+so gestures don't zoom or pan the image underneath.
+
+## Interactive example
+
+<Primary />
+
+## Stories
+
+<Stories includePrimary={false} />

@@ -14,7 +14,7 @@ describe('ImageCollectionsList (#1586)', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('uses the singular label for a single collection', () => {
+  it('renders no label — the caller supplies it (ImageViewerInfoBar)', () => {
     render(
       <ImageCollectionsList
         collections={[{ id: 7, name: 'Skull comparison' }]}
@@ -22,19 +22,8 @@ describe('ImageCollectionsList (#1586)', () => {
         onOpenCollection={() => {}}
       />,
     )
-    expect(screen.getByText('Collection:')).toBeInTheDocument()
+    expect(screen.queryByText(/Collections?:/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Skull comparison' })).toBeInTheDocument()
-  })
-
-  it('uses the plural label for multiple collections', () => {
-    render(
-      <ImageCollectionsList
-        collections={toCollections(['One', 'Two'])}
-        hrefForCollection={href}
-        onOpenCollection={() => {}}
-      />,
-    )
-    expect(screen.getByText('Collections:')).toBeInTheDocument()
   })
 
   it('renders each name as a link to its collection', () => {

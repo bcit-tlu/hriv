@@ -7,8 +7,9 @@
  * test file carries the drag-end coverage this file used to host.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 
 import type { Collection, ImageItem } from '../../src/types'
 import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
@@ -22,7 +23,11 @@ let lastViewerProps: Record<string, unknown> | null = null
 vi.mock('../../src/components/ImageViewer', () => ({
   default: (props: Record<string, unknown>) => {
     lastViewerProps = props
-    return <div data-testid="image-viewer" data-image-id={String(props.imageId)} />
+    return (
+      <div data-testid="image-viewer" data-image-id={String(props.imageId)}>
+        {props.viewportOverlay as ReactNode}
+      </div>
+    )
   },
 }))
 
@@ -480,5 +485,87 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByTestId('sequence-thumbnail-strip')).toHaveStyle({
       filter: 'grayscale(100%)',
     })
+  })
+})
+
+describe('caption note', () => {
+  const note = 'Fracture line visible.\nCallus forming medially.'
+  const noted = () => seqCollection({ images: [makeImage({ id: 1, name: 'Slice A', note })] })
+
+  const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollHeight',
+  )
+  const originalClientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'clientHeight',
+  )
+  const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth')
+  const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+  // The caption clamp is 1 line: it overflows horizontally (scrollWidth).
+  function stubOverflow() {
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 500,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 100,
+    })
+  }
+  afterEach(() => {
+    for (const [prop, descriptor] of [
+      ['scrollHeight', originalScrollHeight],
+      ['clientHeight', originalClientHeight],
+      ['scrollWidth', originalScrollWidth],
+      ['clientWidth', originalClientWidth],
+    ] as const) {
+      if (descriptor) {
+        Object.defineProperty(HTMLElement.prototype, prop, descriptor)
+      } else {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop]
+      }
+    }
+  })
+
+  it('renders the image name as a level-2 heading', () => {
+    renderViewer({ collection: noted() })
+    expect(screen.getByRole('heading', { level: 2, name: 'Slice A' })).toBeInTheDocument()
+  })
+
+  it('shows the flattened note between the title and the position counter', () => {
+    renderViewer({ collection: noted() })
+    const heading = screen.getByRole('heading', { level: 2, name: 'Slice A' })
+    const noteEl = screen.getByText('Fracture line visible. Callus forming medially.')
+    const position = screen.getByTestId('sequence-position')
+    expect(heading.compareDocumentPosition(noteEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(noteEl.compareDocumentPosition(position) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('offers no "Show full note" control without a note', () => {
+    renderViewer()
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+  })
+
+  it('treats a whitespace-only note as absent', () => {
+    renderViewer({
+      collection: seqCollection({
+        images: [makeImage({ id: 1, name: 'Slice A', note: '  \n  ' })],
+      }),
+    })
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+  })
+
+  it('opens a dialog inside the viewer with the full multi-line note on overflow', () => {
+    stubOverflow()
+    renderViewer({ collection: noted() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    const viewer = screen.getByTestId('image-viewer')
+    const dialog = within(viewer).getByRole('dialog', { name: 'Notes' })
+    expect(within(dialog).getByText(/Fracture line/).textContent).toContain(
+      'Fracture line visible.\nCallus forming medially.',
+    )
   })
 })

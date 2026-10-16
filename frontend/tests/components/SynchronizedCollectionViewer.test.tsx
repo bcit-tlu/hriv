@@ -8,8 +8,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
-import { useEffect } from 'react'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
+import { useEffect, type ReactNode } from 'react'
 
 import type { Collection, ImageItem } from '../../src/types'
 import { makeCollection, makeImage } from '../helpers/fixtures'
@@ -138,7 +138,11 @@ vi.mock('../../src/components/ImageViewer', () => ({
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [imageId, props.initialOverlays, props.initialViewport])
-    return <div data-testid="image-viewer" data-image-id={String(imageId)} />
+    return (
+      <div data-testid="image-viewer" data-image-id={String(imageId)}>
+        {props.viewportOverlay as ReactNode}
+      </div>
+    )
   },
 }))
 
@@ -920,5 +924,97 @@ describe('SynchronizedCollectionViewer', () => {
       fakeA.viewport!.panTo({ x: 0.9, y: 0.9 })
     })
     expect(fakeB.viewport).toBeNull()
+  })
+})
+
+describe('caption note', () => {
+  const note = 'Frontal suture intact.\nNo asymmetry detected.'
+  const noted = () =>
+    syncCollection({
+      images: [
+        makeImage({ id: 1, name: 'Skull — frontal', note }),
+        makeImage({ id: 2, name: 'Skull — lateral' }),
+      ],
+    })
+
+  const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollHeight',
+  )
+  const originalClientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'clientHeight',
+  )
+  const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth')
+  const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+  // The caption clamp is 1 line: it overflows horizontally (scrollWidth).
+  function stubOverflow() {
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 500,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 100,
+    })
+  }
+  afterEach(() => {
+    for (const [prop, descriptor] of [
+      ['scrollHeight', originalScrollHeight],
+      ['clientHeight', originalClientHeight],
+      ['scrollWidth', originalScrollWidth],
+      ['clientWidth', originalClientWidth],
+    ] as const) {
+      if (descriptor) {
+        Object.defineProperty(HTMLElement.prototype, prop, descriptor)
+      } else {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop]
+      }
+    }
+  })
+
+  it('renders each pane name as a level-2 heading', () => {
+    renderViewer({ collection: noted() })
+    expect(screen.getByRole('heading', { level: 2, name: 'Skull — frontal' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Skull — lateral' })).toBeInTheDocument()
+  })
+
+  it('shows the flattened note in the caption row', () => {
+    renderViewer({ collection: noted() })
+    expect(screen.getByText('Frontal suture intact. No asymmetry detected.')).toBeInTheDocument()
+  })
+
+  it('offers no "Show full note" control without a note', () => {
+    renderViewer()
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+  })
+
+  it('treats a whitespace-only note as absent', () => {
+    renderViewer({
+      collection: syncCollection({
+        images: [
+          makeImage({ id: 1, name: 'Skull — frontal', note: '  \n  ' }),
+          makeImage({ id: 2, name: 'Skull — lateral' }),
+        ],
+      }),
+    })
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
+  })
+
+  it('opens the notes dialog inside the matching pane on overflow', () => {
+    stubOverflow()
+    renderViewer({ collection: noted() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    // Exactly one dialog opens, inside the noted image's viewer pane.
+    const dialog = screen.getByRole('dialog', { name: 'Notes' })
+    const viewers = screen.getAllByTestId('image-viewer')
+    expect(viewers).toHaveLength(2)
+    const viewer = viewers.find((v) => v.getAttribute('data-image-id') === '1')!
+    expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBe(dialog)
+    expect(within(dialog).getByText(/Frontal suture/).textContent).toContain(
+      'Frontal suture intact.\nNo asymmetry detected.',
+    )
   })
 })

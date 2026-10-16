@@ -1,0 +1,46 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ImageCaptionRowStories from './ImageCaptionRow.stories'
+
+<Meta of={ImageCaptionRowStories} />
+
+<Title />
+
+<Subtitle>
+  The caption row shared by the image view and the collection viewers: title, note, and actions.
+</Subtitle>
+
+## When to use
+
+`ImageCaptionRow` renders `[h2 image title] [Notes: note …more] {end}` — the note clamps to one
+line with an "…more" affordance (`onShowNote` opens the caller's `ViewportDialog`), and `end`
+carries the right-hand actions (position readout, **Open image**, or the fitted collections cell).
+When a note is present the title is capped at min(468px, 40%) so the note gets the room; without one the title
+takes the full width.
+
+Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedCollectionViewer`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ImageCaptionRowStories.Basic} />
+
+## Examples
+
+### Long note
+
+A note longer than one line clamps behind an "…more" link.
+
+<Canvas of={ImageCaptionRowStories.LongNote} />
+
+## Stories
+
+<Stories includePrimary={false} />

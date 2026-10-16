@@ -545,15 +545,21 @@ vi.mock('../src/components/ImageViewer', () => ({
     onCanvasEditModeChange,
     onCanvasAnnotationsChange,
     onSaveCanvasAnnotations,
+    viewportOverlay,
+    viewportControl,
   }: {
     imageId?: number
     onCanvasEditModeChange?: (active: boolean) => void
     onCanvasAnnotationsChange?: (annotations: unknown[]) => void
     onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+    viewportOverlay?: ReactNode
+    viewportControl?: ReactNode
   }) {
     const [internalEditMode, setInternalEditMode] = useState(false)
     return (
       <div>
+        {viewportControl}
+        {viewportOverlay}
         Image Viewer {String(imageId)} / internal edit: {String(internalEditMode)}
         <button
           type="button"
@@ -563,6 +569,15 @@ vi.mock('../src/components/ImageViewer', () => ({
           }}
         >
           Enter canvas edit
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setInternalEditMode(false)
+            onCanvasEditModeChange?.(false)
+          }}
+        >
+          Exit canvas edit
         </button>
         <button type="button" onClick={() => onCanvasAnnotationsChange?.([])}>
           Change canvas annotations
@@ -1511,22 +1526,55 @@ describe('App breadcrumbs', () => {
     expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
   })
 
-  it('resets expanded note state when selecting another image', () => {
+  it('resets the notes dialog state when selecting another image', async () => {
     mockImage.note = 'A'.repeat(350)
     mockSecondImage.note = 'B'.repeat(350)
     currentImagesMock = [mockImage, mockSecondImage]
+    // jsdom can't measure line clamping, so force the 1-line clamp's
+    // horizontal overflow detection on.
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollWidth',
+    )
+    const originalClientWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'clientWidth',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 500,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 100,
+    })
 
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Image information' }))
+    try {
+      render(<App />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
-    fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
-    expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+      expect(screen.getByRole('dialog', { name: 'Notes' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+      // The dialog is focus-trapped; close it before interacting elsewhere.
+      fireEvent.keyDown(screen.getByRole('dialog', { name: 'Notes' }), { key: 'Escape' })
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
+      })
 
-    expect(screen.queryByRole('button', { name: /Show less/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Show more/i })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+
+      // The second image's cell still overflows and offers its own dialog.
+      expect(screen.getByRole('button', { name: 'Show full note' })).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
+    } finally {
+      if (originalScrollWidth) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth)
+      }
+      if (originalClientWidth) {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
+      }
+    }
   })
 
   it('does not load the announcement while auth is still loading', async () => {
@@ -1644,29 +1692,17 @@ describe('App failure notifications', () => {
   })
 })
 
-describe('App image information accordion', () => {
-  const preferenceKey = 'hrivpref:image-info-expanded:user:1'
-  let storedUser: string | null = null
-
+describe('App image details drawer', () => {
   beforeEach(() => {
     resetFixtures()
     Object.assign(mockImage, { copyright: 'Educational use only' })
-    storedUser = localStorage.getItem('hriv_user')
-    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
-    localStorage.removeItem(preferenceKey)
   })
 
   afterEach(() => {
     Object.assign(mockImage, { copyright: null })
-    localStorage.removeItem(preferenceKey)
-    if (storedUser === null) {
-      localStorage.removeItem('hriv_user')
-    } else {
-      localStorage.setItem('hriv_user', storedUser)
-    }
   })
 
-  it('renders collapsed and reveals image information when expanded', async () => {
+  it('renders a closed drawer trigger and reveals image details when opened', async () => {
     apiMocks.fetchImageSourceInfo.mockResolvedValueOnce({
       originalFilename: 'specimen-scan.tif',
       fileType: 'TIF',
@@ -1675,11 +1711,11 @@ describe('App image information accordion', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
-    const summary = screen.getByRole('button', { name: 'Image information' })
-    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    const trigger = screen.getByRole('button', { name: 'Image details' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
 
-    fireEvent.click(summary)
+    fireEvent.click(trigger)
 
     const copyright = screen.getByText('Copyright:', { exact: true }).parentElement
     expect(copyright).toHaveTextContent('Copyright: Educational use only')
@@ -1689,6 +1725,84 @@ describe('App image information accordion', () => {
     expect(fileType.parentElement).toHaveTextContent('File type: TIF')
     const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
     expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
+    // The viewer instructions live in the drawer footer.
+    const panel = document.getElementById('image-details-drawer') as HTMLElement
+    expect(panel).toHaveTextContent(/Scroll or tap to zoom/)
+  })
+
+  it('closes the drawer when another image is selected', async () => {
+    currentImagesMock = [mockImage, mockSecondImage]
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  })
+
+  it('disables the trigger and hides an open drawer in canvas edit mode', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: 'Image details' })).toBeDisabled()
+  })
+
+  it('stays closed when returning to the same image after leaving it', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    // Leave the image via browser back, then reopen the same image.
+    act(() => {
+      popStateHandler!('browse', [], null)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    expect(screen.getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('button', { name: 'Close image details' })).not.toBeInTheDocument()
+  })
+
+  it('stays closed when canvas edit mode exits', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter canvas edit' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exit canvas edit' }))
+
+    expect(screen.queryByRole('heading', { name: 'Image details' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
   })
 })
 
