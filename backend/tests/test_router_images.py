@@ -1,6 +1,7 @@
 """Tests for the images router endpoints."""
 
 import errno
+import json
 from datetime import datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
@@ -726,6 +727,70 @@ async def test_update_image_if_match_stale_version() -> None:
     # The in-memory image should not have been mutated
     assert img.name == "test-img"
     db.commit.assert_not_awaited()
+
+
+async def test_update_image_noop_if_match_returns_current_version() -> None:
+    """A no-op PATCH (e.g. merging locked_overlays=null onto empty metadata)
+    with a matching If-Match must succeed without running the CAS UPDATE —
+    a bulk UPDATE expires the ORM attributes, and serializing the expired
+    object raised MissingGreenlet/500 before. Response still carries the
+    unchanged version and serializes updated_at."""
+    img = _make_image()
+    img.version = 2
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.execute = AsyncMock()
+
+    body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
+    result = await update_image(1, body, _mock_request(if_match='"2"'), _make_user(), db)
+
+    db.execute.assert_not_awaited()
+    db.commit.assert_not_awaited()
+    assert img.version == 2
+    assert result.headers["etag"] == '"2"'
+    # Body must serialize cleanly, including updated_at.
+    payload = json.loads(result.body)
+    assert payload["version"] == 2
+    assert payload["updated_at"] is not None
+
+
+async def test_update_image_noop_if_match_stale_version() -> None:
+    """A no-op PATCH with a stale If-Match still 409s — the CAS is skipped
+    but the in-memory version check guards the conflict."""
+    img = _make_image()
+    img.version = 5
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.execute = AsyncMock()
+
+    body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
+    with pytest.raises(HTTPException) as exc:
+        await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
+    assert exc.value.status_code == 409
+    db.execute.assert_not_awaited()
+
+
+async def test_update_image_dirty_if_match_still_bumps() -> None:
+    """A dirty PATCH with a matching If-Match still runs the CAS and
+    increments the version."""
+    img = _make_image()
+    img.version = 3
+
+    cas_result = MagicMock()
+    cas_result.rowcount = 1
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.execute = AsyncMock(return_value=cas_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(note="new note")
+    await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
+    db.execute.assert_awaited_once()
+    assert img.version == 4
 
 
 async def test_update_image_if_match_invalid() -> None:
