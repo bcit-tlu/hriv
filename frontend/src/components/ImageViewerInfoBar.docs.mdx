@@ -14,15 +14,17 @@ import * as ImageViewerInfoBarStories from './ImageViewerInfoBar.stories'
 <Title />
 
 <Subtitle>
-  An always-visible Notes / Collections / instructions row below the image viewer.
+  An always-visible Notes / Collections row below the image viewer, clamped to two lines.
 </Subtitle>
 
 ## When to use
 
-`App` renders the info bar directly below the regular image viewer. At `md` and up it is a
-40/40/20 grid — Notes, Collections, and the viewer instructions — and empty Notes/Collections
-cells still reserve their column so the instructions never move between images. Below `md` the
-cells stack and empty ones collapse. Image metadata moved into the `ImageDetailsDrawer` overlay.
+`App` renders the info bar directly below the regular image viewer. At `md` and up Notes and
+Collections sit side by side in a 60/40 split favouring the note; a lone cell spans the full
+width, and below `md` the cells stack.
+Each value is clamped to two lines — when it overflows, an "…more" link at the end of the second
+line opens a Popover with the full content. The bar renders nothing when both are absent; the viewer instructions live in
+the `ImageDetailsDrawer` footer.
 
 ## Interactive example
 
@@ -34,16 +36,20 @@ cells stack and empty ones collapse. Image metadata moved into the `ImageDetails
 
 ### Long note
 
-Long notes truncate behind "Show more" and collection lists behind "… and N more".
+Content that needs more than two lines clamps behind an "…more" link that opens the full
+text in a Popover.
 
 <Canvas of={ImageViewerInfoBarStories.LongNote} />
 
-### Empty
+### Many collections
 
-With no note and no collections only the instructions cell shows; at `md`+ the two leading
-columns stay reserved.
+<Canvas of={ImageViewerInfoBarStories.ManyCollections} />
 
-<Canvas of={ImageViewerInfoBarStories.Empty} />
+### Notes only
+
+A lone cell spans the full width.
+
+<Canvas of={ImageViewerInfoBarStories.NotesOnly} />
 
 ## Stories
 

@@ -1257,8 +1257,8 @@ visibility, duplicates and the synchronized cap on every write.
 `components/ImageViewerInfoBar.tsx`, `components/ImageCollectionsList.tsx`,
 `fetchImageCollections` in `api.ts`.
 
-**What.** A read-only **Collections** row in the info bar directly below the
-viewer (`ImageViewerInfoBar`'s 40% middle column) lists the collections the
+**What.** A read-only **Collections** cell in the info bar directly below the
+viewer (`ImageViewerInfoBar`) lists the collections the
 current image belongs to, so a viewer can see where else it is used. It is
 informational only — distinct from the single-parent category and from the "Add
 to Collection" write flow above.
@@ -1276,11 +1276,14 @@ left click opens the collection in-app (`onOpenCollection` → `handleOpenCollec
 → `?collection={id}`); because each name is a real anchor (`hrefForCollection`
 builds `?collection={id}`), a modifier- or middle-click opens it in a new tab.
 Every link is safe to follow — the list is already visibility-filtered
-server-side, so it only ever contains collections the caller may open. It shows
-up to three names, then truncates with an inline "… and N more" link that expands
-the rest (reset per image via a `key`). The always-plural "Collections:" label
-is rendered by `ImageViewerInfoBar`; `ImageCollectionsList` renders only the
-links and the "more" affordance.
+server-side, so it only ever contains collections the caller may open. In the
+info bar every name is shown inline (`App` passes `limit` = the full count),
+clamped to two lines in a 40% column (a `3fr 2fr` split favouring the note);
+when the list overflows, an "…more" link at the end of the
+second line opens a Popover listing every collection (reset per image via a `key`).
+The always-plural "Collections:" label is rendered by `ImageViewerInfoBar`;
+`ImageCollectionsList` renders only the links and still supports `limit`
+(default 3) for its inline "… and N more" affordance elsewhere.
 
 ### Sequence collection viewer (#1416)
 

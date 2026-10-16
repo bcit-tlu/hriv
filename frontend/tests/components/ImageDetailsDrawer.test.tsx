@@ -169,7 +169,7 @@ describe('ImageDetailsDrawer', () => {
     expectField('Measurement:', expected)
   })
 
-  it('does not contain notes, collections or the viewer instructions', async () => {
+  it('does not contain notes or collections; instructions live in the footer', async () => {
     render(<Harness {...populatedProps} />)
     fireEvent.click(trigger())
     await screen.findByRole('heading', { name: 'Image details' })
@@ -177,7 +177,21 @@ describe('ImageDetailsDrawer', () => {
     const panel = document.getElementById('image-details-drawer') as HTMLElement
     expect(panel).not.toHaveTextContent('Note:')
     expect(panel).not.toHaveTextContent('Collections:')
-    expect(panel).not.toHaveTextContent('Scroll or tap to zoom')
+    expect(panel).toHaveTextContent(
+      'Scroll or tap to zoom, and drag to move/pan. Buttons in the bottom left control the view. The mini-map in the bottom-right shows your current view.',
+    )
+  })
+
+  it('pins the instructions footer outside the scrolling field list', async () => {
+    render(<Harness {...populatedProps} />)
+    fireEvent.click(trigger())
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    const instructions = screen.getByText(/Scroll or tap to zoom/)
+    const field = screen.getByText('Copyright:', { exact: true }).parentElement as HTMLElement
+    const scrollRegion = field.parentElement?.parentElement as HTMLElement
+    expect(scrollRegion).toContainElement(field)
+    expect(scrollRegion).not.toContainElement(instructions)
   })
 
   it('closes via the ✕ button and returns focus to the trigger', async () => {

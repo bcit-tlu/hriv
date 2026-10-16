@@ -176,7 +176,8 @@ export default function ImageDetailsDrawer({
               <CloseIcon />
             </IconButton>
           </Box>
-          <Box sx={{ overflowY: 'auto', px: 2, py: 1.5 }}>
+          {/* tabIndex makes the scroll region keyboard-scrollable (a11y). */}
+          <Box tabIndex={0} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
             <Stack spacing={0.75}>
               {fields.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
@@ -188,6 +189,23 @@ export default function ImageDetailsDrawer({
                 ))
               )}
             </Stack>
+          </Box>
+          {/* Footer instructions. `contain: inline-size` keeps the wrapping
+              text out of the drawer's max-content width calculation. */}
+          <Box
+            sx={{
+              flexShrink: 0,
+              borderTop: 1,
+              borderColor: 'divider',
+              px: 2,
+              py: 1.5,
+              contain: 'inline-size',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Scroll or tap to zoom, and drag to move/pan. Buttons in the bottom left control the
+              view. The mini-map in the bottom-right shows your current view.
+            </Typography>
           </Box>
         </Paper>
       </Slide>

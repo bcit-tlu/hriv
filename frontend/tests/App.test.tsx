@@ -1523,21 +1523,54 @@ describe('App breadcrumbs', () => {
     expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
   })
 
-  it('resets expanded note state when selecting another image', () => {
+  it('resets the note popover state when selecting another image', async () => {
     mockImage.note = 'A'.repeat(350)
     mockSecondImage.note = 'B'.repeat(350)
     currentImagesMock = [mockImage, mockSecondImage]
+    // jsdom can't measure line clamping, so force the overflow detection on.
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollHeight',
+    )
+    const originalClientHeight = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'clientHeight',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 100,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => 40,
+    })
 
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    try {
+      render(<App />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
-    fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
-    expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+      expect(screen.getByText('Note', { selector: 'h3' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+      // The popover is a modal; close it before interacting with the page.
+      fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' })
+      await waitFor(() => {
+        expect(screen.queryByText('Note', { selector: 'h3' })).not.toBeInTheDocument()
+      })
 
-    expect(screen.queryByRole('button', { name: /Show less/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Show more/i })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+
+      // The second image's cell still overflows and offers its own popover.
+      expect(screen.getByRole('button', { name: 'Show full note' })).toBeInTheDocument()
+      expect(screen.queryByText('Note', { selector: 'h3' })).not.toBeInTheDocument()
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)
+      }
+      if (originalClientHeight) {
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', originalClientHeight)
+      }
+    }
   })
 
   it('does not load the announcement while auth is still loading', async () => {
@@ -1688,6 +1721,9 @@ describe('App image details drawer', () => {
     expect(fileType.parentElement).toHaveTextContent('File type: TIF')
     const uploadedBy = screen.getByText('Uploaded by:', { exact: true })
     expect(uploadedBy.parentElement).toHaveTextContent('Uploaded by: Image Uploader')
+    // The viewer instructions live in the drawer footer.
+    const panel = document.getElementById('image-details-drawer') as HTMLElement
+    expect(panel).toHaveTextContent(/Scroll or tap to zoom, and drag to move\/pan/)
   })
 
   it('closes the drawer when another image is selected', async () => {

@@ -1,38 +1,151 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
+import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
+import Popover from '@mui/material/Popover'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
-import NoteDisplay from './NoteDisplay'
 
 export interface ImageViewerInfoBarProps {
-  /** NoteDisplay key so Show more resets per image. */
+  /** Cells are keyed on this so overflow/popover state resets per image. */
   imageId: number
   note?: string | null
-  /** App passes <ImageCollectionsList …/> or null. */
+  /** App passes <ImageCollectionsList …/> or null. Rendered both in the clamped
+   *  cell and (again) inside the popover — rendering the same element twice is
+   *  intentional. */
   collections?: ReactNode
 }
 
-function InfoRow({ label, children }: { label: string; children: ReactNode }) {
+interface InfoCellProps {
+  label: string
+  children: ReactNode
+  /** Preserve newlines (notes) in both the clamp and the popover. */
+  preWrap?: boolean
+  /** Accessible name for the "more" link (the visible text is just "more"). */
+  moreAriaLabel: string
+}
+
+/**
+ * One info-bar cell: label on the left, value clamped to two lines on the
+ * right. When the value overflows, an "…more" link overlaid at the end of the
+ * second line opens a Popover with the full content (body-portaled — the bar
+ * lives outside OSD).
+ */
+function InfoCell({ label, children, preWrap = false, moreAriaLabel }: InfoCellProps) {
+  const [cellEl, setCellEl] = useState<HTMLDivElement | null>(null)
+  const valueRef = useRef<HTMLDivElement>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  const [popoverOpen, setPopoverOpen] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = valueRef.current
+    if (!el) return
+    const measure = () => setOverflowing(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [children])
+
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        component="div"
-        sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+    <>
+      <Box ref={setCellEl} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            component="div"
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            <strong>{label}</strong>
+          </Typography>
+        </Box>
+        <Box
+          ref={valueRef}
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            typography: 'body2',
+            color: 'text.secondary',
+            position: 'relative',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            ...(preWrap ? { whiteSpace: 'pre-wrap' } : {}),
+          }}
+        >
+          {children}
+          {overflowing && (
+            // Covers the native line-clamp ellipsis so the reader sees
+            // "…more" right after the cut-off text.
+            <Box
+              component="span"
+              sx={{
+                position: 'absolute',
+                right: 0,
+                bottom: 0,
+                bgcolor: 'background.paper',
+                pl: 0.5,
+                typography: 'body2',
+              }}
+            >
+              …
+              <Link
+                component="button"
+                type="button"
+                variant="body2"
+                underline="hover"
+                aria-label={moreAriaLabel}
+                aria-haspopup="dialog"
+                aria-expanded={popoverOpen}
+                onClick={() => setPopoverOpen(true)}
+              >
+                more
+              </Link>
+            </Box>
+          )}
+        </Box>
+      </Box>
+      <Popover
+        open={popoverOpen}
+        anchorEl={cellEl}
+        onClose={() => setPopoverOpen(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       >
-        <strong>{label}</strong>
-      </Typography>
-      <Box sx={{ flex: 1, minWidth: 0, typography: 'body2' }}>{children}</Box>
-    </Box>
+        <Box
+          sx={{ maxWidth: 480, maxHeight: '50vh', overflow: 'auto', p: 2 }}
+          // A collection link inside the popover also closes it.
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest('a, button')) setPopoverOpen(false)
+          }}
+        >
+          <Typography variant="subtitle2" component="h3" sx={{ mb: 0.5 }}>
+            {label.replace(/:$/, '')}
+          </Typography>
+          <Box
+            sx={{
+              typography: 'body2',
+              color: 'text.secondary',
+              ...(preWrap ? { whiteSpace: 'pre-wrap' } : {}),
+            }}
+          >
+            {children}
+          </Box>
+        </Box>
+      </Popover>
+    </>
   )
 }
 
 /**
- * Always-visible info row below the regular image viewer (#1677): Notes,
- * Collections, and the viewer instructions in a 40/40/20 grid at `md`+ (cells
- * always rendered so the instructions column never moves); below `md` the
- * cells stack and empty ones collapse.
+ * Always-visible info row below the regular image viewer (#1677): Notes and
+ * Collections side by side at `md`+ in a 3fr 2fr split (notes get priority; a
+ * lone cell spans the full width), stacking below `md`. Each value is clamped
+ * to two lines with an "…more" popover for the full content. Renders nothing when both are absent — the
+ * viewer instructions now live in the ImageDetailsDrawer footer.
  */
 export default function ImageViewerInfoBar({
   imageId,
@@ -41,12 +154,7 @@ export default function ImageViewerInfoBar({
 }: ImageViewerInfoBarProps) {
   const hasNote = note != null && note !== ''
   const hasCollections = collections != null
-
-  // Empty optional cells collapse below md but keep their grid column at md+.
-  const optionalCellDisplay = (present: boolean) => ({
-    xs: present ? 'block' : 'none',
-    md: 'block',
-  })
+  if (!hasNote && !hasCollections) return null
 
   return (
     <Paper
@@ -62,26 +170,24 @@ export default function ImageViewerInfoBar({
         display: { xs: 'flex', md: 'grid' },
         flexDirection: 'column',
         gap: { xs: 1.5, md: 0 },
-        gridTemplateColumns: { md: '2fr 2fr 1fr' },
+        gridTemplateColumns: { md: hasNote && hasCollections ? '3fr 2fr' : '1fr' },
         columnGap: { md: 3 },
       }}
     >
-      <Box sx={{ minWidth: 0, display: optionalCellDisplay(hasNote) }}>
-        {hasNote && (
-          <InfoRow label="Note:">
-            <NoteDisplay key={imageId} note={note} />
-          </InfoRow>
-        )}
-      </Box>
-      <Box sx={{ minWidth: 0, display: optionalCellDisplay(hasCollections) }}>
-        {hasCollections && <InfoRow label="Collections:">{collections}</InfoRow>}
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" color="text.secondary">
-          Scroll or tap to zoom, and drag to move/pan. Buttons in the bottom left control the view.
-          The mini-map in the bottom-right shows your current view.
-        </Typography>
-      </Box>
+      {hasNote && (
+        <InfoCell key={`note-${imageId}`} label="Note:" preWrap moreAriaLabel="Show full note">
+          {note}
+        </InfoCell>
+      )}
+      {hasCollections && (
+        <InfoCell
+          key={`collections-${imageId}`}
+          label="Collections:"
+          moreAriaLabel="Show all collections"
+        >
+          {collections}
+        </InfoCell>
+      )}
     </Paper>
   )
 }

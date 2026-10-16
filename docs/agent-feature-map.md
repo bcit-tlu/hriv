@@ -40,7 +40,10 @@ The regular viewer's image metadata lives in two components wired by
 (an "i"-triggered overlay panel portaled into the OSD container via
 `ImageViewer`'s `viewportOverlay` prop) and
 `frontend/src/components/ImageViewerInfoBar.tsx` (the always-visible
-Notes / Collections / instructions row below the viewer). Source metadata
+Notes / Collections row below the viewer, clamped to two lines in a 60/40
+split favouring notes, with an "…more" popover; the viewer instructions live
+in the drawer's footer).
+Source metadata
 is fetched by
 `frontend/src/useImageSourceInfo.ts` from `/api/images/{id}/source-info`, with
 the backend query and role gate in `backend/app/image_source_info.py`.

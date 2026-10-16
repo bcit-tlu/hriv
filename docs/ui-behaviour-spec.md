@@ -126,8 +126,10 @@ images> / Empty` format used on category tiles.
   with the full value in `title`: Copyright, Program(s), Group(s), Created,
   Modified, Dimensions, Size, Measurement, Original file, File type, and (for
   admins and instructors) Uploaded by. Empty fields are omitted; "No details
-  available." shows when none render. The panel does not contain notes,
-  collections, or the viewer instructions.
+  available." shows when none render. The field list is the only scroll
+  region; the viewer instructions sit in a footer pinned to the bottom of
+  the drawer and wrap without widening the panel. The panel does not contain
+  notes or collections.
 - **When** the drawer opens, **Then** focus moves to its close button; it
   closes via the ✕ button, the "i" button, or Escape, returning focus to the
   trigger. It does not close on viewport clicks, so users can keep panning.
@@ -135,14 +137,17 @@ images> / Empty` format used on category tiles.
   fetched lazily; closing and re-opening the same image version reuses the
   cached result, while a version change fetches fresh information without
   exposing stale data.
-- The drawer is closed on every image open (open state is keyed by image id,
-  no persisted preference). In canvas edit mode the "i" button is disabled and
-  an open drawer closes.
+- The drawer is closed on every image change, including leaving and
+  returning to the same image (no persisted preference). In canvas edit mode
+  the "i" button is disabled and an open drawer closes; it stays closed when
+  edit mode exits.
 - The info bar shows Notes and Collections rows with their label to the left
-  (the Collections label is always plural) and the viewer instructions text.
-  At `md` and up it is a 40/40/20 grid with all three cells always rendered so
-  the instructions column never moves; below `md` the cells stack and empty
-  ones collapse (see [collections.md](collections.md)).
+  (the Collections label is always plural). At `md` and up the two cells sit
+  side by side in a 60/40 split favouring the note (`3fr 2fr`); a lone cell
+  spans the full width, below `md` they stack, and
+  when both are absent the bar renders nothing. Each value is clamped to two
+  lines; overflow gets an "…more" link at the end of the second line that opens a
+  Popover with the full content (see [collections.md](collections.md)).
 - On the regular image viewer and open collection detail, a closed My
   collections drawer reserves an opaque trigger row in the footer dock and
   `<main>` adds 4px of bottom padding, leaving a 16px gap above the button.

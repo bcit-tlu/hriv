@@ -2883,6 +2883,7 @@ export default function App() {
                     <ImageCollectionsList
                       key={selectedImage.id}
                       collections={selectedImageCollections}
+                      limit={selectedImageCollections.length}
                       hrefForCollection={(id) => `${window.location.pathname}?collection=${id}`}
                       onOpenCollection={handleOpenCollection}
                     />
