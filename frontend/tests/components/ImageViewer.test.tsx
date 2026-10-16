@@ -1324,6 +1324,39 @@ describe('ImageViewer selection rectangles', () => {
 
     expect(onClearOverlays).not.toHaveBeenCalled()
   })
+
+  it('hides the clear button until it can be used', () => {
+    const onLockOverlays = vi.fn()
+    const { rerender } = render(
+      <ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={onLockOverlays} />,
+    )
+    const clearWrapper = buttonByTooltip('Clear all selection rectangles').element
+      .parentElement as HTMLElement
+
+    // Hidden before any rectangle exists.
+    expect(clearWrapper.style.display).toBe('none')
+
+    // Visible once a rectangle is drawn.
+    drawRect()
+    expect(clearWrapper.style.display).toBe('inline-block')
+
+    // Hidden again after a clear empties the overlay list.
+    act(() => buttonByTooltip('Clear all selection rectangles').options.onClick())
+    expect(clearWrapper.style.display).toBe('none')
+
+    // Hidden while the overlays are locked.
+    drawRect()
+    expect(clearWrapper.style.display).toBe('inline-block')
+    rerender(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        canEditContent
+        overlaysLocked
+        onLockOverlays={onLockOverlays}
+      />,
+    )
+    expect(clearWrapper.style.display).toBe('none')
+  })
 })
 
 describe('ImageViewer overlay locking', () => {

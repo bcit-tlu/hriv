@@ -656,6 +656,7 @@ export default function ImageViewer({
       const locked = overlaysLockedRef.current
       const empty = overlaysRef.current.length === 0
       const disabled = locked || empty
+      clearWrapper.style.display = disabled ? 'none' : 'inline-block'
       clearButton.element.style.opacity = disabled ? '0.3' : '1'
       clearButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
       clearWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'

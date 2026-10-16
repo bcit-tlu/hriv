@@ -55,7 +55,7 @@ A box you draw stays private until you save or share it:
 - **Padlock** — saves your boxes to the image so everyone who views it sees
   them (and can't move them). Unlock to edit again.
 - **Share View** — copies a link that opens the image with your boxes drawn.
-- **X** — clears all boxes.
+- **X** — clears all boxes. It only appears when there are unlocked boxes to clear.
 
 ## Annotating an image
 

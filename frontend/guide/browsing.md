@@ -59,7 +59,7 @@ link that opens the full text over the viewer.
 | **Curved arrows**  | Rotate the image left / right                                             |
 | **Selection tool** | Draw measurement boxes — see [Measuring](images#measuring-on-an-image)    |
 | **Padlock**        | Lock or unlock the boxes you've drawn                                     |
-| **X**              | Clear all boxes                                                           |
+| **X**              | Clear all boxes (shown only when boxes exist)                             |
 | **Pencil**         | Open the annotation canvas — see [Annotating](images#annotating-an-image) |
 
 Drag to pan. The **mini-map** in the bottom right shows where you are, and

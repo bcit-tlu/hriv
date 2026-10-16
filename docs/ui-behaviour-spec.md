@@ -236,7 +236,10 @@ images> / Empty` format used on category tiles.
   inline-block baseline strut that otherwise lifts them a few px.
 - The canvas-edit pencil button uses the same state styling as the other OSD
   toolbar icons: translucent dark rest/hover backgrounds, a red pressed
-  background, and a red `2px` outline while canvas edit mode is active.
+  background, and a red `2px` outline while canvas edit mode is active. The
+  lock button instead shows the locked state with a filled red icon
+  (`primary.main` rest, `primary.dark` hover/pressed), and the clear-overlays
+  button is hidden entirely until unlocked rectangles exist to clear.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:
