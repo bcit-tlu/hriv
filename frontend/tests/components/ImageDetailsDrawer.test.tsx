@@ -321,6 +321,8 @@ describe('ImageDetailsDrawer', () => {
     expect(trigger()).toHaveStyle({
       backgroundImage: 'url(/openseadragon-svg-icons/info_rest.svg)',
     })
+    // No native ButtonFace fill behind the translucent svg.
+    expect(getComputedStyle(trigger()).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   })
 
   it('marks trigger and panel with data-hriv-canvas-ui', async () => {

@@ -52,6 +52,10 @@ export function ImageDetailsTrigger({
         border: 'none',
         borderRadius: 0,
         cursor: 'pointer',
+        appearance: 'none',
+        // Native buttons paint a ButtonFace grey that shows through the svg's
+        // translucent black; keep the fill transparent like the OSD icons.
+        backgroundColor: 'transparent',
         backgroundImage: 'url(/openseadragon-svg-icons/info_rest.svg)',
         backgroundSize: '100% 100%',
         '&:hover:not(:disabled), &:focus-visible': {

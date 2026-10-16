@@ -22,11 +22,7 @@ function ImageViewerExample() {
         tileSources="/sample.dzi"
         height={420}
         viewportControl={
-          <ImageDetailsTrigger
-            open={open}
-            onOpenChange={setOpen}
-            triggerRef={triggerRef}
-          />
+          <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
         }
         viewportOverlay={
           <ImageDetailsDrawer
