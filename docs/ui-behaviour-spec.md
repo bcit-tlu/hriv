@@ -240,8 +240,9 @@ images> / Empty` format used on category tiles.
   dedicated `*_active_*` icon sets (`primary.main` rest, `primary.dark`
   hover/pressed) while their mode is on. The lock button shows the locked
   state with the same filled-red scheme (`primary.main` rest, `primary.dark`
-  hover/pressed), and the clear-overlays button is hidden entirely until
-  unlocked rectangles exist to clear.
+  hover/pressed); the lock and clear-overlays buttons are hidden entirely
+  until unlocked rectangles exist for them to act on (the lock stays
+  visible while locked so it can be unlocked).
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:

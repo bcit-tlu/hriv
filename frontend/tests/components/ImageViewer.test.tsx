@@ -1357,6 +1357,37 @@ describe('ImageViewer selection rectangles', () => {
     )
     expect(clearWrapper.style.display).toBe('none')
   })
+
+  it('hides the lock button until it can be used', () => {
+    const { rerender } = render(
+      <ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={vi.fn()} />,
+    )
+    const lockWrapper = buttonByTooltip('Lock selection rectangles').element
+      .parentElement as HTMLElement
+
+    // Hidden before any rectangle exists.
+    expect(lockWrapper.style.display).toBe('none')
+
+    // Visible once a rectangle is drawn.
+    drawRect()
+    expect(lockWrapper.style.display).toBe('inline-block')
+
+    // Hidden again after a clear empties the overlay list.
+    act(() => buttonByTooltip('Clear all selection rectangles').options.onClick())
+    expect(lockWrapper.style.display).toBe('none')
+
+    // Visible while the overlays are locked.
+    drawRect()
+    rerender(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        canEditContent
+        overlaysLocked
+        onLockOverlays={vi.fn()}
+      />,
+    )
+    expect(lockWrapper.style.display).toBe('inline-block')
+  })
 })
 
 describe('ImageViewer overlay locking', () => {

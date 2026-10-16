@@ -817,6 +817,7 @@ export default function ImageViewer({
       lockButton.element.style.outline = 'none'
       // Disable when not locked and no rectangles exist
       const disabled = !locked && empty
+      if (lockWrapper) lockWrapper.style.display = disabled ? 'none' : 'inline-block'
       lockButton.element.style.opacity = disabled ? '0.3' : '1'
       lockButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
       if (lockWrapper) {
