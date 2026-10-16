@@ -864,11 +864,16 @@ export default function ImageViewer({
       updateLockIcon()
     }
 
-    // Add clear button to toolbar (created above, before selection tracker)
-    updateClearButtonState()
+    // Add clear button to toolbar (created above, before selection tracker).
+    // updateClearButtonState must run AFTER addControl: OSD's ControlDock
+    // sets element.style.display = 'inline-block' on every added control,
+    // which would undo the initial hidden state. Nothing else writes the
+    // element's display later (setControlsEnabled/setVisible only touch the
+    // OSD-created wrapper), so the reorder alone keeps it hidden.
     viewer.addControl(clearWrapper, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
+    updateClearButtonState()
 
     // --- Canvas edit mode toolbar button (visible to admin/instructor) ---
     if (canEditContentRef.current) {
