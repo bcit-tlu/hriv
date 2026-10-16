@@ -1104,9 +1104,8 @@ export default function ImageViewer({
     // Swap the fullscreen button between outward and inward arrows. The
     // typings don't declare viewer.fullPageButton as a Button, so cast.
     const syncFullPageIcon = () => {
-      const fullPageButton = (
-        viewer as unknown as { fullPageButton?: OpenSeadragon.Button }
-      ).fullPageButton
+      const fullPageButton = (viewer as unknown as { fullPageButton?: OpenSeadragon.Button })
+        .fullPageButton
       if (!fullPageButton) return
       const fullPage = viewer.isFullPage()
       setButtonIcons(fullPageButton, fullPage ? 'exitfullpage' : 'fullpage')
