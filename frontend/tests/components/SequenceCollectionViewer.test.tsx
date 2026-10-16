@@ -544,6 +544,7 @@ describe('caption note', () => {
       }),
     })
     expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
   })
 
   it('opens a popover with the full multi-line note when the caption overflows', () => {
