@@ -194,7 +194,14 @@ export const NarrowCollections: Story = {
 export const NarrowSingleCollection: Story = {
   args: {
     note: 'The cathedral’s construction began in 1386.',
-    collections: [{ id: 1621, name: 'Duomo of Milan digital archive documentation' }],
+    // Long enough to overflow 420px even with the label and gaps, so it
+    // ellipsizes at any viewport.
+    collections: [
+      {
+        id: 1621,
+        name: 'Duomo of Milan digital archive — façade, nave, apse and roof survey photographs 1890–2020',
+      },
+    ],
   },
   decorators: [
     (Story) => (
@@ -208,7 +215,7 @@ export const NarrowSingleCollection: Story = {
     const canvas = within(canvasElement)
     const label = canvas.getByText('Collections:', { selector: 'span.MuiTypography-root' })
     const name = canvas.getByRole('link', {
-      name: 'Duomo of Milan digital archive documentation',
+      name: 'Duomo of Milan digital archive — façade, nave, apse and roof survey photographs 1890–2020',
     })
     const cell = label.parentElement!
     const eps = 0.5
