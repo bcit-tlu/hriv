@@ -205,8 +205,11 @@ describe('ImageDetailsDrawer', () => {
     expect(scrollRegion).toContainElement(field)
     expect(scrollRegion).not.toContainElement(instructions)
 
-    // The footer carries a "Viewer controls" heading above the instructions.
+    // The footer is its own labelled, scrollable region (short viewports).
     const footer = instructions.parentElement as HTMLElement
+    expect(footer).toHaveStyle({ overflowY: 'auto' })
+    const region = screen.getByRole('region', { name: 'Viewer controls' })
+    expect(region).toContainElement(instructions)
     expect(within(footer).getByRole('heading', { name: 'Viewer controls' })).toBeInTheDocument()
     expect(scrollRegion).not.toContainElement(footer)
   })

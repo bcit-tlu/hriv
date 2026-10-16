@@ -215,8 +215,13 @@ export default function ImageDetailsDrawer({
           {/* Footer instructions. `contain: inline-size` keeps the wrapping
               text out of the drawer's max-content width calculation. */}
           <Box
+            role="region"
+            aria-labelledby="image-details-viewer-controls"
+            tabIndex={0}
             sx={{
               flexShrink: 0,
+              maxHeight: '50%',
+              overflowY: 'auto',
               borderTop: 1,
               borderColor: 'divider',
               px: 2,
@@ -224,7 +229,12 @@ export default function ImageDetailsDrawer({
               contain: 'inline-size',
             }}
           >
-            <Typography variant="subtitle2" component="h3" sx={{ mb: 0.5 }}>
+            <Typography
+              variant="subtitle2"
+              component="h3"
+              id="image-details-viewer-controls"
+              sx={{ mb: 0.5 }}
+            >
               Viewer controls
             </Typography>
             <Typography variant="body2" color="text.secondary">

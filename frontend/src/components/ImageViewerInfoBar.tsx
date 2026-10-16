@@ -49,9 +49,16 @@ function InfoCell({ label, children, preWrap = false, fullContent, moreAriaLabel
       setOverflowing(el.scrollHeight > el.clientHeight + 1)
       // Links clipped below the fold of the clamp must leave the tab order.
       // Their offsetParent is this Box (it is position: relative).
+      const overlay = el.querySelector('[data-info-more]')?.parentElement
+      const overlayRect = overlay?.getBoundingClientRect()
       for (const node of el.querySelectorAll<HTMLElement>('a[href], button')) {
         if (node.hasAttribute('data-info-more')) continue
-        if (node.offsetTop >= el.clientHeight) node.setAttribute('tabindex', '-1')
+        const rect = node.getBoundingClientRect()
+        const hidden =
+          node.offsetTop >= el.clientHeight ||
+          // Covered by the "…more" overlay on the clamped second line.
+          (overlayRect != null && rect.right > overlayRect.left && rect.bottom > overlayRect.top)
+        if (hidden) node.setAttribute('tabindex', '-1')
         else node.removeAttribute('tabindex')
       }
     }
@@ -60,7 +67,8 @@ function InfoCell({ label, children, preWrap = false, fullContent, moreAriaLabel
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [children])
+    // `overflowing` is a dep so measure re-runs once the overlay renders.
+  }, [children, overflowing])
 
   return (
     <>

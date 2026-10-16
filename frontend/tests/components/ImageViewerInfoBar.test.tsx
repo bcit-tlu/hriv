@@ -156,7 +156,25 @@ describe('ImageViewerInfoBar', () => {
     stubOverflow()
     // Fake the geometry: links past the 40px clamp get offsetTop 50.
     const tops: Record<string, number> = { Three: 50, Four: 50 }
+    const rects: Record<string, DOMRect> = {
+      // The "…more" overlay span sits over the second line; Two overlaps it.
+      '…more': { left: 200, top: 20, right: 250, bottom: 40 } as DOMRect,
+      Two: { left: 205, top: 20, right: 240, bottom: 40 } as DOMRect,
+      One: { left: 0, top: 0, right: 60, bottom: 20 } as DOMRect,
+    }
     const originalOffsetTop = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetTop')
+    const originalGetBoundingClientRect = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'getBoundingClientRect',
+    )
+    Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value() {
+        return (
+          rects[this.textContent ?? ''] ?? ({ left: 0, top: 0, right: 0, bottom: 0 } as DOMRect)
+        )
+      },
+    })
     Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
       configurable: true,
       get() {
@@ -181,7 +199,8 @@ describe('ImageViewerInfoBar', () => {
       )
 
       expect(screen.getByRole('button', { name: 'One' })).not.toHaveAttribute('tabindex')
-      expect(screen.getByRole('button', { name: 'Two' })).not.toHaveAttribute('tabindex')
+      // Two is inside the clamp but covered by the "…more" overlay.
+      expect(screen.getByRole('button', { name: 'Two' })).toHaveAttribute('tabindex', '-1')
       expect(screen.getByRole('button', { name: 'Three' })).toHaveAttribute('tabindex', '-1')
       expect(screen.getByRole('button', { name: 'Four' })).toHaveAttribute('tabindex', '-1')
     } finally {
@@ -189,6 +208,17 @@ describe('ImageViewerInfoBar', () => {
         Object.defineProperty(HTMLElement.prototype, 'offsetTop', originalOffsetTop)
       } else {
         delete (HTMLElement.prototype as unknown as Record<string, unknown>)['offsetTop']
+      }
+      if (originalGetBoundingClientRect) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          'getBoundingClientRect',
+          originalGetBoundingClientRect,
+        )
+      } else {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[
+          'getBoundingClientRect'
+        ]
       }
     }
   })
