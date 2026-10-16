@@ -532,6 +532,39 @@ describe('SynchronizedCollectionViewer', () => {
     expect(mockState.fakes.get(101)!.viewport!.goHome).not.toHaveBeenCalled()
   })
 
+  it('portals the view controls into actionsContainer beside the description (#1683)', async () => {
+    openPair()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    try {
+      const { props } = renderViewer({ actionsContainer: host })
+      act(() => {
+        mockState.fakes.get(100)!.open()
+        mockState.fakes.get(101)!.open()
+      })
+      // The controls render inside the header's slot, not in the viewer's own
+      // subtree — the buttons stay functional from their hoisted spot.
+      expect(within(host).getByTestId('synchronized-reset')).toBeInTheDocument()
+      expect(within(host).getByTestId('synchronized-save')).toBeInTheDocument()
+      const viewerEl = screen.getByTestId('synchronized-collection-viewer')
+      expect(within(viewerEl).queryByTestId('synchronized-reset')).not.toBeInTheDocument()
+      expect(within(viewerEl).queryByTestId('synchronized-save')).not.toBeInTheDocument()
+      await act(async () => {
+        fireEvent.click(within(host).getByTestId('synchronized-save'))
+      })
+      await vi.waitFor(() => expect(props.onSaveViewport).toHaveBeenCalled())
+    } finally {
+      host.remove()
+    }
+  })
+
+  it('renders no view controls while the actionsContainer host is pending', () => {
+    openPair()
+    renderViewer({ actionsContainer: null })
+    expect(screen.queryByTestId('synchronized-reset')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('synchronized-save')).not.toBeInTheDocument()
+  })
+
   it('pins every pane by default; unpinning detaches it from the mirror (#1564)', () => {
     openPair()
     renderViewer()
@@ -682,7 +715,7 @@ describe('SynchronizedCollectionViewer', () => {
     const panesArea = screen.getByTestId('synchronized-viewer-frame-100').parentElement!
       .parentElement!.parentElement!
     expect(emotionRulesFor(panesArea)).toMatch(/min-height:auto/)
-    expect(emotionRulesFor(panesArea)).not.toMatch(/min-height:320px/)
+    expect(emotionRulesFor(panesArea)).not.toMatch(/min-height:260px/)
   })
 
   it('keeps two members in the side-by-side layout', () => {
@@ -696,7 +729,7 @@ describe('SynchronizedCollectionViewer', () => {
     }
     const panesArea = screen.getByTestId('synchronized-viewer-frame-100').parentElement!
       .parentElement!.parentElement!
-    expect(emotionRulesFor(panesArea)).toMatch(/min-height:320px/)
+    expect(emotionRulesFor(panesArea)).toMatch(/min-height:260px/)
   })
 
   it('notes when the member count exceeds the pane cap', () => {

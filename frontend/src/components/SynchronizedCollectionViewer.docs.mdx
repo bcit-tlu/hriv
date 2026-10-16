@@ -21,6 +21,10 @@ Two to four read-only OpenSeadragon panes for `synchronized` collections, mounte
 - A **link** button sits at the top-right of each pane's viewport (#1564, #1567). Panes start
   linked; unlinking detaches that pane so it pans/zooms/rotates independently, and the link vs
   link-off icon plus the button's pressed state show which panes are linked.
+- The view controls — the member-overflow "Showing _N_ of _M_" note, **Restore default view**
+  and **Set as default view** — are not a blocking band: on the collection detail they portal
+  into the header's slot beside the description (`actionsContainer`, #1683); mounted
+  standalone they keep an inline row above the panes.
 - Fewer than two visible members shows a fallback alert with the ordered member list and
   per-row **Open image** buttons. Members whose tiles fail mid-session are skipped; if the failures
   leave fewer than two, the fallback explains that the images could not be loaded.

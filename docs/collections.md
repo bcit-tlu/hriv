@@ -1011,7 +1011,10 @@ pill** — the shared `CollectionTypeChip` with the type's icon
 chips carry the restriction; an unscoped restricted collection still
 gets the pill so it is never label-less; #1567) sit to the
 left of the owner line; the description renders below the pills,
-left-aligned (#1567). Hidden state shows through greyscale alone — no
+left-aligned (#1567) — for `synchronized` collections the viewer's
+**Restore/Set as default view** controls sit beside the description on the
+same wrapping row via a portal into the header (#1683). Hidden state shows
+through greyscale alone — no
 `Hidden` chip — and the same desaturation (chips, pills, action buttons,
 sequence filmstrip) applies when the collection sits under a hidden
 category. No Delete (#1554).
@@ -1315,7 +1318,7 @@ management moved into the detail header's **Manage Images** dialog
 
 **Viewport fit.** At MUI `md` and up, the regular image viewer and loaded
 sequence/synchronized collection detail fill the window, with only the OSD
-viewer area flexing and a 320px minimum. If fixed content cannot fit around
+viewer area flexing and a 260px minimum. If fixed content cannot fit around
 that minimum, the page grows and scrolls. Below `md`, the existing 70vh / 60vh
 / 55vh / 34vh viewer heights and page scrolling are unchanged.
 
@@ -1416,7 +1419,11 @@ four-image synchronized cap, reporting already/full outcomes through
 
 **Where.** `components/SynchronizedCollectionViewer.tsx`, mounted by
 `CollectionsPage` for `type === 'synchronized'` below the shared detail
-header.
+header. The view controls — the "Showing _N_ of _M_" note, **Restore
+default view** and **Set as default view** — are not a blocking band above
+the panes: the header exposes a slot beside the collection description and
+the viewer portals them into it (`actionsContainer`, #1683); a standalone
+mount keeps its own row.
 
 **Panes.** Up to `SYNCHRONIZED_COLLECTION_MAX_IMAGES` (4) visible members
 render as panes — a side-by-side row for two, a 2×2 grid for three or four
@@ -1434,7 +1441,7 @@ per-row **Open image** buttons; members whose tiles fail mid-session are
 skipped, so the panes slide forward. At `md` and up, each frame in the
 three/four-pane grid has a 200px minimum and the grid rows honor that floor;
 the grid pane area's minimum follows its rows' intrinsic content, so the
-page grows and scrolls when they cannot fit. The two-pane row and its 320px
+page grows and scrolls when they cannot fit. The two-pane row and its 260px
 pane-area minimum are unchanged.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new

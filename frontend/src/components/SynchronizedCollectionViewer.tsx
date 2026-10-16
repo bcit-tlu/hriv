@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -45,6 +46,14 @@ export interface SynchronizedCollectionViewerProps {
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  /**
+   * Host element for the view controls (#1683). On the collection detail the
+   * header exposes a slot beside the description so Restore/Set-as-default
+   * render there instead of a blocking band above the panes. `undefined` =
+   * standalone mount: keep the viewer's own row; `null` = the host is a
+   * commit away, render nothing until it arrives.
+   */
+  actionsContainer?: HTMLElement | null
 }
 
 /**
@@ -103,6 +112,7 @@ export default function SynchronizedCollectionViewer({
   onOpenImage,
   onImageRenewed,
   onError,
+  actionsContainer,
 }: SynchronizedCollectionViewerProps) {
   const images = collection.images
   const canEdit = collection.permissions.canEdit
@@ -472,6 +482,39 @@ export default function SynchronizedCollectionViewer({
   // 2×2 grid (SYNCHRONIZED_COLLECTION_MAX_IMAGES caps members at four).
   const gridPanes = panes.length > 2
 
+  const showingNote =
+    images.length > panes.length ? (
+      <Typography variant="body2" color="text.secondary">
+        Showing {panes.length} of {images.length}
+      </Typography>
+    ) : null
+  const viewControls = (
+    <>
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<RestartAltIcon />}
+        onClick={handleReset}
+        disabled={!hasSavedView}
+        data-testid="synchronized-reset"
+      >
+        Restore default view
+      </Button>
+      {canEdit && (
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={<SaveIcon />}
+          onClick={() => void handleSave()}
+          disabled={saving}
+          data-testid="synchronized-save"
+        >
+          Set as default view
+        </Button>
+      )}
+    </>
+  )
+
   return (
     <Box
       data-testid="synchronized-collection-viewer"
@@ -481,49 +524,40 @@ export default function SynchronizedCollectionViewer({
         flex: { md: '1 1 0' },
       }}
     >
-      <Box
-        sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 1,
-          mt: 2,
-          mb: 1,
-          flexShrink: 0,
-        }}
-      >
-        {/* Panes start pinned (linked); the per-pane pin in each viewport's
-            top-right corner replaces the old global "Link views" switch
-            (#1564). */}
-        {images.length > panes.length && (
-          <Typography variant="body2" color="text.secondary">
-            Showing {panes.length} of {images.length}
-          </Typography>
-        )}
-        <Box sx={{ flex: 1 }} />
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<RestartAltIcon />}
-          onClick={handleReset}
-          disabled={!hasSavedView}
-          data-testid="synchronized-reset"
+      {/* The Restore/Save controls are not a blocking band on the detail
+          page: the header renders a slot beside the collection description
+          (`actionsContainer`) and they portal into it (#1683). A standalone
+          mount keeps this inline row; `null` means the host arrives on the
+          next commit, so nothing renders here yet. */}
+      {actionsContainer === undefined ? (
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 1,
+            mt: 1,
+            mb: 1,
+            flexShrink: 0,
+          }}
         >
-          Restore default view
-        </Button>
-        {canEdit && (
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<SaveIcon />}
-            onClick={() => void handleSave()}
-            disabled={saving}
-            data-testid="synchronized-save"
-          >
-            Set as default view
-          </Button>
-        )}
-      </Box>
+          {/* Panes start pinned (linked); the per-pane pin in each viewport's
+              top-right corner replaces the old global "Link views" switch
+              (#1564). */}
+          {showingNote}
+          <Box sx={{ flex: 1 }} />
+          {viewControls}
+        </Box>
+      ) : (
+        actionsContainer &&
+        createPortal(
+          <>
+            {showingNote}
+            {viewControls}
+          </>,
+          actionsContainer,
+        )
+      )}
 
       <Box
         sx={{
@@ -531,7 +565,7 @@ export default function SynchronizedCollectionViewer({
           display: { md: 'flex' },
           flexDirection: { md: 'column' },
           flex: { md: '1 1 0' },
-          minHeight: { md: gridPanes ? 'auto' : 320 },
+          minHeight: { md: gridPanes ? 'auto' : 260 },
         }}
       >
         <Box

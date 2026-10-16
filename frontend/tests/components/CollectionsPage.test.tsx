@@ -1269,8 +1269,13 @@ describe('CollectionsPage', () => {
       expect(within(crumb).getByText('(2 images)')).toBeInTheDocument()
       expect(screen.getByText('Two views')).toBeInTheDocument()
       expect(screen.getByTestId('synchronized-collection-viewer')).toBeInTheDocument()
+      // The header exposes the slot the viewer's Restore/Save controls
+      // portal into, beside the description (#1683).
+      const actionsSlot = screen.getByTestId('synchronized-viewer-actions')
+      expect(actionsSlot).toBeInTheDocument()
 
       const props = synchronizedViewerProps.current!
+      expect(props.actionsContainer).toBe(actionsSlot)
       expect(props.collection).toBe(detail)
       void (props.onSaveViewport as (s: Record<string, unknown>) => Promise<unknown>)({
         '21': { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
@@ -1316,6 +1321,8 @@ describe('CollectionsPage', () => {
       expect(screen.getByTestId('sequence-collection-viewer')).toBeInTheDocument()
       // The member list / coming-soon alert only remain for synchronized.
       expect(screen.queryByText('1. Frontal')).not.toBeInTheDocument()
+      // No view-controls slot — only synchronized details host one (#1683).
+      expect(screen.queryByTestId('synchronized-viewer-actions')).not.toBeInTheDocument()
 
       const props = sequenceViewerProps.current!
       expect(props.collection).toBe(detail)
