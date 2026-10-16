@@ -40,7 +40,7 @@ function makeAuth(user: User): AuthContextValue {
   }
 }
 
-function makeImage(id: number, name: string): ImageItem {
+function makeImage(id: number, name: string, note?: string): ImageItem {
   return {
     id,
     name,
@@ -48,6 +48,7 @@ function makeImage(id: number, name: string): ImageItem {
     // .storybook/static/sample.dzi parses but serves no tiles, so the viewer
     // mounts deterministically instead of racing an open-failed path.
     tileSources: '/sample.dzi',
+    note,
     active: true,
     sortOrder: id,
     version: 1,
@@ -90,8 +91,12 @@ function makeCollection(images: ImageItem[], canEdit: boolean): Collection {
 const ONE_IMAGE = makeCollection([makeImage(101, 'Skull — frontal')], true)
 const MANY_IMAGES = makeCollection(
   [
-    makeImage(101, 'Skull — frontal'),
-    makeImage(102, 'Skull — lateral'),
+    makeImage(101, 'Skull — frontal', 'Hairline fracture, week two.'),
+    makeImage(
+      102,
+      'Skull — lateral',
+      'Follow-up scan after the cast was removed.\nCallus forming along the medial edge.\nHealing consistent with week six.\nCompare the cortical thickening against the baseline scan; remodelling continues through week twelve.',
+    ),
     makeImage(103, 'Skull — occipital'),
     makeImage(104, 'Mandible — left'),
     makeImage(105, 'Mandible — right'),

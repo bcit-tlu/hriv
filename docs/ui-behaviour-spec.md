@@ -112,22 +112,61 @@ images> / Empty` format used on category tiles.
 - Profile menu shows the student's own **program** and **group** memberships as
   read-only chips (`useUserProfile.ts` — `useUserProfile.test.ts`).
 
-### Image viewer: image information accordion (`ImageInfoAccordion.test.tsx`, `App.test.tsx`)
+### Image viewer: image details drawer and info bar (`ImageDetailsDrawer.test.tsx`, `ImageViewerInfoBar.test.tsx`, `App.test.tsx`)
 
-- **Given** the regular image viewer page, **Then** a collapsed-by-default
-  **Image information** accordion sits directly below the viewer and its heading
-  contains only that title.
-- **When** expanded, **Then** metadata appears in evenly spaced rows and the
-  original filename, file type, and (for admins and instructors) uploader appear
-  in a row after the existing file details; the viewer usage hint is the final
-  row and rows with no visible fields are omitted.
-- The read-only Collections row sits inside the first classification row, after
-  Groups, when the image belongs to visible collections (see [collections.md](collections.md)).
-- **When** the user clicks to expand the accordion, **Then** it predicts the
-  mounted details height and scrolls into view above the footer dock and any
-  horizontally overlapping My collections trigger with a 16px gap before
-  expansion starts; reduced-motion preferences use instant scrolling, and
-  persisted expansion on mount does not auto-scroll.
+- **Given** the regular image viewer page, **Then** an "i" button sits in the
+  top-right corner of the OSD viewport and an always-visible info bar sits
+  directly below the viewer. The "i" matches the bottom-left toolbar icons
+  (48px svg with rest/hover/pressed states and a native `title` tooltip) and
+  is an OSD control (`ImageViewer`'s `viewportControl`), so it fades with the
+  toolbar when the pointer is idle and stays visible while keyboard-focused.
+- The "i" button is portaled into a top-right OSD control wrapper and the
+  **Image details** panel it opens is portaled into the
+  OSD container (`viewer.container` via `ImageViewer`'s `viewportOverlay` prop),
+  so they stay usable in OSD full-page mode. Both carry `data-hriv-canvas-ui`
+  so the selection tracker skips presses inside them.
+- **When** opened, **Then** a right-anchored panel slides in over the viewport
+  (it does not resize OSD) listing one field per non-wrapping line — ellipsis
+  with the full value in `title`: Copyright, Program(s), Group(s), Created,
+  Modified, Dimensions, Size, Measurement, Original file, File type, and (for
+  admins and instructors) Uploaded by. Empty fields are omitted; "No details
+  available." shows when none render. The field list is the only scroll
+  region; the viewer instructions (a bulleted list: "Scroll or tap to
+  zoom", "Drag to move/pan", "Bottom left buttons control view", "Bottom
+  right mini-map shows current view") sit under a
+  "Viewer controls" heading in a footer pinned to the bottom of the drawer
+  and wrap without widening the panel. Created and Modified show
+  the long-form date (e.g. "October 15, 2026"); the exact timestamp shows
+  in a tooltip on hover, tap or focus (the value is `tabIndex={0}`; other
+  fields keep their `title`). The panel does not contain notes or collections.
+- **When** the drawer opens, **Then** focus moves to its close button; it
+  closes via the ✕ button, the "i" button, or Escape, returning focus to the
+  trigger. It does not close on viewport clicks, so users can keep panning.
+- **When** the drawer first opens for an image, **Then** source information is
+  fetched lazily; closing and re-opening the same image version reuses the
+  cached result, while a version change fetches fresh information without
+  exposing stale data.
+- The drawer is closed on every image change, including leaving and
+  returning to the same image (no persisted preference). In canvas edit mode
+  the "i" button is disabled and an open drawer closes; it stays closed when
+  edit mode exits.
+- The info bar is a plain row (no background) shared with the collection
+  viewers (`ImageCaptionRow`): the image title as an `h2` left, a **Notes:**
+  cell (bold label plus the note clamped to one line) when the image has a
+  note, and a **Collections:** cell at the right when the image belongs to
+  any collections (see [collections.md](collections.md)). The bar always
+  renders because the title is always shown. At `md` and up the row is one
+  line — the title capped at min(468px, 40%) when a note is present, the note taking the
+  middle, the collections cell capped at 30% — and below `md` the
+  collections cell wraps to its own left-aligned line.
+- An overflowing note gets an "…more" link at the end of the line; it opens
+  a `ViewportDialog` titled **Notes** centered over the OSD viewport (via
+  `viewportOverlay`, so it survives full-page mode), showing the full note.
+  The collections cell shows the largest prefix of names that fits; a
+  trailing "… + N more" opens a **Collections** dialog with the full list.
+  Both dialogs trap focus, close on Escape, ✕, or a backdrop click, restore
+  focus to the opener, and stop pointer/wheel propagation so the image
+  underneath does not pan or zoom.
 - On the regular image viewer and open collection detail, a closed My
   collections drawer reserves an opaque trigger row in the footer dock and
   `<main>` adds 4px of bottom padding, leaving a 16px gap above the button.
@@ -140,13 +179,6 @@ images> / Empty` format used on category tiles.
 - An image at Home stays fitted when its viewer frame resizes, including
   full-screen entry and exit; zoomed, panned, rotated, or flipped views are not
   refitted.
-- **When** the accordion expands, **Then** source information is fetched lazily;
-  collapsing and re-expanding the same image version reuses the cached result,
-  while a version change fetches fresh information without exposing stale data.
-- **When** the user expands or collapses the accordion, **Then** that choice is
-  persisted per authenticated user id (or `anonymous` before authentication)
-  under `hrivpref:image-info-expanded:user:${currentUser?.id ?? 'anonymous'}`
-  in localStorage.
 
 ### Viewer: annotations, overlays, measurement (`CanvasOverlay.test.tsx`, `useCanvasAnnotations.test.ts`, `useOverlayPersistence.test.ts`)
 
@@ -569,7 +601,10 @@ always read-only (`canEditContent={false}`).
 
 - **Given** a sequence collection is open with no `?item=`, **Then** the
   thumbnail filmstrip renders _above_ the viewer (#1564), the first member
-  renders with the caption row under the viewport (member name left;
+  renders with the caption row under the viewport (member name `h2` left;
+  when the image has a note, a visible **Notes:** label plus the note
+  clamped to one line in the middle — "…more" opens the same **Notes**
+  `ViewportDialog` centered over the viewer — the title capped at min(468px, 40%);
   `1 of N` position readout and **Open image** right — the synchronized
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
@@ -636,7 +671,9 @@ measurement metadata.
 
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
-  three or four (each pane captioned with the member name and an
+  three or four (each pane captioned with the member name as an `h2`, its
+  note clamped to one line behind a visible **Notes:** label — "…more"
+  opens a **Notes** `ViewportDialog` centered over that pane — and an
   **Open image** → `?image={id}` action) — and, when more than four are
   stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other

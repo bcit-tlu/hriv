@@ -23,6 +23,8 @@ import { userMessage, type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
+import ImageCaptionRow from './ImageCaptionRow'
+import ViewportDialog from './ViewportDialog'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
   canvasAnnotationsFromMetadata,
@@ -111,6 +113,9 @@ export default function SynchronizedCollectionViewer({
   // until re-pinned; pinning is per member, not a global on/off switch.
   const [unpinnedIds, setUnpinnedIds] = useState<ReadonlySet<number>>(() => new Set())
   const [saving, setSaving] = useState(false)
+  // Which pane's notes dialog is open (each pane's dialog centres on that
+  // pane's viewport); null = closed.
+  const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
 
   // OSD handles arrive through onViewerReady. They are registered by image
   // id — not by pane — so when a member fails and the panes slide forward,
@@ -594,6 +599,23 @@ export default function SynchronizedCollectionViewer({
                     onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
                     onTileSourceRenewed={onImageRenewed}
                     onError={(message) => handleViewerError(image, message)}
+                    viewportOverlay={
+                      <ViewportDialog
+                        open={noteDialogImageId === image.id}
+                        title="Notes"
+                        onClose={() => setNoteDialogImageId(null)}
+                      >
+                        <Box
+                          sx={{
+                            typography: 'body2',
+                            whiteSpace: 'pre-wrap',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {image.note}
+                        </Box>
+                      </ViewportDialog>
+                    }
                   />
                   {/* Link toggle sits top-right of the viewport (the
                       ImageViewer's own toolbar docks bottom-left, so no
@@ -628,34 +650,25 @@ export default function SynchronizedCollectionViewer({
                     </IconButton>
                   </Tooltip>
                 </Paper>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    mt: 0.5,
-                    flexShrink: 0,
-                  }}
-                >
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    noWrap
-                    sx={{ flex: 1, minWidth: 0 }}
-                  >
-                    {image.name}
-                    {!image.active ? ' (inactive)' : ''}
-                  </Typography>
-                  <Button
-                    size="small"
-                    variant="text"
-                    endIcon={<ImageIcon />}
-                    onClick={() => onOpenImage(image)}
-                    aria-label={`Open ${image.name}`}
-                  >
-                    Open image
-                  </Button>
-                </Box>
+                <ImageCaptionRow
+                  key={`caption-${image.id}`}
+                  name={image.name}
+                  active={image.active}
+                  note={image.note}
+                  noteDialogOpen={noteDialogImageId === image.id}
+                  onShowNote={() => setNoteDialogImageId(image.id)}
+                  end={
+                    <Button
+                      size="small"
+                      variant="text"
+                      endIcon={<ImageIcon />}
+                      onClick={() => onOpenImage(image)}
+                      aria-label={`Open ${image.name}`}
+                    >
+                      Open image
+                    </Button>
+                  }
+                />
               </Box>
             )
           })}

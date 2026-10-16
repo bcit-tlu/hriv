@@ -30,8 +30,10 @@ with annotations and measurement markings visible on each.
 
 - Pan, zoom or rotate any pane and the others follow, keeping their
   relative positions — handy when the views highlight different spots.
-- Each pane's caption shows the image name and an **Open image** link to
-  the normal image view.
+- Each pane's caption shows the image name, its note when it has one
+  (longer notes clamp behind an **…more** link that opens the full note
+  over that viewer), and an **Open image** link
+  to the normal image view.
 - The **link** icon at the top-right of each pane keeps it synced with the
   others — panes start linked. Click it to unlink a pane and adjust it on
   its own (the icon switches to link-off); click again to re-link, which
@@ -62,7 +64,9 @@ visible but can't be changed here.
   press the ← and → arrow keys — they step the sequence from anywhere on
   the page, so they keep working after a dialog closes or a button click
   moves focus elsewhere.
-- The caption under the viewer shows the image name, the position
+- The caption under the viewer shows the image name, its note when it has
+  one (longer notes clamp behind an **…more** link that opens the full
+  note over the viewer), the position
   (`n of N` — part of the page link, so copying the URL shares the exact
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.

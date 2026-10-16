@@ -35,10 +35,20 @@ Frontend hooks/components live under `frontend/src/` (e.g. `useImageActions.ts`,
 
 ### Regular image viewer information
 
-The regular viewer's metadata accordion is in
-`frontend/src/components/ImageInfoAccordion.tsx`; its per-user expanded-state
-hook is `frontend/src/useImageInfoExpandedPreference.ts`, integrated by
-`frontend/src/App.tsx`, which passes the authenticated user's id. Source metadata
+The regular viewer's image metadata lives in two components wired by
+`frontend/src/App.tsx`: `frontend/src/components/ImageDetailsDrawer.tsx`
+(an "i"-triggered overlay panel portaled into the OSD container via
+`ImageViewer`'s `viewportOverlay` prop) and
+`frontend/src/components/ImageViewerInfoBar.tsx` (the always-visible row
+below the viewer: title `h2`, a **Notes:** cell clamped to one line, and a
+right-side `FittedCollections` cell showing the largest prefix that fits,
+with "…more" / "… + N more" opening a `ViewportDialog` centered over the
+viewport; the viewer instructions live in the drawer's footer). The row is
+the shared `frontend/src/components/ImageCaptionRow.tsx`, also used by the
+sequence and synchronized collection viewers, and the dialogs are
+`frontend/src/components/ViewportDialog.tsx` portaled into the OSD container
+alongside the drawer.
+Source metadata
 is fetched by
 `frontend/src/useImageSourceInfo.ts` from `/api/images/{id}/source-info`, with
 the backend query and role gate in `backend/app/image_source_info.py`.

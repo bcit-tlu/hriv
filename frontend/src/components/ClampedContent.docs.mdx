@@ -1,0 +1,43 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as ClampedContentStories from './ClampedContent.stories'
+
+<Meta of={ClampedContentStories} />
+
+<Title />
+
+<Subtitle>
+  Line-clamped text with an "…more" affordance that lets the caller open the full content.
+</Subtitle>
+
+## When to use
+
+`ClampedContent` renders content clamped to a fixed number of lines (`lines`, default 2). When it
+overflows, an "…more" link at the end of the last visible line calls `onMore` — callers open the
+full content in a `ViewportDialog`. It is shared by `ImageCaptionRow` (notes) and any clamped
+link list.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={ClampedContentStories.Basic} />
+
+## Examples
+
+### Overflowing
+
+Content past the line cap clamps behind an "…more" link that calls `onMore`.
+
+<Canvas of={ClampedContentStories.Overflowing} />
+
+## Stories
+
+<Stories includePrimary={false} />
