@@ -1523,7 +1523,7 @@ describe('App breadcrumbs', () => {
     expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
   })
 
-  it('resets the note popover state when selecting another image', async () => {
+  it('resets the notes dialog state when selecting another image', async () => {
     mockImage.note = 'A'.repeat(350)
     mockSecondImage.note = 'B'.repeat(350)
     currentImagesMock = [mockImage, mockSecondImage]
@@ -1550,19 +1550,19 @@ describe('App breadcrumbs', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
       fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
-      expect(screen.getByText('Notes', { selector: 'h3' })).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: 'Notes' })).toBeInTheDocument()
 
-      // The popover is a modal; close it before interacting with the page.
-      fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' })
+      // The dialog is focus-trapped; close it before interacting elsewhere.
+      fireEvent.keyDown(screen.getByRole('dialog', { name: 'Notes' }), { key: 'Escape' })
       await waitFor(() => {
-        expect(screen.queryByText('Notes', { selector: 'h3' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
 
-      // The second image's cell still overflows and offers its own popover.
+      // The second image's cell still overflows and offers its own dialog.
       expect(screen.getByRole('button', { name: 'Show full note' })).toBeInTheDocument()
-      expect(screen.queryByText('Notes', { selector: 'h3' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
     } finally {
       if (originalScrollHeight) {
         Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight)

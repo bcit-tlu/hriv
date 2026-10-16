@@ -143,13 +143,23 @@ images> / Empty` format used on category tiles.
   returning to the same image (no persisted preference). In canvas edit mode
   the "i" button is disabled and an open drawer closes; it stays closed when
   edit mode exits.
-- The info bar is a plain row (no background) showing Notes and Collections
-  cells with their label to the left (both labels are plural). At `md` and up the two cells sit
-  side by side in a 60/40 split favouring the note (`3fr 2fr`); a lone cell
-  spans the full width, below `md` they stack, and
-  when both are absent the bar renders nothing. Each value is clamped to two
-  lines; overflow gets an "…more" link at the end of the second line that opens a
-  Popover with the full content (see [collections.md](collections.md)).
+- The info bar is a plain row (no background) shared with the collection
+  viewers (`ImageCaptionRow`): the image title as an `h2` left, a **Notes:**
+  cell (bold label plus the note clamped to one line) when the image has a
+  note, and a **Collections:** cell at the right when the image belongs to
+  any collections (see [collections.md](collections.md)). The bar always
+  renders because the title is always shown. At `md` and up the row is one
+  line — the title capped at 20% when a note is present, the note taking the
+  middle, the collections cell capped at 30% — and below `md` the
+  collections cell wraps to its own left-aligned line.
+- An overflowing note gets an "…more" link at the end of the line; it opens
+  a `ViewportDialog` titled **Notes** centered over the OSD viewport (via
+  `viewportOverlay`, so it survives full-page mode), showing the full note.
+  The collections cell shows the largest prefix of names that fits; a
+  trailing "… + N more" opens a **Collections** dialog with the full list.
+  Both dialogs trap focus, close on Escape, ✕, or a backdrop click, restore
+  focus to the opener, and stop pointer/wheel propagation so the image
+  underneath does not pan or zoom.
 - On the regular image viewer and open collection detail, a closed My
   collections drawer reserves an opaque trigger row in the footer dock and
   `<main>` adds 4px of bottom padding, leaving a 16px gap above the button.
@@ -585,8 +595,9 @@ always read-only (`canEditContent={false}`).
 - **Given** a sequence collection is open with no `?item=`, **Then** the
   thumbnail filmstrip renders _above_ the viewer (#1564), the first member
   renders with the caption row under the viewport (member name `h2` left;
-  when the image has a note, the note clamped to one line with an "…more"
-  popover in the middle, the title capped at 20%;
+  when the image has a note, a visible **Notes:** label plus the note
+  clamped to one line in the middle — "…more" opens the same **Notes**
+  `ViewportDialog` centered over the viewer — the title capped at 20%;
   `1 of N` position readout and **Open image** right — the synchronized
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
@@ -654,7 +665,8 @@ measurement metadata.
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
   three or four (each pane captioned with the member name as an `h2`, its
-  note clamped to one line with an "…more" popover when present, and an
+  note clamped to one line behind a visible **Notes:** label — "…more"
+  opens a **Notes** `ViewportDialog` centered over that pane — and an
   **Open image** → `?image={id}` action) — and, when more than four are
   stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other

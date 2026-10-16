@@ -14,8 +14,8 @@ import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
-import ClampedContent from './ClampedContent'
-import { visuallyHidden } from '@mui/utils'
+import ImageCaptionRow from './ImageCaptionRow'
+import ViewportDialog from './ViewportDialog'
 import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
@@ -172,7 +172,15 @@ export default function SequenceCollectionViewer({
     return idx >= 0 ? idx : 0
   }, [available, itemId])
   const current = available[currentIndex] ?? null
-  const noteText = current?.note?.trim() ?? ''
+  // Notes dialog open state; closed on every image change (same
+  // adjust-during-render pattern as the App's image-details drawer).
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false)
+  const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
+  const currentImageId = current?.id ?? null
+  if (currentImageId !== noteDialogImageId) {
+    setNoteDialogImageId(currentImageId)
+    setNoteDialogOpen(false)
+  }
 
   // Autofocus the region when a collection opens (#1564) so ←/→ step the
   // sequence immediately — no click needed first. Ref-guarded so switching
@@ -385,6 +393,23 @@ export default function SequenceCollectionViewer({
           measurement={measurement}
           onTileSourceRenewed={onImageRenewed}
           onError={handleViewerError}
+          viewportOverlay={
+            <ViewportDialog
+              open={noteDialogOpen}
+              title="Notes"
+              onClose={() => setNoteDialogOpen(false)}
+            >
+              <Box
+                sx={{
+                  typography: 'body2',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {current.note}
+              </Box>
+            </ViewportDialog>
+          }
         />
         <Box
           data-testid="sequence-nav-overlay"
@@ -419,57 +444,37 @@ export default function SequenceCollectionViewer({
         </Box>
       </Paper>
       {/* Caption row mirrors the synchronized pane captions (#1564): the
-          member name left, the position readout + Open image right. */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexShrink: 0 }}>
-        <Typography
-          variant="subtitle1"
-          component="h2"
-          noWrap
-          title={current.name}
-          sx={
-            noteText !== ''
-              ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%' }
-              : { flex: 1, minWidth: 0 }
-          }
-        >
-          {current.name}
-          {!current.active ? ' (inactive)' : ''}
-        </Typography>
-        {current.note != null && noteText !== '' && (
-          <ClampedContent
-            key={`note-${current.id}`}
-            lines={1}
-            popoverHeading="Notes"
-            moreAriaLabel="Show full note"
-            preWrap
-            fullContent={current.note}
-            sx={{ flex: 1, minWidth: 0 }}
-          >
-            <Box component="span" sx={visuallyHidden}>
-              Notes:{' '}
-            </Box>
-            {current.note.replace(/\s*\n\s*/g, ' ')}
-          </ClampedContent>
-        )}
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          aria-live="polite"
-          data-testid="sequence-position"
-          sx={{ flexShrink: 0 }}
-        >
-          {position}
-        </Typography>
-        <Button
-          size="small"
-          variant="text"
-          endIcon={<ImageIcon />}
-          onClick={() => onOpenImage(current)}
-          sx={{ flexShrink: 0 }}
-        >
-          Open image
-        </Button>
-      </Box>
+          member name + note left, the position readout + Open image right. */}
+      <ImageCaptionRow
+        key={`caption-${current.id}`}
+        name={current.name}
+        active={current.active}
+        note={current.note}
+        noteDialogOpen={noteDialogOpen}
+        onShowNote={() => setNoteDialogOpen(true)}
+        end={
+          <>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              aria-live="polite"
+              data-testid="sequence-position"
+              sx={{ flexShrink: 0 }}
+            >
+              {position}
+            </Typography>
+            <Button
+              size="small"
+              variant="text"
+              endIcon={<ImageIcon />}
+              onClick={() => onOpenImage(current)}
+              sx={{ flexShrink: 0 }}
+            >
+              Open image
+            </Button>
+          </>
+        }
+      />
     </Box>
   )
 }

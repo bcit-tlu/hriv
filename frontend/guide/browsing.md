@@ -46,7 +46,7 @@ Copyright, programs, groups, dates, dimensions, original file name and type,
 and other image details open from the **i** button in the top-right corner of
 the viewer — viewer tips are at the bottom of that panel. Notes and
 collections show just below the viewer; long entries have an **…more**
-link.
+link that opens the full text over the viewer.
 
 ### Viewer toolbar (bottom left)
 

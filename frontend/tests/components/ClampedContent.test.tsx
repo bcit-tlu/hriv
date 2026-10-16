@@ -1,15 +1,15 @@
 /**
- * Tests for ClampedContent — the shared line-clamp + "…more" + popover
- * used by ImageViewerInfoBar and the collection-viewer caption rows.
+ * Tests for ClampedContent — the shared line-clamp + "…more" affordance
+ * used by ImageCaptionRow and any clamped link list.
  */
 
-import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import ClampedContent from '../../src/components/ClampedContent'
 
 const defaultProps = {
-  popoverHeading: 'Notes',
   moreAriaLabel: 'Show full note',
+  onMore: vi.fn(),
 }
 
 const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
@@ -28,6 +28,7 @@ function stubOverflow() {
 }
 
 afterEach(() => {
+  vi.clearAllMocks()
   for (const [prop, descriptor] of [
     ['scrollHeight', originalScrollHeight],
     ['clientHeight', originalClientHeight],
@@ -62,32 +63,31 @@ describe('ClampedContent', () => {
     })
   })
 
-  it('opens a popover with the heading and fullContent on overflow', async () => {
+  it('calls onMore from the "…more" link when it overflows', () => {
     stubOverflow()
+    const onMore = vi.fn()
     render(
-      <ClampedContent {...defaultProps} fullContent="Full text with newlines">
-        Truncated text
+      <ClampedContent {...defaultProps} onMore={onMore}>
+        Long content
       </ClampedContent>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
-    const popover = screen.getByRole('presentation')
-    expect(within(popover).getByText('Notes')).toBeInTheDocument()
-    expect(within(popover).getByText('Full text with newlines')).toBeInTheDocument()
-
-    fireEvent.keyDown(popover, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('presentation')).not.toBeInTheDocument())
+    const more = screen.getByRole('button', { name: 'Show full note' })
+    expect(more).toHaveAttribute('aria-haspopup', 'dialog')
+    fireEvent.click(more)
+    expect(onMore).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to children as the popover body when fullContent is omitted', async () => {
+  it('reflects the caller dialog state on the link', () => {
     stubOverflow()
-    render(<ClampedContent {...defaultProps}>Full children text</ClampedContent>)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
-    const popover = screen.getByRole('presentation')
-    expect(within(popover).getByText('Full children text')).toBeInTheDocument()
-
-    fireEvent.keyDown(popover, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByRole('presentation')).not.toBeInTheDocument())
+    render(
+      <ClampedContent {...defaultProps} expanded>
+        Long content
+      </ClampedContent>,
+    )
+    expect(screen.getByRole('button', { name: 'Show full note' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
   })
 })

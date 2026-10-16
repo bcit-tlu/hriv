@@ -7,6 +7,7 @@
  * test file carries the drag-end coverage this file used to host.
  */
 
+import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
 
@@ -22,7 +23,11 @@ let lastViewerProps: Record<string, unknown> | null = null
 vi.mock('../../src/components/ImageViewer', () => ({
   default: (props: Record<string, unknown>) => {
     lastViewerProps = props
-    return <div data-testid="image-viewer" data-image-id={String(props.imageId)} />
+    return (
+      <div data-testid="image-viewer" data-image-id={String(props.imageId)}>
+        {props.viewportOverlay as ReactNode}
+      </div>
+    )
   },
 }))
 
@@ -547,14 +552,14 @@ describe('caption note', () => {
     expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
   })
 
-  it('opens a popover with the full multi-line note when the caption overflows', () => {
+  it('opens a dialog inside the viewer with the full multi-line note on overflow', () => {
     stubOverflow()
     renderViewer({ collection: noted() })
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
-    const popover = screen.getByRole('presentation')
-    expect(within(popover).getByText('Notes')).toBeInTheDocument()
-    expect(within(popover).getByText(/Fracture line/).textContent).toContain(
+    const viewer = screen.getByTestId('image-viewer')
+    const dialog = within(viewer).getByRole('dialog', { name: 'Notes' })
+    expect(within(dialog).getByText(/Fracture line/).textContent).toContain(
       'Fracture line visible.\nCallus forming medially.',
     )
   })

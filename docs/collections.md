@@ -1277,11 +1277,13 @@ left click opens the collection in-app (`onOpenCollection` → `handleOpenCollec
 builds `?collection={id}`), a modifier- or middle-click opens it in a new tab.
 Every link is safe to follow — the list is already visibility-filtered
 server-side, so it only ever contains collections the caller may open. In the
-info bar every name is shown inline (`App` passes `limit` = the full count),
-clamped to two lines in a 40% column (a `3fr 2fr` split favouring the note);
-when the list overflows, an "…more" link at the end of the
-second line opens a Popover listing every collection (reset per image via a `key`).
-The always-plural "Collections:" label is rendered by `ImageViewerInfoBar`;
+info bar a `FittedCollections` cell (capped at 30% of the row at `md`, a
+full-width line below it) shows the largest prefix of names that fits,
+measured against an `aria-hidden` clone; a trailing "… + N more" link opens
+a `ViewportDialog` centered over the viewport listing every collection
+(`ImageCollectionsList` with `limit` = the full count), and following a
+collection link also closes the dialog. The always-plural "Collections:"
+label is rendered by the fitted cell;
 `ImageCollectionsList` renders only the links and still supports `limit`
 (default 3) for its inline "… and N more" affordance elsewhere.
 
@@ -1301,12 +1303,12 @@ render read-only via `canvasAnnotationsFromMetadata` /
 (`components/imageViewerUtils.ts`). **Open image** navigates to the normal
 `?image={id}` view where annotations can be edited.
 
-**Caption.** A caption row under the viewport — the same pattern the
-synchronized panes use (#1564) — holds the member name as an `h2` (left),
-then, when the image has a note, the note clamped to one line with an
-"…more" link that opens a Popover with the full note (`ClampedContent`,
-shared with the viewer info bar; the title is capped at 20% when a note is
-present) and, at the
+**Caption.** A caption row under the viewport — the same `ImageCaptionRow`
+the synchronized panes and the image-view info bar use — holds the member
+name as an `h2` (left), then, when the image has a note, a visible
+**Notes:** label plus the note clamped to one line (`ClampedContent`) with
+an "…more" link that opens a `ViewportDialog` over the viewer with the full
+note (the title is capped at 20% when a note is present) and, at the
 right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
@@ -1422,8 +1424,9 @@ render as panes — a side-by-side row for two, a 2×2 grid for three or four
 sequence viewer (`canEditContent={false}`; stored annotations, locked
 overlays and measurement metadata pass through from `metadataExtra`). A
 caption under each pane shows the member name (plus an _inactive_ marker),
-then — when the image has a note — the note clamped to one line with an
-"…more" popover (title capped at 20%), and an
+then — when the image has a note — a **Notes:** label plus the note clamped
+to one line, "…more" opening a `ViewportDialog` centered over that pane
+(title capped at 20%), and an
 **Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
 surviving) members shows a fallback alert with the ordered member list and

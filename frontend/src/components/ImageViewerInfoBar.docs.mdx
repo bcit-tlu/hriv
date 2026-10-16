@@ -14,17 +14,17 @@ import * as ImageViewerInfoBarStories from './ImageViewerInfoBar.stories'
 <Title />
 
 <Subtitle>
-  An always-visible Notes / Collections row below the image viewer, clamped to two lines.
+  The caption row below the image viewer: title, clamped note, and fitted collections.
 </Subtitle>
 
 ## When to use
 
-`App` renders the info bar directly below the regular image viewer. At `md` and up Notes and
-Collections sit side by side in a 60/40 split favouring the note; a lone cell spans the full
-width, and below `md` the cells stack.
-Each value is clamped to two lines — when it overflows, an "…more" link at the end of the second
-line opens a Popover with the full content. The bar renders nothing when both are absent; the viewer instructions live in
-the `ImageDetailsDrawer` footer.
+`App` renders the info bar directly below the regular image viewer. The image title leads on the
+left, followed by the note clamped to one line with a "…more" link, then — pushed right — a
+"Collections:" cell that shows as many names as fit and collapses the rest behind a "+ N more"
+link. Both affordances open a `ViewportDialog` centred over the viewer. The bar always renders
+because the title is always shown; the viewer instructions live in the `ImageDetailsDrawer`
+footer.
 
 ## Interactive example
 
@@ -36,20 +36,21 @@ the `ImageDetailsDrawer` footer.
 
 ### Long note
 
-Content that needs more than two lines clamps behind an "…more" link that opens the full
-text in a Popover.
+A note longer than one line clamps behind an "…more" link that opens the notes dialog.
 
 <Canvas of={ImageViewerInfoBarStories.LongNote} />
 
 ### Many collections
 
+More names than fit collapse behind a "+ N more" link that opens the collections dialog.
+
 <Canvas of={ImageViewerInfoBarStories.ManyCollections} />
 
-### Notes only
+### Title only
 
-A lone cell spans the full width.
+No note and no collections — just the title.
 
-<Canvas of={ImageViewerInfoBarStories.NotesOnly} />
+<Canvas of={ImageViewerInfoBarStories.TitleOnly} />
 
 ## Stories
 

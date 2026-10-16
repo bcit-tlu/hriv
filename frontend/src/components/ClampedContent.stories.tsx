@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
 import ClampedContent from './ClampedContent'
 
@@ -7,8 +7,8 @@ const meta = {
   title: 'Components/ClampedContent',
   component: ClampedContent,
   args: {
-    popoverHeading: 'Notes',
     moreAriaLabel: 'Show full note',
+    onMore: fn(),
   },
   decorators: [
     (Story) => (
@@ -42,18 +42,13 @@ export const Basic: Story = {
 export const Overflowing: Story = {
   args: {
     lines: 1,
-    preWrap: true,
-    fullContent:
-      'Fracture line visible along the parietal.\nCallus forming medially.\nHealing stage consistent with week six.',
     children:
       'Fracture line visible along the parietal. Callus forming medially. Healing stage consistent with week six.',
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
     const more = await canvas.findByRole('button', { name: 'Show full note' })
     await userEvent.click(more)
-    const popover = await within(document.body).findByRole('presentation')
-    await expect(within(popover).getByText('Notes')).toBeInTheDocument()
-    await expect(within(popover).getByText(/Callus forming/)).toBeInTheDocument()
+    await expect(args.onMore).toHaveBeenCalled()
   },
 }

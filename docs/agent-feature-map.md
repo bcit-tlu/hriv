@@ -39,10 +39,15 @@ The regular viewer's image metadata lives in two components wired by
 `frontend/src/App.tsx`: `frontend/src/components/ImageDetailsDrawer.tsx`
 (an "i"-triggered overlay panel portaled into the OSD container via
 `ImageViewer`'s `viewportOverlay` prop) and
-`frontend/src/components/ImageViewerInfoBar.tsx` (the always-visible
-Notes / Collections row below the viewer, clamped to two lines in a 60/40
-split favouring notes, with an "…more" popover; the viewer instructions live
-in the drawer's footer).
+`frontend/src/components/ImageViewerInfoBar.tsx` (the always-visible row
+below the viewer: title `h2`, a **Notes:** cell clamped to one line, and a
+right-side `FittedCollections` cell showing the largest prefix that fits,
+with "…more" / "… + N more" opening a `ViewportDialog` centered over the
+viewport; the viewer instructions live in the drawer's footer). The row is
+the shared `frontend/src/components/ImageCaptionRow.tsx`, also used by the
+sequence and synchronized collection viewers, and the dialogs are
+`frontend/src/components/ViewportDialog.tsx` portaled into the OSD container
+alongside the drawer.
 Source metadata
 is fetched by
 `frontend/src/useImageSourceInfo.ts` from `/api/images/{id}/source-info`, with

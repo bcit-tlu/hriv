@@ -14,15 +14,15 @@ import * as ClampedContentStories from './ClampedContent.stories'
 <Title />
 
 <Subtitle>
-  Line-clamped text with an "…more" affordance that opens the full content in a Popover.
+  Line-clamped text with an "…more" affordance that lets the caller open the full content.
 </Subtitle>
 
 ## When to use
 
 `ClampedContent` renders content clamped to a fixed number of lines (`lines`, default 2). When it
-overflows, an "…more" link at the end of the last visible line opens a Popover with the full
-content (`fullContent`, defaulting to the children — pass the unflattened note for `pre-wrap`
-output). It is shared by `ImageViewerInfoBar` and the collection-viewer caption rows.
+overflows, an "…more" link at the end of the last visible line calls `onMore` — callers open the
+full content in a `ViewportDialog`. It is shared by `ImageCaptionRow` (notes) and any clamped
+link list.
 
 ## Interactive example
 
@@ -34,7 +34,7 @@ output). It is shared by `ImageViewerInfoBar` and the collection-viewer caption 
 
 ### Overflowing
 
-Content past the line cap clamps behind an "…more" link that opens the full text in a Popover.
+Content past the line cap clamps behind an "…more" link that calls `onMore`.
 
 <Canvas of={ClampedContentStories.Overflowing} />
 

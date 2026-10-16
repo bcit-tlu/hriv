@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 
 import type { Collection, ImageItem } from '../../src/types'
 import { makeCollection, makeImage } from '../helpers/fixtures'
@@ -138,7 +138,11 @@ vi.mock('../../src/components/ImageViewer', () => ({
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [imageId, props.initialOverlays, props.initialViewport])
-    return <div data-testid="image-viewer" data-image-id={String(imageId)} />
+    return (
+      <div data-testid="image-viewer" data-image-id={String(imageId)}>
+        {props.viewportOverlay as ReactNode}
+      </div>
+    )
   },
 }))
 
@@ -993,14 +997,18 @@ describe('caption note', () => {
     expect(screen.queryByText(/^Notes:/)).not.toBeInTheDocument()
   })
 
-  it('opens a popover with the full multi-line note when the caption overflows', () => {
+  it('opens the notes dialog inside the matching pane on overflow', () => {
     stubOverflow()
     renderViewer({ collection: noted() })
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
-    const popover = screen.getByRole('presentation')
-    expect(within(popover).getByText('Notes')).toBeInTheDocument()
-    expect(within(popover).getByText(/Frontal suture/).textContent).toContain(
+    // Exactly one dialog opens, inside the noted image's viewer pane.
+    const dialog = screen.getByRole('dialog', { name: 'Notes' })
+    const viewers = screen.getAllByTestId('image-viewer')
+    expect(viewers).toHaveLength(2)
+    const viewer = viewers.find((v) => v.getAttribute('data-image-id') === '1')!
+    expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBe(dialog)
+    expect(within(dialog).getByText(/Frontal suture/).textContent).toContain(
       'Frontal suture intact.\nNo asymmetry detected.',
     )
   })
