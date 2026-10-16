@@ -324,8 +324,13 @@ function PositionSlotTile({
               p: 0,
               pointerEvents: 'none',
               // Native-checkbox look: opaque white inside the outline.
+              // Checked flips the inner fill so the text.primary tick reads
+              // in both themes (dark box/white tick light, inverse dark).
               color: 'grey.700',
-              '&.Mui-checked': { color: 'primary.main' },
+              '&.Mui-checked': {
+                color: 'text.primary',
+                '&::before': { bgcolor: 'background.paper' },
+              },
               '&::before': {
                 content: '""',
                 position: 'absolute',
@@ -493,8 +498,13 @@ function SortableMemberTile({
             p: 0,
             pointerEvents: 'none',
             // Native-checkbox look: opaque white inside the outline.
+            // Checked flips the inner fill so the text.primary tick reads
+            // in both themes (dark box/white tick light, inverse dark).
             color: 'grey.700',
-            '&.Mui-checked': { color: 'primary.main' },
+            '&.Mui-checked': {
+              color: 'text.primary',
+              '&::before': { bgcolor: 'background.paper' },
+            },
             '&::before': {
               content: '""',
               position: 'absolute',
