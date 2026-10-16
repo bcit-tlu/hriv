@@ -323,6 +323,17 @@ function PositionSlotTile({
               ...slotCornerSx,
               p: 0,
               pointerEvents: 'none',
+              // Native-checkbox look: opaque white inside the outline.
+              color: 'grey.700',
+              '&.Mui-checked': { color: 'primary.main' },
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                inset: 3,
+                bgcolor: 'common.white',
+                borderRadius: '2px',
+              },
+              '& .MuiSvgIcon-root': { position: 'relative', zIndex: 1 },
             }}
           />
         ) : (
@@ -481,6 +492,17 @@ function SortableMemberTile({
             zIndex: 1,
             p: 0,
             pointerEvents: 'none',
+            // Native-checkbox look: opaque white inside the outline.
+            color: 'grey.700',
+            '&.Mui-checked': { color: 'primary.main' },
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              inset: 3,
+              bgcolor: 'common.white',
+              borderRadius: '2px',
+            },
+            '& .MuiSvgIcon-root': { position: 'relative', zIndex: 1 },
           }}
         />
       ) : (
