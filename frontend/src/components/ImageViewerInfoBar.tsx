@@ -48,16 +48,23 @@ function InfoCell({ label, children, preWrap = false, fullContent, moreAriaLabel
     const measure = () => {
       setOverflowing(el.scrollHeight > el.clientHeight + 1)
       // Links clipped below the fold of the clamp must leave the tab order.
-      // Their offsetParent is this Box (it is position: relative).
+      // getClientRects() gives one rect per line fragment, so a link that
+      // wraps stays tabbable while part of it is visible. An empty list
+      // (jsdom) means we can't measure, so the node stays tabbable too.
+      const fold = el.getBoundingClientRect().top + el.clientHeight
       const overlay = el.querySelector('[data-info-more]')?.parentElement
       const overlayRect = overlay?.getBoundingClientRect()
       for (const node of el.querySelectorAll<HTMLElement>('a[href], button')) {
         if (node.hasAttribute('data-info-more')) continue
-        const rect = node.getBoundingClientRect()
+        const fragments = [...node.getClientRects()]
         const hidden =
-          node.offsetTop >= el.clientHeight ||
-          // Covered by the "…more" overlay on the clamped second line.
-          (overlayRect != null && rect.right > overlayRect.left && rect.bottom > overlayRect.top)
+          fragments.length > 0 &&
+          fragments.every(
+            (f) =>
+              f.top >= fold ||
+              // Covered by the "…more" overlay on the clamped second line.
+              (overlayRect != null && f.right > overlayRect.left && f.bottom > overlayRect.top),
+          )
         if (hidden) node.setAttribute('tabindex', '-1')
         else node.removeAttribute('tabindex')
       }
