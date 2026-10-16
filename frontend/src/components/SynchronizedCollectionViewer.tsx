@@ -23,6 +23,8 @@ import { userMessage, type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
+import ClampedContent from './ClampedContent'
+import { visuallyHidden } from '@mui/utils'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
   canvasAnnotationsFromMetadata,
@@ -638,14 +640,35 @@ export default function SynchronizedCollectionViewer({
                   }}
                 >
                   <Typography
-                    variant="body2"
-                    color="text.secondary"
+                    variant="subtitle1"
+                    component="h2"
                     noWrap
-                    sx={{ flex: 1, minWidth: 0 }}
+                    title={image.name}
+                    sx={
+                      image.note
+                        ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%' }
+                        : { flex: 1, minWidth: 0 }
+                    }
                   >
                     {image.name}
                     {!image.active ? ' (inactive)' : ''}
                   </Typography>
+                  {image.note != null && image.note !== '' && (
+                    <ClampedContent
+                      key={`note-${image.id}`}
+                      lines={1}
+                      popoverHeading="Notes"
+                      moreAriaLabel="Show full note"
+                      preWrap
+                      fullContent={image.note}
+                      sx={{ flex: 1, minWidth: 0 }}
+                    >
+                      <Box component="span" sx={visuallyHidden}>
+                        Notes:{' '}
+                      </Box>
+                      {image.note.replace(/\s*\n\s*/g, ' ')}
+                    </ClampedContent>
+                  )}
                   <Button
                     size="small"
                     variant="text"

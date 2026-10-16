@@ -7,8 +7,8 @@
  * test file carries the drag-end coverage this file used to host.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 
 import type { Collection, ImageItem } from '../../src/types'
 import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
@@ -480,5 +480,72 @@ describe('SequenceCollectionViewer', () => {
     expect(screen.getByTestId('sequence-thumbnail-strip')).toHaveStyle({
       filter: 'grayscale(100%)',
     })
+  })
+})
+
+describe('caption note', () => {
+  const note = 'Fracture line visible.\nCallus forming medially.'
+  const noted = () => seqCollection({ images: [makeImage({ id: 1, name: 'Slice A', note })] })
+
+  const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollHeight',
+  )
+  const originalClientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'clientHeight',
+  )
+  function stubOverflow() {
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 100,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => 40,
+    })
+  }
+  afterEach(() => {
+    for (const [prop, descriptor] of [
+      ['scrollHeight', originalScrollHeight],
+      ['clientHeight', originalClientHeight],
+    ] as const) {
+      if (descriptor) {
+        Object.defineProperty(HTMLElement.prototype, prop, descriptor)
+      } else {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop]
+      }
+    }
+  })
+
+  it('renders the image name as a level-2 heading', () => {
+    renderViewer({ collection: noted() })
+    expect(screen.getByRole('heading', { level: 2, name: 'Slice A' })).toBeInTheDocument()
+  })
+
+  it('shows the flattened note between the title and the position counter', () => {
+    renderViewer({ collection: noted() })
+    const heading = screen.getByRole('heading', { level: 2, name: 'Slice A' })
+    const noteEl = screen.getByText('Fracture line visible. Callus forming medially.')
+    const position = screen.getByTestId('sequence-position')
+    expect(heading.compareDocumentPosition(noteEl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(noteEl.compareDocumentPosition(position) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('offers no "Show full note" control without a note', () => {
+    renderViewer()
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+  })
+
+  it('opens a popover with the full multi-line note when the caption overflows', () => {
+    stubOverflow()
+    renderViewer({ collection: noted() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    const popover = screen.getByRole('presentation')
+    expect(within(popover).getByText('Notes')).toBeInTheDocument()
+    expect(within(popover).getByText(/Fracture line/).textContent).toContain(
+      'Fracture line visible.\nCallus forming medially.',
+    )
   })
 })

@@ -14,6 +14,8 @@ import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
+import ClampedContent from './ClampedContent'
+import { visuallyHidden } from '@mui/utils'
 import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
@@ -418,10 +420,36 @@ export default function SequenceCollectionViewer({
       {/* Caption row mirrors the synchronized pane captions (#1564): the
           member name left, the position readout + Open image right. */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexShrink: 0 }}>
-        <Typography variant="body2" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
+        <Typography
+          variant="subtitle1"
+          component="h2"
+          noWrap
+          title={current.name}
+          sx={
+            current.note
+              ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%' }
+              : { flex: 1, minWidth: 0 }
+          }
+        >
           {current.name}
           {!current.active ? ' (inactive)' : ''}
         </Typography>
+        {current.note != null && current.note !== '' && (
+          <ClampedContent
+            key={`note-${current.id}`}
+            lines={1}
+            popoverHeading="Notes"
+            moreAriaLabel="Show full note"
+            preWrap
+            fullContent={current.note}
+            sx={{ flex: 1, minWidth: 0 }}
+          >
+            <Box component="span" sx={visuallyHidden}>
+              Notes:{' '}
+            </Box>
+            {current.note.replace(/\s*\n\s*/g, ' ')}
+          </ClampedContent>
+        )}
         <Typography
           variant="body2"
           color="text.secondary"

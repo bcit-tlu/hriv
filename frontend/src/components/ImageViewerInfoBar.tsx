@@ -1,9 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import Link from '@mui/material/Link'
-import Popover from '@mui/material/Popover'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
+import ClampedContent from './ClampedContent'
 
 export interface ImageViewerInfoBarProps {
   /** Cells are keyed on this so overflow/popover state resets per image. */
@@ -31,144 +29,32 @@ interface InfoCellProps {
 }
 
 /**
- * One info-bar cell: label on the left, value clamped to two lines on the
- * right. When the value overflows, an "…more" link overlaid at the end of the
- * second line opens a Popover with the full content (body-portaled — the bar
- * lives outside OSD).
+ * One info-bar cell: label on the left, a `ClampedContent` value on the
+ * right. The label column only ever holds the label — the "…more" affordance
+ * lives inside the clamp.
  */
 function InfoCell({ label, children, preWrap = false, fullContent, moreAriaLabel }: InfoCellProps) {
-  const [cellEl, setCellEl] = useState<HTMLDivElement | null>(null)
-  const valueRef = useRef<HTMLDivElement>(null)
-  const [overflowing, setOverflowing] = useState(false)
-  const [popoverOpen, setPopoverOpen] = useState(false)
-
-  useLayoutEffect(() => {
-    const el = valueRef.current
-    if (!el) return
-    const measure = () => {
-      setOverflowing(el.scrollHeight > el.clientHeight + 1)
-      // Links clipped below the fold of the clamp must leave the tab order.
-      // getClientRects() gives one rect per line fragment, so a link that
-      // wraps stays tabbable while part of it is visible. An empty list
-      // (jsdom) means we can't measure, so the node stays tabbable too.
-      const fold = el.getBoundingClientRect().top + el.clientHeight
-      const overlay = el.querySelector('[data-info-more]')?.parentElement
-      const overlayRect = overlay?.getBoundingClientRect()
-      for (const node of el.querySelectorAll<HTMLElement>('a[href], button')) {
-        if (node.hasAttribute('data-info-more')) continue
-        const fragments = [...node.getClientRects()]
-        const hidden =
-          fragments.length > 0 &&
-          fragments.every(
-            (f) =>
-              f.top >= fold ||
-              // Covered by the "…more" overlay on the clamped second line.
-              (overlayRect != null && f.right > overlayRect.left && f.bottom > overlayRect.top),
-          )
-        if (hidden) node.setAttribute('tabindex', '-1')
-        else node.removeAttribute('tabindex')
-      }
-    }
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-    // `overflowing` is a dep so measure re-runs once the overlay renders.
-  }, [children, overflowing])
-
   return (
-    <>
-      <Box ref={setCellEl} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            component="div"
-            sx={{ whiteSpace: 'nowrap' }}
-          >
-            <strong>{label}</strong>
-          </Typography>
-        </Box>
-        <Box
-          ref={valueRef}
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            typography: 'body2',
-            color: 'text.secondary',
-            position: 'relative',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            // Long unbroken strings wrap so the clamp — and "…more" — engage.
-            overflowWrap: 'anywhere',
-          }}
-        >
-          {children}
-          {overflowing && (
-            // Covers the native line-clamp ellipsis so the reader sees
-            // "…more" right after the cut-off text.
-            <Box
-              component="span"
-              sx={{
-                position: 'absolute',
-                right: 0,
-                bottom: 0,
-                bgcolor: 'background.default',
-                pl: 0.5,
-                typography: 'body2',
-              }}
-            >
-              …
-              <Link
-                component="button"
-                type="button"
-                variant="body2"
-                underline="hover"
-                data-info-more
-                aria-label={moreAriaLabel}
-                aria-haspopup="dialog"
-                aria-expanded={popoverOpen}
-                onClick={() => setPopoverOpen(true)}
-              >
-                more
-              </Link>
-            </Box>
-          )}
-        </Box>
-      </Box>
-      <Popover
-        open={popoverOpen}
-        anchorEl={cellEl}
-        onClose={() => setPopoverOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        component="div"
+        sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
       >
-        <Box
-          sx={{ maxWidth: 480, maxHeight: '50vh', overflow: 'auto', p: 2 }}
-          // A collection link inside the popover also closes it.
-          onClick={(e) => {
-            if ((e.target as HTMLElement).closest('a, button')) setPopoverOpen(false)
-          }}
-        >
-          <Typography variant="subtitle2" component="h3" sx={{ mb: 0.5 }}>
-            {label.replace(/:$/, '')}
-          </Typography>
-          <Box
-            sx={{
-              typography: 'body2',
-              color: 'text.secondary',
-              overflowWrap: 'anywhere',
-              ...(preWrap ? { whiteSpace: 'pre-wrap' } : {}),
-            }}
-          >
-            {fullContent ?? children}
-          </Box>
-        </Box>
-      </Popover>
-    </>
+        <strong>{label}</strong>
+      </Typography>
+      <ClampedContent
+        lines={2}
+        popoverHeading={label.replace(/:$/, '')}
+        moreAriaLabel={moreAriaLabel}
+        preWrap={preWrap}
+        fullContent={fullContent}
+        sx={{ flex: 1, minWidth: 0 }}
+      >
+        {children}
+      </ClampedContent>
+    </Box>
   )
 }
 

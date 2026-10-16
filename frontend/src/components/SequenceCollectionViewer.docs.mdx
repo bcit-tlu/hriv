@@ -16,8 +16,9 @@ import * as SequenceCollectionViewerStories from './SequenceCollectionViewer.sto
 <Subtitle>
   The read-only viewer for sequence collections: a thumbnail filmstrip above the image, one image at
   a time with edge-overlay Previous/Next buttons (revealed on pointer activity), a caption row with
-  the member name, position readout, and Open image action, and focused arrow-key support. Member
-  management (reorder, add, remove) lives in the collection page's Manage dialog.
+  the member name, its note (clamped, with an "…more" popover), position readout, and Open image
+  action, and focused arrow-key support. Member management (reorder, add, remove) lives in the
+  collection page's Manage dialog.
 </Subtitle>
 
 ## When to use
@@ -44,9 +45,11 @@ browser history.
   where annotations can be edited with the usual permissions.
 - **Per-image reset.** The viewer is keyed by image id, so switching items remounts it — no
   viewport state bleeds between images.
-- **Layout.** The thumbnail filmstrip sits _above_ the viewer (#1564); the member name,
+- **Layout.** The thumbnail filmstrip sits _above_ the viewer (#1564); the member name (`h2`),
   position readout (`x of y`, `aria-live`), and **Open image** form a caption row under the
-  viewport — the same pattern the synchronized panes use.
+  viewport — the same pattern the synchronized panes use. When the image has a note it renders
+  between the name and the readout via `ClampedContent` (one line, "…more" popover); the name is
+  capped at 20% when a note is present.
 - **Navigation.** Lightbox-style Previous/Next chevrons overlay the viewport's left/right
   edges (#1561), fading in on pointer activity over the frame and back out after ~2 s idle
   or on leave — like the OSD toolbar's `autoHideControls`; keyboard focus reveals them too

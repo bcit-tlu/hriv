@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import { useEffect } from 'react'
 
 import type { Collection, ImageItem } from '../../src/types'
@@ -920,5 +920,75 @@ describe('SynchronizedCollectionViewer', () => {
       fakeA.viewport!.panTo({ x: 0.9, y: 0.9 })
     })
     expect(fakeB.viewport).toBeNull()
+  })
+})
+
+describe('caption note', () => {
+  const note = 'Frontal suture intact.\nNo asymmetry detected.'
+  const noted = () =>
+    syncCollection({
+      images: [
+        makeImage({ id: 1, name: 'Skull — frontal', note }),
+        makeImage({ id: 2, name: 'Skull — lateral' }),
+      ],
+    })
+
+  const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollHeight',
+  )
+  const originalClientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'clientHeight',
+  )
+  function stubOverflow() {
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 100,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get: () => 40,
+    })
+  }
+  afterEach(() => {
+    for (const [prop, descriptor] of [
+      ['scrollHeight', originalScrollHeight],
+      ['clientHeight', originalClientHeight],
+    ] as const) {
+      if (descriptor) {
+        Object.defineProperty(HTMLElement.prototype, prop, descriptor)
+      } else {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop]
+      }
+    }
+  })
+
+  it('renders each pane name as a level-2 heading', () => {
+    renderViewer({ collection: noted() })
+    expect(screen.getByRole('heading', { level: 2, name: 'Skull — frontal' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Skull — lateral' })).toBeInTheDocument()
+  })
+
+  it('shows the flattened note in the caption row', () => {
+    renderViewer({ collection: noted() })
+    expect(screen.getByText('Frontal suture intact. No asymmetry detected.')).toBeInTheDocument()
+  })
+
+  it('offers no "Show full note" control without a note', () => {
+    renderViewer()
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+  })
+
+  it('opens a popover with the full multi-line note when the caption overflows', () => {
+    stubOverflow()
+    renderViewer({ collection: noted() })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+    const popover = screen.getByRole('presentation')
+    expect(within(popover).getByText('Notes')).toBeInTheDocument()
+    expect(within(popover).getByText(/Frontal suture/).textContent).toContain(
+      'Frontal suture intact.\nNo asymmetry detected.',
+    )
   })
 })

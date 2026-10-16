@@ -1302,7 +1302,11 @@ render read-only via `canvasAnnotationsFromMetadata` /
 `?image={id}` view where annotations can be edited.
 
 **Caption.** A caption row under the viewport — the same pattern the
-synchronized panes use (#1564) — holds the member name (left) and, at the
+synchronized panes use (#1564) — holds the member name as an `h2` (left),
+then, when the image has a note, the note clamped to one line with an
+"…more" link that opens a Popover with the full note (`ClampedContent`,
+shared with the viewer info bar; the title is capped at 20% when a note is
+present) and, at the
 right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
@@ -1417,8 +1421,10 @@ render as panes — a side-by-side row for two, a 2×2 grid for three or four
 (#1561) — each a read-only `ImageViewer` with the same prop set as the
 sequence viewer (`canEditContent={false}`; stored annotations, locked
 overlays and measurement metadata pass through from `metadataExtra`). A
-caption under each pane shows the member name (plus an _inactive_ marker)
-and an **Open image** action → `?image={id}`. A member count above the pane
+caption under each pane shows the member name (plus an _inactive_ marker),
+then — when the image has a note — the note clamped to one line with an
+"…more" popover (title capped at 20%), and an
+**Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
 surviving) members shows a fallback alert with the ordered member list and
 per-row **Open image** buttons; members whose tiles fail mid-session are

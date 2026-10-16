@@ -584,7 +584,9 @@ always read-only (`canEditContent={false}`).
 
 - **Given** a sequence collection is open with no `?item=`, **Then** the
   thumbnail filmstrip renders _above_ the viewer (#1564), the first member
-  renders with the caption row under the viewport (member name left;
+  renders with the caption row under the viewport (member name `h2` left;
+  when the image has a note, the note clamped to one line with an "…more"
+  popover in the middle, the title capped at 20%;
   `1 of N` position readout and **Open image** right — the synchronized
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
@@ -651,7 +653,8 @@ measurement metadata.
 
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
-  three or four (each pane captioned with the member name and an
+  three or four (each pane captioned with the member name as an `h2`, its
+  note clamped to one line with an "…more" popover when present, and an
   **Open image** → `?image={id}` action) — and, when more than four are
   stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other
