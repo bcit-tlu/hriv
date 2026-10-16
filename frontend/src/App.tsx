@@ -2117,6 +2117,7 @@ export default function App() {
     ) {
       return
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a stale ?item= once the collection detail resolves
     setSelectedCollectionItemId(null)
   }, [collectionsData.detail, selectedCollectionItemId])
 

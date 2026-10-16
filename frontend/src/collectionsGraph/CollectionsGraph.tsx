@@ -763,7 +763,7 @@ function TooltipBody({
  * "Top-level category" when path === label (a root has no ancestors, so the
  * path would just repeat the name).
  */
-export function categoryTooltipLine(category: { label: string; path: string }): string {
+function categoryTooltipLine(category: { label: string; path: string }): string {
   return category.path === category.label ? 'Top-level category' : category.path
 }
 

@@ -1,11 +1,5 @@
 name: '[CI] Test, build & publish'
 
-# PR runs show PR title; main runs show head commit subject.
-run-name: >-
-  ${{ github.event_name == 'pull_request'
-      && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
-      || format('Head build — {0}', github.event.head_commit.message) }}
-
 on:
   push:
     branches: [main]
@@ -280,9 +274,7 @@ jobs:
       - name: Verify third-party license notices
         run: npm run licenses:check
 
-      # Advisory until pre-existing lint errors are resolved.
       - name: Lint (ESLint)
-        continue-on-error: true
         run: npm run lint
 
       # Coverage thresholds enforced via vite.config.ts.
