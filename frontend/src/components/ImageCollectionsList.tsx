@@ -135,6 +135,7 @@ export function FittedCollections({
   const cellRef = useRef<HTMLDivElement | null>(null)
   const cloneRef = useRef<HTMLDivElement | null>(null)
   const [fitCount, setFitCount] = useState(collections.length)
+  const [minCellWidth, setMinCellWidth] = useState(0)
   const theme = useTheme()
   const isMdUp = useMediaQuery(theme.breakpoints.up('md'))
   const n = collections.length
@@ -164,6 +165,7 @@ export function FittedCollections({
       const gapPx = parseFloat(window.getComputedStyle(cell).columnGap) || 0
       if (labelWidth + gapPx + namesWidth(n) <= available) {
         setFitCount(n)
+        setMinCellWidth(0)
         return
       }
       // Largest prefix whose names + label + suffix fit; at least one name
@@ -172,6 +174,11 @@ export function FittedCollections({
       while (k < n && labelWidth + gapPx + namesWidth(k + 1) + gapPx + suffixWidth <= available)
         k += 1
       setFitCount(k)
+      // The label and "+ N more" must never be clipped, so when the cell is
+      // narrower than they are, the names box (flex 0 1 auto, min-width 0)
+      // absorbs the whole shortfall — the cell may exceed its cap only by
+      // this minimum.
+      setMinCellWidth(labelWidth + gapPx + suffixWidth + gapPx)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -192,13 +199,18 @@ export function FittedCollections({
         ml: { xs: 0, md: 'auto' },
         flex: { md: '0 1 auto' },
         flexBasis: { xs: '100%', md: 'auto' },
-        minWidth: 0,
+        // Never smaller than the label + suffix when a suffix shows, so
+        // neither is clipped; the names box absorbs the shortfall.
+        minWidth: minCellWidth,
         maxWidth: { xs: '100%', md: '30%' },
         display: 'flex',
         alignItems: 'baseline',
         gap: 0.5,
         whiteSpace: 'nowrap',
-        justifyContent: { xs: 'flex-start', md: 'flex-end' },
+        // Left-aligned contents; the cell stays right-aligned via ml: auto.
+        // justifyContent: flex-end would clip the label when the cell is
+        // narrower than its contents.
+        justifyContent: 'flex-start',
         position: 'relative',
         // Safety net: never render wider than the 30% cap.
         overflow: 'hidden',

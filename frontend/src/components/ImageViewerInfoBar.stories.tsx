@@ -123,31 +123,29 @@ export const LongNote: Story = {
 export const ManyCollections: Story = {
   args: {
     note: 'The cathedral’s construction began in 1386.',
+    // Long names at full row width so "… + N more" engages naturally.
     collections: [
-      ...COLLECTIONS,
-      { id: 1623, name: 'Gothic cathedrals' },
-      { id: 1624, name: 'Restoration case studies' },
-      { id: 1625, name: 'Lombardy fieldwork' },
-      { id: 1626, name: 'Marble conservation' },
-      { id: 1627, name: 'Spire survey 2024' },
-      { id: 1628, name: 'Stained glass documentation' },
+      { id: 1621, name: 'Duomo of Milan digital archive' },
+      { id: 1622, name: 'Italian Renaissance architecture' },
+      { id: 1623, name: 'Gothic cathedrals of Lombardy' },
+      { id: 1624, name: 'Restoration case studies 2019–2024' },
+      { id: 1625, name: 'Lombardy fieldwork documentation' },
+      { id: 1626, name: 'Marble conservation techniques' },
+      { id: 1627, name: 'Spire survey fieldwork 2024' },
+      { id: 1628, name: 'Stained glass documentation project' },
+      { id: 1629, name: 'Buttress and vault measurements' },
+      { id: 1630, name: 'Sculpture workshop attributions' },
+      { id: 1631, name: 'Candoglia marble quarry records' },
+      { id: 1632, name: 'Cathedral fabric inventory 1386–' },
     ],
   },
-  decorators: [
-    (Story) => (
-      // Narrow the row so the names cannot all fit — "… + N more" shows.
-      <Box sx={{ width: 480, maxWidth: '100%', bgcolor: 'background.default', p: 1 }}>
-        <Story />
-      </Box>
-    ),
-  ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const showMore = canvas.getByRole('button', { name: 'Show all 8 collections' })
+    const showMore = canvas.getByRole('button', { name: 'Show all 12 collections' })
     await userEvent.click(showMore)
     const dialog = await canvas.findByRole('dialog', { name: 'Collections' })
     await expect(
-      within(dialog).getByRole('link', { name: 'Stained glass documentation' }),
+      within(dialog).getByRole('link', { name: 'Candoglia marble quarry records' }),
     ).toBeInTheDocument()
   },
 }

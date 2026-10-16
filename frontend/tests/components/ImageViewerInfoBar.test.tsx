@@ -219,6 +219,33 @@ describe('ImageViewerInfoBar', () => {
     )
   })
 
+  it('never clips the label or suffix: the cell floor is label + suffix + gaps', () => {
+    // 10px gaps; the row is only 100px wide but label(60) + 2 gaps + suffix(60)
+    // = 140 — the cell must grow past it rather than clip either end.
+    const realGetComputedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => {
+      const style = realGetComputedStyle(el, pseudo)
+      return new Proxy(style, {
+        get: (target, prop) => {
+          if (prop === 'columnGap') return '10px'
+          const value = Reflect.get(target, prop)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+    })
+    stubFitWidths(100, 40)
+    render(
+      <ImageViewerInfoBar {...defaultProps} collections={collections(['One', 'Two', 'Three'])} />,
+    )
+
+    const label = screen.getByText('Collections:', { selector: 'span.MuiTypography-root' })
+    expect(label).toBeInTheDocument()
+    const more = screen.getByRole('button', { name: 'Show all 3 collections' })
+    expect(more).toHaveTextContent('+ 2 more')
+    // The cell is the label's parent flex box.
+    expect(label.parentElement).toHaveStyle({ minWidth: '140px' })
+  })
+
   it('shows all names when they fit', () => {
     stubFitWidths(1000, 40)
     render(<ImageViewerInfoBar {...defaultProps} collections={collections(['One', 'Two'])} />)
