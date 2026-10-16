@@ -172,6 +172,7 @@ export default function SequenceCollectionViewer({
     return idx >= 0 ? idx : 0
   }, [available, itemId])
   const current = available[currentIndex] ?? null
+  const noteText = current?.note?.trim() ?? ''
 
   // Autofocus the region when a collection opens (#1564) so ←/→ step the
   // sequence immediately — no click needed first. Ref-guarded so switching
@@ -426,7 +427,7 @@ export default function SequenceCollectionViewer({
           noWrap
           title={current.name}
           sx={
-            current.note
+            noteText !== ''
               ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%' }
               : { flex: 1, minWidth: 0 }
           }
@@ -434,7 +435,7 @@ export default function SequenceCollectionViewer({
           {current.name}
           {!current.active ? ' (inactive)' : ''}
         </Typography>
-        {current.note != null && current.note !== '' && (
+        {current.note != null && noteText !== '' && (
           <ClampedContent
             key={`note-${current.id}`}
             lines={1}

@@ -980,6 +980,18 @@ describe('caption note', () => {
     expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
   })
 
+  it('treats a whitespace-only note as absent', () => {
+    renderViewer({
+      collection: syncCollection({
+        images: [
+          makeImage({ id: 1, name: 'Skull — frontal', note: '  \n  ' }),
+          makeImage({ id: 2, name: 'Skull — lateral' }),
+        ],
+      }),
+    })
+    expect(screen.queryByRole('button', { name: 'Show full note' })).not.toBeInTheDocument()
+  })
+
   it('opens a popover with the full multi-line note when the caption overflows', () => {
     stubOverflow()
     renderViewer({ collection: noted() })

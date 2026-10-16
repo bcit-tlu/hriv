@@ -71,7 +71,7 @@ export default function ImageViewerInfoBar({
   note,
   collections,
 }: ImageViewerInfoBarProps) {
-  const hasNote = note != null && note !== ''
+  const hasNote = note != null && note.trim() !== ''
   const hasCollections = collections != null
   if (!hasNote && !hasCollections) return null
 

@@ -550,6 +550,7 @@ export default function SynchronizedCollectionViewer({
         >
           {paneProps.map(({ image, pane }) => {
             const pinned = !unpinnedIds.has(image.id)
+            const noteText = image.note?.trim() ?? ''
             return (
               <Box
                 key={image.id}
@@ -645,7 +646,7 @@ export default function SynchronizedCollectionViewer({
                     noWrap
                     title={image.name}
                     sx={
-                      image.note
+                      noteText !== ''
                         ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%' }
                         : { flex: 1, minWidth: 0 }
                     }
@@ -653,7 +654,7 @@ export default function SynchronizedCollectionViewer({
                     {image.name}
                     {!image.active ? ' (inactive)' : ''}
                   </Typography>
-                  {image.note != null && image.note !== '' && (
+                  {image.note != null && noteText !== '' && (
                     <ClampedContent
                       key={`note-${image.id}`}
                       lines={1}
