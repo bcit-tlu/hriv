@@ -85,6 +85,8 @@ interface MockViewer {
   addHandler: ReturnType<typeof vi.fn>
   addOnceHandler: ReturnType<typeof vi.fn>
   addControl: ReturnType<typeof vi.fn>
+  removeControl: ReturnType<typeof vi.fn>
+  setControlsEnabled: ReturnType<typeof vi.fn>
   addOverlay: ReturnType<typeof vi.fn>
   updateOverlay: ReturnType<typeof vi.fn>
   removeOverlay: ReturnType<typeof vi.fn>
@@ -167,8 +169,10 @@ vi.mock('openseadragon', () => {
     // container and hold inline-block wrappers around each control element.
     const bottomLeftDock = document.createElement('div')
     const bottomRightDock = document.createElement('div')
+    const topRightDock = document.createElement('div')
     container.appendChild(bottomLeftDock)
     container.appendChild(bottomRightDock)
+    container.appendChild(topRightDock)
     const navigatorElement = document.createElement('div')
     bottomRightDock.appendChild(navigatorElement)
     const activeOverlays = new Set<HTMLElement>()
@@ -220,11 +224,14 @@ vi.mock('openseadragon', () => {
       addOnceHandler: vi.fn((event: string, handler: (event: unknown) => void) => {
         onceHandlers.set(event, [...(onceHandlers.get(event) ?? []), handler])
       }),
-      addControl: vi.fn((el: HTMLElement) => {
+      addControl: vi.fn((el: HTMLElement, options?: { anchor?: number }) => {
         const wrapper = document.createElement('div')
         wrapper.appendChild(el)
-        bottomLeftDock.appendChild(wrapper)
+        const dock = options?.anchor === OSD.ControlAnchor.TOP_RIGHT ? topRightDock : bottomLeftDock
+        dock.appendChild(wrapper)
       }),
+      removeControl: vi.fn(),
+      setControlsEnabled: vi.fn(),
       addOverlay: vi.fn((element: HTMLElement) => activeOverlays.add(element)),
       updateOverlay: vi.fn(),
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
@@ -259,7 +266,7 @@ vi.mock('openseadragon', () => {
   OSD.Rect = OSDRect
   OSD.Button = OSDButton
   OSD.MouseTracker = OSDMouseTracker
-  OSD.ControlAnchor = { BOTTOM_LEFT: 3 }
+  OSD.ControlAnchor = { TOP_RIGHT: 1, BOTTOM_LEFT: 3 }
   return { default: OSD }
 })
 
@@ -397,6 +404,39 @@ describe('ImageViewer drawer configuration', () => {
     await waitFor(() =>
       expect(viewer().container.querySelector('[data-testid="viewport-overlay"]')).not.toBeNull(),
     )
+  })
+
+  it('anchors viewportControl as a top-right OSD control and portals its content', async () => {
+    render(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        viewportControl={<button data-testid="viewport-control">info</button>}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(viewer().addControl).toHaveBeenCalledWith(
+        expect.any(HTMLDivElement),
+        expect.objectContaining({ anchor: 1 /* TOP_RIGHT */ }),
+      ),
+    )
+    const wrapper = viewer().addControl.mock.calls.find(
+      ([, options]: [HTMLElement, { anchor?: number }]) => options?.anchor === 1,
+    )?.[0] as HTMLElement
+    // addControl wraps the element; the dock around that wrapper is a
+    // direct child of viewer.container and gets the top zIndex.
+    const dock = wrapper.parentElement?.parentElement
+    expect(dock?.parentElement).toBe(viewer().container)
+    expect(dock).toHaveStyle({ zIndex: '26' })
+    await waitFor(() =>
+      expect(wrapper.querySelector('[data-testid="viewport-control"]')).not.toBeNull(),
+    )
+
+    // Keyboard focus inside the control keeps the OSD chrome visible.
+    fireEvent.focusIn(wrapper)
+    expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(true)
+    fireEvent.focusOut(wrapper)
+    expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(false)
   })
 })
 
@@ -1356,7 +1396,9 @@ describe('ImageViewer chrome alignment', () => {
   it('bottom-aligns bottom-dock descendants so toolbar and minimap sit flush', () => {
     render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
     const v = viewer()
-    const docks = Array.from(v.container.children) as HTMLElement[]
+    // The bottom-left and bottom-right docks are the first two children;
+    // the top-right viewport-control dock is not bottom-aligned.
+    const docks = (Array.from(v.container.children) as HTMLElement[]).slice(0, 2)
     expect(docks.length).toBeGreaterThanOrEqual(2)
     for (const dock of docks) {
       const descendants = dock.querySelectorAll<HTMLElement>('*')

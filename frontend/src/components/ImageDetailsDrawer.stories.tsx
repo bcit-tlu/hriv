@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
 import Box from '@mui/material/Box'
 import type { ImageDetailsDrawerProps } from './ImageDetailsDrawer'
-import ImageDetailsDrawer from './ImageDetailsDrawer'
+import ImageDetailsDrawer, { ImageDetailsTrigger } from './ImageDetailsDrawer'
 
 const IMAGE = {
   copyright: '© Museo del Duomo',
@@ -25,10 +25,15 @@ interface StoryArgs {
 
 function ImageDetailsDrawerExample(args: StoryArgs) {
   const [open, setOpen] = useState(args.initialOpen)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   return (
-    // Stands in for the OSD container the drawer is portaled into.
+    // Stands in for the OSD container the drawer is portaled into; the
+    // trigger is positioned here because OSD's top-right dock is absent.
     <Box sx={{ position: 'relative', width: 720, height: 420, bgcolor: 'grey.900' }}>
+      <Box sx={{ position: 'absolute', top: 8, right: 8, lineHeight: 0 }}>
+        <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
+      </Box>
       <ImageDetailsDrawer
         image={args.image}
         programNames={args.programNames}
@@ -37,6 +42,7 @@ function ImageDetailsDrawerExample(args: StoryArgs) {
         sourceInfo={args.sourceInfo}
         open={open}
         onOpenChange={setOpen}
+        triggerRef={triggerRef}
       />
     </Box>
   )

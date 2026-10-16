@@ -32,7 +32,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
-import ImageDetailsDrawer from './components/ImageDetailsDrawer'
+import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
 import SortableTileGrid from './components/SortableTileGrid'
@@ -321,6 +321,7 @@ export default function App() {
   // "Image details" drawer open state; closed on every image change
   // (including leave -> return to the same image) and on canvas edit entry.
   const [imageDetailsOpen, setImageDetailsOpen] = useState(false)
+  const imageDetailsTriggerRef = useRef<HTMLButtonElement>(null)
   const [imageDetailsImageId, setImageDetailsImageId] = useState<number | null>(null)
   // Which dialog is open over the image viewport (notes / collections).
   // Closed on image change and on canvas edit entry.
@@ -2863,6 +2864,14 @@ export default function App() {
                       setViewerDialog(null)
                     }
                   }}
+                  viewportControl={
+                    <ImageDetailsTrigger
+                      open={imageDetailsOpen}
+                      onOpenChange={setImageDetailsOpen}
+                      disabled={canvasEditActive}
+                      triggerRef={imageDetailsTriggerRef}
+                    />
+                  }
                   viewportOverlay={
                     <>
                       <ImageDetailsDrawer
@@ -2878,7 +2887,7 @@ export default function App() {
                         sourceInfo={imageSourceInfo}
                         open={imageDetailsOpen}
                         onOpenChange={setImageDetailsOpen}
-                        disabled={canvasEditActive}
+                        triggerRef={imageDetailsTriggerRef}
                       />
                       <ViewportDialog
                         open={viewerDialog === 'note'}

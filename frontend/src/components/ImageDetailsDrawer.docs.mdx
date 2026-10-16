@@ -19,10 +19,12 @@ import * as ImageDetailsDrawerStories from './ImageDetailsDrawer.stories'
 
 ## When to use
 
-`App` renders the drawer through `ImageViewer`'s `viewportOverlay` portal so it stays usable in
-OSD full-page mode. The "i" button in the top-right corner opens a right-anchored panel listing
+`App` renders the drawer through `ImageViewer`'s `viewportOverlay` portal and its
+`ImageDetailsTrigger` through `viewportControl` — an OSD control — so the "i" button looks like
+the toolbar icons and fades with them when idle, staying usable in OSD full-page mode. It opens a right-anchored panel listing
 copyright, programs, groups, dates, dimensions, file size, measurement, and source-file details;
-each field is one non-wrapping line with the full value in `title`. The viewer instructions sit
+each field is one non-wrapping line with the full value in `title` — except Created and Modified,
+whose exact timestamp shows in a tooltip on hover, tap or focus. The viewer instructions sit
 in a footer pinned to the bottom of the drawer. Notes and collections live in
 `ImageViewerInfoBar` below the viewer instead.
 

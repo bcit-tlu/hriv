@@ -546,16 +546,19 @@ vi.mock('../src/components/ImageViewer', () => ({
     onCanvasAnnotationsChange,
     onSaveCanvasAnnotations,
     viewportOverlay,
+    viewportControl,
   }: {
     imageId?: number
     onCanvasEditModeChange?: (active: boolean) => void
     onCanvasAnnotationsChange?: (annotations: unknown[]) => void
     onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
     viewportOverlay?: ReactNode
+    viewportControl?: ReactNode
   }) {
     const [internalEditMode, setInternalEditMode] = useState(false)
     return (
       <div>
+        {viewportControl}
         {viewportOverlay}
         Image Viewer {String(imageId)} / internal edit: {String(internalEditMode)}
         <button

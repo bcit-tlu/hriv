@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useState } from 'react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useRef, useState } from 'react'
 import ImageDetailsDrawer, {
+  ImageDetailsTrigger,
   type ImageDetailsDrawerProps,
 } from '../../src/components/ImageDetailsDrawer'
 
 function makeProps(
   overrides: Partial<ImageDetailsDrawerProps> = {},
-): Omit<ImageDetailsDrawerProps, 'open' | 'onOpenChange'> {
+): Omit<ImageDetailsDrawerProps, 'open' | 'onOpenChange' | 'triggerRef'> {
   return {
     image: {},
     programNames: [],
@@ -16,11 +18,25 @@ function makeProps(
   }
 }
 
-function Harness(props: Omit<ImageDetailsDrawerProps, 'open' | 'onOpenChange'>) {
+interface HarnessProps extends Omit<
+  ImageDetailsDrawerProps,
+  'open' | 'onOpenChange' | 'triggerRef'
+> {
+  disabled?: boolean
+}
+
+function Harness({ disabled = false, ...props }: HarnessProps) {
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   return (
     <div style={{ position: 'relative' }}>
-      <ImageDetailsDrawer {...props} open={open} onOpenChange={setOpen} />
+      <ImageDetailsTrigger
+        open={open}
+        onOpenChange={setOpen}
+        disabled={disabled}
+        triggerRef={triggerRef}
+      />
+      <ImageDetailsDrawer {...props} open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
     </div>
   )
 }
@@ -89,7 +105,9 @@ describe('ImageDetailsDrawer', () => {
       expect(field).toHaveTextContent(
         `${label} ${new Date(iso as string).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`,
       )
-      expect(field).toHaveAttribute('title', `${label} ${new Date(iso as string).toLocaleString()}`)
+      // The exact timestamp moved to a tap/focus-friendly tooltip.
+      expect(field).not.toHaveAttribute('title')
+      expect(field).toHaveAttribute('tabindex', '0')
     }
     expectField('Dimensions:', '2400 × 1600')
     expectField('Size:', '1.5 KB')
@@ -97,6 +115,37 @@ describe('ImageDetailsDrawer', () => {
     expectField('Original file:', 'duomo-scan.tif')
     expectField('File type:', 'TIF')
     expectField('Uploaded by:', 'Mira Patel')
+  })
+
+  it('shows the exact Created timestamp on hover, touch and focus', async () => {
+    render(<Harness {...populatedProps} />)
+    fireEvent.click(trigger())
+    await screen.findByRole('heading', { name: 'Image details' })
+
+    const expected = `Created: ${new Date(populatedProps.image.createdAt as string).toLocaleString()}`
+    const value = screen.getByText('Created:', { exact: true }).parentElement as HTMLElement
+    const user = userEvent.setup()
+    // The touch case lingers for leaveTouchDelay (3s) after touchend.
+    for (const [show, hide, hideTimeout] of [
+      [() => user.hover(value), () => user.unhover(value), 1000],
+      [async () => fireEvent.touchStart(value), async () => fireEvent.touchEnd(value), 4000],
+      // MUI's focus-visible check needs a keyboard event before focus opens the tooltip.
+      [
+        async () => {
+          fireEvent.keyDown(document.body, { key: 'Tab' })
+          act(() => value.focus())
+        },
+        async () => act(() => value.blur()),
+        1000,
+      ],
+    ] as const) {
+      await show()
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(expected)
+      await hide()
+      await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument(), {
+        timeout: hideTimeout,
+      })
+    }
   })
 
   it('omits empty fields and shows the empty state when nothing is populated', async () => {
@@ -146,6 +195,7 @@ describe('ImageDetailsDrawer', () => {
           {...makeProps({ programNames: ['Art'] })}
           open
           onOpenChange={() => {}}
+          triggerRef={{ current: null }}
         />
       </div>,
     )
@@ -159,6 +209,7 @@ describe('ImageDetailsDrawer', () => {
           {...makeProps({ programNames: ['Art', 'History'] })}
           open
           onOpenChange={() => {}}
+          triggerRef={{ current: null }}
         />
       </div>,
     )
@@ -258,8 +309,18 @@ describe('ImageDetailsDrawer', () => {
   })
 
   it('disables the trigger when disabled', () => {
-    render(<Harness {...makeProps({ disabled: true })} />)
+    render(<Harness {...makeProps()} disabled />)
     expect(trigger()).toBeDisabled()
+  })
+
+  it('carries the OSD toolbar trigger styling hooks', () => {
+    render(<Harness {...makeProps()} />)
+    // Native title tooltip like the OSD buttons, no MUI tooltip.
+    expect(trigger()).toHaveAttribute('title', 'Image details')
+    expect(trigger()).toHaveAttribute('type', 'button')
+    expect(trigger()).toHaveStyle({
+      backgroundImage: 'url(/openseadragon-svg-icons/info_rest.svg)',
+    })
   })
 
   it('marks trigger and panel with data-hriv-canvas-ui', async () => {

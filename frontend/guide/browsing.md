@@ -44,7 +44,8 @@ zoom" — you can zoom in to see fine detail without losing quality.
 
 Copyright, programs, groups, dates, dimensions, original file name and type,
 and other image details open from the **i** button in the top-right corner of
-the viewer — viewer tips are at the bottom of that panel. Notes and
+the viewer — it matches the toolbar icons and fades away with them when the
+pointer is idle, and viewer tips are at the bottom of that panel. Notes and
 collections show just below the viewer; long entries have an **…more**
 link that opens the full text over the viewer.
 

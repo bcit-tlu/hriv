@@ -103,6 +103,11 @@ interface ImageViewerProps {
   onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
   /** Extra UI portaled into the OSD container (`viewer.container`) so it stays visible in OSD full-page mode. */
   viewportOverlay?: ReactNode
+  /**
+   * UI portaled into a top-right OSD control so it fades with the toolbar
+   * (OSD `autoFade`) and also survives full-page mode.
+   */
+  viewportControl?: ReactNode
 }
 
 interface DragState {
@@ -137,11 +142,13 @@ export default function ImageViewer({
   onError,
   onViewerReady,
   viewportOverlay,
+  viewportControl,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  const [controlWrapper, setControlWrapper] = useState<HTMLDivElement | null>(null)
   const [viewerMountReady, setViewerMountReady] = useState(!deferViewerInitializationForStrictMode)
   const canvasEditModeRef = useRef(false)
   const onViewportChangeRef = useRef(onViewportChange)
@@ -906,6 +913,26 @@ export default function ImageViewer({
     }
     if (toolbarAnchor) toolbarAnchor.style.zIndex = '25'
 
+    // --- Top-right viewport control (e.g. the "Image details" trigger) ---
+    // Anchored as an OSD control so autoFade fades it with the toolbar;
+    // keyboard focus keeps it (and the controls) visible.
+    const topRightControl = document.createElement('div')
+    topRightControl.style.display = 'inline-block'
+    topRightControl.style.lineHeight = '0'
+    const keepControlsEnabled = () => viewer.setControlsEnabled(true)
+    const releaseControls = () => viewer.setControlsEnabled(false)
+    topRightControl.addEventListener('focusin', keepControlsEnabled)
+    topRightControl.addEventListener('focusout', releaseControls)
+    viewer.addControl(topRightControl, {
+      anchor: OpenSeadragon.ControlAnchor.TOP_RIGHT,
+    })
+    let topRightAnchor: HTMLElement | null = topRightControl
+    while (topRightAnchor && topRightAnchor.parentElement !== viewer.container) {
+      topRightAnchor = topRightAnchor.parentElement
+    }
+    if (topRightAnchor) topRightAnchor.style.zIndex = '26'
+    setControlWrapper(topRightControl)
+
     // --- Magnification factor badge (inside the navigator mini-map) ---
     // Only visible when the image has measurement settings (scale + unit).
     const magBadge = document.createElement('div')
@@ -1136,6 +1163,11 @@ export default function ImageViewer({
         renewalTimerRef.current = null
       }
       selectionTracker.destroy()
+      topRightControl.removeEventListener('focusin', keepControlsEnabled)
+      topRightControl.removeEventListener('focusout', releaseControls)
+      const registeredControl = viewer.controls?.find((c) => c.element === topRightControl)
+      if (registeredControl) viewer.removeControl(registeredControl)
+      setControlWrapper(null)
       onViewerReadyRef.current?.(null)
       if (handleFullscreenChange) {
         document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -1246,6 +1278,7 @@ export default function ImageViewer({
       {viewerInstance && viewportOverlay
         ? createPortal(viewportOverlay, viewerInstance.container)
         : null}
+      {controlWrapper && viewportControl ? createPortal(viewportControl, controlWrapper) : null}
     </Box>
   )
 }

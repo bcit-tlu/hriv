@@ -116,8 +116,12 @@ images> / Empty` format used on category tiles.
 
 - **Given** the regular image viewer page, **Then** an "i" button sits in the
   top-right corner of the OSD viewport and an always-visible info bar sits
-  directly below the viewer.
-- The "i" button and the **Image details** panel it opens are portaled into the
+  directly below the viewer. The "i" matches the bottom-left toolbar icons
+  (48px svg with rest/hover/pressed states and a native `title` tooltip) and
+  is an OSD control (`ImageViewer`'s `viewportControl`), so it fades with the
+  toolbar when the pointer is idle and stays visible while keyboard-focused.
+- The "i" button is portaled into a top-right OSD control wrapper and the
+  **Image details** panel it opens is portaled into the
   OSD container (`viewer.container` via `ImageViewer`'s `viewportOverlay` prop),
   so they stay usable in OSD full-page mode. Both carry `data-hriv-canvas-ui`
   so the selection tracker skips presses inside them.
@@ -132,8 +136,9 @@ images> / Empty` format used on category tiles.
   right mini-map shows current view") sit under a
   "Viewer controls" heading in a footer pinned to the bottom of the drawer
   and wrap without widening the panel. Created and Modified show
-  the long-form date (e.g. "October 15, 2026"); their `title` keeps the
-  exact timestamp. The panel does not contain notes or collections.
+  the long-form date (e.g. "October 15, 2026"); the exact timestamp shows
+  in a tooltip on hover, tap or focus (the value is `tabIndex={0}`; other
+  fields keep their `title`). The panel does not contain notes or collections.
 - **When** the drawer opens, **Then** focus moves to its close button; it
   closes via the ✕ button, the "i" button, or Escape, returning focus to the
   trigger. It does not close on viewport clicks, so users can keep panning.
