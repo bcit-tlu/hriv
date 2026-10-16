@@ -824,11 +824,13 @@ export default function SearchModal({
   // queries — selections never silently drop when the query changes.
   const resultEpochRef = useRef(0)
   const prevDisplayRef = useRef(displayResults)
+  /* eslint-disable react-hooks/refs -- intentional render-time epoch bump per new result set */
   if (prevDisplayRef.current !== displayResults) {
     prevDisplayRef.current = displayResults
     resultEpochRef.current += 1
   }
   const resultEpoch = resultEpochRef.current
+  /* eslint-enable react-hooks/refs */
 
   const orderedSelectedImages = useMemo(
     () =>

@@ -310,8 +310,10 @@ export function viewportStateFromSaved(value: unknown): ViewportState | undefine
  */
 export function useStableJson<T>(json: string, compute: () => T): T {
   const ref = useRef<{ json: string; value: T } | null>(null)
+  /* eslint-disable react-hooks/refs -- intentional render-time cache keyed by the serialized source (see comment above) */
   if (ref.current == null || ref.current.json !== json) {
     ref.current = { json, value: compute() }
   }
   return ref.current.value
+  /* eslint-enable react-hooks/refs */
 }
