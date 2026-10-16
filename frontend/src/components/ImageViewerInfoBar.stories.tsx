@@ -191,6 +191,37 @@ export const NarrowCollections: Story = {
   },
 }
 
+export const NarrowSingleCollection: Story = {
+  args: {
+    note: 'The cathedral’s construction began in 1386.',
+    collections: [{ id: 1621, name: 'Duomo of Milan digital archive documentation' }],
+  },
+  decorators: [
+    (Story) => (
+      // Narrow the row so a lone long name ellipsizes; the label survives.
+      <Box sx={{ width: 420, maxWidth: '100%', bgcolor: 'background.default', p: 1 }}>
+        <Story />
+      </Box>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const label = canvas.getByText('Collections:', { selector: 'span.MuiTypography-root' })
+    const name = canvas.getByRole('link', {
+      name: 'Duomo of Milan digital archive documentation',
+    })
+    const cell = label.parentElement!
+    const eps = 0.5
+    const cellRect = cell.getBoundingClientRect()
+    const labelRect = label.getBoundingClientRect()
+    // The label sits fully inside the cell…
+    expect(labelRect.left).toBeGreaterThanOrEqual(cellRect.left - eps)
+    expect(labelRect.right).toBeLessThanOrEqual(cellRect.right + eps)
+    // …and the name is the thing that ellipsizes.
+    expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
+  },
+}
+
 export const TitleOnly: Story = {
   args: {
     note: null,

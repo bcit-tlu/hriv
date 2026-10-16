@@ -246,9 +246,21 @@ describe('ImageViewerInfoBar', () => {
     expect(label.parentElement).toHaveStyle({ minWidth: '140px' })
   })
 
-  it('sets no width floor when a lone name gets no suffix', () => {
-    // label(60) + name(40) = 100 > 80, so even one name doesn't fit — but
-    // k === n means no suffix renders and the cell keeps no min-width.
+  it('keeps only the label floor when a lone name gets no suffix', () => {
+    // label(60) + name(40) = 100 > 80, so even one name doesn't fit — and
+    // k === n means no suffix renders. The cell floor is still label + gap
+    // so the label itself is never clipped; the name ellipsizes.
+    const realGetComputedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => {
+      const style = realGetComputedStyle(el, pseudo)
+      return new Proxy(style, {
+        get: (target, prop) => {
+          if (prop === 'columnGap') return '10px'
+          const value = Reflect.get(target, prop)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+    })
     stubFitWidths(80, 40)
     render(<ImageViewerInfoBar {...defaultProps} collections={collections(['One'])} />)
     expect(screen.getByRole('button', { name: 'One' })).toBeInTheDocument()
@@ -256,7 +268,7 @@ describe('ImageViewerInfoBar', () => {
       screen.queryByRole('button', { name: /Show all .* collections/ }),
     ).not.toBeInTheDocument()
     const label = screen.getByText('Collections:', { selector: 'span.MuiTypography-root' })
-    expect(label.parentElement).toHaveStyle({ minWidth: '0px' })
+    expect(label.parentElement).toHaveStyle({ minWidth: '70px' })
   })
 
   it('shows all names when they fit', () => {

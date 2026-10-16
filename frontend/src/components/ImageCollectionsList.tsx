@@ -174,12 +174,11 @@ export function FittedCollections({
       while (k < n && labelWidth + gapPx + namesWidth(k + 1) + gapPx + suffixWidth <= available)
         k += 1
       setFitCount(k)
-      // The label and "+ N more" must never be clipped, so when the cell is
-      // narrower than they are, the names box (flex 0 1 auto, min-width 0)
-      // absorbs the whole shortfall — the cell may exceed its cap only by
-      // this minimum. No floor at all when no suffix renders (k === n —
-      // e.g. a single name that simply ellipsizes).
-      setMinCellWidth(k < n ? labelWidth + gapPx + suffixWidth + gapPx : 0)
+      // The label (and "+ N more" when it renders) must never be clipped,
+      // so the cell floor covers them plus their gaps; the names box
+      // (flex 0 1 auto, min-width 0) absorbs the whole shortfall — the cell
+      // may exceed its cap only by this minimum.
+      setMinCellWidth(labelWidth + gapPx + (k < n ? suffixWidth + gapPx : 0))
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
