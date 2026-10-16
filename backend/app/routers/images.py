@@ -370,9 +370,9 @@ async def update_image(
                     await db.refresh(img)
                     if img.version != client_version:
                         raise HTTPException(
-                        status_code=409,
-                        detail="Resource has been modified by another client",
-                    )
+                            status_code=409,
+                            detail="Resource has been modified by another client",
+                        )
             elif is_dirty:
                 img.version = img.version + 1
 
