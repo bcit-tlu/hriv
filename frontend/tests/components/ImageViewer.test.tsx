@@ -92,6 +92,7 @@ interface MockViewer {
   removeOverlay: ReturnType<typeof vi.fn>
   setMouseNavEnabled: ReturnType<typeof vi.fn>
   isFullPage: ReturnType<typeof vi.fn>
+  fullPageButton: MockButton
   setFullPage: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
@@ -237,6 +238,10 @@ vi.mock('openseadragon', () => {
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
       isFullPage: vi.fn(() => false),
+      fullPageButton: new OSDButton({
+        tooltip: 'Full screen',
+        onClick: () => {},
+      }),
       setFullPage: vi.fn(),
       open: vi.fn(() => {
         if (!viewer.preserveOverlays) activeOverlays.clear()
@@ -748,6 +753,24 @@ describe('ImageViewer lifecycle telemetry', () => {
     expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'full_screen' }),
     )
+  })
+
+  it('swaps the full-page button to inward arrows while full screen', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const fpButton = viewer().fullPageButton
+    const img = fpButton.element.querySelector('img') as HTMLImageElement
+
+    expect(img.src).toContain('fullpage_rest.svg')
+
+    viewer().isFullPage.mockReturnValue(true)
+    act(() => viewer().fire('full-page', { fullPage: true }))
+    expect(img.src).toContain('exitfullpage_rest.svg')
+    expect(fpButton.element.title).toBe('Exit full screen')
+
+    viewer().isFullPage.mockReturnValue(false)
+    act(() => viewer().fire('full-page', { fullPage: false }))
+    expect(img.src).toContain('fullpage_rest.svg')
+    expect(fpButton.element.title).toBe('Full screen')
   })
 
   it('reports viewport state after animations finish', () => {

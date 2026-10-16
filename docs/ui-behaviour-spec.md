@@ -242,7 +242,8 @@ images> / Empty` format used on category tiles.
   state with the same filled-red scheme (`primary.main` rest, `primary.dark`
   hover/pressed); the lock and clear-overlays buttons are hidden entirely
   until unlocked rectangles exist for them to act on (the lock stays
-  visible while locked so it can be unlocked).
+  visible while locked so it can be unlocked). The fullscreen button swaps
+  to inward `exitfullpage_*` arrows while full-page mode is on.
 - Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
   `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
   rotation against finger-separation change. The dominant motion wins:

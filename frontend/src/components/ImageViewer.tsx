@@ -1101,10 +1101,25 @@ export default function ImageViewer({
       emitToolbarAction('home')
       viewer.viewport.setRotation(0)
     })
+    // Swap the fullscreen button between outward and inward arrows. The
+    // typings don't declare viewer.fullPageButton as a Button, so cast.
+    const syncFullPageIcon = () => {
+      const fullPageButton = (
+        viewer as unknown as { fullPageButton?: OpenSeadragon.Button }
+      ).fullPageButton
+      if (!fullPageButton) return
+      const fullPage = viewer.isFullPage()
+      setButtonIcons(fullPageButton, fullPage ? 'exitfullpage' : 'fullpage')
+      fullPageButton.element.title = fullPage ? 'Exit full screen' : 'Full screen'
+    }
     viewer.addHandler('full-page', (event) => {
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
+      syncFullPageIcon()
     })
+    // Run once now: a setFullPage(true) from the fullscreen handoff path can
+    // fire 'full-page' before this handler is registered.
+    syncFullPageIcon()
     viewer.addHandler('resize', () => {
       pendingHomeResize = homeViewportAtLastSettledStateRef.current
     })
