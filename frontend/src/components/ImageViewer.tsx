@@ -812,8 +812,8 @@ export default function ImageViewer({
           img.src = prefix + state + '_' + suffixes[i] + '.svg'
         }
       })
-      lockButton.element.style.outline = locked ? '2px solid red' : 'none'
-      lockButton.element.style.outlineOffset = locked ? '-2px' : ''
+      // The closed-lock icon fills red; no extra outline is needed.
+      lockButton.element.style.outline = 'none'
       // Disable when not locked and no rectangles exist
       const disabled = !locked && empty
       lockButton.element.style.opacity = disabled ? '0.3' : '1'
