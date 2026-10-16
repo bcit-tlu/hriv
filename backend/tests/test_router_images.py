@@ -741,11 +741,13 @@ async def test_update_image_noop_if_match_returns_current_version() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
     db.execute = AsyncMock()
+    db.refresh = AsyncMock()
 
     body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
     result = await update_image(1, body, _mock_request(if_match='"2"'), _make_user(), db)
 
     db.execute.assert_not_awaited()
+    db.refresh.assert_awaited_once()
     db.commit.assert_not_awaited()
     assert img.version == 2
     assert result.headers["etag"] == '"2"'
@@ -764,11 +766,34 @@ async def test_update_image_noop_if_match_stale_version() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
     db.execute = AsyncMock()
+    db.refresh = AsyncMock()
 
     body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
     with pytest.raises(HTTPException) as exc:
         await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
     assert exc.value.status_code == 409
+    db.execute.assert_not_awaited()
+
+
+async def test_update_image_noop_if_match_concurrent_commit_409() -> None:
+    """If a concurrent client bumps the version between our db.get and the
+    no-op check, the re-read sees it and the stale If-Match still 409s."""
+    img = _make_image()
+    img.version = 3
+
+    async def bump_version(instance):
+        instance.version = 4
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.execute = AsyncMock()
+    db.refresh = AsyncMock(side_effect=bump_version)
+
+    body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
+    with pytest.raises(HTTPException) as exc:
+        await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
+    assert exc.value.status_code == 409
+    db.refresh.assert_awaited_once()
     db.execute.assert_not_awaited()
 
 

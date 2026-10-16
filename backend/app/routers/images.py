@@ -346,8 +346,9 @@ async def update_image(
             # version has not changed since the client last read the resource.
             # When the request changes data the check is performed atomically
             # via a single UPDATE … WHERE version = :client_version statement;
-            # when it is a no-op the in-memory comparison suffices, and the
-            # CAS is skipped so no UPDATE fires and no attributes expire. The
+            # when it is a no-op the row is re-read with a plain SELECT so the
+            # version (and the serialized response) is current — no UPDATE
+            # fires, no attributes expire, and `updated_at` isn't touched. The
             # version is only incremented when the request actually changes
             # data, so no-op saves do not stale the client's If-Match copy,
             # and a stale If-Match still fails with 409 either way.
@@ -365,8 +366,10 @@ async def update_image(
                             detail="Resource has been modified by another client",
                         )
                     img.version = new_version
-                elif img.version != client_version:
-                    raise HTTPException(
+                else:
+                    await db.refresh(img)
+                    if img.version != client_version:
+                        raise HTTPException(
                         status_code=409,
                         detail="Resource has been modified by another client",
                     )
