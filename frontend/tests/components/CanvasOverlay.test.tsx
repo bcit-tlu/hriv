@@ -1546,6 +1546,26 @@ describe('CanvasOverlay', () => {
       fireEvent.pointerUp(handle, { pointerId: 1 })
     })
 
+    it('renders the tool submenu items without a pre-selected highlight', async () => {
+      renderEditMode()
+      fireEvent.click(screen.getByLabelText('Rectangle'))
+      expect(await screen.findByLabelText('Outlined Rectangle')).toHaveStyle({
+        color: 'rgb(255, 255, 255)',
+      })
+      expect(screen.getByLabelText('Filled Rectangle')).toHaveStyle({
+        color: 'rgb(255, 255, 255)',
+      })
+      fireEvent.click(screen.getByLabelText('Arrow / Line'))
+      for (const label of [
+        'Plain Line (no arrowhead)',
+        'Standard Arrowhead',
+        'Triangle Arrowhead',
+        'Circle Arrowhead',
+      ]) {
+        expect(screen.getByLabelText(label)).toHaveStyle({ color: 'rgb(255, 255, 255)' })
+      }
+    })
+
     it('closes popovers when the viewer enters full-page mode', async () => {
       renderEditMode()
       fireEvent.click(screen.getByLabelText('Rectangle'))
