@@ -49,7 +49,7 @@ browser history.
   position readout (`x of y`, `aria-live`), and **Open image** form a caption row under the
   viewport — the same pattern the synchronized panes use. When the image has a note it renders
   between the name and the readout via `ClampedContent` (one line, "…more" popover); the name is
-  capped at 20% when a note is present.
+  capped at min(468px, 40%) when a note is present.
 - **Navigation.** Lightbox-style Previous/Next chevrons overlay the viewport's left/right
   edges (#1561), fading in on pointer activity over the frame and back out after ~2 s idle
   or on leave — like the OSD toolbar's `autoHideControls`; keyboard focus reveals them too

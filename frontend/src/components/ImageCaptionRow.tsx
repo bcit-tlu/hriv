@@ -22,7 +22,8 @@ export interface ImageCaptionRowProps {
  * The caption row shared by the image view and the collection viewers:
  * `[h2 image title] [Notes: note …more] {end}`. The note clamps to one line
  * with an "…more" affordance that opens the caller's dialog. When a note is
- * present the title is capped at 20% so the note gets the room.
+ * present the title is capped at min(468px, 40%) so the note gets the room
+ * in narrow panes while typical image names still fit.
  */
 export default function ImageCaptionRow({
   name,
@@ -53,7 +54,7 @@ export default function ImageCaptionRow({
         title={name}
         sx={
           noteText !== ''
-            ? { flex: '0 1 auto', minWidth: 0, maxWidth: '20%', mr: 4 }
+            ? { flex: '0 1 auto', minWidth: 0, maxWidth: 'min(468px, 40%)', mr: 4 }
             : { flex: 1, minWidth: 0 }
         }
       >

@@ -22,7 +22,7 @@ import * as ImageCaptionRowStories from './ImageCaptionRow.stories'
 `ImageCaptionRow` renders `[h2 image title] [Notes: note …more] {end}` — the note clamps to one
 line with an "…more" affordance (`onShowNote` opens the caller's `ViewportDialog`), and `end`
 carries the right-hand actions (position readout, **Open image**, or the fitted collections cell).
-When a note is present the title is capped at 20% so the note gets the room; without one the title
+When a note is present the title is capped at min(468px, 40%) so the note gets the room; without one the title
 takes the full width.
 
 Used by `ImageViewerInfoBar`, `SequenceCollectionViewer`, and `SynchronizedCollectionViewer`.

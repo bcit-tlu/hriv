@@ -156,7 +156,7 @@ images> / Empty` format used on category tiles.
   note, and a **Collections:** cell at the right when the image belongs to
   any collections (see [collections.md](collections.md)). The bar always
   renders because the title is always shown. At `md` and up the row is one
-  line — the title capped at 20% when a note is present, the note taking the
+  line — the title capped at min(468px, 40%) when a note is present, the note taking the
   middle, the collections cell capped at 30% — and below `md` the
   collections cell wraps to its own left-aligned line.
 - An overflowing note gets an "…more" link at the end of the line; it opens
@@ -604,7 +604,7 @@ always read-only (`canEditContent={false}`).
   renders with the caption row under the viewport (member name `h2` left;
   when the image has a note, a visible **Notes:** label plus the note
   clamped to one line in the middle — "…more" opens the same **Notes**
-  `ViewportDialog` centered over the viewer — the title capped at 20%;
+  `ViewportDialog` centered over the viewer — the title capped at min(468px, 40%);
   `1 of N` position readout and **Open image** right — the synchronized
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /

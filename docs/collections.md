@@ -1308,7 +1308,7 @@ the synchronized panes and the image-view info bar use — holds the member
 name as an `h2` (left), then, when the image has a note, a visible
 **Notes:** label plus the note clamped to one line (`ClampedContent`) with
 an "…more" link that opens a `ViewportDialog` over the viewer with the full
-note (the title is capped at 20% when a note is present) and, at the
+note (the title is capped at min(468px, 40%) when a note is present) and, at the
 right, the `n of N` live region plus the **Open image** action. Member
 management moved into the detail header's **Manage Images** dialog
 (#1566/#1567).
@@ -1426,7 +1426,7 @@ overlays and measurement metadata pass through from `metadataExtra`). A
 caption under each pane shows the member name (plus an _inactive_ marker),
 then — when the image has a note — a **Notes:** label plus the note clamped
 to one line, "…more" opening a `ViewportDialog` centered over that pane
-(title capped at 20%), and an
+(title capped at min(468px, 40%)), and an
 **Open image** action → `?image={id}`. A member count above the pane
 cap produces a "Showing _N_ of _M_" note. Fewer than two visible (or
 surviving) members shows a fallback alert with the ordered member list and

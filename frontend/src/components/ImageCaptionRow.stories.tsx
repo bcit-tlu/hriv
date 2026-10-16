@@ -63,6 +63,36 @@ export const LongNote: Story = {
   },
 }
 
+export const LongTitle: Story = {
+  args: {
+    // Kyle's longest real image names; both must fit without an ellipsis at 1280.
+    name: 'Slide 27-117 MARK Connor Lymphoma Cells in CSF Image 10',
+    note: 'Long titles share the row with the note.',
+  },
+  decorators: [
+    // Full-width row like the image view / sequence caption (fixed 1200px so
+    // the assertion holds regardless of the test browser's viewport).
+    (Story) => (
+      <Box sx={{ width: 1200, bgcolor: 'background.default', p: 1 }}>
+        <Story />
+      </Box>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const title = canvas.getByRole('heading', { level: 2 })
+    for (const name of [
+      'Slide 27-117 MARK Connor Lymphoma Cells in CSF Image 10',
+      'Slide 36-102 JACOBI Desiree Image 9 close up Image 2',
+    ]) {
+      const original = title.textContent
+      title.textContent = name
+      await expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth)
+      title.textContent = original
+    }
+  },
+}
+
 export const NoNote: Story = {
   args: {
     note: null,
