@@ -246,6 +246,19 @@ describe('ImageViewerInfoBar', () => {
     expect(label.parentElement).toHaveStyle({ minWidth: '140px' })
   })
 
+  it('sets no width floor when a lone name gets no suffix', () => {
+    // label(60) + name(40) = 100 > 80, so even one name doesn't fit — but
+    // k === n means no suffix renders and the cell keeps no min-width.
+    stubFitWidths(80, 40)
+    render(<ImageViewerInfoBar {...defaultProps} collections={collections(['One'])} />)
+    expect(screen.getByRole('button', { name: 'One' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Show all .* collections/ }),
+    ).not.toBeInTheDocument()
+    const label = screen.getByText('Collections:', { selector: 'span.MuiTypography-root' })
+    expect(label.parentElement).toHaveStyle({ minWidth: '0px' })
+  })
+
   it('shows all names when they fit', () => {
     stubFitWidths(1000, 40)
     render(<ImageViewerInfoBar {...defaultProps} collections={collections(['One', 'Two'])} />)

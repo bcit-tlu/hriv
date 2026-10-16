@@ -150,6 +150,47 @@ export const ManyCollections: Story = {
   },
 }
 
+export const NarrowCollections: Story = {
+  args: {
+    note: 'The cathedral’s construction began in 1386.',
+    collections: [
+      { id: 1621, name: 'Duomo of Milan digital archive' },
+      { id: 1622, name: 'Italian Renaissance architecture' },
+      { id: 1623, name: 'Gothic cathedrals of Lombardy' },
+      { id: 1624, name: 'Restoration case studies 2019–2024' },
+      { id: 1625, name: 'Lombardy fieldwork documentation' },
+      { id: 1626, name: 'Marble conservation techniques' },
+    ],
+  },
+  decorators: [
+    (Story) => (
+      // Narrow the row so "… + N more" must show at any viewport.
+      <Box sx={{ width: 420, maxWidth: '100%', bgcolor: 'background.default', p: 1 }}>
+        <Story />
+      </Box>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const more = await canvas.findByRole('button', { name: 'Show all 6 collections' })
+    const label = canvas.getByText('Collections:', { selector: 'span.MuiTypography-root' })
+    const cell = label.parentElement!
+    const row = cell.parentElement!
+    const eps = 0.5
+    const cellRect = cell.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    // The cell stays inside the caption row…
+    expect(cellRect.left).toBeGreaterThanOrEqual(rowRect.left - eps)
+    expect(cellRect.right).toBeLessThanOrEqual(rowRect.right + eps)
+    // …and the label + suffix lie fully inside the cell.
+    for (const el of [label, more]) {
+      const r = el.getBoundingClientRect()
+      expect(r.left).toBeGreaterThanOrEqual(cellRect.left - eps)
+      expect(r.right).toBeLessThanOrEqual(cellRect.right + eps)
+    }
+  },
+}
+
 export const TitleOnly: Story = {
   args: {
     note: null,

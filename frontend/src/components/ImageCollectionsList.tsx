@@ -177,8 +177,9 @@ export function FittedCollections({
       // The label and "+ N more" must never be clipped, so when the cell is
       // narrower than they are, the names box (flex 0 1 auto, min-width 0)
       // absorbs the whole shortfall — the cell may exceed its cap only by
-      // this minimum.
-      setMinCellWidth(labelWidth + gapPx + suffixWidth + gapPx)
+      // this minimum. No floor at all when no suffix renders (k === n —
+      // e.g. a single name that simply ellipsizes).
+      setMinCellWidth(k < n ? labelWidth + gapPx + suffixWidth + gapPx : 0)
     }
     measure()
     if (typeof ResizeObserver === 'undefined') return
@@ -311,7 +312,9 @@ export function FittedCollections({
           typography: 'body2',
         }}
       >
-        <span>Collections:</span>
+        {/* Bold to match the rendered label — an unstyled sample would
+            underestimate minCellWidth by a few px. */}
+        <span style={{ fontWeight: 'bold' }}>Collections:</span>
         {collections.map((collection, index) => (
           <span key={collection.id}>
             {index > 0 ? ', ' : ''}
