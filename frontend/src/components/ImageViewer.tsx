@@ -621,6 +621,14 @@ export default function ImageViewer({
 
     // --- Toolbar buttons ---
     const prefix = '/openseadragon-svg-icons/'
+    const suffixes = ['rest', 'grouphover', 'hover', 'pressed']
+    const setButtonIcons = (button: OpenSeadragon.Button, base: string) => {
+      button.element.querySelectorAll('img').forEach((img, i) => {
+        if (i < suffixes.length) {
+          img.src = prefix + base + '_' + suffixes[i] + '.svg'
+        }
+      })
+    }
 
     // --- Clear overlays toolbar button ---
     const clearButton = new OpenSeadragon.Button({
@@ -678,8 +686,7 @@ export default function ImageViewer({
         selectionModeRef.current = !selectionModeRef.current
         emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
         viewer.setMouseNavEnabled(!selectionModeRef.current)
-        selectionButton.element.style.outline = selectionModeRef.current ? '2px solid red' : 'none'
-        selectionButton.element.style.outlineOffset = selectionModeRef.current ? '-2px' : ''
+        setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
       },
     })
     selectionButton.element.style.lineHeight = '0'
@@ -776,8 +783,7 @@ export default function ImageViewer({
         currentRect = null
         selectionModeRef.current = false
         viewer.setMouseNavEnabled(true)
-        selectionButton.element.style.outline = 'none'
-        selectionButton.element.style.outlineOffset = ''
+        setButtonIcons(selectionButton, 'selection')
       },
     })
 
@@ -806,13 +812,7 @@ export default function ImageViewer({
       const locked = overlaysLockedRef.current
       const empty = overlaysRef.current.length === 0
       const state = locked ? 'lock_closed' : 'lock_open'
-      const imgs = lockButton.element.querySelectorAll('img')
-      const suffixes = ['rest', 'grouphover', 'hover', 'pressed']
-      imgs.forEach((img, i) => {
-        if (i < suffixes.length) {
-          img.src = prefix + state + '_' + suffixes[i] + '.svg'
-        }
-      })
+      setButtonIcons(lockButton, state)
       // The closed-lock icon fills red; no extra outline is needed.
       lockButton.element.style.outline = 'none'
       // Disable when not locked and no rectangles exist
@@ -890,8 +890,7 @@ export default function ImageViewer({
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
           onCanvasEditModeChangeRef.current?.(entering)
-          canvasEditButton.element.style.outline = entering ? '2px solid red' : 'none'
-          canvasEditButton.element.style.outlineOffset = entering ? '-2px' : ''
+          setButtonIcons(canvasEditButton, entering ? 'canvas_edit_active' : 'canvas_edit')
         },
       })
       canvasEditButton.element.style.lineHeight = '0'
@@ -899,10 +898,9 @@ export default function ImageViewer({
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
 
-      // Allow external code (e.g. CanvasOverlay "Done" button) to update the button outline
+      // Allow external code (e.g. CanvasOverlay "Done" button) to update the button state
       updateCanvasEditUiRef.current = (active: boolean) => {
-        canvasEditButton.element.style.outline = active ? '2px solid red' : 'none'
-        canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
+        setButtonIcons(canvasEditButton, active ? 'canvas_edit_active' : 'canvas_edit')
       }
     }
 

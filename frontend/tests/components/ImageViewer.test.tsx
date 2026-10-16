@@ -1170,11 +1170,11 @@ describe('ImageViewer selection rectangles', () => {
 
     act(() => button.options.onClick())
     expect(viewer().setMouseNavEnabled).toHaveBeenCalledWith(false)
-    expect(button.element.style.outline).toBe('2px solid red')
+    expect(button.element.querySelector('img')?.src).toContain('selection_active_rest.svg')
 
     act(() => button.options.onClick())
     expect(viewer().setMouseNavEnabled).toHaveBeenCalledWith(true)
-    expect(button.element.style.outline).toBe('none')
+    expect(button.element.querySelector('img')?.src).toContain('selection_rest.svg')
   })
 
   it('draws a rectangle and notifies the parent of the overlay set', () => {
@@ -1445,13 +1445,12 @@ describe('ImageViewer canvas edit mode', () => {
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
   })
 
-  it('marks the canvas-edit button active with the standard red outline', () => {
+  it('marks the canvas-edit button active with the solid primary icon', () => {
     render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
     const button = buttonByTooltip('Canvas annotations (add shapes, text, links)')
 
     act(() => button.options.onClick())
-    expect(button.element.style.outline).toBe('2px solid red')
-    expect(button.element.style.outlineOffset).toBe('-2px')
+    expect(button.element.querySelector('img')?.src).toContain('canvas_edit_active_rest.svg')
   })
 })
 
