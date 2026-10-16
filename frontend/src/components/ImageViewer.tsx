@@ -920,7 +920,13 @@ export default function ImageViewer({
     topRightControl.style.display = 'inline-block'
     topRightControl.style.lineHeight = '0'
     const keepControlsEnabled = () => viewer.setControlsEnabled(true)
-    const releaseControls = () => viewer.setControlsEnabled(false)
+    // Don't start auto-hide when focus moves within the control, or while
+    // the pointer still hovers the viewer — OSD's own leave handler resumes it.
+    const releaseControls = (e: FocusEvent) => {
+      if (e.relatedTarget instanceof Node && topRightControl.contains(e.relatedTarget)) return
+      if (viewer.container.matches(':hover')) return
+      viewer.setControlsEnabled(false)
+    }
     topRightControl.addEventListener('focusin', keepControlsEnabled)
     topRightControl.addEventListener('focusout', releaseControls)
     viewer.addControl(topRightControl, {

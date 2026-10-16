@@ -438,6 +438,36 @@ describe('ImageViewer drawer configuration', () => {
     fireEvent.focusOut(wrapper)
     expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(false)
   })
+
+  it('does not start auto-hide on focusout while the control or viewer is still in use', async () => {
+    render(
+      <ImageViewer
+        tileSources="/tiles.dzi"
+        viewportControl={<button data-testid="viewport-control">info</button>}
+      />,
+    )
+    await waitFor(() => expect(viewer().addControl).toHaveBeenCalled())
+    const wrapper = viewer().addControl.mock.calls.find(
+      ([, options]: [HTMLElement, { anchor?: number }]) => options?.anchor === 1,
+    )?.[0] as HTMLElement
+
+    // Focus moving within the wrapper keeps controls enabled.
+    const inner = wrapper.querySelector('[data-testid="viewport-control"]') as HTMLElement
+    fireEvent.focusOut(wrapper, { relatedTarget: inner })
+    expect(viewer().setControlsEnabled).not.toHaveBeenCalledWith(false)
+
+    // Focus leaving entirely while the viewer is still hovered also keeps them.
+    const matchesSpy = vi
+      .spyOn(viewer().container, 'matches')
+      .mockImplementation((selector: string) => selector === ':hover')
+    fireEvent.focusOut(wrapper, { relatedTarget: document.body })
+    expect(viewer().setControlsEnabled).not.toHaveBeenCalledWith(false)
+    matchesSpy.mockRestore()
+
+    // …and focus leaving while not hovered releases them.
+    fireEvent.focusOut(wrapper, { relatedTarget: document.body })
+    expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(false)
+  })
 })
 
 describe('ImageViewer lifecycle telemetry', () => {
