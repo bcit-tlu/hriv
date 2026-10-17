@@ -2833,7 +2833,7 @@ export default function App() {
                   display: { md: 'flex' },
                   flexDirection: { md: 'column' },
                   flex: { md: '1 1 0' },
-                  minHeight: { md: 320 },
+                  minHeight: { md: 260 },
                 }}
               >
                 <ImageViewer

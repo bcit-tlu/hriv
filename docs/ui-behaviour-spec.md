@@ -173,7 +173,7 @@ images> / Empty` format used on category tiles.
   On every other page where the shelf is visible, `<main>` reserves 68.5px of
   bottom padding at all widths.
 - At `md` and up, regular image and loaded collection-detail pages fill the
-  viewport; only the OSD viewer frame flexes, with a 320px minimum. If fixed
+  viewport; only the OSD viewer frame flexes, with a 260px minimum. If fixed
   content needs more space, the page grows and scrolls. Below `md`, the existing
   70vh / 60vh / 55vh / 34vh viewer heights and page scrolling are unchanged.
 - An image at Home stays fitted when its viewer frame resizes, including
@@ -677,15 +677,17 @@ See [collections.md](collections.md#synchronized-collection-viewer-1417)
 for the full contract. Mounted by the collection detail for `synchronized`
 collections; both panes are read-only `ImageViewer`s
 (`canEditContent={false}`) showing stored annotations, locked overlays and
-measurement metadata.
+measurement metadata. The view controls (Showing note, **Restore default
+view**, **Set as default view**) portal into the detail header beside the
+collection description rather than a blocking band above the panes (#1683).
 
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
-  three or four (each pane captioned with the member name as an `h2`, a
-  **Notes** link when the member has a note — it opens a **Notes**
-  `ViewportDialog` centered over that pane; no note text renders inline —
-  and an **Open image** → `?image={id}` action) — and, when more than
-  four are stored, a "Showing _N_ of _M_" note appears.
+  three or four (each pane captioned with the member name as an `h2`, when
+  the member has a note a **Notes:** label plus the note clamped to one
+  line — "…more" opens a **Notes** `ViewportDialog` centered over that
+  pane (#1686) — and an **Open image** → `?image={id}` action) — and, when
+  more than four are stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other
   pane follows with `immediately=true`, shifted by that pane's offset from
   the armed baseline, and followers never lead the sync (no oscillation).

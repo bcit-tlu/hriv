@@ -272,6 +272,7 @@ function CollectionDetailHeader({
   onToggleHidden,
   canFile,
   categoryHidden,
+  syncActionsRef,
 }: {
   collection: Collection
   programs: Program[]
@@ -294,6 +295,9 @@ function CollectionDetailHeader({
    *  header desaturates and the hide control locks like the image view
    *  (and `CollectionEditDialog`) "Hidden by Category" state. */
   categoryHidden?: boolean
+  /** Ref for the slot beside the description that hosts the synchronized
+   *  viewer's Restore/Save controls via portal (#1683). */
+  syncActionsRef?: (el: HTMLElement | null) => void
 }) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -566,11 +570,43 @@ function CollectionDetailHeader({
           All images in this collection are currently restricted.
         </Typography>
       )}
-      {/* Description sits under the type chip, left-aligned (#1567). */}
-      {collection.description && (
-        <Typography variant="body1" sx={{ mb: 2, whiteSpace: 'pre-wrap' }}>
-          {collection.description}
-        </Typography>
+      {/* Description sits under the type chip, left-aligned (#1567). For a
+          synchronized collection the row also hosts the viewer's
+          Restore/Set-as-default controls — they portal into the slot
+          (`syncActionsRef`) instead of a blocking band above the panes
+          (#1683). */}
+      {(collection.description || collection.type === 'synchronized') && (
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            gap: 1,
+            mb: 1,
+          }}
+        >
+          {collection.description && (
+            <Typography
+              variant="body1"
+              sx={{ flex: '1 1 300px', minWidth: 0, whiteSpace: 'pre-wrap' }}
+            >
+              {collection.description}
+            </Typography>
+          )}
+          {collection.type === 'synchronized' && (
+            <Box
+              ref={syncActionsRef}
+              data-testid="synchronized-viewer-actions"
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 1,
+                ml: 'auto',
+              }}
+            />
+          )}
+        </Box>
       )}
     </>
   )
@@ -634,6 +670,9 @@ export default function CollectionsPage({
   const [editLoadError, setEditLoadError] = useState<string | null>(null)
   const [transferTarget, setTransferTarget] = useState<CollectionSummary | null>(null)
   const [togglingHidden, setTogglingHidden] = useState(false)
+  // The synchronized detail's header exposes a slot beside the description;
+  // the viewer portals its Restore/Save controls into it (#1683).
+  const [syncActionsEl, setSyncActionsEl] = useState<HTMLElement | null>(null)
   // Member-management dialog (#1566) — reorder/add/remove live here now that
   // the sequence viewer's inline reorder mode is gone.
   const [manageOpen, setManageOpen] = useState(false)
@@ -1146,6 +1185,7 @@ export default function CollectionsPage({
               togglingHidden={togglingHidden}
               onToggleHidden={handleToggleHidden}
               categoryHidden={detailCategoryHidden}
+              syncActionsRef={setSyncActionsEl}
             />
           </Box>
           <SynchronizedCollectionViewer
@@ -1154,6 +1194,7 @@ export default function CollectionsPage({
             onOpenImage={onOpenImage}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
+            actionsContainer={syncActionsEl}
           />
         </Box>
       )

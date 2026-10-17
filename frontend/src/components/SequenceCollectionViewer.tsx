@@ -319,7 +319,7 @@ export default function SequenceCollectionViewer({
         sx={{
           display: 'flex',
           gap: 1,
-          mt: 2,
+          mt: 1,
           pb: 1,
           flexShrink: 0,
           overflowX: 'auto',
@@ -372,7 +372,7 @@ export default function SequenceCollectionViewer({
           display: { md: 'flex' },
           flexDirection: { md: 'column' },
           flex: { md: '1 1 0' },
-          minHeight: { md: 320 },
+          minHeight: { md: 260 },
         }}
         onPointerEnter={showNav}
         onPointerMove={showNav}
