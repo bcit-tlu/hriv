@@ -14,12 +14,27 @@ import * as ThemeStories from './theme.stories'
 
 Use `Foundations/Theme` as the first stop when choosing or reviewing UI colours. The palette stories render directly from `frontend/src/theme.ts`, so the swatches reflect the same tokens used by the application and component stories.
 
+## How theming works
+
+HRIV builds its MUI theme with `buildTheme(mode)` (`frontend/src/theme.ts`), where `mode` is
+`'light'` or `'dark'`. `buildTheme` forwards the **standard** palette fields — `primary`,
+`secondary`, `background`, `text` — into MUI's theme, so every MUI component stays consistent across
+light and dark without per-component overrides. HRIV's **custom** tokens (`surfaceVariant`,
+group-chip, and visibility colours) live outside the MUI theme and are read through dedicated
+helpers (`getSurfaceVariant`, `getGroupChipColors`, `getVisibilityColors`). At runtime the active
+mode comes from `ColorModeContext`; in Storybook, switch it with the theme toolbar.
+
 ## Theme stories
 
+- `Key Surfaces` compares the core surfaces (background, paper, text, primary button) in light vs dark side by side.
 - `Light Theme` shows HRIV's light-mode palette, semantic tokens, and common component variants.
 - `Dark Theme` shows the matching dark-mode palette.
 
 These stories are fixed references rather than prop-driven components, so controls are intentionally disabled. This docs page is the side-by-side reference for both palettes. Use the Storybook theme toolbar to switch the global preview theme while reviewing other component stories.
+
+## Key surfaces
+
+<Canvas of={ThemeStories.KeySurfaces} />
 
 ## Light theme
 

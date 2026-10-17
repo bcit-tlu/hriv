@@ -7,6 +7,7 @@ import Chip from '@mui/material/Chip'
 import CssBaseline from '@mui/material/CssBaseline'
 import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
+import ScopedCssBaseline from '@mui/material/ScopedCssBaseline'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { ThemeProvider } from '@mui/material/styles'
@@ -276,6 +277,70 @@ function ThemePage({ mode }: { mode: HrivThemeMode }) {
       </Box>
     </ModeProvider>
   )
+}
+
+function SurfacePanel({ mode }: { mode: HrivThemeMode }) {
+  // Scoped theming: ScopedCssBaseline themes only this panel's background/text,
+  // so rendering a light and a dark panel together never lets one panel's
+  // global CssBaseline override the preview surface outside the panels.
+  return (
+    <ColorModeContext.Provider
+      value={{ mode, preference: mode, setPreference: () => {}, toggleMode: () => {} }}
+    >
+      <ThemeProvider theme={buildTheme(mode)}>
+        <ScopedCssBaseline sx={{ p: 3, borderRadius: 1 }}>
+          <Stack spacing={2}>
+            <Typography color="text.secondary" variant="overline">
+              {mode === 'dark' ? 'Dark' : 'Light'} · background.default
+            </Typography>
+            <Paper sx={{ p: 2 }}>
+              <Stack alignItems="flex-start" spacing={1}>
+                <Typography variant="subtitle2">Paper surface (background.paper)</Typography>
+                <Typography color="text.primary" variant="body2">
+                  Primary text (text.primary)
+                </Typography>
+                <Typography color="text.secondary" variant="body2">
+                  Secondary text (text.secondary)
+                </Typography>
+                <Button variant="contained">Primary button</Button>
+              </Stack>
+            </Paper>
+          </Stack>
+        </ScopedCssBaseline>
+      </ThemeProvider>
+    </ColorModeContext.Provider>
+  )
+}
+
+// Key surfaces (background, paper, text, primary button) shown light vs dark
+// side by side so the two palettes can be compared directly.
+function KeySurfacesComparison() {
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gap: 2,
+        gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+        width: 760,
+        maxWidth: '90vw',
+      }}
+    >
+      <SurfacePanel mode="light" />
+      <SurfacePanel mode="dark" />
+    </Box>
+  )
+}
+
+export const KeySurfaces: Story = {
+  name: 'Key Surfaces',
+  parameters: {
+    // Known theme-palette contrast debt — see #1345.
+    a11y: { test: 'todo' },
+    controls: {
+      disable: true,
+    },
+  },
+  render: () => <KeySurfacesComparison />,
 }
 
 export const LightTheme: Story = {
