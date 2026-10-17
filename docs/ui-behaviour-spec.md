@@ -683,11 +683,11 @@ collection description rather than a blocking band above the panes (#1683).
 
 - **Given** a synchronized collection with two or more visible members,
   **Then** up to four render as panes — side by side for two, a 2×2 grid for
-  three or four (each pane captioned with the member name as an `h2`, a
-  **Notes** link when the member has a note — it opens a **Notes**
-  `ViewportDialog` centered over that pane; no note text renders inline —
-  and an **Open image** → `?image={id}` action) — and, when more than
-  four are stored, a "Showing _N_ of _M_" note appears.
+  three or four (each pane captioned with the member name as an `h2`, when
+  the member has a note a **Notes:** label plus the note clamped to one
+  line — "…more" opens a **Notes** `ViewportDialog` centered over that
+  pane (#1686) — and an **Open image** → `?image={id}` action) — and, when
+  more than four are stored, a "Showing _N_ of _M_" note appears.
 - **Given** the user pans, zooms or rotates any pane, **Then** every other
   pane follows with `immediately=true`, shifted by that pane's offset from
   the armed baseline, and followers never lead the sync (no oscillation).

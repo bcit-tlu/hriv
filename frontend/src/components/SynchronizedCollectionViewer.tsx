@@ -688,20 +688,11 @@ export default function SynchronizedCollectionViewer({
                   key={`caption-${image.id}`}
                   name={image.name}
                   active={image.active}
+                  note={image.note}
+                  noteDialogOpen={noteDialogImageId === image.id}
                   onShowNote={() => setNoteDialogImageId(image.id)}
                   end={
                     <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
-                      {image.note?.trim() ? (
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() => setNoteDialogImageId(image.id)}
-                          aria-label={`Show notes for ${image.name}`}
-                          aria-expanded={noteDialogImageId === image.id}
-                        >
-                          Notes
-                        </Button>
-                      ) : null}
                       <Button
                         size="small"
                         variant="text"
