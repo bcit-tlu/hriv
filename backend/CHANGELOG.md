@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.68.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.67.0...backend-v0.68.0) (2026-10-17)
+
+
+### Features
+
+* **backend:** collections graph endpoints ([#1632](https://github.com/bcit-tlu/hriv/issues/1632)) ([84686a3](https://github.com/bcit-tlu/hriv/commit/84686a3f55c48ff84d198795ef076bb623bf9305))
+* **backend:** collections graph order=3 category nodes ([#1634](https://github.com/bcit-tlu/hriv/issues/1634)) ([4bcf091](https://github.com/bcit-tlu/hriv/commit/4bcf091b76a7d5ca795eb3f61a438d41aa1aff34))
+* **frontend:** move image metadata into an "Image information" accordion ([#1622](https://github.com/bcit-tlu/hriv/issues/1622)) ([c5627a4](https://github.com/bcit-tlu/hriv/commit/c5627a4941d57280a995ff375e9c495cf3cbeac4))
+* **observability:** record OpenSeadragon viewer-open failure messages ([#1673](https://github.com/bcit-tlu/hriv/issues/1673)) ([a1125db](https://github.com/bcit-tlu/hriv/commit/a1125dbbaaa0f7f3d9104eed28cae9d8d6035a69))
+* revision-based ETag/304 for GET /api/collections ([#1654](https://github.com/bcit-tlu/hriv/issues/1654)) ([79550b6](https://github.com/bcit-tlu/hriv/commit/79550b62a2d39a757623f1f310112bff1e7ef0bf))
+* server-side search, sort and paging for GET /api/collections ([#1650](https://github.com/bcit-tlu/hriv/issues/1650)) ([dba702b](https://github.com/bcit-tlu/hriv/commit/dba702b2c5b3ec43e22f60c9822ebb577a4a09ba))
+
+
+### Bug Fixes
+
+* resolve category card covers server-side so students see them ([#1646](https://github.com/bcit-tlu/hriv/issues/1646)) ([50cf478](https://github.com/bcit-tlu/hriv/commit/50cf47843d68d479de22df5122b0a7b8289645f6))
+* viewer polish follow-ups and no-op image PATCH 500 ([#1681](https://github.com/bcit-tlu/hriv/issues/1681)) ([bf3cc64](https://github.com/bcit-tlu/hriv/commit/bf3cc64650b0c244c0edad3081ba04a496ef5be0))
+
 ## [0.67.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.66.0...backend-v0.67.0) (2026-10-10)
 
 
