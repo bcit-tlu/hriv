@@ -393,7 +393,7 @@ Copyright (C) 2016-present the asyncpg authors and contributors.
    limitations under the License.
 
 ================================================================================
-Authlib@1.8.0
+Authlib@1.9.1
 License: BSD License
 Homepage: https://github.com/authlib/authlib
 ================================================================================
@@ -5869,7 +5869,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-pydantic-settings@2.15.0
+pydantic-settings@2.16.0
 License: MIT
 Homepage: https://github.com/pydantic/pydantic-settings
 ================================================================================
