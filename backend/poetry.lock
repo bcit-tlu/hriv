@@ -194,19 +194,19 @@ gssauth = ["gssapi ; platform_system != \"Windows\"", "sspilib ; platform_system
 
 [[package]]
 name = "authlib"
-version = "1.8.0"
+version = "1.9.1"
 description = "The ultimate Python library in building OAuth and OpenID Connect servers and clients."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "authlib-1.8.0-py2.py3-none-any.whl", hash = "sha256:88aebbd9af6757e14e912d5dc007ae1dc1f3e27e3b2152ce7c552ee2c3b3c121"},
-    {file = "authlib-1.8.0.tar.gz", hash = "sha256:f3ecd5f1da737262fb53bf1a4d95c4ea1ad9dd509316587a255c99ab1838a4f0"},
+    {file = "authlib-1.9.1-py2.py3-none-any.whl", hash = "sha256:8b9be8b1e5174dcbf5520e984f1a22dc2edae5b6e40a61d4cedbf86b97e9e69b"},
+    {file = "authlib-1.9.1.tar.gz", hash = "sha256:5c7d9848f47cac340f060f76ae0bc09b59f5c8e89cc1bb032d4370a0c55b5974"},
 ]
 
 [package.dependencies]
 cryptography = ">=45.0.1"
-joserfc = ">=1.6.1"
+joserfc = ">=1.6.8"
 
 [[package]]
 name = "azure-core"
@@ -786,14 +786,14 @@ ssh = ["bcrypt (>=3.1.5)"]
 
 [[package]]
 name = "fakeredis"
-version = "2.39.0"
+version = "2.40.0"
 description = "Python implementation of redis API, can be used for testing purposes."
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
-    {file = "fakeredis-2.39.0-py3-none-any.whl", hash = "sha256:acd1450575259634db2942d5bae93e383aac32bb9968aab29fe7b0c2ab880bb8"},
-    {file = "fakeredis-2.39.0.tar.gz", hash = "sha256:e89c3410f290330042638ff5cca3e22788fa267dcaf28a64b4f483e14577208d"},
+    {file = "fakeredis-2.40.0-py3-none-any.whl", hash = "sha256:b155ef2442134372eb1cc5664cf5638ccbe0a6dde9d1942153708e2782f315c9"},
+    {file = "fakeredis-2.40.0.tar.gz", hash = "sha256:16eb05a3e97c37a033c73d1da7e885eb2aa47ba7604cc377144339efa2780a02"},
 ]
 
 [package.dependencies]
@@ -803,6 +803,7 @@ sortedcontainers = ">=2"
 [package.extras]
 bf = ["pyprobables (>=0.6)"]
 cf = ["pyprobables (>=0.6)"]
+digest = ["xxhash (>=3)"]
 json = ["jsonpath-ng (>=1.6)"]
 lua = ["lupa (>=2.1)"]
 probabilistic = ["pyprobables (>=0.6)"]
@@ -2080,26 +2081,27 @@ typing-extensions = ">=4.16.0"
 
 [[package]]
 name = "pydantic-settings"
-version = "2.15.0"
+version = "2.16.0"
 description = "Settings management using Pydantic"
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "pydantic_settings-2.15.0-py3-none-any.whl", hash = "sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42"},
-    {file = "pydantic_settings-2.15.0.tar.gz", hash = "sha256:694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117"},
+    {file = "pydantic_settings-2.16.0-py3-none-any.whl", hash = "sha256:7e73acf7f61936a15e5a3b6eedaea29f133357faf7272f2607ba479b049dd7f2"},
+    {file = "pydantic_settings-2.16.0.tar.gz", hash = "sha256:5b6c578049ede4db0e2ef3b4eaa4ad4069cfa9211f83fb38df899dfade50a614"},
 ]
 
 [package.dependencies]
 pydantic = ">=2.7.0"
-python-dotenv = ">=0.21.0"
+python-dotenv = ">=1.2.2"
+typing-extensions = ">=4.0.0"
 typing-inspection = ">=0.4.0"
 
 [package.extras]
 aws-secrets-manager = ["boto3 (>=1.35.0)"]
+aws-systems-manager = ["boto3 (>=1.35.0)"]
 azure-key-vault = ["azure-identity (>=1.16.0)", "azure-keyvault-secrets (>=4.8.0)"]
 gcp-secret-manager = ["google-cloud-secret-manager (>=2.23.1)"]
-toml = ["tomli (>=2.0.1)"]
 yaml = ["pyyaml (>=6.0.1)"]
 
 [[package]]
@@ -2935,4 +2937,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "7fa5793b8727f7c13030038928d71a1be509d1bce769ad350500099cd50977bd"
+content-hash = "c5c8c6b3e2b88e4f5e0e2bbffd3cade6b03ae247e372c5beb9d8fbd84460bdf2"

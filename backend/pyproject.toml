@@ -37,7 +37,7 @@ prometheus-client = ">=0.21,<0.27"
 pytest = ">=8.3.3,<10.0.0"
 pytest-asyncio = ">=0.24,<1.5"
 pytest-cov = ">=7.1.0,<8"
-fakeredis = "2.39.0"
+fakeredis = "2.40.0"
 lupa = "^2.8"
 
 [tool.pytest.ini_options]
