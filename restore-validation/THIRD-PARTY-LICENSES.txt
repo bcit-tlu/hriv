@@ -292,7 +292,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 ================================================================================
-aiohttp@3.14.3
+aiohttp@3.14.4
 License: Apache-2.0 AND MIT
 ================================================================================
 
