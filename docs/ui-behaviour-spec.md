@@ -702,7 +702,8 @@ collection description rather than a blocking band above the panes (#1683).
   `userMessage` on the snackbar. Non-editors never see **Set as default view**.
 - **Given** the **Restore default view** button (everyone), **Then** it stays
   disabled until a view has been saved (#1567); **When** clicked, **Then**
-  each pane re-applies its saved position and the link baselines re-arm.
+  every unlinked pane is re-linked (#1684), each pane re-applies its saved
+  position and the link baselines re-arm.
 - **Given** each pane's **link** button at the top-right of its viewport
   (#1564 — a link icon when linked, link-off when unlinked), **Then**
   panes start linked; **When** a pane is

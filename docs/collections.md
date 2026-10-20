@@ -1477,8 +1477,9 @@ not snap the pane back to where it left).
 consume each other's version. The save stays put — a tile-source refresh
 from the response re-opens the pyramid but preserves the live viewport
 (`ImageViewer` snapshots it before `open`, same as the token-renewal
-path). **Restore default view** (everyone) re-applies the saved
-positions and re-arms the baselines; it is disabled until a viewport has
+path). **Restore default view** (everyone) re-links any unlinked pane
+(#1684), re-applies the saved positions and re-arms the baselines, so
+every pane follows the others again; it is disabled until a viewport has
 been saved for at least one rendered pane (#1567). Saved entries that do
 not match the shape are ignored by
 `viewportStateFromSaved` (`imageViewerUtils.ts`).
