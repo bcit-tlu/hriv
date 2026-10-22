@@ -435,6 +435,46 @@ lock and fail closed while the fixture directory exists; the full procedure and
 measurement record live in
 [backup-restore-runbook.md](backup-restore-runbook.md#tile-rebuild-scale-rehearsal-opt-in-issue-1189).
 
+## Orphaned failed source images
+
+When image processing dies mid-flight — pod crash, OOM, rollout, or node
+drain — the startup reconciliation sweep marks the in-flight `SourceImage`
+rows `failed` **before they ever link an `Image`** (`image_id IS NULL`).
+These rows are terminal: there is no retry path, no viewer can request them,
+and `rebuild_tiles` cannot select them (see the selection contract above —
+`status='completed'` with a linked image only). Operators typically re-upload
+the file, which creates a _new_ `SourceImage` row, so failed orphans only
+accumulate: each retains its preserved source file on the source-images
+volume plus a partial tile tree on the tiles volume.
+
+Purge them on demand with `scripts/purge_failed_source_images.py`, run inside
+the backend container (it needs the database and both volumes):
+
+```bash
+# Dry run — lists candidates and reclaimable space (detector + safety check)
+kubectl --context stable -n hriv exec -i deploy/hriv-backend -- \
+    python - < scripts/purge_failed_source_images.py
+
+# Execute the purge
+kubectl --context stable -n hriv exec -i deploy/hriv-backend -- \
+    python - --apply < scripts/purge_failed_source_images.py
+```
+
+- `--older-than-days N` (default 30) excludes recent failures an instructor
+  may still want to retry or inspect.
+- `--source-ids <csv>` narrows the run to specific `SourceImage` ids.
+- On-disk artifacts are removed **before** the row so files cannot be
+  silently orphaned. A file that fails to delete is reported by the script
+  and later flagged by the startup `list_orphaned_final_files` sweep, since
+  its owning row no longer exists.
+- Eligibility is re-checked at delete time — a row that gained an `image_id`
+  or changed status between scan and delete is skipped.
+
+Do **not** hand-delete `failed` rows that still carry an `image_id`: those are
+linked to a live image and belong to the delete-image or rebuild-tiles paths.
+If orphaned failures start recurring often enough that the manual purge
+becomes routine, revisit promoting this to an admin API operation.
+
 ## Per-file backup restore
 
 The admin area also exposes a manifest-browsing restore flow for restoring a
