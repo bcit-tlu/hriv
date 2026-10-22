@@ -57,6 +57,8 @@ def _dir_size_bytes(path: str) -> int:
             try:
                 total += os.path.getsize(os.path.join(dirpath, name))
             except OSError:
+                # File vanished mid-walk or is unreadable — size is
+                # best-effort accounting for the report only.
                 pass
     return total
 
