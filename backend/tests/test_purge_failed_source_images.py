@@ -9,6 +9,7 @@ exercise real paths under ``tmp_path``.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 from datetime import datetime, timezone
@@ -312,3 +313,36 @@ def test_main_apply_with_no_candidates_exits_clean(managed_roots, capsys):
 
     apply_mock.assert_not_called()
     assert "Nothing to do." in capsys.readouterr().out
+
+
+def test_main_uses_a_single_event_loop(managed_roots):
+    """Find and apply must share one ``asyncio.run``.
+
+    The shared SQLAlchemy engine binds pooled connections to the loop that
+    first used them; a second ``asyncio.run`` would check out connections
+    bound to the closed first loop and crash on the pool pre-ping.
+    """
+    infos = [
+        {
+            "id": 1,
+            "original_filename": "img1.jpg",
+            "created_at": datetime(2026, 7, 17, tzinfo=timezone.utc),
+            "error_message": None,
+            "stored_path": "/data/source_images/x.jpg",
+            "stored_exists": False,
+            "stored_size": 0,
+            "tiles_dir": "/data/tiles/1",
+            "tiles_exists": False,
+            "tiles_size": 0,
+        }
+    ]
+    real_run = asyncio.run
+    with (
+        patch.object(purge, "_find_candidates", new=AsyncMock(return_value=infos)),
+        patch.object(purge, "_apply", new=AsyncMock(return_value=[])),
+        patch.object(sys, "argv", ["-", "--apply"]),
+        patch.object(asyncio, "run", wraps=real_run) as run_spy,
+    ):
+        assert purge.main() == 0
+
+    assert run_spy.call_count == 1
