@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.database import get_async_session, settings
+from app.database import engine, get_async_session, get_engine_pool, settings
 from app.models import SourceImage
 
 
@@ -202,6 +202,62 @@ async def _apply(source_ids: list[int]) -> list[str]:
     return problems
 
 
+async def _run(args: argparse.Namespace) -> int:
+    """Scan, report, and (with ``--apply``) purge inside one event loop.
+
+    The shared SQLAlchemy engine binds pooled connections to the loop that
+    first used them, so the find and apply phases must run under a single
+    ``asyncio.run`` — a second ``asyncio.run`` would check out connections
+    bound to the first (now closed) loop and crash on the pool pre-ping.
+    """
+    try:
+        source_ids = (
+            [int(part) for part in args.source_ids.split(",") if part.strip()]
+            if args.source_ids
+            else None
+        )
+        infos = await _find_candidates(args.older_than_days, source_ids)
+
+        mode = "APPLY" if args.apply else "DRY RUN"
+        print(f"[{mode}] {len(infos)} orphaned failed source image(s) found\n")
+        total_stored = total_tiles = 0
+        for info in infos:
+            _print_candidate(info)
+            total_stored += info["stored_size"]
+            total_tiles += info["tiles_size"]
+        print(
+            f"\nTotal reclaimable: {_format_bytes(total_stored)} source files, "
+            f"{_format_bytes(total_tiles)} tiles"
+        )
+
+        if not args.apply:
+            print("\nDry run only — rerun with --apply to delete.")
+            return 0
+
+        if not infos:
+            print("Nothing to do.")
+            return 0
+
+        problems = await _apply([info["id"] for info in infos])
+        if problems:
+            print("\nCompleted with leftover artifacts:")
+            for problem in problems:
+                print(f"  - {problem}")
+            print(
+                "Rows whose artifact removal failed were retained so a later "
+                "dry run can find and retry their leftover artifacts."
+            )
+        else:
+            print(f"\nDone — purged {len(infos)} orphaned failed source image(s).")
+        return 0
+    finally:
+        # Return pooled connections before the loop closes, so nothing is
+        # left bound to a dead loop. get_engine_pool() avoids instantiating
+        # an engine that was never used (e.g. under test).
+        if get_engine_pool() is not None:
+            await engine.dispose()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Purge orphaned failed SourceImage rows and their files."
@@ -226,47 +282,7 @@ def main() -> int:
         help="comma-separated SourceImage ids to narrow the purge",
     )
     args = parser.parse_args()
-
-    source_ids = (
-        [int(part) for part in args.source_ids.split(",") if part.strip()]
-        if args.source_ids
-        else None
-    )
-
-    infos = asyncio.run(_find_candidates(args.older_than_days, source_ids))
-
-    mode = "APPLY" if args.apply else "DRY RUN"
-    print(f"[{mode}] {len(infos)} orphaned failed source image(s) found\n")
-    total_stored = total_tiles = 0
-    for info in infos:
-        _print_candidate(info)
-        total_stored += info["stored_size"]
-        total_tiles += info["tiles_size"]
-    print(
-        f"\nTotal reclaimable: {_format_bytes(total_stored)} source files, "
-        f"{_format_bytes(total_tiles)} tiles"
-    )
-
-    if not args.apply:
-        print("\nDry run only — rerun with --apply to delete.")
-        return 0
-
-    if not infos:
-        print("Nothing to do.")
-        return 0
-
-    problems = asyncio.run(_apply([info["id"] for info in infos]))
-    if problems:
-        print("\nCompleted with leftover artifacts:")
-        for problem in problems:
-            print(f"  - {problem}")
-        print(
-            "Rows whose artifact removal failed were retained so a later "
-            "dry run can find and retry their leftover artifacts."
-        )
-    else:
-        print(f"\nDone — purged {len(infos)} orphaned failed source image(s).")
-    return 0
+    return asyncio.run(_run(args))
 
 
 if __name__ == "__main__":
