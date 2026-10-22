@@ -438,7 +438,7 @@ measurement record live in
 ## Orphaned failed source images
 
 When image processing dies mid-flight — pod crash, OOM, rollout, or node
-drain — the startup reconciliation sweep marks the in-flight `SourceImage`
+drain — the reconciliation sweep marks the in-flight `SourceImage`
 rows `failed` **before they ever link an `Image`** (`image_id IS NULL`).
 These rows are terminal: there is no retry path, no viewer can request them,
 and `rebuild_tiles` cannot select them (see the selection contract above —
@@ -463,10 +463,11 @@ kubectl --context stable -n hriv exec -i deploy/hriv-backend -- \
 - `--older-than-days N` (default 30) excludes recent failures an instructor
   may still want to retry or inspect.
 - `--source-ids <csv>` narrows the run to specific `SourceImage` ids.
-- On-disk artifacts are removed **before** the row so files cannot be
-  silently orphaned. A file that fails to delete is reported by the script
-  and later flagged by the startup `list_orphaned_final_files` sweep, since
-  its owning row no longer exists.
+- On-disk artifacts are removed **before** the row, and a row whose artifact
+  removal fails is **retained** so the next dry run can find and retry it —
+  the row is the only discoverability anchor for its tile tree (nothing else
+  scans `tiles_dir`). A leftover stored file is additionally reported by the
+  periodic reconciliation sweep's `list_orphaned_final_files` step.
 - Eligibility is re-checked at delete time — a row that gained an `image_id`
   or changed status between scan and delete is skipped.
 

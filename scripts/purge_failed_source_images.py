@@ -27,9 +27,11 @@ Safety properties:
   delete-image / rebuild-tiles paths and is never touched here.
 - ``--older-than-days`` (default 30) excludes recent failures an instructor
   may still want to retry or inspect.
-- On-disk artifacts are removed **before** the row so a leftover file cannot
-  be silently orphaned; any file that fails to delete is reported, and the
-  next backend startup's ``list_orphaned_final_files`` sweep will flag it.
+- On-disk artifacts are removed **before** the row, and a row whose artifact
+  removal fails is *retained* so the next dry run can find and retry it — the
+  row is the only discoverability anchor for its tile tree. (A leftover
+  stored file is additionally reported by the periodic reconciliation sweep's
+  ``list_orphaned_final_files`` step, but nothing else scans ``tiles_dir``.)
 - Path deletions are containment-checked against ``settings.tiles_dir`` and
   ``settings.source_images_dir`` — nothing outside the managed roots is ever
   removed.
@@ -111,9 +113,9 @@ def _print_candidate(info: dict) -> None:
 def _remove_artifacts(info: dict) -> list[str]:
     """Delete the tiles dir and stored file for one candidate.
 
-    Returns a list of human-readable problems; an entry means that artifact
-    could not be removed (the row is still deleted — the leftover file is
-    surfaced to the operator and to the startup orphan scan).
+    Returns a list of human-readable problems; a non-empty result means the
+    caller must retain the source row so a later run can retry the leftover
+    artifact (the row is the only discoverability anchor for its tile tree).
     """
     problems: list[str] = []
     tiles_dir = info["tiles_dir"]
@@ -180,7 +182,18 @@ async def _apply(source_ids: list[int]) -> list[str]:
                 )
                 continue
             info = _candidate_info(src)
-            problems.extend(_remove_artifacts(info))
+            row_problems = _remove_artifacts(info)
+            problems.extend(row_problems)
+            if row_problems:
+                # The row is the only discoverability anchor for its tile
+                # tree — nothing else scans ``tiles_dir`` — so a failed
+                # artifact removal must retain the row for the next dry run
+                # to find and retry rather than stranding the tree.
+                print(
+                    f"  src={src_id}: artifact removal failed; row retained "
+                    "for retry"
+                )
+                continue
             await session.delete(src)
             print(f"  src={src_id}: removed artifacts + row")
         await session.commit()
@@ -246,8 +259,10 @@ def main() -> int:
         for problem in problems:
             print(f"  - {problem}")
         print(
-            "Leftover files are unowned orphans; the backend startup sweep "
-            "(list_orphaned_final_files) reports them on next restart."
+            "Rows whose artifact removal failed were retained so a later "
+            "dry run can find and retry them. A leftover stored file is "
+            "additionally reported by the periodic reconciliation sweep "
+            "(list_orphaned_final_files)."
         )
     else:
         print(f"\nDone — purged {len(infos)} orphaned failed source image(s).")
