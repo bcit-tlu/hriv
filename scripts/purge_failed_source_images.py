@@ -29,9 +29,9 @@ Safety properties:
   may still want to retry or inspect.
 - On-disk artifacts are removed **before** the row, and a row whose artifact
   removal fails is *retained* so the next dry run can find and retry it — the
-  row is the only discoverability anchor for its tile tree. (A leftover
-  stored file is additionally reported by the periodic reconciliation sweep's
-  ``list_orphaned_final_files`` step, but nothing else scans ``tiles_dir``.)
+  row is the discoverability anchor for both its stored file and its tile
+  tree (``list_orphaned_final_files`` only reports *unowned* files, and
+  nothing else scans ``tiles_dir``).
 - Path deletions are containment-checked against ``settings.tiles_dir`` and
   ``settings.source_images_dir`` — nothing outside the managed roots is ever
   removed.
@@ -116,8 +116,8 @@ def _remove_artifacts(info: dict) -> list[str]:
     """Delete the tiles dir and stored file for one candidate.
 
     Returns a list of human-readable problems; a non-empty result means the
-    caller must retain the source row so a later run can retry the leftover
-    artifact (the row is the only discoverability anchor for its tile tree).
+    caller must retain the source row so a later run can find and retry the
+    leftover artifacts (the row is their only discoverability anchor).
     """
     problems: list[str] = []
     tiles_dir = info["tiles_dir"]
@@ -262,9 +262,7 @@ def main() -> int:
             print(f"  - {problem}")
         print(
             "Rows whose artifact removal failed were retained so a later "
-            "dry run can find and retry them. A leftover stored file is "
-            "additionally reported by the periodic reconciliation sweep "
-            "(list_orphaned_final_files)."
+            "dry run can find and retry their leftover artifacts."
         )
     else:
         print(f"\nDone — purged {len(infos)} orphaned failed source image(s).")

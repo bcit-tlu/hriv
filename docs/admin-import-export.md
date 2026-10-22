@@ -465,9 +465,10 @@ kubectl --context stable -n hriv exec -i deploy/hriv-backend -- \
 - `--source-ids <csv>` narrows the run to specific `SourceImage` ids.
 - On-disk artifacts are removed **before** the row, and a row whose artifact
   removal fails is **retained** so the next dry run can find and retry it —
-  the row is the only discoverability anchor for its tile tree (nothing else
-  scans `tiles_dir`). A leftover stored file is additionally reported by the
-  periodic reconciliation sweep's `list_orphaned_final_files` step.
+  the row is the discoverability anchor for both its stored file and its
+  tile tree. (`list_orphaned_final_files` only reports _unowned_ files, and
+  nothing else scans `tiles_dir`, so the retained row is the reliable
+  handle.)
 - Eligibility is re-checked at delete time — a row that gained an `image_id`
   or changed status between scan and delete is skipped.
 
