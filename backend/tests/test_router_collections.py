@@ -109,15 +109,14 @@ def _collection(
     # ``user_id`` is the creator audit column; ownership is the ``owners``
     # list (``collection_owners`` rows), defaulting to the creator like the
     # 0032 backfill. Pass ``owner_ids`` explicitly for co-owned / orphaned /
-    # program-only states. ``owner_roles``/``creator_role`` attach a ``role``
-    # attribute only to the named users — the default namespaces stay
-    # role-less on purpose (production always has one; serialization must
-    # survive doubles without it).
+    # program-only states. Production users always carry a role, so the
+    # doubles default to instructor — ``owner_roles``/``creator_role``
+    # override it per user.
     if owner_ids is None:
         owner_ids = [user_id] if user_id is not None else []
     role_map = owner_roles or {}
     owners = [
-        SimpleNamespace(id=uid, name=f"user{uid}", **({"role": role_map[uid]} if uid in role_map else {}))
+        SimpleNamespace(id=uid, name=f"user{uid}", role=role_map.get(uid, "instructor"))
         for uid in owner_ids
     ]
     owner_program = (
@@ -137,7 +136,7 @@ def _collection(
             SimpleNamespace(
                 id=user_id,
                 name=f"user{user_id}",
-                **({"role": creator_role} if creator_role else {}),
+                role=creator_role or "instructor",
             )
             if user_id
             else None
@@ -430,13 +429,12 @@ async def test_list_summary_student_curated_flag() -> None:
     assert {c.id: c.student_curated for c in out} == expected
 
 
-async def test_list_summary_student_curated_defaults_false_without_roles() -> None:
-    """Namespaces without ``role`` attributes (or a deleted creator row)
-    must not trip the marker."""
+async def test_list_summary_student_curated_defaults_false_without_student_roles() -> None:
+    """Non-student creators/owners never trip the marker."""
     col = _collection(1, "public", user_id=10)
     out = await list_collections(_user("admin"), db=_mock_db([col]))
     assert out[0].student_curated is False
-    assert out[0].owners[0].role is None
+    assert out[0].owners[0].role == "instructor"
 
 
 async def test_list_summary_carries_restriction_scope() -> None:
@@ -2039,7 +2037,7 @@ async def test_owners_stale_version_is_409_with_current_collection() -> None:
     assert exc.value.status_code == 409
     assert exc.value.detail["version"] == 3
     assert exc.value.detail["owners"] == [
-        {"user_id": 10, "program_id": None, "name": "user10", "role": None}
+        {"user_id": 10, "program_id": None, "name": "user10", "role": "instructor"}
     ]
     assert [o.id for o in col.owners] == [10]
     db.commit.assert_not_awaited()
@@ -2192,7 +2190,7 @@ async def test_transfer_stale_version_is_409_with_current_collection() -> None:
     assert exc.value.status_code == 409
     assert exc.value.detail["version"] == 3
     assert exc.value.detail["owners"] == [
-        {"user_id": 10, "program_id": None, "name": "user10", "role": None}
+        {"user_id": 10, "program_id": None, "name": "user10", "role": "instructor"}
     ]
     assert [o.id for o in col.owners] == [10]
     db.commit.assert_not_awaited()
@@ -2767,7 +2765,7 @@ async def test_list_sort_scalar_columns() -> None:
     out = await list_collections(admin, db=_mock_db(cols), sort="visibility")
     assert [c.id for c in out] == [2, 3, 1]
     # owner label is a casefolded string ("user10" < "user3" < "user42").
-    cols[1].owners = [SimpleNamespace(id=42, name="user42")]
+    cols[1].owners = [SimpleNamespace(id=42, name="user42", role="instructor")]
     out = await list_collections(admin, db=_mock_db(cols), sort="owner")
     assert [c.id for c in out] == [1, 3, 2]
     # Timestamps and id default to desc.

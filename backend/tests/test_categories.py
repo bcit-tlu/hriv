@@ -74,7 +74,12 @@ def _make_collection(
         version=1,
         # Multi-owner rows (#1531): user_id is creator-only audit; ``owners``
         # carries the authority/display set.
-        owners=[SimpleNamespace(id=user_id, name=f"u{user_id}")] if user_id else [],
+        creator=(
+            SimpleNamespace(id=user_id, name=f"u{user_id}", role="instructor")
+            if user_id
+            else None
+        ),
+        owners=[SimpleNamespace(id=user_id, name=f"u{user_id}", role="instructor")] if user_id else [],
         created_at=now,
         updated_at=now,
         programs=[SimpleNamespace(id=p) for p in (programs or [])],

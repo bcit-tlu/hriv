@@ -116,8 +116,7 @@ def _owners_out(collection: Collection) -> list[CollectionOwnerOut]:
     owning program's entry when set. Empty means orphaned (#1531).
     """
     owners = [
-        # ``getattr``: unit-test namespaces may not carry a ``role``.
-        CollectionOwnerOut(user_id=o.id, name=o.name, role=getattr(o, "role", None))
+        CollectionOwnerOut(user_id=o.id, name=o.name, role=o.role)
         for o in sorted(
             collection.owners, key=lambda u: (u.name.casefold(), u.id)
         )
@@ -140,10 +139,10 @@ def is_student_curated(collection: Collection) -> bool:
     set. Staff are deliberately excluded: the marker distinguishes student
     work from instructor/admin curation.
     """
-    creator = getattr(collection, "creator", None)
-    if creator is not None and getattr(creator, "role", None) == "student":
+    creator = collection.creator
+    if creator is not None and creator.role == "student":
         return True
-    return any(getattr(o, "role", None) == "student" for o in collection.owners)
+    return any(o.role == "student" for o in collection.owners)
 
 
 def owner_label(collection: Collection) -> str:

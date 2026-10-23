@@ -84,41 +84,9 @@ async def list_images(
     return result.scalars().all()
 
 
-@router.get("/{image_id}", response_model=ImageOut)
-async def get_image(
-    image_id: int,
-    _user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-):
-    return await _get_visible_image(db, _user, image_id)
-
-
-async def _get_visible_image(db: AsyncSession, user: User, image_id: int) -> Image:
-    img = await db.get(Image, image_id)
-    if not img:
-        raise HTTPException(status_code=404, detail="Image not found")
-    if user.role == "student":
-        if not img.active:
-            raise HTTPException(status_code=404, detail="Image not found")
-        user_program_ids = {p.id for p in user.programs}
-        user_group_ids = {g.id for g in user.groups}
-        if not await is_category_visible_to_student(
-            db, img.category_id, user_program_ids, user_group_ids
-        ):
-            raise HTTPException(status_code=404, detail="Image not found")
-    return img
-
-
-@router.get("/{image_id}/source-info", response_model=ImageSourceInfoOut)
-async def get_image_source_info(
-    image_id: int,
-    user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-) -> ImageSourceInfoOut:
-    await _get_visible_image(db, user, image_id)
-    return await build_image_source_info(db, image_id, user)
-
-
+# Literal routes must register before `/{image_id}` — FastAPI matches in
+# registration order, so a later static route would be swallowed by the
+# parameterized one and 422 on the int conversion.
 @router.get("/collections-map", response_model=dict[int, list[CollectionRefOut]])
 async def image_collections_map(
     _user: Annotated[User, Depends(get_current_user)],
@@ -155,6 +123,41 @@ async def image_collections_map(
             CollectionRefOut(id=collection.id, name=collection.name)
         )
     return result
+
+
+@router.get("/{image_id}", response_model=ImageOut)
+async def get_image(
+    image_id: int,
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    return await _get_visible_image(db, _user, image_id)
+
+
+async def _get_visible_image(db: AsyncSession, user: User, image_id: int) -> Image:
+    img = await db.get(Image, image_id)
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+    if user.role == "student":
+        if not img.active:
+            raise HTTPException(status_code=404, detail="Image not found")
+        user_program_ids = {p.id for p in user.programs}
+        user_group_ids = {g.id for g in user.groups}
+        if not await is_category_visible_to_student(
+            db, img.category_id, user_program_ids, user_group_ids
+        ):
+            raise HTTPException(status_code=404, detail="Image not found")
+    return img
+
+
+@router.get("/{image_id}/source-info", response_model=ImageSourceInfoOut)
+async def get_image_source_info(
+    image_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+) -> ImageSourceInfoOut:
+    await _get_visible_image(db, user, image_id)
+    return await build_image_source_info(db, image_id, user)
 
 
 @router.get("/{image_id}/collections", response_model=list[CollectionSummaryOut])

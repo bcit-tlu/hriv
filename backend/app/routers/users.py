@@ -44,9 +44,10 @@ async def _delete_sole_owned_collections(
     Runs *before* the user rows are deleted (the ``collection_owners`` FK
     cascade would otherwise erase the owner rows first and hide which
     collections were sole-owned). Returns True when any collection was
-    affected — filed or unfiled, it dies or loses an owner row, and both
-    change its list row / Browse tile, so the caller must invalidate the
-    ETag (#1531, #1619).
+    affected — filed or unfiled, it dies, loses an owner row, or loses its
+    creator audit link (``user_id`` SET NULL flips ``student_curated`` on
+    a surviving collection), and each changes its list row / Browse tile,
+    so the caller must invalidate the ETag (#1531, #1619).
     """
     if not departing_ids:
         return False
@@ -74,7 +75,20 @@ async def _delete_sole_owned_collections(
             await bump_scopes(db, affected_scope_keys)
         for collection in dying:
             await db.delete(collection)
-    return bool(affected)
+    # Creator-linked rows are not in ``affected`` (that set is owner-keyed)
+    # but the SET NULL still changes what the list serializes.
+    creator_linked = bool(
+        (
+            await db.execute(
+                select(Collection.id)
+                .where(Collection.user_id.in_(departing_ids))
+                .limit(1)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return bool(affected) or creator_linked
 
 
 async def _set_user_programs(
@@ -245,8 +259,14 @@ async def bulk_update_role(
     users = result.scalars().unique().all()
     if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
+    # Role feeds ``student_curated`` and ``owners[].role`` on collection
+    # payloads — a change must invalidate the list ETag like an owner
+    # rename does (#1619).
+    role_changed = any(u.role != body.role for u in users)
     for user in users:
         user.role = body.role
+    if role_changed:
+        await bump_browse_revision(db)
     await db.commit()
     stmt = select(User).where(User.id.in_(body.user_ids))
     result = await db.execute(stmt)
@@ -341,14 +361,16 @@ async def update_user(
             update_data["password_hash"] = hash_password(pwd)
     if "email" in update_data and update_data["email"] is not None:
         update_data["email"] = update_data["email"].lower()
-    # The owner's name renders on filed collection tiles — capture the
-    # rename before setattr so the tree ETag can be invalidated (#1527).
+    # The owner's name renders on filed collection tiles and their role
+    # feeds ``student_curated`` + ``owners[].role`` — capture both before
+    # setattr so the list/tree ETags can be invalidated (#1527, #1619).
     name_changed = "name" in update_data and update_data["name"] != user.name
+    role_changed = update_data.get("role") is not None and update_data["role"] != user.role
     for key, value in update_data.items():
         setattr(user, key, value)
     if program_ids is not None:
         await _set_user_programs(db, user, program_ids)
-    if name_changed:
+    if name_changed or role_changed:
         await bump_browse_revision(db)
     await db.commit()
     await db.refresh(user)

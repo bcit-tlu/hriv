@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from ..auth import create_access_token
+from ..browse_state import bump_browse_revision
 from ..auth_events import (
     AUTH_METHOD_OIDC,
     AUTH_OUTCOME_FAILURE,
@@ -508,11 +509,16 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     user.oidc_subject = sub
                 # Only update role when a group actually matched a mapping entry;
                 # this preserves admin-assigned promotions when the IdP sends
-                # unrecognised groups or no groups at all.
+                # unrecognised groups or no groups at all. A role change feeds
+                # ``student_curated`` + ``owners[].role`` on collection
+                # payloads, so it must invalidate the list ETag (#1619).
+                role_changed = resolved_role is not None and user.role != resolved_role
                 if resolved_role is not None:
                     user.role = resolved_role
                 user.last_access = datetime.now(timezone.utc)
                 user.programs = _sync_programs(user, oidc_programs)
+                if role_changed:
+                    await bump_browse_revision(db)
                 logger.info(
                     "OIDC: logged in existing user",
                     extra={

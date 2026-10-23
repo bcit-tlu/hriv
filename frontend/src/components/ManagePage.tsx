@@ -306,8 +306,11 @@ export default function ManagePage({
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
     getStoredIntSet(storedFilters, 'groups'),
   )
+  // A disabled feature keeps the Collection facet inert: a restored
+  // selection would filter rows against a membership map that never
+  // loads, emptying the table with no visible facet to clear (#1698).
   const [selectedCollections, setSelectedCollections] = useState<Set<number>>(() =>
-    getStoredIntSet(storedFilters, 'collections'),
+    collectionsEnabled ? getStoredIntSet(storedFilters, 'collections') : new Set<number>(),
   )
   const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
     getStoredVisibilityFilters(storedFilters),
@@ -451,6 +454,12 @@ export default function ManagePage({
       cancelled = true
     }
   }, [collectionsEnabled, collectionsColumnVisible, images])
+
+  useEffect(() => {
+    if (collectionsEnabled) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a stale selection when the feature flag flips off
+    setSelectedCollections((prev) => (prev.size === 0 ? prev : new Set()))
+  }, [collectionsEnabled])
 
   const filterSnapshot = useMemo(
     () =>

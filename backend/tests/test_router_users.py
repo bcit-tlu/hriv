@@ -678,6 +678,25 @@ async def test_bulk_update_role_success() -> None:
     assert len(result) == 2
     assert users[0].role == "instructor"
     assert users[1].role == "instructor"
+    # Role feeds ``student_curated`` + ``owners[].role`` (#1698).
+    users_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_bulk_update_role_same_role_skips_browse_bump() -> None:
+    users = [_make_user(id=1, role="instructor")]
+
+    async def mock_execute(_stmt):
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.unique.return_value.all.return_value = users
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = UserBulkRoleUpdate(user_ids=[1], role="instructor")
+    await bulk_update_role(body, MagicMock(), db)
+    users_router.bump_browse_revision.assert_not_awaited()
 
 
 async def test_bulk_update_role_staff_accepted() -> None:
@@ -772,13 +791,22 @@ def _collection_for_delete(
     return col
 
 
-def _execute_for_delete(users: list, collections: list | None = None):
+def _execute_for_delete(
+    users: list, collections: list | None = None, creator_linked: list | None = None
+):
     """Dispatch ``db.execute`` by selected entity — the user fetch first,
-    then the affected-collections query inside
-    ``_delete_sole_owned_collections`` (#1531)."""
+    then the owner-linked and creator-linked queries inside
+    ``_delete_sole_owned_collections`` (#1531, #1698), in that order."""
+    collection_queries = 0
+
     async def mock_execute(stmt):
+        nonlocal collection_queries
         entity = getattr(stmt, "column_descriptions", [{}])[0].get("entity")
-        rows = users if entity is User else (collections or [])
+        if entity is User:
+            rows = users
+        else:
+            collection_queries += 1
+            rows = (collections or []) if collection_queries == 1 else (creator_linked or [])
         mock_result = MagicMock()
         mock_result.scalars.return_value.unique.return_value.all.return_value = rows
         mock_result.scalars.return_value.all.return_value = rows
@@ -873,7 +901,33 @@ async def test_update_user_rename_bumps_browse_revision() -> None:
 
 
 async def test_update_user_non_name_change_skips_browse_bump() -> None:
+    """Fields that never render on collection payloads (email) leave the
+    ETag alone."""
     user = _make_user(id=1, name="Ada")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await update_user(1, UserUpdate(email="ada@example.com"), MagicMock(), db)
+    users_router.bump_browse_revision.assert_not_awaited()
+
+
+async def test_update_user_role_change_bumps_browse_revision() -> None:
+    """Role feeds ``student_curated`` + ``owners[].role`` on collection
+    payloads — a change must invalidate the list ETag (#1698)."""
+    user = _make_user(id=1, name="Ada")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await update_user(1, UserUpdate(role="instructor"), MagicMock(), db)
+    users_router.bump_browse_revision.assert_awaited_once()
+
+
+async def test_update_user_same_role_skips_browse_bump() -> None:
+    user = _make_user(id=1, name="Ada", role="instructor")
     db = AsyncMock()
     db.get = AsyncMock(return_value=user)
     db.commit = AsyncMock()
@@ -967,6 +1021,27 @@ async def test_delete_user_mixed_filed_and_unfiled_sole_owned_bumps_filed_scope(
     users_router.bump_browse_revision.assert_awaited_once()
     deleted = [c.args[0] for c in db.delete.await_args_list]
     assert filed in deleted and unfiled in deleted and user in deleted
+
+
+async def test_delete_user_creator_only_collection_bumps() -> None:
+    """A collection whose creator (but not owner) departs survives, yet
+    ``user_id`` SET NULL can flip ``student_curated`` — the ETag must
+    advance (#1698)."""
+    admin = _make_user(id=99, role="admin")
+    user = _make_user(id=1)
+    surviving = _collection_for_delete([5], category_id=7)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=user)
+    db.execute = AsyncMock(
+        side_effect=_execute_for_delete([user], [], creator_linked=[surviving])
+    )
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    await delete_user(1, admin, db)
+    users_router.bump_browse_revision.assert_awaited_once()
+    deleted = [c.args[0] for c in db.delete.await_args_list]
+    assert surviving not in deleted and user in deleted
 
 
 async def test_delete_user_without_collections_skips_bump() -> None:

@@ -704,6 +704,25 @@ async def test_image_collections_map_flag_off_404(
     db.execute.assert_not_called()
 
 
+async def test_image_collections_map_route_reaches_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP-level guard: ``/collections-map`` must not be shadowed by
+    ``/{image_id}`` — a 422 would mean route-order regressed."""
+    _patch_collections_layer(monkeypatch)
+    db = _db_returning_membership_rows(
+        [(1, _make_image(id=1), _make_collection(1, "Alpha"))]
+    )
+    transport = httpx.ASGITransport(app=_images_test_app("admin", db))
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        response = await client.get("/api/images/collections-map")
+
+    assert response.status_code == 200
+    assert response.json() == {"1": [{"id": 1, "name": "Alpha"}]}
+
+
 async def test_create_image_success() -> None:
     db = AsyncMock()
     db.add = MagicMock()

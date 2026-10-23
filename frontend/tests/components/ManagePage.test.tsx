@@ -481,6 +481,27 @@ describe('ManagePage', () => {
     await screen.findByText('Gram Stain')
   }, 30_000)
 
+  it('ignores a stored Collection selection while the feature flag is off', async () => {
+    vi.mocked(fetchImages).mockResolvedValue([
+      makeManageImage(101, 'Blood Smear'),
+      makeManageImage(102, 'Gram Stain'),
+    ])
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({ collections: [5] }),
+    )
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    // The stale selection must not filter rows against a membership map
+    // that never loads — and no Collection facet surfaces to explain it.
+    await screen.findByText('Blood Smear')
+    expect(screen.getByText('Gram Stain')).toBeInTheDocument()
+    expect(fetchImageCollectionsMap).not.toHaveBeenCalled()
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).queryByRole('button', { name: 'Collection' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Collection:/)).not.toBeInTheDocument()
+  })
+
   it('renders headers and row cells in the persisted column order', async () => {
     localStorage.setItem(
       'hrivpref:table-column-order:manage-images:user:1',
