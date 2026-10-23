@@ -54,8 +54,9 @@ absolute position. Entries that don't match the shape are ignored.
   saved layout restores exactly on reload and through `?collection={id}` share links. Saving
   doesn't move the viewer — the response's refreshed tile sources re-open each pane but
   `ImageViewer` carries the live viewport across the reopen (#1567).
-- **Restore default view** (everyone) re-applies the saved positions then re-arms the baselines; it is
-  disabled until a view has been saved for a rendered pane (#1567).
+- **Restore default view** (everyone) re-links any unlinked pane (#1684), re-applies the saved
+  positions, then re-arms the baselines; it is disabled until a view has been saved for a rendered
+  pane (#1567).
 - Non-editors receive the saved view on load and may pan/zoom freely without persisting anything.
 
 ## Orientation

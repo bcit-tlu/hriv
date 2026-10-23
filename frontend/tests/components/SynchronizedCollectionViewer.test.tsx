@@ -630,6 +630,40 @@ describe('SynchronizedCollectionViewer', () => {
     )
   })
 
+  it('restore re-links unlinked panes so they follow again (#1684)', () => {
+    const collection = syncCollection({
+      viewportState: {
+        '100': { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
+        '101': { zoom: 3, x: 0.5, y: 0.5, rotation: 0 },
+      },
+    })
+    openPair({ zoom: 1, x: 0.5, y: 0.5, rotation: 0 }, { zoom: 3, x: 0.5, y: 0.5, rotation: 0 })
+    renderViewer({ collection })
+    const fakeA = mockState.fakes.get(100)!
+    const fakeB = mockState.fakes.get(101)!
+    act(() => {
+      fakeA.open()
+      fakeB.open()
+    })
+    const pinB = screen.getByTestId('pin-toggle-101')
+    // Unlink B and move both panes away from the saved view.
+    fireEvent.click(pinB)
+    act(() => {
+      fakeA.viewport!.zoomTo(5)
+      fakeB.viewport!.zoomTo(7)
+    })
+    fireEvent.click(screen.getByTestId('synchronized-reset'))
+    // Every pane is back at its saved zoom, and B is linked again.
+    expect(fakeA.viewport!.getZoom()).toBe(1)
+    expect(fakeB.viewport!.getZoom()).toBe(3)
+    expect(pinB).toHaveAttribute('aria-pressed', 'true')
+    // A's next zoom now drives B from its restored baseline (1 → 2 doubles B).
+    act(() => {
+      fakeA.viewport!.zoomTo(2)
+    })
+    expect(fakeB.viewport!.getZoom()).toBe(6)
+  })
+
   it('an unpinned leader does not move the panes that are still pinned (#1564)', () => {
     const fakes = openMany({
       100: { zoom: 1, x: 0.5, y: 0.5, rotation: 0 },
