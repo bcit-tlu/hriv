@@ -26,6 +26,7 @@ function collNode(id: number, name = `Collection ${id}`) {
     type: 'sequence' as const,
     image_count: 4,
     hidden: false,
+    student_curated: false,
     category_id: null,
   }
 }

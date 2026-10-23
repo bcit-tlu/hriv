@@ -691,12 +691,14 @@ export type ApiCollectionVisibility = 'private' | 'public' | 'restricted'
 /**
  * One owner entry in `owners` (#1531): a user (`user_id` set) or the owning
  * program (`program_id` set) — exactly one id is non-null. An empty `owners`
- * array means the collection is orphaned.
+ * array means the collection is orphaned. `role` is the user owner's current
+ * role (`student`/`staff`/`instructor`/`admin`); program entries omit it.
  */
 export type ApiCollectionOwner = {
   user_id?: number | null
   program_id?: number | null
   name: string
+  role?: string | null
 }
 
 export interface ApiCollectionPermissions {
@@ -716,6 +718,10 @@ export interface ApiCollectionSummary {
   /** Curatorial hide (#1559): invisible to students who don't own it. */
   hidden: boolean
   owners: ApiCollectionOwner[]
+  /** True when the creator or any user-owner is a student — drives the
+   *  scope-cluster badge (tile, table Scope cell, detail header) and the
+   *  graph legend. */
+  student_curated: boolean
   image_count: number
   cover_thumb: string | null
   /** Pinned cover member; `null` = first-member fallback. */
@@ -765,6 +771,9 @@ export interface CollectionFilters {
   visibility?: ApiCollectionVisibility[]
   /** Repeated `category_id` params — ancestor-aware on the server (#1631). */
   category_ids?: number[]
+  /** `student_curated` param — true keeps only student-curated rows, false
+   *  keeps every other curator kind (the Scope facet). */
+  student_curated?: boolean
   /** Server-side sort key (#1631); the allowed values live on the endpoint. */
   sort?: string
   direction?: 'asc' | 'desc'
@@ -786,6 +795,8 @@ function collectionsQueryString(filters: CollectionFilters): string {
   if (filters.q && filters.q.trim()) params.set('q', filters.q.trim())
   for (const visibility of filters.visibility ?? []) params.append('visibility', visibility)
   for (const id of filters.category_ids ?? []) params.append('category_id', String(id))
+  if (filters.student_curated != null)
+    params.set('student_curated', String(filters.student_curated))
   if (filters.sort) params.set('sort', filters.sort)
   if (filters.direction) params.set('direction', filters.direction)
   if (filters.page != null) params.set('page', String(filters.page))
@@ -890,6 +901,9 @@ export interface ApiCollectionGraphNode {
   type: ApiCollectionType
   image_count: number
   hidden: boolean
+  /** Same marker `ApiCollectionSummary.student_curated` carries — the
+   *  graph payload otherwise omits owners entirely. */
+  student_curated: boolean
   category_id: number | null
 }
 
@@ -971,6 +985,25 @@ export function fetchImageCollections(
   init?: RequestInit,
 ): Promise<ApiCollectionSummary[]> {
   return request(`/images/${imageId}/collections`, init)
+}
+
+/** Thin `{id, name}` collection reference on the image-membership map. */
+export interface ApiImageCollectionRef {
+  id: number
+  name: string
+}
+
+/**
+ * Bulk sibling of `fetchImageCollections`: `{image_id: [{id, name}]}`
+ * covering every membership where both the collection and the image are
+ * caller-visible. Backs the Manage images Collections column, which fetches
+ * it lazily while the column is enabled. 404 when collections are
+ * dark-launched off.
+ */
+export function fetchImageCollectionsMap(
+  init?: RequestInit,
+): Promise<Record<number, ApiImageCollectionRef[]>> {
+  return request(`/images/collections-map`, init)
 }
 
 export function createCollection(body: {

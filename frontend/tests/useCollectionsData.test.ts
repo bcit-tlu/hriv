@@ -290,6 +290,40 @@ describe('toCollectionApiFilters', () => {
     ).toEqual({})
   })
 
+  it('paged mode maps a single Scope selection to student_curated', () => {
+    const page = { listMode: 'paged' as const, sort: 'updated' as const, page: 0, pageSize: 10 }
+    expect(
+      toCollectionApiFilters(
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['student'] },
+        { role: 'admin' },
+        page,
+      ),
+    ).toMatchObject({ student_curated: true })
+    expect(
+      toCollectionApiFilters(
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['instructor_admin'] },
+        { role: 'admin' },
+        page,
+      ),
+    ).toMatchObject({ student_curated: false })
+    // Both buckets selected covers the universe — nothing is sent.
+    expect(
+      toCollectionApiFilters(
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['instructor_admin', 'student'] },
+        { role: 'admin' },
+        page,
+      ),
+    ).not.toHaveProperty('student_curated')
+    // The graph's full-set request carries no facets at all.
+    expect(
+      toCollectionApiFilters(
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['student'] },
+        { role: 'admin' },
+        { listMode: 'full' },
+      ),
+    ).toEqual({})
+  })
+
   it('paged mode still applies the legacy filters and keeps blank q out', () => {
     expect(
       toCollectionApiFilters(
@@ -413,6 +447,46 @@ describe('matchesCollectionFilters', () => {
       matchesCollectionFilters(
         makeCollection({ categoryId: null }),
         { ...DEFAULT_COLLECTION_FILTERS, categoryIds: [4] },
+        user,
+      ),
+    ).toBe(true)
+  })
+
+  it('applies the Scope facet to the student-curated marker', () => {
+    const student = makeCollection({ studentCurated: true })
+    // The two buckets cover the universe: one selection splits the set,
+    // both (or none) match everything.
+    for (const row of [student, theirs, program, orphan]) {
+      expect(matchesCollectionFilters(row, DEFAULT_COLLECTION_FILTERS, user)).toBe(true)
+    }
+    expect(
+      matchesCollectionFilters(
+        student,
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['student'] },
+        user,
+      ),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(theirs, { ...DEFAULT_COLLECTION_FILTERS, scope: ['student'] }, user),
+    ).toBe(false)
+    expect(
+      matchesCollectionFilters(
+        student,
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['instructor_admin'] },
+        user,
+      ),
+    ).toBe(false)
+    expect(
+      matchesCollectionFilters(
+        program,
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['instructor_admin'] },
+        user,
+      ),
+    ).toBe(true)
+    expect(
+      matchesCollectionFilters(
+        student,
+        { ...DEFAULT_COLLECTION_FILTERS, scope: ['student', 'instructor_admin'] },
         user,
       ),
     ).toBe(true)
@@ -2140,7 +2214,7 @@ describe('useCollectionsData', () => {
 
       await expect(result.current.transfer(1, 2)).rejects.toBeInstanceOf(ApiError)
       expect(result.current.collections[0].owners).toEqual([
-        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+        { kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' },
       ])
     })
 
@@ -2247,7 +2321,7 @@ describe('useCollectionsData', () => {
 
       await expect(result.current.saveOwners(1, [])).rejects.toBeInstanceOf(ApiError)
       expect(result.current.collections[0].owners).toEqual([
-        { kind: 'user', userId: 7, name: 'Ada Lovelace' },
+        { kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' },
       ])
     })
 

@@ -39,6 +39,7 @@ import { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
 import type { ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import { filterSurfaceBg } from './FilterPopoverButton'
 import RenewingThumbnail from './RenewingThumbnail'
+import StudentCollectionBadge from './StudentCollectionBadge'
 
 type SortKey = CollectionSortKey
 
@@ -325,7 +326,12 @@ export default function CollectionsTable({
   }
 
   const columnHeaderCells: Record<CollectionsTableColumn, ReactNode> = {
-    cover: headerCell('cover', 'Cover'),
+    // Cover centers its header over the centered thumbnail column.
+    cover: (
+      <TableCell key="cover" align="center" sx={{ width: 56 }}>
+        Cover
+      </TableCell>
+    ),
     id: headerCell('id', 'ID'),
     name: headerCell('name', 'Name'),
     type: headerCell('type', 'Type'),
@@ -389,7 +395,9 @@ export default function CollectionsTable({
                 height: 40,
                 objectFit: 'cover',
                 borderRadius: 0.5,
+                // Centered under the centered Cover header.
                 display: 'block',
+                mx: 'auto',
                 ...greySx,
               }}
             />
@@ -429,9 +437,22 @@ export default function CollectionsTable({
         <TableCell {...dimAttr}>
           {/* Scope pill only — program/group chips live in their own
               columns, so even a scoped restricted collection keeps its
-              label. */}
-          <Box component="span" sx={{ display: 'inline-flex', ...greySx }}>
+              label. The student-curated badge trails the pill, matching
+              the tile's scope cluster. */}
+          <Box
+            component="span"
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, ...greySx }}
+          >
             <CollectionVisibilityChip visibility={c.visibility} hasScopeChips={false} />
+            {c.studentCurated && (
+              <Box
+                component="span"
+                data-testid="student-curated-badge"
+                sx={{ display: 'inline-flex', flexShrink: 0 }}
+              >
+                <StudentCollectionBadge size={16} />
+              </Box>
+            )}
           </Box>
         </TableCell>
       ),

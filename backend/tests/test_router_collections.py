@@ -93,6 +93,8 @@ def _collection(
     visibility: str = "private",
     user_id: int | None = 10,
     owner_ids: list[int] | None = None,
+    owner_roles: dict[int, str] | None = None,
+    creator_role: str | None = None,
     owner_program_id: int | None = None,
     images: list | None = None,
     programs: list[int] | None = None,
@@ -107,10 +109,17 @@ def _collection(
     # ``user_id`` is the creator audit column; ownership is the ``owners``
     # list (``collection_owners`` rows), defaulting to the creator like the
     # 0032 backfill. Pass ``owner_ids`` explicitly for co-owned / orphaned /
-    # program-only states.
+    # program-only states. ``owner_roles``/``creator_role`` attach a ``role``
+    # attribute only to the named users — the default namespaces stay
+    # role-less on purpose (production always has one; serialization must
+    # survive doubles without it).
     if owner_ids is None:
         owner_ids = [user_id] if user_id is not None else []
-    owners = [SimpleNamespace(id=uid, name=f"user{uid}") for uid in owner_ids]
+    role_map = owner_roles or {}
+    owners = [
+        SimpleNamespace(id=uid, name=f"user{uid}", **({"role": role_map[uid]} if uid in role_map else {}))
+        for uid in owner_ids
+    ]
     owner_program = (
         SimpleNamespace(id=owner_program_id, name=f"P{owner_program_id}")
         if owner_program_id
@@ -124,7 +133,15 @@ def _collection(
         visibility=visibility,
         user_id=user_id,
         owner_program_id=owner_program_id,
-        creator=SimpleNamespace(id=user_id, name=f"user{user_id}") if user_id else None,
+        creator=(
+            SimpleNamespace(
+                id=user_id,
+                name=f"user{user_id}",
+                **({"role": creator_role} if creator_role else {}),
+            )
+            if user_id
+            else None
+        ),
         owners=owners,
         owner_program=owner_program,
         category_id=category_id,
@@ -371,6 +388,55 @@ async def test_list_summary_fields_and_permissions_for_owner() -> None:
     # Non-restricted collections carry an empty scope on summaries (#1567).
     assert summary.program_ids == []
     assert summary.group_ids == []
+
+
+async def test_list_summary_owner_entries_carry_role() -> None:
+    """User owners serialize their role so the frontend can label curator
+    type; program entries carry ``role=None``."""
+    col = _collection(
+        1,
+        "public",
+        owner_ids=[10, 4],
+        owner_roles={10: "student", 4: "instructor"},
+        owner_program_id=3,
+    )
+    out = await list_collections(_user("admin"), db=_mock_db([col]))
+    roles = {o.user_id: o.role for o in out[0].owners}
+    assert roles[10] == "student" and roles[4] == "instructor"
+    program_entry = [o for o in out[0].owners if o.program_id is not None][0]
+    assert program_entry.role is None
+
+
+async def test_list_summary_student_curated_flag() -> None:
+    """``student_curated`` is true when the creator or any user-owner is a
+    student; program-only ownership and staff/instructor/admin owners never
+    qualify."""
+    cases = [
+        _collection(1, "public", owner_ids=[10], owner_roles={10: "student"}),
+        _collection(
+            2,
+            "public",
+            owner_ids=[10, 4],
+            owner_roles={10: "instructor", 4: "student"},
+        ),
+        # Creator audit survives removal from the owner list.
+        _collection(3, "public", user_id=10, owner_ids=[], creator_role="student"),
+        _collection(4, "public", owner_ids=[10], owner_roles={10: "staff"}),
+        _collection(5, "public", owner_ids=[10], owner_roles={10: "instructor"}),
+        _collection(6, "public", user_id=None, owner_ids=[], owner_program_id=3),
+    ]
+    expected = {1: True, 2: True, 3: True, 4: False, 5: False, 6: False}
+    out = await list_collections(_user("admin"), db=_mock_db(cases))
+    assert {c.id: c.student_curated for c in out} == expected
+
+
+async def test_list_summary_student_curated_defaults_false_without_roles() -> None:
+    """Namespaces without ``role`` attributes (or a deleted creator row)
+    must not trip the marker."""
+    col = _collection(1, "public", user_id=10)
+    out = await list_collections(_user("admin"), db=_mock_db([col]))
+    assert out[0].student_curated is False
+    assert out[0].owners[0].role is None
 
 
 async def test_list_summary_carries_restriction_scope() -> None:
@@ -1973,7 +2039,7 @@ async def test_owners_stale_version_is_409_with_current_collection() -> None:
     assert exc.value.status_code == 409
     assert exc.value.detail["version"] == 3
     assert exc.value.detail["owners"] == [
-        {"user_id": 10, "program_id": None, "name": "user10"}
+        {"user_id": 10, "program_id": None, "name": "user10", "role": None}
     ]
     assert [o.id for o in col.owners] == [10]
     db.commit.assert_not_awaited()
@@ -1990,7 +2056,7 @@ async def test_transfer_admin_to_program_sets_program_and_clears_user_owners() -
     # creator audit column is untouched.
     assert col.owners == [] and col.user_id == 10
     assert [o.model_dump() for o in out.owners] == [
-        {"user_id": None, "program_id": 5, "name": "P5"}
+        {"user_id": None, "program_id": 5, "name": "P5", "role": None}
     ]
     assert out.version == 4
 
@@ -2126,7 +2192,7 @@ async def test_transfer_stale_version_is_409_with_current_collection() -> None:
     assert exc.value.status_code == 409
     assert exc.value.detail["version"] == 3
     assert exc.value.detail["owners"] == [
-        {"user_id": 10, "program_id": None, "name": "user10"}
+        {"user_id": 10, "program_id": None, "name": "user10", "role": None}
     ]
     assert [o.id for o in col.owners] == [10]
     db.commit.assert_not_awaited()
@@ -2623,6 +2689,23 @@ async def test_list_visibility_invalid_value_is_422() -> None:
             _user("admin"), db=_mock_db([]), visibility=["bogus"]
         )
     assert exc.value.status_code == 422
+
+
+async def test_list_student_curated_filter() -> None:
+    """``student_curated=true`` keeps only rows the marker badge shows;
+    ``false`` keeps every other curator kind; unset returns both."""
+    cols = [
+        _collection(1, "public", owner_ids=[10], owner_roles={10: "student"}),
+        _collection(2, "public", owner_ids=[4], owner_roles={4: "instructor"}),
+        _collection(3, "public", user_id=None, owner_ids=[], owner_program_id=3),
+    ]
+    admin = _user("admin")
+    out = await list_collections(admin, db=_mock_db(cols), student_curated=True)
+    assert {c.id for c in out} == {1}
+    out = await list_collections(admin, db=_mock_db(cols), student_curated=False)
+    assert {c.id for c in out} == {2, 3}
+    out = await list_collections(admin, db=_mock_db(cols))
+    assert {c.id for c in out} == {1, 2, 3}
 
 
 async def test_list_category_id_filter_matches_descendants() -> None:
@@ -3318,6 +3401,17 @@ async def test_graph_collections_match_list_for_student() -> None:
     assert all(2 not in node.collection_ids for node in out.images)
     by_id = {i.id: i for i in out.images}
     assert by_id[2].collection_ids == [1]  # only the visible public holder
+
+
+async def test_graph_nodes_carry_student_curated_marker() -> None:
+    """The graph payload omits owners entirely, so the marker is the only
+    signal the frontend's badge/legend needs."""
+    cols = [
+        _collection(1, "public", owner_ids=[10], owner_roles={10: "student"}),
+        _collection(2, "public", owner_ids=[10], owner_roles={10: "instructor"}),
+    ]
+    out = await collections_graph(_user("admin"), order=1, db=_mock_db(cols))
+    assert {c.id: c.student_curated for c in out.collections} == {1: True, 2: False}
 
 
 async def test_graph_order2_instructor_sees_shared_image_bridges() -> None:

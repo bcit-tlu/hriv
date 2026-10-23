@@ -34,6 +34,7 @@ from ..upload_staging import (
 from ..models import Collection, CollectionImage, Image, SourceImage, User
 from ..schemas import (
     MAX_NOTE_LENGTH,
+    CollectionRefOut,
     CollectionSummaryOut,
     ImageBulkDelete,
     ImageBulkUpdate,
@@ -116,6 +117,44 @@ async def get_image_source_info(
 ) -> ImageSourceInfoOut:
     await _get_visible_image(db, user, image_id)
     return await build_image_source_info(db, image_id, user)
+
+
+@router.get("/collections-map", response_model=dict[int, list[CollectionRefOut]])
+async def image_collections_map(
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-image collection membership for the Manage images table's
+    Collections column — ``{image_id: [{id, name}]}`` covering every
+    membership where BOTH the collection and the image are visible to the
+    caller (students never learn a private/restricted collection exists, nor
+    a membership on an image they cannot see).
+
+    Bulk sibling of ``GET /api/images/{id}/collections``: one query instead
+    of per-row calls, fetched lazily by the frontend only while the column
+    is enabled. Self-gated by ``COLLECTIONS_ENABLED`` — the
+    ``CollectionsFeatureMiddleware`` prefix only covers ``/api/collections``.
+    """
+    if not settings.collections_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    stmt = (
+        select(CollectionImage.image_id, Image, Collection)
+        .join(Collection, CollectionImage.collection_id == Collection.id)
+        .join(Image, CollectionImage.image_id == Image.id)
+        .order_by(CollectionImage.image_id, Collection.name, Collection.id)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    ctx = await _ViewerContext.build(db, _user)
+    result: dict[int, list[CollectionRefOut]] = {}
+    for image_id, img, collection in rows:
+        if not ctx.can_view_image(img) or not ctx.can_view(collection):
+            continue
+        result.setdefault(image_id, []).append(
+            CollectionRefOut(id=collection.id, name=collection.name)
+        )
+    return result
 
 
 @router.get("/{image_id}/collections", response_model=list[CollectionSummaryOut])

@@ -195,6 +195,7 @@ function collectionIdentityKey(api: ApiCollectionSummary): string {
     api.type,
     api.visibility,
     api.owners,
+    api.student_curated,
     api.image_count,
     api.cover_thumb,
     api.cover_image_id,

@@ -724,11 +724,16 @@ class UserOut(UserBase):
 class CollectionOwnerOut(BaseModel):
     """One owner of a collection: a user (``user_id``) or the owning program
     (``program_id``). Exactly one of the two ids is set.
+
+    ``role`` is the user owner's current role — it lets the frontend label
+    student-curated collections without a second lookup. ``None`` on program
+    entries.
     """
 
     user_id: int | None = None
     program_id: int | None = None
     name: str
+    role: str | None = None
 
 
 class CollectionPermissionsOut(BaseModel):
@@ -743,6 +748,16 @@ class CollectionPermissionsOut(BaseModel):
     can_hide: bool = False
 
 
+class CollectionRefOut(BaseModel):
+    """Thin ``{id, name}`` collection reference — used where a full
+    ``CollectionSummaryOut`` would be overkill (e.g. the per-image membership
+    map behind the Manage images Collections column).
+    """
+
+    id: int
+    name: str
+
+
 class CollectionSummaryOut(BaseModel):
     id: int
     name: str
@@ -755,6 +770,11 @@ class CollectionSummaryOut(BaseModel):
     # Co-owners (#1531): one entry per ``collection_owners`` row, plus an
     # entry for the owning program when set. Empty = orphaned (admin-managed).
     owners: list[CollectionOwnerOut] = []
+    # Student-curated marker: the creator or any user-owner is a student.
+    # Drives the scope-cluster badge (tile, table Scope cell, detail
+    # header) and the graph legend — computed server-side so every view
+    # agrees.
+    student_curated: bool = False
     image_count: int = 0
     cover_thumb: str | None = None
     # Pinned cover member (``collections.cover_image_id``) when it resolves
@@ -817,6 +837,9 @@ class CollectionGraphNodeOut(BaseModel):
     type: str
     image_count: int
     hidden: bool = False
+    # Same student-curated marker ``CollectionSummaryOut`` carries — the
+    # payload otherwise omits owners entirely.
+    student_curated: bool = False
     category_id: int | None = None
 
 

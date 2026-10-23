@@ -17,6 +17,7 @@ from app.routers import images as images_router
 from app.routers.images import (
     list_images,
     get_image,
+    image_collections_map,
     list_image_collections,
     create_image,
     update_image,
@@ -497,6 +498,9 @@ class _FakeViewerCtx:
     def can_view(self, collection: SimpleNamespace) -> bool:
         return collection.visibility != "private"
 
+    def can_view_image(self, img: SimpleNamespace) -> bool:
+        return bool(img.active)
+
 
 def _patch_collections_layer(
     monkeypatch: pytest.MonkeyPatch, *, enabled: bool = True
@@ -621,6 +625,83 @@ async def test_list_image_collections_flag_off_404(
         await list_image_collections(1, _make_user("admin"), db=db)
     assert exc.value.status_code == 404
     db.get.assert_not_called()
+
+
+# ── image_collections_map (Manage images Collections column) ────────────
+#
+# Same mocked-DB conventions as ``list_image_collections`` above: the
+# visibility context is patched at the router boundary; these assert the
+# membership grouping, the dual collection+image gate, and the flag gate.
+
+
+def _db_returning_membership_rows(rows: list[tuple]) -> AsyncMock:
+    """``db.execute`` whose result is the (image_id, image, collection)
+    tuples the map query yields."""
+    db = AsyncMock()
+    result = MagicMock()
+    result.all.return_value = rows
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+async def test_image_collections_map_groups_by_image(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    img1, img2 = _make_image(id=1), _make_image(id=2)
+    alpha, beta = _make_collection(1, "Alpha"), _make_collection(2, "Beta")
+    db = _db_returning_membership_rows(
+        [
+            (1, img1, alpha),
+            (1, img1, beta),
+            (2, img2, alpha),
+        ]
+    )
+
+    result = await image_collections_map(_make_user("admin"), db=db)
+
+    assert {i: [c.name for c in refs] for i, refs in result.items()} == {
+        1: ["Alpha", "Beta"],
+        2: ["Alpha"],
+    }
+    assert result[1][0].id == 1
+
+
+async def test_image_collections_map_drops_invisible_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch)
+    active, inactive = _make_image(id=1), _make_image(id=2, active=False)
+    public, private = (
+        _make_collection(1, "Pub", "public"),
+        _make_collection(2, "Priv", "private"),
+    )
+    db = _db_returning_membership_rows(
+        [
+            (1, active, public),
+            # Private collection drops for the student-role gate.
+            (1, active, private),
+            # Inactive image drops even though the collection is public.
+            (2, inactive, public),
+        ]
+    )
+
+    result = await image_collections_map(_make_user("student"), db=db)
+
+    assert result == {1: [result[1][0]]}
+    assert result[1][0].name == "Pub"
+
+
+async def test_image_collections_map_flag_off_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_collections_layer(monkeypatch, enabled=False)
+    db = _db_returning_membership_rows([])
+
+    with pytest.raises(HTTPException) as exc:
+        await image_collections_map(_make_user("admin"), db=db)
+    assert exc.value.status_code == 404
+    db.execute.assert_not_called()
 
 
 async def test_create_image_success() -> None:

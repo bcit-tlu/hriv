@@ -1,0 +1,47 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as StudentCollectionBadgeStories from './StudentCollectionBadge.stories'
+
+<Meta of={StudentCollectionBadgeStories} />
+
+<Title />
+
+<Subtitle>
+  Marble-disc badge marking student-curated collections — the creator or any co-owner is a student.
+</Subtitle>
+
+## When to use
+
+`StudentCollectionBadge` is the shared visual marker for student curation so users can tell
+student-curated collections from instructor- or admin-curated ones at a glance. Everywhere a
+collection's scope cluster renders, the badge rides it:
+
+- `CollectionCard` shows it right of the visibility pill — or left of the top-most
+  program/group chip when a restricted collection's scope chips replace the pill. `minimal`
+  tiles (the My Collections drawer) drop every metadata row, so they never render it.
+- `CollectionsTable` renders it at the end of the Scope cell, right of the visibility pill.
+- The collection detail header shows it right of the visibility pill — and when a restricted
+  collection's scope chips suppress the pill, the badge takes the pill slot between the type
+  chip and the "Managed by" line.
+- The collections graph lists it in the Legend — and the canvas renderer paints the same
+  geometry inside student-curated collection nodes.
+
+The artwork — curved bands and ellipses clipped to a disc, stroked `#5B7A8A` on a paper
+background — lives in `src/studentCollectionBadge.ts`, so this DOM icon and the canvas overlay
+share one geometry and one stroke weight (`STUDENT_BADGE_STROKE`), keeping the legend swatch
+visually identical to a graph node.
+
+## Interactive example
+
+<Primary />
+
+<Controls />
+
+<Stories />

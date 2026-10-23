@@ -14,7 +14,8 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     type: 'synchronized',
     visibility: 'private',
     hidden: false,
-    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' }],
+    studentCurated: false,
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
@@ -82,6 +83,29 @@ export const Basic: Story = {
     // Snapshot the resting card, not the hover/focus highlight left behind by the click.
     await userEvent.unhover(area)
     area.blur()
+  },
+}
+
+export const StudentCurated: Story = {
+  name: 'Student Curated',
+  args: {
+    collection: makeSummary({
+      id: 10,
+      name: 'Cohort 2 review set',
+      type: 'sequence',
+      imageCount: 4,
+      studentCurated: true,
+      owners: [{ kind: 'user', userId: 9, name: 'Sam Student', role: 'student' }],
+    }),
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Student-curated collection — the marble badge rides the scope cluster (right of the visibility pill; left of the top-most program chip on a restricted tile): the same marker the table's Scope cell and the graph legend carry.",
+      },
+    },
+    a11y: { test: 'todo' },
   },
 }
 

@@ -2,6 +2,7 @@ import type { ApiCollection, ApiCollectionOwner, ApiCollectionSummary, ApiImage 
 import type {
   Collection,
   CollectionOwner,
+  CollectionScopeKind,
   CollectionSummary,
   CollectionType,
   CollectionVisibility,
@@ -19,6 +20,19 @@ export const COLLECTION_VISIBILITY_LABELS: Record<CollectionVisibility, string> 
   private: 'Private',
   public: 'Public',
   restricted: 'Restricted',
+}
+
+export const COLLECTION_SCOPE_LABELS: Record<CollectionScopeKind, string> = {
+  student: 'Student-curated',
+  instructor_admin: 'Instructor/admin-curated',
+}
+
+/** Scope-facet bucket for a row: the student-curated marker vs every
+ *  other curator kind. */
+export function collectionScopeKind(
+  row: Pick<CollectionSummary, 'studentCurated'>,
+): CollectionScopeKind {
+  return row.studentCurated ? 'student' : 'instructor_admin'
 }
 
 /** `synchronized` collections show up to this many images side by side (backend 422 above it). */
@@ -88,7 +102,15 @@ export function canUseRestrictedVisibility(role: Role | undefined | null): boole
 }
 
 export function apiCollectionOwnerToOwner(owner: ApiCollectionOwner): CollectionOwner | null {
-  if (owner.user_id != null) return { kind: 'user', userId: owner.user_id, name: owner.name }
+  if (owner.user_id != null) {
+    return {
+      kind: 'user',
+      userId: owner.user_id,
+      name: owner.name,
+      // The backend enum-constrains the value; absent on older payloads.
+      role: (owner.role ?? undefined) as Role | undefined,
+    }
+  }
   if (owner.program_id != null) {
     return { kind: 'program', programId: owner.program_id, name: owner.name }
   }
@@ -106,6 +128,9 @@ export function apiCollectionSummaryToSummary(api: ApiCollectionSummary): Collec
     owners: api.owners
       .map(apiCollectionOwnerToOwner)
       .filter((o): o is CollectionOwner => o != null),
+    // `?? false`: the list response is ETag-cached, so a payload written by
+    // an older API version may not carry the field.
+    studentCurated: api.student_curated ?? false,
     imageCount: api.image_count,
     coverThumb: api.cover_thumb,
     coverImageId: api.cover_image_id,

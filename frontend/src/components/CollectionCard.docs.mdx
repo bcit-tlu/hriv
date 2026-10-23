@@ -66,6 +66,13 @@ and owners/transfer management lives on the detail header and manage table, not 
 - `density="compact"` shrinks the tile (aspect-ratio cover, subtitle title) for the My-collections
   drawer; `density="minimal"` goes further and drops every metadata row under the title — image
   count, visibility pill, and scope chips — for the drawer's minimally-invasive look.
+- A student-curated collection (`collection.studentCurated` — creator or any co-owner is a
+  student) rides the scope cluster with `StudentCollectionBadge` — right of the visibility
+  pill, or left of the top-most program/group chip when a restricted collection's scope chips
+  replace the pill. It sits inside the action area so it never intercepts the open click, and
+  `minimal` tiles never render it (the drawer's title-only look). The same marble-disc marker
+  (`#5B7A8A`) appears at the end of the table's Scope cell, beside the detail header's pill
+  slot, and in the graph legend/node fill — see the `StudentCollectionBadge` docs page.
 - Without a cover the card shows the collection's type icon (sequence carousel / synchronized
   columns) at large size on a primary-coloured block — the uncovered category tile's convention.
   `coverBlank` (the picker's explicit **None**) forces this state even when a thumb is still
@@ -76,6 +83,10 @@ and owners/transfer management lives on the detail header and manage table, not 
 ### Sequence
 
 <Canvas of={CollectionCardStories.Sequence} />
+
+### Student curated
+
+<Canvas of={CollectionCardStories.StudentCurated} />
 
 ### Restricted
 

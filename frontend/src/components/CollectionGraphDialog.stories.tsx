@@ -8,8 +8,22 @@ import type { ApiCollectionGraph } from '../api'
  * images; at 2nd order "Pelvis landmarks" and "Teaching set" join as
  * related collections (image 11 and 12 are shared).
  */
-function collNode(id: number, name: string, type: 'sequence' | 'synchronized', count: number) {
-  return { id, name, type, image_count: count, hidden: false, category_id: null }
+function collNode(
+  id: number,
+  name: string,
+  type: 'sequence' | 'synchronized',
+  count: number,
+  studentCurated = false,
+) {
+  return {
+    id,
+    name,
+    type,
+    image_count: count,
+    hidden: false,
+    student_curated: studentCurated,
+    category_id: null,
+  }
 }
 
 function payloadFor(order: 1 | 2 | 3): ApiCollectionGraph {
@@ -25,7 +39,9 @@ function payloadFor(order: 1 | 2 | 3): ApiCollectionGraph {
       order >= 2
         ? [
             collNode(2, 'Pelvis landmarks', 'synchronized', 3),
-            collNode(3, 'Teaching set', 'sequence', 2),
+            // Student-curated so the 2nd-order story covers the badge
+            // node and the legend's "Student collection" row.
+            collNode(3, 'Teaching set', 'sequence', 2, true),
           ]
         : [],
     categories:

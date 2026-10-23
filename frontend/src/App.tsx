@@ -2530,6 +2530,7 @@ export default function App() {
               categories={categories}
               programs={programs}
               groups={groups}
+              collectionsEnabled={collectionsEnabled}
               imagesVersion={imagesVersion}
               onDismissFailedUpload={dismissJob}
               onEditCategory={editCategoryInline}

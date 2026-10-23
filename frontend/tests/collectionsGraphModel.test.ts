@@ -13,6 +13,7 @@ function coll(id: number, imageCount = 4) {
     type: 'sequence' as const,
     image_count: imageCount,
     hidden: false,
+    student_curated: false,
     category_id: null,
   }
 }
@@ -49,6 +50,19 @@ describe('buildGraphModel', () => {
 
     expect(m.nodes.filter((n) => n.kind === 'collection').map((n) => n.id)).toEqual([1, 3])
     expect(m.stats.collections).toBe(2)
+  })
+
+  it('carries student_curated from the payload onto collection nodes', () => {
+    const p = payload({
+      collections: [{ ...coll(1), student_curated: true }, coll(2)],
+    })
+    const m = buildGraphModel(p, ALL(p), false)
+
+    const node = (id: number) => m.nodes.find((n) => n.kind === 'collection' && n.id === id)
+    expect(node(1)?.collection?.student_curated).toBe(true)
+    expect(node(2)?.collection?.student_curated).toBe(false)
+    // The page hub is synthetic — no collection payload, never marked.
+    expect(m.nodes[0].collection).toBeUndefined()
   })
 
   it('trims image collection_ids and detects shared images', () => {

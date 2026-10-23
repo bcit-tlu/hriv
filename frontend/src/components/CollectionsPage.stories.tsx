@@ -65,7 +65,8 @@ function makeSummary(overrides: Partial<CollectionSummary> = {}): CollectionSumm
     type: 'synchronized',
     visibility: 'private',
     hidden: false,
-    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' }],
+    studentCurated: false,
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
@@ -143,6 +144,10 @@ const summaries: CollectionSummary[] = [
     coverThumb: null,
     coverImageId: null,
     coverBlank: false,
+    // Student-curated: badge rides the tile's scope cluster and the
+    // table's Scope cell; marble-disc node + legend row in the graph.
+    studentCurated: true,
+    owners: [{ kind: 'user', userId: 9, name: 'Sam Student', role: 'student' }],
   }),
 ]
 
@@ -231,6 +236,7 @@ function CollectionsPageExample(args: StoryArgs) {
     q: '',
     visibility: [],
     categoryIds: [],
+    scope: [],
   })
   // Stand-in for the hook's server-side sort/page state (#1631).
   const [sort, setSort] = useState<CollectionSort>({ key: 'updated', direction: 'desc' })

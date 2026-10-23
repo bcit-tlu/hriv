@@ -34,9 +34,11 @@ import {
 } from '../api'
 import {
   apiCollectionSummaryToSummary,
+  COLLECTION_SCOPE_LABELS,
   COLLECTION_TYPE_LABELS,
   COLLECTION_VISIBILITY_LABELS,
   COLLECTIONS_AT_CAP_TOOLTIP,
+  collectionScopeKind,
   describeCollectionOwner,
   describeCollectionOwners,
   studentTypesAtCap,
@@ -83,6 +85,7 @@ import type {
   Category,
   Collection,
   CollectionOwner,
+  CollectionScopeKind,
   CollectionSummary,
   CollectionType,
   CollectionVisibility,
@@ -92,6 +95,7 @@ import type {
   User,
 } from '../types'
 import CollectionCard, { CollectionTypeChip, CollectionVisibilityChip } from './CollectionCard'
+import StudentCollectionBadge, { STUDENT_CURATED_BADGE_LABEL } from './StudentCollectionBadge'
 import CollectionEditDialog, { type CollectionFormValues } from './CollectionEditDialog'
 import CollectionGraphDialog from './CollectionGraphDialog'
 import CollectionManageDialog, { type StageAddImages } from './CollectionManageDialog'
@@ -333,6 +337,11 @@ function CollectionDetailHeader({
       .filter((id) => !ownGroupSet.has(id))
       .map((id) => ({ id, inherited: true })),
   ]
+  // When the scope chips carry the restriction the pill suppresses
+  // itself — and its empty wrapper would still count as a flex item,
+  // doubling the gap beside the student badge, so skip it too.
+  const hasScopeChips = programChips.length > 0 || groupChips.length > 0
+  const visibilityPillSuppressed = collection.visibility === 'restricted' && hasScopeChips
   return (
     <>
       {/* Top container mirrors the image view header (#1564): breadcrumb +
@@ -532,12 +541,25 @@ function CollectionDetailHeader({
         {/* The shared type pill — red outline/text on white with the type
             icon, matching the tile and table (#1567). */}
         <CollectionTypeChip type={collection.type} sx={hiddenSx} />
-        <Box sx={hiddenSx}>
-          <CollectionVisibilityChip
-            visibility={collection.visibility}
-            hasScopeChips={programChips.length > 0 || groupChips.length > 0}
-          />
-        </Box>
+        {!visibilityPillSuppressed && (
+          <Box sx={hiddenSx}>
+            <CollectionVisibilityChip
+              visibility={collection.visibility}
+              hasScopeChips={hasScopeChips}
+            />
+          </Box>
+        )}
+        {/* Student-curated marker trails the pill slot — the same badge
+            as the tile scope cluster, the table Scope cell and the graph
+            legend. A restricted+scoped collection suppresses the pill, so
+            the badge lands between the type chip and the owner line. */}
+        {collection.studentCurated && (
+          <Box sx={{ display: 'inline-flex', flexShrink: 0, ...hiddenSx }}>
+            <Tooltip title={STUDENT_CURATED_BADGE_LABEL}>
+              <StudentCollectionBadge size={18} />
+            </Tooltip>
+          </Box>
+        )}
         <Box sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center' }}>
           <Typography variant="body2" color="text.secondary">
             {ownerText}
@@ -1202,11 +1224,11 @@ export default function CollectionsPage({
       body = null
     }
   } else {
-    // Name, Visibility and Category are server-side facets for Cards/Table
-    // (#1631) — `collections` is already the filtered page. The graph view
-    // keeps the full visible set and uses the same facets for highlight
-    // only (ancestor-aware, like the old client filter): nodes are never
-    // removed.
+    // Name, Visibility, Scope and Category are server-side facets for
+    // Cards/Table (#1631) — `collections` is already the filtered page.
+    // The graph view keeps the full visible set and uses the same facets
+    // for highlight only (ancestor-aware, like the old client filter):
+    // nodes are never removed.
     const searchQ = filters.q.trim().toLowerCase()
     const visibilityFacet = new Set<CollectionVisibility>(filters.visibility)
     const categoryFacet = new Set<number>(filters.categoryIds)
@@ -1219,6 +1241,7 @@ export default function CollectionsPage({
           return false
         }
       }
+      if (filters.scope.length > 0 && !filters.scope.includes(collectionScopeKind(c))) return false
       return (
         searchQ === '' ||
         `${c.name} ${c.description ?? ''} ${describeCollectionOwners(c.owners)}`
@@ -1236,7 +1259,8 @@ export default function CollectionsPage({
       filters.owner !== 'any' ||
       filters.q.trim() !== '' ||
       filters.visibility.length > 0 ||
-      filters.categoryIds.length > 0
+      filters.categoryIds.length > 0 ||
+      filters.scope.length > 0
     const clearAllFilters = () => {
       // Cancel any pending debounce so a stale q commit cannot resurrect
       // it, then reset every facet in one change.
@@ -1332,7 +1356,7 @@ export default function CollectionsPage({
         {/* Shared filter bar (#1629): the popover facets feed all three
             views — in Cards/Table every facet is a server-side request
             parameter (#1631); the graph keeps the full set and uses Name,
-            Visibility and Category for highlight only. */}
+            Visibility, Scope and Category for highlight only. */}
         <FilterBar
           clearAction={
             hasActiveFilters ? (
@@ -1426,6 +1450,20 @@ export default function CollectionsPage({
                     }
                   />
                 ))}
+                {filters.scope.map((s) => (
+                  <Chip
+                    key={`scope:${s}`}
+                    data-testid="filter-chip"
+                    label={`Scope: ${COLLECTION_SCOPE_LABELS[s]}`}
+                    size="small"
+                    onDelete={() =>
+                      onFiltersChange({
+                        ...filters,
+                        scope: filters.scope.filter((c) => c !== s),
+                      })
+                    }
+                  />
+                ))}
               </>
             ) : undefined
           }
@@ -1510,6 +1548,26 @@ export default function CollectionsPage({
                 onFiltersChange({
                   ...filters,
                   visibility: (values as CollectionVisibility[]).sort(),
+                })
+              }
+            />
+          </FilterPopoverButton>
+          {/* Scope splits the student-curated marker from every other
+              curator kind — the rows that carry the scope-cluster badge
+              vs the ones that don't. */}
+          <FilterPopoverButton label="Scope" activeCount={filters.scope.length}>
+            <FilterOptionPanel
+              options={(['student', 'instructor_admin'] as const).map((s) => ({
+                value: s,
+                label: COLLECTION_SCOPE_LABELS[s],
+              }))}
+              selectedValues={[...filters.scope]}
+              onChange={(values) =>
+                // Sorted so the hook's cache keys stay stable regardless of
+                // click order.
+                onFiltersChange({
+                  ...filters,
+                  scope: (values as CollectionScopeKind[]).sort(),
                 })
               }
             />
@@ -1685,7 +1743,11 @@ export default function CollectionsPage({
                     const c = collections.find((r) => r.id === id)
                     return c != null && matchesClientFilters(c)
                   }}
-                  filterActive={filters.visibility.length > 0 || filters.categoryIds.length > 0}
+                  filterActive={
+                    filters.visibility.length > 0 ||
+                    filters.categoryIds.length > 0 ||
+                    filters.scope.length > 0
+                  }
                   tooltipInfo={graphTooltipInfo}
                   overlay={
                     <>
