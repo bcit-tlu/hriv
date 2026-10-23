@@ -42,7 +42,7 @@ const preview: Preview = {
     },
     options: {
       storySort: {
-        order: ['Foundations', ['Theme', 'Typography'], 'Components'],
+        order: ['Foundations', ['Theme', 'Colors', 'Typography'], 'Components'],
       },
     },
     controls: {
