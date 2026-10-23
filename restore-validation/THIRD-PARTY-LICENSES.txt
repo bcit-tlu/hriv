@@ -756,7 +756,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-certifi@2026.7.22
+certifi@2026.10.19
 License: MPL-2.0
 ================================================================================
 
