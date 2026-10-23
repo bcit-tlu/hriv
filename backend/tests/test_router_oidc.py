@@ -20,6 +20,16 @@ from app.routers.oidc import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_browse_bump(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """``bump_browse_revision`` writes to browse_state; the mocked sessions'
+    ``execute`` side effects are sized for the login queries, so stub it.
+    Tests that exercise an IdP role change can assert on the mock."""
+    bump = AsyncMock(return_value=1)
+    monkeypatch.setattr("app.routers.oidc.bump_browse_revision", bump)
+    return bump
+
+
 def _assert_oidc_error_redirect(resp, expected_code: str, origin: str) -> None:
     """Helper: assert ``resp`` is a client-side redirect to
     ``{origin}/#oidc_error={expected_code}``."""
@@ -1041,7 +1051,7 @@ async def test_oidc_callback_existing_user_program_sync() -> None:
     assert prog_ids == {10, 20}
 
 
-async def test_oidc_callback_role_and_program_sync() -> None:
+async def test_oidc_callback_role_and_program_sync(mock_browse_bump: AsyncMock) -> None:
     """Both role and programs are updated from groups on existing user login."""
     request = MagicMock()
     mock_client = AsyncMock()
@@ -1087,3 +1097,6 @@ async def test_oidc_callback_role_and_program_sync() -> None:
     assert result.status_code == 200
     assert existing_user.role == "admin"
     assert [p.id for p in existing_user.programs] == [10]
+    # The role change feeds ``student_curated`` + ``owners[].role`` on
+    # collection payloads, so the list ETag must advance (#1698).
+    mock_browse_bump.assert_awaited_once()

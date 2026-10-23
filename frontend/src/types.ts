@@ -103,9 +103,15 @@ export type CollectionType = 'synchronized' | 'sequence'
 
 export type CollectionVisibility = 'private' | 'public' | 'restricted'
 
-/** One owner of a collection (#1531): a user co-owner or the owning program. */
+/** Scope-facet values: `student` = `studentCurated` rows;
+ *  `instructor_admin` = every other curator kind (staff/instructor/admin
+ *  user owners and program-owned rows all carry no student marker). */
+export type CollectionScopeKind = 'student' | 'instructor_admin'
+
+/** One owner of a collection (#1531): a user co-owner or the owning program.
+ *  `role` is the user owner's current role when the API reports it. */
 export type CollectionOwner =
-  | { kind: 'user'; userId: number; name: string }
+  | { kind: 'user'; userId: number; name: string; role?: Role }
   | { kind: 'program'; programId: number; name: string }
 
 /** UX hints from the API — the backend re-checks authority on every write. */
@@ -130,6 +136,9 @@ export interface CollectionSummary {
   hidden: boolean
   /** User co-owners plus the optional program owner; empty means orphaned (#1531). */
   owners: CollectionOwner[]
+  /** Creator or any user-owner is a student — drives the scope-cluster
+   *  badge (tile, table Scope cell, detail header) and the graph legend. */
+  studentCurated: boolean
   imageCount: number
   coverThumb: string | null
   /** Pinned cover member id; `null` = first-member fallback. */

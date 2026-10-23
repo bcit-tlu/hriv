@@ -25,6 +25,7 @@ import {
   apiCollectionSummaryToSummary,
   apiCollectionToCollection,
   apiImageToItem,
+  collectionScopeKind,
   describeCollectionOwners,
 } from './collectionUtils'
 import { loadStoredRowsPerPage, ROWS_PER_PAGE_OPTIONS } from './useRowsPerPagePreference'
@@ -32,6 +33,7 @@ import type { CollectionFormValues } from './components/CollectionEditDialog'
 import type {
   Collection,
   CollectionOwner,
+  CollectionScopeKind,
   CollectionSummary,
   CollectionType,
   CollectionVisibility,
@@ -94,6 +96,9 @@ export interface CollectionListFilters {
   visibility: CollectionVisibility[]
   /** Server-side category facet (ancestor-aware on the server). */
   categoryIds: number[]
+  /** Server-side Scope facet — the student-curated marker vs every other
+   *  curator kind; kept sorted for stable cache keys. */
+  scope: CollectionScopeKind[]
 }
 
 export const DEFAULT_COLLECTION_FILTERS: CollectionListFilters = {
@@ -103,6 +108,7 @@ export const DEFAULT_COLLECTION_FILTERS: CollectionListFilters = {
   q: '',
   visibility: [],
   categoryIds: [],
+  scope: [],
 }
 
 export const COLLECTION_NOT_FOUND_MESSAGE =
@@ -154,9 +160,9 @@ export function normalizeCollectionFilters(
 
 /**
  * Translate UI filters into API query params. In `'paged'` list mode the
- * search/visibility/category facets and the sort/page controls ride along
- * (#1631); in `'full'` mode (the Graph view's full-set fetch) the request
- * carries only type/mine/owner, exactly like the pre-#1631 callers.
+ * search/visibility/scope/category facets and the sort/page controls ride
+ * along (#1631); in `'full'` mode (the Graph view's full-set fetch) the
+ * request carries only type/mine/owner, exactly like the pre-#1631 callers.
  */
 export function toCollectionApiFilters(
   filters: CollectionListFilters,
@@ -185,6 +191,9 @@ export function toCollectionApiFilters(
     if (filters.visibility.length > 0) api.visibility = [...filters.visibility].sort()
     if (filters.categoryIds.length > 0)
       api.category_ids = [...filters.categoryIds].sort((a, b) => a - b)
+    // The two scope buckets cover the universe, so a single selection is a
+    // real filter while both (or none) serializes to no constraint.
+    if (filters.scope.length === 1) api.student_curated = filters.scope[0] === 'student'
     const sortKey = options.sort ?? 'updated'
     api.sort = COLLECTION_SORT_API_KEYS[sortKey]
     api.direction = options.direction ?? collectionSortDefaultDirection(sortKey)
@@ -249,7 +258,7 @@ export function matchesCollectionFilters(
   user: Pick<User, 'id'> | null,
 ): boolean {
   if (filters.type !== 'all' && row.type !== filters.type) return false
-  // q/visibility are the server-side facets (#1631). Category is NOT
+  // q/visibility/scope are the server-side facets (#1631). Category is NOT
   // mirrored: the server filter is ancestor-aware and this mirror has no
   // category tree, so checking `row.categoryId` would wrongly reject rows
   // filed into a descendant of a selected category — the follow-up reload
@@ -263,6 +272,7 @@ export function matchesCollectionFilters(
   )
     return false
   if (filters.visibility.length > 0 && !filters.visibility.includes(row.visibility)) return false
+  if (filters.scope.length > 0 && !filters.scope.includes(collectionScopeKind(row))) return false
   // Owner filters match membership in the co-owner set (#1531); orphaned
   // means no user owners and no program owner (an empty owners list).
   if (filters.mine) return row.owners.some((o) => o.kind === 'user' && o.userId === user?.id)
@@ -296,7 +306,7 @@ export interface UseCollectionsDataOptions {
   backgroundRefresh: boolean
   /**
    * `'paged'` (Cards/Table) requests one page of rows per key with the
-   * search/visibility/category facets and sort attached; `'full'` (Graph)
+   * search/visibility/scope/category facets and sort attached; `'full'` (Graph)
    * requests the whole visible set with only type/mine/owner (#1631).
    */
   listMode?: 'paged' | 'full'

@@ -37,6 +37,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
   fetchImages,
+  fetchImageCollectionsMap,
   updateImage,
   deleteImage,
   replaceImage,
@@ -44,7 +45,7 @@ import {
   bulkDeleteImages,
   userMessage,
 } from '../api'
-import type { ApiBulkImportJob, ApiImage } from '../api'
+import type { ApiBulkImportJob, ApiImage, ApiImageCollectionRef } from '../api'
 import { invalidateMovedImageScopes, tileOrderingCoordinator } from '../tileOrdering'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
@@ -92,6 +93,7 @@ type SortableColumn =
   | 'note'
   | 'program'
   | 'group'
+  | 'collections'
   | 'active'
   | 'updated_at'
   | 'created_at'
@@ -108,6 +110,7 @@ type ManageTableColumn =
   | 'note'
   | 'program'
   | 'group'
+  | 'collections'
   | 'active'
   | 'updated_at'
   | 'created_at'
@@ -125,6 +128,7 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'note', label: 'Note' },
   { key: 'program', label: 'Program' },
   { key: 'group', label: 'Groups' },
+  { key: 'collections', label: 'Collections' },
   { key: 'active', label: 'Visibility' },
   { key: 'updated_at', label: 'Modified' },
   { key: 'created_at', label: 'Created' },
@@ -164,6 +168,7 @@ type ManageStoredFilters = {
   text?: Record<string, unknown>
   programs?: unknown[]
   groups?: unknown[]
+  collections?: unknown[]
   visibility?: unknown[]
   categories?: unknown[]
 }
@@ -184,6 +189,7 @@ function buildManageFilterSnapshot(
   filters: Record<string, string>,
   selectedPrograms: Set<number>,
   selectedGroups: Set<number>,
+  selectedCollections: Set<number>,
   selectedVisibility: Set<VisibilityFilterValue>,
   selectedCategories: Set<number>,
 ) {
@@ -191,6 +197,7 @@ function buildManageFilterSnapshot(
     text: filters,
     programs: [...selectedPrograms],
     groups: [...selectedGroups],
+    collections: [...selectedCollections],
     visibility: [...selectedVisibility],
     categories: [...selectedCategories],
   }
@@ -202,6 +209,8 @@ interface ManagePageProps {
   categories: Category[]
   programs: Program[]
   groups?: Group[]
+  /** COLLECTIONS_ENABLED — gates the opt-in Collections column (#1586). */
+  collectionsEnabled?: boolean
   imagesVersion?: number
   /** Drop the matching failure notification when a failed upload is dismissed. */
   onDismissFailedUpload?: (sourceImageId: number) => void
@@ -249,6 +258,7 @@ export default function ManagePage({
   categories,
   programs,
   groups = [],
+  collectionsEnabled = false,
   imagesVersion,
   onDismissFailedUpload,
   onViewImage,
@@ -296,6 +306,12 @@ export default function ManagePage({
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
     getStoredIntSet(storedFilters, 'groups'),
   )
+  // A disabled feature keeps the Collection facet inert: a restored
+  // selection would filter rows against a membership map that never
+  // loads, emptying the table with no visible facet to clear (#1698).
+  const [selectedCollections, setSelectedCollections] = useState<Set<number>>(() =>
+    collectionsEnabled ? getStoredIntSet(storedFilters, 'collections') : new Set<number>(),
+  )
   const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
     getStoredVisibilityFilters(storedFilters),
   )
@@ -306,6 +322,7 @@ export default function ManagePage({
     Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0 ||
+    selectedCollections.size > 0 ||
     selectedVisibility.size > 0 ||
     selectedCategories.size > 0
 
@@ -336,15 +353,24 @@ export default function ManagePage({
 
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const [failedUploadsOpen, setFailedUploadsOpen] = useState(false)
+  // The Collections column is gated by the feature flag: outside the known
+  // set it drops out of visibility, order, and the chooser entirely.
+  const allColumns = useMemo<readonly ManageTableColumn[]>(
+    () =>
+      collectionsEnabled
+        ? MANAGE_ALL_COLUMNS
+        : MANAGE_ALL_COLUMNS.filter((column) => column !== 'collections'),
+    [collectionsEnabled],
+  )
   const { visibleColumns, setColumnVisible, columnOrder, orderedVisibleColumns, setColumnOrder } =
     useTableColumnPreferences<ManageTableColumn>({
       tableKey: 'manage-images',
-      allColumns: MANAGE_ALL_COLUMNS,
+      allColumns,
       defaultVisibleColumns: MANAGE_DEFAULT_VISIBLE_COLUMNS,
     })
   const visibleColumnCount = useMemo(
-    () => MANAGE_ALL_COLUMNS.filter((column) => visibleColumns[column]).length,
-    [visibleColumns],
+    () => allColumns.filter((column) => visibleColumns[column]).length,
+    [allColumns, visibleColumns],
   )
   // Dialog options follow the persisted column order (#1577) so drag
   // reordering in the chooser matches the rendered table order.
@@ -404,16 +430,55 @@ export default function ManagePage({
     loadImages() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadImages, imagesVersion])
 
+  // Collection membership per row — fetched only while the opt-in
+  // Collections column is visible (the bulk endpoint stays off the hot
+  // images list). Reloads with `images` so post-mutation refreshes keep
+  // membership current.
+  const [imageCollectionsById, setImageCollectionsById] = useState<
+    Record<number, ApiImageCollectionRef[]>
+  >({})
+  const [collectionMapLoaded, setCollectionMapLoaded] = useState(false)
+  const collectionsColumnVisible = Boolean(visibleColumns['collections'])
+  useEffect(() => {
+    if (!collectionsEnabled || !collectionsColumnVisible) return
+    let cancelled = false
+    fetchImageCollectionsMap()
+      .then((map) => {
+        if (!cancelled) {
+          setImageCollectionsById(map)
+          setCollectionMapLoaded(true)
+        }
+      })
+      .catch((err) => console.error('Failed to load image collections', err))
+    return () => {
+      cancelled = true
+    }
+  }, [collectionsEnabled, collectionsColumnVisible, images])
+
+  useEffect(() => {
+    if (collectionsEnabled) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a stale selection when the feature flag flips off
+    setSelectedCollections((prev) => (prev.size === 0 ? prev : new Set()))
+  }, [collectionsEnabled])
+
   const filterSnapshot = useMemo(
     () =>
       buildManageFilterSnapshot(
         filters,
         selectedPrograms,
         selectedGroups,
+        selectedCollections,
         selectedVisibility,
         selectedCategories,
       ),
-    [filters, selectedCategories, selectedGroups, selectedPrograms, selectedVisibility],
+    [
+      filters,
+      selectedCategories,
+      selectedCollections,
+      selectedGroups,
+      selectedPrograms,
+      selectedVisibility,
+    ],
   )
   useTableFilterPreferences({
     tableKey: 'manage-images',
@@ -543,6 +608,43 @@ export default function ManagePage({
     [getGroupNameList],
   )
 
+  const getCollectionNameList = useCallback(
+    (img: ApiImage): string[] => (imageCollectionsById[img.id] ?? []).map((ref) => ref.name),
+    [imageCollectionsById],
+  )
+
+  const getCollectionNames = useCallback(
+    (img: ApiImage): string => getCollectionNameList(img).join(', '),
+    [getCollectionNameList],
+  )
+
+  // Facet options are the distinct collections present in the table — the
+  // map only covers caller-visible memberships, so nothing hidden leaks.
+  const collectionFilterOptions = useMemo(() => {
+    const byId = new Map<number, string>()
+    for (const refs of Object.values(imageCollectionsById)) {
+      for (const ref of refs) {
+        if (!byId.has(ref.id)) byId.set(ref.id, ref.name.trim())
+      }
+    }
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .filter((option) => option.name.length > 0)
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id)
+  }, [imageCollectionsById])
+
+  // Stored collection selections are only pruned once the membership map
+  // has loaded — otherwise the restore would be wiped before data arrives.
+  useEffect(() => {
+    if (!collectionMapLoaded) return
+    const validIds = new Set(collectionFilterOptions.map((option) => option.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available collections
+    setSelectedCollections((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [collectionFilterOptions, collectionMapLoaded])
+
   const programFilterOptions = useMemo(
     () =>
       programs
@@ -574,6 +676,14 @@ export default function ManagePage({
   const selectedGroupValues = useMemo(
     () => selectedGroupOptions.map((group) => String(group.id)),
     [selectedGroupOptions],
+  )
+  const selectedCollectionOptions = useMemo(
+    () => collectionFilterOptions.filter((collection) => selectedCollections.has(collection.id)),
+    [collectionFilterOptions, selectedCollections],
+  )
+  const selectedCollectionValues = useMemo(
+    () => selectedCollectionOptions.map((collection) => String(collection.id)),
+    [selectedCollectionOptions],
   )
   const selectedVisibilityValues = useMemo(
     () =>
@@ -619,6 +729,10 @@ export default function ManagePage({
         const imageGroups = new Set([...direct, ...ancestor])
         if (![...selectedGroups].some((value) => imageGroups.has(value))) return false
       }
+      if (selectedCollections.size > 0) {
+        const memberIds = imageCollectionsById[img.id] ?? []
+        if (!memberIds.some((ref) => selectedCollections.has(ref.id))) return false
+      }
       if (selectedVisibility.size > 0) {
         const visibilityValue: VisibilityFilterValue = img.active ? 'active' : 'inactive'
         if (!selectedVisibility.has(visibilityValue)) return false
@@ -631,7 +745,9 @@ export default function ManagePage({
     getInheritedGroupIds,
     getInheritedProgramIds,
     hasActiveFilters,
+    imageCollectionsById,
     images,
+    selectedCollections,
     selectedGroups,
     selectedCategories,
     selectedPrograms,
@@ -664,6 +780,9 @@ export default function ManagePage({
         case 'group':
           cmp = getGroupNames(a).localeCompare(getGroupNames(b))
           break
+        case 'collections':
+          cmp = getCollectionNames(a).localeCompare(getCollectionNames(b))
+          break
         case 'active':
           cmp = Number(a.active) - Number(b.active)
           break
@@ -686,7 +805,15 @@ export default function ManagePage({
       return sortDirection === 'asc' ? cmp : -cmp
     })
     return sorted
-  }, [filteredImages, sortColumn, sortDirection, getCategoryLabel, getProgramNames, getGroupNames])
+  }, [
+    filteredImages,
+    sortColumn,
+    sortDirection,
+    getCategoryLabel,
+    getProgramNames,
+    getGroupNames,
+    getCollectionNames,
+  ])
 
   // Auto-correct currentPage when dataset shrinks (e.g. after delete/bulk-delete)
   const maxPage = Math.max(0, Math.ceil(sortedImages.length / rowsPerPage) - 1)
@@ -708,6 +835,7 @@ export default function ManagePage({
     setFilters({})
     setSelectedPrograms(new Set())
     setSelectedGroups(new Set())
+    setSelectedCollections(new Set())
     setSelectedVisibility(new Set())
     setSelectedCategories(new Set())
     setCurrentPage(0)
@@ -723,6 +851,8 @@ export default function ManagePage({
           setSelectedPrograms(new Set())
         } else if (column === 'group') {
           setSelectedGroups(new Set())
+        } else if (column === 'collections') {
+          setSelectedCollections(new Set())
         } else if (column === 'active') {
           setSelectedVisibility(new Set())
         } else if (column === 'category') {
@@ -1047,6 +1177,7 @@ export default function ManagePage({
     note: sortableHeaderCell('note', 'Note'),
     program: sortableHeaderCell('program', 'Program'),
     group: sortableHeaderCell('group', 'Groups'),
+    collections: sortableHeaderCell('collections', 'Collections'),
     active: sortableHeaderCell('active', 'Visibility'),
     updated_at: sortableHeaderCell('updated_at', 'Modified'),
     created_at: sortableHeaderCell('created_at', 'Created'),
@@ -1166,6 +1297,25 @@ export default function ManagePage({
           selectedValues={selectedGroupValues}
           onChange={(values) => {
             setSelectedGroups(new Set(values.map((value) => Number(value))))
+            setCurrentPage(0)
+          }}
+        />
+      </FilterPopoverButton>
+    ),
+    collections: (
+      <FilterPopoverButton
+        label="Collection"
+        activeCount={selectedCollections.size}
+        panelWidth={260}
+      >
+        <FilterOptionPanel
+          options={collectionFilterOptions.map((collection) => ({
+            value: String(collection.id),
+            label: collection.name,
+          }))}
+          selectedValues={selectedCollectionValues}
+          onChange={(values) => {
+            setSelectedCollections(new Set(values.map((value) => Number(value))))
             setCurrentPage(0)
           }}
         />
@@ -1348,6 +1498,34 @@ export default function ManagePage({
                     setSelectedGroups((prev) => {
                       const next = new Set(prev)
                       next.delete(group.id)
+                      return next
+                    })
+                    setCurrentPage(0)
+                  }}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
+              {selectedCollectionOptions.map((collection) => (
+                <Chip
+                  key={`collection:${collection.id}`}
+                  data-testid="filter-chip"
+                  label={`Collection: ${collection.name}`}
+                  size="small"
+                  onDelete={() => {
+                    setSelectedCollections((prev) => {
+                      const next = new Set(prev)
+                      next.delete(collection.id)
                       return next
                     })
                     setCurrentPage(0)
@@ -1570,6 +1748,40 @@ export default function ManagePage({
                                       })}
                                 />
                               ))}
+                          </Box>
+                        )
+                      })()}
+                    </TableCell>
+                  ),
+                  collections: (
+                    <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const refs = imageCollectionsById[img.id] ?? []
+                        if (refs.length === 0) return '—'
+                        return (
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                            {refs.map((ref) => (
+                              <Chip
+                                key={ref.id}
+                                data-testid="collection-chip"
+                                label={ref.name}
+                                size="small"
+                                color="secondary"
+                                onClick={() => {
+                                  setSelectedCollections((prev) => new Set(prev).add(ref.id))
+                                  setCurrentPage(0)
+                                }}
+                                sx={{
+                                  cursor: 'pointer',
+                                  ...(img.active
+                                    ? {}
+                                    : {
+                                        bgcolor: visColors.inactiveChipBg,
+                                        color: '#fff',
+                                      }),
+                                }}
+                              />
+                            ))}
                           </Box>
                         )
                       })()}

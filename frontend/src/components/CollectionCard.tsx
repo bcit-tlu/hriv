@@ -29,6 +29,7 @@ import { COLLECTION_TYPE_LABELS, COLLECTION_VISIBILITY_LABELS } from '../collect
 import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import RenewingThumbnail from './RenewingThumbnail'
+import StudentCollectionBadge, { STUDENT_CURATED_BADGE_LABEL } from './StudentCollectionBadge'
 
 export interface CollectionCardProps {
   collection: CollectionSummary
@@ -234,6 +235,25 @@ export default function CollectionCard({
     .filter((gid) => !ownGroupIds.includes(gid))
     .map((id) => ({ id, label: groupLabel(id) }))
 
+  // The student-curated marker rides the scope cluster — right of the
+  // Public/Private pill, or left of the top-most scope chip when a
+  // restricted collection replaces the pill with its program/group chips.
+  // `minimal` tiles drop every metadata row, so the My Collections
+  // drawer tile never renders it.
+  const ownScopeChips = programChips.length > 0 || groupChips.length > 0
+  const visibilityRowSuppressed = collection.visibility === 'restricted' && ownScopeChips
+  const studentBadge = collection.studentCurated ? (
+    <Tooltip title={STUDENT_CURATED_BADGE_LABEL}>
+      <Box
+        component="span"
+        data-testid="student-curated-badge"
+        sx={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}
+      >
+        <StudentCollectionBadge size={compact ? 16 : 18} />
+      </Box>
+    </Tooltip>
+  ) : null
+
   return (
     <Card data-testid="collection-card" elevation={2} sx={{ height: '100%', position: 'relative' }}>
       <CardActionArea
@@ -385,22 +405,26 @@ export default function CollectionCard({
               (#1567), and an empty row would add a phantom gap the
               category tiles don't have. `mt: 0.5` matches CategoryTile's
               chip-row spacing. */}
-          {!minimal &&
-            !(
-              collection.visibility === 'restricted' &&
-              (programChips.length > 0 || groupChips.length > 0)
-            ) && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                <CollectionVisibilityChip
-                  visibility={collection.visibility}
-                  hasScopeChips={programChips.length > 0 || groupChips.length > 0}
-                />
-              </Box>
-            )}
+          {!minimal && !visibilityRowSuppressed && (
+            <Box
+              sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, alignItems: 'center' }}
+            >
+              <CollectionVisibilityChip
+                visibility={collection.visibility}
+                hasScopeChips={programChips.length > 0 || groupChips.length > 0}
+              />
+              {studentBadge}
+            </Box>
+          )}
           {/* Own/inherited scope render as separate rows, matching
-              CategoryTile (#1567). */}
+              CategoryTile (#1567). The badge leads the first scope row —
+              left of the top-most program chip, or the group row when no
+              program chips exist. */}
           {!minimal && programChips.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+            <Box
+              sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, alignItems: 'center' }}
+            >
+              {studentBadge}
               {programChips.map((p) => (
                 <Chip
                   key={p.id}
@@ -427,7 +451,10 @@ export default function CollectionCard({
             </Box>
           )}
           {!minimal && groupChips.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+            <Box
+              sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, alignItems: 'center' }}
+            >
+              {programChips.length === 0 && studentBadge}
               {groupChips.map((g) => (
                 <Chip
                   key={g.id}

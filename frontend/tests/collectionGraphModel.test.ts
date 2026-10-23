@@ -10,6 +10,7 @@ function coll(id: number, name = `Collection ${id}`, imageCount = 4) {
     type: 'sequence' as const,
     image_count: imageCount,
     hidden: false,
+    student_curated: false,
     category_id: null,
   }
 }
@@ -56,6 +57,26 @@ describe('buildCollectionGraphModel', () => {
     expect(m.nodes.find((n) => n.id === 10)!.shared).toBe(true)
     expect(m.nodes.find((n) => n.id === 11)!.shared).toBe(false)
     expect(m.stats.shared).toBe(1)
+  })
+
+  it('carries student_curated on the hub collection and related collections', () => {
+    const m = buildCollectionGraphModel(
+      payload({
+        order: 2,
+        collection: { ...coll(1, 'Student atlas'), student_curated: true },
+        images: [img(10, [1, 5])],
+        related_collections: [{ ...coll(5, 'Peer set'), student_curated: true }, coll(7)],
+      }),
+    )
+    // The hub carries the viewed collection, so the one renderer rule
+    // (`n.collection?.student_curated`) covers hub and related nodes alike.
+    expect(m.nodes[0].collection?.student_curated).toBe(true)
+    expect(
+      m.nodes.find((n) => n.kind === 'collection' && n.id === 5)?.collection?.student_curated,
+    ).toBe(true)
+    expect(
+      m.nodes.find((n) => n.kind === 'collection' && n.id === 7)?.collection?.student_curated,
+    ).toBe(false)
   })
 
   it('order 2 adds related collection nodes with image edges', () => {

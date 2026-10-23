@@ -55,7 +55,14 @@ collection-page graph dialog (#1630) reuses this component with a different mode
   always shows the image/shared-image rows (member images are the
   spokes at every order), and shows the related-collection/synchronized rows only at
   order ≥ 2. On the page, image/shared-image rows appear at order ≥ 2; the category row
-  appears at order ≥ 3 in both variants. An unboxed, single-line hint sits right-aligned
+  appears at order ≥ 3 in both variants. Whenever an on-screen node carries
+  `collection.student_curated`, a "Student collection" row with the marble-disc badge
+  swatch joins the legend — and the canvas paints those nodes (including a
+  student-curated dialog hub) as the `StudentCollectionBadge` artwork in `#5B7A8A`
+  in place of the type fill. The swatch and the canvas share one geometry and one stroke
+  weight via `studentCollectionBadge.ts` (`Path2D` + `STUDENT_BADGE_STROKE`), so the
+  legend entry reads identically to a node.
+  An unboxed, single-line hint sits right-aligned
   just below the canvas and reads "Scroll or pinch to zoom, and drag to pan."
 - `sharedOnly` hides single-collection images from drawing and hit testing but keeps them in
   the simulation; category nodes are never hidden.

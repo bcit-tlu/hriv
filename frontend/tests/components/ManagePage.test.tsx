@@ -7,6 +7,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   return {
     ...actual,
     fetchImages: vi.fn(),
+    fetchImageCollectionsMap: vi.fn(),
     updateImage: vi.fn(),
     deleteImage: vi.fn(),
     replaceImage: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   }
 })
 
-import { fetchImages, listSourceImages, updateImage } from '../../src/api'
+import { fetchImages, fetchImageCollectionsMap, listSourceImages, updateImage } from '../../src/api'
 import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
@@ -63,6 +64,7 @@ describe('ManagePage', () => {
     localStorage.clear()
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
     resetCategoryTreeExpansionPreferencesForTests()
+    vi.mocked(fetchImageCollectionsMap).mockResolvedValue({})
     vi.mocked(fetchImages).mockResolvedValue([
       {
         id: 101,
@@ -356,6 +358,149 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
     expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
   }, 30_000)
+
+  function makeManageImage(id: number, name: string): ApiImage {
+    return {
+      id,
+      name,
+      thumb: '/thumb.jpg',
+      tile_sources: '/tile.dzi',
+      category_id: 10,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 1,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }
+  }
+
+  it('does not offer the Collections column while the feature flag is off', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Choose image table columns',
+    })
+    expect(within(dialog).queryByRole('checkbox', { name: 'Collections' })).not.toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    expect(screen.queryByRole('columnheader', { name: 'Collections' })).not.toBeInTheDocument()
+    expect(fetchImageCollectionsMap).not.toHaveBeenCalled()
+  })
+
+  it('lists collection memberships in an opt-in column with a matching filter', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchImages).mockResolvedValue([
+      makeManageImage(101, 'Blood Smear'),
+      makeManageImage(102, 'Gram Stain'),
+    ])
+    vi.mocked(fetchImageCollectionsMap).mockResolvedValue({
+      101: [{ id: 5, name: 'Case Studies' }],
+    })
+    render(
+      <ManagePage categories={categories} programs={programs} groups={groups} collectionsEnabled />,
+    )
+
+    await screen.findByText('Blood Smear')
+
+    // Opt-in and lazily fetched: no column, no membership call yet.
+    expect(screen.queryByRole('columnheader', { name: 'Collections' })).not.toBeInTheDocument()
+    expect(fetchImageCollectionsMap).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Choose image table columns',
+    })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Collections' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    await waitFor(() => expect(fetchImageCollectionsMap).toHaveBeenCalled())
+    expect(await screen.findByRole('columnheader', { name: 'Collections' })).toBeInTheDocument()
+
+    const memberRow = screen.getByText('Blood Smear').closest('tr')!
+    expect(within(memberRow).getByTestId('collection-chip')).toHaveTextContent('Case Studies')
+    const otherRow = screen.getByText('Gram Stain').closest('tr')!
+    expect(within(otherRow).queryByTestId('collection-chip')).not.toBeInTheDocument()
+
+    // The Collection facet appears only while the column is visible.
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Collection' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Case Studies' }))
+
+    expect(await screen.findByText('Collection: Case Studies')).toBeInTheDocument()
+    expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    expect(screen.queryByText('Gram Stain')).not.toBeInTheDocument()
+  }, 30_000)
+
+  it('drops the Collection facet and its selection when the column is hidden', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchImages).mockResolvedValue([
+      makeManageImage(101, 'Blood Smear'),
+      makeManageImage(102, 'Gram Stain'),
+    ])
+    vi.mocked(fetchImageCollectionsMap).mockResolvedValue({
+      101: [{ id: 5, name: 'Case Studies' }],
+    })
+    render(
+      <ManagePage categories={categories} programs={programs} groups={groups} collectionsEnabled />,
+    )
+
+    await screen.findByText('Blood Smear')
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    let dialog = await screen.findByRole('dialog', {
+      name: 'Choose image table columns',
+    })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Collections' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    await user.click(await within(filterBar).findByRole('button', { name: 'Collection' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Case Studies' }))
+    expect(await screen.findByText('Collection: Case Studies')).toBeInTheDocument()
+    expect(screen.queryByText('Gram Stain')).not.toBeInTheDocument()
+
+    // Hiding the column clears the selection along with the facet button.
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Collections' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    expect(screen.queryByRole('columnheader', { name: 'Collections' })).not.toBeInTheDocument()
+    expect(within(filterBar).queryByRole('button', { name: 'Collection' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Collection: Case Studies')).not.toBeInTheDocument()
+    await screen.findByText('Gram Stain')
+  }, 30_000)
+
+  it('ignores a stored Collection selection while the feature flag is off', async () => {
+    vi.mocked(fetchImages).mockResolvedValue([
+      makeManageImage(101, 'Blood Smear'),
+      makeManageImage(102, 'Gram Stain'),
+    ])
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({ collections: [5] }),
+    )
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    // The stale selection must not filter rows against a membership map
+    // that never loads — and no Collection facet surfaces to explain it.
+    await screen.findByText('Blood Smear')
+    expect(screen.getByText('Gram Stain')).toBeInTheDocument()
+    expect(fetchImageCollectionsMap).not.toHaveBeenCalled()
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).queryByRole('button', { name: 'Collection' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Collection:/)).not.toBeInTheDocument()
+  })
 
   it('renders headers and row cells in the persisted column order', async () => {
     localStorage.setItem(

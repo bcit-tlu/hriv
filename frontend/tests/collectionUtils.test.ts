@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { ApiImage } from '../src/api'
+import type { ApiCollectionSummary, ApiImage } from '../src/api'
 import {
   apiCollectionOwnerToOwner,
   apiCollectionSummaryToSummary,
@@ -144,6 +144,33 @@ describe('collectionUtils mapping', () => {
       name: 'Ada',
     })
     expect(apiCollectionOwnerToOwner({ user_id: null, program_id: null, name: '' })).toBeNull()
+  })
+
+  it('maps owner roles and the student-curated marker through to the summary', () => {
+    const summary = apiCollectionSummaryToSummary(
+      makeApiCollectionSummary({
+        student_curated: true,
+        owners: [
+          { user_id: 7, name: 'Ada Lovelace', role: 'instructor' },
+          { user_id: 9, name: 'Sam Student', role: 'student' },
+          { program_id: 3, name: 'Radiography' },
+        ],
+      }),
+    )
+    expect(summary.studentCurated).toBe(true)
+    expect(summary.owners).toEqual([
+      { kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' },
+      { kind: 'user', userId: 9, name: 'Sam Student', role: 'student' },
+      { kind: 'program', programId: 3, name: 'Radiography' },
+    ])
+  })
+
+  it('defaults studentCurated to false on payloads written before the field existed', () => {
+    // The collections list is ETag-cached — a cached body from an older API
+    // lacks the field entirely.
+    const api = makeApiCollectionSummary()
+    delete (api as Partial<ApiCollectionSummary>).student_curated
+    expect(apiCollectionSummaryToSummary(api).studentCurated).toBe(false)
   })
 
   it('maps a summary to camelCase including permissions', () => {

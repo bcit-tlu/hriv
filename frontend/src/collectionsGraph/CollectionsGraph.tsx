@@ -12,6 +12,7 @@ import { zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zo
 import { useColorMode } from '../useColorMode'
 import { getThemePalette } from '../theme'
 import { CollectionTypeChip } from '../components/CollectionCard'
+import StudentCollectionBadge from '../components/StudentCollectionBadge'
 import type { GraphModel, GraphNode } from './types'
 import { GraphRenderer, paletteFrom, type DrawState, type LabelThresholds } from './renderer'
 import { createGraphSimulation, preTick, startDragRepel, stopDragRepel } from './simulation'
@@ -496,6 +497,19 @@ export default function CollectionsGraph({
                     ? 'Related synchronized collection'
                     : 'Synchronized collection'
                 }
+              />
+            )}
+            {/* Only listed while a student-curated node is on screen — the
+                row explains the marble-badge discs (same marker as the tile
+                tiles' scope cluster and the table's Scope cell). */}
+            {model.nodes.some((n) => n.collection?.student_curated === true) && (
+              <LegendRow
+                swatch={
+                  <Box sx={{ width: 12, height: 12, flexShrink: 0, display: 'inline-flex' }}>
+                    <StudentCollectionBadge size={12} />
+                  </Box>
+                }
+                label="Student collection"
               />
             )}
             {/* The dialog graph draws member-image spokes at every

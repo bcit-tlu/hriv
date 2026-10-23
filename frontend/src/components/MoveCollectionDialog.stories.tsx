@@ -43,6 +43,7 @@ const collection: CollectionSummary = {
   visibility: 'public',
   hidden: false,
   owners: [{ kind: 'program', programId: 1, name: 'Radiography' }],
+  studentCurated: false,
   imageCount: 9,
   coverThumb: null,
   coverImageId: null,

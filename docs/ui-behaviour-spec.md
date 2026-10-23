@@ -303,8 +303,12 @@ returned by the API (UX only — the backend re-checks).
   non-matching graph nodes), **Type** (single-select; `?type=` still seeds
   it), **Owner** (**My collections**, named owners for non-students from
   `GET /api/collections/owners`, _No owner (orphaned)_ for admins),
-  **Visibility** (multi-select Private/Public/Restricted, server-side
-  `visibility=`, also dims non-matching graph nodes) and **Category**
+  **Visibility** (multi-select
+  Private/Public/Restricted, server-side `visibility=`, also dims
+  non-matching graph nodes), **Scope** (multi-select
+  Student-curated/Instructor-admin-curated — server-side
+  `student_curated=` splits the scope-cluster badge rows from the rest;
+  also dims non-matching graph nodes) and **Category**
   (multi-select ancestor-aware, server-side `category_id=`). A **Clear all**
   action and deletable summary chips appear while any facet is active.
 - **Given** the Cards or Table view (#1631), **Then** the list is
@@ -323,11 +327,11 @@ returned by the API (UX only — the backend re-checks).
 - **Given** the Table view, **Then** the FilterBar shows **Choose columns**
   (table view only) opening the shared `ColumnVisibilityDialog`: 13 columns
   (Cover, ID, Name, Type, Scope, Description, Category, Images, Owner,
-  Programs, Groups, Created, Updated) with per-user persisted visibility and
-  order; default visible set is Cover, Name, Type, Category, Images, Owner,
-  Updated. Every column except Cover, Programs and Groups sorts
-  server-side (`sort=`/`direction=`); ID/Images/Created/Updated open
-  descending and ties break on id.
+  Programs, Groups, Created, Updated) with per-user persisted
+  visibility and order; default visible set is Cover, Name, Type, Category,
+  Images, Owner, Updated. Every column except Cover,
+  Programs and Groups sorts server-side (`sort=`/`direction=`);
+  ID/Images/Created/Updated open descending and ties break on id.
 - **Given** the Cards/Table/Graph toggle, **Then** the view choice is held in
   memory only — the page always loads on Cards (order and Shared-only still
   persist per user).
@@ -338,6 +342,10 @@ returned by the API (UX only — the backend re-checks).
   subtitle), a "Scroll or pinch to zoom, and drag to pan." hint sits
   right-aligned just below the canvas, node labels grow/shrink with zoom
   (12px floor), and the empty state and tooltip stay inside the canvas.
+  While any on-screen collection is student-curated, the legend also lists
+  "Student collection" with the marble-disc badge swatch — student-curated
+  nodes (including the dialog hub) render the badge artwork (paper disc,
+  `#5B7A8A` marbling and rim) in place of the type fill.
 - **Given** the Graph View dialog, **When** the user switches the order,
   **Then** the rebuilt model refits the view (animated); the page-level graph
   keeps its transform on model rebuilds.
@@ -390,13 +398,27 @@ returned by the API (UX only — the backend re-checks).
   **Owners** action appears in its card overlay, a pencil beside the detail
   header's owner name, and its manage-table row; **Given**
   it is false, **Then** none of the affordances render.
+- **Given** a collection created or co-owned by a student
+  (`student_curated` in the API payload), **Then** the marble-disc badge
+  (`#5B7A8A`, `StudentCollectionBadge`) rides its scope cluster wherever
+  scope chips render — right of the Public/Private pill on collection
+  tiles (or left of the top-most program/group chip when a restricted
+  collection's scope chips replace the pill), at the end of the table's
+  Scope cell, and right of the detail header's visibility pill (the pill
+  slot between the type chip and the owner line when a restricted
+  collection's scope chips suppress the pill) — so student-curated work
+  reads at a glance without naming the owner. `minimal` tiles (the My
+  Collections drawer) drop every metadata row, so they never render it.
 - **Given** any user opens the Collections tab's **Table** view, **Then** a
   table of every API-visible collection renders (cover, ID, name, type,
-  scope pill, description, category breadcrumb, image count, owner with a
-  "You" chip, programs, groups, visibility switch, created, updated,
-  actions) filtered by the shared filter bar, with sortable columns,
+  scope pill — the student-curated badge trails it on `student_curated`
+  rows — description, category breadcrumb, image count, owner with a
+  "You" chip, programs, groups, visibility switch,
+  created, updated, actions) filtered by the shared filter bar, with
+  sortable columns,
   per-user persisted column visibility and ordering via **Choose columns**
-  — default cover, name, type, category, images, owner, updated, plus
+  — default cover, name, type, category, images, owner,
+  updated, plus
   visibility for admins/instructors; students are never offered the
   visibility column — and pagination (#1554, #1567). Hidden and
   category-hidden rows dim; row click opens the collection; Edit and
@@ -1063,6 +1085,14 @@ committed on Save) in the edit modals.
 - The `Annotations` column is available in the column chooser but is off by
   default; it indicates whether an image has canvas edit annotations in
   `metadata_extra.canvas_annotations`.
+- The `Collections` column is available in the column chooser but is off by
+  default (and only offered while `COLLECTIONS_ENABLED` is on); it lists the
+  caller-visible collections each image belongs to as clickable chips —
+  clicking one selects it in the `Collection` filter — sourced from
+  `GET /api/images/collections-map`, fetched lazily only while the column is
+  visible. Like the other faceted columns its `Collection` filter control
+  only shows in the **Filter by** bar while the column is visible, and hiding
+  the column clears the selection.
 - Text filters accept comma-separated terms, render one chip per term, and
   match only when every term is present.
 - The `Category` filter is a collapsible checkbox tree. Checking a parent

@@ -1,6 +1,11 @@
 import { alpha } from '@mui/material/styles'
 import { quadtree, type Quadtree } from 'd3-quadtree'
 import type { ZoomTransform } from 'd3-zoom'
+import {
+  STUDENT_BADGE_STROKE,
+  STUDENT_CURATED_COLOR,
+  studentBadgePath2D,
+} from '../studentCollectionBadge'
 import type { GraphEdge, GraphModel, GraphNode } from './types'
 
 /**
@@ -390,6 +395,51 @@ export class GraphRenderer {
       }
     }
 
+    // ---- student-curated overlay: the tile/table badge fills the node —
+    // paper disc, clipped slate marbling, slate rim. Replaces the type
+    // fill so student work reads at a glance; the type chip still names
+    // sequence-vs-synchronized in the tooltip. Runs after the hub pass so
+    // a student-curated dialog hub (which carries `collection`) gets the
+    // badge too. `null` where Path2D is unavailable (jsdom). ----
+    const badgePath = studentBadgePath2D()
+    if (badgePath != null) {
+      const rimLw = 1.5 / Math.sqrt(k)
+      for (const n of model.nodes) {
+        if (n.collection?.student_curated !== true || hid(n)) continue
+        if (!inV(n.x, n.y, n.r)) continue
+        const rr = n.r / Math.sqrt(k)
+        const dimmed = dim(n)
+        ctx.save()
+        ctx.globalAlpha = dimmed ? 0.15 : 1
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, rr, 0, 7)
+        ctx.fillStyle = palette.categoryFill
+        ctx.fill()
+        ctx.clip()
+        // Map the 512-unit artwork onto the node disc.
+        ctx.translate(n.x, n.y)
+        ctx.scale(rr / 256, rr / 256)
+        ctx.translate(-256, -256)
+        ctx.strokeStyle = STUDENT_CURATED_COLOR
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        // Shared with the DOM badge — heavier than the artwork's authored
+        // 10, which sub-pixelates into invisibility at node radii.
+        ctx.lineWidth = STUDENT_BADGE_STROKE
+        ctx.stroke(badgePath)
+        ctx.restore()
+        // Inset rim ring — same footprint convention as the shared-image
+        // ring, so a student collection is no bigger than a plain one.
+        ctx.beginPath()
+        ctx.arc(n.x, n.y, Math.max(0.5 / Math.sqrt(k), rr - rimLw / 2), 0, 7)
+        ctx.strokeStyle = STUDENT_CURATED_COLOR
+        ctx.lineWidth = rimLw
+        ctx.globalAlpha = dimmed ? 0.3 : 1
+        ctx.stroke()
+        ctx.globalAlpha = 1
+      }
+    }
+
     // ---- labels in screen space: ∝ √k (12–26px), overlap-skip, cap ----
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const drawn: { x: number; y: number; w: number; h: number }[] = []
@@ -479,7 +529,9 @@ export class GraphRenderer {
       ctx.font = `500 ${hfs}px Roboto,Arial`
       if (ctx.measureText(hub.label).width <= 2 * sr - 6) {
         ctx.textAlign = 'center'
-        ctx.fillStyle = palette.hubLabel
+        // A student-curated hub (the collection dialog) draws the paper
+        // badge, not the hub fill — the contrast-white label would vanish.
+        ctx.fillStyle = hub.collection?.student_curated ? palette.label : palette.hubLabel
         ctx.fillText(hub.label, sx, sy + hfs / 3)
         ctx.textAlign = 'left'
       } else {

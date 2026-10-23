@@ -78,6 +78,91 @@ describe('CollectionCard', () => {
     expect(screen.queryByRole('img', { name: 'Skull comparison' })).not.toBeInTheDocument()
   })
 
+  it('badges student-curated collections right of the visibility chip', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          visibility: 'public',
+          studentCurated: true,
+          owners: [{ kind: 'user', userId: 9, name: 'Sam Student', role: 'student' }],
+        })}
+        onOpen={vi.fn()}
+      />,
+    )
+    // Same marker the table Scope cell and the graph legend carry — it
+    // trails the scope cluster, and still never prints owner names (#1567).
+    const badge = screen.getByTestId('student-curated-badge')
+    const pill = screen.getByTestId('collection-visibility-chip')
+    expect(badge.compareDocumentPosition(pill)).toBe(Node.DOCUMENT_POSITION_PRECEDING)
+    expect(screen.queryByText(/Sam Student/)).not.toBeInTheDocument()
+  })
+
+  it('leads the program chips with the badge on a restricted student tile', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          visibility: 'restricted',
+          programIds: [1],
+          studentCurated: true,
+        })}
+        onOpen={vi.fn()}
+        programs={[{ id: 1, name: 'Radiography' }]}
+      />,
+    )
+    // The scope pill suppresses itself once chips carry the restriction,
+    // so the badge leads the program chips instead.
+    expect(screen.queryByTestId('collection-visibility-chip')).not.toBeInTheDocument()
+    const badge = screen.getByTestId('student-curated-badge')
+    const chip = screen.getByTestId('program-chip')
+    expect(badge.compareDocumentPosition(chip)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('leads the group chips when a restricted tile has no program chips', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({
+          visibility: 'restricted',
+          groupIds: [5],
+          studentCurated: true,
+        })}
+        onOpen={vi.fn()}
+        groups={[{ id: 5, name: 'Cohort A' }]}
+      />,
+    )
+    const badge = screen.getByTestId('student-curated-badge')
+    const chip = screen.getByTestId('group-chip')
+    expect(badge.compareDocumentPosition(chip)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('omits the student badge on instructor/admin-curated tiles', () => {
+    render(<CollectionCard collection={makeCollectionSummary()} onOpen={vi.fn()} />)
+    expect(screen.queryByTestId('student-curated-badge')).not.toBeInTheDocument()
+  })
+
+  it('omits the student badge on the minimal drawer tile', () => {
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({ studentCurated: true })}
+        onOpen={vi.fn()}
+        density="minimal"
+      />,
+    )
+    expect(screen.queryByTestId('student-curated-badge')).not.toBeInTheDocument()
+  })
+
+  it('opens the collection even when the badge itself is clicked', () => {
+    // The badge sits inside the action area — it is not a dead zone.
+    const onOpen = vi.fn()
+    render(
+      <CollectionCard
+        collection={makeCollectionSummary({ visibility: 'public', studentCurated: true })}
+        onOpen={onOpen}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('student-curated-badge'))
+    expect(onOpen).toHaveBeenCalled()
+  })
+
   it('opens the collection when the card body is clicked', () => {
     const onOpen = vi.fn()
     const collection = makeCollectionSummary()

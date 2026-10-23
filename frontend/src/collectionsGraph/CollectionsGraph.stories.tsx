@@ -16,6 +16,7 @@ const collections = [
     type: 'sequence' as const,
     image_count: 4,
     hidden: false,
+    student_curated: false,
     category_id: 10,
   },
   {
@@ -24,6 +25,7 @@ const collections = [
     type: 'synchronized' as const,
     image_count: 3,
     hidden: false,
+    student_curated: false,
     category_id: 10,
   },
   {
@@ -32,6 +34,9 @@ const collections = [
     type: 'sequence' as const,
     image_count: 2,
     hidden: false,
+    // Student-curated: the node draws the marble badge and the legend
+    // lists the "Student collection" row.
+    student_curated: true,
     category_id: null,
   },
 ]

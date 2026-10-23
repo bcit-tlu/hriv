@@ -76,6 +76,7 @@ from ..collection_views import (
     collection_out,
     collection_summary_out,
     get_visible_collection_or_404,
+    is_student_curated,
     owner_label,
 )
 from ..database import get_db, settings
@@ -319,6 +320,7 @@ async def list_collections(
     q: str | None = None,
     visibility: Annotated[list[str] | None, Query()] = None,
     category_id: Annotated[list[int] | None, Query()] = None,
+    student_curated: bool | None = None,
     sort: str = "updated_at",
     direction: str | None = None,
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
@@ -345,6 +347,9 @@ async def list_collections(
       restricted (**422** otherwise).
     * ``category_id`` — repeatable, ancestor-aware: matches collections
       filed in a listed category or any descendant; unfiled never matches.
+    * ``student_curated`` — ``true`` keeps only collections whose creator
+      or a co-owner is a student (the marker the UI badges); ``false``
+      keeps the rest.
     * ``sort`` — one of ``id``, ``name``, ``type``, ``visibility``,
       ``description``, ``category`` (``›``-joined label path, unfiled sorts
       as "Unfiled"), ``image_count`` (caller-visible members), ``owner``,
@@ -423,6 +428,7 @@ async def list_collections(
             (q or "").strip().casefold(),
             ",".join(sorted(visibility or [])),
             ",".join(str(i) for i in sorted(category_id or [])),
+            str(student_curated),
             str(sort),
             str(direction),
             str(limit),
@@ -483,6 +489,8 @@ async def list_collections(
     if visibility:
         wanted = set(visibility)
         visible = [c for c in visible if c.visibility in wanted]
+    if student_curated is not None:
+        visible = [c for c in visible if is_student_curated(c) == student_curated]
 
     cat_by_id: dict[int, Category] = {}
     if category_id or sort in ("category", "hidden"):
@@ -559,6 +567,7 @@ def _graph_node(ctx: _ViewerContext, collection: Collection) -> CollectionGraphN
         type=collection.type,
         image_count=len(ctx.visible_images(collection)),
         hidden=bool(collection.hidden),
+        student_curated=is_student_curated(collection),
         category_id=collection.category_id,
     )
 

@@ -64,7 +64,8 @@ function makeRow(overrides: Partial<CollectionSummary> = {}): CollectionSummary 
     type: 'synchronized',
     visibility: 'private',
     hidden: false,
-    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace' }],
+    owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' }],
+    studentCurated: false,
     imageCount: 2,
     coverThumb: '/hriv-splash2.jpg',
     coverImageId: null,
@@ -95,7 +96,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: server-sorted, server-paged rows (#1631 — sorting/paging state is controlled by the page\'s data hook) with cover, name, type chip, category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
+          'The Collections page Table view (#1629) — the single collections table since Manage → Collections merged into it: server-sorted, server-paged rows (#1631 — sorting/paging state is controlled by the page\'s data hook) with cover, name, type chip, scope pill (the student-curated badge trails it on student-curated rows), category breadcrumb links, image count, owner (with a "You" chip), relative Updated, and an opt-in Visibility switch. Hidden and category-hidden rows dim; row click opens the collection, Edit / Manage owners sit in the row menu, and curators get a bulk-edit selection column.',
       },
     },
   },
@@ -166,7 +167,13 @@ export const Basic: Story = {
         type: 'sequence',
         categoryId: 1,
         imageCount: 6,
-        owners: [{ kind: 'program', programId: 3, name: 'Radiography' }],
+        // Student co-owner beside the program owner → the badge trails
+        // the Scope cell.
+        studentCurated: true,
+        owners: [
+          { kind: 'program', programId: 3, name: 'Radiography' },
+          { kind: 'user', userId: 9, name: 'Sam Student', role: 'student' },
+        ],
         updatedAt: '2026-08-20T09:00:00Z',
       }),
       makeRow({

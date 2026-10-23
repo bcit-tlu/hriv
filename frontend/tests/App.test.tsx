@@ -675,6 +675,7 @@ const collectionsDataMocks = vi.hoisted(() => ({
     q: '',
     visibility: [] as string[],
     categoryIds: [] as number[],
+    scope: [] as string[],
   },
   setFilters: vi.fn(),
   useRealHook: false,

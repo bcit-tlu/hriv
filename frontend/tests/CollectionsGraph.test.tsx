@@ -30,8 +30,24 @@ class FakeResizeObserver {
 const PAYLOAD: ApiCollectionsGraph = {
   order: 1,
   collections: [
-    { id: 1, name: 'A', type: 'sequence', image_count: 4, hidden: false, category_id: null },
-    { id: 2, name: 'B', type: 'synchronized', image_count: 2, hidden: false, category_id: null },
+    {
+      id: 1,
+      name: 'A',
+      type: 'sequence',
+      image_count: 4,
+      hidden: false,
+      student_curated: false,
+      category_id: null,
+    },
+    {
+      id: 2,
+      name: 'B',
+      type: 'synchronized',
+      image_count: 2,
+      hidden: false,
+      student_curated: false,
+      category_id: null,
+    },
   ],
   images: [],
   categories: [],
@@ -152,6 +168,29 @@ describe('CollectionsGraph', () => {
     expect(screen.getByText('Image')).toBeInTheDocument()
     expect(screen.getByText('Shared image (in 2+ collections)')).toBeInTheDocument()
     expect(screen.getByText('Category')).toBeInTheDocument()
+  })
+
+  it('lists a Student collection legend row only while a student-curated node is on screen', () => {
+    renderGraph()
+    expect(screen.queryByText('Student collection')).toBeNull()
+
+    const studentPayload: ApiCollectionsGraph = {
+      ...PAYLOAD,
+      collections: [{ ...PAYLOAD.collections[0], student_curated: true }, PAYLOAD.collections[1]],
+    }
+    render(
+      <CollectionsGraph
+        model={buildGraphModel(studentPayload, new Set([1, 2]), false)}
+        onOpenCollection={vi.fn()}
+        onOpenImage={vi.fn()}
+        simulate={false}
+      />,
+    )
+    expect(screen.getByText('Student collection')).toBeInTheDocument()
+    // The swatch is the same badge the tile corner and table Role cell carry.
+    expect(
+      screen.getAllByRole('img', { name: 'Student-curated collection' }).length,
+    ).toBeGreaterThan(0)
   })
 
   it('refits on rebuild when fitOnRebuild is set (the dialog graph)', async () => {

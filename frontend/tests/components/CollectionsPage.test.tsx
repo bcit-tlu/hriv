@@ -676,6 +676,35 @@ describe('CollectionsPage', () => {
       expect(await screen.findByText('Visibility: Public')).toBeInTheDocument()
     })
 
+    it('the Scope facet splits student-curated rows from the rest', async () => {
+      const user = userEvent.setup()
+      const onFiltersChange = vi.fn()
+      const { rerender } = renderPage({
+        onFiltersChange,
+        collections: [
+          makeCollectionSummary({ id: 1, name: 'Student pub', studentCurated: true }),
+          makeCollectionSummary({ id: 2, name: 'Faculty pub' }),
+        ],
+      })
+      await user.click(screen.getByRole('button', { name: 'Scope' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Student-curated' }))
+      // Server-side facet: the page forwards it; rows come back filtered.
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        ...DEFAULT_COLLECTION_FILTERS,
+        scope: ['student'],
+      })
+      rerender(
+        <AuthContext.Provider value={makeAuth(ADMIN)}>
+          <CollectionsPage
+            {...makeProps({
+              filters: { ...DEFAULT_COLLECTION_FILTERS, scope: ['student'] },
+            })}
+          />
+        </AuthContext.Provider>,
+      )
+      expect(await screen.findByText('Scope: Student-curated')).toBeInTheDocument()
+    })
+
     it('shows "No matching collections" when the server returns an empty page', async () => {
       const user = userEvent.setup()
       const onFiltersChange = vi.fn()
@@ -1423,6 +1452,63 @@ describe('CollectionsPage', () => {
       // The owners affordance is the transfer-horizontal glyph, not a pencil.
       const ownersBtn = screen.getByRole('button', { name: 'Manage owners' })
       expect(within(ownersBtn).getByTestId('SwapHorizIcon')).toBeInTheDocument()
+    })
+
+    it('marks the detail header with the student-curated badge', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          studentCurated: true,
+          owners: [
+            { kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'instructor' },
+            { kind: 'user', userId: 8, name: 'Sam Student', role: 'student' },
+          ],
+        }),
+      })
+      // The badge trails the scope cluster — right of the visibility pill.
+      const pill = screen.getByTestId('collection-visibility-chip')
+      const badge = screen.getByLabelText('Student-curated collection')
+      expect(badge.compareDocumentPosition(pill)).toBe(Node.DOCUMENT_POSITION_PRECEDING)
+    })
+
+    it('seats the badge between the type chip and the owner line on a restricted detail', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        programs: [{ id: 1, name: 'Radiography' }],
+        detail: makeCollection({
+          id: 9,
+          visibility: 'restricted',
+          programIds: [1],
+          studentCurated: true,
+        }),
+      })
+      // The pill suppresses itself on a scoped restricted collection, so
+      // the badge drops into the pill slot — after the type chip, before
+      // the "Managed by" line (never beside the breadcrumb scope chips).
+      // The badge wrapper must also be the type chip's direct sibling: an
+      // empty pill wrapper would still count as a flex item and double
+      // the row gap.
+      expect(screen.queryByTestId('collection-visibility-chip')).not.toBeInTheDocument()
+      const badge = screen.getByLabelText('Student-curated collection')
+      const typeChip = screen.getByTestId('collection-type-chip')
+      expect(typeChip.compareDocumentPosition(badge)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(typeChip.nextElementSibling).toContainElement(badge)
+      const ownerLine = screen.getByText(/Managed by/)
+      expect(badge.compareDocumentPosition(ownerLine)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    })
+
+    it('omits the scope-cluster badge for staff-curated collections', () => {
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({
+          id: 9,
+          studentCurated: false,
+          owners: [{ kind: 'user', userId: 7, name: 'Ada Lovelace', role: 'staff' }],
+        }),
+      })
+      expect(screen.getByText(/Managed by Ada Lovelace/)).toBeInTheDocument()
+      expect(screen.queryByLabelText('Student-curated collection')).not.toBeInTheDocument()
     })
 
     it('shows program and group restriction chips on a restricted detail', () => {

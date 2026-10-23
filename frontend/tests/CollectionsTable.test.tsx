@@ -223,6 +223,45 @@ describe('CollectionsTable', () => {
     expect(screen.getByText('Created')).toBeInTheDocument()
   })
 
+  it('trails the Scope pill with the student-curated badge', () => {
+    const { container } = render(
+      <CollectionsTable
+        collections={[
+          row({
+            id: 1,
+            name: 'Student set',
+            studentCurated: true,
+            visibility: 'public',
+            owners: [{ kind: 'user', userId: 9, name: 'Sam', role: 'student' }],
+          }),
+          row({
+            id: 2,
+            name: 'Faculty set',
+            visibility: 'public',
+            owners: [{ kind: 'user', userId: 7, name: 'Ada', role: 'instructor' }],
+          }),
+        ]}
+        categoryPaths={buildCategoryPaths([])}
+        currentUser={USER}
+        onOpenCollection={vi.fn()}
+        {...defaultPaging}
+        columns={['name', 'scope']}
+      />,
+    )
+    const student = screen.getByTestId('collections-table-row-1')
+    const badge = within(student).getByTestId('student-curated-badge')
+    // The badge renders inside the Scope cell, right of the visibility pill.
+    const cell = badge.closest('td')!
+    const pill = within(cell).getByTestId('collection-visibility-chip')
+    expect(badge.compareDocumentPosition(pill)).toBe(Node.DOCUMENT_POSITION_PRECEDING)
+
+    const faculty = screen.getByTestId('collections-table-row-2')
+    expect(within(faculty).getByTestId('collection-visibility-chip')).toBeInTheDocument()
+    expect(within(faculty).queryByTestId('student-curated-badge')).toBeNull()
+    // No Role column survives — 'role' is no longer a column key.
+    expect(container.querySelectorAll('th')).toHaveLength(2)
+  })
+
   it('requests ID descending on first click (#1631)', () => {
     const onSortChange = vi.fn()
     render(

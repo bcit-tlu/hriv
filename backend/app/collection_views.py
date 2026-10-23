@@ -116,7 +116,7 @@ def _owners_out(collection: Collection) -> list[CollectionOwnerOut]:
     owning program's entry when set. Empty means orphaned (#1531).
     """
     owners = [
-        CollectionOwnerOut(user_id=o.id, name=o.name)
+        CollectionOwnerOut(user_id=o.id, name=o.name, role=o.role)
         for o in sorted(
             collection.owners, key=lambda u: (u.name.casefold(), u.id)
         )
@@ -129,6 +129,20 @@ def _owners_out(collection: Collection) -> list[CollectionOwnerOut]:
             )
         )
     return owners
+
+
+def is_student_curated(collection: Collection) -> bool:
+    """True when a student created or co-owns the collection.
+
+    Checks both the creator audit column (``user_id`` survives ownership
+    changes — a removed creator still counts) and the ``collection_owners``
+    set. Staff are deliberately excluded: the marker distinguishes student
+    work from instructor/admin curation.
+    """
+    creator = collection.creator
+    if creator is not None and creator.role == "student":
+        return True
+    return any(o.role == "student" for o in collection.owners)
 
 
 def owner_label(collection: Collection) -> str:
@@ -185,6 +199,7 @@ def _summary_fields(
         "visibility": collection.visibility,
         "hidden": collection.hidden,
         "owners": _owners_out(collection),
+        "student_curated": is_student_curated(collection),
         "image_count": len(images),
         "cover_thumb": cover.thumb if cover is not None else None,
         "cover_image_id": (
