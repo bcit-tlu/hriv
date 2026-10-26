@@ -377,6 +377,8 @@ jobs:
     with:
       component: frontend
       image_name: hriv-frontend
+      # flux-fleet-v2 PR previews pull sha-<head> images (bcit-tlu/.github#27).
+      push_pr_images: true
       context: ./frontend
       target: stable
       build_contexts: 'nginx-config=./charts/frontend/files'
@@ -399,6 +401,8 @@ jobs:
     with:
       component: backend
       image_name: hriv-backend
+      # flux-fleet-v2 PR previews pull sha-<head> images (bcit-tlu/.github#27).
+      push_pr_images: true
       context: ./backend
       target: stable
       extra_watch_paths: .trivyignore
