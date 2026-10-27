@@ -1,0 +1,22 @@
+# Delete this PR's preview images (pr-<n>, sha-<head>) from GHCR when it
+# closes — bcit-tlu/.github pr-image-cleanup.
+name: PR image cleanup
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    uses: bcit-tlu/.github/.github/workflows/pr-image-cleanup.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: read
+    with:
+      image_names: |
+        hriv-frontend
+        hriv-backend
