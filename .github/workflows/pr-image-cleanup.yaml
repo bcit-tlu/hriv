@@ -2,6 +2,9 @@
 # closes — bcit-tlu/.github pr-image-cleanup.
 name: PR image cleanup
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     types: [closed]
