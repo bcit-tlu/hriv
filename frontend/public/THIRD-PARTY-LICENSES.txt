@@ -328,7 +328,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-@dnd-kit/abstract@0.5.0
+@dnd-kit/abstract@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -356,7 +356,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/collision@0.5.0
+@dnd-kit/collision@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -384,7 +384,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/dom@0.5.0
+@dnd-kit/dom@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -412,7 +412,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/geometry@0.5.0
+@dnd-kit/geometry@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -440,7 +440,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/helpers@0.5.0
+@dnd-kit/helpers@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -468,7 +468,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/react@0.5.0
+@dnd-kit/react@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -496,7 +496,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/state@0.5.0
+@dnd-kit/state@0.5.1
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -6037,7 +6037,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-react@19.3.0
+react@19.3.1
 License: MIT
 Repository: https://github.com/react/react.git
 ================================================================================
@@ -6065,7 +6065,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-react-dom@19.3.0
+react-dom@19.3.1
 License: MIT
 Repository: https://github.com/react/react.git
 ================================================================================
