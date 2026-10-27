@@ -91,7 +91,7 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 14. **Assert:** The user table lists all accounts, but there is no `Add Person`
     button, no row `Delete` buttons, no selection checkboxes, and no bulk
     action bar — the table is read-only. Clicking a row does not open an
-    edit dialog.
+    edit dialog. The staff account's own row still shows the "You" chip.
 15. **Assert:** Hidden categories and inactive images are visible to staff
     while browsing (staff are not subject to the student visibility filter).
 16. Click Logout.
@@ -321,6 +321,7 @@ pinned image is not otherwise visible, without granting tile access.
 
 1. Login as `admin@example.ca` / `password` (admin).
 2. Click the People tab in the AppBar to open user management.
+   **Assert:** the admin's own row shows a "You" chip after the name, and no other row does (#1651).
 3. Click "Add User" — fill in name, email, role, and password.
 4. **Assert:** New user appears in the user list.
 5. Hard-refresh browser, reopen user management.
