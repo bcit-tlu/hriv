@@ -1334,6 +1334,48 @@ describe('PeoplePage', () => {
     })
   })
 
+  describe('"You" chip (#1651)', () => {
+    it('marks only the signed-in user’s row', async () => {
+      render(<PeoplePage programs={programs} groups={groups} currentUserId={2} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Student')).toBeInTheDocument()
+      })
+      const chips = screen.getAllByTestId('people-you-chip')
+      expect(chips).toHaveLength(1)
+      expect(screen.getByText('Test Student').closest('tr')).toContainElement(chips[0])
+      expect(chips[0]).toHaveTextContent('You')
+    })
+
+    it('renders no chip without a current user', async () => {
+      render(<PeoplePage programs={programs} groups={groups} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('people-you-chip')).not.toBeInTheDocument()
+    })
+
+    it('renders no chip when the current user is not in the list', async () => {
+      render(<PeoplePage programs={programs} groups={groups} currentUserId={99} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('people-you-chip')).not.toBeInTheDocument()
+    })
+
+    it('shows the chip in readOnly mode too', async () => {
+      render(<PeoplePage programs={programs} groups={groups} readOnly currentUserId={1} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Admin User')).toBeInTheDocument()
+      })
+      const chip = screen.getByTestId('people-you-chip')
+      expect(screen.getByText('Admin User').closest('tr')).toContainElement(chip)
+    })
+  })
+
   describe('readOnly mode (staff)', () => {
     it('renders the user table read-only for staff', async () => {
       render(<PeoplePage programs={programs} groups={groups} readOnly />)

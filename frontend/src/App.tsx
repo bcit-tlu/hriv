@@ -2524,6 +2524,7 @@ export default function App() {
               groups={groups}
               initialEditUserId={editUserId}
               onEditUserHandled={clearEditUserId}
+              currentUserId={currentUser?.id}
             />
           ) : page === 'manage' && canEditContent ? (
             <ManagePage

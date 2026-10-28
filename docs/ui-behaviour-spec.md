@@ -1066,6 +1066,9 @@ committed on Save) in the edit modals.
   match only when every term is present.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
+- The signed-in user's row shows a small **You** chip after their name, matching
+  the owner chip in the Collections table (#1651). It is display-only, appears in
+  the read-only staff view too, and is not shown when the Name column is hidden.
 
 ### Profile popover memberships (`AppShell.tsx`)
 

@@ -155,6 +155,8 @@ interface PeoplePageProps {
   readOnly?: boolean
   initialEditUserId?: number | null
   onEditUserHandled?: () => void
+  /** Signed-in user's id; their row's Name cell gets a "You" chip (#1651). */
+  currentUserId?: number | null
 }
 
 export default function PeoplePage({
@@ -163,6 +165,7 @@ export default function PeoplePage({
   readOnly = false,
   initialEditUserId,
   onEditUserHandled,
+  currentUserId,
 }: PeoplePageProps) {
   const [users, setUsers] = useState<ApiUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -1168,7 +1171,19 @@ export default function PeoplePage({
                 // rendered below in the user's persisted column order.
                 const bodyCells: Record<PeopleTableColumn, ReactNode> = {
                   id: <TableCell>{user.id}</TableCell>,
-                  name: <TableCell>{user.name}</TableCell>,
+                  name: (
+                    <TableCell>
+                      <Box
+                        component="span"
+                        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+                      >
+                        {user.name}
+                        {currentUserId != null && user.id === currentUserId && (
+                          <Chip size="small" label="You" data-testid="people-you-chip" />
+                        )}
+                      </Box>
+                    </TableCell>
+                  ),
                   email: <TableCell>{user.email}</TableCell>,
                   role: <TableCell>{user.role}</TableCell>,
                   active: (
