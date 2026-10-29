@@ -120,7 +120,11 @@ replacement, invent a row, run migrations, or weaken the source-selection contra
 A validation cannot report success while temporary **child** resources still exist. On the
 success path, the controller persists cleanup intent, removes every bound child resource, and then
 confirms child absence by name/UID and ownership queries before persisting `SUCCEEDED` and updating
-last complete success. It then clears `holderIdentity` by Lease CAS and exits. Its own Job and Pod
+last complete success. A child that is already absent during a cleanup pass — including one whose
+deletion completes between the pass's existence check and its delete request — is counted as
+removed, never as an ownership conflict; UID, ownership-label, or template-identity mismatches on a
+still-present object still fail closed, and deletion always carries UID preconditions. It then
+clears `holderIdentity` by Lease CAS and exits. Its own Job and Pod
 are lifecycle evidence, not children; they remain through completion and are excluded from the
 success absence gate.
 

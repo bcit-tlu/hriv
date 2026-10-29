@@ -6,7 +6,7 @@ from typing import Any, Callable
 from kubernetes import client, config
 from kubernetes.client import ApiException
 
-from .gateway import Conflict, Lease, Observation, adopted_ref
+from .gateway import Conflict, Lease, Observation, adopted_ref, ownership_conflict
 from .models import ResourceRef
 from .strict import ValidationError, parse_json
 
@@ -107,7 +107,7 @@ class KubernetesGateway:
             try:
                 existing = self._read(api, kind, manifest["metadata"]["name"])
             except ApiException as read_exc:
-                raise ValidationError("OWNERSHIP_CONFLICT") from read_exc
+                raise ownership_conflict(f"{api} {kind} {manifest['metadata']['name']} unreadable after create conflict") from read_exc
             serialized = _serialized_identity(existing)
             return adopted_ref(manifest, serialized)
         return adopted_ref(manifest, _serialized_identity(obj))
@@ -231,7 +231,7 @@ class KubernetesGateway:
             return
         metadata = actual["metadata"]
         if str(metadata.get("uid")) != ref.uid or metadata.get("labels", {}).get("app.kubernetes.io/managed-by") != "hriv-restore-validation":
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{ref.api_version} {ref.kind} {ref.name} uid={ref.uid} actual_uid={metadata.get('uid')} mismatch at delete")
         body = client.V1DeleteOptions(preconditions=client.V1Preconditions(uid=ref.uid), propagation_policy="Foreground")
         try:
             self._delete(ref.api_version, ref.kind, ref.name, body)
@@ -348,7 +348,7 @@ def _validate_lease_identity(holder: str | None, acquired: datetime | None, rene
 def _serialized_identity(obj: Any) -> dict[str, Any]:
     serialized = client.ApiClient().sanitize_for_serialization(obj)
     if not isinstance(serialized, dict):
-        raise ValidationError("OWNERSHIP_CONFLICT")
+        raise ownership_conflict("API object serialization produced no document")
     if not isinstance(obj, dict):
         serialized["apiVersion"] = getattr(obj, "api_version", None)
         serialized["kind"] = getattr(obj, "kind", None)

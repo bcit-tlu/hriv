@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from .gateway import Gateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, template_identity
+from .gateway import Gateway, Lease, TEMPLATE_IDENTITY_ANNOTATION, ownership_conflict, template_identity
 from .models import Config, ResourceRef, SourcePolicy, SourceProfile, Templates, Trigger, _quantity_bytes, canonical_source_state
 from .state import StateStore, merge_history, utc
 from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string, canonical_json, exact_object, integer, parse_json
@@ -203,7 +203,7 @@ class Controller:
                     actual = self.gateway.get_child(ref)
                     if actual is not None:
                         role = self._role_for_ref({"run_id": run_id, "child_resources": retained["child_resources"]}, ref, actual)
-                        self._verify_ref(ref, run_id, role)
+                        self._verify_fields(ref, run_id, role, actual)
                 acquired = now
             try:
                 self.gateway.replace_lease(self.config.lease_name, Lease(lease.resource_version, holder_identity(job_uid, run_id, acquired, now), acquired, now, self.config.lease_seconds))
@@ -222,10 +222,7 @@ class Controller:
             if actual is None:
                 continue
             role = self._role_for_ref({"run_id": run_id, "child_resources": retained["child_resources"]}, ref, actual)
-            self._verify_ref(ref, run_id, role)
-            annotation = actual.get("metadata", {}).get("annotations", {}).get(TEMPLATE_IDENTITY_ANNOTATION)
-            if ref.template_sha256 is not None and annotation != ref.template_sha256:
-                raise ValidationError("OWNERSHIP_CONFLICT")
+            self._verify_fields(ref, run_id, role, actual)
             tracked_actual.append((ref, actual))
         for descendant in observed:
             identity = (descendant.api_version, descendant.kind, descendant.name, descendant.uid)
@@ -556,7 +553,7 @@ class Controller:
     def _owned_observation(self, run_id: str, role: str, healthy: set[str]) -> bool:
         ref = self._find_ref(self.store.read()[0]["latest_run"], child_name(run_id, role))
         if not ref:
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{child_name(run_id, role)} role={role} not in child_resources")
         self._verify_ref(ref, run_id, role)
         observation = self.gateway.observe_child(ref)
         if observation.phase in {"Failed", "Error"}:
@@ -566,13 +563,17 @@ class Controller:
     def _verify_ref(self, ref: ResourceRef, run_id: str, role: str) -> None:
         actual = self.gateway.get_child(ref)
         if actual is None:
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{ref.api_version} {ref.kind} {ref.name} uid={ref.uid} role={role} absent")
+        self._verify_fields(ref, run_id, role, actual)
+
+    @staticmethod
+    def _verify_fields(ref: ResourceRef, run_id: str, role: str, actual: dict[str, Any]) -> None:
         metadata = actual.get("metadata", {})
         labels = metadata.get("labels", {})
         expected = {"app.kubernetes.io/managed-by": MANAGED_BY, RUN_LABEL: run_id, ROLE_LABEL: role}
         annotation = metadata.get("annotations", {}).get(TEMPLATE_IDENTITY_ANNOTATION)
         if str(metadata.get("uid")) != ref.uid or any(labels.get(key) != value for key, value in expected.items()) or (ref.template_sha256 is not None and annotation != ref.template_sha256):
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{ref.api_version} {ref.kind} {ref.name} uid={ref.uid} role={role} identity mismatch")
 
     @staticmethod
     def _excluded_artifacts(value: Any) -> list[dict[str, str]]:
@@ -781,7 +782,11 @@ class Controller:
             actual = self.gateway.get_child(ref)
             if actual is None:
                 continue
-            self._verify_ref(ref, run_id, self._role_for_ref(run, ref, actual))
+            # Verify the fetched object itself rather than re-reading: a child
+            # that disappears mid-pass is already-removed progress, not an
+            # ownership conflict. Identity mismatches on the read object still
+            # fail closed, and delete_child re-checks UID under preconditions.
+            self._verify_fields(ref, run_id, self._role_for_ref(run, ref, actual), actual)
             if not actual.get("metadata", {}).get("deletionTimestamp"):
                 self.gateway.delete_child(ref)
         remaining = [ref for ref in refs if self.gateway.get_child(ref) is not None]
@@ -932,7 +937,11 @@ class Controller:
             if ref.kind not in {"Job", "PersistentVolumeClaim", "Pod", "Service", "Cluster"}:
                 return False
             actual = self.gateway.get_child(ref)
-            metadata = (actual or {}).get("metadata", {})
+            if actual is None:
+                # The object disappeared between the label-list and this read;
+                # a deleted child needs no binding and is not unbound evidence.
+                continue
+            metadata = actual.get("metadata", {})
             labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
             owners = metadata.get("ownerReferences", []) if isinstance(metadata, dict) else []
             if not isinstance(labels, dict) or not isinstance(owners, list):
@@ -1037,7 +1046,7 @@ class Controller:
         except ValidationError:
             if item["kind"] in {"Pod", "Service"}:
                 return None
-            raise
+            raise ownership_conflict(f"{item['apiVersion']} {item['kind']} {item['name']} uid={item['uid']} recorded name has no role")
 
     @classmethod
     def _role_for_ref(cls, run: dict[str, Any], ref: ResourceRef, actual: dict[str, Any]) -> str:
@@ -1045,16 +1054,17 @@ class Controller:
             return cls._role_for_name(run["run_id"], ref.name)
         except ValidationError:
             pass
+        identity = f"{ref.api_version} {ref.kind} {ref.name} uid={ref.uid}"
         if ref.kind not in {"Pod", "Service"}:
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{identity} kind cannot bind by owner chain")
         owners = actual.get("metadata", {}).get("ownerReferences", [])
         if len(owners) != 1 or owners[0].get("kind") not in {"Job", "Cluster"} or owners[0].get("controller") is not True:
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{identity} owner chain invalid owners={len(owners)}")
         owner_uid = str(owners[0].get("uid"))
         for item in run["child_resources"]:
             if item["kind"] in {"Job", "Cluster"} and item["uid"] == owner_uid:
                 return cls._role_for_name(run["run_id"], item["name"])
-        raise ValidationError("OWNERSHIP_CONFLICT")
+        raise ownership_conflict(f"{identity} owner uid={owner_uid} not tracked")
 
     @staticmethod
     def _find_ref(run: dict[str, Any], name: str) -> ResourceRef | None:
