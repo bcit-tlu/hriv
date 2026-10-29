@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.15...restore-validation-v0.1.16) (2026-10-29)
+
+
+### Bug Fixes
+
+* **restore-validation:** count children vanished mid-cleanup as removed ([#1707](https://github.com/bcit-tlu/hriv/issues/1707)) ([82f7c13](https://github.com/bcit-tlu/hriv/commit/82f7c132a72e67f9cb7b992271f5e4bfeb9cbd18))
+
 ## [0.1.15](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.14...restore-validation-v0.1.15) (2026-09-28)
 
 
