@@ -1,0 +1,44 @@
+import { Canvas, Meta, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as ElevationStories from './elevation.stories'
+
+<Meta of={ElevationStories} />
+
+<Title />
+
+<Subtitle>
+  The shadow depths (MUI `Paper` elevation levels) currently in use across HRIV surfaces to convey
+  hierarchy.
+</Subtitle>
+
+## How to use this section
+
+Use `Foundations/Elevation` as the reference for surface depth. Elevation communicates how
+"raised" a surface is: higher levels cast a larger shadow and read as closer to the user. Apply
+them with MUI's `Paper` (or the `elevation` prop on surfaces that accept it), e.g.:
+
+```tsx
+import Paper from '@mui/material/Paper'
+
+;<Paper elevation={8}>…</Paper>
+```
+
+Prefer the documented levels below over arbitrary shadow values so surfaces stay consistent.
+
+## What's included
+
+MUI's `Paper` supports elevation `0–24`; this page lists the levels **HRIV currently uses**, from
+flat to most-raised:
+
+- **0** — flush surfaces, e.g. the announcement banner (no shadow)
+- **1** — the app bar
+- **2** — cards, image tiles, and resting category tiles
+- **3** — collection viewers and raised dialogs
+- **4** — the filter popover panel (set via `boxShadow: 4`)
+- **8** — a category tile highlighted as an active drop target (a file dragged over it)
+
+As new surfaces adopt other levels, add them here so the page stays an accurate inventory of
+current usage.
+
+## Elevation levels
+
+<Canvas of={ElevationStories.Default} />
