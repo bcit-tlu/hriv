@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from hriv_restore_validation.controller import Controller, child_name, holder_identity, make_run_id, normalize_lease_time
 from hriv_restore_validation.gateway import Lease, Observation
+from hriv_restore_validation.models import ResourceRef
 from hriv_restore_validation.state import parse_state
 from hriv_restore_validation.strict import ValidationError
 from fixtures import NOW, RUN, TRIGGER, config, consistency_result, controller, database_result, drive, gateway as fixture_gateway, policy, profile, restore_result as fixture_restore_result, selection_document as fixture_selection_document, template_document, templates
@@ -751,6 +752,82 @@ class ControllerTests(unittest.TestCase):
         trigger = type(TRIGGER)("scheduled", "weekly", "weekly-job-uid")
         self.assertEqual("running", instance.run(trigger, "rv-20260115t110000z-deadbeef"))
         self.assertEqual("weekly-job-uid", fake.lease.holder_identity.split("|")[1])
+
+    @staticmethod
+    def _vanishing_after_first_read(fake, key):
+        # Models an object whose deletion completes between the cleanup pass's
+        # existence check and any later read: the first get returns it, then it
+        # is gone for every subsequent read.
+        original = fake.get_child
+        def get_child(ref):
+            actual = original(ref)
+            if actual is not None and (ref.api_version, ref.kind, ref.name) == key:
+                fake.children.pop(key, None)
+            return actual
+        fake.get_child = get_child
+
+    def _drive_to_cleanup(self, fake, instance):
+        self.assertEqual("running", instance.run(TRIGGER, RUN))
+        for _ in range(30):
+            if parse_state(fake.state_raw, NOW)["latest_run"]["current_stage"] == "CLEANUP":
+                return
+            self.assertEqual("running", instance.run(TRIGGER, RUN))
+        self.fail("run did not reach CLEANUP")
+
+    def test_cleanup_tolerates_child_removed_mid_pass(self) -> None:
+        fake = gateway(); instance = controller(fake)
+        self._drive_to_cleanup(fake, instance)
+        self._vanishing_after_first_read(fake, ("batch/v1", "Job", child_name(RUN, "selection")))
+        self.assertEqual("succeeded", instance.run(TRIGGER, RUN))
+        state = parse_state(fake.state_raw, NOW)
+        self.assertEqual("SUCCEEDED", state["latest_run"]["state"])
+        self.assertFalse(fake.list_run_children(RUN))
+
+    def test_cleanup_fails_closed_on_replaced_child_and_logs_identity(self) -> None:
+        fake = gateway(); instance = controller(fake)
+        self._drive_to_cleanup(fake, instance)
+        key = ("batch/v1", "Job", child_name(RUN, "selection"))
+        _, manifest, observation = fake.children[key]
+        fake.children[key] = (ResourceRef("batch/v1", "Job", child_name(RUN, "selection"), "replaced-uid"), manifest, observation)
+        with self.assertLogs("hriv_restore_validation", level="WARNING") as logged:
+            self.assertEqual("retained", instance.run(TRIGGER, RUN))
+        self.assertTrue(any(child_name(RUN, "selection") in line for line in logged.output))
+        state = parse_state(fake.state_raw, NOW)
+        self.assertEqual("FAILED_RETAIN", state["latest_run"]["state"])
+        self.assertEqual("OWNERSHIP_CONFLICT", state["latest_run"]["failure_code"])
+
+    def test_manual_cleanup_tolerates_child_removed_mid_pass(self) -> None:
+        fake, instance = self._retained()
+        self._vanishing_after_first_read(fake, ("batch/v1", "Job", child_name(RUN, "selection")))
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(fake.list_run_children(RUN))
+        self.assertEqual([], parse_state(fake.state_raw, NOW)["retained_runs"])
+
+    def test_manual_cleanup_stale_takeover_tolerates_child_removed_mid_verify(self) -> None:
+        fake, first = self._retained(); fake.async_deletes = True
+        self.assertEqual("running", first.cleanup_retained("old-cleanup-uid"))
+        takeover_time = NOW + timedelta(seconds=31)
+        replacement = Controller(fake, config(), profile(), policy(), templates(), clock=lambda: takeover_time)
+        self._vanishing_after_first_read(fake, ("batch/v1", "Job", child_name(RUN, "selection")))
+        self.assertEqual("running", replacement.cleanup_retained("replacement-cleanup-uid"))
+        fake.finish_deletes()
+        self.assertEqual("succeeded", replacement.cleanup_retained("replacement-cleanup-uid"))
+
+    def test_manual_cleanup_tolerates_descendant_removed_after_list(self) -> None:
+        fake, instance = self._retained()
+        state = parse_state(fake.state_raw, NOW)
+        cluster = next(item for item in state["retained_runs"][0]["child_resources"] if item["kind"] == "Cluster")
+        labels = {"app.kubernetes.io/managed-by": "hriv-restore-validation", "hriv.bcit.ca/restore-validation-run-id": RUN, "hriv.bcit.ca/restore-validation-role": "cnpg"}
+        owner = {"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "name": cluster["name"], "uid": cluster["uid"], "controller": True}
+        fake.create_child({"apiVersion": "v1", "kind": "Service", "metadata": {"name": "generated-rw", "labels": labels, "ownerReferences": [owner]}})
+        original_list = fake.list_run_children
+        def list_run_children(run_id):
+            refs = original_list(run_id)
+            fake.children.pop(("v1", "Service", "generated-rw"), None)
+            return refs
+        fake.list_run_children = list_run_children
+        self.assertEqual("succeeded", instance.cleanup_retained("cleanup-job-uid"))
+        self.assertFalse(original_list(RUN))
 
     def test_terminal_report_is_bounded_and_omits_sensitive_archive_identity(self) -> None:
         fake = gateway(); instance = controller(fake); outcome = drive(instance)

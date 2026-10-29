@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from .models import ResourceRef
 from .strict import UID_RE, ValidationError, canonical_json
+
+LOG = logging.getLogger("hriv_restore_validation")
 
 MANAGED_BY_LABEL = "app.kubernetes.io/managed-by"
 RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
@@ -88,8 +91,15 @@ def adopted_ref(desired: dict[str, Any], actual: dict[str, Any]) -> ResourceRef:
         )
         or UID_RE.fullmatch(uid) is None
     ):
-        raise ValidationError("OWNERSHIP_CONFLICT")
+        raise ownership_conflict(f"{desired.get('apiVersion')} {desired.get('kind')} {desired_metadata.get('name')} uid={uid} adopt mismatch")
     return ResourceRef(desired["apiVersion"], desired["kind"], desired_metadata["name"], uid)
+
+
+def ownership_conflict(detail: str) -> ValidationError:
+    # The terminal report carries only the bounded failure code; this warning is
+    # the one place the conflicting resource identity reaches the pod log.
+    LOG.warning("restore-validation ownership conflict %s", detail)
+    return ValidationError("OWNERSHIP_CONFLICT", detail)
 
 
 class Conflict(RuntimeError):
@@ -253,7 +263,7 @@ class FakeGateway:
         actual, manifest, _ = item
         labels = manifest.get("metadata", {}).get("labels", {})
         if actual.uid != ref.uid or labels.get("app.kubernetes.io/managed-by") != "hriv-restore-validation":
-            raise ValidationError("OWNERSHIP_CONFLICT")
+            raise ownership_conflict(f"{ref.api_version} {ref.kind} {ref.name} uid={ref.uid} actual_uid={actual.uid} mismatch at delete")
         self.deleted.append(ref)
         if self.async_deletes:
             manifest.setdefault("metadata", {})["deletionTimestamp"] = "2026-01-15T10:00:00Z"
