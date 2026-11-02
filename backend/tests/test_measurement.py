@@ -77,6 +77,18 @@ def test_detector_returns_none_without_cells(tmp_path) -> None:
     assert measure_rbc_diameter(load_work_image(str(path)), 400) is None
 
 
+def test_detector_returns_none_when_few_cells_dominate(tmp_path) -> None:
+    """A handful of large blobs outweighing many small ones is not an RBC film."""
+    img = _blood_film(radius=4, cols=6, rows=2)
+    canvas = pyvips.Image.black(600, 300, bands=3).new_from_image([240, 236, 236])
+    canvas = canvas.insert(img, 0, 0).copy_memory()
+    for cx in (150, 300, 450):
+        canvas = canvas.draw_circle([215, 120, 140], cx, 200, 40, fill=True)
+    path = tmp_path / "blobs.png"
+    canvas.write_to_file(str(path))
+    assert measure_rbc_diameter(load_work_image(str(path)), 600) is None
+
+
 # ── calibration ───────────────────────────────────────────
 
 

@@ -58,6 +58,11 @@ Radiography and other non-microscopy images get a low-confidence finding or no
 RBC population (`evidence.reason = "no_rbc_population"`); reviewers reject
 them.
 
+An RBC population needs at least 10 connected components overall and at least
+10 inside the dominant size window. A few large blobs outweighing many small
+ones (for example a landscape photo) records `no_rbc_population` with no
+proposed scale, rather than a 0%-confidence proposal.
+
 ## API
 
 All endpoints require **admin or instructor** (`require_role("admin",

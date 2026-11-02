@@ -112,7 +112,8 @@ def measure_rbc_diameter(work: pyvips.Image, full_width: int) -> RbcMeasurement 
     mode = _weighted_log_mode(radii)
     lo, hi = mode * _MODE_WINDOW[0], mode * _MODE_WINDOW[1]
     selected = sorted(r for r in radii if lo < r < hi)
-    if not selected:
+    # A dominant blob or two (e.g. a landscape photo) is not an RBC population.
+    if len(selected) < _MIN_COMPONENTS:
         return None
     median = selected[len(selected) // 2]
     total_mass = sum(r * r for r in radii)
