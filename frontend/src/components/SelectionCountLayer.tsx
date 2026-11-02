@@ -44,6 +44,10 @@ export default function SelectionCountLayer({
   const anchorsRef = useRef<Map<number, HTMLDivElement>>(new Map())
   const [reportKey, setReportKey] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+  // Menus portal here: inside viewer.container (visible in OSD full-page
+  // mode) and under data-hriv-canvas-ui, so the selection tracker ignores
+  // presses on them.
+  const [menuHost, setMenuHost] = useState<HTMLDivElement | null>(null)
   const autoOpenedRef = useRef<Set<string>>(new Set())
 
   const keyFor = (key: number) => `sel-${key}`
@@ -155,6 +159,7 @@ export default function SelectionCountLayer({
 
   return (
     <>
+      <div ref={setMenuHost} data-hriv-canvas-ui />
       <CountOutlinesLayer viewer={viewer} items={outlineItems} />
       {!hidden &&
         selections.map((sel) => {
@@ -177,7 +182,7 @@ export default function SelectionCountLayer({
               <CountObjectsButton
                 selectionIndex={sel.index}
                 entry={entry}
-                menuContainer={viewer.container}
+                menuContainer={menuHost ?? viewer.container}
                 onCount={(mode) => handleCount(sel, mode)}
                 onCancel={() => cancel(k)}
                 onViewResults={() => setReportKey(k)}

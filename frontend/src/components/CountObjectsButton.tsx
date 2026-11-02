@@ -80,9 +80,6 @@ export default function CountObjectsButton({
     <Menu
       anchorEl={modeAnchor}
       container={menuContainer}
-      // The menu portals outside this button's data-hriv-canvas-ui wrapper;
-      // mark the popover root too so the OSD selection tracker skips presses.
-      slotProps={{ root: { 'data-hriv-canvas-ui': true } }}
       open={modeAnchor != null}
       onClose={() => setModeAnchor(null)}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -153,7 +150,6 @@ export default function CountObjectsButton({
         <Menu
           anchorEl={splitAnchor}
           container={menuContainer}
-          slotProps={{ root: { 'data-hriv-canvas-ui': true } }}
           open={splitAnchor != null}
           onClose={() => setSplitAnchor(null)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}

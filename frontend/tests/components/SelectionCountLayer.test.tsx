@@ -150,6 +150,28 @@ describe('SelectionCountLayer', () => {
         await vi.advanceTimersByTimeAsync(1000)
       })
       expect(screen.queryByText('Object count report')).not.toBeInTheDocument()
+
+      // A recount of the same selection is a new job, so its report opens.
+      mocks.startCount.mockResolvedValue({ job_id: 'j2', status: 'queued', queue_position: 0 })
+      mocks.getCount.mockResolvedValue(
+        job({
+          job_id: 'j2',
+          status: 'done',
+          total: 4,
+          groups: [{ group: 0, count: 4 }],
+          objects: [],
+          preview: 'data:image/jpeg;base64,x',
+        }),
+      )
+      fireEvent.click(screen.getByLabelText('Count objects in selection 1 — more actions'))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('menuitem', { name: /Count cells again/ }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(screen.getByText('Object count report')).toBeInTheDocument()
+      expect(screen.getByText('4 objects found')).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }

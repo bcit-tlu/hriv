@@ -1635,18 +1635,19 @@ describe('ImageViewer object counting (#1667)', () => {
     render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
     drawRect()
     expect(viewer().container.querySelector('[data-hriv-canvas-ui]')).toBeNull()
+    expect(viewer().container.querySelector('[aria-label^="Count objects"]')).toBeNull()
   })
 
   it('shows no count button with countingEnabled but no selection', () => {
     render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
-    expect(viewer().container.querySelector('[data-hriv-canvas-ui]')).toBeNull()
+    expect(viewer().container.querySelector('[aria-label^="Count objects"]')).toBeNull()
   })
 
   it('shows a data-hriv-canvas-ui count button on a drawn selection', () => {
     render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
     drawRect()
-    const button = viewer().container.querySelector('[data-hriv-canvas-ui]') as HTMLElement | null
-    expect(button).not.toBeNull()
+    const button = viewer().container.querySelector('[aria-label="Count objects in selection 1"]')
+    expect(button?.closest('[data-hriv-canvas-ui]')).not.toBeNull()
     expect(
       within(viewer().container).getByRole('button', {
         name: 'Count objects in selection 1',
