@@ -125,7 +125,7 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
             tiles_dir=settings.tiles_dir,
             outliner=outliner,
             margin_px=settings.counting_margin_px,
-            max_pixels=settings.counting_max_pixels,
+            max_pixels=outliner.max_pixels,
             max_downsample=settings.counting_max_downsample,
             max_objects=settings.counting_max_objects,
             is_cancelled=is_cancelled,
@@ -232,6 +232,8 @@ async def on_startup(ctx: dict[str, Any]) -> None:
         cells=settings.counting_cells_outliner,
         nuclei=settings.counting_nuclei_outliner,
         torch_threads=settings.counting_torch_threads,
+        max_pixels=settings.counting_max_pixels,
+        classical_max_pixels=settings.counting_classical_max_pixels,
     )
     # Warm up each outliner once so first-job latency excludes model init.
     warmup = np.zeros((64, 64, 3), dtype=np.uint8)

@@ -164,9 +164,15 @@ class TestStainFilter:
 
 class TestBuildOutliners:
     def test_stub_and_classical(self):
-        outs = build_outliners(cells="stub", nuclei="classical", torch_threads=1)
+        outs = build_outliners(
+            cells="stub", nuclei="classical", torch_threads=1,
+            max_pixels=750_000, classical_max_pixels=2_000_000,
+        )
         assert isinstance(outs["cells"], StubOutliner)
         assert outs["nuclei"].name == "classical"
+        # Classical/stub outliners carry the larger classical budget.
+        assert outs["cells"].max_pixels == 2_000_000
+        assert outs["nuclei"].max_pixels == 2_000_000
 
     def test_instanseg_missing_dep_fails(self, monkeypatch):
         import builtins
@@ -177,7 +183,28 @@ class TestBuildOutliners:
             return real_import(name, *a, **k)
         monkeypatch.setattr(builtins, "__import__", fake_import)
         with pytest.raises(ImportError):
-            build_outliners(cells="stub", nuclei="instanseg", torch_threads=1)
+            build_outliners(
+                cells="stub", nuclei="instanseg", torch_threads=1,
+                max_pixels=750_000, classical_max_pixels=2_000_000,
+            )
+
+    def test_instanseg_gets_ml_budget(self, monkeypatch):
+        """An instanseg-named outliner gets the smaller ML budget."""
+        import app.counting.outliners as outl
+
+        class FakeInstanSeg:
+            name = "instanseg"
+            max_pixels = 0
+            def __init__(self, torch_threads=2):
+                pass
+
+        monkeypatch.setattr(outl, "InstanSegNucleiOutliner", FakeInstanSeg)
+        outs = build_outliners(
+            cells="classical", nuclei="instanseg", torch_threads=1,
+            max_pixels=750_000, classical_max_pixels=2_000_000,
+        )
+        assert outs["nuclei"].max_pixels == 750_000
+        assert outs["cells"].max_pixels == 2_000_000
 
 
 class TestChooseDownsample:
@@ -397,3 +424,72 @@ class TestInstanSegModelDir:
         assert calls["env"] == "/tmp/fake-models"
         assert calls["name"] == "brightfield_nuclei"
         assert calls["threads"] == 3
+
+
+class TestPerOutlinerBudget:
+    """#1719: classical jobs get the larger stitched-pixel budget."""
+
+    def _run(self, outliner, dzi, sel, monkeypatch, mode="cells"):
+        monkeypatch.setattr(count_pipeline, "resolve_tile_root", lambda *_a, **_k: "root")
+        monkeypatch.setattr(count_pipeline, "read_dzi", lambda *_a, **_k: dzi)
+        rgb = np.full((512, 512, 3), 240, np.uint8)
+        monkeypatch.setattr(
+            count_pipeline, "stitch_region",
+            lambda *_a, **_k: _FakeVips(rgb),
+        )
+        monkeypatch.setattr(
+            count_pipeline, "_selection_preview", lambda *_a, **_k: "data:image/jpeg;base64,x"
+        )
+        monkeypatch.setattr(
+            count_pipeline, "estimate_object_diameter", lambda *_a, **_k: 40.0,
+        )
+        record = {
+            "source_image_id": 5, "mode": mode, "mpp": None,
+            "selection": {"x": 0, "y": 0, "width": sel, "height": sel},
+        }
+        return count_pipeline.run_count(
+            record,
+            tiles_dir="/tmp",
+            outliner=outliner,
+            margin_px=4,
+            max_pixels=outliner.max_pixels,
+            max_downsample=8,
+            max_objects=3000,
+            is_cancelled=lambda: False,
+        )
+
+    class _Zero:
+        """Returns an empty label image sized to whatever is stitched."""
+
+        name = "zero"
+        max_pixels = 0
+
+        def segment(self, rgb, *, plan, mpp):
+            return np.zeros(rgb.shape[:2], np.int32)
+
+    def test_classical_budget_accepts_over_750k(self, monkeypatch):
+        o = self._Zero()
+        o.max_pixels = 2_000_000  # classical budget
+        dzi = DziInfo(
+            width=4096, height=4096, tile_size=512, overlap=0,
+            format="png", max_level=11,
+        )
+        # 1200x1200 at d=1 -> ~1.44MP processed; over 750k, under 2M.
+        result = self._run(o, dzi, 1200, monkeypatch)
+        assert result["total"] == 0
+
+    def test_ml_budget_rejects_same_selection(self, monkeypatch):
+        o = self._Zero()
+        o.max_pixels = 750_000  # ML budget
+        dzi = DziInfo(
+            width=4096, height=4096, tile_size=512, overlap=0,
+            format="png", max_level=11,
+        )
+        # Same 1.44MP job is over the 750k ML budget at its chosen d.
+        # The level rule may coarsen (d=2 -> 360k) instead of rejecting —
+        # either way the job must not exceed the budget it was given.
+        try:
+            result = self._run(o, dzi, 1200, monkeypatch)
+            assert result["_meta"]["pixels"] <= 750_000
+        except count_pipeline.RegionTooLarge:
+            pass

@@ -151,7 +151,10 @@ async def create_count(
                         height=body.selection.height,
                     ),
                     margin_px=settings.counting_margin_px,
-                    max_pixels=settings.counting_max_pixels,
+                    max_pixels=max(
+                        settings.counting_max_pixels,
+                        settings.counting_classical_max_pixels,
+                    ),
                     max_downsample=settings.counting_max_downsample,
                 )
             except InvalidSelection as exc:

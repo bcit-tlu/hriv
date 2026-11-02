@@ -1293,6 +1293,8 @@ assert_contains "$backend_counting_default_manifest" 'value: "false"' \
   "COUNTING_ENABLED must default to false (dark launch)"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_PIXELS" \
   "API deployment must render the counting budget env vars"
+assert_contains "$backend_counting_default_manifest" "name: COUNTING_CLASSICAL_MAX_PIXELS" \
+  "API deployment must render COUNTING_CLASSICAL_MAX_PIXELS"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_OBJECTS" \
   "API deployment must render COUNTING_MAX_OBJECTS"
 
@@ -1315,6 +1317,8 @@ assert_contains "$backend_counting_deployment" "name: COUNTING_TORCH_THREADS" \
   "counting worker must render COUNTING_TORCH_THREADS"
 assert_contains "$backend_counting_deployment" "name: COUNTING_NUCLEI_OUTLINER" \
   "counting worker must render COUNTING_NUCLEI_OUTLINER"
+assert_contains "$backend_counting_deployment" "name: COUNTING_CLASSICAL_MAX_PIXELS" \
+  "counting worker must render COUNTING_CLASSICAL_MAX_PIXELS"
 assert_contains "$backend_counting_deployment" "name: REDIS_URL" \
   "counting worker needs the arq Redis URL"
 assert_not_contains "$backend_counting_deployment" "postgres-db-credentials" \

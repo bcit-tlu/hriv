@@ -17,6 +17,8 @@ from app.counting import jobs, pipeline
 from app.counting.outliners import StubOutliner
 
 STUB_OUTLINERS = {"cells": StubOutliner(), "nuclei": StubOutliner()}
+for _o in STUB_OUTLINERS.values():
+    _o.max_pixels = 4_000_000
 from app.counting.worker import (
     CountingWorkerSettings,
     count_objects_task,
