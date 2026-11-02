@@ -137,6 +137,10 @@ jobs:
       - name: Install Poetry
         run: pip install poetry
 
+      # Real libvips for the counting stitch/pipeline tests (#1663); other suites still stub pyvips.
+      - name: Install libvips
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libvips42t64
+
       - name: Configure in-project virtualenv
         run: poetry config virtualenvs.in-project true
 

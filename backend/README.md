@@ -209,6 +209,18 @@ in-process fallback in a local-mode API pod. Increasing it for a dedicated
 worker therefore increases concurrent vips work in that API pod as well; tune
 it with the API pod's more constrained resource envelope in mind.
 
+## Object counting (epic #1661)
+
+The count-job API is dark-launched behind `COUNTING_ENABLED` (default
+`false`) and runs on a dedicated arq queue + worker
+(`COUNTING_QUEUE_NAME`, default `arq:counting`; start with
+`arq app.counting.worker.CountingWorkerSettings`). Budget, cap and TTL
+knobs: `COUNTING_MAX_PIXELS`, `COUNTING_MAX_DOWNSAMPLE`,
+`COUNTING_MARGIN_PX`, `COUNTING_MAX_ACTIVE_PER_USER`,
+`COUNTING_RESULT_TTL_SECONDS`, `COUNTING_JOB_TIMEOUT_SECONDS`,
+`COUNTING_MAX_OBJECTS` — all documented in
+[docs/object-counting.md](../docs/object-counting.md).
+
 ## Persistent data directories
 
 The backend reads uploaded source files and generated tile trees from

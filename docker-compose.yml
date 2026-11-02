@@ -108,6 +108,9 @@ services:
       - SECURE_COOKIES=false
       - COLLECTIONS_ENABLED=${COLLECTIONS_ENABLED:-true}
       - COLLECTIONS_HOME_SHELF=${COLLECTIONS_HOME_SHELF:-true}
+      # Dark-launched by default: enable locally with
+      #   COUNTING_ENABLED=true docker compose --profile counting up
+      - COUNTING_ENABLED=${COUNTING_ENABLED:-false}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
     depends_on:
@@ -197,6 +200,40 @@ services:
         condition: service_completed_successfully
       seed-media:
         condition: service_completed_successfully
+
+  counting-worker:
+    # Dedicated arq worker for the object-counting queue (epic #1661);
+    # profiled off so it only runs when explicitly requested:
+    #   COUNTING_ENABLED=true docker compose --profile counting up
+    build:
+      context: ./backend
+      target: dev
+    command: ['opentelemetry-instrument', 'arq', 'app.counting.worker.CountingWorkerSettings']
+    volumes:
+      - ./backend/app:/app/app
+      - image_data:/data
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://hriv:hriv@db:5432/hriv
+      - REDIS_URL=redis://redis:6379
+      - SOURCE_IMAGES_DIR=/data/source_images
+      - TILES_DIR=/data/tiles
+      - COUNTING_ENABLED=${COUNTING_ENABLED:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
+      seed-media:
+        condition: service_completed_successfully
+    profiles:
+      - counting
 
   redis:
     image: redis:7-alpine

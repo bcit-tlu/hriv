@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -56,6 +56,21 @@ class Settings(BaseSettings):
 
     # My collections Browse shelf (#1583), gated by collections_enabled.
     collections_home_shelf: bool = False
+
+    # Object counting (epic #1661): dark-launch flag, dedicated arq
+    # queue/worker, pre-flight pixel budget, per-user job cap and ephemeral
+    # Redis result policy. Job state never touches Postgres. The budget,
+    # downsample and margin defaults are placeholders until the outliner
+    # spike (#1662) produces measured numbers — see docs/object-counting.md.
+    counting_enabled: bool = False
+    counting_queue_name: str = "arq:counting"
+    counting_max_pixels: int = Field(default=4_000_000, ge=65_536)
+    counting_max_downsample: int = Field(default=4, ge=1)
+    counting_margin_px: int = Field(default=32, ge=0)
+    counting_max_active_per_user: int = Field(default=3, ge=1)
+    counting_result_ttl_seconds: int = Field(default=600, ge=60)
+    counting_job_timeout_seconds: int = Field(default=60, ge=5)
+    counting_max_objects: int = Field(default=3000, ge=1)
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match
@@ -138,6 +153,17 @@ class Settings(BaseSettings):
     oidc_role_mapping: str = "{}"  # JSON: {"idp-group": "hriv-role"}
     oidc_post_login_redirect: str = ""  # Frontend URL to redirect to after OIDC login
     oidc_trust_email: bool = False  # Skip email_verified check (for IdPs like Vault that don't emit it)
+
+    @field_validator("counting_max_downsample")
+    @classmethod
+    def _check_power_of_two(cls, value: int) -> int:
+        """``COUNTING_MAX_DOWNSAMPLE`` steps through DZI levels, which halve
+        per level — only powers of two land on real pyramid levels."""
+        if value & (value - 1):
+            raise ValueError(
+                "COUNTING_MAX_DOWNSAMPLE must be a power of two"
+            )
+        return value
 
     @model_validator(mode="after")
     def _normalize_database_scheme(self) -> "Settings":

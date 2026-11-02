@@ -73,6 +73,32 @@ config changes, rebuild the specific service:
 docker compose up -d --build frontend   # or backend, worker, etc.
 ```
 
+## Object counting (epic #1661)
+
+Backend-only so far (frontend lands with #1667/#1668). Enable the flag and the
+dedicated worker via the `counting` compose profile:
+
+```bash
+COUNTING_ENABLED=true docker compose --profile counting up -d --build
+```
+
+Then exercise the API directly with any seed login:
+
+```bash
+TOKEN=$(curl -s http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student@example.ca","password":"password"}' | jq -r .access_token)
+curl -s -X POST http://localhost:8000/api/images/1/counts \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"mode":"cells","selection":{"x":10,"y":10,"width":200,"height":200}}'
+# -> {"job_id": "...", "status": "queued", "queue_position": 0}
+curl -s http://localhost:8000/api/counts/<job_id> -H "Authorization: Bearer $TOKEN"
+curl -s -X DELETE http://localhost:8000/api/counts/<job_id> -H "Authorization: Bearer $TOKEN"
+```
+
+Until the worker's `arq:counting:health-check` key exists the POST answers
+503 `counting_unavailable`. See docs/object-counting.md for the contract.
+
 ## Devin Secrets Needed
 
 None for local testing — seed users are created automatically.

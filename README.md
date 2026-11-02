@@ -28,33 +28,34 @@ All seed users share the password `password`.
 
 ### Role Capabilities
 
-| Capability                               | Admin | Instructor | Staff | Student |
-| ---------------------------------------- | ----- | ---------- | ----- | ------- |
-| Browse categories & view images          | Yes   | Yes        | Yes   | Yes†    |
-| View image uploader name                 | Yes   | Yes        | No    | No      |
-| View collections (API)                   | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections‖                      | Yes   | Yes        | Yes   | Yes     |
-| Edit co-owned collections‖               | Yes   | Yes        | Yes   | Yes     |
-| Delete own collections‖                  | Yes   | Yes        | Yes\* | Yes\*   |
-| Restrict collections to programs/groups‖ | Yes   | Yes\*      | No    | No      |
-| Manage collection owners‖                | Yes   | Yes\*      | No    | No      |
-| Hide/show collections‖                   | Yes   | Yes        | No    | No      |
-| Manage any collection (incl. orphaned)‖  | Yes   | No         | No    | No      |
-| Create/update categories                 | Yes   | Yes        | No    | No      |
-| Delete categories                        | Yes   | Yes        | No    | No      |
-| Manage page (image table)                | Yes   | Yes        | No    | No      |
-| Bulk import images                       | Yes   | Yes        | No    | No      |
-| Manage programs                          | Yes   | No         | No    | No      |
-| Manage groups                            | Yes   | Yes\*      | No    | No      |
-| Restrict categories to groups            | Yes   | Yes\*      | No    | No      |
-| Manage announcement                      | Yes   | Yes        | No    | No      |
-| View changelog notifications             | Yes   | Yes        | No    | No      |
-| View component versions (About)          | Yes   | Yes        | No    | No      |
-| Manage changelog entries                 | Yes   | No         | No    | No      |
-| Admin tab (changelog + backups)          | Yes   | No         | No    | No      |
-| User management (add/delete)             | Yes   | No         | No    | No      |
-| People tab (view users)                  | Yes   | No         | Yes‡  | No      |
-| List users (API)                         | Yes   | Yes§       | Yes‡  | No      |
+| Capability                                             | Admin | Instructor | Staff | Student |
+| ------------------------------------------------------ | ----- | ---------- | ----- | ------- |
+| Browse categories & view images                        | Yes   | Yes        | Yes   | Yes†    |
+| Count objects in a selection (when `COUNTING_ENABLED`) | Yes   | Yes        | Yes   | Yes†    |
+| View image uploader name                               | Yes   | Yes        | No    | No      |
+| View collections (API)                                 | Yes   | Yes        | Yes   | Yes¶    |
+| Create collections‖                                    | Yes   | Yes        | Yes   | Yes     |
+| Edit co-owned collections‖                             | Yes   | Yes        | Yes   | Yes     |
+| Delete own collections‖                                | Yes   | Yes        | Yes\* | Yes\*   |
+| Restrict collections to programs/groups‖               | Yes   | Yes\*      | No    | No      |
+| Manage collection owners‖                              | Yes   | Yes\*      | No    | No      |
+| Hide/show collections‖                                 | Yes   | Yes        | No    | No      |
+| Manage any collection (incl. orphaned)‖                | Yes   | No         | No    | No      |
+| Create/update categories                               | Yes   | Yes        | No    | No      |
+| Delete categories                                      | Yes   | Yes        | No    | No      |
+| Manage page (image table)                              | Yes   | Yes        | No    | No      |
+| Bulk import images                                     | Yes   | Yes        | No    | No      |
+| Manage programs                                        | Yes   | No         | No    | No      |
+| Manage groups                                          | Yes   | Yes\*      | No    | No      |
+| Restrict categories to groups                          | Yes   | Yes\*      | No    | No      |
+| Manage announcement                                    | Yes   | Yes        | No    | No      |
+| View changelog notifications                           | Yes   | Yes        | No    | No      |
+| View component versions (About)                        | Yes   | Yes        | No    | No      |
+| Manage changelog entries                               | Yes   | No         | No    | No      |
+| Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
+| User management (add/delete)                           | Yes   | No         | No    | No      |
+| People tab (view users)                                | Yes   | No         | Yes‡  | No      |
+| List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
 they manage; admins manage and attach any group. Inherited program and group
@@ -163,6 +164,7 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                 |
 | [docs/collections.md](docs/collections.md)                                           | Collections model, ownership, visibility/authorization rules, and API surface    |
+| [docs/object-counting.md](docs/object-counting.md)                                   | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
 | [docs/user-deactivation.md](docs/user-deactivation.md)                               | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
 | [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy               |

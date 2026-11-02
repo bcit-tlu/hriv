@@ -481,6 +481,41 @@ class CollectionsFeatureMiddleware:
         await self.app(scope, receive, send)
 
 
+class CountingFeatureMiddleware:
+    """Return 404 for counting API paths while ``COUNTING_ENABLED`` is off.
+
+    Covers ``/api/counts`` + subpaths and ``/api/images/<id>/counts`` — the
+    latter lives under the images prefix, so the gate cannot be a plain
+    path prefix like collections'. Runs before FastAPI parses the request
+    body (a disabled deployment answers a malformed POST with the same 404
+    as an unknown route, not a 422). ``require_counting_enabled`` on the
+    router is the second layer (docs/object-counting.md).
+    """
+
+    _COUNTS_PREFIX = "/api/counts"
+    _IMAGE_COUNTS_ROUTE = re.compile(r"^/api/images/-?\d+/counts$")
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path: str = scope["path"]
+        if not settings.counting_enabled and (
+            path == self._COUNTS_PREFIX
+            or path.startswith(self._COUNTS_PREFIX + "/")
+            or self._IMAGE_COUNTS_ROUTE.match(path) is not None
+        ):
+            response = JSONResponse(status_code=404, content={"detail": "Not Found"})
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
 class MaintenanceMiddleware:
     """Return 503 for non-exempt endpoints when the maintenance flag is set.
 
