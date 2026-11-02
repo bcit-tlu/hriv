@@ -33,7 +33,7 @@ CAMERA_PROFILES: dict[tuple[int, int], dict[str, float]] = {
 # Confidence components.
 _FULL_COUNT = 100  # selected cells for full count credit
 _FULL_MARGIN = 0.5  # log-space margin between nearest and runner-up objective
-_OFF_CLASS_LOG = math.log(1.5)  # >±50% from the nearest objective is suspect
+_OFF_CLASS_LOG = math.log(1.5)  # >1.5× or <1/1.5× the nearest objective is suspect
 _UNPROFILED_CONFIDENCE_CAP = 0.3
 
 

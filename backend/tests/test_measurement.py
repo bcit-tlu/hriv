@@ -277,6 +277,42 @@ async def test_scan_images_commits_per_image(monkeypatch) -> None:
     assert [s.commit.await_count for s in sessions] == [1, 0, 1]
 
 
+async def test_scan_images_skips_images_scaled_since_queueing(monkeypatch) -> None:
+    db = AsyncMock()
+    db.get.return_value = _image(metadata_={"measurement_scale": 4.0})
+
+    class _Factory:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *a):
+            return False
+
+    scan = AsyncMock()
+    monkeypatch.setattr(service, "scan_image", scan)
+    assert await service.scan_images(_Factory, [11]) == 0
+    scan.assert_not_awaited()
+
+
+async def test_scan_images_drops_duplicate_pending_from_overlapping_scan(monkeypatch) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    db = AsyncMock()
+    db.get.return_value = _image()
+    db.commit.side_effect = [IntegrityError("insert", {}, Exception("dup")), None]
+
+    class _Factory:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(service, "scan_image", AsyncMock())
+    assert await service.scan_images(_Factory, [11, 12]) == 1
+    db.rollback.assert_awaited_once()
+
+
 def test_reject_finding() -> None:
     f = _finding()
     service.reject_finding(f, 7)
@@ -403,9 +439,19 @@ async def test_approve_endpoint(monkeypatch) -> None:
 async def test_approve_endpoint_uncategorized_skips_browse_bump(monkeypatch) -> None:
     bump = AsyncMock()
     monkeypatch.setattr(router, "bump_browse_revision", bump)
+    monkeypatch.setattr(router, "image_ids_in_collections", AsyncMock(return_value=set()))
     db = _db_with(_finding(), _image(category_id=None))
     await router.approve(5, _user(), None, db)
     bump.assert_not_awaited()
+
+
+async def test_approve_endpoint_uncategorized_in_collection_bumps(monkeypatch) -> None:
+    bump = AsyncMock()
+    monkeypatch.setattr(router, "bump_browse_revision", bump)
+    monkeypatch.setattr(router, "image_ids_in_collections", AsyncMock(return_value={11}))
+    db = _db_with(_finding(), _image(category_id=None))
+    await router.approve(5, _user(), None, db)
+    bump.assert_awaited_once()
 
 
 async def test_approve_endpoint_requires_scale() -> None:

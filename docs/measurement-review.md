@@ -43,7 +43,7 @@ robust to clumps and rouleaux.
   always need a reviewer.
 
 Confidence = peak share × cell-count factor × objective margin, halved when the
-measurement is more than ±50% from every objective.
+measurement is more than 1.5× (or under 1/1.5×) the nearest objective's scale.
 
 > **Provisional constants.** The per-objective px/µm values are averages of
 > RBC-size clusters on images whose notes name the objective. They will be
@@ -71,7 +71,9 @@ All endpoints require **admin or instructor** (`require_role("admin",
 | POST   | `/api/measurement-findings/{id}/reject`  | Marks rejected; metadata untouched. The image is not proposed again.                                                                                    |
 | POST   | `/api/measurement-findings/approve`      | Bulk `{ids: [...]}` (≤200) at the proposed scale; returns `{approved, skipped}`.                                                                        |
 
-Scans run as the `measurement_scan_task` arq job (one transaction per image)
+Scans run as the `measurement_scan_task` arq job (one transaction per image;
+images that gained a scale since queueing are skipped, and an overlapping scan's
+duplicate pending finding is dropped)
 and fall back to in-process `BackgroundTasks` when the queue is unavailable
 (503 in `TASK_EXECUTION_MODE=required`).
 
@@ -88,7 +90,11 @@ and every other key are preserved:
 | `measurement_finding_id`   | The approved finding                                      |
 
 The image `version` is incremented (so stale viewer `If-Match` saves get 409)
-and the browse revision is bumped for categorized images.
+and the browse revision is bumped when the image is categorized or in a
+collection.
+
+Replacing an image's source supersedes all its findings, so the replacement
+becomes eligible for a fresh scan.
 
 Pyramidal SVS/TIFF uploads keep getting `measurement_scale` automatically from
 embedded MPP; scans skip images that already have a scale.
