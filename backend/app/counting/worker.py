@@ -35,6 +35,7 @@ from ..logging_config import setup_logging
 from ..queue_metrics import HEALTH_CHECK_INTERVAL_SECONDS
 from ..worker import _parse_redis_settings
 from . import jobs, pipeline
+from .metrics import record_objects, record_pixels, record_wait
 from .outliners import Outliner, build_outliners
 from .stitch import CountingRegionError
 
@@ -77,6 +78,9 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
     mode = str(record.get("mode", ""))
     image_id = record.get("image_id")
     started = time.monotonic()
+    enqueued_at = record.get("enqueued_at")
+    if isinstance(enqueued_at, (int, float)):
+        record_wait(mode, max(0.0, time.time() - float(enqueued_at)))
     outliners: dict[str, Outliner] = ctx.get("outliners") or {}
     outliner = outliners.get(record.get("mode", "cells"))
     if outliner is None:
@@ -169,6 +173,9 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
     if not await jobs.update_status(redis, job_id, jobs.STATUS_DONE):
         return  # cancelled between pipeline end and status flip
     jobs.record_count_job(mode, jobs.COUNT_OUTCOME_DONE)
+    record_objects(mode, result["total"])
+    if meta.get("pixels") is not None:
+        record_pixels(mode, meta["pixels"])
     logger.info(
         "count job completed",
         extra={
@@ -182,6 +189,7 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
             "downsample": meta.get("downsample"),
             "pixels": meta.get("pixels"),
             "outliner": meta.get("outliner"),
+            "timings_ms": meta.get("timings_ms"),
         },
     )
 
@@ -201,7 +209,7 @@ async def _fail(
     )
     if not updated:
         return  # record vanished — nothing left to mark
-    jobs.record_count_job(mode, jobs.COUNT_OUTCOME_FAILED)
+    jobs.record_count_job(mode, jobs.COUNT_OUTCOME_FAILED, reason=code)
     logger.warning(
         "count job failed",
         extra={

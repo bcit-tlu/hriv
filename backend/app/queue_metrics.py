@@ -62,6 +62,37 @@ _execution_mode = Gauge(
     registry=_registry,
 )
 
+# Counting-queue gauges (#1661/#1669). Created lazily on first render when
+# ``settings.counting_enabled`` — a counting-disabled deployment never
+# registers them, so they can't emit 0.0 or a stale value and produce false
+# worker-down or queue-depth alerts.
+_count_gauges: dict[str, Gauge] = {}
+
+
+def _counting_gauges() -> dict[str, Gauge]:
+    if not _count_gauges:
+        _count_gauges["depth"] = Gauge(
+            "hriv_count_queue_depth",
+            "Number of queued or executing arq count jobs",
+            registry=_registry,
+        )
+        _count_gauges["oldest_pending_age"] = Gauge(
+            "hriv_count_queue_oldest_pending_age_seconds",
+            "Age of the oldest queued or executing arq count job",
+            registry=_registry,
+        )
+        _count_gauges["worker_up"] = Gauge(
+            "hriv_count_worker_up",
+            "Whether the counting-worker heartbeat key exists",
+            registry=_registry,
+        )
+        _count_gauges["heartbeat_age"] = Gauge(
+            "hriv_count_worker_heartbeat_age_seconds",
+            "Age of the counting-worker heartbeat",
+            registry=_registry,
+        )
+    return _count_gauges
+
 ARQ_QUEUE_NAME = default_queue_name
 HEALTH_CHECK_KEY = ARQ_QUEUE_NAME + health_check_key_suffix
 HEALTH_CHECK_INTERVAL_SECONDS = 30
@@ -116,7 +147,13 @@ return {depth, oldest_score}
 """
 
 
-async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dict[str, Any]:
+async def collect_queue_state(
+    *,
+    exclude_job_ids: set[str] | None = None,
+    queue_name: str = ARQ_QUEUE_NAME,
+    health_check_key: str = HEALTH_CHECK_KEY,
+    health_check_interval_seconds: float | None = None,
+) -> dict[str, Any]:
     """Read queue depth and worker heartbeat without breaking a scrape.
 
     *exclude_job_ids* lets a caller running as an arq job itself (e.g. the
@@ -125,8 +162,11 @@ async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dic
     currently-executing job IDs in the queue sorted set until the job
     finishes, so without this a periodic cron job would always observe
     ``depth >= 1`` (itself) and never treat the queue as idle. When set,
-    ``depth`` and ``oldest_pending_age_seconds`` are both computed by a
-    single atomic Lua script (``_QUEUE_DEPTH_EXCLUDING_SCRIPT``) rather than
+    ``queue_name`` / ``health_check_key`` point the read at a non-default
+    arq queue (the counting queue); ``health_check_interval_seconds``
+    overrides the heartbeat-age base for a worker class with a different
+    interval. ``depth`` and ``oldest_pending_age_seconds`` are both
+    computed by a single atomic Lua script (``_QUEUE_DEPTH_EXCLUDING_SCRIPT``) rather than
     separate ZCARD/ZRANK/ZRANGE round trips: this avoids the race where a
     job enqueued between separate reads could be dropped from ``depth`` (or
     make ``oldest_pending_age_seconds`` describe an entry ``depth`` has
@@ -148,25 +188,29 @@ async def collect_queue_state(*, exclude_job_ids: set[str] | None = None) -> dic
 
     async def read_state() -> tuple[int, float | None, float | None, bool | None]:
         now_ms = time.time() * 1000
-        health_check_interval = WorkerSettings.health_check_interval
+        health_check_interval = (
+            health_check_interval_seconds
+            if health_check_interval_seconds is not None
+            else WorkerSettings.health_check_interval
+        )
         if exclude_job_ids:
             depth, oldest_score = await pool.eval(
                 _QUEUE_DEPTH_EXCLUDING_SCRIPT,
                 1,
-                ARQ_QUEUE_NAME,
+                queue_name,
                 *exclude_job_ids,
             )
             oldest_age = None
             if oldest_score is not None:
                 oldest_age = max(0.0, (now_ms - float(oldest_score)) / 1000)
         else:
-            depth = await pool.zcard(ARQ_QUEUE_NAME)
-            oldest = await pool.zrange(ARQ_QUEUE_NAME, 0, 0, withscores=True)
+            depth = await pool.zcard(queue_name)
+            oldest = await pool.zrange(queue_name, 0, 0, withscores=True)
             oldest_age = None
             if oldest:
                 score = oldest[0][1]
                 oldest_age = max(0.0, (now_ms - float(score)) / 1000)
-        remaining_ttl = await pool.ttl(HEALTH_CHECK_KEY)
+        remaining_ttl = await pool.ttl(health_check_key)
         worker_up = remaining_ttl != -2
         heartbeat_age = None
         if remaining_ttl != -2:
@@ -224,6 +268,40 @@ async def render_queue_metrics() -> tuple[bytes, str]:
         )
         _execution_mode.clear()
         _execution_mode.labels(mode=settings.task_execution_mode).set(1)
+        if settings.counting_enabled:
+            from .counting.worker import CountingWorkerSettings
+
+            count_state = await collect_queue_state(
+                queue_name=settings.counting_queue_name,
+                health_check_key=settings.counting_queue_name + health_check_key_suffix,
+                health_check_interval_seconds=CountingWorkerSettings.health_check_interval,
+            )
+            gauges = _counting_gauges()
+            gauges["depth"].set(
+                float("nan") if count_state["depth"] is None else count_state["depth"]
+            )
+            gauges["oldest_pending_age"].set(
+                float("nan")
+                if count_state["oldest_pending_age_seconds"] is None
+                else count_state["oldest_pending_age_seconds"]
+            )
+            gauges["worker_up"].set(
+                float("nan")
+                if count_state["worker_up"] is None
+                else 1 if count_state["worker_up"] else 0
+            )
+            gauges["heartbeat_age"].set(
+                float("nan")
+                if count_state["worker_heartbeat_age_seconds"] is None
+                else count_state["worker_heartbeat_age_seconds"]
+            )
+        elif _count_gauges:
+            # Counting was disabled (or a test flips the flag): remove the
+            # gauges so they stop emitting — a stale set value would
+            # otherwise keep rendering after disable.
+            for g in _count_gauges.values():
+                _registry.unregister(g)
+            _count_gauges.clear()
         return generate_latest(_registry), CONTENT_TYPE_LATEST
 
 

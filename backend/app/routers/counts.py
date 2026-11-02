@@ -88,7 +88,7 @@ def _counting_health_key() -> str:
 def _reject(mode: str, reason: str, *, job_id: str | None = None,
             image_id: int | None = None) -> None:
     """Structured rejection log + metric before raising an HTTP error."""
-    jobs.record_count_job(mode, _outcome_for_reason(reason))
+    jobs.record_count_job(mode, _outcome_for_reason(reason), reason=reason)
     logger.info(
         "count job rejected",
         extra={

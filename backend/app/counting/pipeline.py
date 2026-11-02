@@ -10,12 +10,17 @@ codes (``timeout``, ``too_large``, ``too_many_objects``, ``no_tiles``,
 from __future__ import annotations
 
 import base64
+import logging
+import time
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import Any, Callable
 
 import pyvips
+from opentelemetry import trace
 
 from .grouping import assign_groups
+from .metrics import record_run_step
 from .objects import objects_from_labels
 from .outliners import NATIVE_DIAMETER, Outliner, estimate_object_diameter
 from .stitch import (
@@ -27,6 +32,9 @@ from .stitch import (
     resolve_tile_root,
     stitch_region,
 )
+
+logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 # Longest-side bound for the JPEG preview embedded in the result; the
 # preview is only ever downscaled, never upscaled.
@@ -166,6 +174,27 @@ def _selection_preview(stitched: pyvips.Image, plan) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf).decode("ascii")
 
 
+@contextmanager
+def _step_span(mode: str, step: str, timings: dict[str, int]):
+    """Trace + time one pipeline step.
+
+    Runs inside the worker's ``asyncio.to_thread`` — the enclosing
+    ``count_objects_task`` context propagates through contextvars, so these
+    spans land as children of the arq task span. Exceptions recorded on the
+    span propagate to the job-failure path unchanged.
+    """
+    with _tracer.start_as_current_span(
+        f"count.{step}", attributes={"count.mode": mode}
+    ) as span:
+        t0 = time.monotonic()
+        try:
+            yield span
+        finally:
+            elapsed_ms = round((time.monotonic() - t0) * 1000)
+            timings[step] = elapsed_ms
+            record_run_step(mode, step, elapsed_ms / 1000)
+
+
 def run_count(
     record: dict[str, Any],
     *,
@@ -183,86 +212,106 @@ def run_count(
     gone between stages, :class:`TooManyObjects` past the object cap, and
     :class:`CountingRegionError` subclasses for planning/tile failures.
     """
-    sel = record["selection"]
-    tile_root = resolve_tile_root(tiles_dir, int(record["source_image_id"]))
-    dzi = read_dzi(tile_root)
-    mode = record.get("mode", "cells")
-    mpp = record.get("mpp")
-    sel_rect = Rect(
-        x=int(sel["x"]),
-        y=int(sel["y"]),
-        width=int(sel["width"]),
-        height=int(sel["height"]),
-    )
-    # Size-driven level rule: probe the object scale on a coarse stitch,
-    # then plan at the fixed downsample it dictates.
-    downsample = _choose_downsample(
-        tile_root,
-        dzi,
-        sel_rect,
-        mode=mode,
-        mpp=float(mpp) if mpp else None,
-        margin_px=margin_px,
-        max_pixels=max_pixels,
-        max_downsample=max_downsample,
-    )
-    plan = plan_region(
-        dzi,
-        sel_rect,
-        margin_px=margin_px,
-        max_pixels=max_pixels,
-        max_downsample=max_downsample,
-        downsample=downsample,
-    )
-    _check_cancelled(is_cancelled)
-    stitched = stitch_region(tile_root, dzi, plan)
-    _check_cancelled(is_cancelled)
-    rgb = stitched.numpy()
-    # Outliners see the effective pixel size at the stitched level:
-    # every level px spans ``mpp * downsample`` µm.
-    eff_mpp = float(mpp) * downsample if mpp else None
-    labels = outliner.segment(rgb, plan=plan, mpp=eff_mpp)
-    _check_cancelled(is_cancelled)
-    objects = [
-        obj
-        for obj in objects_from_labels(labels, rgb, plan=plan)
-        if _centroid_in_selection(obj, plan.selection)
-    ]
-    if mode == "nuclei":
-        # Stain post-filter: keep only hematoxylin-blue objects.
-        objects = [o for o in objects if o["b"] <= _NUCLEI_B_STAR_MAX]
-    if len(objects) > max_objects:
-        raise TooManyObjects(
-            f"{len(objects)} objects exceeds the {max_objects} cap"
+    timings: dict[str, int] = {}
+    with _step_span(record.get("mode", "cells"), "total", timings):
+        sel = record["selection"]
+        tile_root = resolve_tile_root(tiles_dir, int(record["source_image_id"]))
+        dzi = read_dzi(tile_root)
+        mode = record.get("mode", "cells")
+        mpp = record.get("mpp")
+        sel_rect = Rect(
+            x=int(sel["x"]),
+            y=int(sel["y"]),
+            width=int(sel["width"]),
+            height=int(sel["height"]),
         )
-    _check_cancelled(is_cancelled)
+        # Size-driven level rule: probe the object scale on a coarse stitch,
+        # then plan at the fixed downsample it dictates.
+        with _step_span(mode, "plan", timings) as span:
+            downsample = _choose_downsample(
+                tile_root,
+                dzi,
+                sel_rect,
+                mode=mode,
+                mpp=float(mpp) if mpp else None,
+                margin_px=margin_px,
+                max_pixels=max_pixels,
+                max_downsample=max_downsample,
+            )
+            plan = plan_region(
+                dzi,
+                sel_rect,
+                margin_px=margin_px,
+                max_pixels=max_pixels,
+                max_downsample=max_downsample,
+                downsample=downsample,
+            )
+            span.set_attributes({
+                "count.level": plan.level,
+                "count.downsample": downsample,
+                "count.pixels": plan.out_width * plan.out_height,
+                "count.outliner": outliner.name,
+            })
+        _check_cancelled(is_cancelled)
+        with _step_span(mode, "stitch", timings) as span:
+            stitched = stitch_region(tile_root, dzi, plan)
+            span.set_attribute("count.pixels", plan.out_width * plan.out_height)
+        _check_cancelled(is_cancelled)
+        rgb = stitched.numpy()
+        # Outliners see the effective pixel size at the stitched level:
+        # every level px spans ``mpp * downsample`` µm.
+        eff_mpp = float(mpp) * downsample if mpp else None
+        with _step_span(mode, "outline", timings) as span:
+            labels = outliner.segment(rgb, plan=plan, mpp=eff_mpp)
+            span.set_attribute("count.outliner", outliner.name)
+        _check_cancelled(is_cancelled)
+        with _step_span(mode, "objects", timings) as span:
+            objects = [
+                obj
+                for obj in objects_from_labels(labels, rgb, plan=plan)
+                if _centroid_in_selection(obj, plan.selection)
+            ]
+            if mode == "nuclei":
+                # Stain post-filter: keep only hematoxylin-blue objects.
+                objects = [o for o in objects if o["b"] <= _NUCLEI_B_STAR_MAX]
+            if len(objects) > max_objects:
+                raise TooManyObjects(
+                    f"{len(objects)} objects exceeds the {max_objects} cap"
+                )
+            span.set_attribute("count.objects", len(objects))
+        _check_cancelled(is_cancelled)
 
-    for obj, group in zip(objects, assign_groups(objects)):
-        obj["group"] = group
-    groups, reindexed = _reindex_groups(objects)
-    return {
-        "total": len(reindexed),
-        "groups": groups,
-        "objects": [
-            {
-                "group": obj["group"],
-                "centroid": [
-                    round(obj["centroid"][0], 1),
-                    round(obj["centroid"][1], 1),
-                ],
-                "polygon": [
-                    [round(px, 1), round(py, 1)] for px, py in obj["polygon"]
-                ],
-            }
-            for obj in reindexed
-        ],
-        "preview": _selection_preview(stitched, plan),
-        # Planning context for the worker's completion log; popped before
-        # the result is persisted so it never reaches the client.
-        "_meta": {
-            "level": plan.level,
-            "downsample": downsample,
-            "pixels": plan.out_width * plan.out_height,
-            "outliner": outliner.name,
-        },
-    }
+        with _step_span(mode, "group", timings) as span:
+            for obj, group in zip(objects, assign_groups(objects)):
+                obj["group"] = group
+            groups, reindexed = _reindex_groups(objects)
+            span.set_attribute("count.groups", len(groups))
+        with _step_span(mode, "preview", timings):
+            preview = _selection_preview(stitched, plan)
+        return {
+            "total": len(reindexed),
+            "groups": groups,
+            "objects": [
+                {
+                    "group": obj["group"],
+                    "centroid": [
+                        round(obj["centroid"][0], 1),
+                        round(obj["centroid"][1], 1),
+                    ],
+                    "polygon": [
+                        [round(px, 1), round(py, 1)] for px, py in obj["polygon"]
+                    ],
+                }
+                for obj in reindexed
+            ],
+            "preview": preview,
+            # Planning context for the worker's completion log; popped before
+            # the result is persisted so it never reaches the client.
+            "_meta": {
+                "level": plan.level,
+                "downsample": downsample,
+                "pixels": plan.out_width * plan.out_height,
+                "outliner": outliner.name,
+                "timings_ms": timings,
+            },
+        }
