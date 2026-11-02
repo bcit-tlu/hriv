@@ -285,6 +285,24 @@ spec:
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
+            - name: COUNTING_ENABLED
+              value: {{ .Values.counting.enabled | quote }}
+            - name: COUNTING_QUEUE_NAME
+              value: {{ .Values.counting.queueName | quote }}
+            - name: COUNTING_MAX_PIXELS
+              value: {{ .Values.counting.maxPixels | quote }}
+            - name: COUNTING_MAX_DOWNSAMPLE
+              value: {{ .Values.counting.maxDownsample | quote }}
+            - name: COUNTING_MARGIN_PX
+              value: {{ .Values.counting.marginPx | quote }}
+            - name: COUNTING_MAX_ACTIVE_PER_USER
+              value: {{ .Values.counting.maxActivePerUser | quote }}
+            - name: COUNTING_RESULT_TTL_SECONDS
+              value: {{ .Values.counting.resultTtlSeconds | quote }}
+            - name: COUNTING_JOB_TIMEOUT_SECONDS
+              value: {{ .Values.counting.jobTimeoutSeconds | quote }}
+            - name: COUNTING_MAX_OBJECTS
+              value: {{ .Values.counting.maxObjects | quote }}
             # API-side libvips and database pool profile, mirroring the
             # worker-only redis.worker.* profile so each pod class
             # carries an explicit connection budget.  VIPS_CONCURRENCY

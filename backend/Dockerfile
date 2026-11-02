@@ -239,7 +239,16 @@ COPY --from=poetry-tools /opt/poetry-venv /opt/poetry-venv
 COPY pyproject.toml poetry.lock ./
 RUN /opt/poetry-venv/bin/poetry export --only main,counting,counting-ml -f requirements.txt -o requirements.txt \
     && pip install --no-cache-dir -r requirements.txt \
-       --extra-index-url https://download.pytorch.org/whl/cpu
+       --extra-index-url https://download.pytorch.org/whl/cpu \
+    && find /usr/local/lib/python3.14/site-packages -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && find /usr/local/lib/python3.14/site-packages -name "*.pyc" -delete \
+    && find /usr/local/lib/python3.14/site-packages -type d -name tests -prune -exec rm -rf {} + \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip* \
+             /usr/local/lib/python3.14/site-packages/setuptools* \
+             /usr/local/lib/python3.14/site-packages/ensurepip* \
+             /usr/local/lib/python3.14/site-packages/_distutils_hack \
+             /usr/local/lib/python3.14/site-packages/torch/test \
+             /usr/local/lib/python3.14/site-packages/torch/include
 
 # Bake the InstanSeg ``brightfield_nuclei`` v0.1.1 bioimage.io model so no
 # runtime download is needed (``instanseg.utils.utils`` resolves models

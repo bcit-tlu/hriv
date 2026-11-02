@@ -24,7 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: [frontend, backend, backup, restore-validation, synthetic-monitoring]
+        include:
+          - { component: frontend, image: hriv-frontend }
+          - { component: backend, image: hriv-backend }
+          # The counting worker shares the backend release tag
+          # (tag_prefix: backend-v in ci.yaml) but is a separate image.
+          - { component: backend, image: hriv-counting-worker }
+          - { component: backup, image: hriv-backup }
+          - { component: restore-validation, image: hriv-restore-validation }
+          - { component: synthetic-monitoring, image: hriv-synthetic-monitoring }
 
     steps:
       - name: Parse release tag
@@ -88,7 +96,7 @@ jobs:
       - name: Wait for source image
         if: steps.parse.outputs.match == 'true'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
           SRC="${IMAGE}:sha-${SHA}"
@@ -115,7 +123,7 @@ jobs:
         id: retag
         if: steps.parse.outputs.match == 'true'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
           SHA: ${{ steps.sha.outputs.sha }}
           VERSION: ${{ steps.parse.outputs.version }}
           IS_HIGHEST: ${{ steps.highest.outputs.is_highest }}

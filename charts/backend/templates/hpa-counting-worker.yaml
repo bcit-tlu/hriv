@@ -1,0 +1,25 @@
+{{- if and .Values.redis.enabled .Values.countingWorker.enabled .Values.countingWorker.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-counting-worker
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: counting-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "hriv-backend.fullname" . }}-counting-worker
+  minReplicas: {{ .Values.countingWorker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.countingWorker.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.countingWorker.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.countingWorker.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}

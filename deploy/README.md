@@ -91,3 +91,11 @@ the old single-PVC layout should plan a manual migration:
 
 Until the Flux overlays are updated, old flat-key overrides may not express the
 intended split-PVC configuration.
+
+## Counting worker (#1661/#1666)
+
+To enable object counting in `latest`: set `counting.enabled: true` and
+`countingWorker.enabled: true` in the hriv-backend overlay, and point
+`countingWorker.networkPolicy.{redis,otel}` peers at the in-cluster
+Redis and OTel collector. KEDA on `arq:counting` is the preferred
+autoscaler when available.

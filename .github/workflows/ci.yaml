@@ -413,6 +413,64 @@ jobs:
       trivyignore: .trivyignore
     secrets: inherit
 
+  build-counting-worker:
+    needs: [changes, backend-tests]
+    if: >-
+      always() && needs.changes.outputs.backend-image == 'true' &&
+      needs.backend-tests.result == 'success'
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+      actions: read
+    with:
+      component: counting-worker
+      image_name: hriv-counting-worker
+      push_pr_images: false
+      context: ./backend
+      target: counting-worker
+      # Versioned with backend releases (the Helm chart defaults the
+      # counting image tag to the backend image tag).
+      tag_prefix: backend-v
+      extra_watch_paths: .trivyignore
+      trivyignore: .trivyignore
+    secrets: inherit
+
+  # The chart pins the counting image tag to the backend RC tag, but each
+  # oci-build call stamps its own <ver>-rc.<ts>.g<short>; alias the
+  # counting image under the backend RC so the tag exists before a chart
+  # that references it is published.
+  alias-counting-worker:
+    needs: [build-backend, build-counting-worker]
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      needs.build-backend.result == 'success' &&
+      needs.build-counting-worker.result == 'success' &&
+      needs.build-backend.outputs.changed == 'true' &&
+      needs.build-counting-worker.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Alias counting image to the backend RC tag
+        env:
+          BACKEND_RC: ${{ needs.build-backend.outputs.rc_version }}
+          SHA: ${{ github.sha }}
+          IMAGE: ghcr.io/${{ github.repository }}/hriv-counting-worker
+        run: |
+          docker buildx imagetools create             -t "${IMAGE}:${BACKEND_RC}"             "${IMAGE}:sha-${SHA}"
+
   build-backup:
     needs: [changes, backup-tests]
     if: >-
@@ -480,7 +538,16 @@ jobs:
   # the publish loop below.
 
   helm-publish:
-    needs: [helm-lint, build-frontend, build-backend, build-backup, build-restore-validation]
+    needs:
+      [
+        helm-lint,
+        build-frontend,
+        build-backend,
+        build-counting-worker,
+        alias-counting-worker,
+        build-backup,
+        build-restore-validation,
+      ]
     if: >-
       always() && github.event_name != 'pull_request' &&
       needs.helm-lint.result == 'success' &&
@@ -488,6 +555,10 @@ jobs:
       needs.build-frontend.result == 'skipped') &&
       (needs.build-backend.result == 'success' ||
       needs.build-backend.result == 'skipped') &&
+      (needs.build-counting-worker.result == 'success' ||
+      needs.build-counting-worker.result == 'skipped') &&
+      (needs.alias-counting-worker.result == 'success' ||
+      needs.alias-counting-worker.result == 'skipped') &&
       (needs.build-backup.result == 'success' ||
       needs.build-backup.result == 'skipped') &&
       (needs.build-restore-validation.result == 'success' ||

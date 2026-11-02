@@ -68,3 +68,11 @@ bash scripts/test-tiles-nginx-runtime.sh
 ```
 
 For backup changes, use `$testing-backup-service`.
+
+## Counting worker (#1666)
+
+`hriv-counting-worker` is a separate backend-derived image (Dockerfile
+target `counting-worker`, CPU torch + baked InstanSeg model). It shares
+the backend release tag; CI job `alias-counting-worker` creates the
+`<backend-rc>` tag on main so `charts/backend`'s default image.tag works.
+Chart values live under `counting.*` / `countingWorker.*`.

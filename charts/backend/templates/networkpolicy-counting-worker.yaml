@@ -1,0 +1,51 @@
+{{- if and .Values.countingWorker.enabled .Values.countingWorker.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-counting-worker
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: counting-worker
+spec:
+  # Counting-worker pods: no ingress at all; egress only to Redis (the
+  # arq queue), kube-dns, and the OTel collector when telemetry is on.
+  # No internet.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "hriv-backend.name" . }}-counting-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            {{- toYaml .Values.countingWorker.networkPolicy.redis.podSelector | nindent 12 }}
+          {{- with .Values.countingWorker.networkPolicy.redis.namespaceSelector }}
+          namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: {{ .Values.countingWorker.networkPolicy.redis.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.countingWorker.networkPolicy.dns.namespaceSelector | nindent 12 }}
+      ports:
+        - port: {{ .Values.countingWorker.networkPolicy.dns.port }}
+          protocol: UDP
+        - port: {{ .Values.countingWorker.networkPolicy.dns.port }}
+          protocol: TCP
+    {{- if .Values.observability.openTelemetry.enabled }}
+    - to:
+        - podSelector:
+            {{- toYaml .Values.countingWorker.networkPolicy.otel.podSelector | nindent 12 }}
+          {{- with .Values.countingWorker.networkPolicy.otel.namespaceSelector }}
+          namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      ports:
+        - port: {{ .Values.countingWorker.networkPolicy.otel.port }}
+          protocol: TCP
+    {{- end }}
+{{- end }}

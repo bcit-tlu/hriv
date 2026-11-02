@@ -368,6 +368,96 @@ redis:
       # horizon from the #1189 latest-cluster rehearsal.
       scaleDownStabilizationWindowSeconds: 3600
 
+# ── Object counting (epic #1661) ────────────────────────────────
+# Renders as COUNTING_* env on the API Deployment and is shared with the
+# optional counting-worker Deployment below.  The API pre-flights
+# selections against these budgets; jobs and results live ephemerally in
+# Redis on the dedicated arq:counting queue.
+counting:
+  enabled: false # COUNTING_ENABLED — dark-launch flag for the whole surface
+  queueName: arq:counting
+  maxPixels: 750000 # stitched level pixels per job (pre-flight cap)
+  maxDownsample: 8 # coarsest permitted level-0:level ratio (power of two)
+  marginPx: 32 # margin in level pixels (~1 object diameter)
+  maxActivePerUser: 3 # queued+running jobs per user; over -> 429
+  resultTtlSeconds: 600
+  jobTimeoutSeconds: 60
+  maxObjects: 3000
+
+# Dedicated arq worker for the counting queue.  Counting jobs run ML
+# inference (InstanSeg / classical scikit-image) so they get their own
+# image (hriv-counting-worker, CPU torch) and pod class — tile jobs never
+# compete with them.  Requires redis.enabled and a ReadWriteMany tiles
+# PVC (mounted read-only); the worker needs no database access and no
+# source-images mount.
+countingWorker:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/bcit-tlu/hriv/hriv-counting-worker
+    # '' -> image.tag | default Chart.AppVersion (the chart pins the
+    # counting image to the backend release tag).
+    tag: ''
+    pullPolicy: IfNotPresent
+  # Outliner selection (backend settings Literal values).
+  cellsOutliner: classical # classical | stub
+  nucleiOutliner: instanseg # instanseg | classical | stub
+  torchThreads: 2 # COUNTING_TORCH_THREADS (torch CPU threads)
+  # Count jobs are seconds long and ephemeral — a short grace period is
+  # fine; the job record outlives the pod anyway (Redis TTL).
+  terminationGracePeriodSeconds: 30
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 60
+      periodSeconds: 60
+      timeoutSeconds: 15
+      failureThreshold: 10
+  resources:
+    # From the #1662 spike: InstanSeg on CPU at ~1 job/pod wants ~2 cores
+    # and ~2Gi; the limit keeps a runaway stitch/segment inside the pod.
+    requests:
+      cpu: '2'
+      memory: '2Gi'
+    limits:
+      cpu: '2'
+      memory: '3Gi'
+  # CPU-based HPA. The preferred lab-burst signal is KEDA on the
+  # arq:counting queue length (see docs/object-counting.md); scheduled
+  # pre-scaling is the fallback when KEDA isn't available.
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+  # Egress policy for counting-worker pods: Redis + DNS + the OTel
+  # collector only — never the internet.  Disabled by default to match
+  # networkPolicy.enabled.
+  networkPolicy:
+    enabled: false
+    # Peers the worker must reach.  redis is the arq queue; dns is
+    # kube-dns for service resolution; otel is the collector (only
+    # rendered when observability.openTelemetry.enabled).
+    redis:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: hriv-redis
+      namespaceSelector: {}
+      port: 6379
+    dns:
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      port: 53
+    otel:
+      # Endpoint the OTLP exporter targets; the peer is a namespace/pod
+      # selector pair like the redis peer.
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: opentelemetry-collector
+      namespaceSelector: {}
+      port: 4317
+
 # ── Feedback delivery ────────────────────────────────────────
 # The backend accepts in-app feedback submissions via
 # POST /api/issues/report, then routes them through a provider.
