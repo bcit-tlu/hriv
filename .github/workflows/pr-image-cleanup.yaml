@@ -20,3 +20,4 @@ jobs:
       image_names: |
         hriv-frontend
         hriv-backend
+        hriv-counting-worker
