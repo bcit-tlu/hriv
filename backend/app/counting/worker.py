@@ -35,7 +35,7 @@ from ..logging_config import setup_logging
 from ..queue_metrics import HEALTH_CHECK_INTERVAL_SECONDS
 from ..worker import _parse_redis_settings
 from . import jobs, pipeline
-from .outliners import Outliner, StubOutliner
+from .outliners import Outliner, build_outliners
 from .stitch import CountingRegionError
 
 logger = logging.getLogger(__name__)
@@ -74,10 +74,24 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
         # Cancelled (record deleted) or expired before the worker dequeued.
         return
 
-    outliner: Outliner = ctx.get("outliner") or StubOutliner()
     mode = str(record.get("mode", ""))
     image_id = record.get("image_id")
     started = time.monotonic()
+    outliners: dict[str, Outliner] = ctx.get("outliners") or {}
+    outliner = outliners.get(record.get("mode", "cells"))
+    if outliner is None:
+        # No silent stub fallback — a misconfigured worker must fail the job
+        # with `internal`, never return fabricated counts.
+        logger.error(
+            "count job has no configured outliner",
+            extra={"event": "count.failed", "job_id": job_id,
+                   "mode": record.get("mode")},
+        )
+        await _fail(
+            redis, job_id, record, record.get("mode", "cells"),
+            image_id, started, "internal",
+        )
+        return
     logger.info(
         "count job started",
         extra={
@@ -165,7 +179,9 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
             "total": result.get("total"),
             "duration_ms": duration_ms,
             "level": meta.get("level"),
+            "downsample": meta.get("downsample"),
             "pixels": meta.get("pixels"),
+            "outliner": meta.get("outliner"),
         },
     )
 
@@ -200,9 +216,36 @@ async def _fail(
 
 
 async def on_startup(ctx: dict[str, Any]) -> None:
-    """Initialise logging and the (stub) outliner when the worker boots."""
+    """Initialise logging and build the configured outliners once.
+
+    A configured outliner that can't load (e.g. torch missing for
+    ``instanseg``) fails startup LOUDLY: no heartbeat is published, so the
+    API answers ``counting_unavailable`` — the correct signal for a
+    broken worker rather than silently degraded counts.
+    """
     setup_logging()
-    ctx["outliner"] = StubOutliner()
+    import numpy as np
+
+    from .stitch import Rect, RegionPlan
+
+    ctx["outliners"] = build_outliners(
+        cells=settings.counting_cells_outliner,
+        nuclei=settings.counting_nuclei_outliner,
+        torch_threads=settings.counting_torch_threads,
+    )
+    # Warm up each outliner once so first-job latency excludes model init.
+    warmup = np.zeros((64, 64, 3), dtype=np.uint8)
+    warm_plan = RegionPlan(
+        level=0,
+        downsample=1,
+        selection=Rect(0, 0, 64, 64),
+        region=Rect(0, 0, 64, 64),
+        level_rect=Rect(0, 0, 64, 64),
+        out_width=64,
+        out_height=64,
+    )
+    for mode, outliner in ctx["outliners"].items():
+        outliner.segment(warmup, plan=warm_plan, mpp=None)
     logger.info(
         "arq counting worker started",
         extra={
@@ -211,7 +254,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
                 "OTEL_SERVICE_NAME", "hriv-counting-worker"
             ),
             "service.version": get_worker_version(),
-            "outliner": ctx["outliner"].name,
+            "outliners": {m: o.name for m, o in ctx["outliners"].items()},
             "queue_name": settings.counting_queue_name,
         },
     )

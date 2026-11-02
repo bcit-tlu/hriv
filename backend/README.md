@@ -368,3 +368,14 @@ repository managed outside this repo. Keep this backend repo focused on the
 telemetry contract (metric names, log fields, and semantics), and coordinate
 any dashboard updates in the external provisioning repo when that contract
 changes.
+
+## Counting worker (#1665)
+
+The `counting-worker` service (compose profile `counting`) runs real
+outliners. Optional Poetry groups: `counting` (numpy, scikit-image,
+scikit-learn — installed in CI and the worker image) and `counting-ml`
+(CPU torch + instanseg-torch — image-only, skipped in CI). Env:
+`COUNTING_CELLS_OUTLINER` (`classical`|`stub`), `COUNTING_NUCLEI_OUTLINER`
+(`instanseg`|`classical`|`stub`), `COUNTING_TORCH_THREADS`,
+`COUNTING_MODELS_DIR`, plus the `COUNTING_MAX_*` budget knobs in
+`app/database.py`.

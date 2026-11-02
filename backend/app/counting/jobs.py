@@ -85,6 +85,7 @@ async def create_record(
     source_image_id: int,
     mode: str,
     selection: dict[str, int],
+    mpp: float | None = None,
     ttl_seconds: int,
 ) -> dict[str, Any]:
     """Persist a fresh queued record (before enqueue) and return it."""
@@ -95,6 +96,7 @@ async def create_record(
         "source_image_id": source_image_id,
         "mode": mode,
         "selection": selection,
+        "mpp": mpp,
         "status": STATUS_QUEUED,
         "created_at": _now(),
         "started_at": None,

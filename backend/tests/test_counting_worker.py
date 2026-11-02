@@ -15,6 +15,8 @@ from fakeredis import aioredis as fake_aioredis
 
 from app.counting import jobs, pipeline
 from app.counting.outliners import StubOutliner
+
+STUB_OUTLINERS = {"cells": StubOutliner(), "nuclei": StubOutliner()}
 from app.counting.worker import (
     CountingWorkerSettings,
     count_objects_task,
@@ -85,7 +87,7 @@ async def _result(pool, job_id: str) -> dict:
 
 async def test_task_end_to_end_done(worker_settings, pool) -> None:
     await _record(pool, "job-ok")
-    await count_objects_task({"redis": pool}, "job-ok", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-ok", {})
 
     record = await jobs.get_record(pool, "job-ok")
     assert record["status"] == "done"
@@ -117,7 +119,7 @@ async def test_task_end_to_end_done(worker_settings, pool) -> None:
 async def test_task_groups_ordered_by_mean_area(worker_settings, pool) -> None:
     """Group indices are ordered by mean object area, ascending."""
     await _record(pool, "job-groups")
-    await count_objects_task({"redis": pool}, "job-groups", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-groups", {})
     result = await _result(pool, "job-groups")
     if len(result["groups"]) < 2:
         pytest.skip("stub produced a single group for this selection")
@@ -143,7 +145,7 @@ async def test_task_groups_ordered_by_mean_area(worker_settings, pool) -> None:
 
 async def test_task_preview_is_bounded_jpeg(worker_settings, pool) -> None:
     await _record(pool, "job-prev")
-    await count_objects_task({"redis": pool}, "job-prev", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-prev", {})
     result = await _result(pool, "job-prev")
     assert result["preview"].startswith("data:image/jpeg;base64,")
     raw = base64.b64decode(result["preview"].split(",", 1)[1])
@@ -157,8 +159,8 @@ async def test_task_deterministic_across_runs(worker_settings, pool) -> None:
     """Same selection -> identical outlines (seed derives from geometry)."""
     await _record(pool, "job-a")
     await _record(pool, "job-b")
-    await count_objects_task({"redis": pool}, "job-a", {})
-    await count_objects_task({"redis": pool}, "job-b", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-a", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-b", {})
     a = await _result(pool, "job-a")
     b = await _result(pool, "job-b")
     assert a == b
@@ -166,7 +168,7 @@ async def test_task_deterministic_across_runs(worker_settings, pool) -> None:
 
 async def test_task_missing_record_returns_silently(worker_settings, pool) -> None:
     """Cancelled/expired before dequeue: no writes at all."""
-    await count_objects_task({"redis": pool}, "ghost", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "ghost", {})
     assert await pool.get("count:job:ghost") is None
     assert await pool.get("count:result:ghost") is None
 
@@ -189,7 +191,7 @@ async def test_task_cancelled_mid_run_writes_nothing(
         return real_stitch(*args, **kwargs)
 
     monkeypatch.setattr(pipeline, "stitch_region", deleting_stitch)
-    await count_objects_task({"redis": pool}, "job-cancel", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-cancel", {})
 
     assert await jobs.get_record(pool, "job-cancel") is None
     assert await pool.get("count:result:job-cancel") is None
@@ -198,7 +200,7 @@ async def test_task_cancelled_mid_run_writes_nothing(
 async def test_task_missing_tiles_fails_no_tiles(worker_settings, pool) -> None:
     """No pyramid for the source image -> failed with ``no_tiles``."""
     await _record(pool, "job-notiles", source_image_id=404)
-    await count_objects_task({"redis": pool}, "job-notiles", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-notiles", {})
     record = await jobs.get_record(pool, "job-notiles")
     assert record["status"] == "failed"
     assert record["error"] == "no_tiles"
@@ -210,7 +212,7 @@ async def test_task_object_cap_fails_too_many(
 ) -> None:
     monkeypatch.setattr(settings, "counting_max_objects", 2)
     await _record(pool, "job-capped")
-    await count_objects_task({"redis": pool}, "job-capped", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-capped", {})
     record = await jobs.get_record(pool, "job-capped")
     assert record["status"] == "failed"
     assert record["error"] == "too_many_objects"
@@ -224,7 +226,7 @@ async def test_task_unexpected_error_fails_internal(
     )
     await _record(pool, "job-boom")
     with pytest.raises(RuntimeError):
-        await count_objects_task({"redis": pool}, "job-boom", {})
+        await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-boom", {})
     record = await jobs.get_record(pool, "job-boom")
     assert record["status"] == "failed"
     assert record["error"] == "internal"
@@ -239,7 +241,7 @@ async def test_task_arq_timeout_marks_failed_timeout(
     )
     await _record(pool, "job-timeout")
     with pytest.raises(asyncio.CancelledError):
-        await count_objects_task({"redis": pool}, "job-timeout", {})
+        await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-timeout", {})
     record = await jobs.get_record(pool, "job-timeout")
     assert record["status"] == "failed"
     assert record["error"] == "timeout"
@@ -265,7 +267,9 @@ async def test_task_timeout_holds_slot_until_pipeline_thread_exits(
     monkeypatch.setattr(pipeline, "run_count", slow_run_count)
     await _record(pool, "job-slow")
     task = asyncio.ensure_future(
-        count_objects_task({"redis": pool}, "job-slow", {})
+        count_objects_task(
+            {"redis": pool, "outliners": STUB_OUTLINERS}, "job-slow", {}
+        )
     )
     await asyncio.to_thread(started.wait, 10)
     task.cancel()
@@ -296,7 +300,7 @@ async def test_task_arq_abort_with_deleted_record_writes_nothing(
 
     monkeypatch.setattr(pipeline, "run_count", gone)
     with pytest.raises(asyncio.CancelledError):
-        await count_objects_task({"redis": pool}, "job-abort", {})
+        await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-abort", {})
     # Nothing resurrected.
     assert await jobs.get_record(pool, "job-abort") is None
     assert await pool.get("count:result:job-abort") is None
@@ -310,7 +314,7 @@ async def test_update_status_never_resurrects_cancelled_record(pool) -> None:
 
 async def test_status_updates_keep_record_ttl(worker_settings, pool) -> None:
     await _record(pool, "job-ttl")
-    await count_objects_task({"redis": pool}, "job-ttl", {})
+    await count_objects_task(dict({"redis": pool}, outliners=STUB_OUTLINERS) , "job-ttl", {})
     assert 0 < await pool.ttl("count:job:job-ttl") <= 600
 
 
@@ -332,8 +336,19 @@ def test_counting_worker_settings_shape() -> None:
     assert ws.health_check_interval > 0
 
 
-async def test_on_startup_installs_stub_outliner() -> None:
+async def test_on_startup_installs_stub_outliners(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "counting_cells_outliner", "stub")
+    monkeypatch.setattr(settings, "counting_nuclei_outliner", "stub")
     ctx: dict = {}
     await on_startup(ctx)
-    assert isinstance(ctx["outliner"], StubOutliner)
-    assert ctx["outliner"].name == "stub"
+    cells = ctx["outliners"]["cells"]
+    nuclei = ctx["outliners"]["nuclei"]
+    assert cells.name == "stub" and nuclei.name == "stub"
+
+
+async def test_missing_outliner_fails_internal(worker_settings, pool) -> None:
+    await _record(pool, "job-missing-outliner")
+    ctx = {"redis": pool, "outliners": {}}
+    await count_objects_task(ctx, "job-missing-outliner")
+    raw = await pool.get("count:job:job-missing-outliner")
+    assert "internal" in raw

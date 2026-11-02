@@ -151,7 +151,7 @@ jobs:
           restore-keys: backend-venv-py3.14-
 
       - name: Install dependencies
-        run: poetry install --with dev
+        run: poetry install --with dev,counting
 
       # THIRD-PARTY-LICENSES.txt must match the locked runtime dependency
       # tree (run `poetry run python scripts/generate_third_party_licenses.py` to refresh).

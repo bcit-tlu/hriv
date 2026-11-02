@@ -75,7 +75,7 @@ docker compose up -d --build frontend   # or backend, worker, etc.
 
 ## Object counting (epic #1661)
 
-Backend API, counting worker (stub outliner until #1665) and the viewer UI
+Backend API, counting worker (#1665: classical cells + InstanSeg nuclei, built from the `counting-worker` Docker target) and the viewer UI
 (Count objects pop-up, progress snackbar, report modal) are all available.
 Enable the flag and the dedicated worker via the `counting` compose profile:
 
