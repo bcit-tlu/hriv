@@ -247,6 +247,7 @@ RUN /opt/poetry-venv/bin/poetry export --only main,counting,counting-ml -f requi
              /usr/local/lib/python3.14/site-packages/setuptools* \
              /usr/local/lib/python3.14/site-packages/ensurepip* \
              /usr/local/lib/python3.14/site-packages/_distutils_hack \
+             /usr/local/lib/python3.14/site-packages/distutils-precedence.pth \
              /usr/local/lib/python3.14/site-packages/torch/test \
              /usr/local/lib/python3.14/site-packages/torch/include
 
