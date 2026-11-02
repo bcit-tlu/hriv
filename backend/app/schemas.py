@@ -1086,6 +1086,69 @@ class CollectionBulkDelete(BaseModel):
     collection_ids: list[int]
 
 
+# ── Object counting (epic #1661, ephemeral jobs — no DB tables) ────────────
+
+
+class CountSelection(BaseModel):
+    """Selection rectangle in level-0 image pixels."""
+
+    x: int
+    y: int
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+
+
+class CountCreate(BaseModel):
+    """``POST /api/images/{image_id}/counts`` body."""
+
+    mode: Literal["cells", "nuclei"]
+    selection: CountSelection
+
+
+class CountGroupOut(BaseModel):
+    group: int
+    count: int
+
+
+class CountObjectOut(BaseModel):
+    group: int
+    centroid: list[float] = Field(min_length=2, max_length=2)
+    polygon: list[list[float]]
+
+
+class CountJobCreatedOut(BaseModel):
+    """``POST /api/images/{image_id}/counts`` -> 202."""
+
+    job_id: str
+    status: Literal["queued"]
+    queue_position: int | None
+
+
+class CountJobOut(BaseModel):
+    """``GET /api/counts/{job_id}`` — result contract from the epic.
+
+    Result fields (``total``/``groups``/``objects``/``preview``) are
+    populated only when ``status`` is ``"done"``; ``queue_position`` only
+    while ``"queued"``. ``cancelled`` and ``expired`` appear in the contract
+    for the frontend but are never returned by this endpoint — cancellation
+    deletes the job record and expiry is Redis TTL eviction, so both read
+    as a 404.
+    """
+
+    job_id: str
+    status: Literal[
+        "queued", "running", "done", "failed", "cancelled", "expired"
+    ]
+    queue_position: int | None
+    mode: Literal["cells", "nuclei"]
+    selection: CountSelection
+    total: int | None
+    groups: list[CountGroupOut]
+    objects: list[CountObjectOut]
+    error: str | None
+    preview: str | None
+
+
 class FeaturesOut(BaseModel):
     """``GET /api/features``: deployment-level feature flags the frontend
     reads at boot to decide which surfaces to render. Flags are not secrets;
@@ -1094,6 +1157,7 @@ class FeaturesOut(BaseModel):
 
     collections: bool
     collections_home_shelf: bool
+    counting: bool
 
 
 # Rebuild forward refs for nested models (``CategoryTree`` embeds
