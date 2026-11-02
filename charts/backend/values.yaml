@@ -428,7 +428,7 @@ countingWorker:
   autoscaling:
     enabled: false
     minReplicas: 1
-    maxReplicas: 4
+    maxReplicas: 5
     targetCPUUtilizationPercentage: 70
   # Egress policy for counting-worker pods: Redis + DNS + the OTel
   # collector only — never the internet.  Disabled by default to match

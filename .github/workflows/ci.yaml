@@ -428,7 +428,8 @@ jobs:
     with:
       component: counting-worker
       image_name: hriv-counting-worker
-      push_pr_images: false
+      # PR previews pin sha-<head>; the chart reuses that tag for this image.
+      push_pr_images: true
       context: ./backend
       target: counting-worker
       # Versioned with backend releases (the Helm chart defaults the
