@@ -13,7 +13,6 @@ import base64
 from collections import defaultdict
 from typing import Any, Callable
 
-import numpy as np
 import pyvips
 
 from .grouping import assign_groups
@@ -219,7 +218,10 @@ def run_count(
     stitched = stitch_region(tile_root, dzi, plan)
     _check_cancelled(is_cancelled)
     rgb = stitched.numpy()
-    labels = outliner.segment(rgb, plan=plan, mpp=float(mpp) if mpp else None)
+    # Outliners see the effective pixel size at the stitched level:
+    # every level px spans ``mpp * downsample`` µm.
+    eff_mpp = float(mpp) * downsample if mpp else None
+    labels = outliner.segment(rgb, plan=plan, mpp=eff_mpp)
     _check_cancelled(is_cancelled)
     objects = [
         obj

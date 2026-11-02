@@ -123,9 +123,17 @@ class InstanSegNucleiOutliner:
     name = "instanseg"
 
     def __init__(self, torch_threads: int = 2) -> None:
+        import os
+
         import torch
         from instanseg import InstanSeg
 
+        from ..database import settings
+
+        # Point InstanSeg's model store at the baked dir before it loads —
+        # without this it would fall back to a site-packages path or try to
+        # download the model at runtime.
+        os.environ["INSTANSEG_BIOIMAGEIO_PATH"] = settings.counting_models_dir
         torch.set_num_threads(max(1, torch_threads))
         torch.set_num_interop_threads(1)
         self._model = InstanSeg("brightfield_nuclei", verbosity=0, device="cpu")

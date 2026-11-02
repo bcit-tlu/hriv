@@ -276,7 +276,7 @@ def test_instanseg_brightfield_nuclei_real_model():
     Runs only where the ``counting-ml`` group is installed and the model
     is baked at ``$INSTANSEG_BIOIMAGEIO_PATH`` (the counting-worker image).
     """
-    torch = pytest.importorskip("torch")
+    pytest.importorskip("torch")
     pytest.importorskip("instanseg")
     import os
 
@@ -300,3 +300,100 @@ def test_instanseg_brightfield_nuclei_real_model():
     assert labels.dtype == np.int32
     assert labels.shape[:2] == rgb.shape[:2]
     assert len(np.unique(labels)) > 1  # found at least one nucleus
+
+
+class _FakeVips:
+    def __init__(self, arr):
+        self._arr = arr
+    def numpy(self):
+        return self._arr
+
+
+class TestRunCountNuclei:
+    """Integrated nuclei-mode run_count: mpp rule, effective pixel size,
+    and the blue-stain post-filter all exercised end to end."""
+
+    def test_mpp_downsample_effective_px_and_stain_filter(self, monkeypatch):
+        dzi = DziInfo(
+            width=4096, height=4096, tile_size=512, overlap=0,
+            format="png", max_level=11,
+        )
+        monkeypatch.setattr(count_pipeline, "resolve_tile_root", lambda *_a, **_k: "root")
+        monkeypatch.setattr(count_pipeline, "read_dzi", lambda *_a, **_k: dzi)
+
+        # 64x64 field: blue-ish blob (labels=1) + pink blob (labels=2).
+        rgb = np.full((64, 64, 3), 240, np.uint8)
+        rgb[8:24, 8:24] = (30, 30, 170)   # hematoxylin-ish, b* << 0
+        rgb[40:56, 40:56] = (230, 150, 120)  # eosin-tan, b* > -5 -> dropped
+        monkeypatch.setattr(
+            count_pipeline, "stitch_region",
+            lambda *_a, **_k: _FakeVips(rgb),
+        )
+        monkeypatch.setattr(
+            count_pipeline, "_selection_preview", lambda *_a, **_k: "data:image/jpeg;base64,x"
+        )
+
+        labels = np.zeros((64, 64), np.int32)
+        labels[8:24, 8:24] = 1
+        labels[40:56, 40:56] = 2
+        seen: dict = {}
+
+        class FakeNucleiOutliner:
+            name = "fake"
+            def segment(self, _rgb, *, plan, mpp):
+                seen["mpp"] = mpp
+                return labels
+
+        record = {
+            "source_image_id": 5,
+            "mode": "nuclei",
+            "mpp": 0.25,
+            "selection": {"x": 0, "y": 0, "width": 128, "height": 128},
+        }
+        result = count_pipeline.run_count(
+            record,
+            tiles_dir="/tmp",
+            outliner=FakeNucleiOutliner(),
+            margin_px=4,
+            max_pixels=750_000,
+            max_downsample=8,
+            max_objects=3000,
+            is_cancelled=lambda: False,
+        )
+        # mpp rule: largest d<=8 with 0.25*d <= 0.5 -> d=2.
+        assert result["_meta"]["downsample"] == 2
+        # Effective pixel size handed to the outliner: mpp * downsample.
+        assert seen["mpp"] == 0.5
+        # Blue object survives; pink is dropped by the stain filter.
+        assert result["total"] == 1
+        assert len(result["objects"]) == 1
+
+
+class TestInstanSegModelDir:
+    def test_models_dir_sets_bioimageio_path(self, monkeypatch):
+        import sys, types
+        from app.database import settings
+
+        calls: dict = {}
+        fake_torch = types.SimpleNamespace(
+            set_num_threads=lambda n: calls.setdefault("threads", n),
+            set_num_interop_threads=lambda n: None,
+        )
+        class FakeInstanSeg:
+            def __init__(self, name, **kw):
+                calls["name"] = name
+                calls["env"] = __import__("os").environ.get(
+                    "INSTANSEG_BIOIMAGEIO_PATH"
+                )
+        fake_instanseg = types.ModuleType("instanseg")
+        fake_instanseg.InstanSeg = FakeInstanSeg
+        monkeypatch.setitem(sys.modules, "torch", fake_torch)
+        monkeypatch.setitem(sys.modules, "instanseg", fake_instanseg)
+        monkeypatch.setattr(
+            settings, "counting_models_dir", "/tmp/fake-models"
+        )
+        from app.counting.outliners import InstanSegNucleiOutliner
+        InstanSegNucleiOutliner(torch_threads=3)
+        assert calls["env"] == "/tmp/fake-models"
+        assert calls["name"] == "brightfield_nuclei"
+        assert calls["threads"] == 3

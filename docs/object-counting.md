@@ -102,10 +102,12 @@ is met by scaling replicas, not per-process concurrency.
 **`StubOutliner`** — a deterministic, pixel-free stand-in that places
 synthetic round objects on a jittered grid so the job lifecycle, edge rule,
 grouping and frontend integration can be exercised end-to-end **before the
-ML pipeline exists**. The spike (#1662) picks real models (design lock:
-Cells → Cellpose `cyto3`, Nuclei → InstanSeg brightfield nuclei, both
-PyTorch CPU-only, MPL-2.0-compatible licences) and #1665 swaps the
-implementation behind the same protocol.
+ML pipeline exists**. The spike (#1662) selected the shipped models —
+Cells → classical scikit-image watershed, Nuclei → InstanSeg
+`brightfield_nuclei` (Apache-2.0) — and #1665 lands them behind the same
+protocol. Cellpose `cyto3` is not shipped by default: its weights are
+trained partly on CC-BY-NC data and it needs Python ≤3.12, so it is pending
+an owner decision as an opt-in plugin.
 
 ## API
 
@@ -186,17 +188,17 @@ instead of `sendBeacon` when a selection is destroyed.
 Count affordance while off. Flags are UX hints only — the backend enforces
 independently.
 
-| Setting                        | Default        | Purpose                                                                                        |
-| ------------------------------ | -------------- | ---------------------------------------------------------------------------------------------- |
-| `COUNTING_ENABLED`             | `false`        | Dark-launch flag: 404s the whole surface when off.                                             |
-| `COUNTING_QUEUE_NAME`          | `arq:counting` | Dedicated arq queue (distinct from the tile worker's `arq:queue`).                             |
-| `COUNTING_MAX_PIXELS`          | `4_000_000`    | Pre-flight budget: stitched level pixels per job. ≥ 65 536. _Placeholder pending spike #1662._ |
-| `COUNTING_MAX_DOWNSAMPLE`      | `4`            | Coarsest permitted level-0:level pixel ratio (power of two). _Placeholder pending #1662._      |
-| `COUNTING_MARGIN_PX`           | `32`           | Margin in **level** pixels (~1 object diameter). _Placeholder pending #1662._                  |
-| `COUNTING_MAX_ACTIVE_PER_USER` | `3`            | Per-user queued+running cap; over → 429.                                                       |
-| `COUNTING_RESULT_TTL_SECONDS`  | `600`          | TTL on job record/result/user-set keys; also the arq `_expires`.                               |
-| `COUNTING_JOB_TIMEOUT_SECONDS` | `60`           | arq `func(timeout=…)`; expiry maps to `error: "timeout"`.                                      |
-| `COUNTING_MAX_OBJECTS`         | `3000`         | Result cap; over → `error: "too_many_objects"`.                                                |
+| Setting                        | Default        | Purpose                                                            |
+| ------------------------------ | -------------- | ------------------------------------------------------------------ |
+| `COUNTING_ENABLED`             | `false`        | Dark-launch flag: 404s the whole surface when off.                 |
+| `COUNTING_QUEUE_NAME`          | `arq:counting` | Dedicated arq queue (distinct from the tile worker's `arq:queue`). |
+| `COUNTING_MAX_PIXELS`          | `750_000`      | Pre-flight budget: stitched level pixels per job. ≥ 65 536.        |
+| `COUNTING_MAX_DOWNSAMPLE`      | `8`            | Coarsest permitted level-0:level pixel ratio (power of two).       |
+| `COUNTING_MARGIN_PX`           | `32`           | Margin in **level** pixels (~1 object diameter).                   |
+| `COUNTING_MAX_ACTIVE_PER_USER` | `3`            | Per-user queued+running cap; over → 429.                           |
+| `COUNTING_RESULT_TTL_SECONDS`  | `600`          | TTL on job record/result/user-set keys; also the arq `_expires`.   |
+| `COUNTING_JOB_TIMEOUT_SECONDS` | `60`           | arq `func(timeout=…)`; expiry maps to `error: "timeout"`.          |
+| `COUNTING_MAX_OBJECTS`         | `3000`         | Result cap; over → `error: "too_many_objects"`.                    |
 
 ### Redis keys
 
@@ -228,11 +230,11 @@ curl -s -X POST http://localhost:8000/api/images/1/counts \
 
 ## Remaining work
 
-- **#1662** — spike: benchmark/select outliners; produce real budget,
-  downsample and margin constants (current values are placeholders).
-- **#1665** — real ML pipeline behind the `Outliner` protocol; models in an
-  optional dependency group, baked into the counting-worker image.
-- **#1666** — counting-worker image, Helm deployment, CI.
+- **#1662** — spike: outliner selection (done; see the models table).
+- **#1665** — real pipeline (shipped): classical cells + InstanSeg
+  brightfield_nuclei, optional `counting`/`counting-ml` dependency
+  groups, baked into the counting-worker image.
+- **#1666** — Helm deployment of the counting-worker image.
 - **#1667 / #1668** — frontend (landed): `api.ts` count wrappers,
   `useSelectionCounts.ts`, `components/CountObjectsButton.tsx`,
   `CountProgressSnackbar.tsx`, `CountReportDialog.tsx`,

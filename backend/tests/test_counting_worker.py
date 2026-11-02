@@ -347,7 +347,7 @@ async def test_on_startup_installs_stub_outliners(monkeypatch) -> None:
 
 
 async def test_missing_outliner_fails_internal(worker_settings, pool) -> None:
-    record = await _record(pool, "job-missing-outliner")
+    await _record(pool, "job-missing-outliner")
     ctx = {"redis": pool, "outliners": {}}
     await count_objects_task(ctx, "job-missing-outliner")
     raw = await pool.get("count:job:job-missing-outliner")
