@@ -49,6 +49,7 @@ from .models import (
     CollectionImage,
     Group,
     Image,
+    MeasurementFinding,
     Program,
     SourceImage,
     User,
@@ -1169,6 +1170,17 @@ async def run_db_export(task_id: int) -> None:
             result = await session.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
             changelog_entries = result.scalars().all()
 
+            # Measurement findings (reviews of rebuild-fixture images are dropped)
+            await _update_task(session, task, log_line="Exporting measurement findings…", progress=72, check_cancelled=True)
+            result = await session.execute(
+                select(MeasurementFinding).order_by(MeasurementFinding.id)
+            )
+            measurement_findings = [
+                f
+                for f in result.scalars().all()
+                if f.image_id in exported_image_ids
+            ]
+
             # Announcement
             await _update_task(session, task, log_line="Exporting announcement…", progress=75, check_cancelled=True)
             result = await session.execute(
@@ -1331,6 +1343,27 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for entry in changelog_entries
                 ],
+                "measurement_findings": [
+                    {
+                        "id": f.id,
+                        "image_id": f.image_id,
+                        "status": f.status,
+                        "source": f.source,
+                        "proposed_scale": f.proposed_scale,
+                        "proposed_unit": f.proposed_unit,
+                        "objective": f.objective,
+                        "confidence": f.confidence,
+                        "evidence": f.evidence,
+                        "detector_version": f.detector_version,
+                        "approved_scale": f.approved_scale,
+                        "approved_unit": f.approved_unit,
+                        "reviewed_by": f.reviewed_by,
+                        "reviewed_at": dt(f.reviewed_at),
+                        "created_at": dt(f.created_at),
+                        "updated_at": dt(f.updated_at),
+                    }
+                    for f in measurement_findings
+                ],
                 "announcement": {
                     "message": ann.message if ann else "",
                     "enabled": ann.enabled if ann else False,
@@ -1486,6 +1519,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM collection_owners"))
                 await data_session.execute(text("DELETE FROM collections"))
                 await data_session.execute(text("DELETE FROM source_images"))
+                await data_session.execute(text("DELETE FROM measurement_findings"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM category_groups"))
                 await data_session.execute(text("DELETE FROM category_programs"))
@@ -1769,6 +1803,32 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(collection)
                 await data_session.flush()
 
+                # Import measurement findings (after images and users:
+                # image_id and reviewed_by reference those rows)
+                await _update_task(status_session, task, log_line="Importing measurement findings…", progress=69)
+                for f in dump.get("measurement_findings", []):
+                    data_session.add(
+                        MeasurementFinding(
+                            id=f["id"],
+                            image_id=f["image_id"],
+                            status=f["status"],
+                            source=f["source"],
+                            proposed_scale=f.get("proposed_scale"),
+                            proposed_unit=f.get("proposed_unit", "um"),
+                            objective=f.get("objective"),
+                            confidence=f.get("confidence", 0.0),
+                            evidence=f.get("evidence"),
+                            detector_version=f["detector_version"],
+                            approved_scale=f.get("approved_scale"),
+                            approved_unit=f.get("approved_unit"),
+                            reviewed_by=f.get("reviewed_by"),
+                            reviewed_at=_parse_dt(f.get("reviewed_at")),
+                            created_at=_parse_dt(f.get("created_at")),
+                            updated_at=_parse_dt(f.get("updated_at")),
+                        )
+                    )
+                await data_session.flush()
+
                 # Import changelog entries
                 await _update_task(status_session, task, log_line="Importing changelog entries…", progress=70)
                 for entry in dump.get("changelog_entries", []):
@@ -1801,7 +1861,7 @@ async def run_db_import(task_id: int) -> None:
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images", "collections"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images", "collections", "measurement_findings"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
