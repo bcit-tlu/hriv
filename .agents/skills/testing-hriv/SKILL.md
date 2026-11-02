@@ -75,8 +75,9 @@ docker compose up -d --build frontend   # or backend, worker, etc.
 
 ## Object counting (epic #1661)
 
-Backend-only so far (frontend lands with #1667/#1668). Enable the flag and the
-dedicated worker via the `counting` compose profile:
+Backend API, counting worker (stub outliner until #1665) and the viewer UI
+(Count objects pop-up, progress snackbar, report modal) are all available.
+Enable the flag and the dedicated worker via the `counting` compose profile:
 
 ```bash
 COUNTING_ENABLED=true docker compose --profile counting up -d --build
