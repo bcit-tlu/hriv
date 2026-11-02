@@ -293,6 +293,12 @@ spec:
               value: {{ .Values.counting.maxPixels | quote }}
             - name: COUNTING_CLASSICAL_MAX_PIXELS
               value: {{ .Values.counting.classicalMaxPixels | int | quote }}
+            # Same outliner selection as the counting worker, so the API
+            # pre-flight applies the budget the worker will actually use.
+            - name: COUNTING_CELLS_OUTLINER
+              value: {{ .Values.countingWorker.cellsOutliner | quote }}
+            - name: COUNTING_NUCLEI_OUTLINER
+              value: {{ .Values.countingWorker.nucleiOutliner | quote }}
             - name: COUNTING_MAX_DOWNSAMPLE
               value: {{ .Values.counting.maxDownsample | quote }}
             - name: COUNTING_MARGIN_PX

@@ -1295,6 +1295,8 @@ assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_PIXELS"
   "API deployment must render the counting budget env vars"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_CLASSICAL_MAX_PIXELS" \
   "API deployment must render COUNTING_CLASSICAL_MAX_PIXELS"
+assert_contains "$backend_counting_default_manifest" "name: COUNTING_NUCLEI_OUTLINER" \
+  "API deployment must render COUNTING_NUCLEI_OUTLINER (pre-flight budget follows the worker outliner)"
 assert_contains "$backend_counting_default_manifest" 'value: "2000000"' \
   "COUNTING_CLASSICAL_MAX_PIXELS must default to 2000000 on the API"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_OBJECTS" \

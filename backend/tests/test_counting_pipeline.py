@@ -492,4 +492,4 @@ class TestPerOutlinerBudget:
             result = self._run(o, dzi, 1200, monkeypatch)
             assert result["_meta"]["pixels"] <= 750_000
         except count_pipeline.RegionTooLarge as exc:
-            assert exc.code == "too_large"  # rejected within the ML budget
+            assert exc.code == "selection_too_large"  # rejected within the ML budget
