@@ -1100,3 +1100,9 @@ async def test_telemetry_records_admin_tab_hits(
     assert getattr(first, "admin.tab") == "backups"
     # Unknown admin_tab values are coerced to the bounded "other" bucket.
     assert getattr(second, "admin.tab") == "other"
+
+
+def test_measurement_review_page_is_a_bounded_page():
+    from app.routers.telemetry import _PAGES, _bounded
+
+    assert _bounded("measurement", _PAGES) == "measurement"
