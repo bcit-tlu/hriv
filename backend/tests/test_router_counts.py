@@ -694,11 +694,11 @@ def test_plan_region_rejects_what_router_rejects(counting_tiles) -> None:
         )
 
 
-async def test_create_count_preflight_uses_max_of_budgets(
+async def test_create_count_preflight_classical_budget_202(
     monkeypatch, counting_tiles, pool
 ) -> None:
-    """#1719: pre-flight accepts selections over the ML budget but under
-    the classical budget (the worker can run them on the fast outliner)."""
+    """#1719: cells/classical selections over the ML budget but under the
+    classical budget pre-flight OK (the fast outliner can run them)."""
     _enable(monkeypatch, counting_tiles)
     _mock_pool(monkeypatch, pool)
     await _live_worker(pool)
@@ -714,3 +714,24 @@ async def test_create_count_preflight_uses_max_of_budgets(
         IMAGE_ID, body, _user(), False, _db(_image())
     )
     assert result.status == "queued"
+
+
+async def test_create_count_preflight_instanseg_budget_422(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """#1719: nuclei/instanseg selections between the budgets are rejected
+    up front — the mode-aware pre-flight must not queue them to fail."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    monkeypatch.setattr(settings, "counting_max_pixels", 65_536)
+    monkeypatch.setattr(settings, "counting_classical_max_pixels", 2_000_000)
+    monkeypatch.setattr(settings, "counting_max_downsample", 1)
+    body = CountCreate(
+        mode="nuclei",
+        selection=CountSelection(x=0, y=0, width=800, height=800),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_count(IMAGE_ID, body, _user(), False, _db(_image()))
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "selection_too_large"

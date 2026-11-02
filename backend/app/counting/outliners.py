@@ -31,6 +31,7 @@ from typing import Protocol
 
 import numpy as np
 
+from .budgets import pixel_budget
 from .stitch import RegionPlan
 
 # Native object diameter (processing px) each mode targets when the level
@@ -262,9 +263,9 @@ def build_outliners(
         ),
     }
     for outliner in outliners.values():
-        outliner.max_pixels = (
-            classical_max_pixels
-            if outliner.name in ("classical", "stub")
-            else max_pixels
+        outliner.max_pixels = pixel_budget(
+            outliner.name,
+            max_pixels=max_pixels,
+            classical_max_pixels=classical_max_pixels,
         )
     return outliners

@@ -376,7 +376,8 @@ redis:
 counting:
   enabled: false # COUNTING_ENABLED — dark-launch flag for the whole surface
   queueName: arq:counting
-  maxPixels: 750000 # stitched level pixels per job (pre-flight cap)
+  maxPixels: 750000 # stitched level pixels per job (pre-flight cap, ML outliners)
+  classicalMaxPixels: 2000000 # larger budget for the ~20x-faster classical outliners (#1719)
   maxDownsample: 8 # coarsest permitted level-0:level ratio (power of two)
   marginPx: 32 # margin in level pixels (~1 object diameter)
   maxActivePerUser: 3 # queued+running jobs per user; over -> 429

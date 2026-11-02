@@ -190,15 +190,15 @@ class TestBuildOutliners:
 
     def test_instanseg_gets_ml_budget(self, monkeypatch):
         """An instanseg-named outliner gets the smaller ML budget."""
-        import app.counting.outliners as outl
-
         class FakeInstanSeg:
             name = "instanseg"
             max_pixels = 0
             def __init__(self, torch_threads=2):
                 pass
 
-        monkeypatch.setattr(outl, "InstanSegNucleiOutliner", FakeInstanSeg)
+        monkeypatch.setattr(
+            "app.counting.outliners.InstanSegNucleiOutliner", FakeInstanSeg
+        )
         outs = build_outliners(
             cells="classical", nuclei="instanseg", torch_threads=1,
             max_pixels=750_000, classical_max_pixels=2_000_000,
@@ -491,5 +491,5 @@ class TestPerOutlinerBudget:
         try:
             result = self._run(o, dzi, 1200, monkeypatch)
             assert result["_meta"]["pixels"] <= 750_000
-        except count_pipeline.RegionTooLarge:
-            pass
+        except count_pipeline.RegionTooLarge as exc:
+            assert exc.code == "too_large"  # rejected within the ML budget

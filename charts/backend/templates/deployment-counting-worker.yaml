@@ -58,7 +58,7 @@ spec:
             - name: COUNTING_MAX_PIXELS
               value: {{ .Values.counting.maxPixels | quote }}
             - name: COUNTING_CLASSICAL_MAX_PIXELS
-              value: {{ .Values.counting.classicalMaxPixels | quote }}
+              value: {{ .Values.counting.classicalMaxPixels | int | quote }}
             - name: COUNTING_MAX_DOWNSAMPLE
               value: {{ .Values.counting.maxDownsample | quote }}
             - name: COUNTING_MARGIN_PX

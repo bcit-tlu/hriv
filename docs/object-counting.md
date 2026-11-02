@@ -46,10 +46,11 @@ file and client-rendered pixels are never involved, so viewer zoom,
 annotations and overlays can never leak into the analysed pixels.
 
 `plan_region` picks the finest pyramid level whose stitched pixel count
-fits the budget (`COUNTING_MAX_PIXELS`, with a hard
-`MAX_DECODED_PIXELS = 25M` memory guard regardless of settings). The same
-function runs pre-flight in the API (rejecting over-budget selections
-before enqueue) and again in the worker.
+fits the job's budget (`COUNTING_MAX_PIXELS` for ML outliners or the
+larger `COUNTING_CLASSICAL_MAX_PIXELS` for classical/stub, with a hard
+`MAX_DECODED_PIXELS = 25M` memory guard regardless of settings). The API
+pre-flights with the budget of the outliner configured for the requested
+mode, and the worker plans again with its own outliner's budget.
 
 ### Edge rule (centroid-in-selection)
 
