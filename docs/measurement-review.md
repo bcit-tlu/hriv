@@ -99,8 +99,24 @@ becomes eligible for a fresh scan.
 Pyramidal SVS/TIFF uploads keep getting `measurement_scale` automatically from
 embedded MPP; scans skip images that already have a scale.
 
+## Review page
+
+**Manage → Measurement review** (`?page=measurement`, Admins and Instructors)
+lists findings from `GET /api/measurement-findings`:
+
+- **Pending / Approved / Rejected** tabs; pending is the default, sorted by
+  confidence (highest first, click the column header to flip).
+- **Scan next 10** calls `POST /api/measurement-findings/scan` with
+  `limit: 10`; findings appear after **Refresh** once the worker finishes.
+- Each pending row shows the thumbnail, name and size, objective, an editable
+  proposed scale, confidence, and an evidence summary (RBC diameter and cell
+  count, or the detector's reason for not proposing). Approving an edited
+  scale sends it as the correction; findings with no proposal need a manual
+  value before **Approve** enables and cannot be bulk-selected.
+- **Approve selected** calls the bulk endpoint; skipped IDs are reported.
+- Approved and Rejected views are read-only.
+
 ## Not yet built
 
-- Manage → Measurement review page (frontend).
 - Upload hook that creates a pending finding for each new image.
 - Stage-micrometer calibration constants.

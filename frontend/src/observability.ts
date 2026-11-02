@@ -86,7 +86,15 @@ export type TelemetryErrorCode =
   | 'window_runtime_error'
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
 export type FrontendPage =
-  'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide' | 'other' | 'unknown'
+  | 'browse'
+  | 'collections'
+  | 'manage'
+  | 'measurement'
+  | 'people'
+  | 'admin'
+  | 'guide'
+  | 'other'
+  | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
 
 interface TelemetryEventBase {
@@ -235,6 +243,7 @@ function currentPage(): FrontendPage {
     page === 'browse' ||
     page === 'collections' ||
     page === 'manage' ||
+    page === 'measurement' ||
     page === 'people' ||
     page === 'admin' ||
     page === 'guide'

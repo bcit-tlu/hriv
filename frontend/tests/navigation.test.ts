@@ -10,6 +10,7 @@ const ALL_IDS = [
   'programs',
   'groups',
   'announcement',
+  'measurement',
   'people',
   'admin',
 ]
@@ -104,7 +105,12 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const manageItems = items.filter((i) => i.section === 'manage')
-    expect(manageItems.map((i) => i.id).sort()).toEqual(['announcement', 'categories', 'groups'])
+    expect(manageItems.map((i) => i.id).sort()).toEqual([
+      'announcement',
+      'categories',
+      'groups',
+      'measurement',
+    ])
   })
 
   it('includes account-section items only for admin or staff', () => {

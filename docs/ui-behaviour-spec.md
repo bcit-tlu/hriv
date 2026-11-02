@@ -22,18 +22,19 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface               | Student | Staff | Instructor | Admin |
-| --------------------- | ------- | ----- | ---------- | ----- |
-| Home                  | ✓       | ✓     | ✓          | ✓     |
-| Collections tab       | ✓       | ✓     | ✓          | ✓     |
-| Images tab            | —       | —     | ✓          | ✓     |
-| Manage dropdown       | —       | —     | ✓          | ✓     |
-| Manage → Categories   | —       | —     | ✓          | ✓     |
-| Manage → Programs     | —       | —     | —          | ✓     |
-| Manage → Groups       | —       | —     | ✓          | ✓     |
-| Manage → Announcement | —       | —     | ✓          | ✓     |
-| People tab            | —       | ✓     | —          | ✓     |
-| Admin tab             | —       | —     | —          | ✓     |
+| Surface                     | Student | Staff | Instructor | Admin |
+| --------------------------- | ------- | ----- | ---------- | ----- |
+| Home                        | ✓       | ✓     | ✓          | ✓     |
+| Collections tab             | ✓       | ✓     | ✓          | ✓     |
+| Images tab                  | —       | —     | ✓          | ✓     |
+| Manage dropdown             | —       | —     | ✓          | ✓     |
+| Manage → Categories         | —       | —     | ✓          | ✓     |
+| Manage → Programs           | —       | —     | —          | ✓     |
+| Manage → Groups             | —       | —     | ✓          | ✓     |
+| Manage → Announcement       | —       | —     | ✓          | ✓     |
+| Manage → Measurement review | —       | —     | ✓          | ✓     |
+| People tab                  | —       | ✓     | —          | ✓     |
+| Admin tab                   | —       | —     | —          | ✓     |
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).

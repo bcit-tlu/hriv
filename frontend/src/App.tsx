@@ -43,6 +43,7 @@ import MyCollectionsDrawer, {
 import ReorderSnackbar from './components/ReorderSnackbar'
 import ImageCollectionsList from './components/ImageCollectionsList'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
+import MeasurementReviewPage from './components/MeasurementReviewPage'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
 import type { Page } from './components/AppShell'
@@ -231,7 +232,14 @@ export default function App() {
     const p = new URLSearchParams(window.location.search).get('page')
     // Manage → Collections merged into the Collections Table view.
     if (p === LEGACY_MANAGE_COLLECTIONS_PAGE) return 'collections'
-    if (p === 'collections' || p === 'manage' || p === 'people' || p === 'admin' || p === 'guide')
+    if (
+      p === 'collections' ||
+      p === 'manage' ||
+      p === 'measurement' ||
+      p === 'people' ||
+      p === 'admin' ||
+      p === 'guide'
+    )
       return p
     return 'browse'
   })
@@ -240,7 +248,7 @@ export default function App() {
   // back to browse for unauthorized roles (e.g. a student on ?page=guide), so
   // telemetry reports this rather than the raw URL param.
   const effectivePage: FrontendPage =
-    (page === 'guide' || page === 'manage') && !canEditContent
+    (page === 'guide' || page === 'manage' || page === 'measurement') && !canEditContent
       ? 'browse'
       : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
@@ -948,7 +956,9 @@ export default function App() {
       const validPage = (
         popPage === LEGACY_MANAGE_COLLECTIONS_PAGE
           ? 'collections'
-          : ['browse', 'collections', 'manage', 'people', 'admin', 'guide'].includes(popPage)
+          : ['browse', 'collections', 'manage', 'measurement', 'people', 'admin', 'guide'].includes(
+                popPage,
+              )
             ? popPage
             : 'browse'
       ) as Page
@@ -2435,6 +2445,8 @@ export default function App() {
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
+          ) : page === 'measurement' && canEditContent ? (
+            <MeasurementReviewPage />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
               currentUser={currentUser}
