@@ -150,10 +150,15 @@ async def write_result(
     result: dict[str, Any],
     ttl_seconds: int,
 ) -> None:
-    """Persist the result payload under its own TTL."""
-    await redis.set(
-        _result_key(job_id), json.dumps(result), ex=ttl_seconds
-    )
+    """Persist the result payload, expiring with its job record.
+
+    The result inherits the record's remaining TTL so a long queue wait
+    never leaves an unreachable result behind; *ttl_seconds* is only the
+    fallback when the record has no TTL to inherit.
+    """
+    remaining = await redis.ttl(_job_key(job_id))
+    ex = remaining if remaining and remaining > 0 else ttl_seconds
+    await redis.set(_result_key(job_id), json.dumps(result), ex=ex)
 
 
 async def get_result(redis: Redis, job_id: str) -> dict[str, Any] | None:

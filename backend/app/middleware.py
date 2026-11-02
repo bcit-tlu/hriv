@@ -493,7 +493,7 @@ class CountingFeatureMiddleware:
     """
 
     _COUNTS_PREFIX = "/api/counts"
-    _IMAGE_COUNTS_ROUTE = re.compile(r"^/api/images/\d+/counts$")
+    _IMAGE_COUNTS_ROUTE = re.compile(r"^/api/images/-?\d+/counts$")
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

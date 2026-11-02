@@ -11,6 +11,7 @@ from arq.constants import health_check_key_suffix
 from fakeredis import aioredis as fake_aioredis
 from fastapi import HTTPException
 from pydantic import ValidationError
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.counting import jobs
 from app.counting.stitch import (
@@ -317,6 +318,73 @@ async def test_create_count_no_live_worker_503(
     assert exc.value.detail == "counting_unavailable"
 
 
+class _BrokenRedis:
+    """A cached pool whose Redis connection has gone away."""
+
+    def __getattr__(self, name):
+        async def _fail(*_args, **_kwargs):
+            raise RedisConnectionError("Connection refused")
+
+        return _fail
+
+
+async def test_create_count_redis_down_after_pool_cached_503(
+    monkeypatch, counting_tiles
+) -> None:
+    """A stale cached pool answers 503, never a 500 (review finding)."""
+    _enable(monkeypatch, counting_tiles)
+    monkeypatch.setattr(
+        counts_router, "get_pool", AsyncMock(return_value=_BrokenRedis())
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_count(IMAGE_ID, _body(), _user(), False, _db(_image()))
+    assert exc.value.status_code == 503
+    assert exc.value.detail == "counting_unavailable"
+
+
+async def test_create_count_redis_drops_before_record_503(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """Redis failing after the heartbeat check still maps to 503."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    monkeypatch.setattr(
+        jobs, "create_record",
+        AsyncMock(side_effect=RedisConnectionError("gone")),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_count(IMAGE_ID, _body(), _user(), False, _db(_image()))
+    assert exc.value.status_code == 503
+
+
+async def test_get_and_delete_count_redis_down_503(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "counting_enabled", True)
+    monkeypatch.setattr(
+        counts_router, "get_pool", AsyncMock(return_value=_BrokenRedis())
+    )
+    for call in (get_count("j", _user()), delete_count("j", _user(), False)):
+        with pytest.raises(HTTPException) as exc:
+            await call
+        assert exc.value.status_code == 503
+        assert exc.value.detail == "counting_unavailable"
+
+
+async def test_write_result_inherits_record_ttl(pool) -> None:
+    """Results expire with their record, not a fresh TTL (review finding)."""
+    await jobs.create_record(
+        pool, job_id="jt", user_id=1, image_id=IMAGE_ID,
+        source_image_id=SID, mode="cells",
+        selection={"x": 0, "y": 0, "width": 1, "height": 1},
+        ttl_seconds=120,
+    )
+    await jobs.write_result(pool, "jt", {"total": 0}, 600)
+    assert 0 < await pool.ttl("count:result:jt") <= 120
+    # No record to inherit from -> the configured TTL is the fallback.
+    await jobs.write_result(pool, "orphan", {"total": 0}, 600)
+    assert 120 < await pool.ttl("count:result:orphan") <= 600
+
+
 async def test_create_count_enqueue_failure_503_and_cleanup(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -392,7 +460,7 @@ async def test_get_count_queued_shows_position(
 ) -> None:
     monkeypatch.setattr(settings, "counting_enabled", True)
     _mock_pool(monkeypatch, pool)
-    record = await jobs.create_record(
+    await jobs.create_record(
         pool, job_id="j1", user_id=1, image_id=IMAGE_ID,
         source_image_id=SID, mode="nuclei",
         selection={"x": 1, "y": 2, "width": 3, "height": 4},
@@ -573,6 +641,7 @@ async def test_middleware_404s_counting_paths_when_off(monkeypatch) -> None:
         "/api/counts/",
         "/api/counts/abc123",
         "/api/images/7/counts",
+        "/api/images/-1/counts",
     ):
         assert await _invoke_mw(path) == 404, path
 

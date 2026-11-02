@@ -46,7 +46,6 @@ class Outliner(Protocol):
         including the margin — in level-0 coordinates; the pipeline applies
         the centroid-in-selection edge rule afterwards.
         """
-        ...
 
 
 def _polygon_area(points: list[tuple[float, float]]) -> float:

@@ -12,6 +12,7 @@ The whole surface is dark-launched: ``CountingFeatureMiddleware`` answers
 same 404 as a router-level second layer.
 """
 
+import contextlib
 import logging
 import uuid
 from typing import Annotated
@@ -21,6 +22,7 @@ from arq.jobs import Job
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from opentelemetry import trace
 from opentelemetry.propagate import inject
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user
@@ -61,6 +63,15 @@ def require_counting_enabled() -> None:
     """
     if not settings.counting_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
+
+
+# A cached pool can outlive Redis; connection/timeout failures on counting
+# operations surface as the stable 503 rather than a 500.
+_REDIS_ERRORS = (RedisError, OSError)
+
+
+def _unavailable() -> HTTPException:
+    return HTTPException(status_code=503, detail="counting_unavailable")
 
 
 router = APIRouter(
@@ -159,37 +170,46 @@ async def create_count(
                 ) from exc
 
             pool = await get_pool()
-            if (
-                pool is None
-                or await pool.ttl(_counting_health_key()) == -2
-            ):
+            worker_live = False
+            if pool is not None:
+                try:
+                    worker_live = (
+                        await pool.ttl(_counting_health_key()) != -2
+                    )
+                except _REDIS_ERRORS:
+                    worker_live = False
+            if not worker_live:
                 _reject(body.mode, "counting_unavailable", image_id=image_id)
-                raise HTTPException(
-                    status_code=503, detail="counting_unavailable"
-                )
+                raise _unavailable()
 
             job_id = uuid.uuid4().hex
             # The record exists before the cap reservation and the enqueue:
             # the reservation's verification counts its own queued record
             # (otherwise it would prune itself as a dead member), and a fast
             # worker can never observe an enqueued job with no record.
-            await jobs.create_record(
-                pool,
-                job_id=job_id,
-                user_id=user.id,
-                image_id=image_id,
-                source_image_id=source_image_id,
-                mode=body.mode,
-                selection=body.selection.model_dump(),
-                ttl_seconds=settings.counting_result_ttl_seconds,
-            )
-            if not await jobs.reserve_active_slot(
-                pool,
-                user_id=user.id,
-                job_id=job_id,
-                cap=settings.counting_max_active_per_user,
-                ttl_seconds=settings.counting_result_ttl_seconds,
-            ):
+            try:
+                await jobs.create_record(
+                    pool,
+                    job_id=job_id,
+                    user_id=user.id,
+                    image_id=image_id,
+                    source_image_id=source_image_id,
+                    mode=body.mode,
+                    selection=body.selection.model_dump(),
+                    ttl_seconds=settings.counting_result_ttl_seconds,
+                )
+                reserved = await jobs.reserve_active_slot(
+                    pool,
+                    user_id=user.id,
+                    job_id=job_id,
+                    cap=settings.counting_max_active_per_user,
+                    ttl_seconds=settings.counting_result_ttl_seconds,
+                )
+            except _REDIS_ERRORS as exc:
+                _reject(body.mode, "counting_unavailable",
+                        job_id=job_id, image_id=image_id)
+                raise _unavailable() from exc
+            if not reserved:
                 await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
                 _reject(body.mode, "too_many_active_counts",
                         job_id=job_id, image_id=image_id)
@@ -210,12 +230,11 @@ async def create_count(
                     _expires=settings.counting_result_ttl_seconds,
                 )
             except Exception as exc:
-                await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
+                with contextlib.suppress(*_REDIS_ERRORS):
+                    await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
                 _reject(body.mode, "counting_unavailable",
                         job_id=job_id, image_id=image_id)
-                raise HTTPException(
-                    status_code=503, detail="counting_unavailable"
-                ) from exc
+                raise _unavailable() from exc
 
             jobs.record_count_job(body.mode, jobs.COUNT_OUTCOME_ENQUEUED)
             logger.info(
@@ -230,11 +249,14 @@ async def create_count(
                     ),
                 },
             )
-            position = await jobs.queue_position(
-                pool,
-                job_id=job_id,
-                queue_name=settings.counting_queue_name,
-            )
+            try:
+                position = await jobs.queue_position(
+                    pool,
+                    job_id=job_id,
+                    queue_name=settings.counting_queue_name,
+                )
+            except _REDIS_ERRORS:
+                position = None  # job is enqueued; the first poll reports it
             return CountJobCreatedOut(
                 job_id=job_id, status="queued", queue_position=position
             )
@@ -251,20 +273,23 @@ async def get_count(
     """Poll a count job. Owner only — anyone else (or expiry) reads 404."""
     pool = await get_pool()
     if pool is None:
-        raise HTTPException(status_code=503, detail="counting_unavailable")
-    record = await jobs.get_record(pool, job_id)
-    if record is None or record.get("user_id") != user.id:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise _unavailable()
+    try:
+        record = await jobs.get_record(pool, job_id)
+        if record is None or record.get("user_id") != user.id:
+            raise HTTPException(status_code=404, detail="Not Found")
 
-    position = None
-    if record.get("status") == jobs.STATUS_QUEUED:
-        position = await jobs.queue_position(
-            pool, job_id=job_id, queue_name=settings.counting_queue_name
-        )
+        position = None
+        if record.get("status") == jobs.STATUS_QUEUED:
+            position = await jobs.queue_position(
+                pool, job_id=job_id, queue_name=settings.counting_queue_name
+            )
 
-    result: dict = {}
-    if record.get("status") == jobs.STATUS_DONE:
-        result = await jobs.get_result(pool, job_id) or {}
+        result: dict = {}
+        if record.get("status") == jobs.STATUS_DONE:
+            result = await jobs.get_result(pool, job_id) or {}
+    except _REDIS_ERRORS as exc:
+        raise _unavailable() from exc
 
     return CountJobOut(
         job_id=job_id,
@@ -294,22 +319,29 @@ async def delete_count(
     """
     pool = await get_pool()
     if pool is None:
-        raise HTTPException(status_code=503, detail="counting_unavailable")
-    record = await jobs.get_record(pool, job_id)
-    if record is None:
-        return Response(status_code=204)
-    if record.get("user_id") != user.id:
-        raise HTTPException(status_code=404, detail="Not Found")
-
-    # Abort the arq job first (best-effort — a finished or never-dequeued
-    # job may already be gone), then destroy the keys so any late worker
-    # write fails its ``XX KEEPTTL`` check.
-    job = Job(job_id, pool, _queue_name=settings.counting_queue_name)
+        raise _unavailable()
     try:
-        await job.abort(timeout=0)
-    except Exception:
-        pass
-    await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
+        record = await jobs.get_record(pool, job_id)
+        if record is None:
+            return Response(status_code=204)
+        if record.get("user_id") != user.id:
+            raise HTTPException(status_code=404, detail="Not Found")
+
+        # Abort the arq job first (best-effort — a finished or never-dequeued
+        # job may already be gone), then destroy the keys so any late worker
+        # write fails its ``XX KEEPTTL`` check.
+        job = Job(job_id, pool, _queue_name=settings.counting_queue_name)
+        try:
+            await job.abort(timeout=0)
+        except Exception:
+            logger.debug(
+                "count job abort did not confirm; deleting keys anyway",
+                extra={"event": "count.abort_unconfirmed", "job_id": job_id},
+                exc_info=True,
+            )
+        await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
+    except _REDIS_ERRORS as exc:
+        raise _unavailable() from exc
     jobs.record_count_job(str(record.get("mode", "")), jobs.COUNT_OUTCOME_CANCELLED)
     logger.info(
         "count job cancelled",
