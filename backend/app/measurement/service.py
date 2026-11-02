@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timezone
 
 from sqlalchemy import exists, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Image, MeasurementFinding, SourceImage
@@ -115,10 +116,16 @@ async def scan_images(session_factory, image_ids: list[int]) -> int:
     for image_id in image_ids:
         async with session_factory() as db:
             image = await db.get(Image, image_id)
-            if image is None:
+            # A scale set after the scan was queued wins; never propose over it.
+            if image is None or SCALE_KEY in (image.metadata_ or {}):
                 continue
             await scan_image(db, image)
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                # An overlapping scan already holds this image's pending slot.
+                await db.rollback()
+                continue
             created += 1
     return created
 
