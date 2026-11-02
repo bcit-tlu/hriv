@@ -139,14 +139,27 @@ async def list_findings(
 async def _pending_with_image(
     db: AsyncSession, finding_id: int
 ) -> tuple[MeasurementFinding, Image]:
-    finding = await db.get(MeasurementFinding, finding_id, with_for_update=True)
+    finding, image = await _lock_finding_and_image(db, finding_id)
     if finding is None:
         raise HTTPException(status_code=404, detail="Finding not found")
     if finding.status != "pending":
         raise HTTPException(status_code=409, detail=f"Finding is {finding.status}")
-    image = await db.get(Image, finding.image_id, with_for_update=True)
     if image is None:
         raise HTTPException(status_code=404, detail="Image not found")
+    return finding, image
+
+
+async def _lock_finding_and_image(
+    db: AsyncSession, finding_id: int
+) -> tuple[MeasurementFinding | None, Image | None]:
+    """Lock image before finding, the same order as image replacement."""
+    finding = await db.get(MeasurementFinding, finding_id)
+    if finding is None:
+        return None, None
+    image = await db.get(Image, finding.image_id, with_for_update=True)
+    finding = await db.get(
+        MeasurementFinding, finding_id, with_for_update=True, populate_existing=True
+    )
     return finding, image
 
 
@@ -173,12 +186,7 @@ async def bulk_approve(
     skipped: list[int] = []
     touched: list[Image] = []
     for finding_id in dict.fromkeys(body.ids):
-        finding = await db.get(MeasurementFinding, finding_id, with_for_update=True)
-        image = (
-            await db.get(Image, finding.image_id, with_for_update=True)
-            if finding is not None
-            else None
-        )
+        finding, image = await _lock_finding_and_image(db, finding_id)
         if (
             finding is None
             or image is None
