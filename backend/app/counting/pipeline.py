@@ -190,9 +190,9 @@ def _step_span(mode: str, step: str, timings: dict[str, int]):
         try:
             yield span
         finally:
-            elapsed_ms = round((time.monotonic() - t0) * 1000)
-            timings[step] = elapsed_ms
-            record_run_step(mode, step, elapsed_ms / 1000)
+            elapsed = time.monotonic() - t0
+            timings[step] = round(elapsed * 1000)
+            record_run_step(mode, step, elapsed)
 
 
 def run_count(

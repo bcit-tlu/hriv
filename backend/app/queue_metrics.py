@@ -269,12 +269,13 @@ async def render_queue_metrics() -> tuple[bytes, str]:
         _execution_mode.clear()
         _execution_mode.labels(mode=settings.task_execution_mode).set(1)
         if settings.counting_enabled:
-            from .counting.worker import CountingWorkerSettings
-
+            # Never import app.counting.worker here: it pulls numpy and the
+            # ML outliners, which the API image does not install. The worker
+            # uses the same HEALTH_CHECK_INTERVAL_SECONDS constant.
             count_state = await collect_queue_state(
                 queue_name=settings.counting_queue_name,
                 health_check_key=settings.counting_queue_name + health_check_key_suffix,
-                health_check_interval_seconds=CountingWorkerSettings.health_check_interval,
+                health_check_interval_seconds=int(HEALTH_CHECK_INTERVAL_SECONDS),
             )
             gauges = _counting_gauges()
             gauges["depth"].set(

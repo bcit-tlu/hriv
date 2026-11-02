@@ -5,14 +5,13 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
-import pytest
 from fakeredis import aioredis as fake_aioredis
 
 from app.counting import jobs, metrics as count_metrics, pipeline as count_pipeline
 from app.counting.outliners import StubOutliner
 from app.counting.stitch import DziInfo
 from app.database import settings
-from app.queue_metrics import ARQ_QUEUE_NAME, collect_queue_state, render_queue_metrics
+from app.queue_metrics import collect_queue_state, render_queue_metrics
 
 
 class _FakeVips:
@@ -199,3 +198,21 @@ async def test_render_counting_worker_up_nan_on_redis_error(monkeypatch) -> None
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         payload, _ = await render_queue_metrics()
     assert "hriv_count_worker_up NaN" in payload.decode()
+
+
+async def test_render_queue_metrics_never_imports_counting_worker(monkeypatch):
+    """The API image lacks numpy/ML deps: rendering the counting gauges must
+    not import app.counting.worker (review finding on #1724)."""
+    import sys
+
+    monkeypatch.setattr(settings, "counting_enabled", True)
+    monkeypatch.setitem(sys.modules, "app.counting.worker", None)  # import -> ImportError
+    with patch(
+        "app.queue_metrics.collect_queue_state",
+        AsyncMock(return_value={
+            "queue_up": True, "depth": 0, "oldest_pending_age_seconds": None,
+            "worker_heartbeat_age_seconds": None, "worker_up": False,
+        }),
+    ):
+        body, _ = await render_queue_metrics()
+    assert b"hriv_count_worker_up 0.0" in body

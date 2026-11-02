@@ -148,9 +148,12 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
         # arq timeout or abort: a user DELETE removes the record, so a still-
         # present record means the job timed out.
         if await jobs.record_exists(redis, job_id):
-            await jobs.update_status(
+            if await jobs.update_status(
                 redis, job_id, jobs.STATUS_FAILED, error="timeout"
-            )
+            ):
+                jobs.record_count_job(
+                    mode, jobs.COUNT_OUTCOME_FAILED, reason="timeout"
+                )
         raise
     except CountingRegionError as exc:
         await _fail(redis, job_id, record, mode, image_id, started,
