@@ -82,6 +82,13 @@ This means a mid-import failure rolls back _all_ data changes (via
 `measurement_findings` ([Measurement review](measurement-review.md) findings,
 excluding rebuild-fixture images), `changelog_entries`, and the `announcement`.
 
+All table reads run on a dedicated session pinned to one `REPEATABLE READ`
+transaction, so the dump is a single consistent snapshot: a write that lands
+mid-export (for example a measurement approval, which updates both the image's
+metadata and its finding) is either fully in the dump or fully absent. Task
+progress and cancellation checks commit on a separate session so they don't
+end that snapshot.
+
 Each exported **collection** carries `name`, `description`, `type`,
 `visibility`, `user_id` (creator audit — may be `null`),
 `owner_program_id`, `owner_ids` (the user-owner id list; both empty for an
