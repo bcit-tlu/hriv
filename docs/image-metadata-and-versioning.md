@@ -100,16 +100,17 @@ column with its own `Collection.version` optimistic concurrency; see
 
 When a source image is replaced (`process_replace_image`):
 
-| Metadata key          | Action                                                            |
-| --------------------- | ----------------------------------------------------------------- |
-| `canvas_annotations`  | **Cleared** — coordinates reference old geometry                  |
-| `locked_overlays`     | **Cleared** — coordinates reference old geometry                  |
-| `measurement_scale`   | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `measurement_unit`    | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `objective_power`     | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `mpp_x`, `mpp_y`      | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `pyramid_detected`    | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `pyramid_level_count` | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| Metadata key                                         | Action                                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `canvas_annotations`                                 | **Cleared** — coordinates reference old geometry                                    |
+| `locked_overlays`                                    | **Cleared** — coordinates reference old geometry                                    |
+| `measurement_scale`                                  | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `measurement_unit`                                   | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `measurement_scale_source`, `measurement_finding_id` | **Cleared**; the image's measurement findings are superseded so it can be rescanned |
+| `objective_power`                                    | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `mpp_x`, `mpp_y`                                     | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `pyramid_detected`                                   | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `pyramid_level_count`                                | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
 
 All pyramid-related keys are cleared first, then re-populated if the
 replacement file is also pyramidal. Version is bumped unconditionally.

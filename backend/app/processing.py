@@ -1070,7 +1070,8 @@ async def process_replace_image(
                 # Clear old pyramid metadata before merging new
                 for key in ("pyramid_detected", "pyramid_level_count",
                             "mpp_x", "mpp_y", "objective_power",
-                            "measurement_scale", "measurement_unit"):
+                            "measurement_scale", "measurement_unit",
+                            "measurement_scale_source", "measurement_finding_id"):
                     current_meta.pop(key, None)
 
                 # Merge pyramid metadata from the new source file
