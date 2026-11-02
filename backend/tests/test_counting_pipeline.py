@@ -217,8 +217,8 @@ class TestChooseDownsample:
     def test_diameter_converted_to_level0(self, monkeypatch):
         """Probe at d>=2: probe-level diameter must scale by probe d."""
         monkeypatch.setattr(
-            count_pipeline, "estimate_object_diameter",
-            lambda _rgb, _mode: 20.0,  # probe-level px
+            count_pipeline, "probe_object_stats",
+            lambda _rgb, _mode: (20.0, 12),  # probe-level px, enough components
         )
         monkeypatch.setattr(
             count_pipeline, "stitch_region",
@@ -441,7 +441,7 @@ class TestPerOutlinerBudget:
             count_pipeline, "_selection_preview", lambda *_a, **_k: "data:image/jpeg;base64,x"
         )
         monkeypatch.setattr(
-            count_pipeline, "estimate_object_diameter", lambda *_a, **_k: 40.0,
+            count_pipeline, "probe_object_stats", lambda *_a, **_k: (40.0, 12),
         )
         record = {
             "source_image_id": 5, "mode": mode, "mpp": None,

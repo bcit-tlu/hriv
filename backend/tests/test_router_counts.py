@@ -735,3 +735,29 @@ async def test_create_count_preflight_instanseg_budget_422(
         await create_count(IMAGE_ID, body, _user(), False, _db(_image()))
     assert exc.value.status_code == 422
     assert exc.value.detail == "selection_too_large"
+
+
+async def test_create_count_nuclei_no_mpp_too_large_422(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """#1728 review: nuclei selections without mpp are pre-flighted at
+    d=1 (the level rule can't coarsen them), so an over-budget box is
+    rejected immediately instead of queueing to fail."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    monkeypatch.setattr(settings, "counting_nuclei_outliner", "instanseg")
+    monkeypatch.setattr(settings, "counting_max_pixels", 65_536)
+    monkeypatch.setattr(settings, "counting_classical_max_pixels", 2_000_000)
+    monkeypatch.setattr(settings, "counting_max_downsample", 8)
+    # The seeded image's mpp_x must not rescue this path — force it off.
+    img = _image()
+    img.metadata_ = {"mpp_x": None}
+    body = CountCreate(
+        mode="nuclei",
+        selection=CountSelection(x=0, y=0, width=800, height=800),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_count(IMAGE_ID, body, _user(), False, _db(img))
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "selection_too_large"

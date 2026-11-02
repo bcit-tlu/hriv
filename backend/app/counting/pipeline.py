@@ -25,7 +25,6 @@ from .objects import objects_from_labels
 from .outliners import (
     NATIVE_DIAMETER,
     Outliner,
-    estimate_object_diameter,
     probe_object_stats,
 )
 from .stitch import (

@@ -29,7 +29,7 @@ def _run_count(mode="cells"):
     with (
         patch.object(count_pipeline, "resolve_tile_root", return_value="r"),
         patch.object(count_pipeline, "read_dzi", return_value=dzi),
-        patch.object(count_pipeline, "estimate_object_diameter", return_value=30.0),
+        patch.object(count_pipeline, "probe_object_stats", return_value=(30.0, 12)),
         patch.object(count_pipeline, "stitch_region",
                      return_value=_FakeVips(np.zeros((64, 64, 3), np.uint8))),
         patch.object(count_pipeline, "_selection_preview",
