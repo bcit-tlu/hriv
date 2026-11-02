@@ -64,11 +64,15 @@ export default function SelectionCountLayer({
   }, [clearedToken, cancelAll])
 
   // Auto-open the report when a job finishes — unless one is already open.
+  // Tracked by job id (not selection key) so a recount of the same
+  // selection auto-opens its new report too.
   useEffect(() => {
     if (reportKey != null) return
-    const doneEntry = entries.find((e) => e.phase === 'done' && !autoOpenedRef.current.has(e.key))
+    const doneEntry = entries.find(
+      (e) => e.phase === 'done' && e.jobId != null && !autoOpenedRef.current.has(e.jobId),
+    )
     if (doneEntry) {
-      autoOpenedRef.current.add(doneEntry.key)
+      autoOpenedRef.current.add(doneEntry.jobId as string)
       setReportKey(doneEntry.key)
     }
   }, [entries, reportKey])
@@ -122,6 +126,12 @@ export default function SelectionCountLayer({
 
   const reportEntry = reportKey ? entries.find((e) => e.key === reportKey) : undefined
 
+  // Polling updates `entries` every tick; only rebuild the canvas items
+  // when the SET of finished jobs changes, not per tick.
+  const doneSignature = entries
+    .filter((e) => e.phase === 'done' && e.result)
+    .map((e) => e.jobId ?? e.key)
+    .join('|')
   const outlineItems = useMemo(
     () =>
       entries
@@ -130,7 +140,8 @@ export default function SelectionCountLayer({
           selection: e.selection,
           objects: e.result!.objects,
         })),
-    [entries],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doneSignature],
   )
 
   const handleCount = useCallback(
@@ -166,6 +177,7 @@ export default function SelectionCountLayer({
               <CountObjectsButton
                 selectionIndex={sel.index}
                 entry={entry}
+                menuContainer={viewer.container}
                 onCount={(mode) => handleCount(sel, mode)}
                 onCancel={() => cancel(k)}
                 onViewResults={() => setReportKey(k)}
@@ -176,7 +188,8 @@ export default function SelectionCountLayer({
       <CountProgressSnackbar
         activeEntries={activeEntries}
         errorEntry={failedEntry}
-        onCancelActive={() => cancelAll()}
+        // Cancel only the jobs still running — finished results stay.
+        onCancelActive={() => activeEntries.forEach((e) => cancel(e.key))}
         onDismissError={(key) => cancel(key)}
         onRetry={(e) => void start(e.key, e.label, e.selection, e.mode)}
       />

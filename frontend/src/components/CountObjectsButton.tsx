@@ -27,6 +27,9 @@ export interface CountObjectsButtonProps {
   /** 1-based selection index, for the aria-label ("selection 2"). */
   selectionIndex: number
   entry?: SelectionCountEntry
+  /** Portal container for the menus — pass `viewer.container` so they stay
+   * visible in OSD full-page mode instead of escaping to document.body. */
+  menuContainer?: HTMLElement
   onCount: (mode: CountMode) => void
   onCancel: () => void
   onViewResults: () => void
@@ -59,6 +62,7 @@ const NOTCH_SX = {
 export default function CountObjectsButton({
   selectionIndex,
   entry,
+  menuContainer,
   onCount,
   onCancel,
   onViewResults,
@@ -75,6 +79,10 @@ export default function CountObjectsButton({
   const modeMenu = (
     <Menu
       anchorEl={modeAnchor}
+      container={menuContainer}
+      // The menu portals outside this button's data-hriv-canvas-ui wrapper;
+      // mark the popover root too so the OSD selection tracker skips presses.
+      slotProps={{ root: { 'data-hriv-canvas-ui': true } }}
       open={modeAnchor != null}
       onClose={() => setModeAnchor(null)}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -117,20 +125,11 @@ export default function CountObjectsButton({
         >
           <Button
             onClick={done ? onViewResults : undefined}
-            disabled={active}
-            // Default disabled colours (grey on grey) fail axe contrast —
-            // keep the active job's main segment readable instead.
-            sx={
-              active
-                ? {
-                    '&.Mui-disabled': {
-                      color: 'primary.contrastText',
-                      bgcolor: 'primary.main',
-                      opacity: 0.9,
-                    },
-                  }
-                : undefined
-            }
+            // `disabled` would grey the button into a low-contrast state —
+            // keep the contained-primary look while a job runs and just
+            // make it non-interactive (pointer + aria).
+            aria-disabled={active || undefined}
+            sx={active ? { pointerEvents: 'none' } : undefined}
             startIcon={
               active ? (
                 <CircularProgress size={14} color="inherit" aria-label="Count in progress" />
@@ -153,6 +152,8 @@ export default function CountObjectsButton({
         </ButtonGroup>
         <Menu
           anchorEl={splitAnchor}
+          container={menuContainer}
+          slotProps={{ root: { 'data-hriv-canvas-ui': true } }}
           open={splitAnchor != null}
           onClose={() => setSplitAnchor(null)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}

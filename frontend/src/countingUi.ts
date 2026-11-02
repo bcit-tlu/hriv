@@ -80,10 +80,14 @@ export function selectionToLevel0(
     new OpenSeadragon.Rect(rect.x, rect.y, rect.width, rect.height),
   )
   const size = item.getContentSize()
-  const x = Math.max(0, Math.floor(r.x))
-  const y = Math.max(0, Math.floor(r.y))
-  const width = Math.min(size.x - x, Math.ceil(r.width))
-  const height = Math.min(size.y - y, Math.ceil(r.height))
+  // Clamp BOTH endpoints: a rect drawn past an edge keeps the portion
+  // that's inside, not the original width/height.
+  const x0 = Math.max(0, Math.floor(r.x))
+  const y0 = Math.max(0, Math.floor(r.y))
+  const x1 = Math.min(size.x, Math.ceil(r.x + r.width))
+  const y1 = Math.min(size.y, Math.ceil(r.y + r.height))
+  const width = x1 - x0
+  const height = y1 - y0
   if (width <= 0 || height <= 0) return null
-  return { x, y, width, height }
+  return { x: x0, y: y0, width, height }
 }

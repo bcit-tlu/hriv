@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { drawCountOutlines } from '../../src/countOutlines'
+import { drawCountOutlines } from '../src/countOutlines'
 
 // jsdom has no Path2D — stub a minimal recording stand-in.
 beforeAll(() => {

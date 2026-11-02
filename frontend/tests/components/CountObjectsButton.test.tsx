@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import CountObjectsButton from '../../src/components/CountObjectsButton'
@@ -117,5 +117,25 @@ describe('CountObjectsButton', () => {
     expect(screen.getByRole('button', { name: 'Count objects in selection 2' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Count objects in selection 2' }))
     expect(screen.getByText('Cells')).toBeInTheDocument()
+  })
+
+  it('renders the menu inside menuContainer when provided', async () => {
+    const user = userEvent.setup()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const onCount = vi.fn()
+    render(
+      <CountObjectsButton
+        selectionIndex={2}
+        menuContainer={container}
+        onCount={onCount}
+        onCancel={() => {}}
+        onViewResults={() => {}}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Count objects in selection 2' }))
+    // Menu items appear inside the container, not document.body.
+    expect(container.querySelector('[role="menuitem"]')).not.toBeNull()
+    expect(within(container).getByRole('menuitem', { name: /Cells/ })).toBeInTheDocument()
   })
 })

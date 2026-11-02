@@ -187,10 +187,12 @@ export default function CountReportDialog({
               position: 'absolute',
               top: 12,
               right: 12,
-              bgcolor: (theme) => alpha(theme.palette.common.white, 0.94),
+              // Theme-aware chip surface: `common.white` + `text.primary`
+              // is white-on-white in dark mode.
+              bgcolor: 'background.paper',
               color: 'text.primary',
               fontWeight: 600,
-              boxShadow: 2,
+              boxShadow: 3,
             }}
           />
         </Paper>
