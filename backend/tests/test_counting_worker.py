@@ -273,7 +273,7 @@ async def test_task_timeout_holds_slot_until_pipeline_thread_exits(
     assert not task.done()  # still holding the slot while the thread runs
     release.set()
     with pytest.raises(asyncio.CancelledError):
-        await task
+        _ = await task
     assert observed == [True]  # the thread saw the stop signal
     record = await jobs.get_record(pool, "job-slow")
     assert record["status"] == "failed"
