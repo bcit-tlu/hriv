@@ -32,7 +32,7 @@ from .browse_state import bump_browse_revision
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .auth_events import actor_log_fields
-from .models import Image, SourceImage, User
+from .models import Image, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
 from .task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
@@ -1070,7 +1070,8 @@ async def process_replace_image(
                 # Clear old pyramid metadata before merging new
                 for key in ("pyramid_detected", "pyramid_level_count",
                             "mpp_x", "mpp_y", "objective_power",
-                            "measurement_scale", "measurement_unit"):
+                            "measurement_scale", "measurement_unit",
+                            "measurement_scale_source", "measurement_finding_id"):
                     current_meta.pop(key, None)
 
                 # Merge pyramid metadata from the new source file
@@ -1089,6 +1090,17 @@ async def process_replace_image(
                     current_meta["pyramid_level_count"] = pyramid_info.get("level_count")
 
                 img.metadata_ = current_meta if current_meta else {}
+
+                # Findings measured the old source; retire them so the
+                # replacement is rescanned instead of approving a stale scale.
+                await db.execute(
+                    update(MeasurementFinding)
+                    .where(
+                        MeasurementFinding.image_id == img.id,
+                        MeasurementFinding.status != "superseded",
+                    )
+                    .values(status="superseded")
+                )
 
                 # Record tile-cache provenance for the replacement source so
                 # the new tile tree's currentness is tracked. The checksum was

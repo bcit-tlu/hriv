@@ -77,16 +77,18 @@ the selected images.
 
 ### Known metadata keys
 
-| Key                   | Type            | Source                      | Description                             |
-| --------------------- | --------------- | --------------------------- | --------------------------------------- |
-| `canvas_annotations`  | JSON            | Frontend (Fabric.js)        | Serialised canvas annotation objects    |
-| `locked_overlays`     | JSON array      | Frontend                    | Persistent rectangular overlay regions  |
-| `measurement_scale`   | float           | Processing (pyramid detect) | Pixels per µm (derived from MPP)        |
-| `measurement_unit`    | string (`"um"`) | Processing (pyramid detect) | Unit for measurement_scale              |
-| `objective_power`     | float           | Processing (pyramid detect) | Objective magnification                 |
-| `mpp_x`, `mpp_y`      | float           | Processing (pyramid detect) | Microns per pixel (x and y)             |
-| `pyramid_detected`    | bool            | Processing                  | Whether a pyramidal structure was found |
-| `pyramid_level_count` | int             | Processing                  | Number of pyramid levels                |
+| Key                        | Type            | Source                                               | Description                                                                                   |
+| -------------------------- | --------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `canvas_annotations`       | JSON            | Frontend (Fabric.js)                                 | Serialised canvas annotation objects                                                          |
+| `locked_overlays`          | JSON array      | Frontend                                             | Persistent rectangular overlay regions                                                        |
+| `measurement_scale`        | float           | Processing (pyramid detect)                          | Pixels per µm (derived from MPP, or approved via [Measurement review](measurement-review.md)) |
+| `measurement_unit`         | string (`"um"`) | Processing (pyramid detect)                          | Unit for measurement_scale                                                                    |
+| `measurement_scale_source` | string          | [Measurement review](measurement-review.md) approval | How the approved scale was found (`rbc`, `manual`)                                            |
+| `measurement_finding_id`   | int             | [Measurement review](measurement-review.md) approval | Approved `measurement_findings.id`                                                            |
+| `objective_power`          | float           | Processing (pyramid detect)                          | Objective magnification                                                                       |
+| `mpp_x`, `mpp_y`           | float           | Processing (pyramid detect)                          | Microns per pixel (x and y)                                                                   |
+| `pyramid_detected`         | bool            | Processing                                           | Whether a pyramidal structure was found                                                       |
+| `pyramid_level_count`      | int             | Processing                                           | Number of pyramid levels                                                                      |
 
 The synchronized collection viewer's persisted pane positions
 (`{ "<image_id>": {zoom, x, y, rotation} }`) are **not** image metadata —
@@ -98,16 +100,17 @@ column with its own `Collection.version` optimistic concurrency; see
 
 When a source image is replaced (`process_replace_image`):
 
-| Metadata key          | Action                                                            |
-| --------------------- | ----------------------------------------------------------------- |
-| `canvas_annotations`  | **Cleared** — coordinates reference old geometry                  |
-| `locked_overlays`     | **Cleared** — coordinates reference old geometry                  |
-| `measurement_scale`   | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `measurement_unit`    | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `objective_power`     | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `mpp_x`, `mpp_y`      | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `pyramid_detected`    | **Re-derived** from new file if also pyramidal; cleared otherwise |
-| `pyramid_level_count` | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| Metadata key                                         | Action                                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `canvas_annotations`                                 | **Cleared** — coordinates reference old geometry                                    |
+| `locked_overlays`                                    | **Cleared** — coordinates reference old geometry                                    |
+| `measurement_scale`                                  | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `measurement_unit`                                   | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `measurement_scale_source`, `measurement_finding_id` | **Cleared**; the image's measurement findings are superseded so it can be rescanned |
+| `objective_power`                                    | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `mpp_x`, `mpp_y`                                     | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `pyramid_detected`                                   | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
+| `pyramid_level_count`                                | **Re-derived** from new file if also pyramidal; cleared otherwise                   |
 
 All pyramid-related keys are cleared first, then re-populated if the
 replacement file is also pyramidal. Version is bumped unconditionally.

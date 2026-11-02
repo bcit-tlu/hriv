@@ -186,6 +186,7 @@ reconciliation model for both environments.
 | [docs/browse-state.md](docs/browse-state.md)                                         | Monotonic browse revision and `GET /categories/tree` `304` short-circuit (#1066) |
 | [docs/reorder-performance.md](docs/reorder-performance.md)                           | Browse drag-and-drop profiling results and optimization record (epic #975)       |
 | [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                   |
+| [docs/measurement-review.md](docs/measurement-review.md)                             | Measurement-scale findings: RBC detector, review/approve API, metadata promotion |
 | [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)             | Image processing pipeline stages, tile generation, and worker configuration      |
 | [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                       | Tile-cache provenance fields and current/missing/stale/failed status rules       |
 | [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)         | Production backup and DR strategy, volume layout, restore order, and runbook     |

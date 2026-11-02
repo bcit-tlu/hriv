@@ -132,6 +132,18 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   - `Image.active` controls _image_ visibility; `Category.status` controls
     _category_ visibility — they are **independent**.
 
+### MeasurementFinding
+
+- **Purpose:** a proposed `measurement_scale` for an image awaiting
+  admin/instructor review ([measurement-review](measurement-review.md)).
+- **Key fields:** `image_id` (FK, `CASCADE`); `status`
+  (`pending`/`approved`/`rejected`/`superseded`); `source`; `proposed_scale`;
+  `objective`; `confidence`; `evidence` (JSONB); `detector_version`;
+  `approved_scale`; `reviewed_by` (FK users, `SET NULL`).
+- **Common mistakes:**
+  - Findings never change image metadata until approved; approval merges only
+    the measurement keys into `Image.metadata_`.
+
 ### SourceImage
 
 - **Purpose:** original uploaded file before tiling/processing.

@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -869,3 +870,73 @@ class AdminTask(Base):
     )
 
     creator: Mapped["User | None"] = relationship("User")
+
+
+MEASUREMENT_FINDING_STATUSES: tuple[str, ...] = (
+    "pending",
+    "approved",
+    "rejected",
+    "superseded",
+)
+
+
+class MeasurementFinding(Base):
+    """Proposed measurement scale awaiting admin/instructor review.
+
+    Findings never touch ``Image.metadata_`` until approved; see
+    docs/measurement-review.md.
+    """
+
+    __tablename__ = "measurement_findings"
+    __table_args__ = (
+        Index("idx_measurement_findings_status_conf", "status", "confidence"),
+        Index("idx_measurement_findings_image", "image_id"),
+        Index(
+            "uq_measurement_findings_pending_image",
+            "image_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'superseded')",
+            name="ck_measurement_findings_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    image_id: Mapped[int] = mapped_column(
+        ForeignKey("images.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    proposed_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
+    proposed_unit: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="um", server_default=text("'um'")
+    )
+    objective: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    confidence: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0, server_default="0"
+    )
+    evidence: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=dict, server_default=text("'{}'::jsonb")
+    )
+    detector_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    approved_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
+    approved_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    image: Mapped["Image"] = relationship("Image")
+    reviewer: Mapped["User | None"] = relationship("User")
