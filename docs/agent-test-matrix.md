@@ -234,4 +234,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - backend: `poetry run pytest tests/test_counting_stitch.py tests/test_router_counts.py tests/test_counting_worker.py tests/test_main.py tests/test_middleware.py`
 - Feature flag (`COUNTING_ENABLED`, `GET /api/features`, `CountingFeatureMiddleware`): also
   `tests/test_database.py tests/test_schemas.py`.
+- frontend: `npm test -- useSelectionCounts countPalette CountObjectsButton
+CountProgressSnackbar CountReportDialog CountOutlinesLayer useFeatures
+ImageViewer` (from `frontend/`).
 - See [object-counting.md](object-counting.md).

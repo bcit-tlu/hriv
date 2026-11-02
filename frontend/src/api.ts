@@ -2496,6 +2496,7 @@ export interface VersionsResponse {
 export interface ApiFeatures {
   collections: boolean
   collections_home_shelf: boolean
+  counting: boolean
 }
 
 export function fetchFeatures(): Promise<ApiFeatures> {
@@ -2557,4 +2558,86 @@ export async function downloadAdminTaskResult(taskId: number): Promise<void> {
     credentials: 'include',
   })
   window.location.href = `${BASE}/api/admin/tasks/${taskId}/download`
+}
+
+// ── Object counting (epic #1661, docs/object-counting.md) ────────────────
+
+export type CountMode = 'cells' | 'nuclei'
+
+export interface ApiCountSelection {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ApiCountGroup {
+  group: number
+  count: number
+}
+
+export interface ApiCountObject {
+  group: number
+  centroid: [number, number]
+  polygon: [number, number][]
+}
+
+export type CountStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'expired'
+
+/** POST ``/api/images/{id}/counts`` -> 202. */
+export interface ApiCountJobCreated {
+  job_id: string
+  status: 'queued'
+  queue_position: number | null
+}
+
+/** GET ``/api/counts/{id}`` — result contract; result fields only when done. */
+export interface ApiCountJob {
+  job_id: string
+  status: CountStatus
+  queue_position: number | null
+  mode: CountMode
+  selection: ApiCountSelection
+  total: number | null
+  groups: ApiCountGroup[]
+  objects: ApiCountObject[]
+  error: string | null
+  preview: string | null
+}
+
+export function startCount(
+  imageId: number,
+  mode: CountMode,
+  selection: ApiCountSelection,
+): Promise<ApiCountJobCreated> {
+  return request(`/images/${imageId}/counts`, {
+    method: 'POST',
+    body: JSON.stringify({ mode, selection }),
+  })
+}
+
+export function getCount(jobId: string): Promise<ApiCountJob> {
+  return request(`/counts/${jobId}`)
+}
+
+/**
+ * DELETE ``/api/counts/{id}`` -> 204 (idempotent). With ``keepalive: true``
+ * this bypasses ``request()`` and fires a raw keepalive ``fetch`` so the
+ * cancel still leaves the browser during page unload — ``sendBeacon``
+ * cannot carry the Authorization header.
+ */
+export async function cancelCount(jobId: string, opts?: { keepalive?: boolean }): Promise<void> {
+  if (opts?.keepalive) {
+    try {
+      await fetch(`${BASE}/api/counts/${jobId}`, {
+        method: 'DELETE',
+        keepalive: true,
+        headers: authHeaders(),
+      })
+    } catch {
+      // Best-effort by design: unload must not surface a failure.
+    }
+    return
+  }
+  await request(`/counts/${jobId}`, { method: 'DELETE' })
 }

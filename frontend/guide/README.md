@@ -12,6 +12,9 @@ frontend — there is no separate docs site or build step.
   `![Alt text](images/your-file.png)`.
 - To add a page: create `your-page.md`, then add it to the `GUIDE_PAGES` list
   in `src/guideContent.ts` so it appears in the guide's navigation.
+  Exception: `object-counting.md` is intentionally NOT listed — object
+  counting is dark-launched behind `COUNTING_ENABLED`, so the page is
+  rendered only inside `CountHelpDialog`, reached from the counting UI.
 - Pages are indexed automatically: staff search results include guide
   sections (a `Guide` chip narrows results), so clear `##` headings double as
   search targets.

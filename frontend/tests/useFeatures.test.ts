@@ -16,7 +16,11 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     expect(result.current).toBeNull()
     await waitFor(() =>
-      expect(result.current).toEqual({ collections: true, collectionsHomeShelf: true }),
+      expect(result.current).toEqual({
+        collections: true,
+        collectionsHomeShelf: true,
+        counting: false,
+      }),
     )
     expect(fetchFeatures).toHaveBeenCalledTimes(1)
   })
@@ -25,7 +29,11 @@ describe('useFeatures', () => {
     fetchFeatures.mockResolvedValue({ collections: false, collections_home_shelf: true })
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
-      expect(result.current).toEqual({ collections: false, collectionsHomeShelf: false }),
+      expect(result.current).toEqual({
+        collections: false,
+        collectionsHomeShelf: false,
+        counting: false,
+      }),
     )
   })
 
@@ -33,7 +41,32 @@ describe('useFeatures', () => {
     fetchFeatures.mockResolvedValue({})
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
-      expect(result.current).toEqual({ collections: false, collectionsHomeShelf: false }),
+      expect(result.current).toEqual({
+        collections: false,
+        collectionsHomeShelf: false,
+        counting: false,
+      }),
+    )
+  })
+
+  it('exposes the counting flag only when it is true', async () => {
+    fetchFeatures.mockResolvedValue({ counting: true })
+    const { result } = renderHook(() => useFeatures())
+    await waitFor(() =>
+      expect(result.current).toEqual({
+        collections: false,
+        collectionsHomeShelf: false,
+        counting: true,
+      }),
+    )
+    fetchFeatures.mockResolvedValue({ counting: false })
+    const second = renderHook(() => useFeatures())
+    await waitFor(() =>
+      expect(second.result.current).toEqual({
+        collections: false,
+        collectionsHomeShelf: false,
+        counting: false,
+      }),
     )
   })
 

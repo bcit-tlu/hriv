@@ -2844,6 +2844,7 @@ export default function App() {
                   tileSources={selectedImage.tileSources}
                   imageId={selectedImage.id}
                   categoryId={selectedImage.categoryId ?? undefined}
+                  countingEnabled={features?.counting === true}
                   onTileSourceRenewed={handleImageRenewed}
                   onError={(message) => setErrorSnack(message)}
                   initialViewport={initialViewport}

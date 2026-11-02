@@ -1,0 +1,26 @@
+import { Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as CountProgressSnackbarStories from './CountProgressSnackbar.stories'
+
+<Meta of={CountProgressSnackbarStories} />
+
+<Title />
+
+<Subtitle>
+  Bottom-centre progress indicator and error notices for object counting (epic #1661).
+</Subtitle>
+
+While any count job is active it shows the Figma progress card — a bold
+"Counting objects" caption, per-selection detail ("Selection 2 · Cells —
+waiting in queue (3 ahead)"), a Cancel action and an indeterminate
+`LinearProgress` along the bottom edge. With several active jobs the
+caption collapses to "Counting objects in N selections".
+
+Failures render separately as an `Alert`: warning severity for
+budget/rate-limit/expiry problems, error severity otherwise, and a Retry
+action for timeout/no_tiles/internal failures.
+
+<Primary />
+
+## Stories
+
+<Stories includePrimary={false} />

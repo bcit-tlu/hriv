@@ -99,6 +99,19 @@ curl -s -X DELETE http://localhost:8000/api/counts/<job_id> -H "Authorization: B
 Until the worker's `arq:counting:health-check` key exists the POST answers
 503 `counting_unavailable`. See docs/object-counting.md for the contract.
 
+UI steps (frontend landed with #1667/#1668):
+
+1. Log in as `admin@example.ca` / `password` and open image **5** (the only
+   seeded image with local tiles).
+2. Toolbar **selection** button → drag a rectangle. A **Count objects**
+   button appears above its top-right corner.
+3. Choose **Cells** or **Nuclei**. A progress snackbar shows the queue
+   position; the report dialog opens on completion with outlines, an
+   unnamed **Group n** legend and a total.
+4. Close the report — outlines stay on the viewer. Reopen with **View
+   results (N)** on the rectangle's button; **Cancel count** lives in its
+   dropdown. Clear-all removes selections, outlines and results.
+
 ## Devin Secrets Needed
 
 None for local testing — seed users are created automatically.

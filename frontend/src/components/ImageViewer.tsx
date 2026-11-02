@@ -14,6 +14,7 @@ import { userMessage, type ApiImage } from '../api'
 import { isTileTokenAuthorizationFailure, renewImageRecord } from '../tileTokenRenewal'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
+import SelectionCountLayer from './SelectionCountLayer'
 import {
   formatMeasurement,
   createMeasurementLabel,
@@ -101,6 +102,8 @@ interface ImageViewerProps {
    * raw `viewport-change` handlers and drive the viewport imperatively.
    */
   onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
+  /** Show "Count objects" affordances on selection rectangles (epic #1661). */
+  countingEnabled?: boolean
   /** Extra UI portaled into the OSD container (`viewer.container`) so it stays visible in OSD full-page mode. */
   viewportOverlay?: ReactNode
   /**
@@ -141,6 +144,7 @@ export default function ImageViewer({
   onTileSourceRenewed,
   onError,
   onViewerReady,
+  countingEnabled = false,
   viewportOverlay,
   viewportControl,
 }: ImageViewerProps) {
@@ -148,6 +152,12 @@ export default function ImageViewer({
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  // Object counting (epic #1661): drawn selections with stable keys.
+  const [countSelections, setCountSelections] = useState<
+    { key: number; index: number; rect: { x: number; y: number; width: number; height: number } }[]
+  >([])
+  const [clearedToken, setClearedToken] = useState(0)
+  const [selectionDrawing, setSelectionDrawing] = useState(false)
   const [controlWrapper, setControlWrapper] = useState<HTMLDivElement | null>(null)
   const [viewerMountReady, setViewerMountReady] = useState(!deferViewerInitializationForStrictMode)
   const canvasEditModeRef = useRef(false)
@@ -585,12 +595,26 @@ export default function ImageViewer({
     labelContainer.style.zIndex = '10'
     viewer.canvas.appendChild(labelContainer)
 
-    // Track all label pairs so we can reposition them on zoom/pan
+    // Track all label pairs so we can reposition them on zoom/pan. Each pair
+    // gets a stable `key` so the object-counting UI can address it (the key
+    // is per-draw, never persisted, and resets with the viewer).
+    let nextSelectionKey = 1
     const labelPairs: Array<{
+      key: number
       rect: OpenSeadragon.Rect
       widthLabel: HTMLDivElement
       heightLabel: HTMLDivElement
     }> = []
+
+    const syncCountSelections = () => {
+      setCountSelections(
+        labelPairs.map((p, i) => ({
+          key: p.key,
+          index: i + 1,
+          rect: { x: p.rect.x, y: p.rect.y, width: p.rect.width, height: p.rect.height },
+        })),
+      )
+    }
 
     /** Notify the parent about the current set of overlay rects (max MAX_SHARE_OVERLAYS) */
     const emitOverlays = () => {
@@ -615,8 +639,9 @@ export default function ImageViewer({
       const hl = createMeasurementLabel()
       labelContainer.appendChild(wl)
       labelContainer.appendChild(hl)
-      labelPairs.push({ rect, widthLabel: wl, heightLabel: hl })
+      labelPairs.push({ key: nextSelectionKey++, rect, widthLabel: wl, heightLabel: hl })
       updateMeasurementLabels(rect, wl, hl)
+      syncCountSelections()
     }
 
     // --- Toolbar buttons ---
@@ -649,6 +674,8 @@ export default function ImageViewer({
           pair.heightLabel.remove()
         }
         labelPairs.length = 0
+        syncCountSelections()
+        setClearedToken((t) => t + 1)
         emitOverlays()
         updateClearButtonState()
         updateLockIcon()
@@ -713,6 +740,7 @@ export default function ImageViewer({
       },
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
         if (!selectionModeRef.current || !event.position) return
+        setSelectionDrawing(true)
         const overlayElement = document.createElement('div')
         overlayElement.style.border = '2px solid red'
         overlayElement.style.boxSizing = 'border-box'
@@ -763,10 +791,12 @@ export default function ImageViewer({
         // Store the final rect and labels for repositioning on zoom/pan
         if (currentRect && currentRect.width > 0 && currentRect.height > 0) {
           labelPairs.push({
+            key: nextSelectionKey++,
             rect: currentRect,
             widthLabel: dragRef.current.widthLabel,
             heightLabel: dragRef.current.heightLabel,
           })
+          syncCountSelections()
           emitOverlays()
           updateClearButtonState()
           updateLockIcon()
@@ -782,6 +812,7 @@ export default function ImageViewer({
         dragRef.current = null
         currentRect = null
         selectionModeRef.current = false
+        setSelectionDrawing(false)
         viewer.setMouseNavEnabled(true)
         setButtonIcons(selectionButton, 'selection')
       },
@@ -1178,6 +1209,8 @@ export default function ImageViewer({
       dragRef.current = null
       overlaysRef.current = []
       labelPairs.length = 0
+      setCountSelections([])
+      setSelectionDrawing(false)
       canvasEditModeRef.current = false
       setCanvasEditMode(false)
       setViewerInstance(null)
@@ -1300,6 +1333,23 @@ export default function ImageViewer({
           the position:relative container. */}
       {viewerInstance && viewportOverlay
         ? createPortal(viewportOverlay, viewerInstance.container)
+        : null}
+      {/* Object counting UI (epic #1661): also portaled into the OSD
+          container so buttons/dialogs survive full-page mode. Hidden in
+          canvas edit mode and while a rectangle is being drawn — mounting
+          it unconditionally would cancel in-flight jobs via the hook's
+          unmount cleanup. */}
+      {viewerInstance && countingEnabled && imageId != null
+        ? createPortal(
+            <SelectionCountLayer
+              viewer={viewerInstance}
+              imageId={imageId}
+              selections={countSelections}
+              clearedToken={clearedToken}
+              hidden={canvasEditMode || selectionDrawing}
+            />,
+            viewerInstance.container,
+          )
         : null}
       {controlWrapper && viewportControl ? createPortal(viewportControl, controlWrapper) : null}
     </Box>

@@ -1,0 +1,25 @@
+import { Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as CountObjectsButtonStories from './CountObjectsButton.stories'
+
+<Meta of={CountObjectsButtonStories} />
+
+<Title />
+
+<Subtitle>
+  Per-selection "Count objects" affordance anchored above a drawn selection rectangle (epic #1661).
+</Subtitle>
+
+Idle renders the Figma pop-up button with its arrow notch; clicking opens a
+Cells/Nuclei menu. While a job runs it becomes a split button ("Counting…"
+or "Queued · n ahead" plus a Cancel action); when it finishes the same
+split button reopens the report or starts a recount. Failures return it to
+the idle state — the error surfaces in `CountProgressSnackbar`.
+
+Every interactive element carries `data-hriv-canvas-ui` so the OSD selection
+tracker ignores its presses.
+
+<Primary />
+
+## Stories
+
+<Stories includePrimary={false} />

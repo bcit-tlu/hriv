@@ -93,9 +93,15 @@ export interface Features {
   collections: boolean
   /** My collections drawer on Browse (#1583). */
   collectionsHomeShelf: boolean
+  /** Object counting in the viewer (epic #1661). */
+  counting: boolean
 }
 
-export const DEFAULT_FEATURES: Features = { collections: false, collectionsHomeShelf: false }
+export const DEFAULT_FEATURES: Features = {
+  collections: false,
+  collectionsHomeShelf: false,
+  counting: false,
+}
 
 // ── Collections (docs/collections.md) ─────────────────────
 
