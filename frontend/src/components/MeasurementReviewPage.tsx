@@ -98,6 +98,12 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
       })
       .then((result) => {
         if (cancelled) return
+        const lastPage = Math.max(0, Math.ceil(result.total / rowsPerPage) - 1)
+        if (page > lastPage) {
+          // Reviewing the last rows of a later page shrinks the list under it.
+          setPage(lastPage)
+          return
+        }
         setFindings(result.items)
         setTotal(result.total)
         setError(null)
@@ -136,14 +142,18 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
         : `Scanning ${result.image_ids.length} image${result.image_ids.length === 1 ? '' : 's'}. Refresh in a moment to see the findings.`
     })
 
+  /** `{}` to accept the proposal, `{ scale }` for a correction, `null` if the edit is invalid. */
+  const correctionFor = (finding: ApiMeasurementFinding): { scale?: number } | null => {
+    const edited = edits[finding.id]
+    if (edited == null) return {}
+    const scale = parseScale(edited)
+    if (scale == null) return null
+    return scale !== finding.proposed_scale ? { scale } : {}
+  }
+
   const handleApprove = (finding: ApiMeasurementFinding) =>
     run(async () => {
-      const edited = edits[finding.id]
-      const scale = edited != null ? parseScale(edited) : null
-      await api.approve(
-        finding.id,
-        scale != null && scale !== finding.proposed_scale ? { scale } : {},
-      )
+      await api.approve(finding.id, correctionFor(finding) ?? {})
       return `Approved “${finding.image_name}”.`
     })
 
@@ -155,9 +165,21 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
 
   const handleBulkApprove = () =>
     run(async () => {
-      const result = await api.bulkApprove([...selected])
-      const skipped = result.skipped.length ? `, skipped ${result.skipped.length}` : ''
-      return `Approved ${result.approved.length}${skipped}.`
+      // The bulk endpoint only promotes proposals, so corrected rows go one by one.
+      const plain: number[] = []
+      const corrected: { id: number; scale: number }[] = []
+      let invalid = 0
+      for (const f of findings.filter((row) => selected.has(row.id))) {
+        const correction = correctionFor(f)
+        if (correction == null) invalid += 1
+        else if (correction.scale != null) corrected.push({ id: f.id, scale: correction.scale })
+        else plain.push(f.id)
+      }
+      for (const { id, scale } of corrected) await api.approve(id, { scale })
+      const result = plain.length ? await api.bulkApprove(plain) : { approved: [], skipped: [] }
+      const skippedCount = result.skipped.length + invalid
+      const skipped = skippedCount ? `, skipped ${skippedCount}` : ''
+      return `Approved ${result.approved.length + corrected.length}${skipped}.`
     })
 
   const pending = status === 'pending'

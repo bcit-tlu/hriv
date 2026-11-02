@@ -128,6 +128,36 @@ describe('MeasurementReviewPage', () => {
     expect(await screen.findByText('Approved 2.')).toBeInTheDocument()
   })
 
+  it('approves corrected rows individually during bulk approval', async () => {
+    const api = makeApi([makeFinding(), makeFinding({ id: 2, image_id: 12, image_name: 'Film B' })])
+    render(<MeasurementReviewPage api={api} />)
+    const field = await screen.findByLabelText('Scale for Film B')
+    await userEvent.clear(field)
+    await userEvent.type(field, '2')
+    await userEvent.click(screen.getByLabelText('Select all findings'))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve selected (2)' }))
+    expect(api.approve).toHaveBeenCalledWith(2, { scale: 2 })
+    expect(api.bulkApprove).toHaveBeenCalledWith([1])
+    expect(await screen.findByText('Approved 2.')).toBeInTheDocument()
+  })
+
+  it('steps back a page when the current page empties', async () => {
+    const api = makeApi()
+    vi.mocked(api.fetchFindings).mockImplementation(async (query = {}) =>
+      query.offset ? { items: [], total: 25 } : { items: [makeFinding()], total: 26 },
+    )
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Go to next page' }))
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenCalledWith(expect.objectContaining({ offset: 25 })),
+    )
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 })),
+    )
+    expect(await screen.findByText('Blood film 40x')).toBeInTheDocument()
+  })
+
   it('shows reviewed findings read-only', async () => {
     const api = makeApi([makeFinding({ status: 'approved', approved_scale: 2 })])
     render(<MeasurementReviewPage api={api} />)
