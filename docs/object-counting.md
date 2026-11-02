@@ -243,3 +243,27 @@ curl -s -X POST http://localhost:8000/api/images/1/counts \
 - **#1669** — Prometheus queue gauges/dashboards for the counting queue
   (the OTel `hriv.count_jobs` counter already lands here).
 - **#1670** — lab-burst load test; **#1671** — docs/user validation.
+
+## Models and pipeline (#1665)
+
+The stub was replaced by two real outliners behind the same `segment(rgb,
+plan, mpp) -> int32 labels` seam:
+
+| Mode   | Outliner                                                                                                                    | Licence                                                        |
+| ------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Cells  | `ClassicalCellsOutliner` — scikit-image channel-extrema + darkness signal, Otsu, distance-transform watershed (#1662 spike) | BSD-3 (scikit-image / scikit-learn)                            |
+| Nuclei | `InstanSegNucleiOutliner` — InstanSeg `brightfield_nuclei` v0.1.1 on CPU                                                    | Apache-2.0 code + weights; its dep `fastremap` is **LGPL-3.0** |
+
+Cellpose `cyto3` is **pending an owner decision** (numpy<2.1 pin, no py3.14
+wheels, CC-BY-NC training data) — the `Outliner` protocol is the plugin
+point if it ever lands.
+
+- **Level rule**: a ≤0.25 MP coarse stitch estimates the median object
+  diameter via the classical mask; the worker picks the largest
+  power-of-two `d ≤ counting_max_downsample` with `diameter/d ≥ native`
+  (30 px cells, 12 px nuclei), or `mpp*d ≤ 0.5` for nuclei with a known
+  mpp. Never upscale; over budget at that `d` → `too_large`.
+- **Stain filter** (nuclei only): objects with mean CIELAB `b* > -5` are
+  dropped after the centroid edge rule.
+- **Grouping**: GaussianMixture+BIC in `[log(area)/ln(2.5), a*/10, b*/10]`,
+  union-merge components <1.0 apart, re-indexed by mean area ascending.

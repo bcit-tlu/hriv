@@ -196,6 +196,15 @@ async def create_count(
                     source_image_id=source_image_id,
                     mode=body.mode,
                     selection=body.selection.model_dump(),
+                    mpp=(
+                        mpp_val
+                        if isinstance(
+                            (mpp_val := (getattr(img, "metadata_", None) or {}).get("mpp_x")),
+                            (int, float),
+                        )
+                        and mpp_val > 0
+                        else None
+                    ),
                     ttl_seconds=settings.counting_result_ttl_seconds,
                 )
                 reserved = await jobs.reserve_active_slot(

@@ -223,3 +223,49 @@ EXPOSE 8000
 # proxy boundary (app.middleware.get_client_ip / TRUSTED_PROXY_HOPS; see
 # docs/deployment-proxy-chain.md).
 CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+
+# ── Stage 1c: counting-worker dependency builder (discarded) ──
+# main + counting + counting-ml in one site-packages: the counting ML
+# groups extend the same lockfile, and torch resolves from the explicit
+# ``pytorch-cpu`` index (no CUDA/nvidia wheels).
+FROM python:3.14-slim AS counting-builder
+WORKDIR /app
+RUN apt-get update \
+    && apt-get -y upgrade \
+    && apt-get install -y --no-install-recommends \
+       pkg-config gcc curl unzip \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=poetry-tools /opt/poetry-venv /opt/poetry-venv
+COPY pyproject.toml poetry.lock ./
+RUN /opt/poetry-venv/bin/poetry export --only main,counting,counting-ml -f requirements.txt -o requirements.txt \
+    && pip install --no-cache-dir -r requirements.txt \
+       --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Bake the InstanSeg ``brightfield_nuclei`` v0.1.1 bioimage.io model so no
+# runtime download is needed (``instanseg.utils.utils`` resolves models
+# under ``$INSTANSEG_BIOIMAGEIO_PATH/<name>/<version>/instanseg.pt``).
+ARG INSTANSEG_MODEL_URL=https://github.com/instanseg/instanseg/releases/download/instanseg_models_v0.1.1/brightfield_nuclei.zip
+ARG INSTANSEG_MODEL_SHA256=427aa9cfe961b6d0012e2abf6befc6a9f76398db5d28dc2302ad911327d1c448
+RUN curl -fsSL -o /tmp/model.zip "${INSTANSEG_MODEL_URL}" \
+    && echo "${INSTANSEG_MODEL_SHA256}  /tmp/model.zip" | sha256sum -c - \
+    && mkdir -p /opt/hriv-models/brightfield_nuclei/0.1.1 \
+    && unzip -q /tmp/model.zip -d /opt/hriv-models/brightfield_nuclei/0.1.1 \
+    && rm /tmp/model.zip
+
+# ── Stage 5: Counting worker (arq, ML outliners) ─────────
+# Builds on ``base`` (custom libvips, codec libs, app code, OTel-off
+# defaults) and overlays the counting site-packages — a superset of the
+# main group — plus the baked model.  Runs non-root.
+FROM base AS counting-worker
+COPY --from=counting-builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=counting-builder /usr/local/bin/arq /usr/local/bin/opentelemetry-instrument /usr/local/bin/
+COPY --from=counting-builder /opt/hriv-models /opt/hriv-models
+
+ENV INSTANSEG_BIOIMAGEIO_PATH=/opt/hriv-models \
+    COUNTING_MODELS_DIR=/opt/hriv-models \
+    HOME=/tmp
+
+RUN useradd -r -u 10001 app && chown -R app:app /opt/hriv-models
+USER app
+
+CMD ["opentelemetry-instrument", "arq", "app.counting.worker.CountingWorkerSettings"]

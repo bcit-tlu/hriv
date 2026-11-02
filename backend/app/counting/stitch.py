@@ -159,6 +159,7 @@ def plan_region(
     margin_px: int,
     max_pixels: int,
     max_downsample: int,
+    downsample: int | None = None,
 ) -> RegionPlan:
     """Pick the pyramid level and geometry for one count job.
 
@@ -184,6 +185,44 @@ def plan_region(
     pixel_cap = min(max_pixels, MAX_DECODED_PIXELS)
     level_w = dzi.width
     level_h = dzi.height
+    if downsample is not None:
+        # Fixed-downsample plan (the worker's size-driven level rule): plan
+        # only this level; over budget -> RegionTooLarge, no coarsening.
+        level = dzi.max_level - (downsample.bit_length() - 1)
+        if level < 0:
+            raise RegionTooLarge(
+                f"downsample {downsample} exceeds the pyramid's coarsest level"
+            )
+        margin = margin_px * downsample
+        rx0 = max(0, sx0 - margin)
+        ry0 = max(0, sy0 - margin)
+        rx1 = min(dzi.width, sx1 + margin)
+        ry1 = min(dzi.height, sy1 + margin)
+        level_w = _ceil_div(dzi.width, downsample)
+        level_h = _ceil_div(dzi.height, downsample)
+        lx0 = rx0 // downsample
+        ly0 = ry0 // downsample
+        lx1 = min(_ceil_div(rx1, downsample), level_w)
+        ly1 = min(_ceil_div(ry1, downsample), level_h)
+        out_w = lx1 - lx0
+        out_h = ly1 - ly0
+        if out_w <= 0 or out_h <= 0:
+            raise InvalidSelection("selection lies outside the image")
+        if out_w * out_h > pixel_cap:
+            raise RegionTooLarge(
+                f"selection needs {out_w * out_h} px at downsample "
+                f"{downsample} (budget {pixel_cap})"
+            )
+        return RegionPlan(
+            level=level,
+            downsample=downsample,
+            selection=clamped_selection,
+            region=Rect(rx0, ry0, rx1 - rx0, ry1 - ry0),
+            level_rect=Rect(lx0, ly0, out_w, out_h),
+            out_width=out_w,
+            out_height=out_h,
+        )
+
     downsample = 1
     while downsample <= max_downsample:
         level = dzi.max_level - (downsample.bit_length() - 1)

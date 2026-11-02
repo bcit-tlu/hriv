@@ -33,6 +33,21 @@ alembic = "^1.13.0"
 azure-storage-blob = "12.31.0"
 prometheus-client = ">=0.21,<0.27"
 
+[tool.poetry.group.counting]
+optional = true
+
+[tool.poetry.group.counting.dependencies]
+numpy = ">=1.26"
+scikit-image = ">=0.24"
+scikit-learn = ">=1.5"
+
+[tool.poetry.group.counting-ml]
+optional = true
+
+[tool.poetry.group.counting-ml.dependencies]
+torch = { version = ">=2.5", source = "pytorch-cpu" }
+instanseg-torch = ">=0.1.2"
+
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.3.3,<10.0.0"
 pytest-asyncio = ">=0.24,<1.5"
@@ -45,7 +60,15 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80"
+markers = [
+    "counting_ml: real-ML-model tests; need the counting-ml group and a baked model",
+]
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"

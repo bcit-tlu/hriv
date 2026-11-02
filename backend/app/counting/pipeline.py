@@ -13,12 +13,16 @@ import base64
 from collections import defaultdict
 from typing import Any, Callable
 
+import numpy as np
 import pyvips
 
-from .outliners import OutlinedObject, Outliner
+from .grouping import assign_groups
+from .objects import objects_from_labels
+from .outliners import NATIVE_DIAMETER, Outliner, estimate_object_diameter
 from .stitch import (
     CountingRegionError,
     Rect,
+    RegionTooLarge,
     plan_region,
     read_dzi,
     resolve_tile_root,
@@ -50,9 +54,9 @@ def _check_cancelled(is_cancelled: Callable[[], bool]) -> None:
         raise JobCancelled
 
 
-def _centroid_in_selection(obj: OutlinedObject, selection: Rect) -> bool:
+def _centroid_in_selection(obj: dict[str, Any], selection: Rect) -> bool:
     """Edge rule: keep objects whose centroid lies inside the selection."""
-    cx, cy = obj.centroid
+    cx, cy = obj["centroid"]
     return (
         selection.x <= cx < selection.x + selection.width
         and selection.y <= cy < selection.y + selection.height
@@ -60,19 +64,14 @@ def _centroid_in_selection(obj: OutlinedObject, selection: Rect) -> bool:
 
 
 def _reindex_groups(
-    objects: list[OutlinedObject],
-) -> tuple[list[dict[str, int]], list[OutlinedObject]]:
-    """Re-map group ids to contiguous 0..n-1 ordered by mean object area.
-
-    Deterministic ordering (mean area ascending, then original id as a
-    stable tiebreak) keeps group -> colour assignments roughly consistent
-    across selections.
-    """
-    members: dict[int, list[OutlinedObject]] = defaultdict(list)
+    objects: list[dict[str, Any]],
+) -> tuple[list[dict[str, int]], list[dict[str, Any]]]:
+    """Re-map group ids to contiguous 0..n-1 ordered by mean object area."""
+    members: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for obj in objects:
-        members[obj.group].append(obj)
+        members[obj["group"]].append(obj)
     mean_area = {
-        group: sum(o.area for o in objs) / len(objs)
+        group: sum(o["area"] for o in objs) / len(objs)
         for group, objs in members.items()
     }
     order = sorted(members, key=lambda g: (mean_area[g], g))
@@ -81,16 +80,74 @@ def _reindex_groups(
         {"group": new, "count": len(members[old])}
         for old, new in sorted(remap.items(), key=lambda kv: kv[1])
     ]
-    reindexed = [
-        OutlinedObject(
-            polygon=obj.polygon,
-            centroid=obj.centroid,
-            area=obj.area,
-            group=remap[obj.group],
+    for obj in objects:
+        obj["group"] = remap[obj["group"]]
+    return groups, objects
+
+
+# Coarse-stage pixel budget for the diameter-estimation stitch (~0.25 MP).
+_DIAMETER_PROBE_PIXELS = 250_000
+# Nuclei-only stain post-filter: drop objects whose mean CIELAB b* is not
+# sufficiently blue (tissue/debris, not hematoxylin-stained nuclei).
+_NUCLEI_B_STAR_MAX = -5.0
+
+
+def _choose_downsample(
+    tile_root,
+    dzi,
+    selection: Rect,
+    *,
+    mode: str,
+    mpp: float | None,
+    margin_px: int,
+    max_pixels: int,
+    max_downsample: int,
+) -> int:
+    """Size-driven level rule (#1662): pick the largest d such that the
+    estimated median object is at least ``NATIVE_DIAMETER`` px at that
+    level — or, for nuclei with a known mpp, ``mpp * d <= 0.5``. Never
+    upscale (d >= 1), never above ``max_downsample``.
+    """
+    if mode == "nuclei" and mpp and mpp > 0:
+        d = max_downsample
+        while d > 1 and mpp * d > 0.5:
+            d //= 2
+        return d
+
+    native = NATIVE_DIAMETER[mode]
+    # Probe at a coarse level bounded by ~0.25 MP; a probe that still can't
+    # fit falls back to the finest level (d=1 keeps the real plan's own
+    # budget decision).
+    # Probe at ≤ ~0.25 MP; if that still can't fit at max_downsample, retry
+    # with the real budget — only then is the selection genuinely too big.
+    probe_plan = None
+    for budget in (min(_DIAMETER_PROBE_PIXELS, max_pixels), max_pixels):
+        try:
+            probe_plan = plan_region(
+                dzi,
+                selection,
+                margin_px=margin_px,
+                max_pixels=budget,
+                max_downsample=max_downsample,
+            )
+            break
+        except RegionTooLarge:
+            continue
+    if probe_plan is None:
+        raise RegionTooLarge(
+            "selection cannot fit the processing budget at any permitted level"
         )
-        for obj in objects
-    ]
-    return groups, reindexed
+    probe_rgb = stitch_region(tile_root, dzi, probe_plan).numpy()
+    diameter = estimate_object_diameter(probe_rgb, mode)
+    if diameter is None or diameter <= 0:
+        return 1
+    # The estimate is in probe-level px — convert to level-0 before
+    # comparing against the native target.
+    diameter_level0 = diameter * probe_plan.downsample
+    d = 1
+    while d < max_downsample and diameter_level0 / (d * 2) >= native:
+        d *= 2
+    return d
 
 
 def _selection_preview(stitched: pyvips.Image, plan) -> str:
@@ -130,45 +187,69 @@ def run_count(
     sel = record["selection"]
     tile_root = resolve_tile_root(tiles_dir, int(record["source_image_id"]))
     dzi = read_dzi(tile_root)
-    plan = plan_region(
+    mode = record.get("mode", "cells")
+    mpp = record.get("mpp")
+    sel_rect = Rect(
+        x=int(sel["x"]),
+        y=int(sel["y"]),
+        width=int(sel["width"]),
+        height=int(sel["height"]),
+    )
+    # Size-driven level rule: probe the object scale on a coarse stitch,
+    # then plan at the fixed downsample it dictates.
+    downsample = _choose_downsample(
+        tile_root,
         dzi,
-        Rect(
-            x=int(sel["x"]),
-            y=int(sel["y"]),
-            width=int(sel["width"]),
-            height=int(sel["height"]),
-        ),
+        sel_rect,
+        mode=mode,
+        mpp=float(mpp) if mpp else None,
         margin_px=margin_px,
         max_pixels=max_pixels,
         max_downsample=max_downsample,
     )
+    plan = plan_region(
+        dzi,
+        sel_rect,
+        margin_px=margin_px,
+        max_pixels=max_pixels,
+        max_downsample=max_downsample,
+        downsample=downsample,
+    )
     _check_cancelled(is_cancelled)
     stitched = stitch_region(tile_root, dzi, plan)
     _check_cancelled(is_cancelled)
+    rgb = stitched.numpy()
+    labels = outliner.segment(rgb, plan=plan, mpp=float(mpp) if mpp else None)
+    _check_cancelled(is_cancelled)
     objects = [
         obj
-        for obj in outliner.outline(stitched, plan)
+        for obj in objects_from_labels(labels, rgb, plan=plan)
         if _centroid_in_selection(obj, plan.selection)
     ]
+    if mode == "nuclei":
+        # Stain post-filter: keep only hematoxylin-blue objects.
+        objects = [o for o in objects if o["b"] <= _NUCLEI_B_STAR_MAX]
     if len(objects) > max_objects:
         raise TooManyObjects(
             f"{len(objects)} objects exceeds the {max_objects} cap"
         )
     _check_cancelled(is_cancelled)
 
+    for obj, group in zip(objects, assign_groups(objects)):
+        obj["group"] = group
     groups, reindexed = _reindex_groups(objects)
     return {
         "total": len(reindexed),
         "groups": groups,
         "objects": [
             {
-                "group": obj.group,
+                "group": obj["group"],
                 "centroid": [
-                    round(obj.centroid[0], 1),
-                    round(obj.centroid[1], 1),
+                    round(obj["centroid"][0], 1),
+                    round(obj["centroid"][1], 1),
                 ],
                 "polygon": [
-                    [round(px, 1), round(py, 1)] for px, py in obj.polygon
+                    [round(px, 1), round(py, 1)] for px, py in obj["polygon"]
                 ],
             }
             for obj in reindexed
@@ -178,6 +259,8 @@ def run_count(
         # the result is persisted so it never reaches the client.
         "_meta": {
             "level": plan.level,
+            "downsample": downsample,
             "pixels": plan.out_width * plan.out_height,
+            "outliner": outliner.name,
         },
     }

@@ -64,9 +64,13 @@ class Settings(BaseSettings):
     # spike (#1662) produces measured numbers — see docs/object-counting.md.
     counting_enabled: bool = False
     counting_queue_name: str = "arq:counting"
-    counting_max_pixels: int = Field(default=4_000_000, ge=65_536)
-    counting_max_downsample: int = Field(default=4, ge=1)
+    counting_max_pixels: int = Field(default=750_000, ge=65_536)
+    counting_max_downsample: int = Field(default=8, ge=1)
     counting_margin_px: int = Field(default=32, ge=0)
+    counting_torch_threads: int = Field(default=2, ge=1)
+    counting_models_dir: str = "/opt/hriv-models"
+    counting_cells_outliner: Literal["classical", "stub"] = "classical"
+    counting_nuclei_outliner: Literal["instanseg", "classical", "stub"] = "instanseg"
     counting_max_active_per_user: int = Field(default=3, ge=1)
     counting_result_ttl_seconds: int = Field(default=600, ge=60)
     counting_job_timeout_seconds: int = Field(default=60, ge=5)

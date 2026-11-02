@@ -207,7 +207,7 @@ services:
     #   COUNTING_ENABLED=true docker compose --profile counting up
     build:
       context: ./backend
-      target: dev
+      target: counting-worker
     command: ['opentelemetry-instrument', 'arq', 'app.counting.worker.CountingWorkerSettings']
     volumes:
       - ./backend/app:/app/app
