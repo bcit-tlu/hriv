@@ -303,6 +303,13 @@ async def enqueue_bulk_import(
     )
 
 
+async def enqueue_measurement_scan(image_ids: list[int]) -> EnqueueResult:
+    """Enqueue an RBC measurement scan of ``image_ids`` (Measurement review)."""
+    return await _enqueue(
+        "measurement_scan_task", image_ids, job_type="measurement_scan"
+    )
+
+
 async def enqueue_admin_task(task_id: int, task_type: str) -> EnqueueResult:
     """Enqueue a background admin task via the shared queue boundary."""
     return await _enqueue(
@@ -407,6 +414,28 @@ async def process_source_image_task(
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
                 span.record_exception(exc)
                 raise
+    finally:
+        if token is not None:
+            detach(token)
+
+
+async def measurement_scan_task(
+    ctx: dict[str, Any],
+    image_ids: list[int],
+    trace_headers: dict[str, str] | None = None,
+) -> int:
+    """Create pending measurement findings for ``image_ids``."""
+    from .database import async_session
+    from .measurement.service import scan_images
+
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "measurement_scan_task",
+            attributes={"measurement.image_count": len(image_ids)},
+        ):
+            return await scan_images(async_session, image_ids)
     finally:
         if token is not None:
             detach(token)
@@ -705,6 +734,7 @@ class WorkerSettings:
             timeout=REBUILD_ARQ_SAFETY_TIMEOUT_SECONDS,
             max_tries=1,
         ),
+        func(measurement_scan_task, max_tries=1),
     ]
     # Runs the reconciliation sweep (stale admin tasks, archive retention,
     # stale source images, stale bulk-import jobs) every 15 minutes, plus

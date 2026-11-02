@@ -284,6 +284,9 @@ def test_worker_settings_apply_task_specific_timeouts() -> None:
     assert rebuild_child_fn.name == "rebuild_tile_item"
     assert rebuild_child_fn.timeout_s == 90000
     assert rebuild_child_fn.max_tries == 1
+    measurement_fn = WorkerSettings.functions[6]
+    assert measurement_fn.name == "measurement_scan_task"
+    assert measurement_fn.max_tries == 1
 
 
 async def test_enqueue_tile_rebuild_pump_uses_deterministic_id() -> None:

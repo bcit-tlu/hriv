@@ -1149,6 +1149,66 @@ class CountJobOut(BaseModel):
     preview: str | None
 
 
+class MeasurementScanRequest(BaseModel):
+    limit: int = Field(default=10, ge=1, le=50)
+    category_id: int | None = None
+
+
+class MeasurementScanOut(BaseModel):
+    image_ids: list[int]
+    mode: Literal["queued", "fallback"]
+
+
+class MeasurementFindingOut(BaseModel):
+    id: int
+    image_id: int
+    image_name: str
+    image_thumb: str
+    category_id: int | None
+    image_width: int | None
+    image_height: int | None
+    status: str
+    source: str
+    proposed_scale: float | None
+    proposed_unit: str
+    objective: str | None
+    confidence: float
+    evidence: dict | None
+    detector_version: str
+    approved_scale: float | None
+    approved_unit: str | None
+    reviewed_by: int | None
+    reviewed_at: datetime | None
+    created_at: datetime
+
+    @field_serializer("image_thumb")
+    def _tokenize_thumb(self, value: str) -> str:
+        from .tile_tokens import append_tile_token
+
+        return append_tile_token(value)
+
+
+class MeasurementFindingsPageOut(BaseModel):
+    items: list[MeasurementFindingOut]
+    total: int
+
+
+class MeasurementApprove(BaseModel):
+    """Optional reviewer correction; omitted fields keep the proposed value."""
+
+    scale: float | None = Field(default=None, gt=0)
+    unit: Literal["um"] | None = None
+
+
+class MeasurementBulkApprove(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
+class MeasurementBulkApproveOut(BaseModel):
+    approved: list[int]
+    skipped: list[int]
+
+
 class FeaturesOut(BaseModel):
     """``GET /api/features``: deployment-level feature flags the frontend
     reads at boot to decide which surfaces to render. Flags are not secrets;
