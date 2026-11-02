@@ -44,10 +44,11 @@ export default function SelectionCountLayer({
   const anchorsRef = useRef<Map<number, HTMLDivElement>>(new Map())
   const [reportKey, setReportKey] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
-  // Menus portal here: inside viewer.container (visible in OSD full-page
-  // mode) and under data-hriv-canvas-ui, so the selection tracker ignores
-  // presses on them.
-  const [menuHost, setMenuHost] = useState<HTMLDivElement | null>(null)
+  // Interactive counting UI (menus and dialogs) portals here: inside
+  // viewer.container (visible in OSD full-page mode) and under
+  // data-hriv-canvas-ui, so the selection tracker never captures presses
+  // on them (captured presses retarget clicks away from dialog buttons).
+  const [uiHost, setUiHost] = useState<HTMLDivElement | null>(null)
   const autoOpenedRef = useRef<Set<string>>(new Set())
 
   const keyFor = (key: number) => `sel-${key}`
@@ -159,7 +160,7 @@ export default function SelectionCountLayer({
 
   return (
     <>
-      <div ref={setMenuHost} data-hriv-canvas-ui />
+      <div ref={setUiHost} data-hriv-canvas-ui />
       <CountOutlinesLayer viewer={viewer} items={outlineItems} />
       {!hidden &&
         selections.map((sel) => {
@@ -182,7 +183,7 @@ export default function SelectionCountLayer({
               <CountObjectsButton
                 selectionIndex={sel.index}
                 entry={entry}
-                menuContainer={menuHost ?? viewer.container}
+                menuContainer={uiHost ?? viewer.container}
                 onCount={(mode) => handleCount(sel, mode)}
                 onCancel={() => cancel(k)}
                 onViewResults={() => setReportKey(k)}
@@ -210,13 +211,13 @@ export default function SelectionCountLayer({
           objects={reportEntry.result.objects}
           preview={reportEntry.result.preview}
           onLearnMore={() => setHelpOpen(true)}
-          container={viewer.container}
+          container={uiHost ?? viewer.container}
         />
       ) : null}
       <CountHelpDialog
         open={helpOpen}
         onClose={() => setHelpOpen(false)}
-        container={viewer.container}
+        container={uiHost ?? viewer.container}
       />
     </>
   )
