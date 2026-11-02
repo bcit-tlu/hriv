@@ -245,6 +245,41 @@ async def test_task_arq_timeout_marks_failed_timeout(
     assert record["error"] == "timeout"
 
 
+async def test_task_timeout_holds_slot_until_pipeline_thread_exits(
+    worker_settings, pool, monkeypatch
+) -> None:
+    """A cancelled task waits for its thread and signals it to stop, so
+    timed-out work never overlaps the next job (review finding)."""
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+    observed: list[bool] = []
+
+    def slow_run_count(*_args, is_cancelled, **_kwargs):
+        started.set()
+        release.wait(timeout=10)
+        observed.append(is_cancelled())
+        raise pipeline.JobCancelled
+
+    monkeypatch.setattr(pipeline, "run_count", slow_run_count)
+    await _record(pool, "job-slow")
+    task = asyncio.ensure_future(
+        count_objects_task({"redis": pool}, "job-slow", {})
+    )
+    await asyncio.to_thread(started.wait, 10)
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert not task.done()  # still holding the slot while the thread runs
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await task
+    assert observed == [True]  # the thread saw the stop signal
+    record = await jobs.get_record(pool, "job-slow")
+    assert record["status"] == "failed"
+    assert record["error"] == "timeout"
+
+
 async def test_task_arq_abort_with_deleted_record_writes_nothing(
     worker_settings, pool, monkeypatch
 ) -> None:

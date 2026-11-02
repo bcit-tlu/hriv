@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 from typing import Any
 
@@ -90,16 +91,21 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
         return  # cancelled between dequeue and status flip
 
     loop = asyncio.get_running_loop()
+    # Set when arq cancels the task (timeout/abort) so the pipeline thread
+    # stops at its next stage boundary.
+    stop = threading.Event()
 
     def is_cancelled() -> bool:
         """Blocking cancellation probe for the pipeline thread."""
+        if stop.is_set():
+            return True
         future = asyncio.run_coroutine_threadsafe(
             jobs.record_exists(redis, job_id), loop
         )
         return not future.result(timeout=10)
 
-    try:
-        result = await asyncio.to_thread(
+    work = asyncio.ensure_future(
+        asyncio.to_thread(
             pipeline.run_count,
             record,
             tiles_dir=settings.tiles_dir,
@@ -110,9 +116,17 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
             max_objects=settings.counting_max_objects,
             is_cancelled=is_cancelled,
         )
+    )
+    try:
+        result = await asyncio.shield(work)
     except pipeline.JobCancelled:
         return
     except asyncio.CancelledError:
+        # A thread can't be interrupted, so hold this job slot until the
+        # pipeline thread exits; otherwise arq (max_jobs=1) would start the
+        # next job while this one still burns CPU and memory.
+        stop.set()
+        await asyncio.wait({work})
         # arq timeout or abort: a user DELETE removes the record, so a still-
         # present record means the job timed out.
         if await jobs.record_exists(redis, job_id):
