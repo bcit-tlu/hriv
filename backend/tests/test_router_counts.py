@@ -363,9 +363,12 @@ async def test_get_and_delete_count_redis_down_503(monkeypatch) -> None:
     monkeypatch.setattr(
         counts_router, "get_pool", AsyncMock(return_value=_BrokenRedis())
     )
-    for call in (get_count("j", _user()), delete_count("j", _user(), False)):
+    for make_call in (
+        lambda: get_count("j", _user()),
+        lambda: delete_count("j", _user(), False),
+    ):
         with pytest.raises(HTTPException) as exc:
-            await call
+            await make_call()
         assert exc.value.status_code == 503
         assert exc.value.detail == "counting_unavailable"
 
