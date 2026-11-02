@@ -235,8 +235,8 @@ class TestChooseDownsample:
 
     def test_probe_falls_back_to_real_budget(self, monkeypatch):
         monkeypatch.setattr(
-            count_pipeline, "estimate_object_diameter",
-            lambda _rgb, _mode: 40.0,
+            count_pipeline, "probe_object_stats",
+            lambda _rgb, _mode: (40.0, 12),
         )
         monkeypatch.setattr(
             count_pipeline, "stitch_region",
@@ -493,3 +493,70 @@ class TestPerOutlinerBudget:
             assert result["_meta"]["pixels"] <= 750_000
         except count_pipeline.RegionTooLarge as exc:
             assert exc.code == "selection_too_large"  # rejected within the ML budget
+
+
+class TestNucleiNoMppAlwaysLevelZero:
+    """#1670: nuclei without mpp must not use the size-driven level rule —
+    the hematoxylin probe merges dense tissue and over-coarsens."""
+
+    def test_nuclei_no_mpp_returns_d1_even_for_large_objects(self):
+        dzi = DziInfo(width=4096, height=4096, tile_size=512, overlap=0,
+                      format="png", max_level=11)
+        # A huge selection with big discs — the probe would suggest a
+        # coarse level, but nuclei must stay at d=1 regardless.
+        d = count_pipeline._choose_downsample(
+            "root", dzi,
+            Rect(0, 0, 1024, 1024),
+            mode="nuclei", mpp=None,
+            margin_px=4, max_pixels=4_000_000, max_downsample=8,
+        )
+        assert d == 1
+
+    def test_nuclei_with_mpp_still_uses_mpp_rule(self):
+        dzi = DziInfo(width=4096, height=4096, tile_size=512, overlap=0,
+                      format="png", max_level=11)
+        d = count_pipeline._choose_downsample(
+            "root", dzi,
+            Rect(0, 0, 1024, 1024),
+            mode="nuclei", mpp=0.125,   # 0.125*d ≤ 0.5 → d=4
+            margin_px=4, max_pixels=4_000_000, max_downsample=8,
+        )
+        assert d == 4
+
+
+class TestMergedFieldProbeStaysLevel0:
+    """#1670 bug 2: when the probe's mask merges into a handful of blobs
+    the diameter estimate measures the blob field, not objects — stay at
+    d=1 rather than coarsen cells out of existence."""
+
+    def _merged_rgb(self):
+        # One dark field: mask components merge into 1-2 blobs.
+        rgb = np.full((400, 400, 3), 235, np.uint8)
+        yy, xx = np.mgrid[:400, :400]
+        rgb[(yy - 200) ** 2 + (xx - 200) ** 2 < 150**2] = [70, 60, 90]
+        return rgb
+
+    def test_probe_stats_few_components(self):
+        _d, n = count_pipeline.probe_object_stats(self._merged_rgb(), "cells")
+        assert n < count_pipeline._PROBE_MIN_COMPONENTS
+
+    def test_choose_downsample_returns_1_on_merged_field(self, monkeypatch):
+        monkeypatch.setattr(
+            count_pipeline, "stitch_region",
+            lambda *_a, **_k: _FakeVips(self._merged_rgb()),
+        )
+        monkeypatch.setattr(
+            count_pipeline, "plan_region",
+            lambda *a, **k: RegionPlan(
+                level=0, downsample=4, selection=Rect(0, 0, 400, 400),
+                region=Rect(0, 0, 400, 400), level_rect=Rect(0, 0, 400, 400),
+                out_width=400, out_height=400,
+            ),
+        )
+        d = count_pipeline._choose_downsample(
+            "root", DziInfo(400, 400, 512, 0, "png", 8),
+            Rect(0, 0, 400, 400),
+            mode="cells", mpp=None,
+            margin_px=4, max_pixels=4_000_000, max_downsample=8,
+        )
+        assert d == 1

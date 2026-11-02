@@ -101,6 +101,23 @@ def classical_labels(rgb: np.ndarray, mode: str) -> np.ndarray:
     return segmentation.watershed(-dist, markers, mask=mask).astype(np.int32)
 
 
+def probe_object_stats(
+    rgb: np.ndarray, mode: str
+) -> tuple[float | None, int]:
+    """Median component diameter (processing px) and component count.
+
+    When a probe field merges into a few blobs, the count collapses and the
+    diameter measures the blobs, not objects — the level rule should not
+    trust it (#1670: a smear-photo crop had n=2 at d=4 and was coarsened
+    until its cells vanished).
+    """
+    mask, lab, n = _mask_and_signal(rgb, mode)
+    if not n:
+        return None, 0
+    areas = np.bincount(lab.ravel())[1:]
+    return float(2.0 * np.sqrt(np.median(areas) / np.pi)), n
+
+
 def estimate_object_diameter(rgb: np.ndarray, mode: str) -> float | None:
     """Median component diameter (processing px) from the classical mask."""
     _mask, lab, n = _mask_and_signal(rgb, mode)
