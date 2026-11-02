@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_role
 from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
+from ..collection_views import image_ids_in_collections
 from ..database import async_session, get_db
 from ..measurement.service import (
     approve_finding,
@@ -150,7 +151,10 @@ async def _pending_with_image(
 
 
 async def _bump_if_browsable(db: AsyncSession, images: list[Image]) -> None:
-    if any(img.category_id is not None for img in images):
+    # Mirrors update_image: uncategorized images still render via collections.
+    if any(img.category_id is not None for img in images) or await image_ids_in_collections(
+        db, {img.id for img in images}
+    ):
         await bump_browse_revision(db)
 
 
