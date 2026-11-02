@@ -24,7 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: [frontend, backend, backup, restore-validation, synthetic-monitoring]
+        include:
+          - { component: frontend, image: hriv-frontend }
+          - { component: backend, image: hriv-backend }
+          # The counting worker shares the backend release tag
+          # (tag_prefix: backend-v in ci.yaml) but is a separate image.
+          - { component: backend, image: hriv-counting-worker }
+          - { component: backup, image: hriv-backup }
+          - { component: restore-validation, image: hriv-restore-validation }
+          - { component: synthetic-monitoring, image: hriv-synthetic-monitoring }
 
     steps:
       - name: Parse release tag
@@ -46,9 +54,26 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # Releases cut before the counting worker existed never built its
+      # image; skip that entry instead of waiting out the image poll.
+      - name: Check image applies to this release
+        id: applies
+        if: steps.parse.outputs.match == 'true'
+        shell: bash
+        env:
+          IMAGE_NAME: ${{ matrix.image }}
+        run: |
+          if [[ "${IMAGE_NAME}" == "hriv-counting-worker" ]] \
+            && ! grep -q 'AS counting-worker' backend/Dockerfile; then
+            echo "applies=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${IMAGE_NAME} predates this release; skipping retag."
+          else
+            echo "applies=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check if this is the highest stable release
         id: highest
-        if: steps.parse.outputs.match == 'true'
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true'
         shell: bash
         env:
           COMPONENT: ${{ matrix.component }}
@@ -70,7 +95,7 @@ jobs:
           fi
 
       - name: Resolve tag commit SHA
-        if: steps.parse.outputs.match == 'true'
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true'
         id: sha
         env:
           TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
@@ -79,16 +104,16 @@ jobs:
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - uses: docker/login-action@v4
-        if: steps.parse.outputs.match == 'true'
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Wait for source image
-        if: steps.parse.outputs.match == 'true'
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
           SRC="${IMAGE}:sha-${SHA}"
@@ -113,9 +138,9 @@ jobs:
 
       - name: Retag (no pull)
         id: retag
-        if: steps.parse.outputs.match == 'true'
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true'
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
           SHA: ${{ steps.sha.outputs.sha }}
           VERSION: ${{ steps.parse.outputs.version }}
           IS_HIGHEST: ${{ steps.highest.outputs.is_highest }}
@@ -134,10 +159,10 @@ jobs:
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
       - uses: sigstore/cosign-installer@v3
-        if: steps.parse.outputs.match == 'true'
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true'
 
       - name: Sign release image
-        if: steps.parse.outputs.match == 'true' && steps.retag.outputs.digest != ''
+        if: steps.parse.outputs.match == 'true' && steps.applies.outputs.applies == 'true' && steps.retag.outputs.digest != ''
         env:
           IMAGE: ${{ steps.retag.outputs.image }}
           DIGEST: ${{ steps.retag.outputs.digest }}

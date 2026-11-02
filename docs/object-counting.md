@@ -269,3 +269,25 @@ point if it ever lands.
   dropped after the centroid edge rule.
 - **Grouping**: GaussianMixture+BIC in `[log(area)/ln(2.5), a*/10, b*/10]`,
   union-merge components <1.0 apart, re-indexed by mean area ascending.
+
+## Deployment (#1666)
+
+- **Image**: `ghcr.io/bcit-tlu/hriv/hriv-counting-worker`, built from the
+  `counting-worker` Dockerfile target (CPU torch, baked
+  `brightfield_nuclei` model — no runtime downloads). The chart defaults
+  its tag to the backend image tag; CI's `alias-counting-worker` job
+  stamps the matching `backend-v<ver>-rc.*` alias on main so the tag the
+  chart references always exists.
+- **Helm** (`charts/backend`): `counting.*` feeds `COUNTING_*` on the API
+  Deployment; `countingWorker.*` renders a dedicated Deployment (tiles
+  PVC **read-only**, Redis only — no DB creds, no source-images mount),
+  HPA (`countingWorker.autoscaling`), and an optional deny-ingress
+  NetworkPolicy (`countingWorker.networkPolicy`, egress to Redis + DNS +
+  the OTel collector only).
+- **Capacity** (from the #1662 spike): ~4–5 replicas covers a 30-job lab
+  burst at one job per pod. KEDA on the `arq:counting` queue length is
+  the preferred scale signal if flux-fleet supports it; otherwise
+  schedule pre-scaling for lab hours.
+- **flux-fleet overlay** (`latest` first): `counting.enabled: true`,
+  `countingWorker.enabled: true`, plus `countingWorker.networkPolicy`
+  peers pointed at the in-cluster Redis, kube-dns and the OTel collector.

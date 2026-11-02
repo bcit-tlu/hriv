@@ -206,3 +206,14 @@ missed deliveries — it is not the rollout path.
 | Image retag didn't happen after release                                 | `release-retag.yaml` run for the release; it waits up to 30 min for the rc image, then times out                                                                                                                                                                                     |
 | Chart artifact missing for a release                                    | `helm-publish.yaml` run for the release tag; parse step rejects malformed tags                                                                                                                                                                                                       |
 | `validation-select` fails `COMPONENT_INCOHERENT` after a backup release | flux-fleet `images.backupChild` pin — likely older than the deployed backup writer; bump both overlays                                                                                                                                                                               |
+
+## Counting worker image (#1666)
+
+`hriv-counting-worker` is built by the same `oci-build` reusable
+workflow from the `counting-worker` Dockerfile target, tagged with the
+**backend** release train (`tag_prefix: backend-v`). Because each
+oci-build stamps its own RC timestamp, CI's `alias-counting-worker` job
+(main pushes only) re-tags the built `sha-<sha>` image as the backend
+`rc_version` so the chart's default `image.tag` reference always
+resolves. `release-retag.yaml` includes a `backend → hriv-counting-worker`
+matrix entry so semver releases alias it the same way as the API image.

@@ -1281,4 +1281,107 @@ if helm template test charts/restore-validation \
   fail "operational mode must require maxRetainedRuns exactly one"
 fi
 
+# ── Counting worker (#1666) ─────────────────────────────────────
+
+# Default off: nothing counting-related renders.
+backend_counting_default_manifest="$(helm template test charts/backend)"
+assert_not_contains "$backend_counting_default_manifest" "counting-worker" \
+  "counting worker must render nothing when countingWorker.enabled is false"
+assert_contains "$backend_counting_default_manifest" "name: COUNTING_ENABLED" \
+  "API deployment must always render COUNTING_ENABLED"
+assert_contains "$backend_counting_default_manifest" 'value: "false"' \
+  "COUNTING_ENABLED must default to false (dark launch)"
+assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_PIXELS" \
+  "API deployment must render the counting budget env vars"
+assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_OBJECTS" \
+  "API deployment must render COUNTING_MAX_OBJECTS"
+
+# Enabled: Deployment with the counting image, env, readOnly tiles mount,
+# no DB secret.
+backend_counting_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set persistence.enabled=true \
+  --set persistence.tiles.accessModes[0]=ReadWriteMany \
+  --set counting.enabled=true \
+  --set countingWorker.enabled=true)"
+backend_counting_deployment="$(extract_yaml_doc "$backend_counting_manifest" "Deployment" "test-hriv-backend-counting-worker")"
+assert_contains "$backend_counting_deployment" "ghcr.io/bcit-tlu/hriv/hriv-counting-worker:" \
+  "counting worker must use the hriv-counting-worker image"
+assert_contains "$backend_counting_deployment" 'command: ["opentelemetry-instrument", "arq", "app.counting.worker.CountingWorkerSettings"]' \
+  "counting worker must run the counting arq queue"
+assert_contains "$backend_counting_deployment" "readOnly: true" \
+  "counting worker tiles mount must be read-only"
+assert_contains "$backend_counting_deployment" "name: COUNTING_TORCH_THREADS" \
+  "counting worker must render COUNTING_TORCH_THREADS"
+assert_contains "$backend_counting_deployment" "name: COUNTING_NUCLEI_OUTLINER" \
+  "counting worker must render COUNTING_NUCLEI_OUTLINER"
+assert_contains "$backend_counting_deployment" "name: REDIS_URL" \
+  "counting worker needs the arq Redis URL"
+assert_not_contains "$backend_counting_deployment" "postgres-db-credentials" \
+  "counting worker must not receive database credentials"
+assert_not_contains "$backend_counting_deployment" "source-images" \
+  "counting worker must not mount the source-images volume"
+assert_contains "$backend_counting_deployment" "runAsUser: 10001" \
+  "counting worker must run as the image's non-root uid"
+assert_contains "$backend_counting_deployment" 'command: ["arq", "--check", "app.counting.worker.CountingWorkerSettings"]' \
+  "counting worker liveness must check the counting health key"
+
+# Guard rails.
+if counting_no_redis_output="$(helm template test charts/backend \
+  --set persistence.enabled=true \
+  --set persistence.tiles.accessModes[0]=ReadWriteMany \
+  --set countingWorker.enabled=true 2>&1)"; then
+  fail "countingWorker.enabled without redis.enabled must be rejected"
+fi
+assert_contains "$counting_no_redis_output" "requires redis.enabled" \
+  "counting worker without Redis must be rejected with a clear message"
+if counting_no_pvc_output="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set countingWorker.enabled=true 2>&1)"; then
+  fail "countingWorker.enabled without persistence must be rejected"
+fi
+assert_contains "$counting_no_pvc_output" "requires persistence.enabled" \
+  "counting worker without persistence must be rejected with a clear message"
+if counting_rwo_output="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set persistence.enabled=true \
+  --set persistence.tiles.accessModes[0]=ReadWriteOnce \
+  --set countingWorker.enabled=true 2>&1)"; then
+  fail "countingWorker.enabled with an RWO tiles PVC must be rejected"
+fi
+assert_contains "$counting_rwo_output" "ReadWriteMany" \
+  "counting worker with an RWO tiles PVC must be rejected with a clear message"
+
+# HPA on/off.
+backend_counting_hpa_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set persistence.enabled=true \
+  --set persistence.tiles.accessModes[0]=ReadWriteMany \
+  --set countingWorker.enabled=true \
+  --set countingWorker.autoscaling.enabled=true)"
+assert_contains "$backend_counting_hpa_manifest" "kind: HorizontalPodAutoscaler" \
+  "counting worker autoscaling must render an HPA"
+assert_contains "$backend_counting_hpa_manifest" "averageUtilization: 70" \
+  "counting worker HPA must target 70% CPU"
+assert_not_contains "$backend_counting_manifest" "HorizontalPodAutoscaler" \
+  "counting worker HPA must not render when autoscaling is off"
+
+# NetworkPolicy on.
+backend_counting_netpol="$(extract_yaml_doc \
+  "$(helm template test charts/backend \
+    --set redis.enabled=true \
+    --set persistence.enabled=true \
+    --set persistence.tiles.accessModes[0]=ReadWriteMany \
+    --set countingWorker.enabled=true \
+    --set countingWorker.networkPolicy.enabled=true)" \
+  "NetworkPolicy" "test-hriv-backend-counting-worker")"
+assert_contains "$backend_counting_netpol" "policyTypes:" \
+  "counting worker NetworkPolicy must exist"
+assert_contains "$backend_counting_netpol" "- Egress" \
+  "counting worker NetworkPolicy must restrict egress"
+assert_contains "$backend_counting_netpol" "port: 6379" \
+  "counting worker egress must allow Redis"
+assert_contains "$backend_counting_netpol" "protocol: UDP" \
+  "counting worker egress must allow DNS"
+
 echo "Helm chart regression checks passed."
