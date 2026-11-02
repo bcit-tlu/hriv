@@ -55,9 +55,17 @@ COUNT_OUTCOME_REJECTED_RATE_LIMITED = "rejected_rate_limited"
 COUNT_OUTCOME_QUEUE_UNAVAILABLE = "queue_unavailable"
 
 
-def record_count_job(mode: str, outcome: str) -> None:
-    """Record one bounded count-job lifecycle outcome in OpenTelemetry."""
-    _count_jobs_counter.add(1, {"mode": mode, "outcome": outcome})
+def record_count_job(mode: str, outcome: str, reason: str | None = None) -> None:
+    """Record one bounded count-job lifecycle outcome in OpenTelemetry.
+
+    ``reason`` carries the job error code on ``failed`` and the API detail
+    code on ``rejected_*``/``queue_unavailable`` outcomes (bounded
+    allowlist values only).
+    """
+    attributes = {"mode": mode, "outcome": outcome}
+    if reason is not None:
+        attributes["reason"] = reason
+    _count_jobs_counter.add(1, attributes)
 
 
 def _job_key(job_id: str) -> str:
@@ -99,6 +107,9 @@ async def create_record(
         "mpp": mpp,
         "status": STATUS_QUEUED,
         "created_at": _now(),
+        # Epoch seconds: the worker derives hriv.count.wait from this —
+        # created_at is second-precision and unusable for a histogram.
+        "enqueued_at": time.time(),
         "started_at": None,
         "finished_at": None,
         "error": None,

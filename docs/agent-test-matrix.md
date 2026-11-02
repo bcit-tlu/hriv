@@ -239,4 +239,6 @@ ImageViewer` (from `frontend/`).
 - When in doubt about which files a feature touches, consult the
   [agent feature map](agent-feature-map.md).
 - This matrix lists the _most relevant_ tests, not an exhaustive set — always run
-  the full suite before merging.
+  the full suite before merging.- **Counting metrics/tracing** (`app/counting/metrics.py`, spans in `pipeline.py`,
+  counting gauges in `queue_metrics.py`) → `tests/test_counting_metrics.py` +
+  `tests/test_queue_metrics.py` + `tests/test_counting_pipeline.py`.

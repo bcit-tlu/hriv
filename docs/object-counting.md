@@ -292,3 +292,18 @@ point if it ever lands.
 - **flux-fleet overlay** (`latest` first): `counting.enabled: true`,
   `countingWorker.enabled: true`, plus `countingWorker.networkPolicy`
   peers pointed at the in-cluster Redis, kube-dns and the OTel collector.
+
+## Observability (#1669)
+
+- **OTel** (`app/counting/metrics.py`): `hriv.count_jobs{mode,outcome[,reason]}`,
+  `hriv.count.wait`, `hriv.count.run{mode,step}`, `hriv.count.objects`,
+  `hriv.count.pixels`.
+- **`/api/metrics`** (only when `counting_enabled`):
+  `hriv_count_queue_depth`, `hriv_count_queue_oldest_pending_age_seconds`,
+  `hriv_count_worker_up`, `hriv_count_worker_heartbeat_age_seconds`.
+- **Tracing**: `count.<step>` child spans under `count_objects_task` with
+  `count.mode`/`level`/`downsample`/`pixels`/`objects`/`groups`/`outliner`.
+- **Logs**: `count.completed` includes `timings_ms` per step; the other
+  events are unchanged.
+- Full semantics in `docs/observability-conventions.md` → Object Counting
+  Metrics.

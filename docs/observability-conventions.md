@@ -1087,3 +1087,52 @@ Before adding a new metric, span attribute, log field, or frontend event:
 5. Update this document if the contract changes, then add or extend targeted
    tests in `backend/tests/test_middleware.py`, `backend/tests/test_telemetry.py`,
    or `frontend/tests/observability.test.ts`.
+
+## Object Counting Metrics
+
+Ephemeral Redis-backed count jobs (#1661/#1669). OTel instruments are
+recorded in whichever process runs the code path — the dedicated counting
+worker for wait/run/objects/pixels and the API for enqueue/reject/cancel —
+and exported via OTLP. Queue-state gauges render on `/api/metrics` from the
+API's single atomic Redis read, mirroring the task-queue semantics.
+
+### `hriv.count_jobs` counter
+
+`{mode, outcome}`, plus `reason` on `failed` (the job error code:
+`timeout`/`too_large`/`too_many_objects`/`no_tiles`/`internal`) and on
+`rejected_*`/`queue_unavailable` outcomes (the API detail code).
+`outcome` ∈ `enqueued`/`done`/`failed`/`cancelled`/`rejected_too_large`/
+`rejected_rate_limited`/`queue_unavailable`.
+
+### `hriv.count.wait` histogram (s, `{mode}`)
+
+Enqueue → worker start latency, derived from the `enqueued_at` epoch float
+stored on the job record (`created_at` is only second-precision).
+
+### `hriv.count.run` histogram (s, `{mode, step}`)
+
+Per-step pipeline duration. `step` ∈ `plan` (size-driven level rule incl.
+the probe stitch), `stitch`, `outline`, `objects` (objects_from_labels +
+filters), `group`, `preview`, `total`.
+
+### `hriv.count.objects` / `hriv.count.pixels` histograms (`{mode}`)
+
+Object count and processed stitched-pixel count per done job.
+
+### `/api/metrics` counting gauges
+
+Rendered only when `counting_enabled`; absent otherwise so no false alerts:
+
+- `hriv_count_queue_depth` — queued + executing arq count jobs (the
+  arq sorted set holds executing jobs too, exactly as for the task queue)
+- `hriv_count_queue_oldest_pending_age_seconds`
+- `hriv_count_worker_up` — 1/0; NaN only when Redis can't be queried,
+  mirroring `hriv_task_queue_worker_up`
+- `hriv_count_worker_heartbeat_age_seconds`
+
+### Tracing
+
+Child spans `count.<step>` under the `count_objects_task` task span, with
+attributes `count.mode`, `count.level`, `count.downsample`, `count.pixels`,
+`count.objects`, `count.groups`, `count.outliner`. No image content or user
+PII; `image.id`/`count.job_id` follow the existing span conventions.
