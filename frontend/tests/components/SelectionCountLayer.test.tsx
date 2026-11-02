@@ -259,3 +259,73 @@ describe('SelectionCountLayer', () => {
     }
   })
 })
+
+describe('dialog close buttons (regression: clicks must not be swallowed)', () => {
+  async function finishJob() {
+    mocks.startCount.mockResolvedValue({ job_id: 'j1', status: 'queued', queue_position: 0 })
+    mocks.getCount.mockResolvedValue(
+      job({
+        status: 'done',
+        total: 2,
+        groups: [{ group: 0, count: 2 }],
+        objects: [],
+        preview: 'data:image/jpeg;base64,x',
+      }),
+    )
+    const v = viewer()
+    render(<SelectionCountLayer viewer={v} imageId={5} selections={SELECTIONS} clearedToken={0} />)
+    fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(5000)
+    })
+    return v
+  }
+
+  function dialogHost() {
+    const dlg = document.querySelector('.MuiDialog-root')
+    expect(dlg).not.toBeNull()
+    return dlg!
+  }
+
+  it('report dialog mounts under data-hriv-canvas-ui; Close and X close it', async () => {
+    vi.useFakeTimers()
+    try {
+      await finishJob()
+      const dlg = dialogHost()
+      expect(dlg.closest('[data-hriv-canvas-ui]')).not.toBeNull()
+      // Contained Close button closes via a real click.
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+      expect(document.querySelector('.MuiDialog-root')).toBeNull()
+      // Reopen via View results; the X icon closes it too.
+      fireEvent.click(screen.getByRole('button', { name: /View results/ }))
+      expect(document.querySelector('.MuiDialog-root')).not.toBeNull()
+      fireEvent.click(screen.getByLabelText('Close report'))
+      expect(document.querySelector('.MuiDialog-root')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('help dialog mounts under data-hriv-canvas-ui and its X closes it', async () => {
+    vi.useFakeTimers()
+    try {
+      await finishJob()
+      fireEvent.click(screen.getByRole('button', { name: /Learn more about object counting/ }))
+      // The help dialog renders on top of the report — take the last one.
+      const dlgs = document.querySelectorAll('.MuiDialog-root')
+      const dlg = dlgs[dlgs.length - 1]
+      expect(dlg.closest('[data-hriv-canvas-ui]')).not.toBeNull()
+      fireEvent.click(screen.getByLabelText('Close help'))
+      // The help Dialog unmounts after its close transition.
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(document.querySelectorAll('.MuiDialog-root').length).toBe(dlgs.length - 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
