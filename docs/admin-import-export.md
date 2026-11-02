@@ -117,10 +117,10 @@ matters because of foreign keys.
 
   ```
   programs → users → groups → categories (restoring category↔program and
-  category↔group links) → images → source_images → measurement_findings →
-  collections (with
+  category↔group links) → images → source_images → collections (with
   collection_images / collection_owners / collection_programs /
-  collection_groups) → changelog_entries → announcement
+  collection_groups) → measurement_findings → changelog_entries →
+  announcement
   ```
 
 - **Sequence reset.** After import, PostgreSQL sequences are reset to
