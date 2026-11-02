@@ -17,6 +17,19 @@ appearance (size, colour, texture) into unnamed groups (Group 1, Group 2, …).
 Every selection rectangle is its own count — overlapping selections each get
 their own outlines and legend.
 
+## Cells or Nuclei?
+
+- **Cells** outlines whole cells by their stained shape — best for blood
+  smears and other preparations where cells sit apart from each other.
+- **Nuclei** outlines cell nuclei with a model trained on brightfield
+  tissue and cytology images. Only blue/purple (hematoxylin-stained)
+  objects are kept, so pink or red objects such as red blood cells are
+  ignored in this mode.
+
+The counter picks the viewing resolution itself from the size of the
+objects in your box, so it does not matter how far you are zoomed in when
+you draw it — only how large the box is.
+
 ## The edge rule
 
 An object counts only when its **centre** lies inside your selection box.

@@ -38,6 +38,7 @@ from ..counting.stitch import (
     resolve_tile_root,
 )
 from ..database import get_db, settings
+from ..counting.budgets import pixel_budget
 from ..models import User
 from ..processing import _tile_source_id_from_url, tiles_present_on_disk
 from ..schemas import (
@@ -151,7 +152,17 @@ async def create_count(
                         height=body.selection.height,
                     ),
                     margin_px=settings.counting_margin_px,
-                    max_pixels=settings.counting_max_pixels,
+                    # Mode-aware budget: the pre-flight uses the budget of
+                    # the outliner configured for this mode, so a nuclei
+                    # selection can't queue on the classical budget and
+                    # then fail in the InstanSeg worker.
+                    max_pixels=pixel_budget(
+                        settings.counting_cells_outliner
+                        if body.mode == "cells"
+                        else settings.counting_nuclei_outliner,
+                        max_pixels=settings.counting_max_pixels,
+                        classical_max_pixels=settings.counting_classical_max_pixels,
+                    ),
                     max_downsample=settings.counting_max_downsample,
                 )
             except InvalidSelection as exc:

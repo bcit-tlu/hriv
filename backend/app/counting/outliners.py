@@ -31,6 +31,7 @@ from typing import Protocol
 
 import numpy as np
 
+from .budgets import pixel_budget
 from .stitch import RegionPlan
 
 # Native object diameter (processing px) each mode targets when the level
@@ -41,9 +42,15 @@ INSTANSEG_PIXEL_SIZE = 0.5
 
 
 class Outliner(Protocol):
-    """Detect objects in a stitched RGB region; return an int32 label image."""
+    """Detect objects in a stitched RGB region; return an int32 label image.
+
+    ``max_pixels`` is the stitched-pixel budget this outliner may process
+    per job (classical outliners are ~20x faster per MP than ML ones and
+    get a larger budget). ``build_outliners`` assigns it from settings.
+    """
 
     name: str
+    max_pixels: int
 
     def segment(
         self,
@@ -105,6 +112,7 @@ def estimate_object_diameter(rgb: np.ndarray, mode: str) -> float | None:
 
 class ClassicalCellsOutliner:
     name = "classical"
+    max_pixels = 0  # assigned by build_outliners
 
     def segment(self, rgb: np.ndarray, *, plan: RegionPlan, mpp: float | None) -> np.ndarray:
         return classical_labels(rgb, "cells")
@@ -112,6 +120,7 @@ class ClassicalCellsOutliner:
 
 class ClassicalNucleiOutliner:
     name = "classical"
+    max_pixels = 0  # assigned by build_outliners
 
     def segment(self, rgb: np.ndarray, *, plan: RegionPlan, mpp: float | None) -> np.ndarray:
         return classical_labels(rgb, "nuclei")
@@ -121,6 +130,7 @@ class InstanSegNucleiOutliner:
     """InstanSeg ``brightfield_nuclei`` on CPU (torch, counting-ml group)."""
 
     name = "instanseg"
+    max_pixels = 0  # assigned by build_outliners
 
     def __init__(self, torch_threads: int = 2) -> None:
         import os
@@ -160,6 +170,7 @@ class StubOutliner:
     """
 
     name = "stub"
+    max_pixels = 0  # assigned by build_outliners
 
     _GRID_JITTER = 0.22
     _VERTICES = 16
@@ -227,9 +238,21 @@ def build_outliner(name: str, *, torch_threads: int) -> Outliner:
     raise ValueError(f"unknown counting outliner {name!r}")
 
 
-def build_outliners(*, cells: str, nuclei: str, torch_threads: int) -> dict[str, Outliner]:
-    """Build the per-mode outliner map for the worker."""
-    return {
+def build_outliners(
+    *,
+    cells: str,
+    nuclei: str,
+    torch_threads: int,
+    max_pixels: int,
+    classical_max_pixels: int,
+) -> dict[str, Outliner]:
+    """Build the per-mode outliner map for the worker.
+
+    Each outliner carries its stitched-pixel ``max_pixels`` budget —
+    ``classical_max_pixels`` for the cheap scikit-image/stub outliners,
+    ``max_pixels`` for ML ones (InstanSeg).
+    """
+    outliners = {
         "cells": (
             ClassicalCellsOutliner() if cells == "classical" else build_outliner(cells, torch_threads=torch_threads)
         ),
@@ -239,3 +262,10 @@ def build_outliners(*, cells: str, nuclei: str, torch_threads: int) -> dict[str,
             else build_outliner(nuclei, torch_threads=torch_threads)
         ),
     }
+    for outliner in outliners.values():
+        outliner.max_pixels = pixel_budget(
+            outliner.name,
+            max_pixels=max_pixels,
+            classical_max_pixels=classical_max_pixels,
+        )
+    return outliners

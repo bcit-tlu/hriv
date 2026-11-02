@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     counting_enabled: bool = False
     counting_queue_name: str = "arq:counting"
     counting_max_pixels: int = Field(default=750_000, ge=65_536)
+    # Classical (scikit-image watershed) outliners are ~20x faster per MP
+    # than the ML outliners, so they get a larger pixel budget before a
+    # selection is rejected as too_large (#1719).
+    counting_classical_max_pixels: int = Field(default=2_000_000, ge=65_536)
     counting_max_downsample: int = Field(default=8, ge=1)
     counting_margin_px: int = Field(default=32, ge=0)
     counting_torch_threads: int = Field(default=2, ge=1)
