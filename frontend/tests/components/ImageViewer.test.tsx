@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { cleanup, render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, act, fireEvent, waitFor, within } from '@testing-library/react'
 
 const hadFullscreenElementOwnProperty = Object.prototype.hasOwnProperty.call(
   document,
@@ -81,6 +81,9 @@ interface MockViewer {
     pixelFromPoint: ReturnType<typeof vi.fn>
     pointFromPixel: ReturnType<typeof vi.fn>
     viewportToImageZoom: ReturnType<typeof vi.fn>
+    viewportToImageRectangle: ReturnType<typeof vi.fn>
+    viewportToViewerElementCoordinates: ReturnType<typeof vi.fn>
+    imageToViewerElementCoordinates: ReturnType<typeof vi.fn>
   }
   addHandler: ReturnType<typeof vi.fn>
   addOnceHandler: ReturnType<typeof vi.fn>
@@ -120,6 +123,9 @@ const observabilityMocks = vi.hoisted(() => ({
 const apiMocks = vi.hoisted(() => ({
   fetchImage: vi.fn(),
   userMessage: vi.fn((_err: unknown, fallback: string) => fallback),
+  startCount: vi.fn(),
+  getCount: vi.fn(),
+  cancelCount: vi.fn(),
 }))
 
 vi.mock('../../src/observability', () => observabilityMocks)
@@ -130,6 +136,9 @@ vi.mock('../../src/api', async (importOriginal) => {
     ...actual,
     fetchImage: apiMocks.fetchImage,
     userMessage: apiMocks.userMessage,
+    startCount: apiMocks.startCount,
+    getCount: apiMocks.getCount,
+    cancelCount: apiMocks.cancelCount,
   }
 })
 
@@ -218,6 +227,23 @@ vi.mock('openseadragon', () => {
         pixelFromPoint: vi.fn((p: { x: number; y: number }) => ({ x: p.x * 100, y: p.y * 100 })),
         pointFromPixel: vi.fn((p: { x: number; y: number }) => ({ x: p.x / 100, y: p.y / 100 })),
         viewportToImageZoom: vi.fn((zoom: number) => zoom * 0.001),
+        // Linear 1000x800 image space for counting level-0 conversions.
+        viewportToImageRectangle: vi.fn(
+          (r: { x: number; y: number; width: number; height: number }) => ({
+            x: r.x * 1000,
+            y: r.y * 800,
+            width: r.width * 1000,
+            height: r.height * 800,
+          }),
+        ),
+        viewportToViewerElementCoordinates: vi.fn((p: { x: number; y: number }) => ({
+          x: p.x * 100,
+          y: p.y * 100,
+        })),
+        imageToViewerElementCoordinates: vi.fn((p: { x: number; y: number }) => ({
+          x: p.x,
+          y: p.y,
+        })),
       },
       addHandler: vi.fn((event: string, handler: (event: unknown) => void) => {
         handlers.set(event, [...(handlers.get(event) ?? []), handler])
@@ -1591,5 +1617,90 @@ describe('ImageViewer magnification badge and pinch rotation', () => {
     act(() => viewer().fire('canvas-pinch', { gesturePoints: [] }))
 
     expect(viewer().viewport.rotateTo).not.toHaveBeenCalled()
+  })
+})
+
+describe('ImageViewer object counting (#1667)', () => {
+  beforeEach(() => {
+    apiMocks.startCount.mockResolvedValue({
+      job_id: 'j1',
+      status: 'queued',
+      queue_position: 0,
+    })
+    apiMocks.getCount.mockReturnValue(new Promise(() => {}))
+    apiMocks.cancelCount.mockResolvedValue(undefined)
+  })
+
+  it('shows no count button when countingEnabled is off, even with a selection', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
+    drawRect()
+    expect(viewer().container.querySelector('[data-hriv-canvas-ui]')).toBeNull()
+    expect(viewer().container.querySelector('[aria-label^="Count objects"]')).toBeNull()
+  })
+
+  it('shows no count button with countingEnabled but no selection', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    expect(viewer().container.querySelector('[aria-label^="Count objects"]')).toBeNull()
+  })
+
+  it('shows a data-hriv-canvas-ui count button on a drawn selection', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    drawRect()
+    const button = viewer().container.querySelector('[aria-label="Count objects in selection 1"]')
+    expect(button?.closest('[data-hriv-canvas-ui]')).not.toBeNull()
+    expect(
+      within(viewer().container).getByRole('button', {
+        name: 'Count objects in selection 1',
+      }),
+    ).toBeTruthy()
+  })
+
+  it('POSTs the level-0 rect converted from the drawn viewport rect', async () => {
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    // press (10,10)px -> (0.1,0.1)vp; drag (30,20)px -> (0.3,0.2)vp
+    // => rect (0.1,0.1,0.2,0.1) => image px (100,80,200,80)
+    drawRect()
+    fireEvent.click(
+      within(viewer().container).getByRole('button', {
+        name: 'Count objects in selection 1',
+      }),
+    )
+    // Menus portal into viewer.container (visible in OSD full-page mode).
+    await waitFor(() =>
+      expect(within(viewer().container).getByRole('menuitem', { name: /Cells/ })).toBeTruthy(),
+    )
+    fireEvent.click(within(viewer().container).getByRole('menuitem', { name: /Cells/ }))
+    await waitFor(() =>
+      expect(apiMocks.startCount).toHaveBeenCalledWith(7, 'cells', {
+        x: 100,
+        y: 80,
+        width: 200,
+        height: 80,
+      }),
+    )
+  })
+
+  it('clear-all cancels the selection job', async () => {
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    drawRect()
+    fireEvent.click(
+      within(viewer().container).getByRole('button', {
+        name: 'Count objects in selection 1',
+      }),
+    )
+    fireEvent.click(await within(viewer().container).findByRole('menuitem', { name: /Cells/ }))
+    await waitFor(() => expect(apiMocks.startCount).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(within(viewer().container).getByText(/Counting…|Queued/)).toBeTruthy(),
+    )
+    act(() => {
+      buttonByTooltip('Clear all selection rectangles').options.onClick()
+    })
+    await waitFor(() => expect(apiMocks.cancelCount).toHaveBeenCalledWith('j1', undefined))
+    expect(
+      within(viewer().container).queryByRole('button', {
+        name: 'Count objects in selection 1',
+      }),
+    ).toBeNull()
   })
 })

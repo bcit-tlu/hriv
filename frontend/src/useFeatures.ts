@@ -21,6 +21,7 @@ export function useFeatures(): Features | null {
           setFeatures({
             collections: data.collections === true,
             collectionsHomeShelf: data.collections === true && data.collections_home_shelf === true,
+            counting: data.counting === true,
           })
       })
       .catch(() => {

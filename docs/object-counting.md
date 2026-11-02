@@ -18,16 +18,18 @@ implemented.
 
 ## User flow
 
-_Backend landed (#1663/#1664); frontend lands in a follow-up PR (#1667,
-#1668):_
-
-1. In the image viewer, the existing OSD **selection** toolbar button draws a
-   rectangle; a **Count** affordance on it opens a small menu:
-   **Cells** · **Nuclei**.
+1. In the image viewer, the existing OSD **selection** toolbar button draws
+   a rectangle; a **Count objects** button appears above its top-right
+   corner and opens a small menu: **Cells** · **Nuclei**
+   (`components/CountObjectsButton.tsx`).
 2. The frontend `POST`s `{mode, selection}` (level-0 image pixels) and polls
-   the job, showing a progress snackbar with the queue position.
-3. When the job finishes, a report modal shows the outlines clipped to the
-   selection, the per-group legend and the total.
+   with backoff (`useSelectionCounts.ts`), showing a progress snackbar with
+   the queue position (`components/CountProgressSnackbar.tsx`).
+3. When the job finishes, the report dialog auto-opens (`components/
+CountReportDialog.tsx`): the stitched preview with outlines clipped to
+   the selection, the unnamed **Group n** legend and the total. Outlines
+   also stay on the viewer itself (`components/CountOutlinesLayer.tsx`)
+   until the selection is cleared.
 
 Every selection is its own job — overlapping selections each get discrete
 outlines and a discrete legend; jobs never share or merge results.
@@ -231,8 +233,13 @@ curl -s -X POST http://localhost:8000/api/images/1/counts \
 - **#1665** — real ML pipeline behind the `Outliner` protocol; models in an
   optional dependency group, baked into the counting-worker image.
 - **#1666** — counting-worker image, Helm deployment, CI.
-- **#1667 / #1668** — frontend: per-selection Count action, job lifecycle,
-  outlines layer, legend panel.
+- **#1667 / #1668** — frontend (landed): `api.ts` count wrappers,
+  `useSelectionCounts.ts`, `components/CountObjectsButton.tsx`,
+  `CountProgressSnackbar.tsx`, `CountReportDialog.tsx`,
+  `CountOutlinesLayer.tsx`, `SelectionCountLayer.tsx`,
+  `CountHelpDialog.tsx`, `countingUi.ts`, `countOutlines.ts`,
+  `countPalette.ts`, `guide/object-counting.md` (dark-launched, not in
+  `GUIDE_PAGES`).
 - **#1669** — Prometheus queue gauges/dashboards for the counting queue
   (the OTel `hriv.count_jobs` counter already lands here).
 - **#1670** — lab-burst load test; **#1671** — docs/user validation.

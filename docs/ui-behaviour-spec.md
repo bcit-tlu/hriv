@@ -1216,3 +1216,37 @@ Tasks`: durable `Job` rows are never merged into the serial `AdminTask`
   authoritative visibility model (frontend narrowing vs backend enforcement).
 - [agent-feature-map.md](agent-feature-map.md) — where each feature lives.
 - [agent-test-matrix.md](agent-test-matrix.md) — which tests to run per change.
+
+## Object counting (epic #1661)
+
+Gate: rendered only while `GET /api/features` reports `counting: true` AND
+the viewer has a drawn selection rectangle; hidden during canvas edit mode
+and mid-drag. All interactive elements carry `data-hriv-canvas-ui` so the
+selection MouseTracker ignores their presses.
+
+- Draw a selection → a "Count objects" button is anchored above the
+  rectangle's top-right corner (repositions imperatively on every viewport
+  event; it never re-renders per frame). Clicking opens a Cells/Nuclei
+  menu — the tool is a **counter, not a classifier**.
+- Each rectangle owns one job; overlapping selections each get their own
+  outlines and legend. Re-running cancels that selection's previous job.
+- While active the button is a split button ("Counting…" /
+  "Queued · n ahead" + Cancel). A bottom-centre snackbar shows progress —
+  "Selection n · Mode — waiting in queue (k ahead)" or "…finding and
+  outlining objects…", collapsing to "Counting objects in N selections" —
+  with a Cancel action. Failures surface as Alert notices (warning for
+  too_large / rate_limited / too_many_objects / expired, error otherwise,
+  Retry for timeout/no_tiles/internal).
+- On `done` the report dialog auto-opens once (unless one is already open)
+  and can be reopened via "View results (N)". It shows the stitched
+  selection preview with halo+colour polygon outlines, an unnamed
+  "Group n" legend, a total row, and a Learn-more link that opens the help
+  in place (results are ephemeral — navigation would destroy them).
+- Outlines persist on the viewer after the report closes (a dedicated
+  pointer-events-none canvas clipped to each selection quad).
+- Ephemerality: clear-all, image switch, unmount and pagehide all
+  `DELETE` every job record — including done results — with keepalive
+  fetches on `pagehide`. Nothing is persisted to localStorage or the URL.
+- Everything renders inside `viewer.container` so it survives OSD
+  full-page mode; dialogs receive the same container to stay above the
+  canvas.

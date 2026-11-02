@@ -1,0 +1,28 @@
+import { Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as CountReportDialogStories from './CountReportDialog.stories'
+
+<Meta of={CountReportDialogStories} />
+
+<Title />
+
+<Subtitle>
+  Ephemeral count report — outlines over the selection preview plus the unnamed-group legend (epic
+  #1661).
+</Subtitle>
+
+Opens automatically when a count finishes and reopens from the selection's
+"View results" button. The preview is the backend's stitched selection crop
+with white-haloed, group-coloured polygon outlines drawn in level-0
+coordinates (halo + colour are `non-scaling-stroke` so lines stay constant
+width). Groups are appearance clusters only — "Group 1", "Group 2", … —
+never named cell types, because the tool is a counter, not a classifier.
+
+The caption links to the in-app help dialog; results are ephemeral and are
+destroyed when the selection is cleared or the page unloads. There is no
+export, no editing and no per-group toggles.
+
+<Primary />
+
+## Stories
+
+<Stories includePrimary={false} />
