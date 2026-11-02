@@ -1089,7 +1089,7 @@ async def _acquire_fixture_archive_lock_for_task(
 
 async def run_db_export(task_id: int) -> None:
     """Export all database tables to a JSON file in the background."""
-    async with get_async_session()() as session:
+    async with get_async_session()() as session, get_async_session()() as snapshot:
         task = await session.get(AdminTask, task_id)
         if task is None:
             logger.error("AdminTask %d not found", task_id)
@@ -1110,34 +1110,42 @@ async def run_db_export(task_id: int) -> None:
                 settings.source_images_dir,
             )
 
+            # Read every table from one REPEATABLE READ snapshot so a write
+            # landing mid-export (e.g. a measurement approval updating both an
+            # image and its finding) can't be split across tables. Progress
+            # updates commit on ``session``, which would end a shared snapshot.
+            await snapshot.connection(
+                execution_options={"isolation_level": "REPEATABLE READ"}
+            )
+
             # Programs
             await _update_task(session, task, log_line="Exporting programs…", progress=10, check_cancelled=True)
-            result = await session.execute(select(Program).order_by(Program.id))
+            result = await snapshot.execute(select(Program).order_by(Program.id))
             programs = result.scalars().all()
 
             # Groups
             await _update_task(session, task, log_line="Exporting groups…", progress=15, check_cancelled=True)
-            result = await session.execute(select(Group).order_by(Group.id))
+            result = await snapshot.execute(select(Group).order_by(Group.id))
             groups = result.scalars().unique().all()
 
             # Categories
             await _update_task(session, task, log_line="Exporting categories…", progress=20, check_cancelled=True)
-            result = await session.execute(select(Category).order_by(Category.id))
+            result = await snapshot.execute(select(Category).order_by(Category.id))
             categories = result.scalars().all()
 
             # Images
             await _update_task(session, task, log_line="Exporting images…", progress=40, check_cancelled=True)
-            result = await session.execute(select(Image).order_by(Image.id))
+            result = await snapshot.execute(select(Image).order_by(Image.id))
             all_images = list(result.scalars().all())
 
             # Users
             await _update_task(session, task, log_line="Exporting users…", progress=55, check_cancelled=True)
-            result = await session.execute(select(User).order_by(User.id))
+            result = await snapshot.execute(select(User).order_by(User.id))
             users = result.scalars().all()
 
             # Source images
             await _update_task(session, task, log_line="Exporting source images…", progress=65, check_cancelled=True)
-            result = await session.execute(select(SourceImage).order_by(SourceImage.id))
+            result = await snapshot.execute(select(SourceImage).order_by(SourceImage.id))
             all_source_images = list(result.scalars().all())
             fixture_images, fixture_source_images = select_rebuild_fixture_rows(
                 all_images,
@@ -1161,18 +1169,18 @@ async def run_db_export(task_id: int) -> None:
             # Collections (image links to rebuild-fixture images are dropped
             # because those images are not part of the export)
             await _update_task(session, task, log_line="Exporting collections…", progress=68, check_cancelled=True)
-            result = await session.execute(select(Collection).order_by(Collection.id))
+            result = await snapshot.execute(select(Collection).order_by(Collection.id))
             collections = result.scalars().all()
             exported_image_ids = {image.id for image in images}
 
             # Changelog entries
             await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
-            result = await session.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
+            result = await snapshot.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
             changelog_entries = result.scalars().all()
 
             # Measurement findings (reviews of rebuild-fixture images are dropped)
             await _update_task(session, task, log_line="Exporting measurement findings…", progress=72, check_cancelled=True)
-            result = await session.execute(
+            result = await snapshot.execute(
                 select(MeasurementFinding).order_by(MeasurementFinding.id)
             )
             measurement_findings = [
@@ -1183,7 +1191,7 @@ async def run_db_export(task_id: int) -> None:
 
             # Announcement
             await _update_task(session, task, log_line="Exporting announcement…", progress=75, check_cancelled=True)
-            result = await session.execute(
+            result = await snapshot.execute(
                 select(Announcement).where(Announcement.id == 1)
             )
             ann = result.scalar_one_or_none()

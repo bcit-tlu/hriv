@@ -1258,6 +1258,9 @@ async def test_run_db_export_success(tmp_path) -> None:
     assert task.result_filename is not None
     assert task.result_filename.endswith(".json")
     assert "Export complete" in task.log
+    mock_session.connection.assert_awaited_once_with(
+        execution_options={"isolation_level": "REPEATABLE READ"}
+    )
 
     # Verify PII/credential fields are excluded from the export
     export_path = os.path.join(tasks_dir, task.result_filename)
