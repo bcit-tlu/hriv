@@ -143,8 +143,9 @@ lists findings from `GET /api/measurement-findings`:
   `limit: 10`, then a snackbar ("Scanning images: N of 10 done", with a
   progress bar) polls `scan-progress` every 2 s. When every image is done the
   list reloads and "Scan finished" is shown; the scan button stays disabled
-  meanwhile. A progress error ends tracking and is shown as an error, as does no progress
-  for 2 minutes (e.g. a stopped worker).
+  meanwhile. A progress error ends tracking and is shown as an error. After 10 minutes
+  with no progress (a busy queue or stopped worker) tracking stops with a
+  notice to use **Refresh**; the scan itself may still finish.
 - Each pending row shows the thumbnail, name and size, the **detected
   objective** (the ×10/×40/×100 objective lens matched for the known camera;
   a tooltip explains it), the read-only **proposed** scale in px/µm, an

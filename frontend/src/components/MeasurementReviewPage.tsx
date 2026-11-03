@@ -35,8 +35,8 @@ import RenewingThumbnail from './RenewingThumbnail'
 
 export const SCAN_BATCH_SIZE = 10
 const SCAN_POLL_MS = 2000
-/** Stop tracking a scan whose progress hasn't moved for this long (e.g. a crashed worker). */
-const SCAN_STALL_MS = 120_000
+/** Stop tracking a scan whose progress hasn't moved for this long (queued or crashed worker). */
+const SCAN_STALL_MS = 600_000
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100]
 
 export interface MeasurementReviewApi {
@@ -170,8 +170,9 @@ export default function MeasurementReviewPage({
               reload()
             } else if (done === lastDone && Date.now() - lastChange >= scanStallMs) {
               setScan(null)
-              setError(
-                `The scan stopped making progress at ${done} of ${total}. Refresh later to see any findings.`,
+              // The job may only be waiting behind other worker jobs, so don't call it failed.
+              setNotice(
+                `No scan progress for a while (${done} of ${total} done). It may still be running; use Refresh to check for new findings.`,
               )
             } else {
               if (done !== lastDone) {

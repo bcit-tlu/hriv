@@ -96,9 +96,7 @@ describe('MeasurementReviewPage', () => {
     await screen.findByText('Blood film 40x')
     await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
     expect(
-      await screen.findByText(
-        'The scan stopped making progress at 1 of 2. Refresh later to see any findings.',
-      ),
+      await screen.findByText(/No scan progress for a while \(1 of 2 done\)/),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeEnabled()
   })
