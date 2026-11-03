@@ -329,8 +329,8 @@ selections and returned wrong counts.
 - **Recommendations**: `latest` — 1 replica (staging). `stable` (4
   worker nodes, ~35 CPU unrequested; namespace quota `limits.memory`
   52 Gi with ~11.5 Gi used) — `countingWorker.replicaCount: 2` when
-  counting is enabled there (halves burst wait and survives a node
-  drain); raise to 4 for labs where everyone counts Nuclei at full
+  counting is enabled there (halves burst wait and keeps counting
+  available while one pod restarts); raise to 4 for labs where everyone counts Nuclei at full
   selection size. Each replica costs 2 CPU / 1.5 Gi request / 3 Gi
   limit. Keep `torchThreads: 2`, one job per process, and the 750 k (ML)
   / 2 M (classical) pixel budgets. CPU HPA is not useful for
