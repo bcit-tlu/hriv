@@ -1229,12 +1229,19 @@ async def test_run_db_export_success(tmp_path) -> None:
             result.scalar_one_or_none.return_value = announcement
         return result
 
+    # Status/progress and table reads use separate sessions; keep them apart so
+    # a read on the status session (or a commit on the snapshot) fails here.
     mock_session = AsyncMock()
     mock_session.get = AsyncMock(return_value=task)
-    mock_session.execute = AsyncMock(side_effect=mock_execute)
+    mock_session.execute = AsyncMock(side_effect=AssertionError("read on status session"))
     mock_session.commit = AsyncMock()
+    snapshot_session = AsyncMock()
+    snapshot_session.execute = AsyncMock(side_effect=mock_execute)
+    snapshot_session.commit = AsyncMock(side_effect=AssertionError("commit on snapshot"))
     mock_session_factory = MagicMock()
-    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aenter__ = AsyncMock(
+        side_effect=[mock_session, snapshot_session]
+    )
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
     tasks_dir = str(tmp_path / "admin_tasks")
@@ -1258,6 +1265,9 @@ async def test_run_db_export_success(tmp_path) -> None:
     assert task.result_filename is not None
     assert task.result_filename.endswith(".json")
     assert "Export complete" in task.log
+    snapshot_session.connection.assert_awaited_once_with(
+        execution_options={"isolation_level": "REPEATABLE READ"}
+    )
 
     # Verify PII/credential fields are excluded from the export
     export_path = os.path.join(tasks_dir, task.result_filename)
