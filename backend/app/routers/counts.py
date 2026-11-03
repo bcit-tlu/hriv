@@ -379,12 +379,18 @@ async def delete_count(
                 extra={"event": "count.abort_unconfirmed", "job_id": job_id},
                 exc_info=True,
             )
-        await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
+        deleted = await jobs.delete_job(pool, job_id=job_id, user_id=user.id)
     except _REDIS_ERRORS as exc:
         raise _unavailable() from exc
     # DELETE doubles as "clear result" — only an active job counts as a
     # cancellation for the metric; clearing a finished one is its own event.
-    active = record.get("status") in (jobs.STATUS_QUEUED, jobs.STATUS_RUNNING)
+    # The status comes from the record *at deletion*, not the earlier read:
+    # ``delete_job`` and the worker's ``update_status`` (SET XX KEEPTTL) are
+    # exactly-once — whichever lands second either sees the deleted status
+    # (worker finished first -> not cancelled) or fails its XX (delete first
+    # -> the worker can't write ``done``).
+    deleted_status = deleted.get("status") if deleted else None
+    active = deleted_status in (jobs.STATUS_QUEUED, jobs.STATUS_RUNNING)
     if active:
         jobs.record_count_job(str(record.get("mode", "")), jobs.COUNT_OUTCOME_CANCELLED)
         logger.info(
@@ -405,7 +411,7 @@ async def delete_count(
                 "job_id": job_id,
                 "image_id": record.get("image_id"),
                 "mode": record.get("mode"),
-                "status": record.get("status"),
+                "status": deleted_status,
                 **actor_log_fields(user, client_synthetic=x_client_synthetic),
             },
         )
