@@ -238,7 +238,7 @@ async def approve(
             "event": "measurement.approved",
             "finding_id": finding.id,
             "image_id": image.id,
-            "edited": body.scale is not None,
+            "edited": image.metadata_.get("measurement_scale_source") == "manual",
             **actor_log_fields(user),
         },
     )
