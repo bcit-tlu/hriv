@@ -22,7 +22,11 @@ from opentelemetry import trace
 from .grouping import assign_groups
 from .metrics import record_run_step
 from .objects import objects_from_labels
-from .outliners import NATIVE_DIAMETER, Outliner, estimate_object_diameter
+from .outliners import (
+    NATIVE_DIAMETER,
+    Outliner,
+    probe_object_stats,
+)
 from .stitch import (
     CountingRegionError,
     Rect,
@@ -98,6 +102,12 @@ _DIAMETER_PROBE_PIXELS = 250_000
 # sufficiently blue (tissue/debris, not hematoxylin-stained nuclei).
 _NUCLEI_B_STAR_MAX = -5.0
 
+# When the probe's mask merges into a handful of blobs the diameter
+# estimate measures the blob field, not objects (#1670: a smear-photo crop
+# had n=2 at d=4 and was coarsened until its cells vanished). Below this
+# component count the estimate is untrustworthy and the job stays at level 0.
+_PROBE_MIN_COMPONENTS = 8
+
 
 def _choose_downsample(
     tile_root,
@@ -115,11 +125,19 @@ def _choose_downsample(
     level — or, for nuclei with a known mpp, ``mpp * d <= 0.5``. Never
     upscale (d >= 1), never above ``max_downsample``.
     """
-    if mode == "nuclei" and mpp and mpp > 0:
-        d = max_downsample
-        while d > 1 and mpp * d > 0.5:
-            d //= 2
-        return d
+    if mode == "nuclei":
+        # Nuclei are sub-px at coarse levels: with a known mpp pick the
+        # coarsest level still inside the ~0.5 µm/px model sweet spot; with
+        # no mpp the hematoxylin-mask diameter estimate merges dense tissue
+        # and over-coarsens, so always stay at level 0 — an over-budget
+        # selection then fails pre-flight rather than silently counting
+        # nothing.
+        if mpp and mpp > 0:
+            d = max_downsample
+            while d > 1 and mpp * d > 0.5:
+                d //= 2
+            return d
+        return 1
 
     native = NATIVE_DIAMETER[mode]
     # Probe at a coarse level bounded by ~0.25 MP; a probe that still can't
@@ -145,7 +163,9 @@ def _choose_downsample(
             "selection cannot fit the processing budget at any permitted level"
         )
     probe_rgb = stitch_region(tile_root, dzi, probe_plan).numpy()
-    diameter = estimate_object_diameter(probe_rgb, mode)
+    diameter, n_components = probe_object_stats(probe_rgb, mode)
+    if n_components < _PROBE_MIN_COMPONENTS:
+        return 1
     if diameter is None or diameter <= 0:
         return 1
     # The estimate is in probe-level px — convert to level-0 before

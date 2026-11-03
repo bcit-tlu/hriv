@@ -265,7 +265,12 @@ point if it ever lands.
   diameter via the classical mask; the worker picks the largest
   power-of-two `d ≤ counting_max_downsample` with `diameter/d ≥ native`
   (30 px cells, 12 px nuclei), or `mpp*d ≤ 0.5` for nuclei with a known
-  mpp. Never upscale; over budget at that `d` → `too_large`.
+  mpp. Nuclei **without** mpp always run at d=1 — the hematoxylin-mask
+  diameter estimate merges dense tissue and over-coarsens. Cells use a
+  merged-field guard: a probe with fewer than 8 mask components means the
+  field collapsed into blobs, so d stays 1 — and a large box over such a
+  field can be rejected `too_large` rather than silently counting nothing.
+  Never upscale; over budget at that `d` → `too_large`.
 - **Stain filter** (nuclei only): objects with mean CIELAB `b* > -5` are
   dropped after the centroid edge rule.
 - **Grouping**: GaussianMixture+BIC in `[log(area)/ln(2.5), a*/10, b*/10]`,

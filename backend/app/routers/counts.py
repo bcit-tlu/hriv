@@ -38,7 +38,7 @@ from ..counting.stitch import (
     resolve_tile_root,
 )
 from ..database import get_db, settings
-from ..counting.budgets import pixel_budget
+from ..counting.budgets import CHEAP_OUTLINERS, pixel_budget
 from ..models import User
 from ..processing import _tile_source_id_from_url, tiles_present_on_disk
 from ..schemas import (
@@ -138,6 +138,16 @@ async def create_count(
 
             # Cheap pre-flight validation — the worker re-plans identically
             # before stitching, so both sides share ``plan_region``.
+            raw_mpp = (getattr(img, "metadata_", None) or {}).get("mpp_x")
+            # Metadata is free-form JSON: only a positive number counts as a
+            # known pixel size; anything else is treated as absent.
+            mpp_x = (
+                float(raw_mpp)
+                if isinstance(raw_mpp, (int, float))
+                and not isinstance(raw_mpp, bool)
+                and raw_mpp > 0
+                else None
+            )
             try:
                 tile_root = resolve_tile_root(
                     settings.tiles_dir, source_image_id
@@ -164,6 +174,20 @@ async def create_count(
                         classical_max_pixels=settings.counting_classical_max_pixels,
                     ),
                     max_downsample=settings.counting_max_downsample,
+                    # Nuclei without mpp always run at level 0 (the
+                    # hematoxylin estimate merges dense tissue); forcing
+                    # the same d=1 here surfaces selection_too_large at
+                    # enqueue instead of after a wasted queue slot.
+                    downsample=(
+                        1
+                        if (
+                            body.mode == "nuclei"
+                            and settings.counting_nuclei_outliner
+                            not in CHEAP_OUTLINERS
+                            and mpp_x is None
+                        )
+                        else None
+                    ),
                 )
             except InvalidSelection as exc:
                 raise HTTPException(
@@ -208,12 +232,8 @@ async def create_count(
                     mode=body.mode,
                     selection=body.selection.model_dump(),
                     mpp=(
-                        mpp_val
-                        if isinstance(
-                            (mpp_val := (getattr(img, "metadata_", None) or {}).get("mpp_x")),
-                            (int, float),
-                        )
-                        and mpp_val > 0
+                        mpp_x
+                        if isinstance(mpp_x, (int, float)) and mpp_x > 0
                         else None
                     ),
                     ttl_seconds=settings.counting_result_ttl_seconds,
