@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pyvips
 import pytest
 from fastapi import BackgroundTasks, HTTPException
+from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
 from app.measurement import service
@@ -211,6 +212,19 @@ async def test_approve_with_correction_is_manual() -> None:
     assert image.metadata_["measurement_scale"] == 18.7
     assert image.metadata_["measurement_scale_source"] == "manual"
     assert finding.approved_scale == 18.7
+
+
+async def test_approve_with_unit_correction_is_manual() -> None:
+    finding, image = _finding(), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3, scale=0.0073, unit="nm")
+    assert image.metadata_["measurement_unit"] == "nm"
+    assert image.metadata_["measurement_scale_source"] == "manual"
+    assert finding.approved_unit == "nm"
+
+
+def test_approve_schema_rejects_unknown_unit() -> None:
+    with pytest.raises(ValidationError):
+        MeasurementApprove(unit="in")
 
 
 async def test_approve_without_scale_raises() -> None:

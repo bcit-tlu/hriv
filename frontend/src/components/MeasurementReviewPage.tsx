@@ -13,9 +13,9 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
-import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import {
   approveMeasurementFinding,
@@ -25,8 +25,10 @@ import {
   scanMeasurements,
   userMessage,
 } from '../api'
-import type { ApiMeasurementFinding, MeasurementFindingStatus } from '../api'
+import type { ApiMeasurementFinding, MeasurementFindingStatus, MeasurementUnit } from '../api'
 import { evidenceSummary } from '../measurementEvidence'
+import { measurementUnitLabel } from '../measurementUnits'
+import MeasurementScaleFields from './MeasurementScaleFields'
 import RenewingThumbnail from './RenewingThumbnail'
 
 export const SCAN_BATCH_SIZE = 10
@@ -54,9 +56,14 @@ export interface MeasurementReviewPageProps {
 }
 
 type ReviewStatus = Exclude<MeasurementFindingStatus, 'superseded'>
+type Correction = { scale?: number; unit?: MeasurementUnit }
 
 function formatScale(scale: number | null): string {
   return scale == null ? '—' : scale.toFixed(2)
+}
+
+function formatWithUnit(scale: number | null, unit: string): string {
+  return scale == null ? '—' : `${formatScale(scale)} px/${measurementUnitLabel(unit)}`
 }
 
 function parseScale(value: string): number | null {
@@ -77,6 +84,7 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [edits, setEdits] = useState<Record<number, string>>({})
+  const [unitEdits, setUnitEdits] = useState<Record<number, MeasurementUnit>>({})
   const [reloadToken, setReloadToken] = useState(0)
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), [])
@@ -88,6 +96,7 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
     setLoading(true)
     setSelected(new Set())
     setEdits({})
+    setUnitEdits({})
     /* eslint-enable react-hooks/set-state-in-effect */
     api
       .fetchFindings({
@@ -142,13 +151,18 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
         : `Scanning ${result.image_ids.length} image${result.image_ids.length === 1 ? '' : 's'}. Refresh in a moment to see the findings.`
     })
 
-  /** `{}` to accept the proposal, `{ scale }` for a correction, `null` if the edit is invalid. */
-  const correctionFor = (finding: ApiMeasurementFinding): { scale?: number } | null => {
+  /** `{}` to accept the proposal, `{ scale?, unit? }` for a correction, `null` if the edit is invalid. */
+  const correctionFor = (finding: ApiMeasurementFinding): Correction | null => {
+    const correction: Correction = {}
     const edited = edits[finding.id]
-    if (edited == null) return {}
-    const scale = parseScale(edited)
-    if (scale == null) return null
-    return scale !== finding.proposed_scale ? { scale } : {}
+    if (edited != null) {
+      const scale = parseScale(edited)
+      if (scale == null) return null
+      if (scale !== finding.proposed_scale) correction.scale = scale
+    }
+    const unit = unitEdits[finding.id]
+    if (unit != null && unit !== finding.proposed_unit) correction.unit = unit
+    return correction
   }
 
   const handleApprove = (finding: ApiMeasurementFinding) =>
@@ -167,15 +181,15 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
     run(async () => {
       // The bulk endpoint only promotes proposals, so corrected rows go one by one.
       const plain: number[] = []
-      const corrected: { id: number; scale: number }[] = []
+      const corrected: { id: number; correction: Correction }[] = []
       let invalid = 0
       for (const f of findings.filter((row) => selected.has(row.id))) {
         const correction = correctionFor(f)
         if (correction == null) invalid += 1
-        else if (correction.scale != null) corrected.push({ id: f.id, scale: correction.scale })
+        else if (Object.keys(correction).length) corrected.push({ id: f.id, correction })
         else plain.push(f.id)
       }
-      for (const { id, scale } of corrected) await api.approve(id, { scale })
+      for (const { id, correction } of corrected) await api.approve(id, correction)
       const result = plain.length ? await api.bulkApprove(plain) : { approved: [], skipped: [] }
       const skippedCount = result.skipped.length + invalid
       const skipped = skippedCount ? `, skipped ${skippedCount}` : ''
@@ -201,9 +215,9 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
         Measurement review
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        Proposed image scales (pixels per µm) from the red-blood-cell detector. Nothing reaches
-        image metadata until a finding is approved. Correct a scale before approving if the proposal
-        is wrong.
+        Proposed image scales (pixels per unit, µm by default) from the red-blood-cell detector.
+        Nothing reaches image metadata until a finding is approved. Correct a scale before approving
+        if the proposal is wrong.
       </Typography>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }} useFlexGap>
@@ -271,8 +285,15 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
                 </TableCell>
               )}
               <TableCell>Image</TableCell>
-              <TableCell>Objective</TableCell>
-              <TableCell>Scale (px/µm)</TableCell>
+              <TableCell>
+                <Tooltip title="Microscope objective lens (×10, ×40 or ×100) the detector matched for this camera. Its calibrated px/µm is the proposed scale. Blank for unknown cameras.">
+                  <span>Detected objective</span>
+                </Tooltip>
+              </TableCell>
+              <TableCell>Proposed</TableCell>
+              <TableCell>
+                {pending ? 'Scale (px per unit) and unit' : 'Scale (px per unit)'}
+              </TableCell>
               <TableCell sortDirection={ascending ? 'asc' : 'desc'}>
                 <TableSortLabel
                   active
@@ -292,7 +313,7 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
           <TableBody>
             {!loading && findings.length === 0 && (
               <TableRow>
-                <TableCell colSpan={pending ? 7 : 5}>
+                <TableCell colSpan={pending ? 8 : 6}>
                   <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                     {pending
                       ? `No findings to review. Use “Scan next ${SCAN_BATCH_SIZE}” to assess more images.`
@@ -335,26 +356,32 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
                     </Stack>
                   </TableCell>
                   <TableCell>{f.objective ? `×${f.objective}` : '—'}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                    {formatWithUnit(f.proposed_scale, f.proposed_unit)}
+                  </TableCell>
                   <TableCell>
                     {pending ? (
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={edit ?? (f.proposed_scale != null ? String(f.proposed_scale) : '')}
-                        placeholder="Enter scale"
-                        error={invalidEdit}
-                        onChange={(e) => setEdits((prev) => ({ ...prev, [f.id]: e.target.value }))}
-                        slotProps={{
-                          htmlInput: {
-                            min: 0,
-                            step: 0.01,
-                            'aria-label': `Scale for ${f.image_name}`,
-                          },
-                        }}
-                        sx={{ width: 120 }}
-                      />
+                      <Box sx={{ minWidth: 250 }}>
+                        <MeasurementScaleFields
+                          size="small"
+                          ariaLabel={f.image_name}
+                          scale={edit ?? (f.proposed_scale != null ? String(f.proposed_scale) : '')}
+                          unit={unitEdits[f.id] ?? f.proposed_unit}
+                          placeholder="Enter scale"
+                          error={invalidEdit}
+                          onScaleChange={(value) =>
+                            setEdits((prev) => ({ ...prev, [f.id]: value }))
+                          }
+                          onUnitChange={(value) =>
+                            setUnitEdits((prev) => ({ ...prev, [f.id]: value as MeasurementUnit }))
+                          }
+                        />
+                      </Box>
                     ) : (
-                      formatScale(f.approved_scale ?? f.proposed_scale)
+                      formatWithUnit(
+                        f.approved_scale ?? f.proposed_scale,
+                        f.approved_unit ?? f.proposed_unit,
+                      )
                     )}
                   </TableCell>
                   <TableCell>{Math.round(f.confidence * 100)}%</TableCell>

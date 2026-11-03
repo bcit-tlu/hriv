@@ -1,0 +1,32 @@
+import { Controls, Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as MeasurementScaleFieldsStories from './MeasurementScaleFields.stories'
+
+<Meta of={MeasurementScaleFieldsStories} />
+
+<Title />
+
+<Subtitle>Scale (px per unit) number field plus a unit picker.</Subtitle>
+
+## When to use
+
+Shared by the Edit image dialog's Measurement Settings and the Measurement
+review table so both edit `measurement_scale` / `measurement_unit` the same
+way. Units are µm, nm, mm and cm; a stored value outside that list (older
+free-text entries) stays selectable rather than being dropped.
+
+- Dialogs pass `scaleLabel` / `unitLabel` and `allowEmptyUnit` (adds **None**).
+- Dense table rows use `size="small"` and `ariaLabel` (the image name) instead
+  of visible labels.
+
+The scale field keeps `type="number"` and a minimum width so the spinner
+arrows never cover the value.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={MeasurementScaleFieldsStories.Dialog} />
+
+## All stories
+
+<Stories />

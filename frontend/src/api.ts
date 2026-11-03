@@ -2645,6 +2645,7 @@ export async function cancelCount(jobId: string, opts?: { keepalive?: boolean })
 // ── Measurement review (Manage → Measurement review) ──────
 
 export type MeasurementFindingStatus = 'pending' | 'approved' | 'rejected' | 'superseded'
+export type MeasurementUnit = 'um' | 'nm' | 'mm' | 'cm'
 export type MeasurementFindingSort = 'confidence_desc' | 'confidence_asc' | 'created_desc'
 
 export interface ApiMeasurementFinding {
@@ -2711,7 +2712,7 @@ export function scanMeasurements(body: {
 
 export function approveMeasurementFinding(
   id: number,
-  correction: { scale?: number; unit?: 'um' } = {},
+  correction: { scale?: number; unit?: MeasurementUnit } = {},
 ): Promise<ApiMeasurementFinding> {
   return request(`/measurement-findings/${id}/approve`, {
     method: 'POST',

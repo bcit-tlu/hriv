@@ -93,6 +93,26 @@ describe('MeasurementReviewPage', () => {
     expect(api.approve).toHaveBeenCalledWith(1, { scale: 2 })
   })
 
+  it('sends a changed unit with the approval', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await userEvent.click(await screen.findByLabelText('Unit for Blood film 40x'))
+    await userEvent.click(screen.getByRole('option', { name: 'mm' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Blood film 40x' }))
+    expect(api.approve).toHaveBeenCalledWith(1, { unit: 'mm' })
+  })
+
+  it('approves unit-only corrections individually during bulk approval', async () => {
+    const api = makeApi([makeFinding(), makeFinding({ id: 2, image_id: 12, image_name: 'Film B' })])
+    render(<MeasurementReviewPage api={api} />)
+    await userEvent.click(await screen.findByLabelText('Unit for Film B'))
+    await userEvent.click(screen.getByRole('option', { name: 'cm' }))
+    await userEvent.click(screen.getByLabelText('Select all findings'))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve selected (2)' }))
+    expect(api.approve).toHaveBeenCalledWith(2, { unit: 'cm' })
+    expect(api.bulkApprove).toHaveBeenCalledWith([1])
+  })
+
   it('requires a manual scale before approving a finding with no proposal', async () => {
     const api = makeApi([
       makeFinding({
@@ -169,7 +189,7 @@ describe('MeasurementReviewPage', () => {
       ),
     )
     const table = screen.getByRole('table', { name: 'Measurement findings' })
-    expect(within(table).getByText('2.00')).toBeInTheDocument()
+    expect(within(table).getByText('2.00 px/µm')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Approve Blood/ })).not.toBeInTheDocument()
   })
 

@@ -151,7 +151,9 @@ async def approve_finding(
     unit: str | None = None,
 ) -> None:
     """Promote a pending finding into the image's metadata (caller commits)."""
-    edited = scale is not None and scale != finding.proposed_scale
+    edited = (scale is not None and scale != finding.proposed_scale) or (
+        unit is not None and unit != finding.proposed_unit
+    )
     final_scale = scale if scale is not None else finding.proposed_scale
     if final_scale is None or final_scale <= 0:
         raise ValueError("finding has no scale to approve")
