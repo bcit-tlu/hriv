@@ -118,8 +118,7 @@ async def create_record(
     return record
 
 
-async def get_record(redis: Redis, job_id: str) -> dict[str, Any] | None:
-    raw = await redis.get(_job_key(job_id))
+def _parse_record(raw: Any) -> dict[str, Any] | None:
     if raw is None:
         return None
     try:
@@ -127,6 +126,10 @@ async def get_record(redis: Redis, job_id: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         return None
     return record if isinstance(record, dict) else None
+
+
+async def get_record(redis: Redis, job_id: str) -> dict[str, Any] | None:
+    return _parse_record(await redis.get(_job_key(job_id)))
 
 
 async def update_status(
@@ -185,10 +188,21 @@ async def get_result(redis: Redis, job_id: str) -> dict[str, Any] | None:
     return result if isinstance(result, dict) else None
 
 
-async def delete_job(redis: Redis, *, job_id: str, user_id: int) -> None:
-    """Remove record, result and the owner's set entry."""
-    await redis.delete(_job_key(job_id), _result_key(job_id))
-    await redis.srem(_user_key(user_id), job_id)
+async def delete_job(
+    redis: Redis, *, job_id: str, user_id: int
+) -> dict[str, Any] | None:
+    """Atomically remove record, result and the owner's set entry.
+
+    Returns the record as it was at deletion (None when already gone), so
+    callers can make exactly-once decisions against the worker's
+    ``update_status`` GET-then-``SET XX KEEPTTL`` write.
+    """
+    async with redis.pipeline(transaction=True) as pipe:
+        pipe.get(_job_key(job_id))
+        pipe.delete(_job_key(job_id), _result_key(job_id))
+        pipe.srem(_user_key(user_id), job_id)
+        raw, _, _ = await pipe.execute()
+    return _parse_record(raw)
 
 
 async def record_exists(redis: Redis, job_id: str) -> bool:

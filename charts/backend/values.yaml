@@ -415,17 +415,19 @@ countingWorker:
       timeoutSeconds: 15
       failureThreshold: 10
   resources:
-    # From the #1662 spike: InstanSeg on CPU at ~1 job/pod wants ~2 cores
-    # and ~2Gi; the limit keeps a runaway stitch/segment inside the pod.
+    # Measured on latest (#1670): peak working set ~1.1 GiB for
+    # budget-limit Cells/Nuclei jobs; 1.5Gi request + 3Gi limit leaves
+    # headroom without over-asking.
     requests:
       cpu: '2'
-      memory: '2Gi'
+      memory: '1.5Gi'
     limits:
       cpu: '2'
       memory: '3Gi'
-  # CPU-based HPA. The preferred lab-burst signal is KEDA on the
-  # arq:counting queue length (see docs/object-counting.md); scheduled
-  # pre-scaling is the fallback when KEDA isn't available.
+  # CPU HPA stays disabled: a lab burst (~1 min) is shorter than HPA
+  # sync + pod start (1.75 GB image pull + model load), and flux-fleet
+  # has no KEDA. Size `replicaCount` up front instead — see
+  # docs/object-counting.md → Capacity.
   autoscaling:
     enabled: false
     minReplicas: 1
