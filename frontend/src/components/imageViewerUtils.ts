@@ -53,6 +53,7 @@ export const CSS_PIXEL_UM = 25400 / 96
 
 /** Known physical units and their micrometre equivalents. */
 const UNIT_TO_UM: Record<string, number> = {
+  nm: 0.001,
   um: 1,
   µm: 1,
   mm: 1000,

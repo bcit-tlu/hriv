@@ -167,6 +167,10 @@ describe('createMeasurementLabel', () => {
 })
 
 describe('unitToMicrons', () => {
+  it('converts nanometres', () => {
+    expect(unitToMicrons('nm')).toBe(0.001)
+  })
+
   it('returns 1 for micrometres (um)', () => {
     expect(unitToMicrons('um')).toBe(1)
   })
