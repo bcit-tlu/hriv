@@ -138,7 +138,16 @@ async def create_count(
 
             # Cheap pre-flight validation — the worker re-plans identically
             # before stitching, so both sides share ``plan_region``.
-            mpp_x = (getattr(img, "metadata_", None) or {}).get("mpp_x")
+            raw_mpp = (getattr(img, "metadata_", None) or {}).get("mpp_x")
+            # Metadata is free-form JSON: only a positive number counts as a
+            # known pixel size; anything else is treated as absent.
+            mpp_x = (
+                float(raw_mpp)
+                if isinstance(raw_mpp, (int, float))
+                and not isinstance(raw_mpp, bool)
+                and raw_mpp > 0
+                else None
+            )
             try:
                 tile_root = resolve_tile_root(
                     settings.tiles_dir, source_image_id
@@ -175,7 +184,7 @@ async def create_count(
                             body.mode == "nuclei"
                             and settings.counting_nuclei_outliner
                             not in CHEAP_OUTLINERS
-                            and not (mpp_x and mpp_x > 0)
+                            and mpp_x is None
                         )
                         else None
                     ),
