@@ -7,7 +7,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import case, exists, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +34,12 @@ def has_scale(meta: dict | None) -> bool:
 
 
 def has_scale_sql():
-    return func.jsonb_typeof(Image.metadata_[SCALE_KEY]) == "number"
+    """SQL twin of :func:`has_scale`; CASE guards the cast to numbers only."""
+    value = Image.metadata_[SCALE_KEY]
+    return case(
+        (func.jsonb_typeof(value) == "number", value.as_float() > 0),
+        else_=False,
+    )
 
 
 def scan_candidates_stmt(limit: int, category_id: int | None = None):
@@ -103,9 +108,36 @@ def record_existing(db: AsyncSession, image: Image) -> MeasurementFinding:
     return finding
 
 
-async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding:
-    """Record a stored scale, or run the RBC detector and record a pending finding."""
+async def _retire_pending(db: AsyncSession, image_id: int) -> None:
+    await db.execute(
+        update(MeasurementFinding)
+        .where(
+            MeasurementFinding.image_id == image_id,
+            MeasurementFinding.status == "pending",
+        )
+        .values(status="superseded")
+    )
+
+
+async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding | None:
+    """Record a stored scale, or run the RBC detector and record a pending finding.
+
+    Returns ``None`` when an overlapping scan already recorded the stored scale.
+    """
     if has_scale(image.metadata_):
+        # Serialize overlapping scans of this image; approved rows have no unique index.
+        await db.execute(select(Image.id).where(Image.id == image.id).with_for_update())
+        if await db.scalar(
+            select(MeasurementFinding.id)
+            .where(
+                MeasurementFinding.image_id == image.id,
+                MeasurementFinding.status == "approved",
+            )
+            .limit(1)
+        ):
+            return None
+        # A proposal made before the scale was stored must not resurface later.
+        await _retire_pending(db, image.id)
         return record_existing(db, image)
     path = await _latest_source_path(db, image.id)
     estimate: ScaleEstimate | None = None
@@ -129,14 +161,7 @@ async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding:
             if estimate is None:
                 evidence["reason"] = "no_rbc_population"
 
-    await db.execute(
-        update(MeasurementFinding)
-        .where(
-            MeasurementFinding.image_id == image.id,
-            MeasurementFinding.status == "pending",
-        )
-        .values(status="superseded")
-    )
+    await _retire_pending(db, image.id)
     finding = MeasurementFinding(
         image_id=image.id,
         status="pending",
@@ -160,7 +185,9 @@ async def scan_images(session_factory, image_ids: list[int]) -> int:
             image = await db.get(Image, image_id)
             if image is None:
                 continue
-            await scan_image(db, image)
+            if await scan_image(db, image) is None:
+                await db.rollback()
+                continue
             try:
                 await db.commit()
             except IntegrityError:

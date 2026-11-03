@@ -580,6 +580,7 @@ def test_has_scale(value, expected) -> None:
 async def test_scan_image_records_existing_scale_as_authoritative(meta, source) -> None:
     db = MagicMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=None)
     image = _image(metadata_=dict(meta))
     finding = await service.scan_image(db, image)
     assert finding.status == "approved" and finding.source == source
@@ -588,7 +589,43 @@ async def test_scan_image_records_existing_scale_as_authoritative(meta, source) 
     assert finding.approved_unit == meta["measurement_unit"]
     assert finding.reviewed_by is None and finding.reviewed_at is not None
     assert image.metadata_ == meta
-    db.execute.assert_not_awaited()
+    # Row lock, then retire any proposal made before the scale was stored.
+    assert db.execute.await_count == 2
+    assert "FOR UPDATE" in str(db.execute.await_args_list[0].args[0])
+    assert "superseded" in str(
+        db.execute.await_args_list[1].args[0].compile(compile_kwargs={"literal_binds": True})
+    )
+
+
+async def test_scan_image_skips_existing_scale_already_recorded() -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    assert await service.scan_image(db, _image(metadata_={"measurement_scale": 4.0})) is None
+    db.add.assert_not_called()
+
+
+async def test_scan_images_rolls_back_when_scan_records_nothing(monkeypatch) -> None:
+    db = AsyncMock()
+    db.get.return_value = _image(metadata_={"measurement_scale": 4.0})
+
+    class _Factory:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(service, "scan_image", AsyncMock(return_value=None))
+    assert await service.scan_images(_Factory, [11]) == 0
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
+
+
+def test_has_scale_sql_requires_positive_number() -> None:
+    sql = str(service.has_scale_sql().compile(dialect=postgresql.dialect()))
+    assert "CASE WHEN" in sql and "jsonb_typeof" in sql and "> " in sql
 
 
 async def test_scan_image_skips_rbc_on_whole_slide_images(monkeypatch) -> None:
