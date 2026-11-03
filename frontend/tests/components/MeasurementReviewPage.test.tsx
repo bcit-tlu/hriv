@@ -37,6 +37,7 @@ function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementR
   return {
     fetchFindings: vi.fn(async () => ({ items, total: items.length })),
     scan: vi.fn(async () => ({ image_ids: [11, 12], mode: 'queued' as const })),
+    scanProgress: vi.fn(async () => ({ total: 2, done: 2 })),
     approve: vi.fn(async (id: number) => makeFinding({ id, status: 'approved' })),
     reject: vi.fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
     bulkApprove: vi.fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),
@@ -67,13 +68,59 @@ describe('MeasurementReviewPage', () => {
     )
   })
 
-  it('scans the next 10 images and reports how many were queued', async () => {
+  it('tracks scan progress in a snackbar and reloads when the scan finishes', async () => {
     const api = makeApi()
-    render(<MeasurementReviewPage api={api} />)
+    let finish: (value: { total: number; done: number }) => void = () => {}
+    vi.mocked(api.scanProgress)
+      .mockResolvedValueOnce({ total: 2, done: 1 })
+      .mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
+    render(<MeasurementReviewPage api={api} scanPollMs={10} />)
     await screen.findByText('Blood film 40x')
     await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
     expect(api.scan).toHaveBeenCalledWith({ limit: 10 })
-    expect(await screen.findByText(/Scanning 2 images/)).toBeInTheDocument()
+    expect(await screen.findByText(/Scanning images: 1 of 2 done/)).toBeInTheDocument()
+    await waitFor(() => expect(api.scanProgress).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeDisabled()
+    finish({ total: 2, done: 2 })
+    expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
+    expect(api.scanProgress).toHaveBeenCalledWith([11, 12])
+    // Initial load, after queueing, and after the scan finished.
+    await waitFor(() => expect(api.fetchFindings).toHaveBeenCalledTimes(3))
+    expect(screen.queryByText(/Scanning images/)).not.toBeInTheDocument()
+  })
+
+  it('reports when there is nothing left to scan', async () => {
+    const api = makeApi()
+    vi.mocked(api.scan).mockResolvedValueOnce({ image_ids: [], mode: 'queued' })
+    render(<MeasurementReviewPage api={api} scanPollMs={10} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    expect(await screen.findByText('Every image has already been scanned.')).toBeInTheDocument()
+    expect(api.scanProgress).not.toHaveBeenCalled()
+  })
+
+  it('shows an error and stops tracking when progress cannot be checked', async () => {
+    const api = makeApi()
+    vi.mocked(api.scanProgress).mockRejectedValueOnce(new Error('boom'))
+    render(<MeasurementReviewPage api={api} scanPollMs={10} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    expect(await screen.findByText(/boom|Could not check scan progress/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeEnabled()
+  })
+
+  it('labels existing and embedded scales in the evidence column', async () => {
+    const api = makeApi([
+      makeFinding({
+        id: 7,
+        status: 'approved',
+        source: 'embedded',
+        confidence: 1,
+        evidence: { reason: 'existing_scale' },
+      }),
+    ])
+    render(<MeasurementReviewPage api={api} />)
+    expect(await screen.findByText('embedded calibration')).toBeInTheDocument()
   })
 
   it('approves the proposal unchanged when the scale was not edited', async () => {

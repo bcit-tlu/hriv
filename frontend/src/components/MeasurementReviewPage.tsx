@@ -4,6 +4,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import LinearProgress from '@mui/material/LinearProgress'
+import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -21,6 +22,7 @@ import {
   approveMeasurementFinding,
   bulkApproveMeasurementFindings,
   fetchMeasurementFindings,
+  fetchMeasurementScanProgress,
   rejectMeasurementFinding,
   scanMeasurements,
   userMessage,
@@ -32,11 +34,13 @@ import MeasurementScaleFields from './MeasurementScaleFields'
 import RenewingThumbnail from './RenewingThumbnail'
 
 export const SCAN_BATCH_SIZE = 10
+const SCAN_POLL_MS = 2000
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100]
 
 export interface MeasurementReviewApi {
   fetchFindings: typeof fetchMeasurementFindings
   scan: typeof scanMeasurements
+  scanProgress: typeof fetchMeasurementScanProgress
   approve: typeof approveMeasurementFinding
   reject: typeof rejectMeasurementFinding
   bulkApprove: typeof bulkApproveMeasurementFindings
@@ -45,6 +49,7 @@ export interface MeasurementReviewApi {
 const defaultApi: MeasurementReviewApi = {
   fetchFindings: fetchMeasurementFindings,
   scan: scanMeasurements,
+  scanProgress: fetchMeasurementScanProgress,
   approve: approveMeasurementFinding,
   reject: rejectMeasurementFinding,
   bulkApprove: bulkApproveMeasurementFindings,
@@ -53,6 +58,13 @@ const defaultApi: MeasurementReviewApi = {
 export interface MeasurementReviewPageProps {
   /** Injected for stories/tests; defaults to the real API client. */
   api?: MeasurementReviewApi
+  /** Scan-progress poll interval; shortened in tests. */
+  scanPollMs?: number
+}
+
+interface ScanState {
+  imageIds: number[]
+  done: number
 }
 
 type ReviewStatus = Exclude<MeasurementFindingStatus, 'superseded'>
@@ -73,7 +85,10 @@ function parseScale(value: string): number | null {
   return value.trim() !== '' && Number.isFinite(n) && n > 0 ? n : null
 }
 
-export default function MeasurementReviewPage({ api = defaultApi }: MeasurementReviewPageProps) {
+export default function MeasurementReviewPage({
+  api = defaultApi,
+  scanPollMs = SCAN_POLL_MS,
+}: MeasurementReviewPageProps) {
   const [status, setStatus] = useState<ReviewStatus>('pending')
   const [ascending, setAscending] = useState(false)
   const [page, setPage] = useState(0)
@@ -88,6 +103,7 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
   const [edits, setEdits] = useState<Record<number, string>>({})
   const [unitEdits, setUnitEdits] = useState<Record<number, MeasurementUnit>>({})
   const [reloadToken, setReloadToken] = useState(0)
+  const [scan, setScan] = useState<ScanState | null>(null)
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), [])
 
@@ -130,6 +146,40 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
     }
   }, [api, status, ascending, page, rowsPerPage, reloadToken])
 
+  const scanIds = scan?.imageIds
+  useEffect(() => {
+    if (!scanIds) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = () => {
+      timer = setTimeout(() => {
+        api
+          .scanProgress(scanIds)
+          .then(({ done, total }) => {
+            if (cancelled) return
+            if (done >= total) {
+              setScan(null)
+              setNotice(`Scan finished: ${total} image${total === 1 ? '' : 's'} processed.`)
+              reload()
+            } else {
+              setScan({ imageIds: scanIds, done })
+              poll()
+            }
+          })
+          .catch((err: unknown) => {
+            if (cancelled) return
+            setScan(null)
+            setError(userMessage(err, 'Could not check scan progress.'))
+          })
+      }, scanPollMs)
+    }
+    poll()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [api, scanIds, scanPollMs, reload])
+
   const run = async (action: () => Promise<string | null>) => {
     setBusy(true)
     setNotice(null)
@@ -148,9 +198,9 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
   const handleScan = () =>
     run(async () => {
       const result = await api.scan({ limit: SCAN_BATCH_SIZE })
-      return result.image_ids.length === 0
-        ? 'Every image already has a scale or a finding.'
-        : `Scanning ${result.image_ids.length} image${result.image_ids.length === 1 ? '' : 's'}. Refresh in a moment to see the findings.`
+      if (result.image_ids.length === 0) return 'Every image has already been scanned.'
+      setScan({ imageIds: result.image_ids, done: 0 })
+      return null
     })
 
   /** `{}` to accept the proposal, `{ scale?, unit? }` for a correction, `null` if the edit is invalid. */
@@ -217,9 +267,14 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
         Measurement review
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
+        Sets each image&apos;s scale so students can take real-world measurements in the viewer.
+        Scan images in batches, then approve, correct or reject each proposed scale.
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
         Proposed image scales (pixels per unit, µm by default) from the red-blood-cell detector.
         Nothing reaches image metadata until a finding is approved. Correct a scale before approving
-        if the proposal is wrong.
+        if the proposal is wrong. Scales already stored on an image are listed under Approved as
+        existing values or embedded calibration and are never overwritten.
       </Typography>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }} useFlexGap>
@@ -252,7 +307,7 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
             Approve selected ({selected.size})
           </Button>
         )}
-        <Button variant="contained" onClick={handleScan} disabled={busy}>
+        <Button variant="contained" onClick={handleScan} disabled={busy || scan != null}>
           Scan next {SCAN_BATCH_SIZE}
         </Button>
       </Stack>
@@ -267,6 +322,23 @@ export default function MeasurementReviewPage({ api = defaultApi }: MeasurementR
           {notice}
         </Alert>
       )}
+
+      <Snackbar open={scan != null} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+        <Alert severity="info" variant="filled" sx={{ minWidth: 280 }} role="status">
+          {scan && (
+            <>
+              Scanning images: {scan.done} of {scan.imageIds.length} done
+              <LinearProgress
+                variant="determinate"
+                value={(scan.done / scan.imageIds.length) * 100}
+                aria-label="Scan progress"
+                color="inherit"
+                sx={{ mt: 1 }}
+              />
+            </>
+          )}
+        </Alert>
+      </Snackbar>
 
       <TableContainer>
         {loading && <LinearProgress aria-label="Loading findings" />}

@@ -2710,6 +2710,15 @@ export function scanMeasurements(body: {
   })
 }
 
+/** How many of a scan's images have a finding yet (deleted images count as done). */
+export function fetchMeasurementScanProgress(
+  imageIds: number[],
+): Promise<{ total: number; done: number }> {
+  const qs = new URLSearchParams()
+  for (const id of imageIds) qs.append('image_ids', String(id))
+  return request(`/measurement-findings/scan-progress?${qs.toString()}`)
+}
+
 export function approveMeasurementFinding(
   id: number,
   correction: { scale?: number; unit?: MeasurementUnit } = {},

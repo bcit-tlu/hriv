@@ -62,6 +62,7 @@ function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {
   return {
     fetchFindings: fn(async () => ({ items, total: items.length })),
     scan: fn(async () => ({ image_ids: [21, 22, 23], mode: 'queued' as const })),
+    scanProgress: fn(async () => ({ total: 3, done: 3 })),
     approve: fn(async (id: number) => makeFinding({ id, status: 'approved' })),
     reject: fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
     bulkApprove: fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),

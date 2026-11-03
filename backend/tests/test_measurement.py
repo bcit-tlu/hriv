@@ -135,14 +135,14 @@ def test_unprofiled_camera_reports_raw_estimate_capped() -> None:
 # ── service ───────────────────────────────────────────────
 
 
-def test_scan_candidates_excludes_scaled_and_reviewed_images() -> None:
+def test_scan_candidates_excludes_reviewed_images_only() -> None:
     sql = str(
         service.scan_candidates_stmt(10, category_id=4).compile(
             dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
         )
     )
     assert "measurement_findings.status != 'superseded'" in sql
-    assert "NOT (images.metadata ? 'measurement_scale')" in sql
+    assert "measurement_scale" not in sql
     assert "images.category_id = 4" in sql
     assert "LIMIT 10" in sql
 
@@ -303,9 +303,9 @@ async def test_scan_images_commits_per_image(monkeypatch) -> None:
     assert [s.commit.await_count for s in sessions] == [1, 0, 1]
 
 
-async def test_scan_images_skips_images_scaled_since_queueing(monkeypatch) -> None:
+async def test_scan_images_skips_deleted_images(monkeypatch) -> None:
     db = AsyncMock()
-    db.get.return_value = _image(metadata_={"measurement_scale": 4.0})
+    db.get.return_value = None
 
     class _Factory:
         async def __aenter__(self):
@@ -556,3 +556,95 @@ def test_all_routes_require_reviewer_role() -> None:
             getattr(d.call, "__qualname__", "") for d in route.dependant.dependencies
         }
         assert any("require_role" in q for q in deps), route.path
+
+
+# ── existing scales, slide guard, approval guard, progress ─
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(4.0, True), (2, True), (None, False), (0, False), ("4", False), (True, False)],
+)
+def test_has_scale(value, expected) -> None:
+    assert service.has_scale({"measurement_scale": value}) is expected
+    assert service.has_scale(None) is False
+
+
+@pytest.mark.parametrize(
+    "meta, source",
+    [
+        ({"measurement_scale": 4.0, "measurement_unit": "um", "mpp_x": 0.25}, "embedded"),
+        ({"measurement_scale": 0.5, "measurement_unit": "mm"}, "existing"),
+    ],
+)
+async def test_scan_image_records_existing_scale_as_authoritative(meta, source) -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+    image = _image(metadata_=dict(meta))
+    finding = await service.scan_image(db, image)
+    assert finding.status == "approved" and finding.source == source
+    assert finding.confidence == 1.0
+    assert finding.proposed_scale == finding.approved_scale == meta["measurement_scale"]
+    assert finding.approved_unit == meta["measurement_unit"]
+    assert finding.reviewed_by is None and finding.reviewed_at is not None
+    assert image.metadata_ == meta
+    db.execute.assert_not_awaited()
+
+
+async def test_scan_image_skips_rbc_on_whole_slide_images(monkeypatch) -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+    monkeypatch.setattr(service, "_latest_source_path", AsyncMock(return_value=__file__))
+    detect = MagicMock()
+    monkeypatch.setattr(service, "_detect", detect)
+    finding = await service.scan_image(db, _image(width=56448, height=20783))
+    assert finding.status == "pending" and finding.proposed_scale is None
+    assert finding.evidence == {"reason": "slide_too_large_for_rbc"}
+    detect.assert_not_called()
+
+
+async def test_approve_endpoint_refuses_when_image_already_scaled() -> None:
+    finding = _finding()
+    image = _image(metadata_={"measurement_scale": 4.0, "canvas_annotations": []})
+    db = _db_with(finding, image)
+    with pytest.raises(HTTPException) as exc:
+        await router.approve(5, _user(), MeasurementApprove(scale=18.7), db)
+    assert exc.value.status_code == 409
+    assert finding.status == "superseded"
+    assert image.metadata_ == {"measurement_scale": 4.0, "canvas_annotations": []}
+    db.commit.assert_awaited_once()
+
+
+async def test_bulk_approve_supersedes_findings_on_scaled_images() -> None:
+    finding = _finding(id=1, image_id=11)
+    image = _image(id=11, metadata_={"measurement_scale": 4.0})
+    db = AsyncMock()
+    db.get.side_effect = lambda model, _i, **_kw: (
+        finding if model is MeasurementFinding else image
+    )
+    out = await router.bulk_approve(MeasurementBulkApprove(ids=[1]), _user(), db)
+    assert out.approved == [] and out.skipped == [1]
+    assert finding.status == "superseded"
+    assert image.metadata_ == {"measurement_scale": 4.0}
+    db.commit.assert_awaited_once()
+
+
+async def test_list_pending_hides_findings_on_scaled_images() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 0
+    rows = MagicMock()
+    rows.all.return_value = []
+    db.execute.return_value = rows
+    await router.list_findings(_user(), db, "pending", None, None, "confidence_desc", 50, 0)
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "jsonb_typeof" in sql
+
+
+async def test_scan_progress_counts_live_findings_and_deleted_images() -> None:
+    db = AsyncMock()
+    found, present = MagicMock(), MagicMock()
+    found.scalars.return_value = [11]
+    present.scalars.return_value = [11, 12]
+    db.execute.side_effect = [found, present]
+    out = await router.scan_progress(_user(), db, [11, 12, 13])
+    assert (out.total, out.done) == (3, 2)

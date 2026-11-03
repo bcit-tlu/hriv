@@ -68,17 +68,17 @@ proposed scale, rather than a 0%-confidence proposal.
 All endpoints require **admin or instructor** (`require_role("admin",
 "instructor")`).
 
-| Method | Path                                     | Behaviour                                                                                                                                               |
-| ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/measurement-findings/scan`         | `{limit: 1–50 (default 10), category_id?}`. Picks the next images with no `measurement_scale` and no non-superseded finding, queues detection. 202.     |
-| GET    | `/api/measurement-findings`              | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`. |
-| POST   | `/api/measurement-findings/{id}/approve` | Optional `{scale, unit}` correction (`unit`: `um`, `nm`, `mm`, `cm`). Promotes into metadata. 409 if not pending, 422 if no scale.                      |
-| POST   | `/api/measurement-findings/{id}/reject`  | Marks rejected; metadata untouched. The image is not proposed again.                                                                                    |
-| POST   | `/api/measurement-findings/approve`      | Bulk `{ids: [...]}` (≤200) at the proposed scale; returns `{approved, skipped}`.                                                                        |
+| Method | Path                                      | Behaviour                                                                                                                                                                                            |
+| ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/measurement-findings/scan`          | `{limit: 1–50 (default 10), category_id?}`. Picks the next images with no non-superseded finding (scaled or not), queues them. 202.                                                                  |
+| GET    | `/api/measurement-findings`               | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`.                                              |
+| POST   | `/api/measurement-findings/{id}/approve`  | Optional `{scale, unit}` correction (`unit`: `um`, `nm`, `mm`, `cm`). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale. |
+| GET    | `/api/measurement-findings/scan-progress` | `image_ids` (repeated, 1–200) from a scan response; returns `{total, done}` where done = images with a live finding, or deleted.                                                                     |
+| POST   | `/api/measurement-findings/{id}/reject`   | Marks rejected; metadata untouched. The image is not proposed again.                                                                                                                                 |
+| POST   | `/api/measurement-findings/approve`       | Bulk `{ids: [...]}` (≤200) at the proposed scale; returns `{approved, skipped}`; findings on already-scaled images are superseded and skipped.                                                       |
 
 Scans run as the `measurement_scan_task` arq job (one transaction per image;
-images that gained a scale since queueing are skipped, and an overlapping scan's
-duplicate pending finding is dropped)
+an overlapping scan's duplicate pending finding is dropped)
 and fall back to in-process `BackgroundTasks` when the queue is unavailable
 (503 in `TASK_EXECUTION_MODE=required`).
 
@@ -102,7 +102,31 @@ Replacing an image's source supersedes all its findings, so the replacement
 becomes eligible for a fresh scan.
 
 Pyramidal SVS/TIFF uploads keep getting `measurement_scale` automatically from
-embedded MPP; scans skip images that already have a scale.
+embedded MPP.
+
+## Existing scales are authoritative
+
+A scan never re-detects an image that already has a numeric `measurement_scale`
+(including one set while the scan was queued). Instead it records an
+**approved** finding with confidence `1.0`, the stored scale and unit as both
+proposed and approved values, `reviewed_by = null`, evidence
+`{"reason": "existing_scale", "scale_source": …}`, and source:
+
+- `embedded` when the metadata carries `mpp_x` (pyramid calibration);
+- `existing` otherwise (Edit image, import, earlier tooling).
+
+Metadata is not changed. Pending findings on images that have since gained a
+scale are hidden from the Pending list, and approving one returns 409 (bulk:
+skipped) and marks it `superseded`, so a proposal can never overwrite a stored
+value.
+
+## Whole-slide images
+
+The RBC detector works on a ≤2000 px thumbnail, so on slide scans (longest side
+
+> 8000 px) cells vanish and tissue structures get measured instead. Those images
+> get a pending finding with no proposal and reason `slide_too_large_for_rbc`;
+> they need a manual value until a slide-specific method exists.
 
 ## Review page
 
@@ -111,14 +135,20 @@ lists findings from `GET /api/measurement-findings`:
 
 - **Pending / Approved / Rejected** tabs; pending is the default, sorted by
   confidence (highest first, click the column header to flip).
+- A short purpose statement heads the page: the tool sets image scales so
+  students can measure in real units.
 - **Scan next 10** calls `POST /api/measurement-findings/scan` with
-  `limit: 10`; findings appear after **Refresh** once the worker finishes.
+  `limit: 10`, then a snackbar ("Scanning images: N of 10 done", with a
+  progress bar) polls `scan-progress` every 2 s. When every image is done the
+  list reloads and "Scan finished" is shown; the scan button stays disabled
+  meanwhile. A progress error ends tracking and is shown as an error.
 - Each pending row shows the thumbnail, name and size, the **detected
   objective** (the ×10/×40/×100 objective lens matched for the known camera;
   a tooltip explains it), the read-only **proposed** scale in px/µm, an
   editable **scale** with a **unit** picker (µm, nm, mm, cm; µm by default),
-  confidence, and an evidence summary (RBC diameter and cell count, or the
-  detector's reason for not proposing). Approving an edited scale or unit
+  confidence, and an evidence summary (RBC diameter and cell count, the
+  detector's reason for not proposing, or "existing value" / "embedded
+  calibration" for stored scales). Approving an edited scale or unit
   sends it as the correction; findings with no proposal need a manual value
   before **Approve** enables and cannot be bulk-selected.
 - The scale and unit fields are the shared `MeasurementScaleFields`

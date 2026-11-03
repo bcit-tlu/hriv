@@ -3,6 +3,9 @@ import type { ApiMeasurementFinding } from './api'
 /** One-line evidence summary: the detector's reason, or what it measured. */
 export function evidenceSummary(finding: ApiMeasurementFinding): string {
   const evidence = finding.evidence ?? {}
+  if (evidence.reason === 'existing_scale') {
+    return finding.source === 'embedded' ? 'embedded calibration' : 'existing value'
+  }
   if (typeof evidence.reason === 'string') return evidence.reason.replace(/_/g, ' ')
   const parts: string[] = []
   if (typeof evidence.rbc_diameter_px === 'number') {
