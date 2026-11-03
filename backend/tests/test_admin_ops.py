@@ -1190,6 +1190,28 @@ async def test_run_db_export_success(tmp_path) -> None:
             updated_at=now,
         )
     ]
+    measurement_findings = [
+        SimpleNamespace(
+            id=3,
+            image_id=9_400_005,
+            status="approved",
+            source="rbc",
+            proposed_scale=7.3,
+            proposed_unit="um",
+            objective="40",
+            confidence=0.8,
+            evidence={"rbc_diameter_px": 54.8},
+            detector_version="rbc-1",
+            approved_scale=7.3,
+            approved_unit="um",
+            reviewed_by=1,
+            reviewed_at=now,
+            created_at=now,
+            updated_at=now,
+        ),
+        # Review of a rebuild-fixture image (not exported) → dropped.
+        SimpleNamespace(id=4, image_id=9_400_000),
+    ]
     call_count = 0
 
     async def mock_execute(stmt):
@@ -1199,8 +1221,9 @@ async def test_run_db_export_success(tmp_path) -> None:
         data_map = {
             1: programs, 2: groups, 3: categories, 4: images,
             5: users, 6: source_images, 7: collections, 8: changelog_entries,
+            9: measurement_findings,
         }
-        if call_count <= 8:
+        if call_count <= 9:
             result.scalars.return_value.all.return_value = data_map[call_count]
         else:
             result.scalar_one_or_none.return_value = announcement
@@ -1279,6 +1302,26 @@ async def test_run_db_export_success(tmp_path) -> None:
         }
     ]
     assert "1 collections" in task.log
+    assert dump["measurement_findings"] == [
+        {
+            "id": 3,
+            "image_id": 9_400_005,
+            "status": "approved",
+            "source": "rbc",
+            "proposed_scale": 7.3,
+            "proposed_unit": "um",
+            "objective": "40",
+            "confidence": 0.8,
+            "evidence": {"rbc_diameter_px": 54.8},
+            "detector_version": "rbc-1",
+            "approved_scale": 7.3,
+            "approved_unit": "um",
+            "reviewed_by": 1,
+            "reviewed_at": now.isoformat(),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    ]
     assert dump["changelog_entries"] == [
         {
             "id": 1,
@@ -1503,6 +1546,18 @@ def _full_dump() -> dict:
                 "image_ids": [],
             },
         ],
+        "measurement_findings": [
+            {
+                "id": 3,
+                "image_id": 1,
+                "status": "pending",
+                "source": "rbc",
+                "proposed_scale": 7.3,
+                "confidence": 0.8,
+                "detector_version": "rbc-1",
+                "created_at": "2025-01-02T00:00:00+00:00",
+            }
+        ],
         "changelog_entries": [
             {
                 "id": 1,
@@ -1563,6 +1618,10 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert mock_session.commit.await_count >= 2
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
     assert any(type(obj).__name__ == "ChangelogEntry" for obj in add_calls)
+    findings = [obj for obj in add_calls if type(obj).__name__ == "MeasurementFinding"]
+    assert [(f.id, f.image_id, f.status, f.proposed_unit) for f in findings] == [
+        (3, 1, "pending", "um")
+    ]
     imported_users = [obj for obj in add_calls if type(obj).__name__ == "User"]
     assert len(imported_users) == 2
     by_email = {u.email: u for u in imported_users}
@@ -3239,8 +3298,8 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [changelog_entry]}
-        if call_count <= 8:
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [changelog_entry], 9: []}
+        if call_count <= 9:
             rows = data_map[call_count]
             result.scalars.return_value.all.return_value = rows
             result.scalars.return_value.unique.return_value.all.return_value = rows

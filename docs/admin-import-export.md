@@ -79,7 +79,8 @@ This means a mid-import failure rolls back _all_ data changes (via
 **Export** (`run_db_export`) writes a JSON document containing: `programs`,
 `groups`, `categories` (with `program_ids` and `group_ids`), `images`,
 `source_images`, `users` (with program memberships), `collections`,
-`changelog_entries`, and the `announcement`.
+`measurement_findings` ([Measurement review](measurement-review.md) findings,
+excluding rebuild-fixture images), `changelog_entries`, and the `announcement`.
 
 Each exported **collection** carries `name`, `description`, `type`,
 `visibility`, `user_id` (creator audit — may be `null`),
@@ -106,7 +107,7 @@ matters because of foreign keys.
   ```
   collection_images → collection_programs → collection_groups →
   collection_owners → collections →
-  source_images → images → category_groups → category_programs → categories →
+  source_images → measurement_findings → images → category_groups → category_programs → categories →
   group_members → group_instructors → groups → user_programs → users →
   changelog_entries → announcements → programs
   ```
@@ -118,13 +119,14 @@ matters because of foreign keys.
   programs → users → groups → categories (restoring category↔program and
   category↔group links) → images → source_images → collections (with
   collection_images / collection_owners / collection_programs /
-  collection_groups) → changelog_entries → announcement
+  collection_groups) → measurement_findings → changelog_entries →
+  announcement
   ```
 
 - **Sequence reset.** After import, PostgreSQL sequences are reset to
   `max(id) + 1` so subsequent inserts don't collide. Sequences reset:
   `programs`, `groups`, `categories`, `images`, `users`, `announcements`,
-  `changelog_entries`, `source_images`, `collections`.
+  `changelog_entries`, `source_images`, `collections`, `measurement_findings`.
 
 ## Filesystem export/import
 
