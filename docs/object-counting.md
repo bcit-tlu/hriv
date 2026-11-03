@@ -243,9 +243,10 @@ curl -s -X POST http://localhost:8000/api/images/1/counts \
   `CountHelpDialog.tsx`, `countingUi.ts`, `countOutlines.ts`,
   `countPalette.ts`, `guide/object-counting.md` (dark-launched, not in
   `GUIDE_PAGES`).
-- **#1669** — Prometheus queue gauges/dashboards for the counting queue
-  (the OTel `hriv.count_jobs` counter already lands here).
-- **#1670** — lab-burst load test; **#1671** — docs/user validation.
+- **#1669** — observability (shipped): OTel instruments + `/api/metrics`
+  counting gauges, Grafana "Object counting" panels, flux-fleet alerts.
+- **#1670** — lab-burst load test (done — see Capacity); **#1671** —
+  docs/user validation.
 
 ## Models and pipeline (#1665)
 
@@ -257,9 +258,9 @@ plan, mpp) -> int32 labels` seam:
 | Cells  | `ClassicalCellsOutliner` — scikit-image channel-extrema + darkness signal, Otsu, distance-transform watershed (#1662 spike) | BSD-3 (scikit-image / scikit-learn)                            |
 | Nuclei | `InstanSegNucleiOutliner` — InstanSeg `brightfield_nuclei` v0.1.1 on CPU                                                    | Apache-2.0 code + weights; its dep `fastremap` is **LGPL-3.0** |
 
-Cellpose `cyto3` is **pending an owner decision** (numpy<2.1 pin, no py3.14
-wheels, CC-BY-NC training data) — the `Outliner` protocol is the plugin
-point if it ever lands.
+Cellpose `cyto3` is **deferred indefinitely** by the owner until the
+feature has soaked (numpy<2.1 pin, no py3.14 wheels, CC-BY-NC training
+data) — the `Outliner` protocol remains the plugin point.
 
 - **Level rule**: a ≤0.25 MP coarse stitch estimates the median object
   diameter via the classical mask; the worker picks the largest
@@ -290,13 +291,51 @@ point if it ever lands.
   HPA (`countingWorker.autoscaling`), and an optional deny-ingress
   NetworkPolicy (`countingWorker.networkPolicy`, egress to Redis + DNS +
   the OTel collector only).
-- **Capacity** (from the #1662 spike): ~4–5 replicas covers a 30-job lab
-  burst at one job per pod. KEDA on the `arq:counting` queue length is
-  the preferred scale signal if flux-fleet supports it; otherwise
-  schedule pre-scaling for lab hours.
+- **Capacity**: see [Capacity (#1670)](#capacity-1670).
 - **flux-fleet overlay** (`latest` first): `counting.enabled: true`,
   `countingWorker.enabled: true`, plus `countingWorker.networkPolicy`
   peers pointed at the in-cluster Redis, kube-dns and the OTel collector.
+
+## Capacity (#1670)
+
+Lab-burst load test on `latest` (2026-11-03) with
+`scripts/count_load_test.py` and 45 prefixed test accounts
+(`scripts/count_load_accounts.py`): one counting-worker replica (2 CPU,
+2 Gi request / 3 Gi limit, `torchThreads: 2`); 30 users within 30 s,
+15 more over the next 4 minutes, 4 re-runs and 2 cancels — 49 jobs mixing
+Cells/Nuclei from 600² up to the pre-flight budget plus deliberate
+over-budget selections.
+
+| Measure                                            | Result                                                                                              |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Outcomes                                           | 42 done, 5 over-budget rejections (422 at pre-flight, expected), 2 cancelled; 0 unexpected failures |
+| End-to-end (client, submit → done)                 | p50 13.7 s, p95 37.9 s, max 40.9 s (target p95 ≤ 60 s)                                              |
+| Queue wait (client, submit → first `running` poll) | p50 10.6 s, p95 34.8 s; peak `hriv_count_queue_depth` 7                                             |
+| Worker run time (`hriv.count.run`, step `total`)   | mean Cells 0.8 s, Nuclei 4.2 s; budget-limit Nuclei (800²) ≈ 6 s                                    |
+| API latency                                        | POST p50 29 ms / p95 61 ms; poll GET p50 20 ms / p95 45 ms                                          |
+| Counting worker                                    | peak working set 1.08 GiB (RSS 1.0 GiB); CPU ≤ 1.5 cores (1 min rate); CFS throttling ≤ 18 %        |
+| Redis                                              | ≤ 52 commands/s, ≤ 19 clients, ~19 MiB                                                              |
+| Tile-processing queue                              | depth 0 throughout; tile worker idle — no impact                                                    |
+
+Client times are quantised by the UI-like poll backoff (up to 3 s), so
+they overstate server time slightly. The first run (before #1728) had a
+lower p95 (22.9 s) only because the old level rule over-coarsened some
+selections and returned wrong counts.
+
+- **Sizing model**: one replica runs one job at a time, so burst latency
+  ≈ queued work ÷ replicas. The realistic mixed burst above fits one
+  replica. The worst case — 30 budget-limit Nuclei selections within 30 s
+  (≈ 180 s of work) — needs 3–4 replicas to keep p95 ≤ 60 s.
+- **Recommendations**: `latest` — 1 replica (staging). `stable` (4
+  worker nodes, ~35 CPU unrequested; namespace quota `limits.memory`
+  52 Gi with ~11.5 Gi used) — `countingWorker.replicaCount: 2` when
+  counting is enabled there (halves burst wait and survives a node
+  drain); raise to 4 for labs where everyone counts Nuclei at full
+  selection size. Each replica costs 2 CPU / 1.5 Gi request / 3 Gi
+  limit. Keep `torchThreads: 2`, one job per process, and the 750 k (ML)
+  / 2 M (classical) pixel budgets. CPU HPA is not useful for
+  minute-long bursts and flux-fleet has no KEDA, so size replicas up
+  front; enabling `stable` waits on the #1671 instructor feel-test.
 
 ## Observability (#1669)
 

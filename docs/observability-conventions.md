@@ -1102,7 +1102,9 @@ API's single atomic Redis read, mirroring the task-queue semantics.
 `timeout`/`too_large`/`too_many_objects`/`no_tiles`/`internal`) and on
 `rejected_*`/`queue_unavailable` outcomes (the API detail code).
 `outcome` ∈ `enqueued`/`done`/`failed`/`cancelled`/`rejected_too_large`/
-`rejected_rate_limited`/`queue_unavailable`.
+`rejected_rate_limited`/`queue_unavailable`. `cancelled` counts only a
+DELETE of a queued/running job; deleting a finished (done/failed) job is
+a "clear" — logged as `count.cleared`, not counted.
 
 ### `hriv.count.wait` histogram (s, `{mode}`)
 

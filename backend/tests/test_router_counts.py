@@ -588,6 +588,62 @@ async def test_delete_count_cancels_and_removes_keys(
     assert await pool.zrank(abort_jobs_ss, "j5") is not None
 
 
+@pytest.mark.parametrize("status_key", ["queued", "running"])
+async def test_delete_count_active_records_cancelled(
+    monkeypatch, pool, status_key
+) -> None:
+    """DELETE of a queued/running job counts one `cancelled` outcome."""
+    monkeypatch.setattr(settings, "counting_enabled", True)
+    _mock_pool(monkeypatch, pool)
+    calls = []
+    monkeypatch.setattr(
+        jobs, "record_count_job",
+        lambda mode, outcome, **kw: calls.append((mode, outcome)),
+    )
+    await jobs.create_record(
+        pool, job_id="ja", user_id=1, image_id=IMAGE_ID,
+        source_image_id=SID, mode="cells",
+        selection={"x": 0, "y": 0, "width": 10, "height": 10},
+        ttl_seconds=600,
+    )
+    # create_record makes status queued; flip to running when asked.
+    if status_key == "running":
+        await jobs.update_status(pool, "ja", jobs.STATUS_RUNNING)
+
+    resp = await delete_count("ja", _user(), False)
+    assert resp.status_code == 204
+    assert calls == [("cells", jobs.COUNT_OUTCOME_CANCELLED)]
+
+
+@pytest.mark.parametrize("status_key", ["done", "failed"])
+async def test_delete_count_finished_records_no_metric(
+    monkeypatch, pool, status_key
+) -> None:
+    """Clearing a done/failed job removes keys without a `cancelled` outcome."""
+    monkeypatch.setattr(settings, "counting_enabled", True)
+    _mock_pool(monkeypatch, pool)
+    calls = []
+    monkeypatch.setattr(
+        jobs, "record_count_job",
+        lambda mode, outcome, **kw: calls.append((mode, outcome)),
+    )
+    await jobs.create_record(
+        pool, job_id="jf", user_id=1, image_id=IMAGE_ID,
+        source_image_id=SID, mode="cells",
+        selection={"x": 0, "y": 0, "width": 10, "height": 10},
+        ttl_seconds=600,
+    )
+    await jobs.update_status(pool, "jf", status_key)
+    await jobs.write_result(pool, "jf", {"total": 0}, 600)
+    await pool.sadd("count:user:1", "jf")
+
+    resp = await delete_count("jf", _user(), False)
+    assert resp.status_code == 204
+    assert calls == []
+    assert await jobs.get_record(pool, "jf") is None
+    assert await jobs.get_result(pool, "jf") is None
+
+
 async def test_delete_count_missing_is_idempotent_204(
     monkeypatch, pool
 ) -> None:
