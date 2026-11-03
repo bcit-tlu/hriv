@@ -1,0 +1,44 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as MeasurementReviewPageStories from './MeasurementReviewPage.stories'
+
+<Meta of={MeasurementReviewPageStories} />
+
+<Title />
+
+<Subtitle>Manage → Measurement review: vet, correct, and approve proposed image scales.</Subtitle>
+
+## When to use
+
+`MeasurementReviewPage` is the admin/instructor page opened from the Manage
+menu (`?page=measurement`). It lists measurement findings from
+`/api/measurement-findings`, sorted by confidence, and is the only place a
+proposed scale is promoted into image metadata. See
+`docs/measurement-review.md`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={MeasurementReviewPageStories.Basic} />
+
+## Guidance
+
+- **Scan next 10** queues the next unscanned images; findings appear after a
+  refresh.
+- Approving an unedited row promotes the proposal; editing the scale first
+  approves the corrected value.
+- Findings with no proposed scale cannot be bulk-selected and need a manual
+  value before **Approve** enables.
+- Approved and Rejected views are read-only.
+
+<Stories />
+
+<Canvas of={MeasurementReviewPageStories.Empty} />

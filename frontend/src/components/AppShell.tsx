@@ -53,6 +53,7 @@ import LightModeIcon from '@mui/icons-material/LightMode'
 import DarkModeIcon from '@mui/icons-material/DarkMode'
 import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto'
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts'
+import StraightenIcon from '@mui/icons-material/Straighten'
 import LogoutIcon from '@mui/icons-material/Logout'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
@@ -68,7 +69,8 @@ import {
   getSurfaceVariant,
 } from '../theme'
 
-export type Page = 'browse' | 'collections' | 'manage' | 'people' | 'admin' | 'guide'
+export type Page =
+  'browse' | 'collections' | 'manage' | 'measurement' | 'people' | 'admin' | 'guide'
 
 export interface AppShellProps {
   page: Page
@@ -228,6 +230,7 @@ export default function AppShell(props: AppShellProps) {
         programs: <SchoolIcon fontSize="small" />,
         groups: <GroupsIcon fontSize="small" />,
         announcement: <CampaignIcon fontSize="small" />,
+        measurement: <StraightenIcon fontSize="small" />,
         people: <PeopleIcon fontSize="small" />,
         admin: <AdminPanelSettingsIcon fontSize="small" />,
       }
@@ -357,7 +360,7 @@ export default function AppShell(props: AppShellProps) {
           ) : (
             <Tabs
               // 'guide' has no AppBar tab — it opens via the notification menu.
-              value={page === 'guide' ? false : page}
+              value={page === 'guide' || page === 'measurement' ? false : page}
               onChange={(_, v: Page) => {
                 if (
                   v === 'browse' ||
@@ -457,6 +460,17 @@ export default function AppShell(props: AppShellProps) {
                   }}
                 >
                   Announcement
+                </MenuItem>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  selected={page === 'measurement'}
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onTabChange('measurement')
+                  }}
+                >
+                  Measurement review
                 </MenuItem>
               )}
             </Menu>

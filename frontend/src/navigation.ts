@@ -1,4 +1,5 @@
-export type NavigationPage = 'browse' | 'collections' | 'manage' | 'people' | 'admin'
+export type NavigationPage =
+  'browse' | 'collections' | 'manage' | 'measurement' | 'people' | 'admin'
 export type NavigationSection = 'primary' | 'manage' | 'account'
 export type NavigationIcon =
   | 'home'
@@ -8,6 +9,7 @@ export type NavigationIcon =
   | 'programs'
   | 'groups'
   | 'announcement'
+  | 'measurement'
   | 'people'
   | 'admin'
 
@@ -73,6 +75,14 @@ const navigationItems: readonly NavigationItem[] = [
     label: 'Announcement',
     section: 'manage',
     icon: 'announcement',
+    requiresEditContent: true,
+  },
+  {
+    id: 'measurement',
+    label: 'Measurement review',
+    section: 'manage',
+    icon: 'measurement',
+    page: 'measurement',
     requiresEditContent: true,
   },
   {

@@ -2641,3 +2641,93 @@ export async function cancelCount(jobId: string, opts?: { keepalive?: boolean })
   }
   await request(`/counts/${jobId}`, { method: 'DELETE' })
 }
+
+// ── Measurement review (Manage → Measurement review) ──────
+
+export type MeasurementFindingStatus = 'pending' | 'approved' | 'rejected' | 'superseded'
+export type MeasurementFindingSort = 'confidence_desc' | 'confidence_asc' | 'created_desc'
+
+export interface ApiMeasurementFinding {
+  id: number
+  image_id: number
+  image_name: string
+  image_thumb: string
+  category_id: number | null
+  image_width: number | null
+  image_height: number | null
+  status: MeasurementFindingStatus
+  source: string
+  /** Pixels per µm in source pixels; `null` when nothing could be measured. */
+  proposed_scale: number | null
+  proposed_unit: string
+  objective: string | null
+  confidence: number
+  evidence: Record<string, unknown> | null
+  detector_version: string
+  approved_scale: number | null
+  approved_unit: string | null
+  reviewed_by: number | null
+  reviewed_at: string | null
+  created_at: string
+}
+
+export interface MeasurementFindingsPage {
+  items: ApiMeasurementFinding[]
+  total: number
+}
+
+export interface MeasurementFindingsQuery {
+  status?: MeasurementFindingStatus
+  categoryId?: number
+  minConfidence?: number
+  sort?: MeasurementFindingSort
+  limit?: number
+  offset?: number
+}
+
+export function fetchMeasurementFindings(
+  query: MeasurementFindingsQuery = {},
+): Promise<MeasurementFindingsPage> {
+  const qs = new URLSearchParams()
+  if (query.status) qs.set('status', query.status)
+  if (query.categoryId != null) qs.set('category_id', String(query.categoryId))
+  if (query.minConfidence != null) qs.set('min_confidence', String(query.minConfidence))
+  if (query.sort) qs.set('sort', query.sort)
+  if (query.limit != null) qs.set('limit', String(query.limit))
+  if (query.offset != null) qs.set('offset', String(query.offset))
+  const suffix = qs.toString()
+  return request(`/measurement-findings${suffix ? `?${suffix}` : ''}`)
+}
+
+export function scanMeasurements(body: {
+  limit?: number
+  category_id?: number | null
+}): Promise<{ image_ids: number[]; mode: 'queued' | 'fallback' }> {
+  return request('/measurement-findings/scan', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function approveMeasurementFinding(
+  id: number,
+  correction: { scale?: number; unit?: 'um' } = {},
+): Promise<ApiMeasurementFinding> {
+  return request(`/measurement-findings/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(correction),
+  })
+}
+
+export function rejectMeasurementFinding(id: number): Promise<ApiMeasurementFinding> {
+  return request(`/measurement-findings/${id}/reject`, { method: 'POST' })
+}
+
+export function bulkApproveMeasurementFindings(
+  ids: number[],
+): Promise<{ approved: number[]; skipped: number[] }> {
+  return request('/measurement-findings/approve', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
+}

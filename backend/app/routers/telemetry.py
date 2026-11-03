@@ -112,7 +112,9 @@ _OS_FAMILIES = frozenset({
     "windows", "macos", "ios", "android", "linux", "chromeos", "other",
 })
 _DEVICE_CLASSES = frozenset({"desktop", "mobile", "tablet", "other"})
-_PAGES = frozenset({"browse", "manage", "people", "admin", "guide", "unknown", "other"})
+_PAGES = frozenset(
+    {"browse", "manage", "measurement", "people", "admin", "guide", "unknown", "other"}
+)
 _NAV_DIRECTIONS = frozenset({"down", "up", "jump"})
 _VIEWPORT_BUCKETS = frozenset({"xs", "sm", "md", "lg", "xl"})
 _UNITS = frozenset({"ms", "score"})
