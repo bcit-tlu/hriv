@@ -193,6 +193,16 @@ describe('MeasurementReviewPage', () => {
     expect(screen.queryByRole('button', { name: /Approve Blood/ })).not.toBeInTheDocument()
   })
 
+  it('shows sub-0.01 approved scales without rounding to zero', async () => {
+    const api = makeApi([
+      makeFinding({ status: 'approved', approved_scale: 0.0073, approved_unit: 'nm' }),
+    ])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    expect(await screen.findByText('0.0073 px/nm')).toBeInTheDocument()
+  })
+
   it('surfaces load errors', async () => {
     const api = makeApi()
     vi.mocked(api.fetchFindings).mockRejectedValueOnce(new Error('boom'))

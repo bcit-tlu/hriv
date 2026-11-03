@@ -59,7 +59,9 @@ type ReviewStatus = Exclude<MeasurementFindingStatus, 'superseded'>
 type Correction = { scale?: number; unit?: MeasurementUnit }
 
 function formatScale(scale: number | null): string {
-  return scale == null ? '—' : scale.toFixed(2)
+  if (scale == null) return '—'
+  // Sub-0.01 scales (e.g. px/nm) would round to 0.00.
+  return scale < 0.01 ? String(Number(scale.toPrecision(3))) : scale.toFixed(2)
 }
 
 function formatWithUnit(scale: number | null, unit: string): string {
