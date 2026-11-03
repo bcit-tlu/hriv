@@ -32,7 +32,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Dialog: Story = {
+export const Basic: Story = {
   args: {
     scaleLabel: 'Scale (px per unit)',
     unitLabel: 'Unit',
