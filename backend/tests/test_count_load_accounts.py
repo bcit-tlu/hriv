@@ -11,8 +11,6 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.auth_events import SYNTHETIC_METADATA_KEY
 
 
