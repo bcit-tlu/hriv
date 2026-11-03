@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from .detector import RbcMeasurement
 
-DETECTOR_VERSION = "rbc-1"
+DETECTOR_VERSION = "rbc-2"
 # Apparent RBC diameter (µm) as measured by the detector (inscribed radius
 # ×2 + 1 overstates the true ~7.5 µm slightly; this is what the clusters show).
 RBC_APPARENT_DIAMETER_UM = 7.5
