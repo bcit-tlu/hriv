@@ -1159,6 +1159,11 @@ class MeasurementScanOut(BaseModel):
     mode: Literal["queued", "fallback"]
 
 
+class MeasurementScanProgressOut(BaseModel):
+    total: int
+    done: int
+
+
 class MeasurementFindingOut(BaseModel):
     id: int
     image_id: int

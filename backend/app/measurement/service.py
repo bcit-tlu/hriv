@@ -7,7 +7,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import case, exists, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,12 +23,31 @@ UNIT_KEY = "measurement_unit"
 SOURCE_KEY = "measurement_scale_source"
 FINDING_KEY = "measurement_finding_id"
 
+# Slide scans this large shrink cells below detection in the work thumbnail.
+RBC_MAX_SIDE_PX = 8000
+
+
+def has_scale(meta: dict | None) -> bool:
+    """A usable stored scale (a cleared ``null`` or junk value doesn't count)."""
+    value = (meta or {}).get(SCALE_KEY)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def has_scale_sql():
+    """SQL twin of :func:`has_scale`; CASE guards the cast to numbers only."""
+    value = Image.metadata_[SCALE_KEY]
+    return case(
+        (func.jsonb_typeof(value) == "number", value.as_float() > 0),
+        else_=False,
+    )
+
 
 def scan_candidates_stmt(limit: int, category_id: int | None = None):
-    """Images with no scale and no live (pending/approved/rejected) finding.
+    """Images with no live (pending/approved/rejected) finding.
 
     Rejected and approved findings stop an image being re-proposed; only
-    superseded findings leave it eligible again.
+    superseded findings leave it eligible again. Already-scaled images are
+    included so their stored value is recorded as an authoritative finding.
     """
     reviewed = exists().where(
         MeasurementFinding.image_id == Image.id,
@@ -36,10 +55,7 @@ def scan_candidates_stmt(limit: int, category_id: int | None = None):
     )
     stmt = (
         select(Image.id)
-        .where(
-            ~reviewed,
-            ~Image.metadata_.has_key(SCALE_KEY),
-        )
+        .where(~reviewed)
         .order_by(Image.id)
         .limit(limit)
     )
@@ -65,13 +81,71 @@ async def _latest_source_path(db: AsyncSession, image_id: int) -> str | None:
     )
 
 
-async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding:
-    """Run the RBC detector on one image and record a pending finding."""
+def record_existing(db: AsyncSession, image: Image) -> MeasurementFinding:
+    """Record an image's stored scale as an approved, full-confidence finding.
+
+    Metadata is not touched: the stored value is authoritative.
+    """
+    meta = image.metadata_ or {}
+    scale = float(meta[SCALE_KEY])
+    unit = str(meta.get(UNIT_KEY) or "um")[:10]
+    finding = MeasurementFinding(
+        image_id=image.id,
+        status="approved",
+        # Pyramid detection writes mpp_x alongside the scale it derives.
+        source="embedded" if "mpp_x" in meta else "existing",
+        proposed_scale=scale,
+        proposed_unit=unit,
+        objective=None,
+        confidence=1.0,
+        evidence={"reason": "existing_scale", "scale_source": meta.get(SOURCE_KEY)},
+        detector_version=DETECTOR_VERSION,
+        approved_scale=scale,
+        approved_unit=unit,
+        reviewed_at=datetime.now(timezone.utc),
+    )
+    db.add(finding)
+    return finding
+
+
+async def _retire_pending(db: AsyncSession, image_id: int) -> None:
+    await db.execute(
+        update(MeasurementFinding)
+        .where(
+            MeasurementFinding.image_id == image_id,
+            MeasurementFinding.status == "pending",
+        )
+        .values(status="superseded")
+    )
+
+
+async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding | None:
+    """Record a stored scale, or run the RBC detector and record a pending finding.
+
+    Returns ``None`` when an overlapping scan already recorded the stored scale.
+    """
+    if has_scale(image.metadata_):
+        # Serialize overlapping scans of this image; approved rows have no unique index.
+        await db.execute(select(Image.id).where(Image.id == image.id).with_for_update())
+        if await db.scalar(
+            select(MeasurementFinding.id)
+            .where(
+                MeasurementFinding.image_id == image.id,
+                MeasurementFinding.status == "approved",
+            )
+            .limit(1)
+        ):
+            return None
+        # A proposal made before the scale was stored must not resurface later.
+        await _retire_pending(db, image.id)
+        return record_existing(db, image)
     path = await _latest_source_path(db, image.id)
     estimate: ScaleEstimate | None = None
     evidence: dict = {}
     if not path or not await asyncio.to_thread(os.path.isfile, path):
         evidence["reason"] = "source_missing"
+    elif max(image.width or 0, image.height or 0) > RBC_MAX_SIDE_PX:
+        evidence["reason"] = "slide_too_large_for_rbc"
     else:
         try:
             estimate = await asyncio.to_thread(_detect, path, image.width, image.height)
@@ -87,14 +161,7 @@ async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding:
             if estimate is None:
                 evidence["reason"] = "no_rbc_population"
 
-    await db.execute(
-        update(MeasurementFinding)
-        .where(
-            MeasurementFinding.image_id == image.id,
-            MeasurementFinding.status == "pending",
-        )
-        .values(status="superseded")
-    )
+    await _retire_pending(db, image.id)
     finding = MeasurementFinding(
         image_id=image.id,
         status="pending",
@@ -116,10 +183,11 @@ async def scan_images(session_factory, image_ids: list[int]) -> int:
     for image_id in image_ids:
         async with session_factory() as db:
             image = await db.get(Image, image_id)
-            # A scale set after the scan was queued wins; never propose over it.
-            if image is None or SCALE_KEY in (image.metadata_ or {}):
+            if image is None:
                 continue
-            await scan_image(db, image)
+            if await scan_image(db, image) is None:
+                await db.rollback()
+                continue
             try:
                 await db.commit()
             except IntegrityError:

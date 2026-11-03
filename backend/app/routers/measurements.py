@@ -20,6 +20,8 @@ from ..collection_views import image_ids_in_collections
 from ..database import async_session, get_db
 from ..measurement.service import (
     approve_finding,
+    has_scale,
+    has_scale_sql,
     reject_finding,
     scan_candidates_stmt,
     scan_images,
@@ -32,6 +34,7 @@ from ..schemas import (
     MeasurementFindingOut,
     MeasurementFindingsPageOut,
     MeasurementScanOut,
+    MeasurementScanProgressOut,
     MeasurementScanRequest,
 )
 from ..worker import TaskQueueUnavailableError, enqueue_measurement_scan
@@ -106,6 +109,30 @@ async def scan(
     return MeasurementScanOut(image_ids=image_ids, mode=mode)
 
 
+@router.get("/scan-progress", response_model=MeasurementScanProgressOut)
+async def scan_progress(
+    _user: _Reviewer,
+    db: AsyncSession = Depends(get_db),
+    image_ids: list[int] = Query(..., min_length=1, max_length=200),
+) -> MeasurementScanProgressOut:
+    """How many of a scan's images have been processed (a live finding, or deleted)."""
+    ids = set(image_ids)
+    scanned = set(
+        (
+            await db.execute(
+                select(MeasurementFinding.image_id)
+                .where(
+                    MeasurementFinding.image_id.in_(ids),
+                    MeasurementFinding.status != "superseded",
+                )
+                .distinct()
+            )
+        ).scalars()
+    )
+    present = set((await db.execute(select(Image.id).where(Image.id.in_(ids)))).scalars())
+    return MeasurementScanProgressOut(total=len(ids), done=len(scanned | (ids - present)))
+
+
 @router.get("", response_model=MeasurementFindingsPageOut)
 async def list_findings(
     _user: _Reviewer,
@@ -118,6 +145,9 @@ async def list_findings(
     offset: int = Query(default=0, ge=0),
 ) -> MeasurementFindingsPageOut:
     filters = [MeasurementFinding.status == status]
+    if status == "pending":
+        # Approval is refused once an image has a scale, so hide those rows.
+        filters.append(~has_scale_sql())
     if category_id is not None:
         filters.append(Image.category_id == category_id)
     if min_confidence is not None:
@@ -185,6 +215,7 @@ async def bulk_approve(
     approved: list[int] = []
     skipped: list[int] = []
     touched: list[Image] = []
+    superseded = False
     for finding_id in dict.fromkeys(body.ids):
         finding, image = await _lock_finding_and_image(db, finding_id)
         if (
@@ -195,11 +226,17 @@ async def bulk_approve(
         ):
             skipped.append(finding_id)
             continue
+        if has_scale(image.metadata_):
+            finding.status = "superseded"
+            superseded = True
+            skipped.append(finding_id)
+            continue
         await approve_finding(db, finding, image, user.id)
         approved.append(finding_id)
         touched.append(image)
     if approved:
         await _bump_if_browsable(db, touched)
+    if approved or superseded:
         await db.commit()
     logger.info(
         "Measurement findings bulk-approved",
@@ -222,6 +259,11 @@ async def approve(
 ) -> MeasurementFindingOut:
     """Approve one finding, optionally with a corrected scale."""
     finding, image = await _pending_with_image(db, finding_id)
+    if has_scale(image.metadata_):
+        # The stored value is authoritative; retire the stale proposal.
+        finding.status = "superseded"
+        await db.commit()
+        raise HTTPException(status_code=409, detail="Image already has a scale")
     body = body or MeasurementApprove()
     try:
         await approve_finding(db, finding, image, user.id, body.scale, body.unit)
