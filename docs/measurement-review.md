@@ -115,7 +115,9 @@ proposed and approved values, `reviewed_by = null`, evidence
 - `embedded` when the metadata carries `mpp_x` (pyramid calibration);
 - `existing` otherwise (Edit image, import, earlier tooling).
 
-Metadata is not changed. Pending findings on images that have since gained a
+Metadata is not changed. Recording the stored scale also supersedes any older
+pending proposal, and the image row is locked so overlapping scans record it
+once. Pending findings on images that have since gained a
 scale are hidden from the Pending list, and approving one returns 409 (bulk:
 skipped) and marks it `superseded`, so a proposal can never overwrite a stored
 value.
@@ -141,7 +143,8 @@ lists findings from `GET /api/measurement-findings`:
   `limit: 10`, then a snackbar ("Scanning images: N of 10 done", with a
   progress bar) polls `scan-progress` every 2 s. When every image is done the
   list reloads and "Scan finished" is shown; the scan button stays disabled
-  meanwhile. A progress error ends tracking and is shown as an error.
+  meanwhile. A progress error ends tracking and is shown as an error, as does no progress
+  for 2 minutes (e.g. a stopped worker).
 - Each pending row shows the thumbnail, name and size, the **detected
   objective** (the ×10/×40/×100 objective lens matched for the known camera;
   a tooltip explains it), the read-only **proposed** scale in px/µm, an

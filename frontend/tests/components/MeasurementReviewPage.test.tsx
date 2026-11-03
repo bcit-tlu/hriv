@@ -89,6 +89,20 @@ describe('MeasurementReviewPage', () => {
     expect(screen.queryByText(/Scanning images/)).not.toBeInTheDocument()
   })
 
+  it('stops tracking a scan that makes no progress', async () => {
+    const api = makeApi()
+    vi.mocked(api.scanProgress).mockResolvedValue({ total: 2, done: 1 })
+    render(<MeasurementReviewPage api={api} scanPollMs={10} scanStallMs={30} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    expect(
+      await screen.findByText(
+        'The scan stopped making progress at 1 of 2. Refresh later to see any findings.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeEnabled()
+  })
+
   it('reports when there is nothing left to scan', async () => {
     const api = makeApi()
     vi.mocked(api.scan).mockResolvedValueOnce({ image_ids: [], mode: 'queued' })

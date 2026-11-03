@@ -35,6 +35,8 @@ import RenewingThumbnail from './RenewingThumbnail'
 
 export const SCAN_BATCH_SIZE = 10
 const SCAN_POLL_MS = 2000
+/** Stop tracking a scan whose progress hasn't moved for this long (e.g. a crashed worker). */
+const SCAN_STALL_MS = 120_000
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100]
 
 export interface MeasurementReviewApi {
@@ -60,6 +62,8 @@ export interface MeasurementReviewPageProps {
   api?: MeasurementReviewApi
   /** Scan-progress poll interval; shortened in tests. */
   scanPollMs?: number
+  /** Give up tracking after this long without progress; shortened in tests. */
+  scanStallMs?: number
 }
 
 interface ScanState {
@@ -88,6 +92,7 @@ function parseScale(value: string): number | null {
 export default function MeasurementReviewPage({
   api = defaultApi,
   scanPollMs = SCAN_POLL_MS,
+  scanStallMs = SCAN_STALL_MS,
 }: MeasurementReviewPageProps) {
   const [status, setStatus] = useState<ReviewStatus>('pending')
   const [ascending, setAscending] = useState(false)
@@ -151,6 +156,8 @@ export default function MeasurementReviewPage({
     if (!scanIds) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    let lastDone = -1
+    let lastChange = Date.now()
     const poll = () => {
       timer = setTimeout(() => {
         api
@@ -161,7 +168,16 @@ export default function MeasurementReviewPage({
               setScan(null)
               setNotice(`Scan finished: ${total} image${total === 1 ? '' : 's'} processed.`)
               reload()
+            } else if (done === lastDone && Date.now() - lastChange >= scanStallMs) {
+              setScan(null)
+              setError(
+                `The scan stopped making progress at ${done} of ${total}. Refresh later to see any findings.`,
+              )
             } else {
+              if (done !== lastDone) {
+                lastDone = done
+                lastChange = Date.now()
+              }
               setScan({ imageIds: scanIds, done })
               poll()
             }
@@ -178,7 +194,7 @@ export default function MeasurementReviewPage({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [api, scanIds, scanPollMs, reload])
+  }, [api, scanIds, scanPollMs, scanStallMs, reload])
 
   const run = async (action: () => Promise<string | null>) => {
     setBusy(true)
