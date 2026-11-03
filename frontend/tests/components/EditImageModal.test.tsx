@@ -285,7 +285,8 @@ describe('EditImageModal – form fields and save', () => {
     const unitInput = screen.getByLabelText('Unit')
 
     await user.type(scaleInput, '2.5')
-    await user.type(unitInput, 'mm')
+    await user.click(unitInput)
+    await user.click(screen.getByRole('option', { name: 'mm' }))
 
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
@@ -328,7 +329,22 @@ describe('EditImageModal – form fields and save', () => {
     })
 
     expect(screen.getByDisplayValue('5')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('um')).toBeInTheDocument()
+    expect(screen.getByLabelText('Unit')).toHaveTextContent('µm')
+  })
+
+  it('keeps a legacy free-text unit selectable', async () => {
+    const user = userEvent.setup()
+    renderModal({
+      image: {
+        ...baseImage,
+        metadata_extra: { measurement_scale: 5.0, measurement_unit: 'px' },
+      },
+    })
+    const unit = screen.getByLabelText('Unit')
+    expect(unit).toHaveTextContent('px')
+    await user.click(unit)
+    expect(screen.getByRole('option', { name: 'cm' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'None' })).toBeInTheDocument()
   })
 })
 

@@ -1197,7 +1197,7 @@ class MeasurementApprove(BaseModel):
     """Optional reviewer correction; omitted fields keep the proposed value."""
 
     scale: float | None = Field(default=None, gt=0)
-    unit: Literal["um"] | None = None
+    unit: Literal["um", "nm", "mm", "cm"] | None = None
 
 
 class MeasurementBulkApprove(BaseModel):

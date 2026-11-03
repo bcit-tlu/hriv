@@ -72,7 +72,7 @@ All endpoints require **admin or instructor** (`require_role("admin",
 | ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/measurement-findings/scan`         | `{limit: 1–50 (default 10), category_id?}`. Picks the next images with no `measurement_scale` and no non-superseded finding, queues detection. 202.     |
 | GET    | `/api/measurement-findings`              | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`. |
-| POST   | `/api/measurement-findings/{id}/approve` | Optional `{scale, unit}` correction. Promotes into metadata. 409 if not pending, 422 if no scale.                                                       |
+| POST   | `/api/measurement-findings/{id}/approve` | Optional `{scale, unit}` correction (`unit`: `um`, `nm`, `mm`, `cm`). Promotes into metadata. 409 if not pending, 422 if no scale.                      |
 | POST   | `/api/measurement-findings/{id}/reject`  | Marks rejected; metadata untouched. The image is not proposed again.                                                                                    |
 | POST   | `/api/measurement-findings/approve`      | Bulk `{ids: [...]}` (≤200) at the proposed scale; returns `{approved, skipped}`.                                                                        |
 
@@ -87,12 +87,12 @@ and fall back to in-process `BackgroundTasks` when the queue is unavailable
 Approval merges only these keys into `Image.metadata_`; annotations, overlays
 and every other key are preserved:
 
-| Key                        | Value                                                     |
-| -------------------------- | --------------------------------------------------------- |
-| `measurement_scale`        | Approved px/µm                                            |
-| `measurement_unit`         | `um`                                                      |
-| `measurement_scale_source` | Finding `source` (e.g. `rbc`), or `manual` when corrected |
-| `measurement_finding_id`   | The approved finding                                      |
+| Key                        | Value                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `measurement_scale`        | Approved px/µm                                                                  |
+| `measurement_unit`         | `um` unless the reviewer picked `nm`, `mm` or `cm`                              |
+| `measurement_scale_source` | Finding `source` (e.g. `rbc`), or `manual` when the scale or unit was corrected |
+| `measurement_finding_id`   | The approved finding                                                            |
 
 The image `version` is incremented (so stale viewer `If-Match` saves get 409)
 and the browse revision is bumped when the image is categorized or in a
@@ -113,12 +113,18 @@ lists findings from `GET /api/measurement-findings`:
   confidence (highest first, click the column header to flip).
 - **Scan next 10** calls `POST /api/measurement-findings/scan` with
   `limit: 10`; findings appear after **Refresh** once the worker finishes.
-- Each pending row shows the thumbnail, name and size, objective, an editable
-  proposed scale, confidence, and an evidence summary (RBC diameter and cell
-  count, or the detector's reason for not proposing). Approving an edited
-  scale sends it as the correction; findings with no proposal need a manual
-  value before **Approve** enables and cannot be bulk-selected.
-- **Approve selected** calls the bulk endpoint; skipped IDs are reported.
+- Each pending row shows the thumbnail, name and size, the **detected
+  objective** (the ×10/×40/×100 objective lens matched for the known camera;
+  a tooltip explains it), the read-only **proposed** scale in px/µm, an
+  editable **scale** with a **unit** picker (µm, nm, mm, cm; µm by default),
+  confidence, and an evidence summary (RBC diameter and cell count, or the
+  detector's reason for not proposing). Approving an edited scale or unit
+  sends it as the correction; findings with no proposal need a manual value
+  before **Approve** enables and cannot be bulk-selected.
+- The scale and unit fields are the shared `MeasurementScaleFields`
+  component, also used by the Edit image dialog's Measurement Settings.
+- **Approve selected** calls the bulk endpoint for unedited rows and approves
+  rows with a scale or unit correction one by one; skipped IDs are reported.
 - Approved and Rejected views are read-only.
 
 ## Not yet built

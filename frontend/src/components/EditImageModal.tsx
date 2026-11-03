@@ -21,6 +21,7 @@ import { getVisibilityColors } from '../theme'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import MeasurementScaleFields from './MeasurementScaleFields'
 import { MAX_NOTE_LENGTH } from '../constants'
 
 export interface ImageFormData {
@@ -492,26 +493,16 @@ function EditImageForm({
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings
         </Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField
-            label="Scale (px per unit)"
-            fullWidth
-            variant="outlined"
-            type="number"
-            value={measurementScale}
-            onChange={(e) => setMeasurementScale(e.target.value)}
-            helperText="Image pixels per real-world unit"
-            slotProps={{ htmlInput: { min: 0, step: 'any' } }}
-          />
-          <TextField
-            label="Unit"
-            fullWidth
-            variant="outlined"
-            value={measurementUnit}
-            onChange={(e) => setMeasurementUnit(e.target.value)}
-            helperText='e.g. "mm", "um", "cm"'
-          />
-        </Box>
+        <MeasurementScaleFields
+          scaleLabel="Scale (px per unit)"
+          unitLabel="Unit"
+          scale={measurementScale}
+          unit={measurementUnit}
+          onScaleChange={setMeasurementScale}
+          onUnitChange={setMeasurementUnit}
+          scaleHelperText="Image pixels per real-world unit"
+          allowEmptyUnit
+        />
         {image && image.created_at && image.updated_at && (
           <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
             <Typography variant="caption" color="text.secondary">
