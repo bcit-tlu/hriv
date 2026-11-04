@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.17...restore-validation-v0.1.18) (2026-11-04)
+
+
+### Bug Fixes
+
+* join barman serverName into restore-validation catalog prefix ([#1751](https://github.com/bcit-tlu/hriv/issues/1751)) ([84cef18](https://github.com/bcit-tlu/hriv/commit/84cef18e474ee3ca393c6f96f6a6e604e9c0ddb9))
+
 ## [0.1.17](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.16...restore-validation-v0.1.17) (2026-11-04)
 
 
