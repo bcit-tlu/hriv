@@ -959,11 +959,11 @@ restore_validation_state="$(extract_top_level_yaml_doc \
 restore_validation_lease="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Lease" "hriv-restore-validation")"
 restore_validation_children="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v7")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-child-templates-v9")"
 restore_validation_profile="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v7")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-profile-v9")"
 restore_validation_policy="$(extract_top_level_yaml_doc \
-  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v7")"
+  "$restore_validation_manifest" "ConfigMap" "hriv-restore-validation-source-state-policy-v9")"
 restore_validation_role="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "Role" "hriv-restore-validation-orchestrator")"
 restore_validation_default_deny="$(extract_top_level_yaml_doc \
@@ -972,15 +972,15 @@ restore_validation_quota="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "ResourceQuota" "hriv-restore-validation")"
 restore_validation_limits="$(extract_top_level_yaml_doc \
   "$restore_validation_manifest" "LimitRange" "hriv-restore-validation")"
-for version in v1 v2 v3 v4 v5 v6; do
+for version in v1 v2 v3 v4 v5 v6 v7; do
   assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-controller-${version}" \
-    "${version} controller ConfigMap must be unreferenced after the atomic v7 upgrade"
+    "${version} controller ConfigMap must be unreferenced after the atomic v8 upgrade"
   assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-source-profile-${version}" \
-    "${version} profile ConfigMap must be unreferenced after the atomic v7 upgrade"
+    "${version} profile ConfigMap must be unreferenced after the atomic v8 upgrade"
   assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-source-state-policy-${version}" \
-    "${version} policy ConfigMap must be unreferenced after the atomic v7 upgrade"
+    "${version} policy ConfigMap must be unreferenced after the atomic v8 upgrade"
   assert_not_contains "$restore_validation_manifest" "hriv-restore-validation-child-templates-${version}" \
-    "${version} templates ConfigMap must be unreferenced after the atomic v7 upgrade"
+    "${version} templates ConfigMap must be unreferenced after the atomic v8 upgrade"
 done
 
 # Parse the outer manifests and all embedded profile/policy/template documents with
@@ -988,13 +988,17 @@ done
 ruby -ryaml -rjson -e '
   docs = YAML.load_stream(STDIN.read).compact
   by_name = docs.to_h { |doc| [[doc["kind"], doc.dig("metadata", "name")], doc] }
-  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v7"]).fetch("data").fetch("profile.json"))
-  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v7"]).fetch("data").fetch("policy.json"))
-  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v7"]).fetch("data").fetch("templates.yaml"), aliases: true)
+  profile = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-profile-v9"]).fetch("data").fetch("profile.json"))
+  policy = JSON.parse(by_name.fetch(["ConfigMap", "hriv-restore-validation-source-state-policy-v9"]).fetch("data").fetch("policy.json"))
+  templates = YAML.safe_load(by_name.fetch(["ConfigMap", "hriv-restore-validation-child-templates-v9"]).fetch("data").fetch("templates.yaml"), aliases: true)
   raise "profile identity drift" unless profile.values_at("source_cluster", "external_cluster", "database", "owner", "server_name", "object_store") == ["pg-core", "pg-core-source", "app", "app", "pg-core", "hriv-restore-validation-pg-core"]
   raise "policy structure drift" unless policy == {"missing_count" => 39, "orphan_count" => 3, "policy_version" => 1, "source_state_sha256" => "958b1dc2dca298c56fd96dd80b6c694144905e22c00c4b3ca9d2c59c3b666083"}
   target = templates.dig("cnpg_cluster", "spec", "bootstrap", "recovery", "recoveryTarget")
-  raise "CNPG target drift" unless target == {"targetLSN" => "CONTROLLER_BOUND_TARGET_LSN", "targetTLI" => "CONTROLLER_BOUND_TARGET_TLI"}
+  raise "CNPG target drift" unless target == {"backupID" => "CONTROLLER_BOUND_BACKUP_ID", "targetLSN" => "CONTROLLER_BOUND_TARGET_LSN", "targetTLI" => "CONTROLLER_BOUND_TARGET_TLI"}
+  selection_env = templates.dig("selection_job", "spec", "template", "spec", "containers", 0, "env").to_h { |e| [e["name"], e] }
+  raise "selection barman env drift" unless selection_env["BARMAN_DESTINATION_PATH"] == {"name" => "BARMAN_DESTINATION_PATH", "value" => "https://example.invalid/hriv-backup"} && selection_env["BARMAN_SERVER_NAME"] == {"name" => "BARMAN_SERVER_NAME", "value" => "pg-core"} && selection_env.dig("BARMAN_ACCOUNT_NAME", "valueFrom", "secretKeyRef") == {"name" => "hriv-restore-validation-barman-read", "key" => "storage_account_name"} && selection_env.dig("BARMAN_SAS_TOKEN", "valueFrom", "secretKeyRef") == {"name" => "hriv-restore-validation-barman-read", "key" => "storage_sas_token"}
+  restore_env = templates.dig("source_restore_job", "spec", "template", "spec", "containers", 0, "env").map { |e| e["name"] }
+  raise "restore child must not mount barman credentials" if (restore_env & ["BARMAN_DESTINATION_PATH", "BARMAN_SERVER_NAME", "BARMAN_ACCOUNT_NAME", "BARMAN_SAS_TOKEN"]).any?
   inherited = templates.dig("cnpg_cluster", "spec", "inheritedMetadata", "labels")
   raise "CNPG inherited labels drift" unless inherited == {"app.kubernetes.io/managed-by" => "hriv-restore-validation", "hriv.bcit.ca/restore-validation-role" => "cnpg"}
 ' <<<"$restore_validation_manifest"
@@ -1008,9 +1012,9 @@ import sys, yaml
 from hriv_restore_validation.models import SourcePolicy, SourceProfile, Templates
 docs = [item for item in yaml.safe_load_all(sys.stdin.read()) if item]
 config_maps = {item["metadata"]["name"]: item["data"] for item in docs if item.get("kind") == "ConfigMap"}
-profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v7"]["profile.json"])
-SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v7"]["policy.json"])
-Templates.parse(config_maps["hriv-restore-validation-child-templates-v7"]["templates.yaml"], profile)
+profile = SourceProfile.parse(config_maps["hriv-restore-validation-source-profile-v9"]["profile.json"])
+SourcePolicy.parse(config_maps["hriv-restore-validation-source-state-policy-v9"]["policy.json"])
+Templates.parse(config_maps["hriv-restore-validation-child-templates-v9"]["templates.yaml"], profile)
 ' <<<"$restore_validation_manifest"
 fi
 

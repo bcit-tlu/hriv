@@ -15,9 +15,9 @@ from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string,
 MANAGED_BY = "hriv-restore-validation"
 RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
 ROLE_LABEL = "hriv.bcit.ca/restore-validation-role"
-SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at"}
+SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at", "cnpg_backup_id"}
 SELECTED_SOURCE_FIELDS = {
-    "selection_schema_version", "selection_operation", "backup_run_id", "snapshot_name", "recovery_set_id",
+    "selection_schema_version", "selection_operation", "backup_run_id", "snapshot_name", "recovery_set_id", "cnpg_backup_id",
     "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn",
     "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count",
     "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts",
@@ -28,6 +28,7 @@ SELECTED_SOURCE_FIELDS = {
 }
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 SNAPSHOT_RE = re.compile(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?")
+CNPG_BACKUP_ID_RE = re.compile(r"backup-[0-9]{14}")
 ETAG_TOKEN_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _WAL_SEGMENT_MIN_BYTES = 1024 * 1024
 _WAL_SEGMENT_MAX_BYTES = 1024 * 1024 * 1024
@@ -44,6 +45,9 @@ BACKUP_FAILURE_CODES = {
     "ARCHIVE_MEMBER_INVALID", "ARCHIVE_MEMBER_UNSAFE", "ARCHIVE_MISSING",
     "ARCHIVE_NOT_PUBLISHED", "ARCHIVE_PREFIX_INVALID", "ARCHIVE_PROPERTIES_INVALID",
     "ARCHIVE_ROOT_MISMATCH", "ARCHIVE_SIZE_MISMATCH", "ARCHIVE_STREAM_INVALID",
+    "BARMAN_CATALOG_TOO_LARGE", "BARMAN_MISSING", "BARMAN_PATH_INVALID",
+    "BARMAN_PATH_MISSING", "BARMAN_SAS_MISSING", "BARMAN_TOO_LARGE",
+    "CNPG_BASE_BACKUP_UNAVAILABLE",
     "COMPONENT_INCOHERENT", "CNPG_METADATA_INVALID", "EMBEDDED_MANIFEST_MISMATCH",
     "EXCLUDED_ARTIFACT_UNAPPROVED", "MANIFEST_COMPONENT_INVALID", "MANIFEST_DIGEST_MISMATCH",
     "MANIFEST_IDENTITY_INVALID", "MANIFEST_INVALID", "MANIFEST_NOT_PRODUCTION",
@@ -260,7 +264,7 @@ class Controller:
         selected = run.get("selected_source") or {}
         stages = {name: entry.get("outcome") for name, entry in run.get("stages", {}).items()}
         durations = {name: entry["duration_seconds"] for name, entry in run.get("stages", {}).items() if "duration_seconds" in entry}
-        return {"schema_version": 1, "operation": "run", "success": outcome == "succeeded", "accepted": True, "outcome": outcome, "run_id": run_id, "job": {"name": trigger.job_name, "uid": trigger.job_uid}, "recovery_point": {"recovery_set_id": selected.get("recovery_set_id"), "target_lsn": selected.get("target_lsn"), "target_timeline": selected.get("target_timeline")}, "stages": stages, "durations_seconds": durations, "counts": {"database_source_rows": selected.get("database_row_count"), "source_files": selected.get("source_file_count"), "missing": selected.get("missing_count"), "orphan": selected.get("orphan_count")}, "bytes": {"archive": selected.get("archive_size"), "source": selected.get("source_total_bytes")}, "source_files_sha256": selected.get("source_files_sha256"), "failure": {"stage": run.get("failure_stage"), "code": run.get("failure_code")}, "cleanup": {key: run.get("cleanup", {}).get(key) for key in ("outcome", "remaining_resource_count", "failure_code")}}
+        return {"schema_version": 1, "operation": "run", "success": outcome == "succeeded", "accepted": True, "outcome": outcome, "run_id": run_id, "job": {"name": trigger.job_name, "uid": trigger.job_uid}, "recovery_point": {"recovery_set_id": selected.get("recovery_set_id"), "target_lsn": selected.get("target_lsn"), "target_timeline": selected.get("target_timeline"), "cnpg_backup_id": selected.get("cnpg_backup_id")}, "stages": stages, "durations_seconds": durations, "counts": {"database_source_rows": selected.get("database_row_count"), "source_files": selected.get("source_file_count"), "missing": selected.get("missing_count"), "orphan": selected.get("orphan_count")}, "bytes": {"archive": selected.get("archive_size"), "source": selected.get("source_total_bytes")}, "source_files_sha256": selected.get("source_files_sha256"), "failure": {"stage": run.get("failure_stage"), "code": run.get("failure_code")}, "cleanup": {key: run.get("cleanup", {}).get(key) for key in ("outcome", "remaining_resource_count", "failure_code")}}
 
     def _acquire(self, trigger: Trigger, run_id: str, trigger_id: str, now: datetime) -> bool:
         lease = self.gateway.read_lease(self.config.lease_name)
@@ -388,7 +392,7 @@ class Controller:
                     },
                 }
             )
-            spec["bootstrap"] = {"recovery": {"source": self.profile.external_cluster, "database": self.profile.database, "owner": self.profile.owner, "recoveryTarget": {"targetLSN": selected["target_lsn"], "targetTLI": str(selected["target_timeline"])}}}
+            spec["bootstrap"] = {"recovery": {"source": self.profile.external_cluster, "database": self.profile.database, "owner": self.profile.owner, "recoveryTarget": {"backupID": selected["cnpg_backup_id"], "targetLSN": selected["target_lsn"], "targetTLI": str(selected["target_timeline"])}}}
             spec["externalClusters"] = [{"name": self.profile.external_cluster, "plugin": {"name": "barman-cloud.cloudnative-pg.io", "parameters": {"barmanObjectName": self.profile.object_store, "serverName": self.profile.server_name}}}]
             self._validate_cluster_target(cluster)
             self._resource(run_id, "cnpg", cluster)
@@ -440,7 +444,7 @@ class Controller:
     @staticmethod
     def _validate_cluster_target(cluster: dict[str, Any]) -> None:
         target = cluster.get("spec", {}).get("bootstrap", {}).get("recovery", {}).get("recoveryTarget")
-        if not isinstance(target, dict) or set(target) != {"targetLSN", "targetTLI"} or LSN_RE.fullmatch(str(target.get("targetLSN", ""))) is None or target.get("targetLSN", "").lower() == "latest" or re.fullmatch(r"[1-9][0-9]{0,9}", str(target.get("targetTLI", ""))) is None:
+        if not isinstance(target, dict) or set(target) != {"backupID", "targetLSN", "targetTLI"} or LSN_RE.fullmatch(str(target.get("targetLSN", ""))) is None or target.get("targetLSN", "").lower() == "latest" or re.fullmatch(r"[1-9][0-9]{0,9}", str(target.get("targetTLI", ""))) is None or CNPG_BACKUP_ID_RE.fullmatch(str(target.get("backupID", ""))) is None:
             raise ValidationError("RECOVERY_TARGET_INVALID")
 
     def _preflight(self, run: dict[str, Any]) -> None:
@@ -622,6 +626,7 @@ class Controller:
             bounded_string(value["backup_run_id"], "backup_run_id", 128, re.compile(r"[A-Za-z0-9._:-]{1,128}"))
             snapshot = bounded_string(value["snapshot_name"], "snapshot_name", 128, SNAPSHOT_RE)
             recovery_set = bounded_string(value["recovery_set_id"], "recovery_set_id", 128, SNAPSHOT_RE)
+            bounded_string(value["cnpg_backup_id"], "cnpg_backup_id", 64, CNPG_BACKUP_ID_RE)
             if snapshot != recovery_set:
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
             for name in ("manifest_sha256", "source_files_sha256", "source_state_sha256", "source_profile_sha256", "source_state_policy_sha256"):
@@ -693,7 +698,7 @@ class Controller:
             raise ValidationError("SOURCE_POLICY_MISMATCH")
         binding = {
             "selection_schema_version": 1, "selection_operation": "validation-select", "backup_run_id": value["run_id"],
-            "snapshot_name": value["snapshot_name"], "recovery_set_id": value["recovery_set_id"], "manifest_sha256": value["manifest_sha256"],
+            "snapshot_name": value["snapshot_name"], "recovery_set_id": value["recovery_set_id"], "cnpg_backup_id": value["cnpg_backup_id"], "manifest_sha256": value["manifest_sha256"],
             "archive_blob": value["archive_blob"], "archive_size": value["archive_size"], "archive_etag": self._canonical_archive_etag(value["archive_etag"]),
             "completed_at": value["completed_at"], "target_lsn": value["target_lsn"], "target_timeline": value["target_timeline"],
             "wal_segment_size_bytes": value["wal_segment_size_bytes"],
@@ -726,7 +731,7 @@ class Controller:
             raise ValidationError("DB_VALIDATION_INVALID")
 
     def _restore_result(self, raw: str, selected: dict[str, Any]) -> None:
-        required = SELECTION_FIELDS | {"target_data_dir", "restored_file_count", "restored_total_bytes", "selection_duration_seconds", "restore_duration_seconds", "duration_seconds", "outcome"}
+        required = (SELECTION_FIELDS - {"cnpg_backup_id"}) | {"target_data_dir", "restored_file_count", "restored_total_bytes", "selection_duration_seconds", "restore_duration_seconds", "duration_seconds", "outcome"}
         value = exact_object(parse_json(raw, max_bytes=128 * 1024), required=required)
         durations = [value[name] for name in ("selection_duration_seconds", "restore_duration_seconds", "duration_seconds")]
         if value["schema_version"] != 1 or value["operation"] != "restore-filesystem-stateless" or value["success"] is not True or value["snapshot_name"] != selected["snapshot_name"] or value["recovery_set_id"] != selected["recovery_set_id"] or value["manifest_sha256"] != selected["manifest_sha256"] or value["outcome"] != "restored" or value["target_data_dir"] != "/restore/data" or value["restored_file_count"] != selected["source_file_count"] or value["restored_total_bytes"] != selected["source_total_bytes"] or value["source_files_sha256"] != selected["source_files_sha256"] or any(isinstance(item, bool) or not isinstance(item, (int, float)) or item < 0 for item in durations):
