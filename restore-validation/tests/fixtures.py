@@ -66,13 +66,14 @@ def template_document() -> dict[str, Any]:
         if role == "selection":
             env.extend([
                 {"name": "BARMAN_DESTINATION_PATH", "value": "https://cnpgbkynf3mp4q.blob.core.windows.net/cnpgbackup/stable/pg-core"},
+                {"name": "BARMAN_SERVER_NAME", "value": "pg-core"},
                 {"name": "BARMAN_ACCOUNT_NAME", "valueFrom": {"secretKeyRef": {"name": "hriv-restore-validation-barman-read", "key": "storage_account_name"}}},
                 {"name": "BARMAN_SAS_TOKEN", "valueFrom": {"secretKeyRef": {"name": "hriv-restore-validation-barman-read", "key": "storage_sas_token"}}},
             ])
         if role in {"db", "consistency"}:
-            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v8"}}])
+            volumes.extend([{"name": "credentials", "secret": {"secretName": "generated-superuser"}}, {"name": "profile", "configMap": {"name": "hriv-restore-validation-source-profile-v9"}}])
         if role == "consistency":
-            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v8"}})
+            volumes.append({"name": "policy", "configMap": {"name": "hriv-restore-validation-source-state-policy-v9"}})
         if role in {"restore", "consistency"}:
             volumes.append({"name": "source", "persistentVolumeClaim": {"claimName": "generated-source-pvc"}})
         mounts = [{"name": "tmp", "mountPath": "/tmp"}]

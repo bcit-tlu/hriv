@@ -45,6 +45,10 @@ class _BackupTestCase(unittest.TestCase):
         "AZURE_STORAGE_CONTAINER",
         "AZURE_READ_SAS_URL",
         "AZURE_BLOB_PREFIX",
+        "BARMAN_DESTINATION_PATH",
+        "BARMAN_ACCOUNT_NAME",
+        "BARMAN_SAS_TOKEN",
+        "BARMAN_SERVER_NAME",
         "VALIDATION_MIN_SAS_VALIDITY_SECONDS",
         "BACKUP_STALE_HOURS",
         "BACKUP_STAGING_DIR",
@@ -6436,24 +6440,24 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
 
     def _container(self):
         blobs = {
-            "stable/pg-core/base/20261031T030004/backup.info": _barman_info(
+            "stable/pg-core/pg-core/base/20261031T030004/backup.info": _barman_info(
                 "backup-20261031030001", timeline=7, end_xlog="52/960014E0"
             ),
-            "stable/pg-core/base/20261101T030001/backup.info": _barman_info(
+            "stable/pg-core/pg-core/base/20261101T030001/backup.info": _barman_info(
                 "backup-20261101030001", timeline=8, end_xlog="53/68000060"
             ),
-            "stable/pg-core/base/20261025T104212/backup.info": _barman_info(
+            "stable/pg-core/pg-core/base/20261025T104212/backup.info": _barman_info(
                 "backup-20261025104212", status="FAILED", timeline=7, end_xlog="52/80000000"
             ),
-            "stable/pg-core/wals/00000008.history.gz": gzip.compress(
+            "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
                 _history([(7, "52/960014E0")]).encode()
             ),
         }
         return _FakeBarmanContainer(
             directories=[
-                "stable/pg-core/base/20261025T104212/",
-                "stable/pg-core/base/20261031T030004/",
-                "stable/pg-core/base/20261101T030001/",
+                "stable/pg-core/pg-core/base/20261025T104212/",
+                "stable/pg-core/pg-core/base/20261031T030004/",
+                "stable/pg-core/pg-core/base/20261101T030001/",
             ],
             blobs=blobs,
         )
@@ -6462,20 +6466,20 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         # TLI-8 fence at 52/BE000C00: the TLI-8 backup ends after the target and
         # the incomplete entry is skipped, so the TLI-7 ancestor wins.
         result = backup._select_cnpg_base_backup(
-            self._container(), "stable/pg-core", "52/BE000C00", 8
+            self._container(), "stable/pg-core/pg-core", "52/BE000C00", 8
         )
         self.assertEqual(result, "backup-20261031030001")
 
     def test_same_timeline_backup_preferred(self):
         result = backup._select_cnpg_base_backup(
-            self._container(), "stable/pg-core", "54/00000000", 8
+            self._container(), "stable/pg-core/pg-core", "54/00000000", 8
         )
         self.assertEqual(result, "backup-20261101030001")
 
     def test_no_candidate_when_all_backups_too_new(self):
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup._select_cnpg_base_backup(
-                self._container(), "stable/pg-core", "52/00000001", 8
+                self._container(), "stable/pg-core/pg-core", "52/00000001", 8
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
@@ -6483,19 +6487,19 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         # A DONE backup on a non-ancestor timeline must not be bound even when
         # its end LSN precedes the target.
         container = _FakeBarmanContainer(
-            directories=["stable/pg-core/base/20261031T030004/"],
+            directories=["stable/pg-core/pg-core/base/20261031T030004/"],
             blobs={
-                "stable/pg-core/base/20261031T030004/backup.info": _barman_info(
+                "stable/pg-core/pg-core/base/20261031T030004/backup.info": _barman_info(
                     "backup-20261031030001", timeline=9, end_xlog="52/960014E0"
                 ),
-                "stable/pg-core/wals/00000008.history.gz": gzip.compress(
+                "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
                     _history([(7, "52/960014E0")]).encode()
                 ),
             },
         )
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup._select_cnpg_base_backup(
-                container, "stable/pg-core", "52/BE000C00", 8
+                container, "stable/pg-core/pg-core", "52/BE000C00", 8
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
@@ -6503,19 +6507,19 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         # A backup that ends after its timeline's fork point holds abandoned
         # branch data and cannot replay onto the fence timeline.
         container = _FakeBarmanContainer(
-            directories=["stable/pg-core/base/20261031T030004/"],
+            directories=["stable/pg-core/pg-core/base/20261031T030004/"],
             blobs={
-                "stable/pg-core/base/20261031T030004/backup.info": _barman_info(
+                "stable/pg-core/pg-core/base/20261031T030004/backup.info": _barman_info(
                     "backup-20261031030001", timeline=7, end_xlog="52/98000000"
                 ),
-                "stable/pg-core/wals/00000008.history.gz": gzip.compress(
+                "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
                     _history([(7, "52/960014E0")]).encode()
                 ),
             },
         )
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup._select_cnpg_base_backup(
-                container, "stable/pg-core", "52/BE000C00", 8
+                container, "stable/pg-core/pg-core", "52/BE000C00", 8
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
@@ -6523,50 +6527,78 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         # A directory created by an in-progress backup has no backup.info yet;
         # it must be skipped rather than aborting catalog evaluation.
         container = self._container()
-        container.directories.append("stable/pg-core/base/20261102T030000/")
+        container.directories.append("stable/pg-core/pg-core/base/20261102T030000/")
         result = backup._select_cnpg_base_backup(
-            container, "stable/pg-core", "52/BE000C00", 8
+            container, "stable/pg-core/pg-core", "52/BE000C00", 8
         )
         self.assertEqual(result, "backup-20261031030001")
 
     def test_missing_history_file_rejects_ancestor(self):
         container = self._container()
-        del container.blobs["stable/pg-core/wals/00000008.history.gz"]
+        del container.blobs["stable/pg-core/pg-core/wals/00000008.history.gz"]
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup._select_cnpg_base_backup(
-                container, "stable/pg-core", "52/BE000C00", 8
+                container, "stable/pg-core/pg-core", "52/BE000C00", 8
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
     def test_plain_history_file_supported(self):
         container = self._container()
-        container.blobs["stable/pg-core/wals/00000008.history"] = _history(
+        container.blobs["stable/pg-core/pg-core/wals/00000008.history"] = _history(
             [(7, "52/960014E0")]
         ).encode()
-        del container.blobs["stable/pg-core/wals/00000008.history.gz"]
+        del container.blobs["stable/pg-core/pg-core/wals/00000008.history.gz"]
         result = backup._select_cnpg_base_backup(
-            container, "stable/pg-core", "52/BE000C00", 8
+            container, "stable/pg-core/pg-core", "52/BE000C00", 8
         )
         self.assertEqual(result, "backup-20261031030001")
 
     def test_unfinished_and_malformed_backups_skipped(self):
         container = _FakeBarmanContainer(
             directories=[
-                "stable/pg-core/base/20261031T030004/",
-                "stable/pg-core/base/20261030T030000/",
+                "stable/pg-core/pg-core/base/20261031T030004/",
+                "stable/pg-core/pg-core/base/20261030T030000/",
             ],
             blobs={
-                "stable/pg-core/base/20261031T030004/backup.info": b"not-an-info",
-                "stable/pg-core/base/20261030T030000/backup.info": _barman_info(
+                "stable/pg-core/pg-core/base/20261031T030004/backup.info": b"not-an-info",
+                "stable/pg-core/pg-core/base/20261030T030000/backup.info": _barman_info(
                     "backup-20261030030000", status="STARTED", timeline=8, end_xlog="52/01000000"
                 ),
             },
         )
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup._select_cnpg_base_backup(
-                container, "stable/pg-core", "52/BE000C00", 8
+                container, "stable/pg-core/pg-core", "52/BE000C00", 8
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
+
+    def test_barman_destination_joins_server_name(self):
+        # barman-cloud stores the catalog under <destinationPath>/<serverName>/;
+        # the catalog prefix must include the server segment. The production
+        # failure mode this guards against: listing <prefix>/base/ without the
+        # server segment returned zero candidates and CNPG_BASE_BACKUP_UNAVAILABLE.
+        base_env = {
+            "BARMAN_DESTINATION_PATH": "https://cnpgbkynf3mp4q.blob.core.windows.net/cnpgbackup/stable/pg-core",
+            "BARMAN_ACCOUNT_NAME": "cnpgbkynf3mp4q",
+            "BARMAN_SERVER_NAME": "pg-core",
+        }
+        self._reload(base_env)
+        self.assertEqual(
+            ("cnpgbackup", "stable/pg-core/pg-core"),
+            backup._barman_destination(),
+        )
+        self._reload(
+            base_env
+            | {
+                "BARMAN_DESTINATION_PATH": "https://cnpgbkynf3mp4q.blob.core.windows.net/cnpgbackup"
+            }
+        )
+        self.assertEqual(("cnpgbackup", "pg-core"), backup._barman_destination())
+        for name, expected in (("", "BARMAN_PATH_MISSING"), ("bad/name", "BARMAN_PATH_INVALID"), ("a" * 64, "BARMAN_PATH_INVALID")):
+            self._reload(base_env | {"BARMAN_SERVER_NAME": name})
+            with self.assertRaises(backup.ValidationFailure) as raised:
+                backup._barman_destination()
+            self.assertEqual(raised.exception.code, expected)
 
     def test_container_root_prefix(self):
         container = _FakeBarmanContainer(

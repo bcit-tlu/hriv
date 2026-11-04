@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hriv-restore-validation-child-templates-v8
+  name: hriv-restore-validation-child-templates-v9
   annotations:
     helm.sh/resource-policy: keep
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     {{- include "hriv-restore-validation.labels" . | nindent 4 }}
-    hriv.bcit.ca/config-version: "8"
+    hriv.bcit.ca/config-version: "9"
 immutable: true
 data:
   templates.yaml: |
@@ -41,6 +41,7 @@ data:
                   - name: AZURE_READ_SAS_URL
                     valueFrom: {secretKeyRef: {name: hriv-restore-validation-azure-read, key: azureReadSasUrl}}
                   - {name: BARMAN_DESTINATION_PATH, value: {{ .Values.objectStore.destinationPath | quote }}}
+                  - {name: BARMAN_SERVER_NAME, value: pg-core}
                   - name: BARMAN_ACCOUNT_NAME
                     valueFrom: {secretKeyRef: {name: hriv-restore-validation-barman-read, key: storage_account_name}}
                   - name: BARMAN_SAS_TOKEN
@@ -120,7 +121,7 @@ data:
                   - {name: credentials, mountPath: /credentials, readOnly: true}
                   - {name: tmp, mountPath: /tmp}
             volumes:
-              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v8}}
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v9}}
               - {name: credentials, secret: {secretName: generated-superuser}}
               - {name: tmp, emptyDir: {sizeLimit: 256Mi}}
     source_restore_job:
@@ -189,8 +190,8 @@ data:
                   - {name: source, mountPath: /restore, readOnly: true}
                   - {name: tmp, mountPath: /tmp}
             volumes:
-              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v8}}
-              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v8}}
+              - {name: profile, configMap: {name: hriv-restore-validation-source-profile-v9}}
+              - {name: policy, configMap: {name: hriv-restore-validation-source-state-policy-v9}}
               - {name: credentials, secret: {secretName: generated-superuser}}
               - {name: source, persistentVolumeClaim: {claimName: generated-source-pvc}}
               - {name: tmp, emptyDir: {sizeLimit: 256Mi}}

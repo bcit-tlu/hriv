@@ -125,6 +125,7 @@ AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 BARMAN_DESTINATION_PATH: str = _env("BARMAN_DESTINATION_PATH", "")
 BARMAN_ACCOUNT_NAME: str = _env("BARMAN_ACCOUNT_NAME", "")
 BARMAN_SAS_TOKEN: str = _env("BARMAN_SAS_TOKEN", "")
+BARMAN_SERVER_NAME: str = _env("BARMAN_SERVER_NAME", "")
 VALIDATION_MIN_SAS_VALIDITY_SECONDS: str = _env(
     "VALIDATION_MIN_SAS_VALIDITY_SECONDS", "21600"
 )
@@ -1615,6 +1616,7 @@ def _read_blob_container_client() -> _ReadContainer:
 
 
 _AZURE_ACCOUNT_NAME_RE = re.compile(r"^[a-z0-9]{3,24}$")
+_BARMAN_SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
 _BARMAN_BACKUP_ID_RE = re.compile(r"backup-[0-9]{14}")
 _BARMAN_BACKUP_DIR_RE = re.compile(r"[0-9]{8}T[0-9]{6}/")
 _MAX_BARMAN_CATALOG_BACKUPS = 512
@@ -1653,7 +1655,14 @@ def _barman_destination() -> tuple[str, str]:
         )
     ):
         raise ValidationFailure("BARMAN_PATH_INVALID", "configuration")
-    return segments[0], "/".join(segments[1:])
+    if not BARMAN_SERVER_NAME:
+        raise ValidationFailure("BARMAN_PATH_MISSING", "configuration")
+    if _BARMAN_SERVER_NAME_RE.fullmatch(BARMAN_SERVER_NAME) is None:
+        raise ValidationFailure("BARMAN_PATH_INVALID", "configuration")
+    # barman-cloud stores the catalog under <destinationPath>/<serverName>/,
+    # so the blob prefix must include the server name segment.
+    prefix = "/".join(segments[1:] + [BARMAN_SERVER_NAME])
+    return segments[0], prefix
 
 
 def _read_barman_container_client() -> tuple[_ReadContainer, str]:

@@ -433,6 +433,7 @@ class Templates:
         }
         expected_selection_env = expected_env | {
             "BARMAN_DESTINATION_PATH": {"name": "BARMAN_DESTINATION_PATH", "value": profile.barman_destination_path},
+            "BARMAN_SERVER_NAME": {"name": "BARMAN_SERVER_NAME", "value": profile.server_name},
             "BARMAN_ACCOUNT_NAME": {"name": "BARMAN_ACCOUNT_NAME", "valueFrom": {"secretKeyRef": {"name": BARMAN_SECRET, "key": "storage_account_name"}}},
             "BARMAN_SAS_TOKEN": {"name": "BARMAN_SAS_TOKEN", "valueFrom": {"secretKeyRef": {"name": BARMAN_SECRET, "key": "storage_sas_token"}}},
         }
@@ -447,7 +448,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v8", "policy": "hriv-restore-validation-source-state-policy-v8"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v9", "policy": "hriv-restore-validation-source-state-policy-v9"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}
