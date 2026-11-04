@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sequence collection, card style</title>
+    <script src="./vendor/react.js"></script>
+    <script src="./vendor/react-dom.js"></script>
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+        />
+        <style>
+          body {
+            margin: 0;
+          }
+          .light {
+            --bg: #f4f4f5;
+            --card: #ffffff;
+            --line: rgba(0, 0, 0, 0.09);
+            --text: #1f1f22;
+            --muted: #6b6b70;
+            --accent: #7a2e3a;
+            --accent-soft: #f6e9eb;
+            --on-accent: #ffffff;
+            --chip: #eeeef0;
+            --viewer: #1c1c1e;
+            --thumb-num: #5a5a60;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+          }
+          .dark {
+            --bg: #161618;
+            --card: #222225;
+            --line: rgba(255, 255, 255, 0.09);
+            --text: #ececee;
+            --muted: #a1a1a8;
+            --accent: #e59aa5;
+            --accent-soft: rgba(229, 154, 165, 0.14);
+            --on-accent: #1c1c1e;
+            --chip: #2f2f33;
+            --viewer: #0e0e10;
+            --thumb-num: #c9c9ce;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+          }
+          a {
+            color: var(--accent);
+          }
+          .ic {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+          }
+          .nav-a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 0 14px;
+            display: flex;
+            align-items: center;
+            border-bottom: 2px solid transparent;
+          }
+          .round {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--line);
+            background: var(--card);
+            color: var(--text);
+            border-radius: 50%;
+            padding: 0;
+            cursor: pointer;
+          }
+          .round:disabled {
+            opacity: 0.4;
+            cursor: default;
+          }
+          .btn {
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 14px;
+            border-radius: 8px;
+            font:
+              600 13px Inter,
+              sans-serif;
+            cursor: pointer;
+            text-decoration: none;
+          }
+          .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--chip);
+            color: var(--text);
+          }
+          .strip {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+            flex: 1;
+            min-width: 0;
+            padding: 3px;
+          }
+          .strip::-webkit-scrollbar {
+            display: none;
+          }
+          .th {
+            position: relative;
+            flex: 0 0 auto;
+            width: 92px;
+            height: 64px;
+            padding: 0;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            background: var(--chip);
+            cursor: pointer;
+            overflow: hidden;
+          }
+          .th img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+          }
+          .th span {
+            position: absolute;
+            right: 3px;
+            bottom: 2px;
+            font:
+              600 10px Inter,
+              sans-serif;
+            color: var(--thumb-num);
+            background: var(--card);
+            border-radius: 3px;
+            padding: 0 3px;
+          }
+          .th-on {
+            border-color: var(--accent);
+          }
+          .tool {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: #ffffff;
+            border: none;
+            border-radius: 50%;
+            padding: 0;
+            cursor: pointer;
+          }
+          .tool:hover {
+            background: rgba(255, 255, 255, 0.14);
+          }
+          .tipwrap {
+            position: relative;
+            min-width: 0;
+            outline-offset: 2px;
+          }
+          .tip {
+            position: absolute;
+            left: 0;
+            top: calc(100% + 6px);
+            z-index: 20;
+            width: max-content;
+            max-width: 420px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: #2b2b2e;
+            color: #ffffff;
+            font:
+              500 12px/1.4 Inter,
+              sans-serif;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s;
+          }
+          .tipwrap:hover .tip,
+          .tipwrap:focus .tip {
+            opacity: 1;
+          }
+          .tip-up {
+            top: auto;
+            bottom: calc(100% + 6px);
+          }
+          .clamp2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+          }
+          .switch {
+            width: 44px;
+            height: 24px;
+            border-radius: 12px;
+            border: none;
+            padding: 2px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+          }
+          .switch span {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+          }
+        </style>
+      </helmet>
+      <div
+        class="{{themeClass}}"
+        style="
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          background: var(--bg);
+          color: var(--text);
+          font-family: Inter, Roboto, Helvetica, Arial, sans-serif;
+        "
+      >
+        <div
+          style="
+            height: calc(100vh - 84px);
+            min-height: 760px;
+            display: flex;
+            flex-direction: column;
+          "
+        >
+          <header
+            style="
+              height: 56px;
+              background: var(--card);
+              border-bottom: 1px solid var(--line);
+              display: flex;
+              align-items: center;
+              gap: 20px;
+              padding: 0 20px;
+              flex-shrink: 0;
+            "
+          >
+            <div style="display: flex; align-items: center; gap: 8px">
+              <div
+                style="
+                  width: 30px;
+                  height: 30px;
+                  border-radius: 8px;
+                  background: var(--accent);
+                  color: var(--on-accent);
+                  font-weight: 700;
+                  font-size: 14px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                "
+              >
+                H
+              </div>
+              <span style="font-size: 18px; font-weight: 700">HRIV</span>
+            </div>
+            <nav aria-label="Main" style="display: flex; flex-grow: 1; height: 100%">
+              <a href="#" class="nav-a">Home</a>
+              <a
+                href="#"
+                class="nav-a"
+                aria-current="page"
+                style="color: var(--text); border-bottom-color: var(--accent)"
+                >Collections</a
+              >
+              <a href="#" class="nav-a">Images</a>
+              <a href="#" class="nav-a">Manage</a>
+            </nav>
+            <button class="round" aria-label="Search" style="border: none">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="M21 21l-4.3-4.3"></path>
+              </svg>
+            </button>
+            <button class="round" aria-label="Notifications" style="border: none">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"
+                ></path>
+              </svg>
+            </button>
+            <div
+              style="
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                background: var(--chip);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                font-weight: 600;
+              "
+            >
+              CH
+            </div>
+          </header>
+
+          <main
+            style="flex: 1 1 auto; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box; padding: 12px 20px {{mainPadBottom}}; display: flex; flex-direction: column; gap: 10px;"
+          >
+            <section
+              style="
+                background: var(--card);
+                border-radius: 12px;
+                box-shadow: var(--shadow);
+                padding: 12px 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 16px;
+                  flex-wrap: wrap;
+                "
+              >
+                <nav
+                  aria-label="Breadcrumb"
+                  style="
+                    flex: 1 1 320px;
+                    min-width: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 13px;
+                    color: var(--muted);
+                  "
+                >
+                  <a
+                    href="#"
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 4px;
+                      color: var(--muted);
+                      text-decoration: none;
+                    "
+                    ><svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      style="width: 16px; height: 16px"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"
+                      ></path></svg
+                    >Home</a
+                  >
+                  <span aria-hidden="true">›</span>
+                  <span class="tipwrap" tabindex="0" aria-current="page" style="display: flex">
+                    <span
+                      style="
+                        min-width: 0;
+                        color: var(--text);
+                        font-weight: 500;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                      "
+                      >Stem Cells and Early Myeloid Precursors: Distinguishing Reactive Changes from
+                      Neoplastic Patterns in Peripheral Blood</span
+                    >
+                    <span class="tip" aria-hidden="true"
+                      >Stem Cells and Early Myeloid Precursors: Distinguishing Reactive Changes from
+                      Neoplastic Patterns in Peripheral Blood</span
+                    >
+                  </span>
+                  <button
+                    class="round"
+                    aria-label="Rename collection"
+                    style="width: 28px; height: 28px; border: none"
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 14px; height: 14px"
+                    >
+                      <path d="M4 20h4L19 9l-4-4L4 16z"></path>
+                    </svg>
+                  </button>
+                </nav>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <button
+                    class="btn"
+                    style="border: none; background: transparent; color: var(--accent)"
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path>
+                      <circle cx="12" cy="12" r="3"></circle></svg
+                    >Hide collection
+                  </button>
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--accent);
+                      background: var(--accent-soft);
+                      color: var(--accent);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <circle cx="12" cy="12" r="2"></circle>
+                      <circle cx="5" cy="5" r="2"></circle>
+                      <circle cx="19" cy="5" r="2"></circle>
+                      <circle cx="5" cy="19" r="2"></circle>
+                      <circle cx="19" cy="19" r="2"></circle>
+                      <path d="M6.5 6.5l4 4M17.5 6.5l-4 4M6.5 17.5l4-4M17.5 17.5l-4-4"></path></svg
+                    >Graph view
+                  </button>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                <span class="pill" style="background: var(--accent-soft); color: var(--accent)"
+                  ><svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 13px; height: 13px"
+                  >
+                    <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                    <path d="M6 6v12M18 6v12"></path></svg
+                  >Sequence</span
+                >
+                <span class="pill"
+                  ><svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 13px; height: 13px"
+                  >
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg
+                  >Public</span
+                >
+                <span
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 13px;
+                    color: var(--muted);
+                    margin-left: 4px;
+                  "
+                  ><span
+                    style="width: 18px; height: 18px; border-radius: 50%; background: #5b7083"
+                  ></span
+                  >Managed by Jeannie Lowe, Wanda Go</span
+                >
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap">
+                <p
+                  style="
+                    flex: 1 1 420px;
+                    min-width: 0;
+                    margin: 0;
+                    font-size: 14px;
+                    line-height: 1.45;
+                  "
+                >
+                  A guided sequence of peripheral blood smears that walks students from normal
+                  neutrophil maturation through common reactive changes, showing how to tell band
+                  forms from segmented neutrophils and how to recognise slide-preparation artifacts
+                  such as burr cells before drawing any clinical conclusions.
+                </p>
+                <div style="display: flex; gap: 8px; flex-shrink: 0; visibility: hidden">
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--line);
+                      background: var(--card);
+                      color: var(--text);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+                      <path d="M3 3v5h5"></path></svg
+                    >Restore default view
+                  </button>
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--accent);
+                      background: var(--accent);
+                      color: var(--on-accent);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <path d="M5 3h11l3 3v15H5z"></path>
+                      <path d="M8 3v5h7V3M8 21v-7h8v7"></path></svg
+                    >Set as default view
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section
+              aria-label="Images in this collection"
+              style="
+                background: var(--card);
+                border-radius: 12px;
+                box-shadow: var(--shadow);
+                padding: 8px 12px 8px 20px;
+                display: flex;
+                align-items: center;
+                gap: 20px;
+              "
+            >
+              <div
+                style="
+                  flex: 0 0 240px;
+                  min-width: 0;
+                  display: flex;
+                  flex-direction: column;
+                  gap: 4px;
+                  padding-right: 20px;
+                  border-right: 1px solid var(--line);
+                "
+              >
+                <div class="tipwrap" tabindex="0">
+                  <h1
+                    class="clamp2"
+                    style="margin: 0; font-size: 15px; line-height: 1.3; font-weight: 700"
+                  >
+                    Stem Cells and Early Myeloid Precursors: Distinguishing Reactive Changes from
+                    Neoplastic Patterns in Peripheral Blood
+                  </h1>
+                  <span class="tip" aria-hidden="true"
+                    >Stem Cells and Early Myeloid Precursors: Distinguishing Reactive Changes from
+                    Neoplastic Patterns in Peripheral Blood</span
+                  >
+                </div>
+                <span style="font-size: 12px; color: var(--muted)" aria-live="polite"
+                  >Image {{position}} / 20</span
+                >
+              </div>
+              <div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px">
+                <button
+                  class="round"
+                  aria-label="Scroll thumbnails left"
+                  onClick="{{scrollLeft}}"
+                  disabled="{{atStart}}"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 18px; height: 18px"
+                  >
+                    <path d="M15 6l-6 6 6 6"></path>
+                  </svg>
+                </button>
+                <div class="strip" ref="{{setStrip}}" onScroll="{{onStripScroll}}">
+                  <sc-for list="{{thumbs}}" as="t" hint-placeholder-count="20">
+                    <button
+                      class="{{t.cls}}"
+                      aria-label="{{t.label}}"
+                      aria-current="{{t.current}}"
+                      onClick="{{t.pick}}"
+                    >
+                      <img src="{{t.src}}" alt="" /><span>{{t.n}}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <button
+                  class="round"
+                  aria-label="Scroll thumbnails right"
+                  onClick="{{scrollRight}}"
+                  disabled="{{atEnd}}"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 18px; height: 18px"
+                  >
+                    <path d="M9 6l6 6-6 6"></path>
+                  </svg>
+                </button>
+              </div>
+            </section>
+
+            <section
+              aria-label="Image viewer"
+              style="
+                flex: 1 1 auto;
+                min-height: 360px;
+                position: relative;
+                border-radius: 12px;
+                overflow: hidden;
+                background: var(--viewer);
+                box-shadow: var(--shadow);
+              "
+            >
+              <img
+                src="./assets/67d74cc54bd7a934603f528c50682c68.jpg"
+                alt="Blood smear with a band neutrophil and an annotated burr cell"
+                style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain"
+              />
+              <sc-if value="{{toolsClosed}}" hint-placeholder-val="{{ true }}">
+                <button
+                  aria-label="Show viewer tools"
+                  aria-expanded="false"
+                  onClick="{{toggleTools}}"
+                  style="
+                    position: absolute;
+                    left: 12px;
+                    bottom: 12px;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 50%;
+                    border: 1px solid rgba(255, 255, 255, 0.25);
+                    background: rgba(20, 20, 22, 0.85);
+                    color: #ffffff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                  "
+                >
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path>
+                    <circle cx="16" cy="6" r="2"></circle>
+                    <circle cx="10" cy="12" r="2"></circle>
+                    <circle cx="18" cy="18" r="2"></circle>
+                  </svg>
+                </button>
+              </sc-if>
+              <sc-if value="{{toolsOpen}}" hint-placeholder-val="{{ false }}">
+                <div
+                  role="toolbar"
+                  aria-label="Viewer tools"
+                  style="
+                    position: absolute;
+                    left: 12px;
+                    bottom: 12px;
+                    display: flex;
+                    align-items: center;
+                    gap: 2px;
+                    padding: 4px;
+                    border-radius: 10px;
+                    border: 1px solid rgba(255, 255, 255, 0.18);
+                    background: rgba(20, 20, 22, 0.85);
+                  "
+                >
+                  <button
+                    class="tool"
+                    aria-label="Hide viewer tools"
+                    aria-expanded="true"
+                    onClick="{{toggleTools}}"
+                    style="background: rgba(255, 255, 255, 0.14)"
+                  >
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18"></path>
+                    </svg>
+                  </button>
+                  <span
+                    style="
+                      width: 1px;
+                      height: 22px;
+                      background: rgba(255, 255, 255, 0.3);
+                      margin: 0 4px;
+                    "
+                  ></span>
+                  <button class="tool" aria-label="Zoom in">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9"></circle>
+                      <path d="M12 8v8M8 12h8"></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Zoom out">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9"></circle>
+                      <path d="M8 12h8"></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Go home">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Full screen">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Selection">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M4 4h3M10 4h4M17 4h3v3M20 10v4M20 17v3h-3M14 20h-4M7 20H4v-3M4 14v-4M4 7V4"
+                      ></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Clear overlays">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Lock overlays">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+                    </svg>
+                  </button>
+                  <button class="tool" aria-label="Canvas edit">
+                    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path>
+                    </svg>
+                  </button>
+                </div>
+              </sc-if>
+            </section>
+
+            <section
+              aria-labelledby="sc-img-title"
+              style="flex-shrink: 0; background: var(--card); border-radius: {{infoRadius}}; box-shadow: var(--shadow); padding: 12px 20px; display: flex; flex-direction: column; gap: 12px;"
+            >
+              <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+                <h2
+                  id="sc-img-title"
+                  style="flex: 1; min-width: 0; margin: 0; font-size: 20px; font-weight: 700"
+                >
+                  Band Neutrophil
+                </h2>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <span id="sc-notes-label" style="font-size: 13px; color: var(--text)"
+                    >Show notes</span
+                  >
+                  <sc-if value="{{notesOpen}}" hint-placeholder-val="{{ true }}">
+                    <button
+                      class="switch"
+                      role="switch"
+                      aria-checked="true"
+                      aria-labelledby="sc-notes-label"
+                      aria-controls="sc-notes"
+                      onClick="{{toggleNotes}}"
+                      style="background: var(--accent); justify-content: flex-end"
+                    >
+                      <span></span>
+                    </button>
+                  </sc-if>
+                  <sc-if value="{{notesClosed}}" hint-placeholder-val="{{ false }}">
+                    <button
+                      class="switch"
+                      role="switch"
+                      aria-checked="false"
+                      aria-labelledby="sc-notes-label"
+                      aria-controls="sc-notes"
+                      onClick="{{toggleNotes}}"
+                      style="background: var(--muted); justify-content: flex-start"
+                    >
+                      <span></span>
+                    </button>
+                  </sc-if>
+                </div>
+                <span style="width: 1px; height: 28px; background: var(--line)"></span>
+                <a
+                  href="#"
+                  class="btn"
+                  style="
+                    border: 1px solid var(--accent);
+                    background: var(--accent);
+                    color: var(--on-accent);
+                  "
+                  ><svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 16px; height: 16px"
+                  >
+                    <path
+                      d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"
+                    ></path></svg
+                  >Open image</a
+                >
+              </div>
+            </section>
+          </main>
+        </div>
+
+        <sc-if value="{{notesOpen}}" hint-placeholder-val="{{ false }}">
+          <div
+            style="
+              width: 100%;
+              max-width: 1400px;
+              margin: 0 auto;
+              box-sizing: border-box;
+              padding: 0 20px 16px;
+            "
+          >
+            <section
+              aria-label="Notes"
+              style="
+                background: var(--card);
+                border-radius: 0 0 12px 12px;
+                box-shadow: var(--shadow);
+                padding: 0 20px 16px;
+              "
+            >
+              <div
+                id="sc-notes"
+                style="
+                  display: flex;
+                  flex-direction: column;
+                  gap: 8px;
+                  padding: 14px 16px;
+                  border: 1px solid var(--line);
+                  border-radius: 10px;
+                  background: var(--bg);
+                "
+              >
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 14px">
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 18px; height: 18px; color: var(--accent)"
+                  >
+                    <path d="M4 6h16M4 10h16M4 14h16M4 18h10"></path>
+                  </svg>
+                  <strong style="font-weight: 700">Notes</strong>
+                </div>
+                <p
+                  style="
+                    margin: 0;
+                    max-width: 90ch;
+                    font-size: 14px;
+                    line-height: 1.6;
+                    white-space: pre-line;
+                  "
+                >
+                  Band neutrophil (stab cell): the last immature stage before the segmented
+                  neutrophil. Look for a curved, horseshoe- or C-shaped nucleus of fairly even width
+                  with no true constrictions into separate lobes. If the narrowest part of the
+                  nucleus is more than a third the width of the widest part, call it a band rather
+                  than a segmented cell. The chromatin is clumped but less condensed than in a
+                  mature neutrophil, and the cytoplasm is pale pink with fine specific granules. In
+                  this field the band sits just left of centre. The spiculated red cell below it is
+                  a burr cell (echinocyte) created during slide preparation rather than a true
+                  finding: the projections are short and evenly spaced, and the cell keeps its
+                  central pallor. Avoid reporting burr cells from thin, slowly dried areas of the
+                  smear. Bands normally make up about 0–5% of white cells in adult peripheral blood.
+                  A rise above that, often called a left shift, points toward infection or
+                  inflammation and should be read together with the total white count and the
+                  clinical history.
+                </p>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+
+        <div
+          style="
+            position: sticky;
+            bottom: 0;
+            z-index: 30;
+            height: 52px;
+            flex-shrink: 0;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+          "
+        >
+          <sc-if value="{{shelfClosed}}" hint-placeholder-val="{{ true }}">
+            <button
+              class="btn"
+              aria-expanded="false"
+              aria-controls="my-collections"
+              onClick="{{toggleShelf}}"
+              style="
+                border: 1px solid var(--accent);
+                background: var(--accent);
+                color: var(--on-accent);
+                box-shadow: var(--shadow);
+              "
+            >
+              <svg
+                class="ic"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                style="width: 16px; height: 16px"
+              >
+                <rect x="6" y="3" width="15" height="15" rx="2"></rect>
+                <path d="M3 7v12a2 2 0 0 0 2 2h12"></path></svg
+              >My collections
+            </button>
+          </sc-if>
+          <sc-if value="{{shelfOpen}}" hint-placeholder-val="{{ false }}">
+            <section
+              id="my-collections"
+              aria-label="My collections"
+              style="
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: var(--card);
+                border-top: 1px solid var(--line);
+                box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+                padding: 8px 16px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+              "
+            >
+              <div style="height: 36px; display: flex; align-items: center; gap: 8px">
+                <button
+                  class="btn"
+                  aria-expanded="true"
+                  aria-controls="my-collections"
+                  onClick="{{toggleShelf}}"
+                  style="
+                    border: 1px solid var(--accent);
+                    background: var(--accent);
+                    color: var(--on-accent);
+                  "
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 16px; height: 16px"
+                  >
+                    <rect x="6" y="3" width="15" height="15" rx="2"></rect>
+                    <path d="M3 7v12a2 2 0 0 0 2 2h12"></path></svg
+                  >My collections
+                </button>
+                <button
+                  class="round"
+                  aria-label="Keep shelf open"
+                  aria-pressed="false"
+                  style="border: none"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 18px; height: 18px"
+                  >
+                    <path d="M9 3h6l-1 6 4 4H6l4-4zM12 13v8"></path>
+                  </svg>
+                </button>
+                <span style="flex: 1"></span>
+                <button
+                  class="btn"
+                  style="border: none; background: transparent; color: var(--accent)"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 16px; height: 16px"
+                  >
+                    <path d="M12 5v14M5 12h14"></path></svg
+                  >New collection
+                </button>
+                <button
+                  class="round"
+                  aria-label="Close my collections"
+                  onClick="{{toggleShelf}}"
+                  style="border: none"
+                >
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18"></path>
+                  </svg>
+                </button>
+              </div>
+              <ul
+                style="
+                  list-style: none;
+                  margin: 0;
+                  padding: 0 0 4px;
+                  display: flex;
+                  gap: 14px;
+                  overflow-x: auto;
+                "
+              >
+                <sc-for list="{{shelf}}" as="c" hint-placeholder-count="5">
+                  <li
+                    style="flex: 0 0 180px; border-radius: 10px; background: var(--bg); border: {{c.border}};"
+                  >
+                    <a
+                      href="#"
+                      tabindex="-1"
+                      aria-hidden="true"
+                      style="
+                        display: block;
+                        position: relative;
+                        height: 100px;
+                        border-radius: 9px 9px 0 0;
+                        overflow: hidden;
+                        background: var(--chip);
+                      "
+                    >
+                      <img
+                        src="{{c.src}}"
+                        alt=""
+                        style="width: 100%; height: 100%; object-fit: cover; display: block"
+                      />
+                      <span
+                        style="
+                          position: absolute;
+                          right: 8px;
+                          top: 8px;
+                          width: 26px;
+                          height: 26px;
+                          border-radius: 50%;
+                          background: rgba(20, 20, 22, 0.7);
+                          color: #ffffff;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                        "
+                        ><svg class="ic" viewBox="0 0 24 24" style="width: 14px; height: 14px">
+                          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                          <path d="M3 15l5-5 4 4 3-3 6 6"></path></svg
+                      ></span>
+                    </a>
+                    <div
+                      style="
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 6px;
+                        padding: 8px 6px 10px 10px;
+                      "
+                    >
+                      <sc-if value="{{c.isSync}}" hint-placeholder-val="{{ false }}"
+                        ><svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          role="img"
+                          aria-label="Synchronized"
+                          style="width: 16px; height: 16px; margin-top: 1px; color: var(--accent)"
+                        >
+                          <rect x="3" y="5" width="7" height="14" rx="1"></rect>
+                          <rect x="14" y="5" width="7" height="14" rx="1"></rect></svg
+                      ></sc-if>
+                      <sc-if value="{{c.isSeq}}" hint-placeholder-val="{{ true }}"
+                        ><svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          role="img"
+                          aria-label="Sequence"
+                          style="width: 16px; height: 16px; margin-top: 1px; color: var(--accent)"
+                        >
+                          <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                          <path d="M6 6v12M18 6v12"></path></svg
+                      ></sc-if>
+                      <a
+                        href="#"
+                        class="tipwrap"
+                        aria-current="{{c.current}}"
+                        style="flex: 1; color: var(--accent); text-decoration: none"
+                      >
+                        <span
+                          class="clamp2"
+                          style="font-size: 13px; font-weight: 600; line-height: 1.35"
+                          >{{c.name}}</span
+                        >
+                        <span class="tip tip-up" aria-hidden="true">{{c.name}}</span>
+                      </a>
+                      <button
+                        class="round"
+                        aria-label="{{c.editLabel}}"
+                        style="width: 28px; height: 28px; border: none; background: transparent"
+                      >
+                        <svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          style="width: 14px; height: 14px"
+                        >
+                          <path d="M4 20h4L19 9l-4-4L4 16z"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </li>
+                </sc-for>
+              </ul>
+            </section>
+          </sc-if>
+        </div>
+
+        <footer
+          style="
+            height: 32px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            background: var(--card);
+            border-top: 1px solid var(--line);
+            font-size: 12px;
+            color: var(--muted);
+          "
+        >
+          <span>High Resolution Image Viewer</span>
+          <a href="#" style="color: var(--muted); text-decoration: none">Send Feedback</a>
+        </footer>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1000}}'
+    >
+      class Component extends DCLogic {
+        constructor(props) {
+          super(props);
+          this.state = { toolsOpen: false, notesOpen: false, current: 0, atStart: true, atEnd: false, shelfOpen: false };
+          this.strip = null;
+        }
+        updateEnds() {
+          const s = this.strip;
+          if (!s) return;
+          const atStart = s.scrollLeft <= 1;
+          const atEnd = s.scrollLeft + s.clientWidth >= s.scrollWidth - 1;
+          if (atStart !== this.state.atStart || atEnd !== this.state.atEnd) this.setState({ atStart, atEnd });
+        }
+        componentDidMount() { setTimeout(() => this.updateEnds(), 0); }
+        renderVals() {
+          // Full '/_blob/<id>' literals: HTML export only bundles image paths it can find in the file text.
+          const ids = ['./assets/440f7109a2877f4d71301ce43f8322f4.jpg','./assets/3a0d65b8048c68428fa89e39576cc944.jpg','./assets/70f15ecb710decea7d0ff746cf5e0ed4.jpg','./assets/1499c43bddcd0676a2d40b5618fc3053.jpg','./assets/bec615fc9cc1768dd6d4c241d43aa4cc.jpg','./assets/02e74f6730ddd7444dfd25819f87ad5c.jpg','./assets/8a73e434ab60c382e74a95f292ae9edd.jpg','./assets/79617182f23ef38266bdadf2e39f4798.jpg','./assets/26f25cf2e1ab319de8a6dbb10b674137.jpg','./assets/b1c27ca083eeebc507fed0da9fef17a6.jpg','./assets/b8011d79fa1b25cd951228726f3a1467.jpg','./assets/b063ab7d7d3d8ad557be1ce30d38db6f.jpg','./assets/bc86adc4e1cc190a0c6de218d1c7be9b.jpg','./assets/dc4ceca58a290bea3aad8892142dea96.jpg','./assets/491dc04419d9bb9b2a541ecc02a0f0f8.jpg','./assets/71c1389ca4e14572ac0c98dffbfee9a9.jpg','./assets/b59d10cd9534e5bb3589b78c3711861b.jpg','./assets/830f1b28a39cab070ecc4316fa6970b3.jpg','./assets/002f2a4a22f82cb04d5c0859f1eacecc.jpg','./assets/d0b01aa834a75554e1d19783779418bc.jpg'];
+          const { toolsOpen, notesOpen, current } = this.state;
+          const page = () => (this.strip ? Math.max(160, this.strip.clientWidth - 88) : 400);
+          return {
+            themeClass: (this.props.theme ?? 'light') === 'dark' ? 'dark' : 'light',
+            position: current + 1,
+            thumbs: ids.map((id, i) => ({
+              src: id,
+              n: i + 1,
+              label: 'Image ' + (i + 1) + ' of 20',
+              cls: i === current ? 'th th-on' : 'th',
+              current: i === current ? 'true' : 'false',
+              pick: () => this.setState({ current: i }),
+            })),
+            setStrip: (el) => { this.strip = el; },
+            onStripScroll: () => this.updateEnds(),
+            scrollLeft: () => this.strip && this.strip.scrollBy({ left: -page(), behavior: 'smooth' }),
+            scrollRight: () => this.strip && this.strip.scrollBy({ left: page(), behavior: 'smooth' }),
+            atStart: this.state.atStart,
+            atEnd: this.state.atEnd,
+            toolsOpen,
+            toolsClosed: !toolsOpen,
+            toggleTools: () => this.setState({ toolsOpen: !toolsOpen }),
+            notesOpen,
+            notesClosed: !notesOpen,
+            // Info card and notes read as one card: square the join and drop the gap.
+            infoRadius: notesOpen ? '12px 12px 0 0' : '12px',
+            mainPadBottom: notesOpen ? '0' : '12px',
+            toggleNotes: () => this.setState({ notesOpen: !notesOpen }),
+            shelfOpen: this.state.shelfOpen,
+            shelfClosed: !this.state.shelfOpen,
+            toggleShelf: () => this.setState({ shelfOpen: !this.state.shelfOpen }),
+            shelf: [
+              ['Synchronized Playground: Comparing Library of Congress Panoramas with Seeded Monitoring Imagery Side by Side', 'sync'],
+              ['playground 3', 'seq'],
+              ['playground 2', 'seq'],
+              ['Italian Cathedrals', 'seq'],
+              ['StevenPlayground1', 'seq'],
+            ].map(([name, type]) => ({
+              name,
+              isSync: type === 'sync',
+              isSeq: type === 'seq',
+              current: 'false',
+              border: '1px solid var(--line)',
+              editLabel: 'Edit ' + name,
+              src: name === 'Italian Cathedrals' ? './assets/80795bc953f131d72f3d090d1a81d2c1.jpg' : './assets/009af8209b85141bbb3abfcea25449fd.jpg',
+            })),
+          };
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Synchronized collection, card style</title>
+    <script src="./vendor/react.js"></script>
+    <script src="./vendor/react-dom.js"></script>
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+        />
+        <style>
+          body {
+            margin: 0;
+          }
+          .light {
+            --bg: #f4f4f5;
+            --card: #ffffff;
+            --line: rgba(0, 0, 0, 0.09);
+            --text: #1f1f22;
+            --muted: #6b6b70;
+            --accent: #7a2e3a;
+            --accent-soft: #f6e9eb;
+            --on-accent: #ffffff;
+            --chip: #eeeef0;
+            --viewer: #1c1c1e;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+          }
+          .dark {
+            --bg: #161618;
+            --card: #222225;
+            --line: rgba(255, 255, 255, 0.09);
+            --text: #ececee;
+            --muted: #a1a1a8;
+            --accent: #e59aa5;
+            --accent-soft: rgba(229, 154, 165, 0.14);
+            --on-accent: #1c1c1e;
+            --chip: #2f2f33;
+            --viewer: #0e0e10;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+          }
+          a {
+            color: var(--accent);
+          }
+          .ic {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+          }
+          .nav-a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 0 14px;
+            display: flex;
+            align-items: center;
+            border-bottom: 2px solid transparent;
+          }
+          .round {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--line);
+            background: var(--card);
+            color: var(--text);
+            border-radius: 50%;
+            padding: 0;
+            cursor: pointer;
+          }
+          .btn {
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 14px;
+            border-radius: 8px;
+            font:
+              600 13px Inter,
+              sans-serif;
+            cursor: pointer;
+            text-decoration: none;
+            white-space: nowrap;
+          }
+          .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--chip);
+            color: var(--text);
+          }
+          .tool {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: #ffffff;
+            border: none;
+            border-radius: 50%;
+            padding: 0;
+            cursor: pointer;
+          }
+          .tool:hover {
+            background: rgba(255, 255, 255, 0.14);
+          }
+          .switch {
+            width: 44px;
+            height: 24px;
+            border-radius: 12px;
+            border: none;
+            padding: 2px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+          }
+          .switch span {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+          }
+          .tipwrap {
+            position: relative;
+            min-width: 0;
+            outline-offset: 2px;
+          }
+          .tip {
+            position: absolute;
+            left: 0;
+            top: calc(100% + 6px);
+            z-index: 20;
+            width: max-content;
+            max-width: 420px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: #2b2b2e;
+            color: #ffffff;
+            font:
+              500 12px/1.4 Inter,
+              sans-serif;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s;
+          }
+          .tipwrap:hover .tip,
+          .tipwrap:focus .tip {
+            opacity: 1;
+          }
+          .tip-up {
+            top: auto;
+            bottom: calc(100% + 6px);
+          }
+          .clamp2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+          }
+        </style>
+      </helmet>
+      <div
+        class="{{themeClass}}"
+        style="
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          background: var(--bg);
+          color: var(--text);
+          font-family: Inter, Roboto, Helvetica, Arial, sans-serif;
+        "
+      >
+        <div
+          style="
+            position: relative;
+            height: calc(100vh - 84px);
+            min-height: 760px;
+            display: flex;
+            flex-direction: column;
+          "
+        >
+          <header
+            style="
+              height: 56px;
+              background: var(--card);
+              border-bottom: 1px solid var(--line);
+              display: flex;
+              align-items: center;
+              gap: 20px;
+              padding: 0 20px;
+              flex-shrink: 0;
+            "
+          >
+            <div style="display: flex; align-items: center; gap: 8px">
+              <div
+                style="
+                  width: 30px;
+                  height: 30px;
+                  border-radius: 8px;
+                  background: var(--accent);
+                  color: var(--on-accent);
+                  font-weight: 700;
+                  font-size: 14px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                "
+              >
+                H
+              </div>
+              <span style="font-size: 18px; font-weight: 700">HRIV</span>
+            </div>
+            <nav aria-label="Main" style="display: flex; flex-grow: 1; height: 100%">
+              <a href="#" class="nav-a">Home</a>
+              <a
+                href="#"
+                class="nav-a"
+                aria-current="page"
+                style="color: var(--text); border-bottom-color: var(--accent)"
+                >Collections</a
+              >
+              <a href="#" class="nav-a">Images</a>
+              <a href="#" class="nav-a">Manage</a>
+            </nav>
+            <button class="round" aria-label="Search" style="border: none">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="M21 21l-4.3-4.3"></path>
+              </svg>
+            </button>
+            <button class="round" aria-label="Notifications" style="border: none">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"
+                ></path>
+              </svg>
+            </button>
+            <div
+              style="
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                background: var(--chip);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                font-weight: 600;
+              "
+            >
+              CH
+            </div>
+          </header>
+
+          <main
+            style="flex: 1 1 auto; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; box-sizing: border-box; padding: 12px 20px {{mainPadBottom}}; display: flex; flex-direction: column; gap: 10px;"
+          >
+            <section
+              style="
+                flex-shrink: 0;
+                background: var(--card);
+                border-radius: 12px;
+                box-shadow: var(--shadow);
+                padding: 12px 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  gap: 16px;
+                  flex-wrap: wrap;
+                "
+              >
+                <nav
+                  aria-label="Breadcrumb"
+                  style="
+                    flex: 1 1 320px;
+                    min-width: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 13px;
+                    color: var(--muted);
+                  "
+                >
+                  <a
+                    href="#"
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 4px;
+                      color: var(--muted);
+                      text-decoration: none;
+                      flex-shrink: 0;
+                    "
+                    ><svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      style="width: 16px; height: 16px"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"
+                      ></path></svg
+                    >Home</a
+                  >
+                  <span aria-hidden="true">›</span>
+                  <a href="#" style="color: var(--muted); text-decoration: none; flex-shrink: 0"
+                    >Panoramas</a
+                  >
+                  <span aria-hidden="true">›</span>
+                  <span
+                    class="tipwrap"
+                    tabindex="0"
+                    aria-current="page"
+                    style="display: flex; align-items: baseline; gap: 4px"
+                  >
+                    <span
+                      style="
+                        min-width: 0;
+                        color: var(--text);
+                        font-weight: 500;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                      "
+                      >Synchronized Playground: Comparing Library of Congress Panoramas with Seeded
+                      Monitoring Imagery Side by Side</span
+                    >
+                    <span style="flex-shrink: 0; white-space: nowrap">(2 images)</span>
+                    <span class="tip" aria-hidden="true"
+                      >Synchronized Playground: Comparing Library of Congress Panoramas with Seeded
+                      Monitoring Imagery Side by Side</span
+                    >
+                  </span>
+                  <button
+                    class="round"
+                    aria-label="Rename collection"
+                    style="width: 28px; height: 28px; border: none"
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 14px; height: 14px"
+                    >
+                      <path d="M4 20h4L19 9l-4-4L4 16z"></path>
+                    </svg>
+                  </button>
+                </nav>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                  <span class="pill" style="background: var(--accent-soft); color: var(--accent)"
+                    >Photography</span
+                  >
+                  <button
+                    class="btn"
+                    style="border: none; background: transparent; color: var(--accent)"
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path>
+                      <circle cx="12" cy="12" r="3"></circle></svg
+                    >Hide collection
+                  </button>
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--accent);
+                      background: var(--accent-soft);
+                      color: var(--accent);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <circle cx="12" cy="12" r="2"></circle>
+                      <circle cx="5" cy="5" r="2"></circle>
+                      <circle cx="19" cy="5" r="2"></circle>
+                      <circle cx="5" cy="19" r="2"></circle>
+                      <circle cx="19" cy="19" r="2"></circle>
+                      <path d="M6.5 6.5l4 4M17.5 6.5l-4 4M6.5 17.5l4-4M17.5 17.5l-4-4"></path></svg
+                    >Graph view
+                  </button>
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--accent);
+                      background: var(--accent-soft);
+                      color: var(--accent);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="14" width="7" height="7" rx="1"></rect></svg
+                    >Manage images
+                  </button>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                <span class="pill" style="background: var(--accent-soft); color: var(--accent)"
+                  ><svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 13px; height: 13px"
+                  >
+                    <rect x="3" y="5" width="7" height="14" rx="1"></rect>
+                    <rect x="14" y="5" width="7" height="14" rx="1"></rect></svg
+                  >Synchronized</span
+                >
+                <span class="pill"
+                  ><svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 13px; height: 13px"
+                  >
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg
+                  >Public</span
+                >
+                <span
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 13px;
+                    color: var(--muted);
+                    margin-left: 4px;
+                  "
+                  >Managed by Carlos Henrique Souza</span
+                >
+                <button
+                  class="round"
+                  aria-label="Transfer ownership"
+                  style="width: 28px; height: 28px; border: none"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 15px; height: 15px"
+                  >
+                    <path d="M4 8h14l-3-3M20 16H6l3 3"></path>
+                  </svg>
+                </button>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap">
+                <p
+                  style="
+                    flex: 1 1 420px;
+                    min-width: 0;
+                    margin: 0;
+                    font-size: 14px;
+                    line-height: 1.45;
+                  "
+                >
+                  A side-by-side playground for testing synchronized viewing: pan or zoom either
+                  image and the other follows, so students can compare architectural ornament in the
+                  Highsmith panorama with the seeded monitoring image at matching scale before
+                  setting a shared default view for the class.
+                </p>
+                <div style="display: flex; gap: 8px; flex-shrink: 0">
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--line);
+                      background: var(--card);
+                      color: var(--text);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+                      <path d="M3 3v5h5"></path></svg
+                    >Restore default view
+                  </button>
+                  <button
+                    class="btn"
+                    style="
+                      border: 1px solid var(--accent);
+                      background: var(--accent);
+                      color: var(--on-accent);
+                    "
+                  >
+                    <svg
+                      class="ic"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      style="width: 16px; height: 16px"
+                    >
+                      <path d="M5 3h11l3 3v15H5z"></path>
+                      <path d="M8 3v5h7V3M8 21v-7h8v7"></path></svg
+                    >Set as default view
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <div
+              style="
+                flex: 1 1 auto;
+                min-height: 360px;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 16px;
+              "
+            >
+              <sc-for list="{{panes}}" as="p" hint-placeholder-count="2">
+                <div style="min-height: 0; display: flex; flex-direction: column; gap: 10px">
+                  <section
+                    aria-label="{{p.viewerLabel}}"
+                    style="
+                      flex: 1 1 auto;
+                      min-height: 0;
+                      position: relative;
+                      border-radius: 12px;
+                      overflow: hidden;
+                      background: var(--viewer);
+                      box-shadow: var(--shadow);
+                    "
+                  >
+                    <img
+                      src="{{p.src}}"
+                      alt="{{p.alt}}"
+                      style="
+                        position: absolute;
+                        inset: 0;
+                        width: 100%;
+                        height: 100%;
+                        object-fit: contain;
+                      "
+                    />
+                    <button
+                      aria-label="{{p.syncLabel}}"
+                      aria-pressed="true"
+                      style="
+                        position: absolute;
+                        right: 12px;
+                        top: 12px;
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 50%;
+                        border: 1px solid rgba(255, 255, 255, 0.25);
+                        background: rgba(20, 20, 22, 0.85);
+                        color: #ffffff;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        cursor: pointer;
+                      "
+                    >
+                      <svg
+                        class="ic"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        style="width: 18px; height: 18px"
+                      >
+                        <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"></path>
+                        <path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"></path>
+                      </svg>
+                    </button>
+                    <sc-if value="{{p.toolsClosed}}" hint-placeholder-val="{{ true }}">
+                      <button
+                        aria-label="Show viewer tools"
+                        aria-expanded="false"
+                        onClick="{{p.toggleTools}}"
+                        style="
+                          position: absolute;
+                          left: 12px;
+                          bottom: 12px;
+                          width: 44px;
+                          height: 44px;
+                          border-radius: 50%;
+                          border: 1px solid rgba(255, 255, 255, 0.25);
+                          background: rgba(20, 20, 22, 0.85);
+                          color: #ffffff;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                          cursor: pointer;
+                        "
+                      >
+                        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path>
+                          <circle cx="16" cy="6" r="2"></circle>
+                          <circle cx="10" cy="12" r="2"></circle>
+                          <circle cx="18" cy="18" r="2"></circle>
+                        </svg>
+                      </button>
+                    </sc-if>
+                    <sc-if value="{{p.toolsOpen}}" hint-placeholder-val="{{ false }}">
+                      <div
+                        role="toolbar"
+                        aria-label="Viewer tools"
+                        style="
+                          position: absolute;
+                          left: 12px;
+                          bottom: 12px;
+                          display: flex;
+                          align-items: center;
+                          gap: 2px;
+                          padding: 4px;
+                          border-radius: 10px;
+                          border: 1px solid rgba(255, 255, 255, 0.18);
+                          background: rgba(20, 20, 22, 0.85);
+                        "
+                      >
+                        <button
+                          class="tool"
+                          aria-label="Hide viewer tools"
+                          aria-expanded="true"
+                          onClick="{{p.toggleTools}}"
+                          style="background: rgba(255, 255, 255, 0.14)"
+                        >
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 6l12 12M18 6L6 18"></path>
+                          </svg>
+                        </button>
+                        <span
+                          style="
+                            width: 1px;
+                            height: 22px;
+                            background: rgba(255, 255, 255, 0.3);
+                            margin: 0 4px;
+                          "
+                        ></span>
+                        <button class="tool" aria-label="Zoom in">
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M12 8v8M8 12h8"></path>
+                          </svg>
+                        </button>
+                        <button class="tool" aria-label="Zoom out">
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <path d="M8 12h8"></path>
+                          </svg>
+                        </button>
+                        <button class="tool" aria-label="Go home">
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                              d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"
+                            ></path>
+                          </svg>
+                        </button>
+                        <button class="tool" aria-label="Full screen">
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                          </svg>
+                        </button>
+                        <button class="tool" aria-label="Selection">
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                              d="M4 4h3M10 4h4M17 4h3v3M20 10v4M20 17v3h-3M14 20h-4M7 20H4v-3M4 14v-4M4 7V4"
+                            ></path>
+                          </svg>
+                        </button>
+                        <button class="tool" aria-label="Lock overlays">
+                          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                            <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </sc-if>
+                  </section>
+                  <section
+                    aria-label="{{p.infoLabel}}"
+                    style="flex-shrink: 0; background: var(--card); border-radius: {{p.infoRadius}}; box-shadow: var(--shadow); padding: 10px 14px 10px 18px; display: flex; align-items: center; gap: 12px;"
+                  >
+                    <h2
+                      style="
+                        flex: 1;
+                        min-width: 0;
+                        margin: 0;
+                        font-size: 17px;
+                        font-weight: 700;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                      "
+                    >
+                      {{p.title}}
+                    </h2>
+                    <span style="font-size: 13px">Show notes</span>
+                    <button
+                      class="switch"
+                      role="switch"
+                      aria-checked="{{p.notesChecked}}"
+                      aria-label="{{p.notesLabel}}"
+                      onClick="{{p.toggleNotes}}"
+                      style="background: {{p.switchBg}}; justify-content: {{p.switchJustify}};"
+                    >
+                      <span></span>
+                    </button>
+                    <span style="width: 1px; height: 26px; background: var(--line)"></span>
+                    <a
+                      href="#"
+                      class="btn"
+                      style="
+                        border: 1px solid var(--accent);
+                        background: var(--accent);
+                        color: var(--on-accent);
+                      "
+                      ><svg
+                        class="ic"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        style="width: 16px; height: 16px"
+                      >
+                        <path
+                          d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"
+                        ></path></svg
+                      >Open image</a
+                    >
+                  </section>
+                </div>
+              </sc-for>
+            </div>
+          </main>
+        </div>
+
+        <sc-if value="{{anyNotes}}" hint-placeholder-val="{{ false }}">
+          <div
+            style="
+              width: 100%;
+              max-width: 1400px;
+              margin: 0 auto;
+              box-sizing: border-box;
+              padding: 0 20px 16px;
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 16px;
+              align-items: start;
+            "
+          >
+            <sc-for list="{{panes}}" as="p" hint-placeholder-count="2">
+              <div>
+                <sc-if value="{{p.notesOpen}}" hint-placeholder-val="{{ false }}">
+                  <section
+                    aria-label="{{p.notesRegion}}"
+                    style="
+                      background: var(--card);
+                      border-radius: 0 0 12px 12px;
+                      box-shadow: var(--shadow);
+                      padding: 0 14px 14px;
+                    "
+                  >
+                    <div
+                      style="
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                        padding: 12px 14px;
+                        border: 1px solid var(--line);
+                        border-radius: 10px;
+                        background: var(--bg);
+                      "
+                    >
+                      <div style="display: flex; align-items: center; gap: 10px; font-size: 14px">
+                        <svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          style="width: 18px; height: 18px; color: var(--accent)"
+                        >
+                          <path d="M4 6h16M4 10h16M4 14h16M4 18h10"></path>
+                        </svg>
+                        <strong style="font-weight: 700">Notes</strong>
+                      </div>
+                      <p
+                        style="margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-line"
+                      >
+                        {{p.notes}}
+                      </p>
+                    </div>
+                  </section>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div
+          style="
+            position: sticky;
+            bottom: 0;
+            z-index: 30;
+            height: 52px;
+            flex-shrink: 0;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+          "
+        >
+          <sc-if value="{{shelfClosed}}" hint-placeholder-val="{{ true }}">
+            <button
+              class="btn"
+              aria-expanded="false"
+              aria-controls="my-collections"
+              onClick="{{toggleShelf}}"
+              style="
+                border: 1px solid var(--accent);
+                background: var(--accent);
+                color: var(--on-accent);
+                box-shadow: var(--shadow);
+              "
+            >
+              <svg
+                class="ic"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                style="width: 16px; height: 16px"
+              >
+                <rect x="6" y="3" width="15" height="15" rx="2"></rect>
+                <path d="M3 7v12a2 2 0 0 0 2 2h12"></path></svg
+              >My collections
+            </button>
+          </sc-if>
+          <sc-if value="{{shelfOpen}}" hint-placeholder-val="{{ false }}">
+            <section
+              id="my-collections"
+              aria-label="My collections"
+              style="
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: var(--card);
+                border-top: 1px solid var(--line);
+                box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+                padding: 8px 16px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+              "
+            >
+              <div style="height: 36px; display: flex; align-items: center; gap: 8px">
+                <button
+                  class="btn"
+                  aria-expanded="true"
+                  aria-controls="my-collections"
+                  onClick="{{toggleShelf}}"
+                  style="
+                    border: 1px solid var(--accent);
+                    background: var(--accent);
+                    color: var(--on-accent);
+                  "
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 16px; height: 16px"
+                  >
+                    <rect x="6" y="3" width="15" height="15" rx="2"></rect>
+                    <path d="M3 7v12a2 2 0 0 0 2 2h12"></path></svg
+                  >My collections
+                </button>
+                <button
+                  class="round"
+                  aria-label="Keep shelf open"
+                  aria-pressed="false"
+                  style="border: none"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 18px; height: 18px"
+                  >
+                    <path d="M9 3h6l-1 6 4 4H6l4-4zM12 13v8"></path>
+                  </svg>
+                </button>
+                <span style="flex: 1"></span>
+                <button
+                  class="btn"
+                  style="border: none; background: transparent; color: var(--accent)"
+                >
+                  <svg
+                    class="ic"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    style="width: 16px; height: 16px"
+                  >
+                    <path d="M12 5v14M5 12h14"></path></svg
+                  >New collection
+                </button>
+                <button
+                  class="round"
+                  aria-label="Close my collections"
+                  onClick="{{toggleShelf}}"
+                  style="border: none"
+                >
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18"></path>
+                  </svg>
+                </button>
+              </div>
+              <ul
+                style="
+                  list-style: none;
+                  margin: 0;
+                  padding: 0 0 4px;
+                  display: flex;
+                  gap: 14px;
+                  overflow-x: auto;
+                "
+              >
+                <sc-for list="{{shelf}}" as="c" hint-placeholder-count="5">
+                  <li
+                    style="flex: 0 0 180px; border-radius: 10px; background: var(--bg); border: {{c.border}};"
+                  >
+                    <a
+                      href="#"
+                      tabindex="-1"
+                      aria-hidden="true"
+                      style="
+                        display: block;
+                        position: relative;
+                        height: 100px;
+                        border-radius: 9px 9px 0 0;
+                        overflow: hidden;
+                        background: var(--chip);
+                      "
+                    >
+                      <img
+                        src="{{c.src}}"
+                        alt=""
+                        style="width: 100%; height: 100%; object-fit: cover; display: block"
+                      />
+                      <span
+                        style="
+                          position: absolute;
+                          right: 8px;
+                          top: 8px;
+                          width: 26px;
+                          height: 26px;
+                          border-radius: 50%;
+                          background: rgba(20, 20, 22, 0.7);
+                          color: #ffffff;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                        "
+                        ><svg class="ic" viewBox="0 0 24 24" style="width: 14px; height: 14px">
+                          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                          <path d="M3 15l5-5 4 4 3-3 6 6"></path></svg
+                      ></span>
+                    </a>
+                    <div
+                      style="
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 6px;
+                        padding: 8px 6px 10px 10px;
+                      "
+                    >
+                      <sc-if value="{{c.isSync}}" hint-placeholder-val="{{ false }}"
+                        ><svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          role="img"
+                          aria-label="Synchronized"
+                          style="width: 16px; height: 16px; margin-top: 1px; color: var(--accent)"
+                        >
+                          <rect x="3" y="5" width="7" height="14" rx="1"></rect>
+                          <rect x="14" y="5" width="7" height="14" rx="1"></rect></svg
+                      ></sc-if>
+                      <sc-if value="{{c.isSeq}}" hint-placeholder-val="{{ true }}"
+                        ><svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          role="img"
+                          aria-label="Sequence"
+                          style="width: 16px; height: 16px; margin-top: 1px; color: var(--accent)"
+                        >
+                          <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                          <path d="M6 6v12M18 6v12"></path></svg
+                      ></sc-if>
+                      <a
+                        href="#"
+                        class="tipwrap"
+                        aria-current="{{c.current}}"
+                        style="flex: 1; color: var(--accent); text-decoration: none"
+                      >
+                        <span
+                          class="clamp2"
+                          style="font-size: 13px; font-weight: 600; line-height: 1.35"
+                          >{{c.name}}</span
+                        >
+                        <span class="tip tip-up" aria-hidden="true">{{c.name}}</span>
+                      </a>
+                      <button
+                        class="round"
+                        aria-label="{{c.editLabel}}"
+                        style="width: 28px; height: 28px; border: none; background: transparent"
+                      >
+                        <svg
+                          class="ic"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          style="width: 14px; height: 14px"
+                        >
+                          <path d="M4 20h4L19 9l-4-4L4 16z"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </li>
+                </sc-for>
+              </ul>
+            </section>
+          </sc-if>
+        </div>
+
+        <footer
+          style="
+            height: 32px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            background: var(--card);
+            border-top: 1px solid var(--line);
+            font-size: 12px;
+            color: var(--muted);
+          "
+        >
+          <span>High Resolution Image Viewer</span>
+          <a href="#" style="color: var(--muted); text-decoration: none">Send Feedback</a>
+        </footer>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1000}}'
+    >
+      class Component extends DCLogic {
+        constructor(props) {
+          super(props);
+          this.state = { tools: [false, false], notes: [false, false], shelfOpen: false };
+        }
+        flip(key, i) {
+          const next = this.state[key].slice();
+          next[i] = !next[i];
+          this.setState({ [key]: next });
+        }
+        renderVals() {
+          const { tools, notes } = this.state;
+          const data = [
+            { title: 'Highsmith Panorama', src: './assets/1cc36c5a84da2cfecaff002f4a6e1e1b.jpg', alt: 'Close-up of carved stone ornament from the Highsmith panorama', notes: 'Library of Congress' },
+            { title: 'Synthetic Monitoring Image', src: './assets/21de871b00462841a1a9565d94a831de.jpg', alt: 'Lit teepees in the snow under green northern lights', notes: 'Local seed image used by the synthetic monitoring Playwright suite to confirm that tiles load, the viewer opens and the minimap renders on every deploy.\n\nKeep this image in the collection: the monitoring checks look it up by name, so renaming or removing it will make the scheduled run fail. It is safe to pan, zoom and annotate here, because the default view is restored before each check.\n\nThe photo itself is a long-exposure shot of lit canvas tents under an aurora, chosen because its strong colour contrast makes rendering problems easy to spot at a glance.' },
+          ];
+          return {
+            themeClass: (this.props.theme ?? 'light') === 'dark' ? 'dark' : 'light',
+            shelfOpen: this.state.shelfOpen,
+            shelfClosed: !this.state.shelfOpen,
+            toggleShelf: () => this.setState({ shelfOpen: !this.state.shelfOpen }),
+            shelf: [
+              ['Synchronized Playground: Comparing Library of Congress Panoramas with Seeded Monitoring Imagery Side by Side', 'sync', true],
+              ['playground 3', 'seq', false],
+              ['playground 2', 'seq', false],
+              ['Italian Cathedrals', 'seq', false],
+              ['StevenPlayground1', 'seq', false],
+            ].map(([name, type, current]) => ({
+              name,
+              isSync: type === 'sync',
+              isSeq: type === 'seq',
+              current: current ? 'page' : 'false',
+              border: current ? '2px solid var(--accent)' : '1px solid var(--line)',
+              editLabel: 'Edit ' + name,
+              src: name === 'Italian Cathedrals' ? './assets/80795bc953f131d72f3d090d1a81d2c1.jpg' : './assets/009af8209b85141bbb3abfcea25449fd.jpg',
+            })),
+            anyNotes: notes[0] || notes[1],
+            mainPadBottom: notes[0] || notes[1] ? '0' : '12px',
+            panes: data.map((d, i) => ({
+              ...d,
+              viewerLabel: 'Image viewer: ' + d.title,
+              infoLabel: 'Image info: ' + d.title,
+              notesRegion: 'Notes: ' + d.title,
+              syncLabel: 'Synced with the other image. Click to unlink ' + d.title,
+              toolsOpen: tools[i],
+              toolsClosed: !tools[i],
+              toggleTools: () => this.flip('tools', i),
+              notesOpen: notes[i],
+              notesChecked: notes[i] ? 'true' : 'false',
+              notesLabel: 'Show notes for ' + d.title,
+              toggleNotes: () => this.flip('notes', i),
+              switchBg: notes[i] ? 'var(--accent)' : 'var(--muted)',
+              switchJustify: notes[i] ? 'flex-end' : 'flex-start',
+              infoRadius: notes[i] ? '12px 12px 0 0' : '12px',
+            })),
+          };
+        }
+      }
+    </script>
+  </body>
+</html>
