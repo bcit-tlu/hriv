@@ -220,6 +220,16 @@ NOT request `latest`. Selection MUST recompute the fence WAL filename using the
 manifest's bound `wal_segment_size_bytes`, not a fixed 16-MiB assumption.
 `target_time` remains audit evidence only.
 
+Selection MUST also bind an explicit CNPG `recoveryTarget.backupID`, chosen as
+the newest completed (`status=DONE`) barman base backup in the bound
+`ObjectStore` destination whose `end_xlog` precedes `target_lsn` and whose
+recorded `timeline` equals the fence timeline or is an ancestor of it, proven
+by walking the archived `wals/*.history` files. Unfinished or malformed catalog
+entries are skipped. When no eligible base backup exists — for example after a
+source-cluster promotion that postdates the last scheduled backup — selection
+MUST fail closed with `CNPG_BASE_BACKUP_UNAVAILABLE` rather than provisioning a
+restore the plugin cannot satisfy.
+
 For the deployed CNPG v1 CRD, `WAIT_CNPG` requires all of `Ready=True`,
 `status.phase: Cluster in healthy state`, and `readyInstances == instances == 1`; the Ready
 condition alone is not sufficient. The subsequent read-only database child remains the final proof

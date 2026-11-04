@@ -24,6 +24,8 @@ IDENT_RE = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 PG_NAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,62}")
 NO_PERMISSION_SA = "hriv-restore-validation-no-permission"
 AZURE_SECRET = "hriv-restore-validation-azure-read"
+BARMAN_SECRET = "hriv-restore-validation-barman-read"
+BARMAN_DESTINATION_RE = re.compile(r"https://[a-z0-9]{3,24}\.blob\.core\.windows\.net/[a-z0-9][a-z0-9-]{1,62}(?:/[A-Za-z0-9._-]{1,256})*")
 
 
 def _strings(value: Any, name: str, maximum: int = 64, *, item_maximum: int = 128, pattern: re.Pattern[str] | None = None) -> tuple[str, ...]:
@@ -116,6 +118,7 @@ class SourceProfile:
     server_name: str
     expected_system_identifier: str
     object_store: str
+    barman_destination_path: str
     postgresql_image: str
     postgresql_storage_size: str
     required_database_inventory: tuple[dict[str, Any], ...]
@@ -141,7 +144,7 @@ class SourceProfile:
 
     @classmethod
     def parse(cls, raw: str | bytes) -> "SourceProfile":
-        required = {"schema_version", "profile_id", "profile_version", "provider", "source_cluster", "external_cluster", "database", "owner", "application_database", "server_name", "expected_system_identifier", "object_store", "object_store_api_version", "postgresql_major", "postgresql_image", "postgresql_storage_size", "required_database_inventory", "required_static_role_inventory", "dynamic_role_prefixes", "expected_migration_version", "minimum_row_counts", "synthetic_row", "controller_image", "backup_image", "source_container", "source_prefix"}
+        required = {"schema_version", "profile_id", "profile_version", "provider", "source_cluster", "external_cluster", "database", "owner", "application_database", "server_name", "expected_system_identifier", "object_store", "object_store_api_version", "postgresql_major", "postgresql_image", "postgresql_storage_size", "required_database_inventory", "required_static_role_inventory", "dynamic_role_prefixes", "expected_migration_version", "minimum_row_counts", "synthetic_row", "controller_image", "backup_image", "source_container", "source_prefix", "barman_destination_path"}
         value = exact_object(parse_json(raw, max_bytes=64 * 1024), required=required, optional={"source_storage_class"})
         if value["schema_version"] != 1:
             raise ValidationError("PROFILE_SCHEMA_UNSUPPORTED")
@@ -164,13 +167,19 @@ class SourceProfile:
             bounded_string(value["profile_id"], "profile_id", 128), integer(value["profile_version"], "profile_version", 1, 1000),
             "pg-core", "pg-core-source", "app", "app", "hriv", "pg-core",
             bounded_string(value["expected_system_identifier"], "expected_system_identifier", 32, re.compile(r"[1-9][0-9]{0,31}")),
-            "hriv-restore-validation-pg-core", images[0], storage, databases, roles,
+            "hriv-restore-validation-pg-core", cls._barman_destination(value["barman_destination_path"]), images[0], storage, databases, roles,
             _strings(value["dynamic_role_prefixes"], "dynamic_role_prefixes", 16),
             bounded_string(value["expected_migration_version"], "expected_migration_version", 128), row_counts,
             {"id": bounded_string(synthetic["id"], "synthetic.id", 128), "email_sha256": bounded_string(synthetic["email_sha256"], "synthetic.email_sha256", 64, re.compile(r"[0-9a-f]{64}"))},
             images[1], images[2], bounded_string(value["source_container"], "source_container", 63, DNS_RE), bounded_string(value["source_prefix"], "source_prefix", 256),
             bounded_string(value.get("source_storage_class", "longhorn"), "source_storage_class", 63, DNS_RE), profile_digest,
         )
+
+    @staticmethod
+    def _barman_destination(value: Any) -> str:
+        if not isinstance(value, str) or len(value.encode("utf-8")) > 2048 or (value and BARMAN_DESTINATION_RE.fullmatch(value) is None):
+            raise ValidationError("PROFILE_NOT_APPROVED")
+        return value
 
     @staticmethod
     def _databases(value: Any) -> tuple[dict[str, Any], ...]:
@@ -344,6 +353,7 @@ class Templates:
             or recovery.get("owner") != "app"
             or target
             != {
+                "backupID": "CONTROLLER_BOUND_BACKUP_ID",
                 "targetLSN": "CONTROLLER_BOUND_TARGET_LSN",
                 "targetTLI": "CONTROLLER_BOUND_TARGET_TLI",
             }
@@ -421,10 +431,15 @@ class Templates:
             "HTTPS_PROXY": {"name": "HTTPS_PROXY", "value": "http://hriv-restore-validation-egress-proxy:10000"},
             "NO_PROXY": {"name": "NO_PROXY", "value": ".svc,.cluster.local,10.43.0.1,localhost,127.0.0.1"},
         }
-        for container in (selection, restore):
+        expected_selection_env = expected_env | {
+            "BARMAN_DESTINATION_PATH": {"name": "BARMAN_DESTINATION_PATH", "value": profile.barman_destination_path},
+            "BARMAN_ACCOUNT_NAME": {"name": "BARMAN_ACCOUNT_NAME", "valueFrom": {"secretKeyRef": {"name": BARMAN_SECRET, "key": "storage_account_name"}}},
+            "BARMAN_SAS_TOKEN": {"name": "BARMAN_SAS_TOKEN", "valueFrom": {"secretKeyRef": {"name": BARMAN_SECRET, "key": "storage_sas_token"}}},
+        }
+        for container, expected in ((selection, expected_selection_env), (restore, expected_env)):
             entries = container.get("env", [])
             env = {item.get("name"): item for item in entries if isinstance(item, dict)}
-            if len(entries) != len(expected_env) or env != expected_env or "envFrom" in container:
+            if len(entries) != len(expected) or env != expected or "envFrom" in container:
                 raise ValidationError("TEMPLATE_SECRET_INVALID")
         if database.get("env", []) or consistency.get("env", []) or "envFrom" in database or "envFrom" in consistency:
             raise ValidationError("TEMPLATE_REFERENCE_INVALID")
@@ -432,7 +447,7 @@ class Templates:
             raise ValidationError("TEMPLATE_PVC_REFERENCE_INVALID")
         if database_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser" or consistency_volumes.get("credentials", {}).get("secret", {}).get("secretName") != "generated-superuser":
             raise ValidationError("TEMPLATE_SECRET_INVALID")
-        expected_maps = {"profile": "hriv-restore-validation-source-profile-v7", "policy": "hriv-restore-validation-source-state-policy-v7"}
+        expected_maps = {"profile": "hriv-restore-validation-source-profile-v8", "policy": "hriv-restore-validation-source-state-policy-v8"}
         if database_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("profile", {}).get("configMap", {}).get("name") != expected_maps["profile"] or consistency_volumes.get("policy", {}).get("configMap", {}).get("name") != expected_maps["policy"]:
             raise ValidationError("TEMPLATE_CONFIG_REFERENCE_INVALID")
         tmp = {"name": "tmp", "mountPath": "/tmp"}

@@ -99,11 +99,11 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 parse_state(json.dumps(altered), NOW)
 
-    def test_cnpg_uses_target_tli(self) -> None:
+    def test_cnpg_binds_backup_id_and_target(self) -> None:
         fake = gateway(); drive(controller(fake))
         cluster = next(item for item in fake.created if item["kind"] == "Cluster")
         target = cluster["spec"]["bootstrap"]["recovery"]["recoveryTarget"]
-        self.assertEqual({"targetLSN": "A/1234", "targetTLI": "7"}, target)
+        self.assertEqual({"backupID": "backup-20260114030000", "targetLSN": "A/1234", "targetTLI": "7"}, target)
         self.assertEqual(cluster["metadata"]["labels"], cluster["spec"]["inheritedMetadata"]["labels"])
         self.assertNotIn("targetTimeline", json.dumps(cluster))
 
@@ -111,7 +111,16 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {}})
 
     def test_cnpg_rejects_latest_target(self) -> None:
-        with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"targetLSN": "latest", "targetTLI": "7"}}}}})
+        with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": "backup-20260114030000", "targetLSN": "latest", "targetTLI": "7"}}}}})
+
+    def test_cnpg_rejects_bad_tli(self) -> None:
+        for tli in ("current", "latest", "0", "-1", "1.5", ""):
+            with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": "backup-20260114030000", "targetLSN": "A/1234", "targetTLI": tli}}}}})
+
+    def test_cnpg_rejects_bad_backup_id(self) -> None:
+        for backup_id in ("", "latest", "backup-1", "backup-abcdefghijklmn", 20260114030000):
+            with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": backup_id, "targetLSN": "A/1234", "targetTLI": "7"}}}}})
+        with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"targetLSN": "A/1234", "targetTLI": "7"}}}}})
 
     def test_selection_rejects_lowercase_wal_fence(self) -> None:
         fake = gateway(); fake.results["selection"] = json.dumps(selection_document(wal_fence_file="0000000a0000000000000001", target_timeline=10))
