@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.8](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.7...backup-v0.16.8) (2026-11-04)
+
+
+### Bug Fixes
+
+* join barman serverName into restore-validation catalog prefix ([#1751](https://github.com/bcit-tlu/hriv/issues/1751)) ([84cef18](https://github.com/bcit-tlu/hriv/commit/84cef18e474ee3ca393c6f96f6a6e604e9c0ddb9))
+
 ## [0.16.7](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.6...backup-v0.16.7) (2026-11-04)
 
 

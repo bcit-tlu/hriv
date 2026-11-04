@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hriv-backup"
-version = "0.16.7"
+version = "0.16.8"
 description = "HRIV Disaster Recovery Backup Service"
 authors = ["Devin AI"]
 license = "MPL-2.0"
