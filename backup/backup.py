@@ -26,6 +26,7 @@ import contextlib
 import copy
 import csv
 import fcntl
+import gzip
 import hashlib
 import hmac
 import io
@@ -121,6 +122,9 @@ AZURE_STORAGE_CONNECTION_STRING: str = _env("AZURE_STORAGE_CONNECTION_STRING", "
 AZURE_STORAGE_CONTAINER: str = _env("AZURE_STORAGE_CONTAINER", "")
 AZURE_READ_SAS_URL: str = _env("AZURE_READ_SAS_URL", "")
 AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
+BARMAN_DESTINATION_PATH: str = _env("BARMAN_DESTINATION_PATH", "")
+BARMAN_ACCOUNT_NAME: str = _env("BARMAN_ACCOUNT_NAME", "")
+BARMAN_SAS_TOKEN: str = _env("BARMAN_SAS_TOKEN", "")
 VALIDATION_MIN_SAS_VALIDITY_SECONDS: str = _env(
     "VALIDATION_MIN_SAS_VALIDITY_SECONDS", "21600"
 )
@@ -1493,6 +1497,11 @@ class _ReadContainer(Protocol):
     ) -> Iterable[_ReadBlobItem]:
         raise NotImplementedError
 
+    def walk_blobs(
+        self, *, name_starts_with: str, delimiter: str
+    ) -> Iterable[object]:
+        raise NotImplementedError
+
     def get_blob_client(self, blob_name: str) -> _ReadBlobClient:
         raise NotImplementedError
 
@@ -1528,11 +1537,16 @@ def _parse_strict_utc(value: object) -> datetime | None:
     return parsed if parsed.tzinfo == timezone.utc else None
 
 
-def _validate_read_sas_url(value: str | None = None) -> str:
+def _validate_read_sas_url(
+    value: str | None = None, *, expected_container: str | None = None
+) -> str:
     """Validate a container-scoped, read/list-only Azure SAS without exposing it."""
     sas_url = AZURE_READ_SAS_URL if value is None else value
     if not sas_url:
         raise ValidationFailure("READ_SAS_MISSING", "configuration")
+    container_expected = (
+        AZURE_STORAGE_CONTAINER if expected_container is None else expected_container
+    )
     try:
         parsed = urlparse(sas_url)
         query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
@@ -1552,7 +1566,7 @@ def _validate_read_sas_url(value: str | None = None) -> str:
         or parsed.netloc != parsed.hostname
         or _AZURE_ACCOUNT_HOST_RE.fullmatch(parsed.hostname) is None
         or _AZURE_CONTAINER_RE.fullmatch(container_name) is None
-        or (AZURE_STORAGE_CONTAINER and container_name != AZURE_STORAGE_CONTAINER)
+        or (container_expected and container_name != container_expected)
     ):
         raise ValidationFailure("READ_SAS_SCOPE_INVALID", "configuration")
     if any(len(values) != 1 for values in query.values()):
@@ -1598,6 +1612,215 @@ def _validate_read_sas_url(value: str | None = None) -> str:
 def _read_blob_container_client() -> _ReadContainer:
     """Create the validation-only client from the container SAS URL."""
     return ContainerClient.from_container_url(_validate_read_sas_url())
+
+
+_AZURE_ACCOUNT_NAME_RE = re.compile(r"^[a-z0-9]{3,24}$")
+_BARMAN_BACKUP_ID_RE = re.compile(r"backup-[0-9]{14}")
+_BARMAN_BACKUP_DIR_RE = re.compile(r"[0-9]{8}T[0-9]{6}/")
+_MAX_BARMAN_CATALOG_BACKUPS = 512
+_MAX_BARMAN_INFO_BYTES = 64 * 1024
+_MAX_BARMAN_HISTORY_BYTES = 64 * 1024
+
+
+def _barman_destination() -> tuple[str, str]:
+    """Validate BARMAN_DESTINATION_PATH and return (container_name, blob_prefix)."""
+    value = BARMAN_DESTINATION_PATH
+    if not value or len(value.encode("utf-8")) > 2048:
+        raise ValidationFailure("BARMAN_PATH_MISSING", "configuration")
+    try:
+        parsed = urlparse(value)
+    except (TypeError, ValueError):
+        raise ValidationFailure("BARMAN_PATH_INVALID", "configuration") from None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.fragment
+        or parsed.params
+        or parsed.query
+        or parsed.hostname is None
+        or parsed.netloc != parsed.hostname
+        or _AZURE_ACCOUNT_HOST_RE.fullmatch(parsed.hostname) is None
+        or _AZURE_ACCOUNT_NAME_RE.fullmatch(BARMAN_ACCOUNT_NAME) is None
+        or parsed.hostname != f"{BARMAN_ACCOUNT_NAME}.blob.core.windows.net"
+        or len(segments) < 1
+        or _AZURE_CONTAINER_RE.fullmatch(segments[0]) is None
+        or any(
+            segment in (".", "..") or "\\" in segment or len(segment.encode()) > 256
+            for segment in segments[1:]
+        )
+    ):
+        raise ValidationFailure("BARMAN_PATH_INVALID", "configuration")
+    return segments[0], "/".join(segments[1:])
+
+
+def _read_barman_container_client() -> tuple[_ReadContainer, str]:
+    """Create the read/list-only client for the CNPG barman object store."""
+    if not BARMAN_SAS_TOKEN:
+        raise ValidationFailure("BARMAN_SAS_MISSING", "configuration")
+    container_name, prefix = _barman_destination()
+    sas_url = _validate_read_sas_url(
+        f"https://{BARMAN_ACCOUNT_NAME}.blob.core.windows.net/{container_name}?{BARMAN_SAS_TOKEN}",
+        expected_container=container_name,
+    )
+    return ContainerClient.from_container_url(sas_url), prefix
+
+
+def _barman_backup_info(payload: bytes) -> dict[str, str] | None:
+    """Parse a barman ``backup.info`` document into a key/value map."""
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    info: dict[str, str] = {}
+    for line in text.splitlines():
+        key, separator, raw = line.partition("=")
+        if separator:
+            info[key.strip()] = raw.strip()
+    return info
+
+
+def _barman_base_backup_candidates(
+    container: _ReadContainer, root: str
+) -> list[tuple[int, int, str]]:
+    """List DONE base backups as (end_lsn, timeline, backup_id) candidates."""
+    candidates: list[tuple[int, int, str]] = []
+    directories: list[str] = []
+    for item in container.walk_blobs(
+        name_starts_with=f"{root}base/", delimiter="/"
+    ):
+        name = getattr(item, "name", "")
+        if not isinstance(name, str) or not name.endswith("/"):
+            continue
+        directories.append(name)
+        if len(directories) > _MAX_BARMAN_CATALOG_BACKUPS:
+            raise ValidationFailure("BARMAN_CATALOG_TOO_LARGE", "selection")
+    for directory in directories:
+        relative = directory[len(f"{root}base/") :]
+        if _BARMAN_BACKUP_DIR_RE.fullmatch(relative) is None:
+            continue
+        try:
+            payload = _validation_download(
+                container, f"{directory}backup.info", "barman", _MAX_BARMAN_INFO_BYTES
+            )
+        except ValidationFailure as exc:
+            if exc.code == "BARMAN_MISSING":
+                continue
+            raise
+        info = _barman_backup_info(payload)
+        if info is None or info.get("status") != "DONE":
+            continue
+        try:
+            timeline = int(info.get("timeline", ""), 10)
+        except ValueError:
+            continue
+        end_lsn = _postgres_lsn_value(info.get("end_xlog", ""))
+        backup_id = info.get("backup_name", "")
+        if end_lsn is None or _BARMAN_BACKUP_ID_RE.fullmatch(backup_id) is None:
+            continue
+        candidates.append((end_lsn, timeline, backup_id))
+    return candidates
+
+
+def _barman_timeline_ancestry(
+    container: _ReadContainer, root: str, target_timeline: int
+) -> dict[int, int]:
+    """Return ``{ancestor_timeline: fork_lsn}`` for the target's lineage.
+
+    A timeline's archived history file lists every ancestor with the LSN at
+    which the next timeline forked from it. An ancestor base backup is only a
+    valid target for the fence when it ended at or before that fork LSN: data
+    recorded later lives on the abandoned branch and cannot replay onto the
+    target timeline. A missing or malformed history file yields no ancestors,
+    which fails closed to same-timeline candidates only.
+    """
+    payload: bytes | None = None
+    for suffix in (".history.gz", ".history"):
+        blob_name = f"{root}wals/{target_timeline:08X}{suffix}"
+        try:
+            raw = _validation_download(
+                container, blob_name, "barman", _MAX_BARMAN_HISTORY_BYTES
+            )
+        except ValidationFailure as exc:
+            if exc.code == "BARMAN_MISSING":
+                continue
+            raise
+        if suffix == ".history.gz":
+            try:
+                raw = gzip.decompress(raw)
+            except (OSError, EOFError):
+                continue
+        payload = raw
+        break
+    if payload is None:
+        return {}
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return {}
+    ancestors: dict[int, int] = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or not fields[0].isdigit():
+            continue
+        fork_lsn = _postgres_lsn_value(fields[1])
+        parent = int(fields[0])
+        if fork_lsn is None or parent <= 0:
+            continue
+        ancestors[parent] = fork_lsn
+    return ancestors
+
+
+def _select_cnpg_base_backup(
+    container: _ReadContainer,
+    prefix: str,
+    target_lsn: object,
+    target_timeline: object,
+) -> str:
+    """Choose the newest DONE barman base backup restorable to the fence target.
+
+    The barman-cloud plugin only considers base backups recorded on the exact
+    numeric ``targetTLI``, which has no candidate when the source cluster was
+    promoted between the last scheduled backup and the recovery-set WAL fence.
+    The drill instead binds an explicit ``backupID``: the latest completed
+    backup that ended before the fence LSN and sits on the fence timeline or
+    one of its archived ancestors. Ancestor candidates must also end at or
+    before the LSN where the next timeline forked from them; a backup that
+    ends later carries abandoned-branch data PostgreSQL cannot replay onto
+    the target timeline.
+    """
+    root = f"{prefix}/" if prefix else ""
+    target_value = (
+        _postgres_lsn_value(target_lsn) if isinstance(target_lsn, str) else None
+    )
+    if (
+        target_value is None
+        or not isinstance(target_timeline, int)
+        or isinstance(target_timeline, bool)
+        or target_timeline < 1
+    ):
+        raise ValidationFailure("CNPG_BASE_BACKUP_UNAVAILABLE", "selection")
+    candidates = [
+        candidate
+        for candidate in _barman_base_backup_candidates(container, root)
+        if candidate[0] < target_value
+    ]
+    if not candidates:
+        raise ValidationFailure("CNPG_BASE_BACKUP_UNAVAILABLE", "selection")
+    ancestors = _barman_timeline_ancestry(container, root, target_timeline)
+    eligible = [
+        candidate
+        for candidate in candidates
+        if candidate[1] == target_timeline
+        or (
+            candidate[1] in ancestors and candidate[0] <= ancestors[candidate[1]]
+        )
+    ]
+    if not eligible:
+        raise ValidationFailure("CNPG_BASE_BACKUP_UNAVAILABLE", "selection")
+    return max(eligible, key=lambda item: (item[0], item[2]))[2]
 
 
 # ---------------------------------------------------------------------------
@@ -3961,7 +4184,11 @@ def _legacy_or_archive_size(value: object, total_bytes: int) -> bool:
 
 
 def validation_select(
-    snapshot_name: str | None = None, *, container: _ReadContainer | None = None
+    snapshot_name: str | None = None,
+    *,
+    container: _ReadContainer | None = None,
+    barman_container: _ReadContainer | None = None,
+    bind_cnpg_backup: bool = False,
 ) -> dict:
     """Select and bind the marker-owned published recovery set using only SAS reads."""
     _validation_blob_prefix()
@@ -4245,6 +4472,18 @@ def validation_select(
         "_manifest_bytes": sidecar_payload,
         "_container": read_container,
     }
+    if bind_cnpg_backup:
+        barman_client, barman_prefix = (
+            (barman_container, _barman_destination()[1])
+            if barman_container is not None
+            else _read_barman_container_client()
+        )
+        result["cnpg_backup_id"] = _select_cnpg_base_backup(
+            barman_client,
+            barman_prefix,
+            summary["target_lsn"],
+            summary["target_timeline"],
+        )
     return result
 
 
@@ -5743,7 +5982,8 @@ def main() -> None:
             if len(positional) > 1:
                 raise ValidationFailure("ARGUMENTS_INVALID", "arguments")
             result = validation_select(
-                _exact_validation_snapshot(positional[0]) if positional else None
+                _exact_validation_snapshot(positional[0]) if positional else None,
+                bind_cnpg_backup=True,
             )
             _machine_json(_public_validation_result(result))
             sys.exit(0)
