@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.17](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.16...restore-validation-v0.1.17) (2026-11-04)
+
+
+### Bug Fixes
+
+* bind explicit CNPG backupID for cross-timeline restores ([#1747](https://github.com/bcit-tlu/hriv/issues/1747)) ([b5e0517](https://github.com/bcit-tlu/hriv/commit/b5e0517b98f90ea84a2e306165522cc56120c2d5))
+
 ## [0.1.16](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.15...restore-validation-v0.1.16) (2026-10-29)
 
 
