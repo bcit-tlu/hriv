@@ -17,7 +17,7 @@ from __future__ import annotations
 from opentelemetry import metrics
 
 COUNT_STEPS = frozenset(
-    {"plan", "stitch", "outline", "objects", "group", "preview", "total"}
+    {"plan", "stitch", "outline", "objects", "group", "preview", "serialise", "total"}
 )
 
 _meter = metrics.get_meter(__name__)
