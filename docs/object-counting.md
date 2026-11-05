@@ -99,16 +99,16 @@ is met by scaling replicas, not per-process concurrency.
 ### Outliners
 
 `app/counting/outliners.py` defines the `Outliner` protocol
-(`outline(rgb, plan) -> [OutlinedObject]`). The pipeline currently ships
-**`StubOutliner`** — a deterministic, pixel-free stand-in that places
-synthetic round objects on a jittered grid so the job lifecycle, edge rule,
-grouping and frontend integration can be exercised end-to-end **before the
-ML pipeline exists**. The spike (#1662) selected the shipped models —
+(`segment(rgb, plan, mpp) -> int32 labels`). The shipped pipeline uses
+real outliners selected by the spike (#1662) —
 Cells → classical scikit-image watershed, Nuclei → InstanSeg
-`brightfield_nuclei` (Apache-2.0) — and #1665 lands them behind the same
-protocol. Cellpose `cyto3` is not shipped by default: its weights are
-trained partly on CC-BY-NC data and it needs Python ≤3.12, so it is pending
-an owner decision as an opt-in plugin.
+`brightfield_nuclei` (Apache-2.0), shipped in #1665 behind the same
+protocol. **`StubOutliner`** remains a deterministic, pixel-free test
+stand-in that places synthetic round objects on a jittered grid; it is
+not a production counting model. Cellpose `cyto3` is deferred indefinitely
+by the owner until the feature has soaked: its weights are trained partly
+on CC-BY-NC data and its numpy pin needs Python ≤3.12. The protocol remains
+the extension point for a future opt-in plugin, not a shipped cyto3 option.
 
 ## API
 
@@ -189,17 +189,22 @@ instead of `sendBeacon` when a selection is destroyed.
 Count affordance while off. Flags are UX hints only — the backend enforces
 independently.
 
-| Setting                        | Default        | Purpose                                                            |
-| ------------------------------ | -------------- | ------------------------------------------------------------------ |
-| `COUNTING_ENABLED`             | `false`        | Dark-launch flag: 404s the whole surface when off.                 |
-| `COUNTING_QUEUE_NAME`          | `arq:counting` | Dedicated arq queue (distinct from the tile worker's `arq:queue`). |
-| `COUNTING_MAX_PIXELS`          | `750_000`      | Pre-flight budget: stitched level pixels per job. ≥ 65 536.        |
-| `COUNTING_MAX_DOWNSAMPLE`      | `8`            | Coarsest permitted level-0:level pixel ratio (power of two).       |
-| `COUNTING_MARGIN_PX`           | `32`           | Margin in **level** pixels (~1 object diameter).                   |
-| `COUNTING_MAX_ACTIVE_PER_USER` | `3`            | Per-user queued+running cap; over → 429.                           |
-| `COUNTING_RESULT_TTL_SECONDS`  | `600`          | TTL on job record/result/user-set keys; also the arq `_expires`.   |
-| `COUNTING_JOB_TIMEOUT_SECONDS` | `60`           | arq `func(timeout=…)`; expiry maps to `error: "timeout"`.          |
-| `COUNTING_MAX_OBJECTS`         | `3000`         | Result cap; over → `error: "too_many_objects"`.                    |
+| Setting                         | Default            | Purpose                                                              |
+| ------------------------------- | ------------------ | -------------------------------------------------------------------- |
+| `COUNTING_ENABLED`              | `false`            | Dark-launch flag: 404s the whole surface when off.                   |
+| `COUNTING_QUEUE_NAME`           | `arq:counting`     | Dedicated arq queue (distinct from the tile worker's `arq:queue`).   |
+| `COUNTING_MAX_PIXELS`           | `750_000`          | Pre-flight budget: stitched level pixels per job. ≥ 65 536.          |
+| `COUNTING_CLASSICAL_MAX_PIXELS` | `2_000_000`        | Larger stitched-pixel budget for classical/stub outliners; ≥ 65 536. |
+| `COUNTING_MAX_DOWNSAMPLE`       | `8`                | Coarsest permitted level-0:level pixel ratio (power of two).         |
+| `COUNTING_MARGIN_PX`            | `32`               | Margin in **level** pixels (~1 object diameter).                     |
+| `COUNTING_TORCH_THREADS`        | `2`                | CPU torch threads per worker process; ≥ 1. Match the CPU limit.      |
+| `COUNTING_MODELS_DIR`           | `/opt/hriv-models` | Directory containing the baked InstanSeg model; no runtime download. |
+| `COUNTING_CELLS_OUTLINER`       | `classical`        | `classical` or `stub` (test-only synthetic results).                 |
+| `COUNTING_NUCLEI_OUTLINER`      | `instanseg`        | `instanseg`, `classical`, or `stub` (test-only).                     |
+| `COUNTING_MAX_ACTIVE_PER_USER`  | `3`                | Per-user queued+running cap; over → 429.                             |
+| `COUNTING_RESULT_TTL_SECONDS`   | `600`              | TTL on job record/result/user-set keys; also the arq `_expires`.     |
+| `COUNTING_JOB_TIMEOUT_SECONDS`  | `60`               | arq `func(timeout=…)`; expiry maps to `error: "timeout"`.            |
+| `COUNTING_MAX_OBJECTS`          | `3000`             | Result cap; over → `error: "too_many_objects"`.                      |
 
 ### Redis keys
 
@@ -217,17 +222,23 @@ COUNTING_ENABLED=true docker compose --profile counting up --build
 
 The `counting-worker` compose service (profile `counting`) runs
 `arq app.counting.worker.CountingWorkerSettings` against the same Redis
-and `image_data` volume. Login as any seed account, then:
+and `image_data` volume. Login as a seed account with access to the image, then:
 
 ```bash
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"student@example.ca","password":"password"}' | jq -r .access_token)
-curl -s -X POST http://localhost:8000/api/images/1/counts \
+  -d '{"email":"synthetic.student@example.ca","password":"password"}' | jq -r .access_token)
+curl -s -X POST http://localhost:8000/api/images/5/counts \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"mode":"cells","selection":{"x":10,"y":10,"width":200,"height":200}}'
 # poll:  GET /api/counts/{job_id}   cancel: DELETE /api/counts/{job_id}
 ```
+
+Image **5**, **Synthetic Monitoring Image**, has local tiles on a fresh
+compose seed. Its category is restricted to the Administration program,
+so use the synthetic student above or an admin/instructor. If the database
+already contains data, find the image by name instead of assuming its ID.
+This fixture exercises the workflow, not blood-smear counting accuracy.
 
 ## Remaining work
 
@@ -235,7 +246,7 @@ curl -s -X POST http://localhost:8000/api/images/1/counts \
 - **#1665** — real pipeline (shipped): classical cells + InstanSeg
   brightfield_nuclei, optional `counting`/`counting-ml` dependency
   groups, baked into the counting-worker image.
-- **#1666** — Helm deployment of the counting-worker image.
+- **#1666** — Helm deployment of the counting-worker image (shipped; see Deployment).
 - **#1667 / #1668** — frontend (landed): `api.ts` count wrappers,
   `useSelectionCounts.ts`, `components/CountObjectsButton.tsx`,
   `CountProgressSnackbar.tsx`, `CountReportDialog.tsx`,
@@ -365,3 +376,57 @@ selections and returned wrong counts.
   Enqueued/rejected events retain their existing fields.
 - Full semantics in `docs/observability-conventions.md` → Object Counting
   Metrics.
+
+## Troubleshooting
+
+| Symptom                                                  | Check / action                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Count button hidden; count endpoints return 404          | Check `GET /api/features` for `counting: true`. Enable `COUNTING_ENABLED` on the API (Helm `counting.enabled`) and reload the viewer. Disabled routes deliberately return 404 even before authentication/body validation. A 404 while enabled can also mean an invisible image, another user's job, or an expired result. |
+| POST returns 503 `counting_unavailable`                  | Start the dedicated counting worker, not just the tile worker: `COUNTING_ENABLED=true docker compose --profile counting up -d --build`. Check Redis connectivity and worker startup/model-loading logs. The metric outcome is `queue_unavailable`; the HTTP detail is `counting_unavailable`.                             |
+| Job stays queued                                         | Check the queue and heartbeat below. A worker can disappear after enqueue. Confirm the API and worker use the same Redis and `COUNTING_QUEUE_NAME`, and that the worker can read the tiles volume. Scale replicas before a lab burst; do not raise per-process concurrency.                                               |
+| `selection_too_large` (422), or worker error `too_large` | Draw a smaller box. The API uses the configured outliner's pixel budget; the worker's size-driven level choice may still reject it to preserve object detail. Do not increase budgets without checking latency/memory and the hard stitching guard.                                                                       |
+| 429 `too_many_active_counts`                             | This user already has `COUNTING_MAX_ACTIVE_PER_USER` queued/running jobs (default 3). Cancel or wait for a job to finish, then retry; API responses include `Retry-After: 10`. Clearing finished results is not an active-job cancellation.                                                                               |
+| Result disappears / polling returns 404                  | Redis records/results expire after `COUNTING_RESULT_TTL_SECONDS` (default 600 seconds from enqueue, not completion). Cancelling a count, or clearing all selection rectangles, also deletes the job. Draw a new selection to count again; results are not saved in image metadata.                                        |
+| 409 `tiles_not_ready`, or worker error `no_tiles`        | Counting needs a readable local DZI pyramid; external/catalogued DZI URLs are not sufficient. Wait for image processing and check the worker's read-only tiles mount. For compose, confirm `seed-media` completed and try Synthetic Monitoring Image (fresh-seed ID 5).                                                   |
+
+For a local diagnosis:
+
+```bash
+docker compose ps -a counting-worker seed-media
+docker compose logs --tail=100 counting-worker backend
+docker compose exec redis redis-cli TTL arq:counting:health-check
+curl -s http://localhost:8000/api/metrics | rg 'hriv_count_'
+```
+
+Substitute the configured queue name in the heartbeat key when it is not
+`arq:counting`. A Redis TTL of `-2` means the heartbeat is absent; `-1`
+means a key exists without expiry (not the normal arq heartbeat). Inspect
+`hriv_count_worker_up`, `hriv_count_worker_heartbeat_age_seconds`,
+`hriv_count_queue_depth`, and
+`hriv_count_queue_oldest_pending_age_seconds`. Gauges are absent while the
+feature is off, and queue depth/age include running jobs. A NaN heartbeat
+gauge means Redis could not be queried, not a confirmed worker outage.
+In Kubernetes inspect the counting-worker Deployment's pods/logs and the
+Grafana **Object counting** group; see [Capacity](#capacity-1670) before scaling.
+
+Correlate structured `count.*` events by `job_id`: `count.enqueued`,
+`count.started`, `count.completed`, `count.failed`, `count.cancelled`,
+`count.rejected`, and `count.cleared`. Check rejection/error codes and
+completed `duration_ms` / per-step `timings_ms`; IDs belong in logs, not
+Prometheus labels. Do not infer a successful run from a queue-depth drop
+alone. See [observability conventions](observability-conventions.md#object-counting-metrics)
+for the deployed telemetry contract.
+
+### Announcement copy
+
+Draft for publication **when counting is enabled on stable**, after instructor
+validation; this text does not announce that stable is already enabled:
+
+> **Count objects in an image selection**
+>
+> Use the selection tool in the image viewer, draw a box, and choose
+> **Count → Cells** or **Count → Nuclei**. Coloured outlines and an unnamed
+> group legend help you compare object counts at a glance. Counting is
+> available to every role on images they can view. It is a counter, not a
+> classifier: always double-check the outlines visually. Results are
+> temporary and disappear when you clear the selections or leave the viewer.

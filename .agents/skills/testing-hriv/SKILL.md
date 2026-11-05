@@ -83,13 +83,14 @@ Enable the flag and the dedicated worker via the `counting` compose profile:
 COUNTING_ENABLED=true docker compose --profile counting up -d --build
 ```
 
-Then exercise the API directly with any seed login:
+Then exercise the API with the synthetic student (whose Administration
+program allows access to the local-tiled seed image), or an admin/instructor:
 
 ```bash
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"student@example.ca","password":"password"}' | jq -r .access_token)
-curl -s -X POST http://localhost:8000/api/images/1/counts \
+  -d '{"email":"synthetic.student@example.ca","password":"password"}' | jq -r .access_token)
+curl -s -X POST http://localhost:8000/api/images/5/counts \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"mode":"cells","selection":{"x":10,"y":10,"width":200,"height":200}}'
 # -> {"job_id": "...", "status": "queued", "queue_position": 0}
@@ -99,6 +100,9 @@ curl -s -X DELETE http://localhost:8000/api/counts/<job_id> -H "Authorization: B
 
 Until the worker's `arq:counting:health-check` key exists the POST answers
 503 `counting_unavailable`. See docs/object-counting.md for the contract.
+Image 5 is **Synthetic Monitoring Image** on a fresh compose seed; on an
+existing database locate it by name because IDs can differ. This fixture
+tests the workflow, not biological accuracy on smear/tissue images.
 
 UI steps (frontend landed with #1667/#1668):
 
