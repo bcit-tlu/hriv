@@ -3,7 +3,7 @@ create/poll/cancel semantics, visibility, budget, cap and queue health."""
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pyvips
 import pytest
@@ -123,6 +123,22 @@ async def _live_worker(pool) -> None:
 # ── feature flag / schema surface ─────────────────────────
 
 
+@pytest.mark.parametrize("reason,outcome", [
+    ("selection_too_large", "rejected_too_large"),
+    ("too_many_active_counts", "rejected_rate_limited"),
+    ("counting_unavailable", "queue_unavailable"),
+    ("invalid_selection", "rejected"),
+    ("tiles_not_ready", "rejected"),
+])
+def test_rejection_outcome_increments_counter(monkeypatch, reason, outcome) -> None:
+    counter = Mock()
+    monkeypatch.setattr(jobs, "_count_jobs_counter", counter)
+    counts_router._reject("nuclei", reason, image_id=IMAGE_ID)
+    counter.add.assert_called_once_with(
+        1, {"mode": "nuclei", "outcome": outcome, "reason": reason}
+    )
+
+
 def test_require_counting_enabled_404_when_off(monkeypatch) -> None:
     monkeypatch.setattr(settings, "counting_enabled", False)
     with pytest.raises(HTTPException) as exc:
@@ -173,11 +189,14 @@ async def test_create_count_202_for_every_role(
         AsyncMock(return_value=True),
     )
     await _live_worker(pool)
+    counter = Mock()
+    monkeypatch.setattr(jobs, "_count_jobs_counter", counter)
 
     out = await create_count(
         IMAGE_ID, _body(), _user(role=role, id=5), False, _db(_image())
     )
     assert out.status == "queued"
+    counter.add.assert_called_once_with(1, {"mode": "cells", "outcome": "enqueued"})
     assert out.job_id
     record = await jobs.get_record(pool, out.job_id)
     assert record["user_id"] == 5
@@ -189,6 +208,8 @@ async def test_create_count_202_for_every_role(
     assert kwargs["_job_id"] == out.job_id
     assert kwargs["_queue_name"] == "arq:counting"
     assert kwargs["_expires"] == settings.counting_result_ttl_seconds
+    assert kwargs["mode"] == "cells"
+    assert kwargs["image_id"] == IMAGE_ID
     # The record exists before the enqueue and carries the owner set entry.
     assert await pool.sismember("count:user:5", out.job_id)
 
@@ -590,16 +611,13 @@ async def test_delete_count_cancels_and_removes_keys(
 
 @pytest.mark.parametrize("status_key", ["queued", "running"])
 async def test_delete_count_active_records_cancelled(
-    monkeypatch, pool, status_key
+    monkeypatch, pool, status_key, caplog
 ) -> None:
     """DELETE of a queued/running job counts one `cancelled` outcome."""
     monkeypatch.setattr(settings, "counting_enabled", True)
     _mock_pool(monkeypatch, pool)
-    calls = []
-    monkeypatch.setattr(
-        jobs, "record_count_job",
-        lambda mode, outcome, **kw: calls.append((mode, outcome)),
-    )
+    counter = Mock()
+    monkeypatch.setattr(jobs, "_count_jobs_counter", counter)
     await jobs.create_record(
         pool, job_id="ja", user_id=1, image_id=IMAGE_ID,
         source_image_id=SID, mode="cells",
@@ -610,9 +628,12 @@ async def test_delete_count_active_records_cancelled(
     if status_key == "running":
         await jobs.update_status(pool, "ja", jobs.STATUS_RUNNING)
 
-    resp = await delete_count("ja", _user(), False)
+    with caplog.at_level("INFO"):
+        resp = await delete_count("ja", _user(), False)
     assert resp.status_code == 204
-    assert calls == [("cells", jobs.COUNT_OUTCOME_CANCELLED)]
+    counter.add.assert_called_once_with(1, {"mode": "cells", "outcome": "cancelled"})
+    event = next(r for r in caplog.records if getattr(r, "event", None) == "count.cancelled")
+    assert event.duration_ms >= 0
 
 
 @pytest.mark.parametrize("status_key", ["done", "failed"])

@@ -14,6 +14,7 @@ same 404 as a router-level second layer.
 
 import contextlib
 import logging
+import time
 import uuid
 from typing import Annotated
 
@@ -265,6 +266,8 @@ async def create_count(
                     "count_objects_task",
                     job_id,
                     carrier,
+                    mode=body.mode,
+                    image_id=image_id,
                     _job_id=job_id,
                     _queue_name=settings.counting_queue_name,
                     _expires=settings.counting_result_ttl_seconds,
@@ -393,10 +396,16 @@ async def delete_count(
     active = deleted_status in (jobs.STATUS_QUEUED, jobs.STATUS_RUNNING)
     if active:
         jobs.record_count_job(str(record.get("mode", "")), jobs.COUNT_OUTCOME_CANCELLED)
+        enqueued_at = deleted.get("enqueued_at")
+        duration_ms = (
+            round(max(0.0, time.time() - enqueued_at) * 1000)
+            if isinstance(enqueued_at, (int, float)) else None
+        )
         logger.info(
             "count job cancelled",
             extra={
                 "event": "count.cancelled",
+                "duration_ms": duration_ms,
                 "job_id": job_id,
                 "image_id": record.get("image_id"),
                 "mode": record.get("mode"),
