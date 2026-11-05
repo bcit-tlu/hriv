@@ -5,9 +5,13 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
+import pytest
 from fakeredis import aioredis as fake_aioredis
 
-from app.counting import jobs, metrics as count_metrics, pipeline as count_pipeline
+from app.counting import jobs
+from app.counting import metrics as count_metrics
+from app.counting import pipeline as count_pipeline
+from app.counting import worker as count_worker
 from app.counting.outliners import StubOutliner
 from app.counting.stitch import DziInfo
 from app.database import settings
@@ -56,6 +60,107 @@ def test_count_jobs_counter_attrs_with_reason() -> None:
         counter.add.assert_called_once_with(
             1, {"mode": "nuclei", "outcome": "failed", "reason": "too_large"}
         )
+
+
+@pytest.mark.parametrize("outcome", [
+    jobs.COUNT_OUTCOME_ENQUEUED, jobs.COUNT_OUTCOME_DONE,
+    jobs.COUNT_OUTCOME_FAILED, jobs.COUNT_OUTCOME_CANCELLED,
+    jobs.COUNT_OUTCOME_EXPIRED, jobs.COUNT_OUTCOME_REJECTED_TOO_LARGE,
+    jobs.COUNT_OUTCOME_REJECTED_RATE_LIMITED, jobs.COUNT_OUTCOME_QUEUE_UNAVAILABLE,
+    "rejected",
+])
+def test_every_count_outcome_increments_counter(outcome) -> None:
+    with patch.object(jobs, "_count_jobs_counter") as counter:
+        jobs.record_count_job("cells", outcome)
+    counter.add.assert_called_once_with(1, {"mode": "cells", "outcome": outcome})
+
+
+@pytest.mark.parametrize("mode,image_id", [("cells", 5), ("unknown", None)])
+@pytest.mark.parametrize("expired_record", [False, True])
+async def test_missing_record_records_expired(mode, image_id, expired_record, caplog) -> None:
+    pool = fake_aioredis.FakeRedis(decode_responses=True)
+    try:
+        if expired_record:
+            await jobs.create_record(
+                pool, job_id="gone", user_id=1, image_id=5, source_image_id=3,
+                mode="cells", selection={"x": 0, "y": 0, "width": 1, "height": 1},
+                ttl_seconds=600,
+            )
+            await pool.expire("count:job:gone", 0)
+        with patch.object(jobs, "_count_jobs_counter") as counter, caplog.at_level("INFO"):
+            await count_worker.count_objects_task(
+                {"redis": pool}, "gone", mode=mode, image_id=image_id
+            )
+        counter.add.assert_called_once_with(1, {"mode": mode, "outcome": "expired"})
+        event = next(r for r in caplog.records if getattr(r, "event", None) == "count.expired")
+        assert (event.job_id, event.mode, event.image_id) == ("gone", mode, image_id)
+        assert await jobs.get_record(pool, "gone") is None
+        assert await jobs.get_result(pool, "gone") is None
+    finally:
+        await pool.aclose()
+
+
+@pytest.mark.parametrize("total", [0, 2])
+async def test_worker_records_done_serialise_and_wait(total, caplog) -> None:
+    pool = fake_aioredis.FakeRedis(decode_responses=True)
+    try:
+        await jobs.create_record(
+            pool, job_id="j", user_id=1, image_id=2, source_image_id=3,
+            mode="cells", selection={"x": 0, "y": 0, "width": 1, "height": 1},
+            ttl_seconds=600,
+        )
+        with (
+            patch.object(count_worker.pipeline, "run_count", return_value={"total": total}),
+            patch.object(jobs, "_count_jobs_counter") as counter,
+            patch.object(count_metrics, "_run_step") as histogram,
+            caplog.at_level("INFO"),
+        ):
+            await count_worker.count_objects_task(
+                {"redis": pool, "outliners": {"cells": StubOutliner()}}, "j"
+            )
+        counter.add.assert_called_once_with(1, {"mode": "cells", "outcome": "done"})
+        seconds, attrs = histogram.record.call_args.args
+        assert seconds >= 0
+        assert attrs == {"mode": "cells", "step": "serialise"}
+        started = next(r for r in caplog.records if getattr(r, "event", None) == "count.started")
+        completed = next(r for r in caplog.records if getattr(r, "event", None) == "count.completed")
+        assert started.wait_seconds >= 0
+        assert completed.timings_ms["serialise"] >= 0
+        assert await jobs.get_result(pool, "j") == {"total": total}
+    finally:
+        await pool.aclose()
+
+
+async def test_serialise_failure_still_records_timing() -> None:
+    pool = AsyncMock()
+    record = {"mode": "cells", "image_id": 2}
+    with (
+        patch.object(jobs, "get_record", AsyncMock(return_value=record)),
+        patch.object(jobs, "update_status", AsyncMock(return_value=True)),
+        patch.object(count_worker.pipeline, "run_count", return_value={"total": 0}),
+        patch.object(jobs, "write_result", AsyncMock(side_effect=RuntimeError("write failed"))),
+        patch.object(jobs, "_count_jobs_counter") as counter,
+        patch.object(count_metrics, "_run_step") as histogram,
+        pytest.raises(RuntimeError, match="write failed"),
+    ):
+        await count_worker.count_objects_task(
+            {"redis": pool, "outliners": {"cells": StubOutliner()}}, "j"
+        )
+    assert histogram.record.call_args.args[1] == {"mode": "cells", "step": "serialise"}
+    counter.add.assert_not_called()
+
+
+async def test_worker_failure_increments_failed_counter() -> None:
+    pool = AsyncMock()
+    with (
+        patch.object(jobs, "get_record", AsyncMock(return_value={"mode": "cells"})),
+        patch.object(jobs, "update_status", AsyncMock(return_value=True)),
+        patch.object(jobs, "_count_jobs_counter") as counter,
+    ):
+        await count_worker.count_objects_task({"redis": pool}, "j")
+    counter.add.assert_called_once_with(
+        1, {"mode": "cells", "outcome": "failed", "reason": "internal"}
+    )
 
 
 async def test_enqueued_at_epoch_float_in_record() -> None:

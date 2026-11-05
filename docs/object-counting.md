@@ -347,7 +347,21 @@ selections and returned wrong counts.
   `hriv_count_worker_up`, `hriv_count_worker_heartbeat_age_seconds`.
 - **Tracing**: `count.<step>` child spans under `count_objects_task` with
   `count.mode`/`level`/`downsample`/`pixels`/`objects`/`groups`/`outliner`.
-- **Logs**: `count.completed` includes `timings_ms` per step; the other
-  events are unchanged.
+- **Logs**: `count.completed` includes `timings_ms` per step.
+  `timings_ms.serialise` now includes result JSON serialization and the
+  Redis write, also recorded as `hriv.count.run{mode,step="serialise"}` and
+  a `count.serialise` span. The existing `total` histogram step remains
+  pipeline-only; completed `duration_ms` includes the result write.
+- **Expiry observations**: `hriv.count_jobs{mode,outcome="expired"}` and
+  `count.expired` record a vanished job record when the worker dequeues it.
+  Mode/image ID come from enqueue arguments (legacy jobs use `unknown`/null).
+  This cannot distinguish Redis TTL expiry from cancellation/deletion, so
+  a cancelled job that still dequeues can also count as expired. Polls of
+  missing IDs do not increment this counter because ownership and prior
+  existence cannot be established.
+- **Lifecycle timing fields**: `count.started.wait_seconds` measures
+  enqueue-to-start; `count.cancelled.duration_ms` measures age since enqueue,
+  including queue wait. Missing legacy enqueue timestamps produce null.
+  Enqueued/rejected events retain their existing fields.
 - Full semantics in `docs/observability-conventions.md` → Object Counting
   Metrics.
