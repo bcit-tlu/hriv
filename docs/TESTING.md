@@ -851,3 +851,74 @@ and collection-page dialog (#1628). Requires `COLLECTIONS_ENABLED=true`.
    though the instructor sees it, and `image_count` counts visible images
    only. `GET /api/collections/{id}/graph?order=3` — **Assert:**
    `categories` covers only the hub members' categories.
+
+## Test Case 15: Object Counting — Results and Selection Lifecycle (UI)
+
+**Purpose:** Verify Cells/Nuclei results and independent ephemeral selections.
+Start with `COUNTING_ENABLED=true docker compose --profile counting up -d --build`;
+wait for `seed-media` to finish and the counting-worker heartbeat to appear.
+Use **Synthetic Monitoring Image** (ID 5 on a fresh seed) for workflow checks,
+then real smear/tissue images with local tiles for visual accuracy checks.
+The synthetic fixture is not expected to produce the epic's ~72 / 4 / 1 counts.
+
+1. Log in as `admin@example.ca`, open the local-tiled image, choose the
+   **selection** toolbar tool and draw a small rectangle. Choose
+   **Count objects → Cells**. **Assert:** progress/queue feedback appears,
+   then the report opens with a preview, clipped coloured outlines, unnamed
+   **Group n** legend and total. Total equals the sum of group counts;
+   zero detections are a valid empty result, not a failed job.
+2. Close the report. **Assert:** viewer outlines remain clipped to the box;
+   **View results (N)** reopens that selection's report. Draw another box
+   and choose **Nuclei**. **Assert:** the same lifecycle works; groups are
+   appearance clusters, not named cell classifications. On real lab images,
+   visually inspect the centroid edge rule and colour legibility and record
+   accuracy/latency feedback rather than assuming a ground-truth count.
+3. Draw two partially overlapping selections and count each. **Assert:**
+   each has its own job ID, outlines and report; clearing one does not
+   remove or merge the other's result.
+4. Start another count and clear its selection while queued/running.
+   **Assert:** its DELETE request returns 204; progress/outlines/results
+   disappear and no late result resurrects the selection. Poll that job ID
+   with the owner's token — **Assert:** 404. Repeat with clear-all; all
+   selections and their jobs/results disappear.
+
+## Test Case 16: Object Counting — Visibility, Flag and Limits (UI/API)
+
+**Purpose:** Verify backend enforcement independently of the viewer affordance.
+Use the enabled stack from Test Case 15 and authenticated API tokens for the
+named users. Restore all temporary configuration changes after testing.
+
+1. As `synthetic.student@example.ca` (Administration program), open
+   **Synthetic Monitoring Image** and count a small selection. **Assert:**
+   POST `/api/images/5/counts` returns 202, owner polling succeeds and the
+   result UI works. As `student@example.ca`, who does not have access to
+   this restricted category, POST the same request directly — **Assert:**
+   404, not 403; a hidden UI alone is not proof of access control. Use the
+   actual image ID if testing an existing database.
+2. Recreate the API with `COUNTING_ENABLED=false`, then reload the viewer.
+   **Assert:** `/api/features` reports `counting: false`, the Count affordance
+   is hidden, and direct POST/GET/DELETE counting requests return 404.
+   Re-enable and recreate the API before the remaining checks.
+3. On a sufficiently large local-tiled image, select a box that exceeds the
+   configured outliner budget at every permitted downsample. **Assert:**
+   POST returns 422 `selection_too_large`, the UI offers a smaller-selection
+   error, and no job is enqueued. For a reproducible local boundary test,
+   temporarily set API `COUNTING_MAX_DOWNSAMPLE=1` and both pixel budgets
+   (`COUNTING_MAX_PIXELS`, `COUNTING_CLASSICAL_MAX_PIXELS`) to 65536; choose
+   a box whose stitched pixels including margin exceed that cap. Restore
+   API/worker settings together afterward. A later worker `too_large`
+   failure is a distinct size-driven planning case, not this pre-flight check.
+4. Keep `COUNTING_MAX_ACTIVE_PER_USER` jobs queued/running for one user
+   (default 3), then submit another small valid selection as that user.
+   **Assert:** 429 `too_many_active_counts` with `Retry-After: 10`; an
+   independent user's request is not blocked by this user's cap. If jobs
+   finish too quickly, briefly pause the compose counting worker immediately
+   after a heartbeat, submit within the heartbeat TTL, then unpause it;
+   a 503 means the heartbeat expired and does not exercise the cap.
+5. Cancel one active job or wait for completion, then retry. **Assert:**
+   the user's slot is released and POST returns 202. Clean up remaining
+   jobs, unpause the worker and restore defaults even if a check fails.
+
+These cases are a validation checklist, not a claim that local E2E or the
+instructor feel-test on `latest` has passed. See
+[object counting](object-counting.md) for troubleshooting and rollout gates.

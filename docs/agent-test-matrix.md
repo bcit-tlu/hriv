@@ -231,6 +231,9 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 CountProgressSnackbar CountReportDialog CountOutlinesLayer useFeatures
 ImageViewer` (from `frontend/`).
 - See [object-counting.md](object-counting.md).
+- **Counting metrics/tracing** (`app/counting/metrics.py`, spans in `pipeline.py`,
+  counting gauges in `queue_metrics.py`) → `tests/test_counting_metrics.py` +
+  `tests/test_queue_metrics.py` + `tests/test_counting_pipeline.py`.
 
 ## Notes
 
@@ -239,6 +242,4 @@ ImageViewer` (from `frontend/`).
 - When in doubt about which files a feature touches, consult the
   [agent feature map](agent-feature-map.md).
 - This matrix lists the _most relevant_ tests, not an exhaustive set — always run
-  the full suite before merging.- **Counting metrics/tracing** (`app/counting/metrics.py`, spans in `pipeline.py`,
-  counting gauges in `queue_metrics.py`) → `tests/test_counting_metrics.py` +
-  `tests/test_queue_metrics.py` + `tests/test_counting_pipeline.py`.
+  the full suite before merging.

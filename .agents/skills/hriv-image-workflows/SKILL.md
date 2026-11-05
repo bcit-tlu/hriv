@@ -45,3 +45,11 @@ Choose targeted tests from `../../../docs/agent-test-matrix.md`. Common targets:
 - `frontend/tests/useOverlayPersistence.test.ts`
 - `frontend/tests/pollProcessingJob.test.ts`
 - viewer or upload component tests touched by the change
+
+## Object counting
+
+For the local counting-worker profile, feature flag, seeded image and viewer
+checks, follow [testing-hriv: Object counting](../testing-hriv/SKILL.md#object-counting-epic-1661).
+See [object-counting.md](../../../docs/object-counting.md) for the real
+outliners, ephemeral job contract, settings, capacity and troubleshooting.
+Counting reads the DZI pyramid and never saves outlines as canvas annotations.
