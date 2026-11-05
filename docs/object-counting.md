@@ -372,7 +372,7 @@ selections and returned wrong counts.
 | Job stays queued                                         | Check the queue and heartbeat below. A worker can disappear after enqueue. Confirm the API and worker use the same Redis and `COUNTING_QUEUE_NAME`, and that the worker can read the tiles volume. Scale replicas before a lab burst; do not raise per-process concurrency.                                               |
 | `selection_too_large` (422), or worker error `too_large` | Draw a smaller box. The API uses the configured outliner's pixel budget; the worker's size-driven level choice may still reject it to preserve object detail. Do not increase budgets without checking latency/memory and the hard stitching guard.                                                                       |
 | 429 `too_many_active_counts`                             | This user already has `COUNTING_MAX_ACTIVE_PER_USER` queued/running jobs (default 3). Cancel or wait for a job to finish, then retry; API responses include `Retry-After: 10`. Clearing finished results is not an active-job cancellation.                                                                               |
-| Result disappears / polling returns 404                  | Redis records/results expire after `COUNTING_RESULT_TTL_SECONDS` (default 600 seconds from enqueue, not completion). Clearing a selection also deletes its job. Draw a new selection to count again; results are not saved in image metadata.                                                                             |
+| Result disappears / polling returns 404                  | Redis records/results expire after `COUNTING_RESULT_TTL_SECONDS` (default 600 seconds from enqueue, not completion). Cancelling a count, or clearing all selection rectangles, also deletes the job. Draw a new selection to count again; results are not saved in image metadata.                                        |
 | 409 `tiles_not_ready`, or worker error `no_tiles`        | Counting needs a readable local DZI pyramid; external/catalogued DZI URLs are not sufficient. Wait for image processing and check the worker's read-only tiles mount. For compose, confirm `seed-media` completed and try Synthetic Monitoring Image (fresh-seed ID 5).                                                   |
 
 For a local diagnosis:
@@ -415,4 +415,4 @@ validation; this text does not announce that stable is already enabled:
 > group legend help you compare object counts at a glance. Counting is
 > available to every role on images they can view. It is a counter, not a
 > classifier: always double-check the outlines visually. Results are
-> temporary and disappear when you clear the selection or leave the viewer.
+> temporary and disappear when you clear the selections or leave the viewer.

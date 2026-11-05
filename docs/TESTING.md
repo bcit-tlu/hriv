@@ -874,13 +874,16 @@ The synthetic fixture is not expected to produce the epic's ~72 / 4 / 1 counts.
    visually inspect the centroid edge rule and colour legibility and record
    accuracy/latency feedback rather than assuming a ground-truth count.
 3. Draw two partially overlapping selections and count each. **Assert:**
-   each has its own job ID, outlines and report; clearing one does not
-   remove or merge the other's result.
-4. Start another count and clear its selection while queued/running.
-   **Assert:** its DELETE request returns 204; progress/outlines/results
-   disappear and no late result resurrects the selection. Poll that job ID
-   with the owner's token — **Assert:** 404. Repeat with clear-all; all
-   selections and their jobs/results disappear.
+   each has its own job ID, outlines and report; cancelling or re-counting
+   one does not remove or merge the other's result.
+4. Start another count and choose **Cancel count** from that selection's
+   count menu while it is queued/running. **Assert:** its DELETE request
+   returns 204; progress and any outlines/results for that job disappear
+   (the rectangle itself stays), and no late result resurrects it. Poll
+   that job ID with the owner's token — **Assert:** 404. Then use the
+   toolbar's **Clear all selection rectangles** button. **Assert:** all
+   rectangles and their jobs/results disappear. The viewer has no
+   per-rectangle remove control.
 
 ## Test Case 16: Object Counting — Visibility, Flag and Limits (UI/API)
 
