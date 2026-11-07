@@ -15,7 +15,11 @@ from ..authz import (
     can_attach_group_to_category,
     can_attach_program_to_category,
 )
-from ..collection_views import _ViewerContext, collection_summary_out
+from ..collection_views import (
+    _ViewerContext,
+    collection_summary_out,
+    collections_accessible_to,
+)
 from ..database import get_db, settings
 from ..models import Category, Collection, Group, Image, Program, User
 from ..schemas import (
@@ -378,7 +382,11 @@ async def _load_tree(
     # ── Query 3: all collections in one shot (flag- and user-gated) ──
     collections_by_cat: dict[int, list[Collection]] = {}
     coll_ctx: _ViewerContext | None = None
-    if settings.collections_enabled and user is not None:
+    if (
+        settings.collections_enabled
+        and user is not None
+        and collections_accessible_to(user)
+    ):
         coll_result = await db.execute(
             select(Collection).order_by(Collection.sort_order, Collection.id)
         )

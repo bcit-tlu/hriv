@@ -1221,6 +1221,7 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+    collections_student_access: bool
     collections_home_shelf: bool
     counting: bool
 

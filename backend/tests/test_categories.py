@@ -1407,6 +1407,19 @@ async def test_load_tree_flag_off_omits_collections(
     assert db.execute.await_count == 2
 
 
+@pytest.mark.parametrize("role", ["student", "staff", "instructor", "admin"])
+async def test_load_tree_student_access_gate(monkeypatch, role):
+    monkeypatch.setattr(categories_router.settings, "collections_enabled", True)
+    monkeypatch.setattr(categories_router.settings, "collections_student_access", False)
+    db = _mock_db3(
+        [_make_category(1, "Visible")], [],
+        [_make_collection(10, category_id=1, visibility="public", user_id=1)],
+    )
+    tree = await _load_tree(db, None, user=_make_user(role), user_role=role)
+    assert [c.id for c in tree[0].collections] == ([] if role == "student" else [10])
+    assert db.execute.await_count == (2 if role == "student" else 3)
+
+
 async def test_load_tree_student_collection_visibility(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
