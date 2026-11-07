@@ -2494,6 +2494,7 @@ export interface VersionsResponse {
 
 /** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
 export interface ApiFeatures {
+  collections_student_access?: boolean
   collections: boolean
   collections_home_shelf: boolean
   counting: boolean

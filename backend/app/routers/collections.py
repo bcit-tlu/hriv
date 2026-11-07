@@ -75,6 +75,7 @@ from ..collection_views import (
     _owners_out,
     collection_out,
     collection_summary_out,
+    collections_accessible_to,
     get_visible_collection_or_404,
     is_student_curated,
     owner_label,
@@ -146,10 +147,25 @@ def require_collections_enabled() -> None:
         raise HTTPException(status_code=404, detail="Not Found")
 
 
+def require_collections_access(
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    """Hide collections from gated students, including collection owners.
+
+    CollectionsFeatureMiddleware runs pre-auth at the ASGI layer and cannot
+    enforce a role gate; this dependency resolves the authenticated user.
+    """
+    if not collections_accessible_to(user):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
 router = APIRouter(
     prefix="/collections",
     tags=["collections"],
-    dependencies=[Depends(require_collections_enabled)],
+    dependencies=[
+        Depends(require_collections_enabled),
+        Depends(require_collections_access),
+    ],
 )
 
 

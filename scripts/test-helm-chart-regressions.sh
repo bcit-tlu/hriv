@@ -536,6 +536,9 @@ backend_default_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' <
 assert_contains "$backend_default_collections_enabled" 'value: "false"' \
   "backend deployment should default collections to disabled"
 backend_default_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_mode_default_deployment")"
+backend_default_student_access="$(grep -F -A1 'name: COLLECTIONS_STUDENT_ACCESS' <<<"$backend_mode_default_deployment")"
+assert_contains "$backend_default_student_access" 'value: "true"' \
+  "backend deployment should default student collections access to enabled"
 assert_contains "$backend_default_home_shelf" 'value: "false"' \
   "backend deployment should default COLLECTIONS_HOME_SHELF to false"
 assert_contains "$backend_mode_default_deployment" 'name: WORKER_MAX_JOBS' \
@@ -595,6 +598,7 @@ backend_required_manifest="$(helm template test charts/backend \
   --set tasks.rebuild.parallelism=3 \
   --set tasks.rebuild.pumpCadenceSeconds=120 \
   --set collections.enabled=true \
+  --set collections.studentAccess=false \
   --set collections.homeShelf=true \
   --set redis.enabled=true \
   --set redis.worker.enabled=true \
@@ -615,6 +619,9 @@ backend_required_collections_enabled="$(grep -F -A1 'name: COLLECTIONS_ENABLED' 
 assert_contains "$backend_required_collections_enabled" 'value: "true"' \
   "backend deployment should render COLLECTIONS_ENABLED=true when collections.enabled is set"
 backend_required_home_shelf="$(grep -F -A1 'name: COLLECTIONS_HOME_SHELF' <<<"$backend_required_api")"
+backend_required_student_access="$(grep -F -A1 'name: COLLECTIONS_STUDENT_ACCESS' <<<"$backend_required_api")"
+assert_contains "$backend_required_student_access" 'value: "false"' \
+  "backend deployment should permit disabling student collections access"
 assert_contains "$backend_required_home_shelf" 'value: "true"' \
   "backend deployment should render COLLECTIONS_HOME_SHELF=true when collections.homeShelf is set"
 assert_contains "$backend_required_api" 'name: REBUILD_PARALLELISM' \

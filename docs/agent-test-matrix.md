@@ -37,9 +37,15 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 ### Changed collections (model, authorization, read/write API, ownership transfer, Collections pages / manage table)
 
 - backend: `poetry run pytest tests/test_collections_model.py tests/test_router_collections.py tests/test_schemas.py tests/test_authz.py tests/test_visibility.py`
-- Feature flag (`COLLECTIONS_ENABLED`, `GET /api/features`, `useFeatures`): add
+- Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_STUDENT_ACCESS`,
+  `GET /api/features`, `useFeatures`): add
   `tests/test_database.py tests/test_main.py` (backend) and
   `npm test -- useFeatures` (frontend); chart: `bash scripts/test-helm-chart-regressions.sh`.
+- Student-access gating also runs `tests/test_categories.py` and
+  `tests/test_router_images.py` (backend) and `npm test -- App.test.tsx`
+  (frontend): assert student-owner 404s, no tree-embedded collections or
+  collection query, hidden navigation/deep-link fallback, and unchanged
+  non-student behavior with student access off.
 - Ownership transfer / program-deletion orphaning (#1413, #1531) also runs
   `tests/test_router_programs.py` (the real `DELETE /api/programs/{id}` →
   orphan test needs `REORDER_FIXTURE_DATABASE_URL`, otherwise it skips) and

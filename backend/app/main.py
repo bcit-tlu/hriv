@@ -390,6 +390,7 @@ async def features() -> FeaturesOut:
     """Deployment feature flags (unauthenticated; see docs/collections.md)."""
     return FeaturesOut(
         collections=settings.collections_enabled,
+        collections_student_access=settings.collections_student_access,
         collections_home_shelf=(
             settings.collections_enabled and settings.collections_home_shelf
         ),
