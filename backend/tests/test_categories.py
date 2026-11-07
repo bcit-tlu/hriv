@@ -381,7 +381,12 @@ def _expected_browse_etag(
 ) -> str:
     programs_str = ",".join(str(i) for i in sorted(programs or []))
     groups_str = ",".join(str(i) for i in sorted(groups or []))
-    fragment = hashlib.md5(f"{role}|{programs_str}|{groups_str}".encode()).hexdigest()
+    collections_enabled = categories_router.settings.collections_enabled and (
+        role != "student" or categories_router.settings.collections_student_access
+    )
+    fragment = hashlib.md5(
+        f"{role}|{programs_str}|{groups_str}|{collections_enabled}".encode()
+    ).hexdigest()
     return f'W/"browse-{revision}-{fragment}"'
 
 
@@ -1418,6 +1423,36 @@ async def test_load_tree_student_access_gate(monkeypatch, role):
     tree = await _load_tree(db, None, user=_make_user(role), user_role=role)
     assert [c.id for c in tree[0].collections] == ([] if role == "student" else [10])
     assert db.execute.await_count == (2 if role == "student" else 3)
+
+
+async def test_category_tree_etag_changes_when_student_access_enabled(monkeypatch):
+    monkeypatch.setattr(categories_router.settings, "collections_enabled", True)
+    monkeypatch.setattr(categories_router.settings, "collections_student_access", False)
+    monkeypatch.setattr(categories_router, "get_browse_revision", AsyncMock(return_value=7))
+    student = _make_user("student")
+    request = MagicMock()
+    request.headers = {}
+    response = Response()
+    cats = [_make_category(1, "Visible")]
+    collection = _make_collection(10, category_id=1, visibility="public", user_id=1)
+
+    tree = await get_category_tree(request, response, student, _mock_db(cats, []))
+
+    assert tree[0].collections == []
+    gated_etag = response.headers["ETag"]
+    request.headers = {"if-none-match": gated_etag}
+    cached = await get_category_tree(request, Response(), student, AsyncMock())
+    assert cached.status_code == 304
+
+    monkeypatch.setattr(categories_router.settings, "collections_student_access", True)
+    response = Response()
+    tree = await get_category_tree(
+        request, response, student, _mock_db3(cats, [], [collection])
+    )
+
+    assert response.status_code == 200
+    assert response.headers["ETag"] != gated_etag
+    assert [c.id for c in tree[0].collections] == [10]
 
 
 async def test_load_tree_student_collection_visibility(

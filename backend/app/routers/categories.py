@@ -164,7 +164,10 @@ def _viewer_etag_fragment(
     """Stable, opaque hash of the caller's visibility context for ETags."""
     programs = ",".join(str(i) for i in sorted(user_program_ids or ()))
     groups = ",".join(str(i) for i in sorted(user_group_ids or ()))
-    return hashlib.md5(f"{user.role}|{programs}|{groups}".encode()).hexdigest()
+    collections_enabled = settings.collections_enabled and collections_accessible_to(user)
+    return hashlib.md5(
+        f"{user.role}|{programs}|{groups}|{collections_enabled}".encode()
+    ).hexdigest()
 
 
 async def _resolve_programs(
