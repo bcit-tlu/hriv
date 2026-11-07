@@ -18,6 +18,7 @@ describe('useFeatures', () => {
     await waitFor(() =>
       expect(result.current).toEqual({
         collections: true,
+        collectionsStudentAccess: true,
         collectionsHomeShelf: true,
         counting: false,
       }),
@@ -31,6 +32,7 @@ describe('useFeatures', () => {
     await waitFor(() =>
       expect(result.current).toEqual({
         collections: false,
+        collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: false,
       }),
@@ -43,6 +45,7 @@ describe('useFeatures', () => {
     await waitFor(() =>
       expect(result.current).toEqual({
         collections: false,
+        collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: false,
       }),
@@ -55,6 +58,7 @@ describe('useFeatures', () => {
     await waitFor(() =>
       expect(result.current).toEqual({
         collections: false,
+        collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: true,
       }),
@@ -64,10 +68,20 @@ describe('useFeatures', () => {
     await waitFor(() =>
       expect(second.result.current).toEqual({
         collections: false,
+        collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: false,
       }),
     )
+  })
+
+  it.each([true, false])('maps collections_student_access=%s', async (studentAccess) => {
+    fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_student_access: studentAccess,
+    })
+    const { result } = renderHook(() => useFeatures())
+    await waitFor(() => expect(result.current?.collectionsStudentAccess).toBe(studentAccess))
   })
 
   it('resolves to DEFAULT_FEATURES (everything off) when the request fails', async () => {
@@ -76,6 +90,7 @@ describe('useFeatures', () => {
     await waitFor(() => expect(result.current).toEqual(DEFAULT_FEATURES))
     expect(DEFAULT_FEATURES.collections).toBe(false)
     expect(DEFAULT_FEATURES.collectionsHomeShelf).toBe(false)
+    expect(DEFAULT_FEATURES.collectionsStudentAccess).toBe(true)
   })
 
   it('ignores a response that lands after unmount', async () => {
