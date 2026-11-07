@@ -18,6 +18,7 @@ from ..browse_state import bump_browse_revision
 from ..collection_views import (
     _ViewerContext,
     collection_summary_out,
+    collections_accessible_to,
     image_ids_in_collections,
 )
 from ..database import async_session, get_db, settings
@@ -103,7 +104,7 @@ async def image_collections_map(
     is enabled. Self-gated by ``COLLECTIONS_ENABLED`` — the
     ``CollectionsFeatureMiddleware`` prefix only covers ``/api/collections``.
     """
-    if not settings.collections_enabled:
+    if not settings.collections_enabled or not collections_accessible_to(_user):
         raise HTTPException(status_code=404, detail="Not Found")
 
     stmt = (
@@ -176,7 +177,7 @@ async def list_image_collections(
     collection set is filtered through ``_ViewerContext.can_view`` so a student
     never learns a private/restricted collection exists.
     """
-    if not settings.collections_enabled:
+    if not settings.collections_enabled or not collections_accessible_to(_user):
         raise HTTPException(status_code=404, detail="Not Found")
 
     await _get_visible_image(db, _user, image_id)

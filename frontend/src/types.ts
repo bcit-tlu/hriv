@@ -91,6 +91,7 @@ export interface Group {
 export interface Features {
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
+  collectionsStudentAccess: boolean
   /** My collections drawer on Browse (#1583). */
   collectionsHomeShelf: boolean
   /** Object counting in the viewer (epic #1661). */
@@ -99,6 +100,7 @@ export interface Features {
 
 export const DEFAULT_FEATURES: Features = {
   collections: false,
+  collectionsStudentAccess: true,
   collectionsHomeShelf: false,
   counting: false,
 }

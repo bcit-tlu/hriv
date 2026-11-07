@@ -344,6 +344,65 @@ def test_require_collections_enabled_passes_when_on(
 # ── list ──────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize("role", ["student", "staff", "instructor", "admin"])
+@pytest.mark.parametrize("student_access", [False, True])
+async def test_student_access_defense_in_depth(monkeypatch, role, student_access):
+    monkeypatch.setattr(collections_router.settings, "collections_student_access", student_access)
+    user = _user(role, id=10)
+    ctx = _ViewerContext(user, set() if role == "student" else None)
+    assert ctx.can_view(_collection(user_id=10)) is (role != "student" or student_access)
+
+
+def test_gated_student_owner_routes_return_404(monkeypatch):
+    from app.auth import get_current_user
+    from app.database import get_db
+    from app.routers import images
+
+    user = _user("student", id=10)
+    owned = _collection(user_id=10)
+    db = _mock_db([owned], get=owned)
+    app = FastAPI()
+    app.include_router(collections_router.router, prefix="/api")
+    app.include_router(images.router, prefix="/api")
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    monkeypatch.setattr(collections_router.settings, "collections_enabled", True)
+    monkeypatch.setattr(collections_router.settings, "collections_student_access", False)
+    with TestClient(app) as client:
+        for method, path, body in (
+            ("GET", "/api/collections", None),
+            ("GET", "/api/collections/1", None),
+            ("POST", "/api/collections", {"name": "New", "type": "sequence"}),
+            ("PATCH", "/api/collections/1", {"name": "Updated", "version": 3}),
+            ("DELETE", "/api/collections/1", None),
+            ("GET", "/api/collections/graph", None),
+            ("GET", "/api/images/collections-map", None),
+            ("GET", "/api/images/1/collections", None),
+        ):
+            response = client.request(method, path, json=body)
+            assert response.status_code == 404, (method, path, response.text)
+            assert response.json() == {"detail": "Not Found"}
+    db.execute.assert_not_awaited()
+    db.get.assert_not_awaited()
+
+
+@pytest.mark.parametrize("role", ["student", "staff", "instructor", "admin"])
+@pytest.mark.parametrize("student_access", [False, True])
+def test_collection_reads_student_access_matrix(monkeypatch, role, student_access):
+    from app.auth import get_current_user
+    from app.routers import images
+
+    client = _graph_app(monkeypatch, _mock_db([], get=_image(1)))
+    client.app.include_router(images.router)
+    client.app.dependency_overrides[get_current_user] = lambda: _user(role)
+    monkeypatch.setattr(collections_router.settings, "collections_student_access", student_access)
+    expected = 404 if role == "student" and not student_access else 200
+    for path in ("/collections", "/images/collections-map", "/images/1/collections"):
+        response = client.get(path)
+        assert response.status_code == expected, response.text
+
+
+
 async def test_list_non_students_see_everything() -> None:
     cols = [
         _collection(1, "private", user_id=10),

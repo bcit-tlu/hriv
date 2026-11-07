@@ -15,7 +15,11 @@ from ..authz import (
     can_attach_group_to_category,
     can_attach_program_to_category,
 )
-from ..collection_views import _ViewerContext, collection_summary_out
+from ..collection_views import (
+    _ViewerContext,
+    collection_summary_out,
+    collections_accessible_to,
+)
 from ..database import get_db, settings
 from ..models import Category, Collection, Group, Image, Program, User
 from ..schemas import (
@@ -160,7 +164,10 @@ def _viewer_etag_fragment(
     """Stable, opaque hash of the caller's visibility context for ETags."""
     programs = ",".join(str(i) for i in sorted(user_program_ids or ()))
     groups = ",".join(str(i) for i in sorted(user_group_ids or ()))
-    return hashlib.md5(f"{user.role}|{programs}|{groups}".encode()).hexdigest()
+    collections_enabled = settings.collections_enabled and collections_accessible_to(user)
+    return hashlib.md5(
+        f"{user.role}|{programs}|{groups}|{collections_enabled}".encode()
+    ).hexdigest()
 
 
 async def _resolve_programs(
@@ -378,7 +385,11 @@ async def _load_tree(
     # ── Query 3: all collections in one shot (flag- and user-gated) ──
     collections_by_cat: dict[int, list[Collection]] = {}
     coll_ctx: _ViewerContext | None = None
-    if settings.collections_enabled and user is not None:
+    if (
+        settings.collections_enabled
+        and user is not None
+        and collections_accessible_to(user)
+    ):
         coll_result = await db.execute(
             select(Collection).order_by(Collection.sort_order, Collection.id)
         )

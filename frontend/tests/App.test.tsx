@@ -452,9 +452,11 @@ vi.mock('../src/components/AppShell', () => ({
       <button type="button" onClick={() => onTabChange('browse')}>
         Shell tab browse
       </button>
-      <button type="button" onClick={() => onTabChange('collections')}>
-        Shell tab collections
-      </button>
+      {collectionsEnabled && (
+        <button type="button" onClick={() => onTabChange('collections')}>
+          Shell tab collections
+        </button>
+      )}
       <button type="button" onClick={onHomeClick}>
         Shell home
       </button>
@@ -2872,6 +2874,54 @@ describe('App collections feature flag (COLLECTIONS_ENABLED)', () => {
     await waitFor(() => expect(apiMocks.fetchFeatures).toHaveBeenCalled())
     await act(async () => {})
     expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('false')
+  })
+
+  it('hides collections navigation and falls back to Browse for a gated student', async () => {
+    authState.currentUser = { ...mockCurrentUser, role: 'student' }
+    authState.canEditContent = false
+    authState.canViewPeople = false
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_student_access: false,
+      collections_home_shelf: true,
+    })
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    expect(await screen.findByRole('button', { name: 'Drop files on grid' })).toBeInTheDocument()
+    expect(screen.getByTestId('shell-collections-enabled')).toHaveTextContent('false')
+    expect(screen.queryByRole('button', { name: 'Shell tab collections' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'My collections' })).not.toBeInTheDocument()
+    expect(apiMocks.fetchCollections).not.toHaveBeenCalled()
+  })
+
+  it.each(['staff', 'instructor', 'admin'] as const)(
+    'keeps collections accessible to %s while student access is off',
+    async (role) => {
+      authState.currentUser = { ...mockCurrentUser, role }
+      apiMocks.fetchFeatures.mockResolvedValue({
+        collections: true,
+        collections_student_access: false,
+      })
+      window.history.replaceState(null, '', '/?collection=12')
+      render(<App />)
+      expect(
+        await screen.findByRole('button', { name: 'Shell tab collections' }),
+      ).toBeInTheDocument()
+      expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+    },
+  )
+
+  it('keeps student collections accessible when student access is on', async () => {
+    authState.currentUser = { ...mockCurrentUser, role: 'student' }
+    apiMocks.fetchFeatures.mockResolvedValue({
+      collections: true,
+      collections_student_access: true,
+    })
+    window.history.replaceState(null, '', '/?collection=12')
+    render(<App />)
+    expect(await screen.findByRole('button', { name: 'Shell tab collections' })).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
   })
 
   it('treats a failed /api/features request as every flag off', async () => {

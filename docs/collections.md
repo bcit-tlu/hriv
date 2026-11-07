@@ -13,7 +13,7 @@ Epic: [#1409](https://github.com/bcit-tlu/hriv/issues/1409). This page is
 extended as each child issue lands; sections marked _planned_ are not yet
 implemented.
 
-## Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_HOME_SHELF`)
+## Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_HOME_SHELF`, `COLLECTIONS_STUDENT_ACCESS`)
 
 Collections are **dark-launched** so the rest of the app can keep releasing
 (patch/minor bumps via release-please, `stable` re-pins) while the epic lands
@@ -34,7 +34,7 @@ one child issue at a time on `main`.
   `collections` tables regardless of the flag (they exist in the schema
   either way).
 - **`GET /api/features`** (`main.py`, unauthenticated, `FeaturesOut`) returns
-  `{"collections": <bool>, "collections_home_shelf": <bool>}`. The drawer
+  `{"collections": <bool>, "collections_home_shelf": <bool>, "collections_student_access": <bool>, "counting": <bool>}`. The drawer
   value is effective only when both settings are enabled. It is a UX hint
   only — flags are not secrets and each one is enforced independently by the
   backend.
@@ -54,7 +54,8 @@ one child issue at a time on `main`.
   `COLLECTIONS_HOME_SHELF` on the backend API pod (`charts/backend`). The
   `flux-fleet` `latest` overlay
   (`apps/overlays/latest/hriv/backend/values-latest.yaml`) sets it `true`;
-  `stable` inherits the chart default until the epic is promoted. Because
+  `stable` controls student exposure separately via `collections.studentAccess`.
+  Because
   chart edits only reach an environment on the next chart release
   ([RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md)), `latest`
   shows no collections between this flag landing and the next backend
@@ -63,6 +64,46 @@ one child issue at a time on `main`.
 - **Removal.** The flag, `/api/features`' `collections` key and the frontend
   gating are deleted in the epic's closing issue
   ([#1419](https://github.com/bcit-tlu/hriv/issues/1419)).
+
+### Student access (`COLLECTIONS_STUDENT_ACCESS`, #1748)
+
+`Settings.collections_student_access` defaults to **`true`** and is checked
+per request. Helm value `collections.studentAccess` (default `true`) renders
+`COLLECTIONS_STUDENT_ACCESS` on the API pod. The `stable` flux-fleet overlay
+pins `collections.studentAccess: false` (flux-fleet#399); `latest` leaves it
+unpinned. Re-enabling students is a flux-fleet values change and rollout only,
+with no hriv release required (flux-fleet#400).
+
+With `COLLECTIONS_ENABLED=true` and `COLLECTIONS_STUDENT_ACCESS=false`, admins,
+instructors and staff retain the complete collections feature. For students,
+the API and UI contract is identical to `COLLECTIONS_ENABLED=false`: every
+`/api/collections*` route and both `GET /api/images/collections-map` and
+`GET /api/images/{id}/collections` return `404 {"detail": "Not Found"}`, never
+403, **even for a student who owns the collection**. Category-tree nodes have
+empty `collections` lists and the collections query is skipped. The frontend
+hides all collections surfaces, including the My Collections shelf, and falls
+back to Browse for collection deep links.
+
+`CollectionsFeatureMiddleware` runs pre-auth at the ASGI layer, so it cannot
+apply a role-based gate. The collections router's `require_collections_access`
+dependency resolves `get_current_user` and applies the student gate; the two
+images-router reads check the same centralized `collections_accessible_to`
+predicate inline. `_ViewerContext.can_view` also checks it before ownership
+visibility as defense-in-depth. The deployment-wide middleware remains in
+place for `COLLECTIONS_ENABLED=false`.
+
+The unauthenticated `GET /api/features` exposes `collections_student_access`
+independently of `collections`; flag values are not secrets. The frontend maps
+it to `collectionsStudentAccess`, treating a missing field from an older
+backend as `true`, and derives one effective role-aware collections gate.
+Both flags true preserve existing behavior.
+
+Students may still be added as co-owners while gated: authorized callers of
+`PUT /api/collections/{id}/owners` may target any active user. This permits
+pre-staging without granting students access. There is **no data migration**:
+student-owned collections persist untouched, remain admin/instructor-manageable
+under the existing authority rules, and become accessible again when the flag
+is enabled.
 
 ## Data model
 
@@ -240,6 +281,11 @@ backend is authoritative (frontend gating on `permissions` is UX only).
 | student — owner            | yes       | yes    | yes                                              |
 | student — other            | no        | yes    | only if the **program gate AND group gate** pass |
 
+The student rows assume `COLLECTIONS_STUDENT_ACCESS=true`. When false, all
+student collection reads and writes return 404, including for owners; the
+non-student rows are unchanged. `COLLECTIONS_ENABLED=false` hides the feature
+from every role.
+
 The restricted dual gate mirrors
 [category visibility](category-visibility-and-programs.md): for each dimension
 the collection either has no scope rows or shares at least one entry with the
@@ -324,8 +370,9 @@ weakens the stronger checks.
 Base path `/api/collections` (router `backend/app/routers/collections.py`).
 All endpoints require a JWT bearer token — there is no unauthenticated variant
 (see [unauthenticated-routes.md](unauthenticated-routes.md)). Every endpoint
-below answers `404` while `COLLECTIONS_ENABLED` is off (see
-[Feature flag](#feature-flag-collections_enabled)).
+below answers `404` while `COLLECTIONS_ENABLED` is off, or for a student while
+`COLLECTIONS_STUDENT_ACCESS` is off (see
+[Student access](#student-access-collections_student_access-1748)).
 
 | Method | Endpoint                         | Min role                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------ | -------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -429,7 +476,8 @@ parse the literal `graph` segment as the int path parameter and answer 422.
 Each `CategoryTree` node additionally carries `collections:
 CollectionSummaryOut[]` — the collections filed into that category, subject
 to the same visibility filtering as `GET /api/collections` (collection gate
-AND category ancestor gate). When `COLLECTIONS_ENABLED` is off the field is
+AND category ancestor gate). When `COLLECTIONS_ENABLED` is off, or the caller
+is a student with `COLLECTIONS_STUDENT_ACCESS=false`, the field is
 always empty and the collections query is skipped entirely, so flag-off
 deployments neither leak collection data nor grow the tree query count.
 
@@ -447,15 +495,16 @@ a 404, not an empty list) and then filters the memberships through the same
 visibility rules as `GET /api/collections`, so a student never learns a
 private/restricted collection exists. Because `CollectionsFeatureMiddleware` only
 guards `/api/collections*`, this `/images` path self-gates on
-`COLLECTIONS_ENABLED` inline (404 when off), and the frontend only calls it when
-`features.collections` is on — so flag-off deployments add no request per image
+`COLLECTIONS_ENABLED` and the student-access predicate inline (404 when gated),
+and the frontend only calls it when its effective role-aware `collectionsEnabled`
+gate is on — so gated sessions add no request per image
 view.
 
 `GET /api/images/collections-map` is the bulk sibling backing the Manage
 images **Collections** column: one query returns `{image_id: [{id, name}]}`
 covering every membership where both the collection and the image are
 caller-visible — the same dual gate as the per-image read, minus the
-membership join's per-row cost. It self-gates on `COLLECTIONS_ENABLED` the
+membership join's per-row cost. It self-gates on both collections flags the
 same way and the frontend fetches it lazily, only while the opt-in column
 is enabled.
 
