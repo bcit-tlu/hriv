@@ -15,6 +15,12 @@ read access through visibility, not the Images tab or other Manage items.)
 
 ### Browse (Home)
 
+`COLLECTIONS_STUDENT_ACCESS` defaults to true. With collections enabled but
+student access false, omit Collections for students from all navigation and
+Browse surfaces (including the shelf); collection deep links fall back to
+Browse. Staff, instructors and admins are unaffected. See `docs/TESTING.md`
+Test Case 9b for the 404 API contract and owner/re-enablement checks.
+
 - Category tiles + uncategorized image tiles at root; filed collection tiles
   inside categories (`COLLECTIONS_ENABLED` on). The root scope contains
   categories and images only — unfiled collections are not Browse tiles.

@@ -196,8 +196,8 @@ so unrelated fixes keep shipping through the normal release-please flow while
 the feature lands piecemeal: with the flag off every `/api/collections` route
 answers `404` and the frontend — which reads `GET /api/features` at boot —
 hides the Collections tab and ignores `?collection=` deep links. The `latest`
-`flux-fleet` overlay sets `collections.enabled: true`; `stable` inherits the
-chart default until the epic is promoted. Only the API pod needs the variable
+`flux-fleet` overlay sets `collections.enabled: true`; `stable` controls student
+exposure separately via `collections.studentAccess` below. Only the API pod needs the variable
 (the worker never serves the router). Flipping it is a rollout-only change
 (no migration: the collections tables are additive and already present). See
 [`docs/collections.md`](../../docs/collections.md).
@@ -205,6 +205,18 @@ chart default until the epic is promoted. Only the API pod needs the variable
 `collections.homeShelf` renders `COLLECTIONS_HOME_SHELF` and defaults to
 `false`. The drawer is effective only when `collections.enabled` is also true;
 the `latest` overlay may enable it independently of `stable`.
+
+`collections.studentAccess` renders `COLLECTIONS_STUDENT_ACCESS` on the API
+pod and defaults to `true`. With collections enabled, setting it to `false`
+hides all collections surfaces from students (404, including owned collections)
+without changing admin, instructor or staff access. The stable flux-fleet
+overlay pins it false (flux-fleet#399); latest leaves it unpinned. Re-enablement
+is an overlay values change and rollout only (flux-fleet#400), with no data
+migration or hriv release. `GET /api/features` reports
+`collections_student_access`; the frontend applies it to navigation, deep links
+and the shelf. Students may still be pre-staged as co-owners by authorized
+curators while access is disabled. See the
+[student-access contract](../../docs/collections.md#student-access-collections_student_access-1748).
 
 ## API configuration
 
