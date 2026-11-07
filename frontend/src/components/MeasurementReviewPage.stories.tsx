@@ -63,8 +63,11 @@ function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {
     fetchFindings: fn(async () => ({ items, total: items.length })),
     scan: fn(async () => ({ image_ids: [21, 22, 23], mode: 'queued' as const })),
     scanProgress: fn(async () => ({ total: 3, done: 3 })),
+    scanRemaining: fn(async () => ({ remaining: 0 })),
     approve: fn(async (id: number) => makeFinding({ id, status: 'approved' })),
     reject: fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
+    reset: fn(async (id: number) => makeFinding({ id, status: 'pending' })),
+    rescan: fn(async () => ({ image_ids: [11], mode: 'queued' as const })),
     bulkApprove: fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),
   }
 }
@@ -88,6 +91,6 @@ export const ScanQueued: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Scan next 10' }))
-    await expect(await canvas.findByText(/Scanning 3 images/)).toBeInTheDocument()
+    await expect(await canvas.findByText(/Scanning images: 0 of 3 done/)).toBeInTheDocument()
   },
 }

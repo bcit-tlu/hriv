@@ -219,6 +219,7 @@ async def _enqueue(
     job_name: str,
     *args: Any,
     job_type: str,
+    job_kwargs: dict[str, Any] | None = None,
 ) -> EnqueueResult:
     """Apply the single queue-vs-fallback policy for all task submissions."""
     def _fallback_or_reject(
@@ -244,7 +245,7 @@ async def _enqueue(
     try:
         carrier: dict[str, str] = {}
         inject(carrier)
-        job = await pool.enqueue_job(job_name, *args, carrier)
+        job = await pool.enqueue_job(job_name, *args, carrier, **(job_kwargs or {}))
     except Exception as exc:
         logger.warning(
             "Task queue submission failed",
@@ -303,10 +304,15 @@ async def enqueue_bulk_import(
     )
 
 
-async def enqueue_measurement_scan(image_ids: list[int]) -> EnqueueResult:
+async def enqueue_measurement_scan(
+    image_ids: list[int], rescan: bool = False
+) -> EnqueueResult:
     """Enqueue an RBC measurement scan of ``image_ids`` (Measurement review)."""
     return await _enqueue(
-        "measurement_scan_task", image_ids, job_type="measurement_scan"
+        "measurement_scan_task",
+        image_ids,
+        job_type="measurement_scan",
+        job_kwargs={"rescan": rescan},
     )
 
 
@@ -423,6 +429,7 @@ async def measurement_scan_task(
     ctx: dict[str, Any],
     image_ids: list[int],
     trace_headers: dict[str, str] | None = None,
+    rescan: bool = False,
 ) -> int:
     """Create pending measurement findings for ``image_ids``."""
     from .database import async_session
@@ -435,7 +442,7 @@ async def measurement_scan_task(
             "measurement_scan_task",
             attributes={"measurement.image_count": len(image_ids)},
         ):
-            return await scan_images(async_session, image_ids)
+            return await scan_images(async_session, image_ids, rescan)
     finally:
         if token is not None:
             detach(token)

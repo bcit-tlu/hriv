@@ -31,13 +31,17 @@ proposed scale is promoted into image metadata. See
 
 ## Guidance
 
-- **Scan next 10** queues the next unscanned images; findings appear after a
-  refresh.
+- **Scan next 10** queues the next unscanned images; **Scan all** queues every
+  unprocessed image in the background; **Re-scan outdated** re-runs detection
+  on images whose findings predate the current detector. A snackbar tracks
+  progress.
 - Approving an unedited row promotes the proposal; editing the scale first
   approves the corrected value.
 - Findings with no proposed scale cannot be bulk-selected and need a manual
   value before **Approve** enables.
-- Approved and Rejected views are read-only.
+- Approved and Rejected rows offer **Move to pending** (reverting an approval
+  also removes the scale it wrote) and **Re-scan** (re-runs detection,
+  superseding the row's findings).
 
 <Stories />
 

@@ -9,18 +9,18 @@ Nothing is written to image metadata until a finding is approved.
 
 `measurement_findings` (migration `0037_measurement_findings`):
 
-| Column                            | Notes                                                                                 |
-| --------------------------------- | ------------------------------------------------------------------------------------- |
-| `image_id`                        | FK `images.id`, `ON DELETE CASCADE`                                                   |
-| `status`                          | `pending` → `approved` / `rejected`; a rescan marks the old pending row `superseded`  |
-| `source`                          | How the value was found (`rbc` today)                                                 |
-| `proposed_scale`, `proposed_unit` | Pixels per µm in source pixels, unit `um`; `NULL` scale when nothing could be found   |
-| `objective`                       | Objective class picked from the camera profile (`10`, `40`, `100`), or `NULL`         |
-| `confidence`                      | 0–1; the review list sorts on it                                                      |
-| `evidence`                        | JSONB: measured RBC diameter, cell counts, peak share, class distances, or a `reason` |
-| `detector_version`                | Bumped whenever the detector or calibration constants change                          |
-| `approved_scale`, `approved_unit` | Value actually promoted (may differ from the proposal when the reviewer corrected it) |
-| `reviewed_by`, `reviewed_at`      | Reviewer (FK `users.id`, `ON DELETE SET NULL`) and time                               |
+| Column                            | Notes                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `image_id`                        | FK `images.id`, `ON DELETE CASCADE`                                                                           |
+| `status`                          | `pending` ↔ `approved` / `rejected` (reset returns to pending); a rescan marks the old live rows `superseded` |
+| `source`                          | How the value was found (`rbc` today)                                                                         |
+| `proposed_scale`, `proposed_unit` | Pixels per µm in source pixels, unit `um`; `NULL` scale when nothing could be found                           |
+| `objective`                       | Objective class picked from the camera profile (`10`, `40`, `100`), or `NULL`                                 |
+| `confidence`                      | 0–1; the review list sorts on it                                                                              |
+| `evidence`                        | JSONB: measured RBC diameter, cell counts, peak share, class distances, or a `reason`                         |
+| `detector_version`                | Bumped whenever the detector or calibration constants change                                                  |
+| `approved_scale`, `approved_unit` | Value actually promoted (may differ from the proposal when the reviewer corrected it)                         |
+| `reviewed_by`, `reviewed_at`      | Reviewer (FK `users.id`, `ON DELETE SET NULL`) and time                                                       |
 
 At most one `pending` finding exists per image (partial unique index
 `uq_measurement_findings_pending_image`).
@@ -68,19 +68,25 @@ proposed scale, rather than a 0%-confidence proposal.
 All endpoints require **admin or instructor** (`require_role("admin",
 "instructor")`).
 
-| Method | Path                                      | Behaviour                                                                                                                                                                                            |
-| ------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/measurement-findings/scan`          | `{limit: 1–50 (default 10), category_id?}`. Picks the next images with no non-superseded finding (scaled or not), queues them. 202.                                                                  |
-| GET    | `/api/measurement-findings`               | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`.                                              |
-| POST   | `/api/measurement-findings/{id}/approve`  | Optional `{scale, unit}` correction (`unit`: `um`, `nm`, `mm`, `cm`). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale. |
-| GET    | `/api/measurement-findings/scan-progress` | `image_ids` (repeated, 1–200) from a scan response; returns `{total, done}` where done = images with a live finding, or deleted.                                                                     |
-| POST   | `/api/measurement-findings/{id}/reject`   | Marks rejected; metadata untouched. The image is not proposed again.                                                                                                                                 |
-| POST   | `/api/measurement-findings/approve`       | Bulk `{ids: [...]}` (≤200) at the proposed scale; returns `{approved, skipped}`; findings on already-scaled images are superseded and skipped.                                                       |
+| Method | Path                                       | Behaviour                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/measurement-findings/scan`           | `{limit: 1–50 (default 10), category_id?, rescan?, all?}`. Picks images with no non-superseded finding (scaled or not) and queues them in chunks of 50. `rescan` instead picks unscaled images with no live finding from the current `DETECTOR_VERSION` (never-scanned or stale-detector) and supersedes their old findings when processed. `all` ignores `limit` and queues every candidate. 202. |
+| GET    | `/api/measurement-findings`                | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`.                                                                                                                                                                                                                                            |
+| POST   | `/api/measurement-findings/{id}/approve`   | Optional `{scale, unit}` correction (`unit`: `um`, `nm`, `mm`, `cm`). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale.                                                                                                                                                                                               |
+| POST   | `/api/measurement-findings/{id}/reject`    | Marks rejected; metadata untouched. The image is not proposed again (a rescan overrides).                                                                                                                                                                                                                                                                                                          |
+| POST   | `/api/measurement-findings/{id}/reset`     | Returns an approved or rejected finding to `pending` and clears `reviewed_by`/`reviewed_at`. Reverting an approval whose stored scale is still the promoted value also removes the four measurement keys from `Image.metadata_` and bumps `Image.version`; a scale changed since is left alone. 409 if not reviewed or another pending finding already exists for the image.                       |
+| POST   | `/api/measurement-findings/{id}/rescan`    | Queues a re-detection of the finding's image; the scan supersedes all its live findings. 202.                                                                                                                                                                                                                                                                                                      |
+| GET    | `/api/measurement-findings/scan-progress`  | `image_ids` (repeated, 1–200) from a scan response; returns `{total, done}` where done = images with a live finding, or deleted. `min_finding_id` counts only newer findings, so a rescan can be tracked past the row it supersedes.                                                                                                                                                               |
+| GET    | `/api/measurement-findings/scan-remaining` | `rescan`, `category_id`; returns `{remaining}`, the count of scan candidates still unprocessed — progress for whole-library scans.                                                                                                                                                                                                                                                                 |
+| POST   | `/api/measurement-findings/approve`        | Bulk `{ids: [...]}` (≤200) at the proposed scale; returns `{approved, skipped}`; findings on already-scaled images are superseded and skipped.                                                                                                                                                                                                                                                     |
 
 Scans run as the `measurement_scan_task` arq job (one transaction per image;
-an overlapping scan's duplicate pending finding is dropped)
-and fall back to in-process `BackgroundTasks` when the queue is unavailable
-(503 in `TASK_EXECUTION_MODE=required`).
+an overlapping scan's duplicate pending finding is dropped). A scan is split
+into jobs of 50 images so a whole-library pass churns through the queue in
+parallel without one job holding a worker slot for hours; a rescan passes
+`rescan=true` so the worker supersedes reviewed findings instead of stopping
+at them. Scans fall back to in-process `BackgroundTasks` when the queue is
+unavailable (503 in `TASK_EXECUTION_MODE=required`).
 
 ## Approval semantics
 
@@ -97,6 +103,13 @@ and every other key are preserved:
 The image `version` is incremented (so stale viewer `If-Match` saves get 409)
 and the browse revision is bumped when the image is categorized or in a
 collection.
+
+Resetting an approved finding reverses that promotion: while the stored
+scale is still exactly the value the finding approved (`measurement_scale`,
+`measurement_unit` and `measurement_finding_id` all matching), the four keys
+are removed and `version` incremented again. A scale changed since — by Edit
+image, a newer finding, or tooling — is authoritative and kept; the finding
+still returns to pending but stays hidden there while a scale exists.
 
 Replacing an image's source supersedes all its findings, so the replacement
 becomes eligible for a fresh scan.
@@ -120,7 +133,9 @@ pending proposal, and the image row is locked so overlapping scans record it
 once. Pending findings on images that have since gained a
 scale are hidden from the Pending list, and approving one returns 409 (bulk:
 skipped) and marks it `superseded`, so a proposal can never overwrite a stored
-value.
+value. A rescan supersedes the image's live findings first, so even a scaled
+image gets a fresh `existing_scale` record stamped with the current
+`detector_version`.
 
 ## Whole-slide images
 
@@ -140,9 +155,14 @@ lists findings from `GET /api/measurement-findings`:
 - A short purpose statement heads the page: the tool sets image scales so
   students can measure in real units.
 - **Scan next 10** calls `POST /api/measurement-findings/scan` with
-  `limit: 10`, then a snackbar ("Scanning images: N of 10 done", with a
-  progress bar) polls `scan-progress` every 2 s. When every image is done the
-  list reloads and "Scan finished" is shown; the scan button stays disabled
+  `limit: 10`, **Scan all** calls it with `all: true` to queue the whole
+  library in the background, and **Re-scan outdated** calls it with
+  `all: true, rescan: true` to re-detect images whose findings predate the
+  current detector (use after a detector or calibration change bumps
+  `DETECTOR_VERSION`). A snackbar ("Scanning images: N of M done", with a
+  progress bar) polls `scan-progress` for small scans or `scan-remaining`
+  for whole-library scans every 2 s. When every image is done the
+  list reloads and "Scan finished" is shown; the scan buttons stay disabled
   meanwhile. A progress error ends tracking and is shown as an error. After 10 minutes
   with no progress (a busy queue or stopped worker) tracking stops with a
   notice to use **Refresh**; the scan itself may still finish.
@@ -159,7 +179,11 @@ lists findings from `GET /api/measurement-findings`:
   component, also used by the Edit image dialog's Measurement Settings.
 - **Approve selected** calls the bulk endpoint for unedited rows and approves
   rows with a scale or unit correction one by one; skipped IDs are reported.
-- Approved and Rejected views are read-only.
+- Every row carries a **Re-scan** action that re-runs detection on its image
+  (the row's findings are superseded and the new proposal lands in Pending),
+  plus — on Approved and Rejected rows — **Move to pending**, which returns
+  the finding to the review queue; reverting an approval also removes the
+  scale it wrote when it is still the stored value.
 
 ## Not yet built
 

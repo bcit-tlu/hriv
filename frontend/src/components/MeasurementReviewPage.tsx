@@ -23,7 +23,10 @@ import {
   bulkApproveMeasurementFindings,
   fetchMeasurementFindings,
   fetchMeasurementScanProgress,
+  fetchMeasurementScanRemaining,
   rejectMeasurementFinding,
+  rescanMeasurementFinding,
+  resetMeasurementFinding,
   scanMeasurements,
   userMessage,
 } from '../api'
@@ -43,8 +46,11 @@ export interface MeasurementReviewApi {
   fetchFindings: typeof fetchMeasurementFindings
   scan: typeof scanMeasurements
   scanProgress: typeof fetchMeasurementScanProgress
+  scanRemaining: typeof fetchMeasurementScanRemaining
   approve: typeof approveMeasurementFinding
   reject: typeof rejectMeasurementFinding
+  reset: typeof resetMeasurementFinding
+  rescan: typeof rescanMeasurementFinding
   bulkApprove: typeof bulkApproveMeasurementFindings
 }
 
@@ -52,8 +58,11 @@ const defaultApi: MeasurementReviewApi = {
   fetchFindings: fetchMeasurementFindings,
   scan: scanMeasurements,
   scanProgress: fetchMeasurementScanProgress,
+  scanRemaining: fetchMeasurementScanRemaining,
   approve: approveMeasurementFinding,
   reject: rejectMeasurementFinding,
+  reset: resetMeasurementFinding,
+  rescan: rescanMeasurementFinding,
   bulkApprove: bulkApproveMeasurementFindings,
 }
 
@@ -67,7 +76,13 @@ export interface MeasurementReviewPageProps {
 }
 
 interface ScanState {
-  imageIds: number[]
+  /** Per-image tracking when set; absent for whole-library scans. */
+  imageIds?: number[]
+  /** A rescan is done once a finding newer than this row exists. */
+  minFindingId?: number
+  /** Whole-library rescan progress counts stale-detector candidates. */
+  rescan?: boolean
+  total: number
   done: number
 }
 
@@ -151,17 +166,26 @@ export default function MeasurementReviewPage({
     }
   }, [api, status, ascending, page, rowsPerPage, reloadToken])
 
+  const scanActive = scan != null
   const scanIds = scan?.imageIds
+  const scanMinFindingId = scan?.minFindingId
+  const scanRescan = scan?.rescan === true
+  const scanTotal = scan?.total
   useEffect(() => {
-    if (!scanIds) return
+    if (!scanActive || scanTotal == null) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let lastDone = -1
     let lastChange = Date.now()
+    const check = (): Promise<{ total: number; done: number }> =>
+      scanIds
+        ? api.scanProgress(scanIds, scanMinFindingId)
+        : api
+            .scanRemaining({ rescan: scanRescan })
+            .then(({ remaining }) => ({ total: scanTotal, done: scanTotal - remaining }))
     const poll = () => {
       timer = setTimeout(() => {
-        api
-          .scanProgress(scanIds)
+        check()
           .then(({ done, total }) => {
             if (cancelled) return
             if (done >= total) {
@@ -179,7 +203,7 @@ export default function MeasurementReviewPage({
                 lastDone = done
                 lastChange = Date.now()
               }
-              setScan({ imageIds: scanIds, done })
+              setScan((current) => (current ? { ...current, done } : current))
               poll()
             }
           })
@@ -195,7 +219,17 @@ export default function MeasurementReviewPage({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [api, scanIds, scanPollMs, scanStallMs, reload])
+  }, [
+    api,
+    scanActive,
+    scanIds,
+    scanMinFindingId,
+    scanRescan,
+    scanTotal,
+    scanPollMs,
+    scanStallMs,
+    reload,
+  ])
 
   const run = async (action: () => Promise<string | null>) => {
     setBusy(true)
@@ -216,8 +250,44 @@ export default function MeasurementReviewPage({
     run(async () => {
       const result = await api.scan({ limit: SCAN_BATCH_SIZE })
       if (result.image_ids.length === 0) return 'Every image has already been scanned.'
-      setScan({ imageIds: result.image_ids, done: 0 })
+      setScan({ imageIds: result.image_ids, total: result.image_ids.length, done: 0 })
       return null
+    })
+
+  const handleScanAll = () =>
+    run(async () => {
+      const result = await api.scan({ all: true })
+      if (result.image_ids.length === 0) return 'Every image has already been scanned.'
+      setScan({ total: result.image_ids.length, done: 0 })
+      return null
+    })
+
+  const handleRescanAll = () =>
+    run(async () => {
+      const result = await api.scan({ all: true, rescan: true })
+      if (result.image_ids.length === 0) {
+        return 'Every unscaled image already has a finding from the current detector.'
+      }
+      setScan({ total: result.image_ids.length, done: 0, rescan: true })
+      return null
+    })
+
+  const handleReset = (finding: ApiMeasurementFinding) =>
+    run(async () => {
+      await api.reset(finding.id)
+      return `Moved “${finding.image_name}” back to pending.`
+    })
+
+  const handleRescan = (finding: ApiMeasurementFinding) =>
+    run(async () => {
+      const result = await api.rescan(finding.id)
+      setScan({
+        imageIds: result.image_ids,
+        minFindingId: finding.id,
+        total: result.image_ids.length,
+        done: 0,
+      })
+      return `Re-scan queued for “${finding.image_name}”; the new proposal lands in Pending.`
     })
 
   /** `{}` to accept the proposal, `{ scale?, unit? }` for a correction, `null` if the edit is invalid. */
@@ -285,7 +355,9 @@ export default function MeasurementReviewPage({
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
         Sets each image&apos;s scale so students can take real-world measurements in the viewer.
-        Scan images in batches, then approve, correct or reject each proposed scale.
+        Scan images (a batch or the whole library), then approve, correct or reject each proposed
+        scale. Approvals and rejections can be moved back to pending, and any image can be
+        re-scanned after the detector changes.
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
         Proposed image scales (pixels per unit, µm by default) from the red-blood-cell detector.
@@ -327,6 +399,16 @@ export default function MeasurementReviewPage({
         <Button variant="contained" onClick={handleScan} disabled={busy || scan != null}>
           Scan next {SCAN_BATCH_SIZE}
         </Button>
+        <Button variant="outlined" onClick={handleScanAll} disabled={busy || scan != null}>
+          Scan all
+        </Button>
+        <Tooltip title="Re-run detection on unscaled images whose findings were made by an older detector version.">
+          <span>
+            <Button variant="outlined" onClick={handleRescanAll} disabled={busy || scan != null}>
+              Re-scan outdated
+            </Button>
+          </span>
+        </Tooltip>
       </Stack>
 
       {error && (
@@ -344,10 +426,10 @@ export default function MeasurementReviewPage({
         <Alert severity="info" variant="filled" sx={{ minWidth: 280 }} role="status">
           {scan && (
             <>
-              Scanning images: {scan.done} of {scan.imageIds.length} done
+              Scanning images: {scan.done} of {scan.total} done
               <LinearProgress
                 variant="determinate"
-                value={(scan.done / scan.imageIds.length) * 100}
+                value={(scan.done / scan.total) * 100}
                 aria-label="Scan progress"
                 color="inherit"
                 sx={{ mt: 1 }}
@@ -398,16 +480,16 @@ export default function MeasurementReviewPage({
                 </TableSortLabel>
               </TableCell>
               <TableCell>Evidence</TableCell>
-              {pending && <TableCell align="right">Actions</TableCell>}
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {!loading && findings.length === 0 && (
               <TableRow>
-                <TableCell colSpan={pending ? 8 : 6}>
+                <TableCell colSpan={pending ? 8 : 7}>
                   <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                     {pending
-                      ? `No findings to review. Use “Scan next ${SCAN_BATCH_SIZE}” to assess more images.`
+                      ? `No findings to review. Use “Scan next ${SCAN_BATCH_SIZE}” or “Scan all” to assess more images.`
                       : `No ${status} findings.`}
                   </Typography>
                 </TableCell>
@@ -481,27 +563,46 @@ export default function MeasurementReviewPage({
                       {evidenceSummary(f)}
                     </Typography>
                   </TableCell>
-                  {pending && (
-                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    {pending ? (
+                      <>
+                        <Button
+                          size="small"
+                          onClick={() => handleApprove(f)}
+                          disabled={busy || !canApprove}
+                          aria-label={`Approve ${f.image_name}`}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="small"
+                          color="error"
+                          onClick={() => handleReject(f)}
+                          disabled={busy}
+                          aria-label={`Reject ${f.image_name}`}
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    ) : (
                       <Button
                         size="small"
-                        onClick={() => handleApprove(f)}
-                        disabled={busy || !canApprove}
-                        aria-label={`Approve ${f.image_name}`}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() => handleReject(f)}
+                        onClick={() => handleReset(f)}
                         disabled={busy}
-                        aria-label={`Reject ${f.image_name}`}
+                        aria-label={`Move ${f.image_name} to pending`}
                       >
-                        Reject
+                        Move to pending
                       </Button>
-                    </TableCell>
-                  )}
+                    )}
+                    <Button
+                      size="small"
+                      onClick={() => handleRescan(f)}
+                      disabled={busy || scan != null}
+                      aria-label={`Re-scan ${f.image_name}`}
+                    >
+                      Re-scan
+                    </Button>
+                  </TableCell>
                 </TableRow>
               )
             })}
