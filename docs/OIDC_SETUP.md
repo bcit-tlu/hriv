@@ -351,4 +351,4 @@ In People’s Sign-in column, OIDC-linked accounts show an **SSO** badge. Edit P
 setup-link and force-change controls are disabled with **Managed by the identity provider**
 copy. Active non-OIDC accounts use the local/invite workflow described in
 [password setup](password-setup.md#admin-workflow-in-people).
-Re-send password link is a checkbox for active local-password users only, never OIDC users.
+Regenerate password link is a switch for active local-password users only, never OIDC users.

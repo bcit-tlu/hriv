@@ -57,25 +57,26 @@ The token is single-use. Replay while a password remains set returns 409
 replacement after any earlier same-user mint finishes. The dialog itself is the
 only frontend owner of the credential.
 
-### Re-send a password link
+### Regenerate a password link
 
-Edit Person has no Clear password button, confirmation or reset switch. To change
-a password, enter a new value in Password; leave it blank to keep the current one.
-For re-invitation, an admin editing another active local-password user can tick
-**Re-send password link**. This is a checkbox, not a switch or immediate action.
-While checked, Password and forced change are disabled. **Save** sends explicit
+Edit Person has no Clear password button or confirmation. To change a password,
+enter a new value in Password; leave it blank to keep the current one.
+For re-invitation, an admin editing another active local-password user can enable
+**Regenerate password link**, a switch styled like the forced-change switch below.
+While enabled, Password and forced change are disabled. **Save** sends explicit
 `password: null` without a forced-change flag, clearing the hash, nonce and flag,
 then automatically opens the setup-link dialog and mints a new credential.
 If minting fails, the saved account is already passwordless: close the dialog,
 reopen Edit Person and use **Copy password-setup link**. Do not clear or create
-the person again. Cancel sends nothing; failed saves retain the checkbox for retry.
+the person again. Cancel sends nothing; failed saves retain the enabled switch for retry.
 The equivalent API operation is `PATCH /api/users/{id}` with `password: null`.
 Existing local passwords cannot be overwritten by
 minting alone: mint returns 409 until the hash is cleared. The self-profile
 editor and an administrator’s own People row hide link/force controls to avoid
 self-lockout; use **Change password** for self-service rotation.
-The re-send checkbox is also absent for self-profile, OIDC, inactive and already
-passwordless accounts. Unsaved deactivation hides it and cancels re-send intent.
+The regeneration switch is also absent for self-profile, OIDC, inactive and already
+passwordless accounts. Unsaved deactivation hides it and cancels regeneration intent.
+Reactivating the account does not restore that intent: the switch remains off.
 
 The table’s separate **Sign-in** column holds credential and rotation chips;
 it is visible by default and hideable/reorderable in **Choose columns**. Name

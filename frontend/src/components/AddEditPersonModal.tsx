@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
-import Checkbox from '@mui/material/Checkbox'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -62,13 +61,13 @@ function AddEditPersonForm({
   const [password, setPassword] = useState('')
   const [invite, setInvite] = useState(false)
   const [mustChange, setMustChange] = useState(user?.must_change_password ?? false)
-  const [resendLink, setResendLink] = useState(false)
+  const [regenerateLink, setRegenerateLink] = useState(false)
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
   const [active, setActive] = useState(user?.active ?? true)
   const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const canResendLink = Boolean(
+  const canRegenerateLink = Boolean(
     isEdit &&
     !selfProfile &&
     onSetupLink &&
@@ -77,8 +76,8 @@ function AddEditPersonForm({
     !user.oidc_linked &&
     user.has_local_password,
   )
-  if (!canResendLink && resendLink) setResendLink(false)
-  const resending = canResendLink && resendLink
+  if (!canRegenerateLink && regenerateLink) setRegenerateLink(false)
+  const regenerating = canRegenerateLink && regenerateLink
   const setupDisabledReason = user?.oidc_linked
     ? 'Managed by the identity provider'
     : !user?.active
@@ -87,7 +86,7 @@ function AddEditPersonForm({
         ? 'This account already has a password'
         : ''
   const passwordError =
-    !resending &&
+    !regenerating &&
     password &&
     (!isEdit && invite
       ? false
@@ -116,12 +115,12 @@ function AddEditPersonForm({
       active,
       program_ids: programIds,
     }
-    if (resending) {
+    if (regenerating) {
       data.password = null
     } else if (password && (isEdit ? !user?.oidc_linked : !invite)) {
       data.password = password
     }
-    if (isEdit && !selfProfile && !resending && !forceDisabledReason)
+    if (isEdit && !selfProfile && !regenerating && !forceDisabledReason)
       data.must_change_password = mustChange
     setSaving(true)
     onSavingChange?.(true)
@@ -220,7 +219,7 @@ function AddEditPersonForm({
             variant="outlined"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={Boolean(user?.oidc_linked) || resending || saving}
+            disabled={Boolean(user?.oidc_linked) || regenerating || saving}
             error={Boolean(passwordError)}
             helperText={
               user?.oidc_linked
@@ -237,16 +236,16 @@ function AddEditPersonForm({
         )}
         {isEdit && !selfProfile && (
           <>
-            {canResendLink && (
+            {canRegenerateLink && (
               <FormControlLabel
                 control={
-                  <Checkbox
-                    checked={resendLink}
+                  <Switch
+                    checked={regenerateLink}
                     disabled={saving}
-                    onChange={(event) => setResendLink(event.target.checked)}
+                    onChange={(event) => setRegenerateLink(event.target.checked)}
                   />
                 }
-                label="Re-send password link"
+                label="Regenerate password link"
               />
             )}
             <Tooltip title={forceDisabledReason} describeChild>
@@ -255,7 +254,7 @@ function AddEditPersonForm({
                   control={
                     <Switch
                       checked={mustChange}
-                      disabled={Boolean(forceDisabledReason) || resending || saving}
+                      disabled={Boolean(forceDisabledReason) || regenerating || saving}
                       onChange={(event) => setMustChange(event.target.checked)}
                     />
                   }

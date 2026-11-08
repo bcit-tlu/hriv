@@ -64,7 +64,7 @@ export const LocalPassword: Story = {
     )
     await expect(canvas.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
     await expect(
-      canvas.getByRole('checkbox', { name: 'Re-send password link' }),
+      canvas.getByRole('switch', { name: 'Regenerate password link' }),
     ).toBeInTheDocument()
   },
 }
@@ -79,11 +79,11 @@ export const Passwordless: Story = {
     ).toBeEnabled()
   },
 }
-export const ResendPasswordLink: Story = {
+export const RegeneratePasswordLink: Story = {
   args: { user: guest },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    await userEvent.click(canvas.getByRole('checkbox', { name: 'Re-send password link' }))
+    await userEvent.click(canvas.getByRole('switch', { name: 'Regenerate password link' }))
     await expect(canvas.getByLabelText('Password (leave blank to keep)')).toBeDisabled()
     await expect(
       canvas.getByRole('switch', { name: 'Force password change on next login' }),

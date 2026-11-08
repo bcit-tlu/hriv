@@ -75,9 +75,9 @@ the mounted link dialog.
 
 People credential chips live in the hideable Sign-in column. Admin setup-link
 controls belong in Edit Person for another saved active passwordless local user;
-self-profile and own-row editors hide them. There is no Clear password button or
-reset switch. Admins type a new Password or leave blank to keep it. Re-send
-password link is a checkbox for another active local-password user: disable
+self-profile and own-row editors hide them. There is no Clear password button
+or confirmation. Admins type a new Password or leave blank to keep it. Regenerate
+password link is a switch for another active local-password user: disable
 Password/forced change, save explicit null without the forced flag, then mint.
 Mint failure leaves the saved passwordless account eligible for Edit Person retry.
 

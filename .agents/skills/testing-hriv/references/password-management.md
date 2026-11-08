@@ -79,14 +79,14 @@ In People, check the default-visible Sign-in column and hide it with Choose
 columns; Name must remain plain and aligned. Mint only through Edit Person for
 another saved active, passwordless, non-OIDC account. On local passworded users,
 the button explains **This account already has a password**. There is no Clear
-password action, confirm dialog or reset switch. Type a new Password to change
+password action or confirm dialog. Type a new Password to change
 it, or leave blank to keep it; failed saves retain the input. For another active
-local-password account, tick **Re-send password link** (a checkbox). Password and
+local-password account, enable **Regenerate password link** (a switch). Password and
 forced change disable; Save sends `password:null` without the forced flag and
 immediately opens minting. Failed minting leaves the account passwordless for
 retry through Edit Person’s link button. Cancel does not clear or mint; failed
-saves retain the checkbox. Self-profile, OIDC, inactive and passwordless accounts
-have no re-send checkbox. Direct API clearing remains available independently.
+saves retain the enabled switch. Self-profile, OIDC, inactive and passwordless accounts
+have no regeneration switch. Direct API clearing remains available independently.
 Invite-mode creation still opens the trimmed link dialog automatically, and
 mint failure leaves the account intact for retry from Edit Person, not a row action.
 

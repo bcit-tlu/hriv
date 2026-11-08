@@ -50,7 +50,7 @@ describe('AddEditPersonModal', () => {
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('checkbox', { name: 'Re-send password link' }),
+      screen.queryByRole('switch', { name: 'Regenerate password link' }),
     ).not.toBeInTheDocument()
     await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
     expect(onSave).toHaveBeenCalledOnce()
@@ -168,7 +168,7 @@ describe('AddEditPersonModal', () => {
         expect(setup).toHaveBeenCalledOnce()
       }
       expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('checkbox', { name: 'Re-send password link' }) !== null).toBe(
+      expect(screen.queryByRole('switch', { name: 'Regenerate password link' }) !== null).toBe(
         active && !oidc && local,
       )
     },
@@ -197,7 +197,7 @@ describe('AddEditPersonModal', () => {
 
   beforeEach(() => vi.clearAllMocks())
 
-  it('re-sends only on save, disables password and forced change, and retains selection on failure', async () => {
+  it('regenerates only on save, disables password and forced change, and retains selection on failure', async () => {
     const actor = userEvent.setup()
     const save = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
     render(
@@ -217,8 +217,8 @@ describe('AddEditPersonModal', () => {
     )
     const password = screen.getByLabelText('Password (leave blank to keep)')
     await actor.type(password, 'short')
-    const checkbox = screen.getByRole('checkbox', { name: 'Re-send password link' })
-    await actor.click(checkbox)
+    const toggle = screen.getByRole('switch', { name: 'Regenerate password link' })
+    await actor.click(toggle)
     expect(save).not.toHaveBeenCalled()
     expect(password).toBeDisabled()
     expect(
@@ -226,12 +226,12 @@ describe('AddEditPersonModal', () => {
     ).toBeDisabled()
     await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to save. Please try again.')
-    expect(checkbox).toBeChecked()
+    expect(toggle).toBeChecked()
     expect(save.mock.calls[0][0]).toHaveProperty('password', null)
     expect(save.mock.calls[0][0]).not.toHaveProperty('must_change_password')
     await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
     expect(save).toHaveBeenCalledTimes(2)
-    await actor.click(checkbox)
+    await actor.click(toggle)
     expect(password).toBeEnabled()
     expect(
       screen.getByRole('switch', { name: 'Force password change on next login' }),
@@ -239,7 +239,7 @@ describe('AddEditPersonModal', () => {
     expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
   })
 
-  it('discards re-send intent when hidden by deactivation, including after reactivation', async () => {
+  it('discards regeneration intent when hidden by deactivation, including after reactivation', async () => {
     const actor = userEvent.setup()
     const save = vi.fn().mockResolvedValue(undefined)
     render(
@@ -252,13 +252,13 @@ describe('AddEditPersonModal', () => {
         user={{ ...existingUser, active: true, has_local_password: true }}
       />,
     )
-    await actor.click(screen.getByRole('checkbox', { name: 'Re-send password link' }))
+    await actor.click(screen.getByRole('switch', { name: 'Regenerate password link' }))
     await actor.click(screen.getByRole('switch', { name: 'Account active' }))
     expect(
-      screen.queryByRole('checkbox', { name: 'Re-send password link' }),
+      screen.queryByRole('switch', { name: 'Regenerate password link' }),
     ).not.toBeInTheDocument()
     await actor.click(screen.getByRole('switch', { name: 'Account inactive' }))
-    expect(screen.getByRole('checkbox', { name: 'Re-send password link' })).not.toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Regenerate password link' })).not.toBeChecked()
     expect(screen.getByLabelText('Password (leave blank to keep)')).toBeEnabled()
     expect(
       screen.getByRole('switch', { name: 'Force password change on next login' }),
@@ -268,7 +268,7 @@ describe('AddEditPersonModal', () => {
     expect(save.mock.calls[0][0]).not.toHaveProperty('password')
   })
 
-  it('cancels a checked re-send without saving', async () => {
+  it('cancels a enabled regeneration without saving', async () => {
     const actor = userEvent.setup()
     const save = vi.fn()
     const close = vi.fn()
@@ -282,7 +282,7 @@ describe('AddEditPersonModal', () => {
         user={{ ...existingUser, active: true, has_local_password: true }}
       />,
     )
-    await actor.click(screen.getByRole('checkbox', { name: 'Re-send password link' }))
+    await actor.click(screen.getByRole('switch', { name: 'Regenerate password link' }))
     await actor.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(close).toHaveBeenCalledOnce()
     expect(save).not.toHaveBeenCalled()

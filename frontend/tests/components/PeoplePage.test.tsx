@@ -239,7 +239,7 @@ describe('PeoplePage', () => {
     vi.mocked(fetchUsers).mockResolvedValue(USERS)
   })
 
-  it('re-sends on save with null, automatically opens minting, and retries a mint failure from Edit Person', async () => {
+  it('regenerates on save with null, automatically opens minting, and retries a mint failure from Edit Person', async () => {
     const actor = userEvent.setup()
     const local = {
       ...USERS[1],
@@ -255,7 +255,7 @@ describe('PeoplePage', () => {
       .mockResolvedValue({ setup_token: 'replacement-token', expires_at: '2030-01-02T12:00:00Z' })
     render(<PeoplePage programs={programs} groups={groups} />)
     await actor.click(await screen.findByText(local.name))
-    await actor.click(screen.getByRole('checkbox', { name: 'Re-send password link' }))
+    await actor.click(screen.getByRole('switch', { name: 'Regenerate password link' }))
     expect(updateUser).not.toHaveBeenCalled()
     expect(mintPasswordSetupLink).not.toHaveBeenCalled()
     vi.mocked(fetchUsers).mockResolvedValue([cleared])
@@ -278,7 +278,7 @@ describe('PeoplePage', () => {
     const linkButton = screen.getByRole('button', { name: 'Copy password-setup link' })
     expect(linkButton).toBeEnabled()
     expect(
-      screen.queryByRole('checkbox', { name: 'Re-send password link' }),
+      screen.queryByRole('switch', { name: 'Regenerate password link' }),
     ).not.toBeInTheDocument()
     await actor.click(linkButton)
     expect(await screen.findByLabelText('Setup URL')).toHaveValue(

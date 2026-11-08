@@ -1296,17 +1296,17 @@ selection MouseTracker ignores their presses.
   Tokens live only within the mounted dialog, never in storage or logs; closing
   discards them and reopening creates a replacement link.
 - Edit Person enables forced change only for non-OIDC accounts that already
-  have a local password. There is no Clear password action, confirmation or reset
-  switch. Enter a new Password to change it, or leave blank to keep the current
+  have a local password. There is no Clear password action or confirmation.
+  Enter a new Password to change it, or leave blank to keep the current
   one; helper text states both options. Save errors retain the entered value.
-- Re-send password link is a checkbox for admins editing another saved active
+- Regenerate password link is a switch for admins editing another saved active
   local user with a password. It is hidden for OIDC, inactive, passwordless and
-  self-profile users. While checked, Password and forced change are disabled.
+  self-profile users. While enabled, Password and forced change are disabled.
   Save sends `password:null` without the forced-change flag, then immediately
-  opens the setup-link dialog to mint. Failed saves retain the checkbox; Cancel
+  opens the setup-link dialog to mint. Failed saves retain the enabled switch; Cancel
   does nothing. Mint failures leave a saved passwordless account and direct the
   admin back to Edit Person’s now-enabled link button. Unsaved deactivation
-  hides the checkbox and prevents re-send.
+  hides the switch and prevents regeneration, even after reactivation.
 - The link dialog warning is “Single-use link. Share it privately.” There is no
   account-exists paragraph or dialog mint-retry action. Failed automatic minting
   after create directs the admin back to Edit Person. Credentials remain local

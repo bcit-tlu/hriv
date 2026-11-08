@@ -219,16 +219,16 @@ Eligibility uses saved flags, not unsaved Active or Password values.
 
 Editing an eligible local-password account exposes **Force password change on
 next login**. The switch is disabled with explanatory tooltips for SSO and
-passwordless accounts. There is no Clear password button, confirmation or reset
-switch. The Password helper explains entering a new password to change it,
+passwordless accounts. There is no Clear password button or confirmation.
+The Password helper explains entering a new password to change it,
 or leaving blank to keep the current one. Failed saves retain the entered value.
-An admin editing another active, local-password user can tick **Re-send password
-link**. While checked, Password and forced change are disabled. Save sends
+An admin editing another active, local-password user can enable **Regenerate
+password link**. While enabled, Password and forced change are disabled. Save sends
 `password: null` without a forced-change flag, clears both saved credential flags,
 then automatically opens the link dialog to mint. Cancel does not clear or mint.
 If minting fails, reopen Edit Person and retry its enabled link button; the
-account is already passwordless. A failed save retains the checkbox for retry.
-The checkbox is hidden for self-profile, OIDC, inactive and passwordless users.
+account is already passwordless. A failed save retains the enabled switch for retry.
+The switch is hidden for self-profile, OIDC, inactive and passwordless users.
 Inactive accounts can still be cleared via the API but
 must be activated before a new link can be minted. Staff’s read-only People
 directory shows badges without credential-management or other mutation actions.
@@ -244,9 +244,9 @@ on profile saves. The profile’s API projection retains all three authoritative
 credential flags. Use the profile menu’s **Change password** action for self-service
 password rotation; clearing your own password is not offered.
 
-The password field remains the direct admin password-editing control. No reset
-switch replaces the removed Clear password action. Re-send password link is
-an explicit save-time checkbox. API clearing with `password:null` also remains
+The password field remains the direct admin password-editing control. Regenerate
+password link is an explicit save-time switch, styled like forced change below it.
+API clearing with `password:null` also remains
 available independently of the UI re-invitation flow.
 
 The link dialog’s warning is **Single-use link. Share it privately.** It keeps

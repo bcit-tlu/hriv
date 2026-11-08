@@ -1076,17 +1076,19 @@ and the User API cases in `api.test.ts`.
   retained. No setup credential is written to storage or application logs.
 - Edit a local-password account and toggle forced change. Passwordless and SSO
   accounts have disabled switches with suitable explanations.
-- Check there is no Clear password action, confirm dialog or reset switch.
+- Check there is no Clear password action or confirm dialog.
   Enter a new Password and Save: the value is sent; blank omits it and keeps
   the current password. Save errors retain typed values. Helper text explains
   both options. Unsaved activation cannot enable minting for an inactive user.
   Passworded users show “This account already has a password” on the disabled link.
 - Re-invite: only an admin editing another active local-password user sees the
-  Re-send password link checkbox. Checking it disables Password and forced
+  Regenerate password link switch. Enabling it disables Password and forced
   change; Save sends `password:null` without a forced-change flag and immediately
   opens minting. Cancel does not clear or mint; save errors retain the selection.
-  Unsaved deactivation hides the checkbox. It is absent for OIDC, inactive,
+  Unsaved deactivation hides the switch and resets it. It is absent for OIDC, inactive,
   passwordless and self-profile users. The direct Password edit path still works.
+  Turn Active off and on again after enabling regeneration: it must remain off,
+  Password and forced change re-enable, and Save must not submit a null password.
 - Fail that mint: the returned flags show Invite pending without forced change.
   Close and reopen Edit Person; the enabled link button retries without another
   clear/update. Direct API clearing via `password:null` remains supported too.
