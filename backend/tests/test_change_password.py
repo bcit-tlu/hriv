@@ -156,6 +156,31 @@ async def test_wrong_or_missing_current(client, user, db, current, caplog):
     assert event["auth.outcome"] == "failure"
 
 
+@pytest.mark.parametrize("flagged", [True, False])
+async def test_unchanged_password_rejected(client, user, db, flagged):
+    user.must_change_password = flagged
+    old_hash = user.password_hash
+    response = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": "old-password", "new_password": "old-password"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "password_unchanged"
+    assert user.password_hash == old_hash
+    assert user.must_change_password is flagged
+    db.commit.assert_not_awaited()
+
+
+async def test_wrong_matching_password_still_requires_verification(client, user, db):
+    response = await client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrong-password", "new_password": "wrong-password"},
+    )
+    assert response.status_code == 401
+    assert user.must_change_password is True
+    db.commit.assert_not_awaited()
+
+
 async def test_oidc_rejected(client, user, db):
     user.oidc_subject = "subject"
     response = await client.post(

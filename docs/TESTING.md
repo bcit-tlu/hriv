@@ -674,6 +674,8 @@ coverage gate. See [password setup](password-setup.md) for the API/error contrac
 
 `backend/tests/test_change_password.py` verifies forced-change blocking (including
 role dependency inheritance), `/auth/me` recovery, successful password changes
+and 422 `password_unchanged` rejection after current-password verification
+(without clearing the forced-change flag),
 and reopening protected endpoints, current/new-password validation, throttling
 before password verification, and structured success/failure events. Download
 cookie and synthetic bearer enforcement are covered in `test_router_admin.py`

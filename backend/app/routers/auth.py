@@ -259,6 +259,8 @@ async def change_password(
             or not verify_password(body.current_password, user.password_hash)
         ):
             raise HTTPException(401, "Invalid current password")
+        if body.new_password == body.current_password:
+            raise HTTPException(422, "password_unchanged")
         user.password_hash = hash_password(body.new_password)
         user.must_change_password = False
         await db.commit()

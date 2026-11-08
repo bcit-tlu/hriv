@@ -84,6 +84,10 @@ current passwords, and passwordless local accounts, receive 401. A new password
 must have at least eight characters and at most 72 UTF-8 bytes (bcrypt's limit),
 otherwise validation returns 422. A missing bearer JWT also returns 401.
 
+After verifying the current password, reusing it as the new password returns
+422 `password_unchanged`. The hash and forced-change flag remain unchanged, so
+a forced rotation cannot be satisfied by resubmitting the existing password.
+
 The per-user Redis bucket `rate:pwchange:{user.id}` runs **before password
 verification**, using `RATE_LIMIT_LOGIN_MAX` and `RATE_LIMIT_LOGIN_WINDOW` (default
 5 attempts per 60 seconds). Exhaustion returns 429 `rate_limited` with
