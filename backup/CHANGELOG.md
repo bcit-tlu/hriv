@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.1...backup-v0.17.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **backup:** bind the barman catalog directory name as the CNPG backupID ([#1809](https://github.com/bcit-tlu/hriv/issues/1809)) ([9e9fde2](https://github.com/bcit-tlu/hriv/commit/9e9fde2775f7e47ea752d5ce2c5d6e1a2963df65))
+
 ## [0.17.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.0...backup-v0.17.1) (2026-11-08)
 
 
