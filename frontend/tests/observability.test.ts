@@ -19,12 +19,14 @@ const mocks = vi.hoisted(() => {
     fetchInstrumentation: vi.fn(),
     inject: vi.fn(),
     providerCtor: vi.fn(),
-    register: vi.fn(),
     resourceFromAttributes: vi.fn(),
     registerInstrumentations: vi.fn(),
     setApiFailureObserver: vi.fn((observer) => {
       apiFailureObserver = observer
     }),
+    setGlobalContextManager: vi.fn(),
+    setGlobalPropagator: vi.fn(),
+    setGlobalTracerProvider: vi.fn(),
     setLogger: vi.fn(),
     span,
     spanProcessor: vi.fn(),
@@ -34,15 +36,22 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('@opentelemetry/api', () => ({
-  context: { active: mocks.active },
+  context: {
+    active: mocks.active,
+    setGlobalContextManager: mocks.setGlobalContextManager,
+  },
   diag: { setLogger: mocks.setLogger },
   DiagConsoleLogger: class {},
   DiagLogLevel: { WARN: 2 },
+  propagation: {
+    setGlobalPropagator: mocks.setGlobalPropagator,
+  },
   SpanStatusCode: { ERROR: 2, OK: 1 },
   trace: {
     getTracer: () => ({
       startActiveSpan: mocks.startActiveSpan,
     }),
+    setGlobalTracerProvider: mocks.setGlobalTracerProvider,
   },
 }))
 
@@ -85,15 +94,14 @@ vi.mock('@opentelemetry/resources', () => ({
   },
 }))
 
-vi.mock('@opentelemetry/sdk-trace-web', () => ({
+vi.mock('@opentelemetry/sdk-trace', () => ({
   BatchSpanProcessor: class {
     constructor(exporter: unknown) {
       mocks.spanProcessor(exporter)
     }
   },
-  WebTracerProvider: class {
-    register = mocks.register
-
+  StackContextManager: class {},
+  TracerProvider: class {
     constructor(config: unknown) {
       mocks.providerCtor(config)
     }
