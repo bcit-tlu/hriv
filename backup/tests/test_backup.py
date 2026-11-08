@@ -2666,11 +2666,12 @@ class AzurePublicationTestCase(_BackupTestCase):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         db = backup._parse_db_url(backup.DATABASE_URL)
         for payload in (
-            "generation\n",
-            "generation\n0\n",
-            "generation\ninvalid\n",
-            "generation\n1\n2\n",
-            "wrong_column\n1\n",
+            "generation,migration_version\n",
+            "generation,migration_version\n0,0038_user_auth_state\n",
+            "generation,migration_version\ninvalid,0038_user_auth_state\n",
+            "generation,migration_version\n1,0038_user_auth_state\n2,0038_user_auth_state\n",
+            "generation\n1\n",
+            "wrong_column,migration_version\n1,0038_user_auth_state\n",
         ):
             with self.subTest(payload=payload):
                 commands = []
@@ -2706,7 +2707,7 @@ class AzurePublicationTestCase(_BackupTestCase):
             "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,bad version\n",
         ):
             with self.subTest(payload=payload):
-                responses = iter(("generation\n1\n", payload))
+                responses = iter((f"generation,migration_version\n1,0038_user_auth_state\n", payload))
                 def invalid_boundary(_cmd, **_kwargs):
                     return MagicMock(returncode=0, stdout=next(responses), stderr="")
                 with (
@@ -2715,7 +2716,7 @@ class AzurePublicationTestCase(_BackupTestCase):
                 ):
                     backup._emit_wal_fence(db)
 
-        responses = iter(("generation\n1\n", valid))
+        responses = iter((f"generation,migration_version\n1,0038_user_auth_state\n", valid))
         def valid_boundary(_cmd, **_kwargs):
             return MagicMock(returncode=0, stdout=next(responses), stderr="")
         with patch.object(backup.subprocess, "run", side_effect=valid_boundary):
@@ -2729,6 +2730,21 @@ class AzurePublicationTestCase(_BackupTestCase):
                 ),
                 backup._emit_wal_fence(db),
             )
+
+        for update_payload, message in (
+            ("generation,migration_version\n1,0037_measurement_findings\n", "migration between the fence"),
+            ("generation,migration_version\n1,\n", "invalid migration version"),
+            ("generation\n1\n", "backup WAL fence transaction"),
+        ):
+            with self.subTest(update_payload=update_payload):
+                responses = iter((update_payload, valid))
+                def drifted(_cmd, **_kwargs):
+                    return MagicMock(returncode=0, stdout=next(responses), stderr="")
+                with (
+                    patch.object(backup.subprocess, "run", side_effect=drifted),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    backup._emit_wal_fence(db)
 
     def test_postgres_lsn_and_wal_file_boundaries(self):
         self.assertEqual((0x1A << 32) + 0x1000000, backup._postgres_lsn_value("1A/1000000"))
@@ -3278,7 +3294,7 @@ def _production_inventory_run(
         if "UPDATE public.backup_recovery_wal_fence" in query:
             return MagicMock(
                 returncode=0,
-                stdout="generation\n1\n",
+                stdout=f"generation,migration_version\n1,{migration_version}\n",
                 stderr="",
             )
         if "pg_walfile_name" in query:
@@ -5429,7 +5445,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertIsNone(
             backup._validation_manifest_summary(legacy)["migration_version"]
         )
-        for invalid in ("", "bad version", 38, True, "x" * 129):
+        for invalid in (None, "", "bad version", 38, True, "x" * 129):
             with self.subTest(invalid=invalid):
                 broken = copy.deepcopy(manifest)
                 broken["database_recovery"]["migration_version"] = invalid
