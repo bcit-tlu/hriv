@@ -137,6 +137,14 @@ async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
     )
 
 
+async def check_password_change_rate_limit(user_id: int) -> int | None:
+    return await check_rate_limit(
+        f"rate:pwchange:{user_id}",
+        settings.rate_limit_login_window,
+        settings.rate_limit_login_max,
+    )
+
+
 async def check_password_setup_ip_rate_limit(client_ip: str) -> int | None:
     return await check_rate_limit(
         f"rate:pwsetup:{client_ip}",

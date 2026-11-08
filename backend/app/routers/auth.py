@@ -5,11 +5,11 @@ import secrets
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..auth import verify_password, create_access_token, get_current_user, hash_password
+from ..auth import verify_password, create_access_token, get_user_from_token, hash_password
 from ..auth_events import (
     AUTH_METHOD_LOCAL,
     AUTH_OUTCOME_FAILURE,
@@ -25,8 +25,9 @@ from ..rate_limit import (
     reset_login_rate_limit,
     check_password_setup_ip_rate_limit,
     check_password_setup_subject_rate_limit,
+    check_password_change_rate_limit,
 )
-from ..schemas import UserOut, PasswordSetupRequest
+from ..schemas import UserOut, PasswordSetupRequest, ChangePasswordRequest
 from ..serializers import user_to_out
 
 logger = logging.getLogger(__name__)
@@ -226,9 +227,72 @@ async def password_setup(
     )
 
 
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(get_user_from_token)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    try:
+        if current_user.oidc_subject is not None:
+            raise HTTPException(403, "oidc_linked")
+        retry_after = await check_password_change_rate_limit(current_user.id)
+        if retry_after is not None:
+            raise HTTPException(
+                429, "rate_limited", headers={"Retry-After": str(retry_after)}
+            )
+        result = await db.execute(
+            select(User)
+            .where(User.id == current_user.id)
+            .with_for_update(of=User)
+            .execution_options(populate_existing=True)
+        )
+        user = result.scalar_one_or_none()
+        if user is None or not user.active:
+            raise HTTPException(401, "Invalid or expired token")
+        if user.oidc_subject is not None:
+            raise HTTPException(403, "oidc_linked")
+        if (
+            not user.password_hash
+            or not body.current_password
+            or len(body.current_password.encode("utf-8")) > 72
+            or not verify_password(body.current_password, user.password_hash)
+        ):
+            raise HTTPException(401, "Invalid current password")
+        if body.new_password == body.current_password:
+            raise HTTPException(422, "password_unchanged")
+        user.password_hash = hash_password(body.new_password)
+        user.must_change_password = False
+        await db.commit()
+    except HTTPException as exc:
+        logger.warning(
+            "Password change failed",
+            extra={
+                "event": "auth.password_change",
+                "status_code": exc.status_code,
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                    user=current_user,
+                ),
+            },
+        )
+        raise
+    logger.info(
+        "Password change successful",
+        extra={
+            "event": "auth.password_change",
+            **auth_event_fields(
+                method=AUTH_METHOD_LOCAL, outcome=AUTH_OUTCOME_SUCCESS, user=current_user
+            ),
+        },
+    )
+    return Response(status_code=204)
+
+
 @router.get("/me", response_model=UserOut)
 async def get_me(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_user_from_token)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Return the currently authenticated user. Any role can access this.

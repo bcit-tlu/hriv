@@ -78,6 +78,25 @@ carried in a path-scoped `HttpOnly` cookie (minted by
 and re-checks that the token subject is still an active admin account before
 serving the file.
 
+### Forced password changes
+
+Unlike deactivation (which also prevents login), `must_change_password` allows
+login but blocks protected use with 403 `password_change_required`. `/auth/me`
+and `/auth/change-password` remain available to active users; changing the local
+password clears the flag. Download cookies and synthetic-result bearer ingestion
+also check the flag. See [password management](password-setup.md) and the
+[user model](domain-model.md#user) for details.
+
+### Existing tile/thumbnail credentials
+
+Already-issued image-scoped tile/thumbnail tokens remain valid until expiry
+after deactivation or a forced-password-change flag. They have no user subject
+and validate without a database lookup. The default remaining window is at most
+15 minutes (`TILE_TOKEN_TTL_MINUTES`, configurable 1–1440). Both the FastAPI tile
+fallback and nginx `tiles-auth` validator preserve this bounded exception; new
+credentials cannot be minted by blocked users. Previously cached/downloaded
+bytes cannot be revoked.
+
 ## Backup export/import behavior
 
 Database export includes `users[].active` and import restores it so deactivated

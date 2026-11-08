@@ -31,9 +31,12 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `has_local_password` (`password_hash IS NOT NULL`), `oidc_linked`
   (`oidc_subject IS NOT NULL`), and `must_change_password`. Both derived flags
   can be true (dual credentials) or false (passwordless, unlinked account).
-  Instructor directory projections omit these flags. This schema foundation
-  does not yet enforce forced changes on authenticated requests; that is a
-  separate part of the self-service password workflow.
+  Instructor directory projections omit these flags. `get_current_user` rejects
+  flagged users with 403 `password_change_required`; `/auth/me` and authenticated
+  `/auth/change-password` deliberately bypass that gate. Successful password
+  change clears the flag. See [password management](password-setup.md) for the
+  API, auth-path audit, and bounded existing tile-token exception, and
+  [user deactivation](user-deactivation.md) for inactive-account behavior.
 - **Relationships:** `programs` (M2M via `user_programs`); `groups` (M2M via
   `group_members`, `viewonly` — the user's group memberships).
 - **Deletion:** no cascade targets; `admin_tasks.created_by` and

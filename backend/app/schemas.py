@@ -664,6 +664,18 @@ class PasswordSetupRequest(BaseModel):
         return value
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str | None = None
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
+
 class PasswordSetupLinkOut(BaseModel):
     setup_token: str
     expires_at: datetime

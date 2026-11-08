@@ -37,8 +37,8 @@ Redemption errors:
 
 Mint and redeem lock the user row until commit, serializing nonce rotations and
 redemptions. Concurrent redeems cannot both change the password. Password clearing
-also revokes any outstanding setup credential. Existing access tokens and the
-authenticated password-change flow are outside this feature's scope.
+also revokes any outstanding setup credential. Revocation of existing access
+tokens is outside this feature's scope.
 
 ## Token configuration and enforcement
 
@@ -70,3 +70,65 @@ success/failure without logging tokens, passwords, or nonces.
 rejection, role gates, rotation, success/replay, account/nonce/error guards,
 password validation, structured events, and both rate-limit budgets. Full backend
 verification: `cd backend && poetry run pytest` (80% coverage gate).
+
+## Authenticated password change
+
+`POST /api/auth/change-password` requires a valid bearer JWT and accepts
+`{ "current_password": "<old>", "new_password": "<new>" }`. Any local user role
+can use it, including a user flagged `must_change_password`. Success is **204 No
+Content**: the hash is replaced and `must_change_password` is cleared in the same
+transaction. Existing bearer JWTs remain valid; a replacement JWT is not needed.
+
+OIDC-linked accounts receive 403 `oidc_linked`. Missing, empty, wrong, or overlong
+current passwords, and passwordless local accounts, receive 401. A new password
+must have at least eight characters and at most 72 UTF-8 bytes (bcrypt's limit),
+otherwise validation returns 422. A missing bearer JWT also returns 401.
+
+After verifying the current password, reusing it as the new password returns
+422 `password_unchanged`. The hash and forced-change flag remain unchanged, so
+a forced rotation cannot be satisfied by resubmitting the existing password.
+
+The per-user Redis bucket `rate:pwchange:{user.id}` runs **before password
+verification**, using `RATE_LIMIT_LOGIN_MAX` and `RATE_LIMIT_LOGIN_WINDOW` (default
+5 attempts per 60 seconds). Exhaustion returns 429 `rate_limited` with
+`Retry-After` seconds. Redis failure remains fail-open, matching login. Structured
+`auth.password_change` events record success/failure with canonical `auth.*`
+fields, never either password. Concurrent changes serialize on the user row.
+
+## Forced password changes and auth-path audit
+
+Admins can set `must_change_password: true` on a local, passworded account. Login
+still succeeds and returns that flag. On subsequent bearer requests,
+`get_current_user` returns 403 `password_change_required`; all `require_role`
+dependencies inherit the block, including admins. Image/category serialization
+is blocked too, preventing new tile/thumbnail credentials from being minted.
+`GET /api/auth/me` and change-password deliberately use `get_user_from_token`
+directly, so the guest can recover their session and clear the flag. Logout is
+client-side token removal; there is no backend logout endpoint.
+
+The admin download-cookie path rechecks the persisted user and forced-change
+flag before serving a file. Synthetic-result **bearer** ingestion also enforces
+the flag, even for synthetic accounts; admins must not flag monitor accounts.
+The operator-provisioned synthetic ingest token is an independent service
+credential, not user authentication, and retains its existing behavior.
+
+OIDC callback establishes IdP identity independently. Linking an existing local
+account clears the flag; OIDC-linked accounts cannot be flagged through the API.
+Password setup cannot bypass forced change for a passworded account (409).
+Request middleware decodes JWT identity only for logging, not authorization.
+Public health/configuration and operator-authenticated routes remain independent
+of this user-authentication gate.
+
+### Existing tile/thumbnail credentials
+
+Already-issued image-scoped tile/thumbnail tokens remain valid until expiry
+after deactivation or a forced-password-change flag. They have no user subject
+and validate without a database lookup. The default remaining window is at most
+15 minutes (`TILE_TOKEN_TTL_MINUTES`, configurable 1–1440). Both the FastAPI tile
+fallback and nginx `tiles-auth` validator preserve this bounded exception; new
+credentials cannot be minted by blocked users. Previously cached/downloaded
+bytes cannot be revoked. See [user deactivation](user-deactivation.md).
+
+`tests/test_change_password.py`, `tests/test_router_admin.py`, and
+`tests/test_telemetry.py` cover these user-authentication boundaries, successful
+recovery, current/new-password validation, rate-limit ordering, and audit events.

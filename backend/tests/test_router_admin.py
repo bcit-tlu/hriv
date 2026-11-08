@@ -1547,9 +1547,25 @@ async def test_download_task_wrong_task_id() -> None:
         assert exc.value.status_code == 401
 
 
+async def test_download_task_requires_password_change() -> None:
+    token = _make_download_token(task_id=1)
+    db = AsyncMock()
+    db.get.return_value = SimpleNamespace(
+        id=1, role="admin", active=True, must_change_password=True
+    )
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, _download_request(1, token), db=db)
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "password_change_required"
+    db.get.assert_awaited_once()
+
+
 async def test_download_task_not_found() -> None:
     token = _make_download_token(task_id=999)
-    admin_user = SimpleNamespace(id=1, role="admin", active=True)
+    admin_user = SimpleNamespace(id=1, role="admin", active=True, must_change_password=False)
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_: admin_user if model.__name__ == "User" else None)
 
@@ -1565,7 +1581,7 @@ async def test_download_task_not_found() -> None:
 
 async def test_download_task_not_completed() -> None:
     task = _make_admin_task(status="running")
-    admin_user = SimpleNamespace(id=1, role="admin", active=True)
+    admin_user = SimpleNamespace(id=1, role="admin", active=True, must_change_password=False)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1594,7 +1610,7 @@ async def test_download_task_result_file_missing() -> None:
         result_path="/nonexistent/file.json",
         result_filename="export.json",
     )
-    admin_user = SimpleNamespace(id=1, role="admin", active=True)
+    admin_user = SimpleNamespace(id=1, role="admin", active=True, must_change_password=False)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1626,7 +1642,7 @@ async def test_download_task_success(tmp_path) -> None:
         result_path=str(filepath),
         result_filename="export.json",
     )
-    admin_user = SimpleNamespace(id=1, role="admin", active=True)
+    admin_user = SimpleNamespace(id=1, role="admin", active=True, must_change_password=False)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
@@ -1665,7 +1681,7 @@ async def test_download_task_tar_gz(tmp_path) -> None:
         result_path=str(filepath),
         result_filename="hriv-files.tar.gz",
     )
-    admin_user = SimpleNamespace(id=1, role="admin", active=True)
+    admin_user = SimpleNamespace(id=1, role="admin", active=True, must_change_password=False)
     token = _make_download_token(task_id=1)
 
     db = AsyncMock()
