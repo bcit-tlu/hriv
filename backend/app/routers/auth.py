@@ -20,6 +20,7 @@ from ..models import User
 from ..middleware import get_client_ip
 from ..rate_limit import check_login_rate_limit, reset_login_rate_limit
 from ..schemas import UserOut
+from ..serializers import user_to_out
 
 logger = logging.getLogger(__name__)
 
@@ -138,24 +139,9 @@ async def login(
 
     token = create_access_token(user)
     await db.refresh(user, ["programs", "groups"])
-    user_data = {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "role": user.role,
-        "active": user.active,
-        "program_ids": [p.id for p in user.programs],
-        "program_names": [p.name for p in user.programs],
-        "group_ids": [g.id for g in user.groups],
-        "group_names": [g.name for g in user.groups],
-        "metadata_extra": user.metadata_,
-        "last_access": user.last_access,
-        "created_at": user.created_at,
-        "updated_at": user.updated_at,
-    }
     return LoginResponse(
         access_token=token,
-        user=UserOut(**user_data),
+        user=UserOut(**user_to_out(user)),
     )
 
 
@@ -171,18 +157,4 @@ async def get_me(
     program chips.
     """
     await db.refresh(current_user, ["programs", "groups"])
-    return UserOut(
-        id=current_user.id,
-        name=current_user.name,
-        email=current_user.email,
-        role=current_user.role,
-        active=current_user.active,
-        program_ids=[p.id for p in current_user.programs],
-        program_names=[p.name for p in current_user.programs],
-        group_ids=[g.id for g in current_user.groups],
-        group_names=[g.name for g in current_user.groups],
-        metadata_extra=current_user.metadata_,
-        last_access=current_user.last_access,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at,
-    )
+    return UserOut(**user_to_out(current_user))

@@ -119,6 +119,40 @@ describe('AddEditPersonModal', () => {
     expect(onSave.mock.calls[0][0].password).toBeUndefined()
   })
 
+  it.each([false, true])(
+    'requires eight characters for an entered password (edit=%s)',
+    async (isEdit) => {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <AddEditPersonModal
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          programs={programs}
+          user={isEdit ? existingUser : undefined}
+        />,
+      )
+      if (!isEdit) {
+        await user.type(screen.getByLabelText(/full name/i), 'New Person')
+        await user.type(screen.getByLabelText(/email/i), 'new@example.ca')
+      }
+      const submit = screen.getByRole('button', { name: isEdit ? 'Save' : 'Add' })
+      const password = screen.getByLabelText(isEdit ? 'Password (leave blank to keep)' : 'Password')
+      if (isEdit) expect(submit).not.toBeDisabled()
+      else expect(submit).toBeDisabled()
+      await user.type(password, '1234567')
+      expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument()
+      expect(submit).toBeDisabled()
+      expect(onSave).not.toHaveBeenCalled()
+      await user.type(password, '8')
+      expect(screen.queryByText('Password must be at least 8 characters')).not.toBeInTheDocument()
+      expect(submit).not.toBeDisabled()
+      await user.click(submit)
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ password: '12345678' }))
+    },
+  )
+
   it('shows student restriction helper text when role is student', () => {
     render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
     expect(screen.getByText('Select one or more programs to restrict access')).toBeInTheDocument()

@@ -475,6 +475,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    invite_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     role: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

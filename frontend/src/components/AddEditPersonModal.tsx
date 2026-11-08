@@ -56,6 +56,7 @@ function AddEditPersonForm({
   const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const passwordTooShort = password.trim().length > 0 && password.trim().length < 8
 
   const handleSave = async () => {
     const trimmedName = name.trim()
@@ -63,6 +64,7 @@ function AddEditPersonForm({
     const trimmedPassword = password.trim()
     if (!trimmedName || !trimmedEmail) return
     if (!isEdit && !trimmedPassword) return
+    if (passwordTooShort) return
 
     const data: PersonFormData = {
       name: trimmedName,
@@ -103,6 +105,7 @@ function AddEditPersonForm({
 
   const canSave =
     !saving &&
+    !passwordTooShort &&
     (isEdit
       ? name.trim() !== '' && email.trim() !== ''
       : name.trim() !== '' && email.trim() !== '' && password.trim() !== '')
@@ -150,6 +153,8 @@ function AddEditPersonForm({
           variant="outlined"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          error={passwordTooShort}
+          helperText={passwordTooShort ? 'Password must be at least 8 characters' : undefined}
         />
         <FormControl fullWidth>
           <InputLabel>Role</InputLabel>

@@ -34,6 +34,8 @@ def _make_user(
         name=name,
         email=email,
         password_hash=password_hash,
+        oidc_subject=None,
+        must_change_password=False,
         role=role,
         active=active,
         programs=programs or [],
@@ -65,6 +67,38 @@ async def test_login_success() -> None:
     assert result.access_token == "jwt-token"
     assert result.user.email == "test@example.com"
     assert result.user.active is True
+    assert result.user.has_local_password is True
+    assert result.user.oidc_linked is False
+    assert result.user.must_change_password is False
+
+
+@pytest.mark.parametrize("password_hash,oidc_subject,must_change", [
+    (None, None, False),
+    (None, "subject", False),
+    ("hash", "subject", False),
+    ("hash", None, True),
+])
+async def test_me_auth_flags(password_hash, oidc_subject, must_change) -> None:
+    user = _make_user(password_hash=password_hash)
+    user.oidc_subject = oidc_subject
+    user.must_change_password = must_change
+    result = await get_me(user, AsyncMock())
+    assert result.has_local_password is (password_hash is not None)
+    assert result.oidc_linked is (oidc_subject is not None)
+    assert result.must_change_password is must_change
+
+
+async def test_login_forced_change_flag() -> None:
+    user = _make_user(password_hash="hash")
+    user.must_change_password = True
+    db = AsyncMock()
+    db.execute.return_value = MagicMock()
+    db.execute.return_value.scalars.return_value.first.return_value = user
+    with patch("app.routers.auth.verify_password", return_value=True), patch(
+        "app.routers.auth.create_access_token", return_value="token"
+    ):
+        result = await login(LoginRequest(email=user.email, password="password"), _mock_request(), db)
+    assert result.user.must_change_password is True
 
 
 async def test_login_case_insensitive_email() -> None:

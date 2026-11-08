@@ -22,6 +22,7 @@ from app.routers.users import (
     delete_user,
 )
 from fastapi import Response
+from pydantic import TypeAdapter
 
 from app.models import User
 from app.schemas import (
@@ -31,6 +32,8 @@ from app.schemas import (
     UserBulkRoleUpdate,
     UserBulkActiveUpdate,
     UserBulkDelete,
+    UserOut,
+    UserMiniOut,
 )
 from app.serializers import user_to_mini_out, user_to_out
 
@@ -54,6 +57,9 @@ def _make_user(
         name=name,
         email=email,
         password_hash="hashed",
+        oidc_subject=None,
+        invite_nonce=None,
+        must_change_password=False,
         role=role,
         active=active,
         programs=programs or [],
@@ -95,6 +101,151 @@ def test_user_to_out_without_programs() -> None:
     assert data["active"] is True
     assert data["program_names"] == []
     assert data["program_ids"] == []
+
+
+@pytest.mark.parametrize("password_hash", [None, "hashed"])
+@pytest.mark.parametrize("oidc_subject", [None, "subject"])
+def test_user_auth_flags(password_hash: str | None, oidc_subject: str | None) -> None:
+    user = _make_user()
+    user.password_hash = password_hash
+    user.oidc_subject = oidc_subject
+    user.invite_nonce = "secret-nonce"
+    data = user_to_out(user)
+    assert data["has_local_password"] is (password_hash is not None)
+    assert data["oidc_linked"] is (oidc_subject is not None)
+    assert data["must_change_password"] is False
+    assert not {"password_hash", "oidc_subject", "invite_nonce"} & data.keys()
+
+
+def test_instructor_response_model_omits_auth_flags() -> None:
+    adapter = TypeAdapter(list[UserOut | UserMiniOut])
+    data = user_to_mini_out(_make_user())
+    response = adapter.dump_python(adapter.validate_python([data]))[0]
+    assert not {"has_local_password", "oidc_linked", "must_change_password"} & response.keys()
+
+
+@pytest.mark.parametrize("password", [None, "password"])
+@pytest.mark.parametrize("must_change", [False, True])
+async def test_create_user_auth_state(password: str | None, must_change: bool) -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    body = UserCreate(name="Guest", email="guest@example.com", password=password,
+                      must_change_password=must_change)
+    with patch("app.routers.users.hash_password", return_value="hash") as hashed:
+        if must_change and password is None:
+            with pytest.raises(HTTPException) as exc:
+                await create_user(body, _make_user(role="admin"), db)
+            assert exc.value.status_code == 422
+            db.add.assert_not_called()
+            hashed.assert_not_called()
+            return
+        result = await create_user(body, _make_user(role="admin"), db)
+    assert result["has_local_password"] is (password is not None)
+    assert result["must_change_password"] is must_change
+    assert hashed.call_count == int(password is not None)
+
+
+@pytest.mark.parametrize("payload", [{}, {"password": None}, {"password": "newpassword"}])
+async def test_update_user_password_presence(payload: dict) -> None:
+    user = _make_user()
+    user.invite_nonce = "nonce"
+    db = AsyncMock()
+    db.get.return_value = user
+    with patch("app.routers.users.hash_password", return_value="new-hash") as hashed:
+        await update_user(1, UserUpdate(**payload), _make_user(role="admin"), db)
+    if "password" not in payload:
+        assert user.password_hash == "hashed"
+        assert user.invite_nonce == "nonce"
+        hashed.assert_not_called()
+    elif payload["password"] is None:
+        assert user.password_hash is None
+        assert user.invite_nonce is None
+        hashed.assert_not_called()
+    else:
+        assert user.password_hash == "new-hash"
+        hashed.assert_called_once_with("newpassword")
+
+
+@pytest.mark.parametrize("flag", [True, False, None])
+async def test_update_user_must_change_password(flag: bool | None) -> None:
+    user = _make_user()
+    user.must_change_password = True
+    db = AsyncMock()
+    db.get.return_value = user
+    result = await update_user(1, UserUpdate(must_change_password=flag), _make_user(role="admin"), db)
+    assert result["must_change_password"] is (True if flag is None else flag)
+
+
+@pytest.mark.parametrize("oidc_subject,password_hash,payload", [
+    ("subject", "hash", {"must_change_password": True}),
+    ("subject", None, {"must_change_password": True, "password": "newpassword"}),
+    (None, None, {"must_change_password": True}),
+    (None, "hash", {"must_change_password": True, "password": None}),
+])
+async def test_update_user_invalid_forced_change(oidc_subject, password_hash, payload) -> None:
+    user = _make_user()
+    user.oidc_subject = oidc_subject
+    user.password_hash = password_hash
+    db = AsyncMock()
+    db.get.return_value = user
+    with pytest.raises(HTTPException) as exc:
+        await update_user(1, UserUpdate(**payload), _make_user(role="admin"), db)
+    assert exc.value.status_code == 422
+    db.commit.assert_not_awaited()
+    assert user.must_change_password is False
+    assert user.password_hash == password_hash
+
+
+async def test_update_user_simultaneous_password_and_force_change() -> None:
+    user = _make_user()
+    user.password_hash = None
+    db = AsyncMock()
+    db.get.return_value = user
+    result = await update_user(1, UserUpdate(password="newpassword", must_change_password=True),
+                               _make_user(role="admin"), db)
+    assert result["has_local_password"] is True
+    assert result["must_change_password"] is True
+
+
+@pytest.mark.parametrize("password", [None, "newpassword"])
+async def test_admin_can_edit_oidc_user_password(password: str | None) -> None:
+    user = _make_user()
+    user.oidc_subject = "subject"
+    db = AsyncMock()
+    db.get.return_value = user
+    result = await update_user(1, UserUpdate(password=password), _make_user(role="admin"), db)
+    assert result["has_local_password"] is (password is not None)
+    assert result["oidc_linked"] is True
+
+
+@pytest.mark.parametrize("flag_payload", [{}, {"must_change_password": False}, {"must_change_password": None}])
+async def test_clear_flagged_user_password_automatically_unflags(flag_payload: dict) -> None:
+    user = _make_user()
+    user.must_change_password = True
+    user.invite_nonce = "nonce"
+    db = AsyncMock()
+    db.get.return_value = user
+    result = await update_user(1, UserUpdate(password=None, **flag_payload),
+                               _make_user(role="admin"), db)
+    assert result["must_change_password"] is False
+    assert result["has_local_password"] is False
+    assert user.invite_nonce is None
+
+
+async def test_clear_flagged_user_password_rejects_explicit_true() -> None:
+    user = _make_user()
+    user.must_change_password = True
+    user.invite_nonce = "nonce"
+    db = AsyncMock()
+    db.get.return_value = user
+    with pytest.raises(HTTPException) as exc:
+        await update_user(1, UserUpdate(password=None, must_change_password=True),
+                          _make_user(role="admin"), db)
+    assert exc.value.status_code == 422
+    assert user.password_hash == "hashed"
+    assert user.invite_nonce == "nonce"
+    assert user.must_change_password is True
+    db.commit.assert_not_awaited()
 
 
 def test_user_to_out_includes_groups() -> None:
@@ -387,7 +538,7 @@ async def test_create_user_success() -> None:
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
-    body = UserCreate(name="New User", email="new@example.com", password="pass123")
+    body = UserCreate(name="New User", email="new@example.com", password="pass1234")
 
     with patch("app.routers.users.hash_password", return_value="hashed"):
         result = await create_user(body, MagicMock(), db)
@@ -412,7 +563,7 @@ async def test_create_user_staff_role_accepted() -> None:
 
     body = UserCreate(
         name="Staff User", email="staff@example.com",
-        password="pass123", role="staff",
+        password="pass1234", role="staff",
     )
 
     with patch("app.routers.users.hash_password", return_value="hashed"):
@@ -425,7 +576,7 @@ async def test_create_user_invalid_role_rejected() -> None:
     db = AsyncMock()
     body = UserCreate(
         name="Bogus", email="bogus@example.com",
-        password="pass123", role="superuser",
+        password="pass1234", role="superuser",
     )
     with pytest.raises(HTTPException) as exc:
         await create_user(body, MagicMock(), db)

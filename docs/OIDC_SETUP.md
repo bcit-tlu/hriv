@@ -5,6 +5,13 @@ authenticates through an external Identity Provider (IdP) instead of
 local email/password credentials. Local login is kept as a fallback for
 admin bootstrap accounts.
 
+Local credentials also remain available for guest accounts. OIDC-linked accounts
+(`users.oidc_subject` set) are reported through the `oidc_linked` API flag and
+cannot be flagged `must_change_password`; linking an existing local account to
+OIDC automatically clears that flag. The Add/Edit Person form requires at least
+eight characters when entering a password; leaving it blank while editing keeps
+the existing password.
+
 ---
 
 ## Environment Variables
