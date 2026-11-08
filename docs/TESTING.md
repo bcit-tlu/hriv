@@ -654,7 +654,11 @@ persistent modes, and stays off the Manage, People, Admin, and Guide pages.
 
 ---
 
-All endpoints except login require a valid JWT bearer token in the `Authorization` header.
+User-authenticated endpoints require a valid JWT bearer token in the
+`Authorization` header. `POST /api/auth/login` and `POST /api/auth/password-setup`
+do not require a bearer token; password setup instead requires a purpose-scoped
+setup token in the request body. Other public/credential-scoped exceptions are
+listed in the table below and in [unauthenticated routes](unauthenticated-routes.md).
 
 Collections gate: all `/api/collections*` routes and the two image collection
 reads below return 404 when `COLLECTIONS_ENABLED=false`, or for students when
