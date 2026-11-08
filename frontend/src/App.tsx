@@ -3615,6 +3615,7 @@ export default function App() {
         onSave={handleSaveProfile}
         programs={programs}
         user={currentApiUser}
+        selfProfile
       />
 
       {/* Announcement modal (from Manage menu) */}

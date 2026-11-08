@@ -1274,3 +1274,24 @@ selection MouseTracker ignores their presses.
 - Everything renders inside `viewer.container` so it survives OSD
   full-page mode; dialogs receive the same container to stay above the
   canvas.
+
+### Admin password setup in People
+
+- Add Person defaults to setting a password now. Invite-by-link mode removes
+  the password requirement and omits the password field from creation. Once
+  created, minting opens a copy dialog; a mint failure leaves the account intact
+  and can be retried from the row without creating another person.
+- Name cells show SSO, Local, or Invite pending, with an additional subtle
+  Must change password chip for forced rotation. Staff see the same indicators
+  in their read-only directory without mutation controls.
+- Copy password-setup link is available only for active non-OIDC accounts.
+  Disabled actions explain identity-provider management or required activation.
+  Already-passworded accounts receive instructions to clear the password first.
+- The dialog shows the one-use credential URL and local-time expiry. Copy uses
+  the clipboard API or selection fallback, with inline success/failure feedback.
+  Tokens live only within the mounted dialog, never in storage or logs; closing
+  discards them and reopening creates a replacement link.
+- Edit Person enables forced change only for non-OIDC accounts that already
+  have a local password. Clearing a local password requires confirmation, sends
+  explicit null, updates both credential/rotation badges, and offers a new link.
+  Dismissing the offer does not mint anything.

@@ -187,3 +187,45 @@ For password changes, 401 `Invalid current password` asks the user to retry
 their current password. A 401 `Invalid or expired token` (or missing bearer
 credentials) instead explains that the session expired or is invalid and asks
 the user to sign in again; it is not presented as a wrong current password.
+
+## Admin workflow in People
+
+Administrators can choose **Set password now** or **Invite by link (user sets
+their own password)** when adding a person. Invite mode sends no `password`
+field. Once creation succeeds, the account exists independently of link minting:
+the setup-link dialog mints a credential for that account. A mint failure does
+not undo creation; retry in the dialog or reopen it using the row’s **Copy
+password-setup link** action. Do not recreate the account after a mint failure.
+
+The dialog composes `${window.location.origin}/#password_setup=<setup_token>`
+using the backend’s `setup_token` and `expires_at` response fields. It shows the
+full URL, local-time expiry, a copy action, and a warning to deliver it privately.
+Each link works once; minting another replaces the previous one. The credential
+is never logged or persisted: only the mounted dialog holds it, and closing
+discards it, including a pending response. Reopening mints a new link.
+
+Rows show **SSO**, **Local**, or **Invite pending**, plus an outlined **Must change
+password** chip when flagged. Link actions are disabled for inactive accounts
+(activate first) and OIDC-linked accounts (**Managed by the identity provider**).
+An already-passworded local account must have its password cleared first; a
+409 mint response explains that prerequisite without clearing automatically.
+
+Editing an eligible local-password account exposes **Force password change on
+next login**. The switch is disabled with explanatory tooltips for SSO and
+passwordless accounts. **Clear password** is a separate, confirmed action for
+local-password accounts. It sends `password: null`, reflects the returned
+passwordless/unflagged state immediately, and offers to create a new setup link.
+Clearing never silently mints a credential. Inactive accounts can be cleared but
+must be activated before a new link can be minted. Staff’s read-only People
+directory shows badges without credential-management or other mutation actions.
+
+Reopening a link dialog while an earlier mint for the same person is still in
+flight waits for that request to settle before issuing a replacement. Only the
+request-completion signal is shared across dialogs, never the setup credential.
+Closed waiting dialogs do not issue a mint, and other people’s mints are independent.
+
+The self-profile editor and an administrator’s own People row hide the admin
+force-change and clear-password controls, and do not send the forced-change flag
+on profile saves. The profile’s API projection retains all three authoritative
+credential flags. Use the profile menu’s **Change password** action for self-service
+password rotation; clearing your own password is not offered.

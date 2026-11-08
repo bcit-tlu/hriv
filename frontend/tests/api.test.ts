@@ -75,6 +75,7 @@ import {
   fetchUsers,
   loginUser,
   createUser,
+  mintPasswordSetupLink,
   updateUser,
   deleteUser as apiDeleteUser,
   bulkUpdateUserProgram,
@@ -1363,6 +1364,25 @@ describe('User API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/users/')
     expect(init.method).toBe('POST')
+  })
+
+  it('mints a setup token using the backend response contract', async () => {
+    const data = { setup_token: 'test-token', expires_at: '2030-01-02T12:00:00Z' }
+    mockFetch.mockReturnValueOnce(jsonResponse(data))
+    expect(await mintPasswordSetupLink(9)).toEqual(data)
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/users/9/password-setup-link'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('omits password on invite creation and sends explicit null when clearing', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 9 }))
+    await createUser({ name: 'Guest', email: 'guest@example.invalid', role: 'student' })
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).not.toHaveProperty('password')
+    mockFetch.mockReturnValueOnce(jsonResponse({ id: 9 }))
+    await updateUser(9, { password: null })
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({ password: null })
   })
 
   it('updateUser sends PATCH to /api/users/:id', async () => {
