@@ -160,7 +160,8 @@ async def scan_image(
     ``rescan=True`` supersedes every live finding first, so the image is
     re-detected (or its stored scale re-recorded) even when a reviewer
     already approved or rejected an earlier proposal. Returns ``None`` when
-    an overlapping scan already recorded the stored scale.
+    an overlapping scan already recorded the stored scale, or (without
+    ``rescan``) when a reviewer already approved or rejected a finding.
     """
     if has_scale(image.metadata_):
         # Serialize overlapping scans of this image; approved rows have no unique index.
@@ -198,6 +199,16 @@ async def scan_image(
         # A proposal made before the scale was stored must not resurface later.
         await _retire_pending(db, image.id)
         return record_existing(db, image)
+    if not rescan and await db.scalar(
+        select(MeasurementFinding.id)
+        .where(
+            MeasurementFinding.image_id == image.id,
+            MeasurementFinding.status.in_(("approved", "rejected")),
+        )
+        .limit(1)
+    ):
+        # A delayed scan (e.g. queued after upload) must not reopen a reviewed image.
+        return None
     path = await _latest_source_path(db, image.id)
     estimate: ScaleEstimate | None = None
     evidence: dict = {}
