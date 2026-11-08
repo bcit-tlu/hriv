@@ -2722,6 +2722,10 @@ export interface ApiMeasurementFinding {
   detector_version: string
   approved_scale: number | null
   approved_unit: string | null
+  /** Objective the approval wrote to `objective_power`; null when it wrote none. */
+  approved_objective: string | null
+  /** Calibrated px/µm per objective for this camera; null for unknown cameras. */
+  objective_scales: Record<string, number> | null
   reviewed_by: number | null
   reviewed_at: string | null
   created_at: string
@@ -2795,9 +2799,16 @@ export function fetchMeasurementScanRemaining(query: {
   return request(`/measurement-findings/scan-remaining${suffix ? `?${suffix}` : ''}`)
 }
 
+/** Omitted fields keep the proposal; `objective: null` approves without an objective. */
+export interface MeasurementCorrection {
+  scale?: number
+  unit?: MeasurementUnit
+  objective?: string | null
+}
+
 export function approveMeasurementFinding(
   id: number,
-  correction: { scale?: number; unit?: MeasurementUnit } = {},
+  correction: MeasurementCorrection = {},
 ): Promise<ApiMeasurementFinding> {
   return request(`/measurement-findings/${id}/approve`, {
     method: 'POST',

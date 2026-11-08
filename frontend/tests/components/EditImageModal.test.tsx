@@ -300,6 +300,46 @@ describe('EditImageModal – form fields and save', () => {
     )
   })
 
+  it('saves a selected objective as objective_power without touching the scale', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderModal({
+      image: { ...baseImage, metadata_extra: { canvas_annotations: [{ id: 'a' }] } },
+    })
+    await user.click(screen.getByLabelText('Objective'))
+    await user.click(screen.getByRole('option', { name: '×40' }))
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    const saved = onSave.mock.calls[0][0].metadata_extra
+    expect(saved).toEqual({ canvas_annotations: [{ id: 'a' }], objective_power: 40 })
+  })
+
+  it('pre-populates and clears a stored objective, keeping unusual values selectable', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderModal({
+      image: { ...baseImage, metadata_extra: { objective_power: 2.5 } },
+    })
+    const objective = screen.getByLabelText('Objective')
+    expect(objective).toHaveTextContent('×2.5')
+    await user.click(objective)
+    await user.click(screen.getByRole('option', { name: 'None' }))
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(onSave.mock.calls[0][0].metadata_extra).toEqual({ objective_power: null })
+  })
+
+  it('does not send objective_power when the objective is unchanged', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderModal({
+      image: { ...baseImage, metadata_extra: { objective_power: 40, measurement_scale: 7.3 } },
+    })
+    await user.clear(screen.getByLabelText('Name'))
+    await user.type(screen.getByLabelText('Name'), 'Renamed')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(onSave.mock.calls[0][0].metadata_extra).toEqual({
+      objective_power: 40,
+      measurement_scale: 7.3,
+      measurement_unit: null,
+    })
+  })
+
   it('renders Created and Modified timestamps', () => {
     renderModal({
       image: {

@@ -26,6 +26,8 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     detector_version: 'rbc-1',
     approved_scale: null,
     approved_unit: null,
+    approved_objective: null,
+    objective_scales: { '10': 2, '40': 7.3, '100': 18.7 },
     reviewed_by: null,
     reviewed_at: null,
     created_at: '2026-11-02T12:00:00Z',
@@ -161,6 +163,65 @@ describe('MeasurementReviewPage', () => {
     await userEvent.click(screen.getByRole('option', { name: 'mm' }))
     await userEvent.click(screen.getByRole('button', { name: 'Approve Blood film 40x' }))
     expect(api.approve).toHaveBeenCalledWith(1, { unit: 'mm' })
+  })
+
+  it('fills in the calibrated scale when the objective changes', async () => {
+    const api = makeApi([makeFinding({ proposed_unit: 'um' })])
+    render(<MeasurementReviewPage api={api} />)
+    await userEvent.click(await screen.findByLabelText('Objective for Blood film 40x'))
+    await userEvent.click(screen.getByRole('option', { name: '×100' }))
+    expect(screen.getByLabelText('Scale for Blood film 40x')).toHaveValue(18.7)
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Blood film 40x' }))
+    expect(api.approve).toHaveBeenCalledWith(1, { scale: 18.7, objective: '100' })
+  })
+
+  it('keeps the scale for an uncalibrated objective on an unknown camera', async () => {
+    const api = makeApi([makeFinding({ objective: null, objective_scales: null })])
+    render(<MeasurementReviewPage api={api} />)
+    await userEvent.click(await screen.findByLabelText('Objective for Blood film 40x'))
+    await userEvent.click(screen.getByRole('option', { name: '×20' }))
+    expect(screen.getByLabelText('Scale for Blood film 40x')).toHaveValue(7.3)
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Blood film 40x' }))
+    expect(api.approve).toHaveBeenCalledWith(1, { objective: '20' })
+  })
+
+  it('approves without an objective when the reviewer clears it', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await userEvent.click(await screen.findByLabelText('Objective for Blood film 40x'))
+    await userEvent.click(screen.getByRole('option', { name: 'None' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Blood film 40x' }))
+    expect(api.approve).toHaveBeenCalledWith(1, { objective: null })
+  })
+
+  it('shows the approved objective on reviewed findings', async () => {
+    const api = makeApi([
+      makeFinding({ status: 'approved', approved_scale: 18.7, approved_objective: '100' }),
+    ])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'approved' }),
+      ),
+    )
+    const table = screen.getByRole('table', { name: 'Measurement findings' })
+    expect(within(table).getByText('×100')).toBeInTheDocument()
+  })
+
+  it('does not show a detected objective the approval did not store', async () => {
+    const api = makeApi([makeFinding({ status: 'approved', approved_scale: 7.3 })])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'approved' }),
+      ),
+    )
+    const table = screen.getByRole('table', { name: 'Measurement findings' })
+    expect(within(table).queryByText('×40')).not.toBeInTheDocument()
   })
 
   it('approves unit-only corrections individually during bulk approval', async () => {

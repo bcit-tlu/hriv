@@ -9,18 +9,19 @@ Nothing is written to image metadata until a finding is approved.
 
 `measurement_findings` (migration `0037_measurement_findings`):
 
-| Column                            | Notes                                                                                                         |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `image_id`                        | FK `images.id`, `ON DELETE CASCADE`                                                                           |
-| `status`                          | `pending` ↔ `approved` / `rejected` (reset returns to pending); a rescan marks the old live rows `superseded` |
-| `source`                          | How the value was found (`rbc` today)                                                                         |
-| `proposed_scale`, `proposed_unit` | Pixels per µm in source pixels, unit `um`; `NULL` scale when nothing could be found                           |
-| `objective`                       | Objective class picked from the camera profile (`10`, `40`, `100`), or `NULL`                                 |
-| `confidence`                      | 0–1; the review list sorts on it                                                                              |
-| `evidence`                        | JSONB: measured RBC diameter, cell counts, peak share, class distances, or a `reason`                         |
-| `detector_version`                | Bumped whenever the detector or calibration constants change                                                  |
-| `approved_scale`, `approved_unit` | Value actually promoted (may differ from the proposal when the reviewer corrected it)                         |
-| `reviewed_by`, `reviewed_at`      | Reviewer (FK `users.id`, `ON DELETE SET NULL`) and time                                                       |
+| Column                            | Notes                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `image_id`                        | FK `images.id`, `ON DELETE CASCADE`                                                                                        |
+| `status`                          | `pending` ↔ `approved` / `rejected` (reset returns to pending); a rescan marks the old live rows `superseded`              |
+| `source`                          | How the value was found (`rbc` today)                                                                                      |
+| `proposed_scale`, `proposed_unit` | Pixels per µm in source pixels, unit `um`; `NULL` scale when nothing could be found                                        |
+| `objective`                       | Objective class picked from the camera profile (`10`, `40`, `100`), or `NULL`                                              |
+| `confidence`                      | 0–1; the review list sorts on it                                                                                           |
+| `evidence`                        | JSONB: measured RBC diameter, cell counts, peak share, class distances, or a `reason`                                      |
+| `detector_version`                | Bumped whenever the detector or calibration constants change                                                               |
+| `approved_scale`, `approved_unit` | Value actually promoted (may differ from the proposal when the reviewer corrected it)                                      |
+| `approved_objective`              | Objective the approval wrote to `objective_power` (migration `0039_finding_approved_objective`); `NULL` when it wrote none |
+| `reviewed_by`, `reviewed_at`      | Reviewer (FK `users.id`, `ON DELETE SET NULL`) and time                                                                    |
 
 At most one `pending` finding exists per image (partial unique index
 `uq_measurement_findings_pending_image`).
@@ -72,7 +73,7 @@ All endpoints require **admin or instructor** (`require_role("admin",
 | ------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/measurement-findings/scan`           | `{limit: 1–50 (default 10), category_id?, rescan?, all?}`. Picks images with no non-superseded finding (scaled or not) and queues them in chunks of 50. `rescan` instead picks unscaled images with no live finding from the current `DETECTOR_VERSION` (never-scanned or stale-detector) and supersedes their old findings when processed. `all` ignores `limit` and queues every candidate. 202. |
 | GET    | `/api/measurement-findings`                | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`.                                                                                                                                                                                                                                            |
-| POST   | `/api/measurement-findings/{id}/approve`   | Optional `{scale, unit}` correction (`unit`: `um`, `nm`, `mm`, `cm`). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale.                                                                                                                                                                                               |
+| POST   | `/api/measurement-findings/{id}/approve`   | Optional `{scale, unit, objective}` correction (`unit`: `um`, `nm`, `mm`, `cm`; `objective`: `4`, `10`, `20`, `40`, `50`, `60`, `100` or `null` for none — omitted keeps the detected objective). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale.                                                                   |
 | POST   | `/api/measurement-findings/{id}/reject`    | Marks rejected; metadata untouched. The image is not proposed again (a rescan overrides).                                                                                                                                                                                                                                                                                                          |
 | POST   | `/api/measurement-findings/{id}/reset`     | Returns an approved or rejected finding to `pending` and clears `reviewed_by`/`reviewed_at`. Reverting an approval whose stored scale is still the promoted value also removes the four measurement keys from `Image.metadata_` and bumps `Image.version`; a scale changed since is left alone. 409 if not reviewed or another pending finding already exists for the image.                       |
 | POST   | `/api/measurement-findings/{id}/rescan`    | Queues a re-detection of the finding's image; the scan supersedes all its live findings. 202.                                                                                                                                                                                                                                                                                                      |
@@ -99,6 +100,18 @@ and every other key are preserved:
 | `measurement_unit`         | `um` unless the reviewer picked `nm`, `mm` or `cm`                              |
 | `measurement_scale_source` | Finding `source` (e.g. `rbc`), or `manual` when the scale or unit was corrected |
 | `measurement_finding_id`   | The approved finding                                                            |
+
+When the image has no `objective_power` yet, approval also writes the
+finding's objective (or the reviewer's corrected one) as a float, e.g. `40.0`,
+and records it in `approved_objective`. An `objective_power` already on the
+image — embedded SVS/TIFF metadata or an Edit image value — is authoritative
+and never overwritten. Bulk approval writes each finding's detected objective
+under the same rule. Resetting the approval removes `objective_power` only
+when `approved_objective` is set and the stored value still matches it.
+
+Finding responses include `approved_objective` and `objective_scales`, the
+calibrated px/µm per objective for the image's camera profile (`null` for
+unknown cameras), so the review page can coordinate objective and scale.
 
 The image `version` is incremented (so stale viewer `If-Match` saves get 409)
 and the browse revision is bumped when the image is categorized or in a
@@ -180,6 +193,11 @@ lists findings from `GET /api/measurement-findings`:
   before **Approve** enables and cannot be bulk-selected.
 - The scale and unit fields are the shared `MeasurementScaleFields`
   component, also used by the Edit image dialog's Measurement Settings.
+- The detected objective is an editable `MeasurementObjectiveSelect` dropdown
+  (None, ×4, ×10, ×20, ×40, ×50, ×60, ×100). On a known camera, picking an
+  objective fills in its calibrated scale and resets the unit to µm; on an
+  unknown camera the scale is left as is. A changed objective is sent as the
+  `objective` correction. Approved rows show the objective the approval wrote.
 - **Approve selected** calls the bulk endpoint for unedited rows and approves
   rows with a scale or unit correction one by one; skipped IDs are reported.
 - Approved and Rejected rows carry a **Reset** action that returns the
