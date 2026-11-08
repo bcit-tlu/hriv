@@ -31,6 +31,7 @@ from sqlalchemy.sql import func
 from .browse_state import bump_browse_revision
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
+from .measurement.service import scan_after_processing
 from .auth_events import actor_log_fields
 from .models import Image, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
@@ -620,6 +621,7 @@ async def process_source_image(source_image_id: int) -> None:
     """
     span = trace.get_current_span()
     span.set_attribute("source_image.id", source_image_id)
+    scan_image_id: int | None = None
 
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
@@ -867,6 +869,7 @@ async def process_source_image(source_image_id: int) -> None:
                     **actor_log_fields(uploader),
                 },
             )
+            scan_image_id = img.id
 
         except Exception as exc:
             span.record_exception(exc)
@@ -892,6 +895,10 @@ async def process_source_image(source_image_id: int) -> None:
                 src.status_message = "Failed"
                 await db.commit()
 
+    # Outside the session so an inline scan never waits on this connection.
+    if scan_image_id is not None:
+        await scan_after_processing(async_session, scan_image_id)
+
 
 async def process_replace_image(
     source_image_id: int, target_image_id: int,
@@ -909,6 +916,7 @@ async def process_replace_image(
         "source_image.id": source_image_id,
         "target_image.id": target_image_id,
     })
+    scan_image_id: int | None = None
 
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
@@ -1148,6 +1156,8 @@ async def process_replace_image(
                     "duration_ms": duration_ms,
                 },
             )
+            # Replacement superseded the old findings, so the image is eligible again.
+            scan_image_id = img.id
 
         except Exception as exc:
             span.record_exception(exc)
@@ -1173,6 +1183,9 @@ async def process_replace_image(
                 )
                 src.status_message = "Failed"
                 await db.commit()
+
+    if scan_image_id is not None:
+        await scan_after_processing(async_session, scan_image_id)
 
 
 # ── Stale SourceImage reconciliation ──────────────────────

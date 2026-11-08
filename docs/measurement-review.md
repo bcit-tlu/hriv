@@ -188,7 +188,18 @@ lists findings from `GET /api/measurement-findings`:
   available via `POST /api/measurement-findings/{id}/rescan` (not surfaced
   in the UI — use Re-scan outdated for bulk re-detection).
 
+## Scans after upload and replacement
+
+When `process_source_image` (single and bulk uploads) or
+`process_replace_image` finishes and commits, it calls
+`scan_after_processing(image_id)`. That enqueues a one-image
+`measurement_scan_task`, or runs the scan inline when the queue is unavailable
+in `local` mode. The scan follows the usual rules: an SVS/TIFF calibration
+written during processing becomes an approved `embedded` finding, and anything
+else gets a pending RBC finding (or no proposal, with a reason). It is
+best-effort: a failure is logged as `measurement.upload_scan_failed` and never
+fails the upload; the image just stays eligible for **Scan next**.
+
 ## Not yet built
 
-- Upload hook that creates a pending finding for each new image.
-- Stage-micrometer calibration constants.
+- Stage-micrometer calibration constants (#1743).

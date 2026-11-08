@@ -61,6 +61,14 @@ def _patch_collection_membership(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _patch_measurement_scan(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """The post-processing measurement scan has its own tests."""
+    scan = AsyncMock()
+    monkeypatch.setattr("app.processing.scan_after_processing", scan)
+    return scan
+
+
 # ── ProgressTracker tests ────────────────────────────────
 
 
@@ -384,7 +392,9 @@ async def test_process_replace_image_skips_terminal_row() -> None:
     mock_session.commit.assert_not_awaited()
 
 
-async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) -> None:
+async def test_process_source_image_success(
+    caplog: pytest.LogCaptureFixture, _patch_measurement_scan: AsyncMock
+) -> None:
     """Successful processing creates Image and emits a lifecycle event."""
     caplog.set_level("INFO", logger="app.processing")
     src = SimpleNamespace(
@@ -456,6 +466,8 @@ async def test_process_source_image_success(caplog: pytest.LogCaptureFixture) ->
     assert getattr(lifecycle_log, "user.id") == 7
     assert getattr(lifecycle_log, "user.role") == "admin"
     assert getattr(lifecycle_log, "event.synthetic") is True
+    _patch_measurement_scan.assert_awaited_once()
+    assert _patch_measurement_scan.await_args.args[1] == 99
 
 
 async def test_process_source_image_uploader_deleted(caplog: pytest.LogCaptureFixture) -> None:
@@ -639,7 +651,7 @@ async def test_process_source_image_uploader_lookup_exception(caplog: pytest.Log
     assert warning.source_image_id == src.id
 
 
-async def test_process_source_image_failure() -> None:
+async def test_process_source_image_failure(_patch_measurement_scan: AsyncMock) -> None:
     """When tile generation fails, source image is marked as failed."""
     src = SimpleNamespace(
         id=2,
@@ -678,6 +690,7 @@ async def test_process_source_image_failure() -> None:
 
     assert src.status == "failed"
     assert src.error_message is not None
+    _patch_measurement_scan.assert_not_awaited()
 
 
 async def test_process_source_image_enospc_failure() -> None:

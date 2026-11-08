@@ -160,7 +160,8 @@ async def scan_image(
     ``rescan=True`` supersedes every live finding first, so the image is
     re-detected (or its stored scale re-recorded) even when a reviewer
     already approved or rejected an earlier proposal. Returns ``None`` when
-    an overlapping scan already recorded the stored scale.
+    an overlapping scan already recorded the stored scale, or (without
+    ``rescan``) when a reviewer already approved or rejected a finding.
     """
     if has_scale(image.metadata_):
         # Serialize overlapping scans of this image; approved rows have no unique index.
@@ -198,6 +199,16 @@ async def scan_image(
         # A proposal made before the scale was stored must not resurface later.
         await _retire_pending(db, image.id)
         return record_existing(db, image)
+    if not rescan and await db.scalar(
+        select(MeasurementFinding.id)
+        .where(
+            MeasurementFinding.image_id == image.id,
+            MeasurementFinding.status.in_(("approved", "rejected")),
+        )
+        .limit(1)
+    ):
+        # A delayed scan (e.g. queued after upload) must not reopen a reviewed image.
+        return None
     path = await _latest_source_path(db, image.id)
     estimate: ScaleEstimate | None = None
     evidence: dict = {}
@@ -259,6 +270,26 @@ async def scan_images(
                 continue
             created += 1
     return created
+
+
+async def scan_after_processing(session_factory, image_id: int) -> None:
+    """Best-effort scan of a freshly processed image; never raises.
+
+    Runs on the worker when the queue is up, otherwise inline. A failure
+    only leaves the image for a later "Scan next" pass.
+    """
+    from ..worker import enqueue_measurement_scan  # worker imports processing
+
+    try:
+        result = await enqueue_measurement_scan([image_id])
+        if not result.queued:
+            await scan_images(session_factory, [image_id])
+    except Exception:
+        logger.warning(
+            "Measurement scan after processing failed",
+            extra={"event": "measurement.upload_scan_failed", "image_id": image_id},
+            exc_info=True,
+        )
 
 
 def merged_measurement_metadata(

@@ -254,7 +254,7 @@ async def test_scan_image_records_estimate(monkeypatch, tmp_path) -> None:
     src.write_bytes(b"x")
     db = AsyncMock()
     db.add = MagicMock()
-    db.scalar.return_value = str(src)
+    db.scalar.side_effect = [None, str(src)]  # no reviewed finding; source path
     monkeypatch.setattr(
         service,
         "_detect",
@@ -272,7 +272,7 @@ async def test_scan_image_records_detector_failure(monkeypatch, tmp_path) -> Non
     src.write_bytes(b"x")
     db = AsyncMock()
     db.add = MagicMock()
-    db.scalar.return_value = str(src)
+    db.scalar.side_effect = [None, str(src)]  # no reviewed finding; source path
 
     def boom(*_a):
         raise pyvips.Error("bad file")
@@ -607,6 +607,18 @@ async def test_scan_image_skips_existing_scale_already_recorded() -> None:
     db.add.assert_not_called()
 
 
+async def test_scan_image_skips_unscaled_image_already_reviewed(monkeypatch) -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    detect = MagicMock()
+    monkeypatch.setattr(service, "_detect", detect)
+    assert await service.scan_image(db, _image()) is None
+    db.add.assert_not_called()
+    detect.assert_not_called()
+
+
 async def test_scan_images_rolls_back_when_scan_records_nothing(monkeypatch) -> None:
     db = AsyncMock()
     db.get.return_value = _image(metadata_={"measurement_scale": 4.0})
@@ -632,6 +644,7 @@ def test_has_scale_sql_requires_positive_number() -> None:
 async def test_scan_image_skips_rbc_on_whole_slide_images(monkeypatch) -> None:
     db = MagicMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=None)
     monkeypatch.setattr(service, "_latest_source_path", AsyncMock(return_value=__file__))
     detect = MagicMock()
     monkeypatch.setattr(service, "_detect", detect)
@@ -1129,3 +1142,46 @@ def test_reset_finding_strips_when_only_unit_corrected_at_approval() -> None:
     )
     assert service.reset_finding(finding, image) is True
     assert image.metadata_ == {}
+
+
+
+# ── scan after upload/replacement processing ──────────────
+
+
+async def test_scan_after_processing_queues_on_worker(monkeypatch) -> None:
+    from app import worker
+
+    enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+    monkeypatch.setattr(worker, "enqueue_measurement_scan", enqueue)
+    inline = AsyncMock()
+    monkeypatch.setattr(service, "scan_images", inline)
+    await service.scan_after_processing("factory", 99)
+    enqueue.assert_awaited_once_with([99])
+    inline.assert_not_awaited()
+
+
+async def test_scan_after_processing_runs_inline_on_fallback(monkeypatch) -> None:
+    from app import worker
+
+    monkeypatch.setattr(
+        worker,
+        "enqueue_measurement_scan",
+        AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable")),
+    )
+    inline = AsyncMock()
+    monkeypatch.setattr(service, "scan_images", inline)
+    await service.scan_after_processing("factory", 99)
+    inline.assert_awaited_once_with("factory", [99])
+
+
+@pytest.mark.parametrize(
+    "error", [TaskQueueUnavailableError("queue_unavailable"), RuntimeError("boom")]
+)
+async def test_scan_after_processing_never_raises(monkeypatch, caplog, error) -> None:
+    from app import worker
+
+    monkeypatch.setattr(worker, "enqueue_measurement_scan", AsyncMock(side_effect=error))
+    await service.scan_after_processing("factory", 99)
+    assert any(
+        getattr(r, "event", None) == "measurement.upload_scan_failed" for r in caplog.records
+    )
