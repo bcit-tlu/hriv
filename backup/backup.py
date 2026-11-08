@@ -1726,15 +1726,14 @@ def _barman_base_backup_candidates(
         except ValueError:
             continue
         end_lsn = _postgres_lsn_value(info.get("end_xlog", ""))
-        # CNPG resolves ``recoveryTarget.backupID`` against barman's
-        # ``backup_id`` (the catalog directory name), not ``backup_name``;
-        # the barman-cloud plugin sets the two to different values.
-        backup_id = info.get("backup_id", "")
-        if (
-            end_lsn is None
-            or _BARMAN_BACKUP_ID_RE.fullmatch(backup_id) is None
-            or backup_id != relative[:-1]
-        ):
+        if end_lsn is None:
+            continue
+        # CNPG resolves ``recoveryTarget.backupID`` against barman's backup
+        # ID, which exists only as the ``base/<ID>/`` directory name;
+        # ``backup.info`` carries no ``backup_id`` key, and under the
+        # barman-cloud plugin its ``backup_name`` is a different value.
+        backup_id = relative[:-1]
+        if _BARMAN_BACKUP_ID_RE.fullmatch(backup_id) is None:
             continue
         candidates.append((end_lsn, timeline, backup_id))
     return candidates

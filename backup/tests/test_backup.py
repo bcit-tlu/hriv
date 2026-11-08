@@ -6474,12 +6474,13 @@ def _barman_info(
     status="DONE",
     timeline=7,
     end_xlog="52/960014E0",
-    backup_id="20261031T030004",
 ):
-    id_line = "" if backup_id is None else f"backup_id={backup_id}\n"
+    # Mirrors the key set barman-cloud writes: there is no ``backup_id`` key;
+    # the backup ID is only the ``base/<ID>/`` directory name.
     return (
-        f"{id_line}backup_name={backup_name}\nstatus={status}\ntimeline={timeline}\n"
+        f"backup_name={backup_name}\nstatus={status}\ntimeline={timeline}\n"
         f"end_xlog={end_xlog}\nbegin_wal=0000000{timeline}0000005200000096\n"
+        f"server_name=cloud\nversion=170011\n"
     ).encode()
 
 
@@ -6500,10 +6501,10 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
                 "backup-20261031030001", timeline=7, end_xlog="52/960014E0"
             ),
             "stable/pg-core/pg-core/base/20261101T030001/backup.info": _barman_info(
-                "backup-20261101030001", timeline=8, end_xlog="53/68000060", backup_id="20261101T030001"
+                "backup-20261101030001", timeline=8, end_xlog="53/68000060"
             ),
             "stable/pg-core/pg-core/base/20261025T104212/backup.info": _barman_info(
-                "backup-20261025104212", status="FAILED", timeline=7, end_xlog="52/80000000", backup_id="20261025T104212"
+                "backup-20261025104212", status="FAILED", timeline=7, end_xlog="52/80000000"
             ),
             "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
                 _history([(7, "52/960014E0")]).encode()
@@ -6618,7 +6619,7 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
             blobs={
                 "stable/pg-core/pg-core/base/20261031T030004/backup.info": b"not-an-info",
                 "stable/pg-core/pg-core/base/20261030T030000/backup.info": _barman_info(
-                    "backup-20261030030000", status="STARTED", timeline=8, end_xlog="52/01000000", backup_id="20261030T030000"
+                    "backup-20261030030000", status="STARTED", timeline=8, end_xlog="52/01000000"
                 ),
             },
         )
@@ -6628,40 +6629,21 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
-    def test_backup_id_not_backup_name_is_bound(self):
-        # barman-cloud plugin backups carry backup_name=backup-<ts> but CNPG
-        # resolves recoveryTarget.backupID against backup_id (the directory
-        # name); binding backup_name made every plugin-era drill fail with
-        # "no backup found with ID backup-...".
+    def test_directory_name_not_backup_name_is_bound(self):
+        # barman-cloud plugin backups carry backup_name=backup-<ts>, but CNPG
+        # resolves recoveryTarget.backupID against the backup ID, which exists
+        # only as the base/<ID>/ directory name (backup.info has no backup_id
+        # key). Binding backup_name made every plugin-era drill fail with
+        # "no backup found with ID backup-..."; requiring a backup_id key made
+        # selection fail with CNPG_BASE_BACKUP_UNAVAILABLE.
         container = self._container()
         for blob in container.blobs.values():
-            self.assertNotIn(b"backup_id=backup-", blob)
+            self.assertNotIn(b"backup_id=", blob)
         result = backup._select_cnpg_base_backup(
             container, "stable/pg-core/pg-core", "52/BE000C00", 8
         )
         self.assertEqual(result, "20261031T030004")
         self.assertRegex(result, r"^[0-9]{8}T[0-9]{6}$")
-
-    def test_backup_id_missing_or_mismatching_directory_skipped(self):
-        for info in (
-            _barman_info("backup-20261031030001", timeline=7, end_xlog="52/960014E0", backup_id=None),
-            _barman_info("backup-20261031030001", timeline=7, end_xlog="52/960014E0", backup_id="20261031T030005"),
-            _barman_info("backup-20261031030001", timeline=7, end_xlog="52/960014E0", backup_id="backup-20261031030001"),
-        ):
-            container = _FakeBarmanContainer(
-                directories=["stable/pg-core/pg-core/base/20261031T030004/"],
-                blobs={
-                    "stable/pg-core/pg-core/base/20261031T030004/backup.info": info,
-                    "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
-                        _history([(7, "52/960014E0")]).encode()
-                    ),
-                },
-            )
-            with self.assertRaises(backup.ValidationFailure) as raised:
-                backup._select_cnpg_base_backup(
-                    container, "stable/pg-core/pg-core", "52/BE000C00", 8
-                )
-            self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
     def test_barman_destination_joins_server_name(self):
         # barman-cloud stores the catalog under <destinationPath>/<serverName>/;
