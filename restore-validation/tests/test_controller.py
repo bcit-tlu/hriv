@@ -195,6 +195,11 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual("abc123", db_args(legacy))
         self.assertIsNone(parse_state(legacy.state_raw, NOW)["latest_run"]["selected_source"]["migration_version"])
 
+        advanced = gateway(); advanced.results["selection"] = json.dumps(selection_document(migration_version="0038_user_auth_state"))
+        advanced.results["db-validation"] = json.dumps(database_result(migration_version="0038_user_auth_state"))
+        self.assertEqual("succeeded", drive(controller(advanced)))
+        self.assertEqual("0038_user_auth_state", db_args(advanced))
+
         newer = gateway(); newer.results["selection"] = json.dumps(selection_document(migration_version="0038_user_auth_state"))
         self.assertEqual("retained", drive(controller(newer)))
         self.assertEqual("0038_user_auth_state", db_args(newer))
