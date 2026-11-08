@@ -31,6 +31,7 @@ from sqlalchemy.sql import func
 from .browse_state import bump_browse_revision
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
+from .measurement.service import scan_after_processing
 from .auth_events import actor_log_fields
 from .models import Image, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
@@ -867,6 +868,7 @@ async def process_source_image(source_image_id: int) -> None:
                     **actor_log_fields(uploader),
                 },
             )
+            await scan_after_processing(async_session, img.id)
 
         except Exception as exc:
             span.record_exception(exc)
@@ -1148,6 +1150,8 @@ async def process_replace_image(
                     "duration_ms": duration_ms,
                 },
             )
+            # Replacement superseded the old findings, so the image is eligible again.
+            await scan_after_processing(async_session, img.id)
 
         except Exception as exc:
             span.record_exception(exc)

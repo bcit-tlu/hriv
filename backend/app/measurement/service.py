@@ -261,6 +261,26 @@ async def scan_images(
     return created
 
 
+async def scan_after_processing(session_factory, image_id: int) -> None:
+    """Best-effort scan of a freshly processed image; never raises.
+
+    Runs on the worker when the queue is up, otherwise inline. A failure
+    only leaves the image for a later "Scan next" pass.
+    """
+    from ..worker import enqueue_measurement_scan  # worker imports processing
+
+    try:
+        result = await enqueue_measurement_scan([image_id])
+        if not result.queued:
+            await scan_images(session_factory, [image_id])
+    except Exception:
+        logger.warning(
+            "Measurement scan after processing failed",
+            extra={"event": "measurement.upload_scan_failed", "image_id": image_id},
+            exc_info=True,
+        )
+
+
 def merged_measurement_metadata(
     current: dict | None, scale: float, unit: str, source: str, finding_id: int
 ) -> dict:

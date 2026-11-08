@@ -1129,3 +1129,46 @@ def test_reset_finding_strips_when_only_unit_corrected_at_approval() -> None:
     )
     assert service.reset_finding(finding, image) is True
     assert image.metadata_ == {}
+
+
+
+# ── scan after upload/replacement processing ──────────────
+
+
+async def test_scan_after_processing_queues_on_worker(monkeypatch) -> None:
+    from app import worker
+
+    enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+    monkeypatch.setattr(worker, "enqueue_measurement_scan", enqueue)
+    inline = AsyncMock()
+    monkeypatch.setattr(service, "scan_images", inline)
+    await service.scan_after_processing("factory", 99)
+    enqueue.assert_awaited_once_with([99])
+    inline.assert_not_awaited()
+
+
+async def test_scan_after_processing_runs_inline_on_fallback(monkeypatch) -> None:
+    from app import worker
+
+    monkeypatch.setattr(
+        worker,
+        "enqueue_measurement_scan",
+        AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable")),
+    )
+    inline = AsyncMock()
+    monkeypatch.setattr(service, "scan_images", inline)
+    await service.scan_after_processing("factory", 99)
+    inline.assert_awaited_once_with("factory", [99])
+
+
+@pytest.mark.parametrize(
+    "error", [TaskQueueUnavailableError("queue_unavailable"), RuntimeError("boom")]
+)
+async def test_scan_after_processing_never_raises(monkeypatch, caplog, error) -> None:
+    from app import worker
+
+    monkeypatch.setattr(worker, "enqueue_measurement_scan", AsyncMock(side_effect=error))
+    await service.scan_after_processing("factory", 99)
+    assert any(
+        getattr(r, "event", None) == "measurement.upload_scan_failed" for r in caplog.records
+    )
