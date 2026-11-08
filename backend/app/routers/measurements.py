@@ -103,26 +103,24 @@ async def _enqueue_scan(
         for i in range(0, len(image_ids), _SCAN_JOB_CHUNK)
     ]
     fallback_ids: list[int] = []
-    queued = False
-    failed_at: int | None = None
-    for i, chunk in enumerate(chunks):
-        try:
+    accepted = 0
+    try:
+        for chunk in chunks:
             result = await enqueue_measurement_scan(chunk, rescan)
-        except TaskQueueUnavailableError:
-            failed_at = i
-            break
-        if result.queued:
-            queued = True
-        else:
-            fallback_ids.extend(chunk)
-    if failed_at is not None:
-        if not queued and not fallback_ids:
-            raise HTTPException(status_code=503, detail="task_queue_unavailable")
-        # The queue died mid-enqueue: run the unsubmitted chunks in-process
-        # rather than drop them (a retry would duplicate the accepted jobs).
-        for chunk in chunks[failed_at:]:
-            fallback_ids.extend(chunk)
-    mode = "fallback" if not queued else "queued"
+            if result.queued:
+                accepted += len(chunk)
+            else:
+                fallback_ids.extend(chunk)
+    except TaskQueueUnavailableError as exc:
+        # Required-mode contract: never run scans on the API process during
+        # a queue outage. Earlier chunks stay queued — disclose that partial
+        # acceptance so a retry isn't assumed to start from zero (re-scan
+        # work is idempotent per image: it just supersedes again).
+        detail = "task_queue_unavailable"
+        if accepted or fallback_ids:
+            detail += f"; {accepted + len(fallback_ids)} images already accepted"
+        raise HTTPException(status_code=503, detail=detail) from exc
+    mode = "fallback" if not accepted else "queued"
     if fallback_ids:
         background_tasks.add_task(scan_images, async_session, fallback_ids, rescan)
     logger.info(

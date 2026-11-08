@@ -957,8 +957,11 @@ async def test_scan_remaining_max_image_id_bounds_count() -> None:
     assert "image.id <= 42" in sql or "images.id <= 42" in sql
 
 
-async def test_scan_partial_enqueue_failure_falls_back_for_rest(monkeypatch) -> None:
-    """A mid-enqueue queue failure must not strand or re-queue submitted work."""
+async def test_scan_partial_enqueue_failure_503s_with_accepted_count(
+    monkeypatch,
+) -> None:
+    """Mid-enqueue queue failure preserves the required-mode 503 contract and
+    discloses the chunks already accepted."""
     db = AsyncMock()
     db.execute.return_value = _scalars(list(range(1, 61)))
     enqueue = AsyncMock(
@@ -969,15 +972,16 @@ async def test_scan_partial_enqueue_failure_falls_back_for_rest(monkeypatch) -> 
     )
     monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
     bg = BackgroundTasks()
-    out = await router.scan(MeasurementScanRequest(all=True), bg, _user(), db)
-    assert out.mode == "queued"
+    with pytest.raises(HTTPException) as exc:
+        await router.scan(MeasurementScanRequest(all=True), bg, _user(), db)
+    assert exc.value.status_code == 503
+    assert "50 images already accepted" in exc.value.detail
     assert enqueue.await_count == 2
-    assert len(bg.tasks) == 1
-    assert bg.tasks[0].args[1] == list(range(51, 61))
+    assert not bg.tasks
 
 
 async def test_scan_enqueue_failure_on_first_chunk_503s(monkeypatch) -> None:
-    """Nothing accepted + queue down = the old 503 contract."""
+    """Nothing accepted + queue down = the plain 503 contract."""
     db = AsyncMock()
     db.execute.return_value = _scalars([1, 2, 3])
     monkeypatch.setattr(
@@ -1033,10 +1037,19 @@ async def test_scan_image_rescan_repoints_scale_ownership() -> None:
     The re-recorded finding inherits the stored provenance so a later reset
     can still strip the scale it now owns.
     """
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+    )
     db = MagicMock()
     db.execute = AsyncMock()
     db.scalar = AsyncMock(return_value=42)
     db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
 
     async def _flush() -> None:  # emulate autoincrement on commit
         for call in db.add.call_args_list:
@@ -1062,3 +1075,36 @@ async def test_scan_image_rescan_repoints_scale_ownership() -> None:
     # The full undo round-trip: resetting the new owner strips the scale.
     assert service.reset_finding(finding, image) is True
     assert "measurement_scale" not in image.metadata_
+
+
+async def test_scan_image_rescan_keeps_edited_scale_unowned() -> None:
+    """A scale edited after approval is not handed to the re-recorded
+    finding — resetting that finding must leave the edit alone."""
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+    db.flush = AsyncMock()
+    meta = {
+        "measurement_scale": 5.0,  # edited after the approval wrote 4.0
+        "measurement_unit": "um",
+        "measurement_scale_source": "manual",
+        "measurement_finding_id": 9,
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.status == "approved"
+    assert image.metadata_["measurement_finding_id"] == 9  # stale pointer kept
+    assert image.version == 4  # metadata untouched
+    # The new finding records the edited value but cannot undo it.
+    assert service.reset_finding(finding, image) is False
+    assert image.metadata_["measurement_scale"] == 5.0

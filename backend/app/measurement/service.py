@@ -166,14 +166,21 @@ async def scan_image(
         # Serialize overlapping scans of this image; approved rows have no unique index.
         await db.execute(select(Image.id).where(Image.id == image.id).with_for_update())
         if rescan:
+            meta = image.metadata_ or {}
+            owner_id = meta.get(FINDING_KEY)
+            owner = (
+                await db.get(MeasurementFinding, owner_id)
+                if owner_id is not None
+                else None
+            )
             await _retire_findings(db, image.id, LIVE_FINDING_STATUSES)
             finding = record_existing(db, image)
-            meta = image.metadata_ or {}
-            if meta.get(FINDING_KEY) is not None:
-                # The scale still credits a finding we just superseded. The
-                # re-recorded finding takes over ownership so a later reset
-                # can still undo it; carry the stored provenance onto the
-                # finding so the reset guard recognizes the write as its own.
+            if owner is not None and _scale_promoted_by(meta, owner):
+                # The stored scale is still exactly what the superseded
+                # finding promoted — hand its undoable ownership to the
+                # re-recorded finding (and carry the stored provenance so
+                # the reset guard recognizes the write as its own). A scale
+                # edited since approval stays externally owned instead.
                 await db.flush()
                 finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
                 image.metadata_ = {**meta, FINDING_KEY: finding.id}
@@ -306,6 +313,37 @@ def reject_finding(finding: MeasurementFinding, reviewer_id: int) -> None:
 _MEASUREMENT_METADATA_KEYS = frozenset({SCALE_KEY, UNIT_KEY, SOURCE_KEY, FINDING_KEY})
 
 
+def _promoted_source(finding: MeasurementFinding) -> str:
+    """The scale_source an approval of ``finding`` would have written.
+
+    Reconstructed the same way ``approve_finding`` chose it — reviewer
+    corrections store ``"manual"``, unedited approvals store the finding's
+    own detection source.
+    """
+    return (
+        "manual"
+        if (
+            finding.approved_scale != finding.proposed_scale
+            or finding.approved_unit != finding.approved_unit
+        )
+        else finding.source
+    )
+
+
+def _scale_promoted_by(meta: dict, finding: MeasurementFinding) -> bool:
+    """True while ``meta``'s scale is still exactly what ``finding`` promoted.
+
+    Any later edit — even one that only touched ``measurement_scale_source``
+    — makes the stored values authoritative rather than an undoable write.
+    """
+    return (
+        meta.get(FINDING_KEY) == finding.id
+        and meta.get(SCALE_KEY) == finding.approved_scale
+        and meta.get(UNIT_KEY) == finding.approved_unit
+        and meta.get(SOURCE_KEY) == _promoted_source(finding)
+    )
+
+
 def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
     """Move an approved or rejected finding back to pending (caller commits).
 
@@ -318,23 +356,7 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
     """
     meta = image.metadata_ or {}
     stripped = False
-    # The source the approval wrote, reconstructed the same way
-    # ``approve_finding`` chose it (reviewer corrections store "manual").
-    expected_source = (
-        "manual"
-        if (
-            finding.approved_scale != finding.proposed_scale
-            or finding.approved_unit != finding.proposed_unit
-        )
-        else finding.source
-    )
-    if (
-        finding.status == "approved"
-        and meta.get(FINDING_KEY) == finding.id
-        and meta.get(SCALE_KEY) == finding.approved_scale
-        and meta.get(UNIT_KEY) == finding.approved_unit
-        and meta.get(SOURCE_KEY) == expected_source
-    ):
+    if finding.status == "approved" and _scale_promoted_by(meta, finding):
         image.metadata_ = {
             k: v for k, v in meta.items() if k not in _MEASUREMENT_METADATA_KEYS
         }
