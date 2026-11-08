@@ -27,6 +27,12 @@ OIDC automatically clears that flag. The Add/Edit Person form requires at least
 eight characters when entering a password; leaving it blank while editing keeps
 the existing password.
 
+The consolidated [password-management runbook](password-management.md) covers
+credential states, invitations and stable rollout. Minting for an OIDC-linked
+account returns **422 `oidc_linked`**; changing its password returns **403
+`oidc_linked`**, regardless of a retained local hash. These endpoints do not
+change IdP credentials or replace the existing OIDC login flow.
+
 ---
 
 ## Environment Variables

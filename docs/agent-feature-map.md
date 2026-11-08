@@ -66,6 +66,21 @@ the backend query and role gate in `backend/app/image_source_info.py`.
   [`docs/admin-import-export.md`](admin-import-export.md).
 - Hooks marked above without a path prefix live directly under `frontend/src/`.
 
+## Local password management (#1757)
+
+- Feature/runbook: [password management](password-management.md); detailed
+  API, lifecycle and frontend contracts: [password setup](password-setup.md).
+- Backend: `models.py`, `password_tokens.py`, `auth.py`, `rate_limit.py`,
+  `routers/auth.py`, `routers/users.py`, and migration `0038_user_auth_state`.
+- Frontend: `AuthContext.tsx`, `api.ts`, `useUserProfile.ts`,
+  `components/PeoplePage.tsx`, `AddEditPersonModal.tsx`,
+  `PasswordSetupLinkDialog.tsx`, `PasswordSetupScreen.tsx`, and
+  `ChangePasswordDialog.tsx` (including the forced-change screen).
+- Tests: `test_password_setup.py`, `test_change_password.py`,
+  `test_router_users.py`, `passwordSession.test.tsx`, `useUserProfile.test.ts`,
+  and the matching password/People component tests. Access-control and
+  testing-hriv skills cover authorization and the local validation sequence.
+
 ## Domain model & invariants
 
 For schema/relationship details before touching models or migrations, see

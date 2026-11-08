@@ -164,6 +164,12 @@ empty or wildcard value.
 
 ## Related
 
+Password setup’s app-credential row above accepts the purpose-scoped token in
+the JSON request body (`token`), not a bearer login JWT or a public recovery
+request. Successful redemption returns a login response and consumes the nonce.
+See the [password-management runbook](password-management.md) for the final
+invite/re-invite and rollout workflow.
+
 - [`docs/category-visibility-and-programs.md`](category-visibility-and-programs.md) — the visibility model tile delivery must honour
 - [`docs/TESTING.md`](TESTING.md) — endpoint → minimum-role table
 - [`docs/observability-conventions.md`](observability-conventions.md) — metrics/scrape conventions

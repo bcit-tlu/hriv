@@ -78,6 +78,22 @@ category visibility; do not add image-level program visibility.
 | instructor   | Category/image create, patch, reorder, upload, delete; `GET /api/users/` (instructor-scoped projection/filter); `/api/groups/*`; editor admin tasks such as bulk import routed through `_editor` |
 | admin        | User mutations (`POST/PATCH/DELETE /api/users/*`), `/api/admin/*`, `/api/programs/*`, and unrestricted group/program attachment                                                                  |
 
+Password-management additions to the endpoint map:
+
+| Credential / role                                           | Endpoint                                   | Gate                                                                                                          |
+| ----------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Admin bearer JWT                                            | `POST /api/users/{id}/password-setup-link` | Active, passwordless local target; inactive 403, OIDC 422, existing hash 409.                                 |
+| Purpose-scoped setup token in JSON body; no bearer required | `POST /api/auth/password-setup`            | Active passwordless local target, valid signature/expiry/nonce; success returns `LoginResponse`.              |
+| Any authenticated role                                      | `GET /api/auth/me`                         | Allowed during forced password change; flags come from the DB.                                                |
+| Authenticated local user                                    | `POST /api/auth/change-password`           | Allowed while flagged; OIDC 403, wrong/missing current password 401, unchanged new password 422, success 204. |
+
+These gates supplement roles, not replace them. Ordinary protected routes
+reject `must_change_password` with 403 before their role checks. A passwordless
+account cannot be flagged. Clear-password PATCH is an admin mutation; explicit
+null also clears `invite_nonce` and `must_change_password`. For all error details
+and independent-credential exceptions, see
+`../../../../docs/password-management.md` and `../../../../docs/password-setup.md`.
+
 Keep this in sync with `../../../../docs/TESTING.md` (the canonical endpoint →
 minimum-role table) when endpoints, roles, or auth rules change.
 

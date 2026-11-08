@@ -42,6 +42,12 @@ docker compose up -d --build   # frontend :5173, backend :8000, db, redis, worke
 
 ## Local Setup
 
+For invite/change/force-change validation, load
+[references/password-management.md](references/password-management.md). It
+includes local backend-only compose startup, curl steps, the setup fragment,
+OIDC fixtures and redaction requirements. No passwordless seed guest was added;
+use a disposable account and leave documented seed credentials unchanged.
+
 The stack is docker-compose based. Full compose file: `docker-compose.yml`
 (plus `docker-compose.observability.yml` for the OTel/Prometheus/Tempo overlay).
 

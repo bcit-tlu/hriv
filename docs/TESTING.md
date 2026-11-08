@@ -672,6 +672,12 @@ tokens, bearer rejection, password validation, structured events, and separate
 per-IP/per-subject throttling. Run `cd backend && poetry run pytest` for the full
 coverage gate. See [password setup](password-setup.md) for the API/error contract.
 
+The consolidated [password-management runbook](password-management.md) covers
+credential state, administrator recovery and stable rollout. The existing
+endpoint-role table below already includes admin mint, public app-credential
+redemption and authenticated self-change; keep those entries rather than adding
+duplicate routes.
+
 `backend/tests/test_change_password.py` verifies forced-change blocking (including
 role dependency inheritance), `/auth/me` recovery, successful password changes
 and 422 `password_unchanged` rejection after current-password verification
@@ -1080,3 +1086,30 @@ release after mint errors, independent people, and skipping closed waiters.
 Self-profile and own-row editing hide force-change/clear-password controls and
 omit the forced-change flag on save. `useUserProfile.test.ts` checks credential
 flags in the profile’s `ApiUser` projection.
+
+## Password-management local validation (#1763)
+
+When `latest` cannot be reached, use the testing-hriv skill’s
+[local password-management reference](../.agents/skills/testing-hriv/references/password-management.md).
+Run the real backend against an isolated migrated/seeded Postgres and Redis,
+then use curl, not mocked API handlers, for these acceptance cases:
+
+| Scenario                            | Required evidence                                                                                                                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Passwordless create → mint → redeem | 201 user with false credential flags; mint returns `setup_token`/`expires_at`; redeem returns 200 `LoginResponse`.                                             |
+| Single use and replacement          | Reuse after success is 409 `password_already_set`; after clearing, mint B then C and redeem B → 401 before redeeming C → 200.                                  |
+| Clear/re-invite                     | Admin explicit `password:null` removes local/forced flags; a new setup succeeds.                                                                               |
+| Forced rotation                     | PATCH flag true; `/auth/me` → 200 with true; `/api/categories/` → 403 `password_change_required`; change → 204; `/auth/me` reports false and categories → 200. |
+| Rejected rotation                   | Wrong current → 401; unchanged verified password → 422 `password_unchanged`; neither clears the flag.                                                          |
+| OIDC fixture                        | Local DB-only dummy `oidc_subject`; `/auth/me` reports linked, mint → 422 `oidc_linked`, change-password → 403 `oidc_linked`.                                  |
+
+Keep HTTP statuses and JSON in an external transcript (for this issue,
+`/home/ubuntu/1763-validation.md`). Redact credentials before writing output,
+including both token response fields and all password input fields. Record the
+source revision, startup command, migration/seed completion, and whether the run
+was local or deployed. Do not commit the transcript or change documented seeds.
+
+Separately verify the browser acceptance cases above: copy link into a fresh
+session and land signed in, force-screen navigation/reload and central 403
+handling, OIDC menu/action exclusions, and a real SSO login. Curl proves API
+session issuance and guards, not those visual or external-provider outcomes.

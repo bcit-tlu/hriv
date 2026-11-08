@@ -1,9 +1,14 @@
 # Local guest password setup
 
+For the credential-state overview, administrator runbook, and stable rollout,
+see [password management](password-management.md). This page remains the
+detailed API and frontend reference.
+
 Admins can provision local guests without an initial password, mint a personally
 delivered setup credential, and let the guest set a password and sign in. No SMTP,
 public forgot-password flow, or OIDC credential management is provided here.
-The frontend setup page and admin copy-link UI are separate follow-up work.
+The frontend setup page and admin copy-link UI are implemented; their behavior
+is documented below.
 
 ## API contract
 
