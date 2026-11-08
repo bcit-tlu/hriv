@@ -29,7 +29,7 @@ SELECTED_SOURCE_FIELDS = {
 }
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 SNAPSHOT_RE = re.compile(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?")
-CNPG_BACKUP_ID_RE = re.compile(r"backup-[0-9]{14}")
+CNPG_BACKUP_ID_RE = re.compile(r"(?:backup-[0-9]{14}|[0-9]{8}T[0-9]{6})")
 ETAG_TOKEN_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _WAL_SEGMENT_MIN_BYTES = 1024 * 1024
 _WAL_SEGMENT_MAX_BYTES = 1024 * 1024 * 1024
