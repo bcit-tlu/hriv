@@ -70,7 +70,7 @@ Boundaries, in order of importance:
 - Login rate limiting (Redis, fails open) with right-anchored XFF parsing (`TRUSTED_PROXY_HOPS=3` on fleet).
 - CORS: explicit origin list with credentials; wildcard rejected in `required` mode.
 - Tile HMAC tokens scoped to one `source_image_id`, ~15 min TTL, `Cache-Control: private`.
-- Archive extraction with `tarfile` `filter="data"` and manifest validation; upload size caps enforced by backend streaming middleware (`middleware.py`) and upload handlers; frontend nginx sets `client_max_body_size 0` on upload routes.
+- Archive extraction with `tarfile` `filter="data"` and manifest validation; upload size caps enforced by backend streaming middleware (`_upload_body_limits` in `middleware.py`) for source-image upload/replace and bulk import; frontend nginx sets `client_max_body_size 0` on upload routes. Admin import uploads (`/api/admin/tasks/db-import`, `files-import`, `tasks/<id>/upload`) have no body cap and rely on admins being trusted.
 - Trivy image scanning + Dependabot (`docs/security-scanning.md`).
 
 ## Out of scope / accepted risk
