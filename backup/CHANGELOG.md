@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.0...backup-v0.17.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **backup:** bind barman backup_id, not backup_name, as the CNPG recovery backupID ([#1803](https://github.com/bcit-tlu/hriv/issues/1803)) ([28feff4](https://github.com/bcit-tlu/hriv/commit/28feff42008f8d63fec3f093b94db3f48344855a))
+
 ## [0.17.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.8...backup-v0.17.0) (2026-11-08)
 
 
