@@ -59,7 +59,7 @@ API for the [password-management validation flow](docs/password-management.md).
 | User management (add/delete)                           | Yes   | No         | No    | No      |
 | Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
 | Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
-| Clear/force another local password (People)            | Yes   | No         | No    | No      |
+| Set/re-send/force another local password (People)      | Yes   | No         | No    | No      |
 | People tab (view users)                                | Yes   | No         | Yes‡  | No      |
 | List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
 

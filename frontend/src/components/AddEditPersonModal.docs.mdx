@@ -6,8 +6,14 @@ import * as PersonStories from './AddEditPersonModal.stories'
 
 Admins can set a password now or invite a guest without a password. Invite mode
 omits the password field from the create request. Local-password accounts can be
-flagged for rotation, or have their password cleared after confirmation. SSO and
+flagged for rotation, or have a new password entered directly. SSO and
 passwordless accounts explain why credential actions are unavailable.
+
+Leave Password blank to keep the current one; no Clear password button or confirm
+is offered. Re-send password link is a checkbox for admins editing another active
+local-password user. It disables Password/forced change; Save clears with null
+and opens minting. A failed mint leaves the account passwordless for Edit Person retry.
+The setup-link button uses saved active/passwordless/local flags, never unsaved activation.
 
 <Primary />
 <Stories includePrimary={false} />

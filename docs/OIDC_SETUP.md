@@ -347,7 +347,8 @@ curl -s http://localhost:8000/api/auth/me \
 | `IdP did not return required claims` (401) | ID token missing `sub` or `email`                | Check Vault OIDC scope template includes `email` and `sub` claims                                          |
 | `email_verified` linking skipped           | `OIDC_TRUST_EMAIL` not set                       | Set `OIDC_TRUST_EMAIL=true` for Vault                                                                      |
 
-In People, OIDC-linked accounts show an **SSO** badge. Setup-link, clear-password,
-and force-change controls are disabled with **Managed by the identity provider**
+In People’s Sign-in column, OIDC-linked accounts show an **SSO** badge. Edit Person’s
+setup-link and force-change controls are disabled with **Managed by the identity provider**
 copy. Active non-OIDC accounts use the local/invite workflow described in
 [password setup](password-setup.md#admin-workflow-in-people).
+Re-send password link is a checkbox for active local-password users only, never OIDC users.

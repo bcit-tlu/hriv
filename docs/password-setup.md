@@ -199,8 +199,8 @@ Administrators can choose **Set password now** or **Invite by link (user sets
 their own password)** when adding a person. Invite mode sends no `password`
 field. Once creation succeeds, the account exists independently of link minting:
 the setup-link dialog mints a credential for that account. A mint failure does
-not undo creation; retry in the dialog or reopen it using the row’s **Copy
-password-setup link** action. Do not recreate the account after a mint failure.
+not undo creation; close the link dialog and reopen **Edit Person**, then choose
+**Copy password-setup link**. Do not recreate the account after a mint failure.
 
 The dialog composes `${window.location.origin}/#password_setup=<setup_token>`
 using the backend’s `setup_token` and `expires_at` response fields. It shows the
@@ -209,18 +209,27 @@ Each link works once; minting another replaces the previous one. The credential
 is never logged or persisted: only the mounted dialog holds it, and closing
 discards it, including a pending response. Reopening mints a new link.
 
-Rows show **SSO**, **Local**, or **Invite pending**, plus an outlined **Must change
-password** chip when flagged. Link actions are disabled for inactive accounts
+The hideable **Sign-in** column shows **SSO**, **Local**, or **Invite pending**,
+plus an outlined **Must change password** chip when flagged. It is visible by
+default; Name cells no longer contain credential chips. Edit Person link actions are disabled for inactive accounts
 (activate first) and OIDC-linked accounts (**Managed by the identity provider**).
-An already-passworded local account must have its password cleared first; a
-409 mint response explains that prerequisite without clearing automatically.
+An already-passworded local account has a disabled button with **This account already
+has a password**; no special already-passworded error copy is shown in the link dialog.
+Eligibility uses saved flags, not unsaved Active or Password values.
 
 Editing an eligible local-password account exposes **Force password change on
 next login**. The switch is disabled with explanatory tooltips for SSO and
-passwordless accounts. **Clear password** is a separate, confirmed action for
-local-password accounts. It sends `password: null`, reflects the returned
-passwordless/unflagged state immediately, and offers to create a new setup link.
-Clearing never silently mints a credential. Inactive accounts can be cleared but
+passwordless accounts. There is no Clear password button, confirmation or reset
+switch. The Password helper explains entering a new password to change it,
+or leaving blank to keep the current one. Failed saves retain the entered value.
+An admin editing another active, local-password user can tick **Re-send password
+link**. While checked, Password and forced change are disabled. Save sends
+`password: null` without a forced-change flag, clears both saved credential flags,
+then automatically opens the link dialog to mint. Cancel does not clear or mint.
+If minting fails, reopen Edit Person and retry its enabled link button; the
+account is already passwordless. A failed save retains the checkbox for retry.
+The checkbox is hidden for self-profile, OIDC, inactive and passwordless users.
+Inactive accounts can still be cleared via the API but
 must be activated before a new link can be minted. Staff’s read-only People
 directory shows badges without credential-management or other mutation actions.
 
@@ -230,7 +239,17 @@ request-completion signal is shared across dialogs, never the setup credential.
 Closed waiting dialogs do not issue a mint, and other people’s mints are independent.
 
 The self-profile editor and an administrator’s own People row hide the admin
-force-change and clear-password controls, and do not send the forced-change flag
+force-change and setup-link controls, and do not send the forced-change flag
 on profile saves. The profile’s API projection retains all three authoritative
 credential flags. Use the profile menu’s **Change password** action for self-service
 password rotation; clearing your own password is not offered.
+
+The password field remains the direct admin password-editing control. No reset
+switch replaces the removed Clear password action. Re-send password link is
+an explicit save-time checkbox. API clearing with `password:null` also remains
+available independently of the UI re-invitation flow.
+
+The link dialog’s warning is **Single-use link. Share it privately.** It keeps
+the URL, local expiry and copy feedback, without the old account-exists paragraph.
+Mint failures direct the admin back to Edit Person; the dialog has no mint retry
+button. Automatic opening after invite-mode creation is unchanged.

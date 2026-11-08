@@ -1064,26 +1064,39 @@ and the User API cases in `api.test.ts`.
 
 - Add a person in set-password mode: password is required and validated. Switch
   to Invite by link: no password input or request field; success opens minting.
-- Fail minting after creation: the account still exists. Close and retry the row
-  action without creating again. Exercise mint 403, 409, 422 and transport errors.
+- Fail minting after creation: the account still exists. Close and retry from
+  Edit Person without creating again. Exercise mint 403, 422 and transport errors.
 - Check SSO/Local/Invite pending badges and the Must change password chip.
-  OIDC and inactive row actions are disabled with explanatory tooltips; eligible
-  active local/passwordless accounts can open minting. Staff cannot mutate.
+  These live in the default-visible, hideable Sign-in column, not Name. There is
+  no row mint action. OIDC, inactive and passworded Edit Person link buttons are
+  disabled with explanatory tooltips; only saved active passwordless local
+  accounts can mint. Staff and self-profile editors have no credential actions.
 - Verify setup URL composition, local-time expiry, clipboard success/fallback
   and manual-copy error feedback. Close during mint and reopen: no old token is
   retained. No setup credential is written to storage or application logs.
 - Edit a local-password account and toggle forced change. Passwordless and SSO
   accounts have disabled switches with suitable explanations.
-- Clear a local password: no request before confirmation; confirm sends null,
-  removes the forced-change flag, and shows an optional new-link offer. Cancel
-  or close does not mint; clearing errors leave confirmation available to retry.
+- Check there is no Clear password action, confirm dialog or reset switch.
+  Enter a new Password and Save: the value is sent; blank omits it and keeps
+  the current password. Save errors retain typed values. Helper text explains
+  both options. Unsaved activation cannot enable minting for an inactive user.
+  Passworded users show “This account already has a password” on the disabled link.
+- Re-invite: only an admin editing another active local-password user sees the
+  Re-send password link checkbox. Checking it disables Password and forced
+  change; Save sends `password:null` without a forced-change flag and immediately
+  opens minting. Cancel does not clear or mint; save errors retain the selection.
+  Unsaved deactivation hides the checkbox. It is absent for OIDC, inactive,
+  passwordless and self-profile users. The direct Password edit path still works.
+- Fail that mint: the returned flags show Invite pending without forced change.
+  Close and reopen Edit Person; the enabled link button retries without another
+  clear/update. Direct API clearing via `password:null` remains supported too.
 - Preview Storybook AddEditPersonModal, PeoplePage and PasswordSetupLinkDialog
   states in light/dark themes; inspect row badges, invite mode, credential dialog
-  and clear-password confirmation before merging.
+  and local-password/passwordless Edit Person states before merging.
 
 People review regressions also cover mint serialization across close/reopen,
 release after mint errors, independent people, and skipping closed waiters.
-Self-profile and own-row editing hide force-change/clear-password controls and
+Self-profile and own-row editing hide force-change/setup-link controls and
 omit the forced-change flag on save. `useUserProfile.test.ts` checks credential
 flags in the profile’s `ApiUser` projection.
 
