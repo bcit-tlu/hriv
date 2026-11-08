@@ -42,7 +42,7 @@ the shell after reload.
 1. In People, add the person using **Invite by link (user sets their own
    password)**. Keep the account active. Creation omits `password` entirely.
 2. The existing account’s link dialog mints a purpose-scoped setup token,
-   replacing its nonce. If minting fails, retry from that dialog or the row;
+   replacing its nonce. If minting fails, reopen **Edit Person** to retry;
    do not create the account again.
 3. Copy the `/#password_setup=<setup_token>` URL and deliver it privately. The
    dialog shows the expiry in local time. A link is a credential: never put it
@@ -57,15 +57,33 @@ The token is single-use. Replay while a password remains set returns 409
 replacement after any earlier same-user mint finishes. The dialog itself is the
 only frontend owner of the credential.
 
-### Clear a password and re-invite
+### Regenerate a password link
 
-Open another person’s local-password account, choose **Clear password**, and
-confirm. This sends explicit `password: null`, clears the hash, invite nonce,
-and forced-change flag, then offers a new setup link. Minting is optional and
-requires an active account. Existing local passwords cannot be overwritten by
+Edit Person has no Clear password button or confirmation. To change a password,
+enter a new value in Password; leave it blank to keep the current one.
+For re-invitation, an admin editing another active local-password user can enable
+**Regenerate password link**, a switch styled like the forced-change switch below.
+While enabled, Password and forced change are disabled. **Save** sends explicit
+`password: null` without a forced-change flag, clearing the hash, nonce and flag,
+then automatically opens the setup-link dialog and mints a new credential.
+If minting fails, the saved account is already passwordless: close the dialog,
+reopen Edit Person and use **Copy password-setup link**. Do not clear or create
+the person again. Cancel sends nothing; failed saves retain the enabled switch for retry.
+The equivalent API operation is `PATCH /api/users/{id}` with `password: null`.
+Existing local passwords cannot be overwritten by
 minting alone: mint returns 409 until the hash is cleared. The self-profile
-editor and an administrator’s own People row hide clear/force controls to avoid
+editor and an administrator’s own People row hide link/force controls to avoid
 self-lockout; use **Change password** for self-service rotation.
+The regeneration switch is also absent for self-profile, OIDC, inactive and already
+passwordless accounts. Unsaved deactivation hides it and cancels regeneration intent.
+Reactivating the account does not restore that intent: the switch remains off.
+
+The table’s separate **Sign-in** column holds credential and rotation chips;
+it is visible by default and hideable/reorderable in **Choose columns**. Name
+cells retain their plain, vertically centered names (and the existing You marker).
+There is no row mint action. The Edit Person link button uses saved account
+flags: only active, non-SSO, passwordless accounts are eligible. Unsaved
+activation does not enable it; passworded accounts explain **This account already has a password**.
 
 ### Force a password change
 

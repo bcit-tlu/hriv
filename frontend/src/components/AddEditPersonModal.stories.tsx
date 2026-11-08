@@ -34,7 +34,7 @@ const meta = {
     programs: [],
     onClose: fn(),
     onSave: fn() as (data: PersonFormData) => Promise<void>,
-    onClearPassword: fn() as () => Promise<void>,
+    onSetupLink: fn(),
   },
 } satisfies Meta<typeof AddEditPersonModal>
 export default meta
@@ -50,15 +50,43 @@ export const InviteMode: Story = {
   },
 }
 export const ForcedChange: Story = { args: { user: { ...guest, must_change_password: true } } }
-export const OidcManaged: Story = { args: { user: { ...guest, oidc_linked: true } } }
-export const Passwordless: Story = { args: { user: { ...guest, has_local_password: false } } }
-export const ClearPasswordConfirm: Story = {
+export const LocalPassword: Story = {
   args: { user: guest },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    await userEvent.click(canvas.getByRole('button', { name: 'Clear password' }))
+    await expect(canvas.getByRole('button', { name: 'Copy password-setup link' })).toBeDisabled()
     await waitFor(() =>
-      expect(canvas.getByRole('heading', { name: 'Clear password?' })).toBeVisible(),
+      expect(
+        canvas.getByText(
+          'Enter a new password to change it, or leave blank to keep the current one.',
+        ),
+      ).toBeVisible(),
     )
+    await expect(canvas.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
+    await expect(
+      canvas.getByRole('switch', { name: 'Regenerate password link' }),
+    ).toBeInTheDocument()
+  },
+}
+export const OidcManaged: Story = { args: { user: { ...guest, oidc_linked: true } } }
+export const Passwordless: Story = {
+  args: { user: { ...guest, has_local_password: false } },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement.ownerDocument.body).getByRole('button', {
+        name: 'Copy password-setup link',
+      }),
+    ).toBeEnabled()
+  },
+}
+export const RegeneratePasswordLink: Story = {
+  args: { user: guest },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(canvas.getByRole('switch', { name: 'Regenerate password link' }))
+    await expect(canvas.getByLabelText('Password (leave blank to keep)')).toBeDisabled()
+    await expect(
+      canvas.getByRole('switch', { name: 'Force password change on next login' }),
+    ).toBeDisabled()
   },
 }

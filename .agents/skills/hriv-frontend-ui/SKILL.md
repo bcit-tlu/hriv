@@ -69,9 +69,17 @@ Storybook states; the auth gate lives above the shell in `AuthContext.tsx`.
 Admin invitation changes also require `components/PeoplePage.test.tsx`,
 `components/AddEditPersonModal.test.tsx`, `components/PasswordSetupLinkDialog.test.tsx`
 and User API cases in `api.test.ts`. Check both create modes, disabled SSO/inactive
-actions, null-password confirmation, mint retry after creation, and clipboard
+actions, direct password edits/blank preservation, mint retry from Edit Person, and clipboard
 feedback. Never persist or log the setup credential; its state belongs only to
 the mounted link dialog.
+
+People credential chips live in the hideable Sign-in column. Admin setup-link
+controls belong in Edit Person for another saved active passwordless local user;
+self-profile and own-row editors hide them. There is no Clear password button
+or confirmation. Admins type a new Password or leave blank to keep it. Regenerate
+password link is a switch for another active local-password user: disable
+Password/forced change, save explicit null without the forced flag, then mint.
+Mint failure leaves the saved passwordless account eligible for Edit Person retry.
 
 ```bash
 npm run format:check

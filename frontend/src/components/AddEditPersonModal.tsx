@@ -30,7 +30,7 @@ export interface PersonFormData {
   email: string
   role: Role
   active: boolean
-  password?: string
+  password?: string | null
   must_change_password?: boolean
   program_ids?: number[]
 }
@@ -42,7 +42,7 @@ interface AddEditPersonModalProps {
   programs: Program[]
   /** If provided, we are editing; otherwise adding. */
   user?: ApiUser | null
-  onClearPassword?: () => Promise<void>
+  onSetupLink?: () => void
   selfProfile?: boolean
 }
 
@@ -52,7 +52,7 @@ function AddEditPersonForm({
   onSavingChange,
   programs,
   user,
-  onClearPassword,
+  onSetupLink,
   selfProfile = false,
 }: Omit<AddEditPersonModalProps, 'open'> & { onSavingChange?: (saving: boolean) => void }) {
   const isEdit = Boolean(user)
@@ -61,13 +61,32 @@ function AddEditPersonForm({
   const [password, setPassword] = useState('')
   const [invite, setInvite] = useState(false)
   const [mustChange, setMustChange] = useState(user?.must_change_password ?? false)
-  const [clearOpen, setClearOpen] = useState(false)
+  const [regenerateLink, setRegenerateLink] = useState(false)
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
   const [active, setActive] = useState(user?.active ?? true)
   const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const canRegenerateLink = Boolean(
+    isEdit &&
+    !selfProfile &&
+    onSetupLink &&
+    active &&
+    user?.active &&
+    !user.oidc_linked &&
+    user.has_local_password,
+  )
+  if (!canRegenerateLink && regenerateLink) setRegenerateLink(false)
+  const regenerating = canRegenerateLink && regenerateLink
+  const setupDisabledReason = user?.oidc_linked
+    ? 'Managed by the identity provider'
+    : !user?.active
+      ? 'Activate this account before creating a setup link'
+      : user.has_local_password
+        ? 'This account already has a password'
+        : ''
   const passwordError =
+    !regenerating &&
     password &&
     (!isEdit && invite
       ? false
@@ -96,10 +115,13 @@ function AddEditPersonForm({
       active,
       program_ids: programIds,
     }
-    if (password && (isEdit ? !user?.oidc_linked : !invite)) {
+    if (regenerating) {
+      data.password = null
+    } else if (password && (isEdit ? !user?.oidc_linked : !invite)) {
       data.password = password
     }
-    if (isEdit && !selfProfile && !forceDisabledReason) data.must_change_password = mustChange
+    if (isEdit && !selfProfile && !regenerating && !forceDisabledReason)
+      data.must_change_password = mustChange
     setSaving(true)
     onSavingChange?.(true)
     setSaveError(null)
@@ -197,10 +219,15 @@ function AddEditPersonForm({
             variant="outlined"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={Boolean(user?.oidc_linked)}
+            disabled={Boolean(user?.oidc_linked) || regenerating || saving}
             error={Boolean(passwordError)}
             helperText={
-              user?.oidc_linked ? 'Managed by the identity provider' : passwordError || undefined
+              user?.oidc_linked
+                ? 'Managed by the identity provider'
+                : passwordError ||
+                  (isEdit
+                    ? 'Enter a new password to change it, or leave blank to keep the current one.'
+                    : undefined)
             }
             slotProps={{
               formHelperText: { sx: { '&.Mui-disabled': { color: 'text.secondary' } } },
@@ -209,13 +236,25 @@ function AddEditPersonForm({
         )}
         {isEdit && !selfProfile && (
           <>
+            {canRegenerateLink && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={regenerateLink}
+                    disabled={saving}
+                    onChange={(event) => setRegenerateLink(event.target.checked)}
+                  />
+                }
+                label="Regenerate password link"
+              />
+            )}
             <Tooltip title={forceDisabledReason} describeChild>
               <span>
                 <FormControlLabel
                   control={
                     <Switch
                       checked={mustChange}
-                      disabled={Boolean(forceDisabledReason) || saving}
+                      disabled={Boolean(forceDisabledReason) || regenerating || saving}
                       onChange={(event) => setMustChange(event.target.checked)}
                     />
                   }
@@ -223,26 +262,11 @@ function AddEditPersonForm({
                 />
               </span>
             </Tooltip>
-            {onClearPassword && (
-              <Tooltip
-                title={
-                  user?.oidc_linked
-                    ? 'Managed by the identity provider'
-                    : !user?.has_local_password
-                      ? 'No local password to clear'
-                      : ''
-                }
-                describeChild
-              >
+            {onSetupLink && (
+              <Tooltip title={setupDisabledReason} describeChild>
                 <span>
-                  <Button
-                    disabled={saving || Boolean(user?.oidc_linked) || !user?.has_local_password}
-                    onClick={() => {
-                      setSaveError(null)
-                      setClearOpen(true)
-                    }}
-                  >
-                    Clear password
+                  <Button disabled={saving || Boolean(setupDisabledReason)} onClick={onSetupLink}>
+                    Copy password-setup link
                   </Button>
                 </span>
               </Tooltip>
@@ -326,53 +350,6 @@ function AddEditPersonForm({
           {isEdit ? 'Save' : 'Add'}
         </Button>
       </DialogActions>
-      <Dialog
-        open={clearOpen && !selfProfile}
-        onClose={saving ? undefined : () => setClearOpen(false)}
-        aria-labelledby="clear-password-title"
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle id="clear-password-title">Clear password?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            This clears the guest's password; send them a new setup link. It also clears the
-            requirement to change their password on next login.
-          </Typography>
-          {saveError && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {saveError}
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button disabled={saving} onClick={() => setClearOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={saving}
-            onClick={async () => {
-              if (!onClearPassword || selfProfile) return
-              setSaving(true)
-              onSavingChange?.(true)
-              setSaveError(null)
-              try {
-                await onClearPassword()
-                setClearOpen(false)
-              } catch (err) {
-                setSaveError(userMessage(err, 'Could not clear the password. Please retry.'))
-              } finally {
-                setSaving(false)
-                onSavingChange?.(false)
-              }
-            }}
-          >
-            Clear password
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   )
 }
@@ -383,7 +360,7 @@ export default function AddEditPersonModal({
   onSave,
   programs,
   user,
-  onClearPassword,
+  onSetupLink,
   selfProfile = false,
 }: AddEditPersonModalProps) {
   const [saving, setSaving] = useState(false)
@@ -407,7 +384,7 @@ export default function AddEditPersonModal({
         key={open ? formKey : 'closed'}
         onClose={onClose}
         onSave={onSave}
-        onClearPassword={onClearPassword}
+        onSetupLink={onSetupLink}
         selfProfile={selfProfile}
         onSavingChange={setSaving}
         programs={programs}

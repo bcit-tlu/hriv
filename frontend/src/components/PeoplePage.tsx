@@ -25,7 +25,6 @@ import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import Typography from '@mui/material/Typography'
-import Tooltip from '@mui/material/Tooltip'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
@@ -98,13 +97,13 @@ function buildPeopleFilterSnapshot(
 type SortableColumn =
   'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
-type PeopleTableColumn =
-  'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
+type PeopleTableColumn = SortableColumn | 'sign_in'
 
 const ROLES: Role[] = ['admin', 'instructor', 'staff', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
   { key: 'id', label: 'ID' },
   { key: 'name', label: 'Name' },
+  { key: 'sign_in', label: 'Sign-in' },
   { key: 'email', label: 'Email' },
   { key: 'role', label: 'Role' },
   { key: 'active', label: 'Status' },
@@ -116,6 +115,7 @@ const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[
 
 const PEOPLE_DEFAULT_VISIBLE_COLUMNS: readonly PeopleTableColumn[] = [
   'name',
+  'sign_in',
   'email',
   'role',
   'active',
@@ -224,9 +224,7 @@ export default function PeoplePage({
   // Modal state
   const [addEditOpen, setAddEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
-  const [setupUser, setSetupUser] = useState<{ user: ApiUser; passwordCleared: boolean } | null>(
-    null,
-  )
+  const [setupUser, setSetupUser] = useState<ApiUser | null>(null)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
   const [bulkActiveOpen, setBulkActiveOpen] = useState(false)
@@ -630,18 +628,22 @@ export default function PeoplePage({
 
   const handleSavePerson = async (data: PersonFormData) => {
     if (editingUser) {
-      await updateUser(editingUser.id, data)
+      const updated = await updateUser(editingUser.id, data)
+      if (data.password === null) {
+        setUsers((prev) => prev.map((person) => (person.id === updated.id ? updated : person)))
+        setSetupUser(updated)
+      }
     } else {
       const created = await createUser({
         name: data.name,
         email: data.email,
         role: data.role,
         active: data.active,
-        ...(data.password === undefined ? {} : { password: data.password }),
+        ...(typeof data.password === 'string' ? { password: data.password } : {}),
         program_ids: data.program_ids,
       })
       setUsers((prev) => [...prev, created])
-      if (data.password === undefined) setSetupUser({ user: created, passwordCleared: false })
+      if (data.password === undefined) setSetupUser(created)
     }
     setAddEditOpen(false)
     setEditingUser(null)
@@ -876,7 +878,7 @@ export default function PeoplePage({
   // and row cells are rendered in the user's persisted column order via
   // `orderedVisibleColumns` — visibility filtering happens there, so the
   // map entries themselves render unconditionally.
-  const sortableHeaderCell = (column: PeopleTableColumn, label: string) => (
+  const sortableHeaderCell = (column: SortableColumn, label: string) => (
     <TableCell sortDirection={sortColumn === column ? sortDirection : false}>
       <TableSortLabel
         active={sortColumn === column}
@@ -891,6 +893,7 @@ export default function PeoplePage({
   const columnHeaderCells: Record<PeopleTableColumn, ReactNode> = {
     id: sortableHeaderCell('id', 'ID'),
     name: sortableHeaderCell('name', 'Name'),
+    sign_in: <TableCell>Sign-in</TableCell>,
     email: sortableHeaderCell('email', 'Email'),
     role: sortableHeaderCell('role', 'Role'),
     active: sortableHeaderCell('active', 'Status'),
@@ -1185,7 +1188,11 @@ export default function PeoplePage({
                           <Chip size="small" label="You" data-testid="people-you-chip" />
                         )}
                       </Box>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                    </TableCell>
+                  ),
+                  sign_in: (
+                    <TableCell>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         <Chip
                           size="small"
                           variant="outlined"
@@ -1283,26 +1290,6 @@ export default function PeoplePage({
                     ))}
                     {!readOnly && (
                       <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                        <Tooltip
-                          title={
-                            user.oidc_linked
-                              ? 'Managed by the identity provider'
-                              : !user.active
-                                ? 'Activate this account before creating a setup link'
-                                : ''
-                          }
-                          describeChild
-                        >
-                          <span>
-                            <Button
-                              size="small"
-                              disabled={Boolean(user.oidc_linked) || !user.active}
-                              onClick={() => setSetupUser({ user, passwordCleared: false })}
-                            >
-                              Copy password-setup link
-                            </Button>
-                          </span>
-                        </Tooltip>
                         <Button
                           size="small"
                           color="error"
@@ -1369,37 +1356,17 @@ export default function PeoplePage({
         programs={programs}
         user={editingUser}
         selfProfile={editingUser?.id === currentUserId}
-        onClearPassword={
-          editingUser
-            ? async () => {
-                const updated = await updateUser(editingUser.id, { password: null })
-                setUsers((prev) =>
-                  prev.map((person) => (person.id === updated.id ? updated : person)),
-                )
-                setEditingUser(null)
+        onSetupLink={
+          editingUser && !readOnly && editingUser.id !== currentUserId
+            ? () => {
+                setSetupUser(editingUser)
                 setAddEditOpen(false)
-                setSetupUser({ user: updated, passwordCleared: true })
-                try {
-                  await loadData()
-                } catch (err) {
-                  setErrorSnack(
-                    userMessage(
-                      err,
-                      'Password cleared, but the people list could not be refreshed.',
-                    ),
-                  )
-                }
+                setEditingUser(null)
               }
             : undefined
         }
       />
-      {setupUser && (
-        <PasswordSetupLinkDialog
-          user={setupUser.user}
-          passwordCleared={setupUser.passwordCleared}
-          onClose={() => setSetupUser(null)}
-        />
-      )}
+      {setupUser && <PasswordSetupLinkDialog user={setupUser} onClose={() => setSetupUser(null)} />}
 
       <BulkEditModal
         open={bulkEditOpen}

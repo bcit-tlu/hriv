@@ -3612,7 +3612,9 @@ export default function App() {
       <AddEditPersonModal
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
-        onSave={handleSaveProfile}
+        onSave={({ password, ...data }) =>
+          handleSaveProfile({ ...data, ...(typeof password === 'string' ? { password } : {}) })
+        }
         programs={programs}
         user={currentApiUser}
         selfProfile

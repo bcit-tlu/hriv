@@ -1280,18 +1280,34 @@ selection MouseTracker ignores their presses.
 - Add Person defaults to setting a password now. Invite-by-link mode removes
   the password requirement and omits the password field from creation. Once
   created, minting opens a copy dialog; a mint failure leaves the account intact
-  and can be retried from the row without creating another person.
-- Name cells show SSO, Local, or Invite pending, with an additional subtle
+  and can be retried from Edit Person without creating another person.
+- A separate Sign-in column shows SSO, Local, or Invite pending, with an additional subtle
   Must change password chip for forced rotation. Staff see the same indicators
   in their read-only directory without mutation controls.
-- Copy password-setup link is available only for active non-OIDC accounts.
+- Sign-in is visible by default and hideable/reorderable in Choose columns.
+  Name cells return to their original vertical alignment without auth chips.
+- Copy password-setup link lives in Edit Person, not a row action, and appears
+  only for admins editing another user. It is enabled only for saved active,
+  non-OIDC, passwordless accounts; unsaved changes do not affect eligibility.
   Disabled actions explain identity-provider management or required activation.
-  Already-passworded accounts receive instructions to clear the password first.
+  Already-passworded accounts show the disabled tooltip “This account already has a password”.
 - The dialog shows the one-use credential URL and local-time expiry. Copy uses
   the clipboard API or selection fallback, with inline success/failure feedback.
   Tokens live only within the mounted dialog, never in storage or logs; closing
   discards them and reopening creates a replacement link.
 - Edit Person enables forced change only for non-OIDC accounts that already
-  have a local password. Clearing a local password requires confirmation, sends
-  explicit null, updates both credential/rotation badges, and offers a new link.
-  Dismissing the offer does not mint anything.
+  have a local password. There is no Clear password action or confirmation.
+  Enter a new Password to change it, or leave blank to keep the current
+  one; helper text states both options. Save errors retain the entered value.
+- Regenerate password link is a switch for admins editing another saved active
+  local user with a password. It is hidden for OIDC, inactive, passwordless and
+  self-profile users. While enabled, Password and forced change are disabled.
+  Save sends `password:null` without the forced-change flag, then immediately
+  opens the setup-link dialog to mint. Failed saves retain the enabled switch; Cancel
+  does nothing. Mint failures leave a saved passwordless account and direct the
+  admin back to Edit Person’s now-enabled link button. Unsaved deactivation
+  hides the switch and prevents regeneration, even after reactivation.
+- The link dialog warning is “Single-use link. Share it privately.” There is no
+  account-exists paragraph or dialog mint-retry action. Failed automatic minting
+  after create directs the admin back to Edit Person. Credentials remain local
+  to the mounted dialog and same-user mint serialization is retained.
