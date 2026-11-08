@@ -324,7 +324,7 @@ def _promoted_source(finding: MeasurementFinding) -> str:
         "manual"
         if (
             finding.approved_scale != finding.proposed_scale
-            or finding.approved_unit != finding.approved_unit
+            or finding.approved_unit != finding.proposed_unit
         )
         else finding.source
     )

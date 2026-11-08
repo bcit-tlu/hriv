@@ -1108,3 +1108,24 @@ async def test_scan_image_rescan_keeps_edited_scale_unowned() -> None:
     # The new finding records the edited value but cannot undo it.
     assert service.reset_finding(finding, image) is False
     assert image.metadata_["measurement_scale"] == 5.0
+
+
+def test_reset_finding_strips_when_only_unit_corrected_at_approval() -> None:
+    """Unit-only corrections also wrote source 'manual' and can be undone."""
+    finding = _finding(
+        status="approved",
+        proposed_scale=7.3,
+        proposed_unit="um",
+        approved_scale=7.3,
+        approved_unit="nm",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "nm",
+            "measurement_scale_source": "manual",
+            "measurement_finding_id": 5,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {}
