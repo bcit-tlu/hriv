@@ -694,7 +694,8 @@ async def test_oidc_callback_userinfo_fallback_failure() -> None:
     _assert_oidc_error_redirect(resp, "userinfo_failed", "http://localhost:3000")
 
 
-async def test_oidc_callback_email_linking_with_trusted_email() -> None:
+@pytest.mark.parametrize("must_change_password", [False, True])
+async def test_oidc_callback_email_linking_with_trusted_email(must_change_password: bool) -> None:
     """When trust_email is True, links by email for first-time OIDC login."""
     request = MagicMock()
     mock_client = AsyncMock()
@@ -714,7 +715,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
     # Second query (by email) returns existing user without oidc_subject
     existing_user = SimpleNamespace(
         id=2, name="User", email="user@example.ca",
-        oidc_subject=None, role="student",
+        oidc_subject=None, role="student", must_change_password=must_change_password,
         active=True, programs=[], last_access=None, metadata_=None,
     )
     mock_result_found = MagicMock()
@@ -737,6 +738,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
 
     assert result.status_code == 200
     assert existing_user.oidc_subject == "new-oidc-sub"
+    assert existing_user.must_change_password is False
 
 
 async def test_oidc_callback_email_linking_case_insensitive() -> None:

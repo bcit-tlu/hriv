@@ -507,6 +507,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     )
                 if not user.oidc_subject:
                     user.oidc_subject = sub
+                    user.must_change_password = False
                 # Only update role when a group actually matched a mapping entry;
                 # this preserves admin-assigned promotions when the IdP sends
                 # unrecognised groups or no groups at all. A role change feeds
