@@ -37,6 +37,12 @@ describe('ChangePasswordDialog', () => {
   })
   it.each([
     [401, 'Invalid current password', 'current password is incorrect'],
+    [
+      401,
+      'Invalid or expired token',
+      'Your session has expired or is invalid. Please sign in again.',
+    ],
+    [401, 'Not authenticated', 'Please sign in again'],
     [429, 'rate_limited', 'Too many attempts'],
     [422, 'password_unchanged', 'different password'],
     [403, 'oidc_linked', 'identity provider'],

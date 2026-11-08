@@ -11,10 +11,13 @@ const PASSWORD_ERROR_MESSAGES: Record<string, string> = {
 export function passwordErrorMessage(error: unknown, setup = false): string {
   if (error instanceof ApiError) {
     if (PASSWORD_ERROR_MESSAGES[error.detail]) return PASSWORD_ERROR_MESSAGES[error.detail]
-    if (error.status === 401)
-      return setup
-        ? 'This link has expired or was already replaced — ask your administrator for a new one'
-        : 'Your current password is incorrect. Please try again.'
+    if (error.status === 401) {
+      if (setup)
+        return 'This link has expired or was already replaced — ask your administrator for a new one'
+      return error.detail === 'Invalid current password'
+        ? 'Your current password is incorrect. Please try again.'
+        : 'Your session has expired or is invalid. Please sign in again.'
+    }
     if (error.status === 409 && setup) return PASSWORD_ERROR_MESSAGES.password_already_set
     if (error.status === 429) return 'Too many attempts. Please try again later.'
     if (error.status === 422)

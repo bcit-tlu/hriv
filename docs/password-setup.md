@@ -174,3 +174,8 @@ Pasting a setup link into an already-open tab is handled on `hashchange` too:
 the token is captured and immediately removed while unrelated URL parameters
 are preserved. The previous session is discarded, and pending validation of
 that session cannot restore it over the setup flow.
+
+For password changes, 401 `Invalid current password` asks the user to retry
+their current password. A 401 `Invalid or expired token` (or missing bearer
+credentials) instead explains that the session expired or is invalid and asks
+the user to sign in again; it is not presented as a wrong current password.

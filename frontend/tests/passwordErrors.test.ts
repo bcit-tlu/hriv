@@ -22,6 +22,8 @@ describe('password validation and error copy', () => {
     [429, 'rate_limited', true, 'Too many attempts.'],
     [422, 'validation', true, 'at least 8 characters'],
     [401, 'Invalid current password', false, 'current password is incorrect'],
+    [401, 'Invalid or expired token', false, 'session has expired or is invalid'],
+    [401, 'Not authenticated', false, 'Please sign in again'],
     [403, 'oidc_linked', false, 'identity provider'],
     [422, 'password_unchanged', false, 'different password'],
     [429, 'rate_limited', false, 'Too many attempts.'],
