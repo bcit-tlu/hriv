@@ -105,6 +105,13 @@ def _order_by(sort: str, path: CTE) -> tuple[ColumnElement, ...]:
     return (ordered.nulls_last(), func.lower(Image.name), MeasurementFinding.id)
 
 
+async def _category_path(db: AsyncSession, image: Image) -> str | None:
+    if image.category_id is None:
+        return None
+    paths = _category_paths()
+    return await db.scalar(select(paths.c.path).where(paths.c.id == image.category_id))
+
+
 def _out(
     finding: MeasurementFinding, image: Image, category_path: str | None = None
 ) -> MeasurementFindingOut:
@@ -452,7 +459,7 @@ async def approve(
             **actor_log_fields(user),
         },
     )
-    return _out(finding, image)
+    return _out(finding, image, await _category_path(db, image))
 
 
 @router.post("/{finding_id}/reject", response_model=MeasurementFindingOut)
@@ -465,7 +472,7 @@ async def reject(
     reject_finding(finding, user.id)
     await db.commit()
     await db.refresh(finding)
-    return _out(finding, image)
+    return _out(finding, image, await _category_path(db, image))
 
 
 @router.post("/{finding_id}/reset", response_model=MeasurementFindingOut)
@@ -521,7 +528,7 @@ async def reset(
             **actor_log_fields(user),
         },
     )
-    return _out(finding, image)
+    return _out(finding, image, await _category_path(db, image))
 
 
 @router.post("/{finding_id}/rescan", response_model=MeasurementScanOut, status_code=202)

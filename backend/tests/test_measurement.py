@@ -450,6 +450,7 @@ def _db_with(finding, image) -> AsyncMock:
     db.get.side_effect = lambda model, _id, **_kw: (
         finding if model is MeasurementFinding else image
     )
+    db.scalar.return_value = "Hematology › Blood films"
     return db
 
 
@@ -1328,3 +1329,12 @@ async def test_list_finding_categories_returns_paths_with_counts() -> None:
     ]
     sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
     assert "jsonb_typeof" in sql
+
+
+async def test_reject_response_carries_category_path() -> None:
+    finding, image = _finding(), _image()
+    db = _db_with(finding, image)
+    out = await router.reject(finding.id, _user(), db)
+    assert out.category_path == "Hematology › Blood films"
+    sql = str(db.scalar.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "WITH RECURSIVE category_paths" in sql
