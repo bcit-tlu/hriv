@@ -20,9 +20,9 @@ def test_hash_password_and_verify_password_roundtrip() -> None:
 def test_create_access_token_contains_expected_claims(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
-    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
-    monkeypatch.setattr(auth.auth_settings, "jwt_expire_minutes", 60)
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_algorithm", "HS256")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_expire_minutes", 60)
 
     user = SimpleNamespace(id=123, email="user@example.com", role="admin")
     token = auth.create_access_token(user)  # type: ignore[arg-type]
@@ -38,8 +38,8 @@ def test_create_access_token_contains_expected_claims(
 async def test_get_user_from_token_returns_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
-    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_algorithm", "HS256")
 
     user = SimpleNamespace(id=42, email="person@example.com", role="student", active=True)
     token = auth.jwt.encode(
@@ -60,8 +60,8 @@ async def test_get_user_from_token_returns_user(
 async def test_get_user_from_token_rejects_scoped_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
-    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_algorithm", "HS256")
 
     token = auth.jwt.encode(
         {
@@ -87,8 +87,8 @@ async def test_get_user_from_token_rejects_scoped_tokens(
 async def test_get_user_from_token_rejects_missing_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
-    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_algorithm", "HS256")
 
     token = auth.jwt.encode(
         {"sub": "999", "email": "missing@example.com", "role": "student", "_epoch": auth.auth_settings.jwt_instance_epoch},
@@ -109,8 +109,8 @@ async def test_get_user_from_token_rejects_stale_instance_epoch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tokens from a previous backend instance (different epoch) are rejected."""
-    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
-    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_algorithm", "HS256")
 
     token = auth.jwt.encode(
         {"sub": "1", "email": "a@b.com", "role": "admin", "_epoch": "old-epoch"},
@@ -130,8 +130,8 @@ async def test_get_user_from_token_rejects_stale_instance_epoch(
 async def test_get_user_from_token_rejects_inactive_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
-    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth._get_auth_settings(), "jwt_algorithm", "HS256")
 
     token = auth.jwt.encode(
         {"sub": "1", "email": "a@b.com", "role": "admin", "_epoch": auth.auth_settings.jwt_instance_epoch},

@@ -110,7 +110,13 @@ def _get_auth_settings() -> AuthSettings:
 
 
 class _LazyAuthSettings:
-    """Proxy so ``auth_settings.X`` still works without eager instantiation."""
+    """Proxy so ``auth_settings.X`` still works without eager instantiation.
+
+    Note for tests: ``monkeypatch.setattr(auth_settings, ...)`` does not
+    survive teardown under pytest >= 9.2 — undo() calls ``delattr`` for any
+    patch that leaves no entry in the target's ``__dict__`` (pytest#10644),
+    and this proxy has none. Patch ``_get_auth_settings()`` instead.
+    """
     def __getattr__(self, name: str):
         return getattr(_get_auth_settings(), name)
     def __setattr__(self, name: str, value):
