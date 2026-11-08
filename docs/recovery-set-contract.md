@@ -177,11 +177,15 @@ database. High-cardinality mismatch details belong in the manifest and
 structured logs, not metric labels.
 
 `database_recovery.migration_version` is the `alembic_version.version_num`
-read by the same post-commit boundary query that binds `target_lsn`, so it is
-the schema head a database restored to that LSN must report. It is additive to
-format 2: manifests captured before it was recorded omit the field, and
-consumers (restore validation, `validation-select`) treat the absence as
-"unknown" rather than as a mismatch.
+read inside the fence transaction and re-read by the post-commit boundary
+query that binds `target_lsn`; capture fails closed if the two differ, so the
+value is the schema head a database restored to that LSN must report. It is
+additive to format 2: manifests captured before it was recorded omit the key
+(an explicit `null` is malformed), and `validation-select` summarizes the
+absence as unknown rather than as a mismatch. Restore validation still checks
+the restored head against the profile's `expected_migration_version`; adopting
+the manifest value, with the profile pin as the fallback for manifests that
+predate it, is the follow-up tracked in bcit-tlu/hriv#1637.
 
 ## Candidate state model
 
