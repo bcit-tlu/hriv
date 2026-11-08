@@ -123,7 +123,8 @@ A successful manifest is versioned and records at least:
     "wal_segment_size_bytes": 16777216,
     "wal_fence_committed_at": "<UTC timestamp>",
     "wal_fence_archived_at": "<UTC timestamp>",
-    "logical_dump_role": "not-included"
+    "logical_dump_role": "not-included",
+    "migration_version": "<Alembic head observed by the WAL-fence boundary query>"
   },
   "versions": {
     "hriv": "<version>",
@@ -174,6 +175,13 @@ safely waits until `pg_stat_archiver` reaches that bound on the same timeline,
 making the fence-containing target reachable even on an otherwise idle
 database. High-cardinality mismatch details belong in the manifest and
 structured logs, not metric labels.
+
+`database_recovery.migration_version` is the `alembic_version.version_num`
+read by the same post-commit boundary query that binds `target_lsn`, so it is
+the schema head a database restored to that LSN must report. It is additive to
+format 2: manifests captured before it was recorded omit the field, and
+consumers (restore validation, `validation-select`) treat the absence as
+"unknown" rather than as a mismatch.
 
 ## Candidate state model
 

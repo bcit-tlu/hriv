@@ -1995,6 +1995,9 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(
             manifest["database_recovery"]["logical_dump_role"], "not-included"
         )
+        self.assertEqual(
+            manifest["database_recovery"]["migration_version"], "0038_user_auth_state"
+        )
         self.assertEqual(manifest["file_count"], 1)
         self.assertEqual(manifest["total_bytes"], len(b"source"))
         self.assertIn("data/source_images/img.jpg", manifest["files"])
@@ -2690,15 +2693,17 @@ class AzurePublicationTestCase(_BackupTestCase):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         db = backup._parse_db_url(backup.DATABASE_URL)
         valid = (
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
-            "0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n"
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n"
+            "0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,0038_user_auth_state\n"
         )
         for payload in (
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\nnot-an-lsn,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,not-a-wal,2026-01-02T03:04:06.000000Z,16777216\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,not-a-time,16777216\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777217\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,524288\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\nnot-an-lsn,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,0038_user_auth_state\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,not-a-wal,2026-01-02T03:04:06.000000Z,16777216,0038_user_auth_state\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,not-a-time,16777216,0038_user_auth_state\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777217,0038_user_auth_state\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,524288,0038_user_auth_state\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,bad version\n",
         ):
             with self.subTest(payload=payload):
                 responses = iter(("generation\n1\n", payload))
@@ -2720,6 +2725,7 @@ class AzurePublicationTestCase(_BackupTestCase):
                     "000000010000000000000006",
                     datetime(2026, 1, 2, 3, 4, 6, tzinfo=timezone.utc),
                     16777216,
+                    "0038_user_auth_state",
                 ),
                 backup._emit_wal_fence(db),
             )
@@ -3237,6 +3243,7 @@ def _production_inventory_run(
     fence_lsn="0/60001FE",
     fence_file="000000010000000000000006",
     wal_segment_size=16 * 1024 * 1024,
+    migration_version="0038_user_auth_state",
     archived_files=None,
     after_boundary=None,
 ):
@@ -3278,8 +3285,8 @@ def _production_inventory_run(
             return MagicMock(
                 returncode=0,
                 stdout=(
-                    "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
-                    f"{fence_lsn},{fence_file},2026-01-02T03:04:06.000000Z,{wal_segment_size}\n"
+                    "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n"
+                    f"{fence_lsn},{fence_file},2026-01-02T03:04:06.000000Z,{wal_segment_size},{migration_version}\n"
                 ),
                 stderr="",
             )
@@ -5210,6 +5217,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "wal_fence_committed_at": "2026-01-01T02:00:10+00:00",
                 "wal_fence_archived_at": "2026-01-01T02:00:20+00:00",
                 "logical_dump_role": "not-included",
+                "migration_version": "0038_user_auth_state",
             },
         }
         sidecar = json.dumps(manifest, indent=2).encode()
@@ -5388,6 +5396,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
         self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
         self.assertEqual(result["completed_at"], "2026-01-01T02:01:00Z")
+        self.assertNotIn("migration_version", result)
         self.assertNotIn("source_files", result)
         self.assertTrue(
             all(operation in {"get", "head", "download"} for operation, _ in calls)
@@ -5408,6 +5417,25 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup.validation_select(snapshot + "x", container=container)
         self.assertEqual(raised.exception.code, "SNAPSHOT_MISMATCH")
+
+    def test_manifest_summary_migration_version_is_optional_but_strict(self):
+        _snapshot, manifest, _sidecar, _blobs, _container, _calls = self._fixture()
+        self.assertEqual(
+            backup._validation_manifest_summary(manifest)["migration_version"],
+            "0038_user_auth_state",
+        )
+        legacy = copy.deepcopy(manifest)
+        del legacy["database_recovery"]["migration_version"]
+        self.assertIsNone(
+            backup._validation_manifest_summary(legacy)["migration_version"]
+        )
+        for invalid in ("", "bad version", 38, True, "x" * 129):
+            with self.subTest(invalid=invalid):
+                broken = copy.deepcopy(manifest)
+                broken["database_recovery"]["migration_version"] = invalid
+                with self.assertRaises(backup.ValidationFailure) as raised:
+                    backup._validation_manifest_summary(broken)
+                self.assertEqual(raised.exception.code, "CNPG_METADATA_INVALID")
 
     def test_selection_emits_canonical_source_files_digest_without_inventory(self):
         snapshot, manifest, _sidecar, _blobs, container, _calls = self._fixture()
