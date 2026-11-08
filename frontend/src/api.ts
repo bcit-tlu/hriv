@@ -1265,7 +1265,8 @@ export function createUser(body: {
   name: string
   email: string
   role: string
-  password: string
+  password?: string
+  must_change_password?: boolean
   active?: boolean
   program_ids?: number[]
 }): Promise<ApiUser> {
@@ -1282,7 +1283,8 @@ export function updateUser(
     email?: string
     role?: string
     active?: boolean
-    password?: string
+    password?: string | null
+    must_change_password?: boolean
     program_ids?: number[]
   },
 ): Promise<ApiUser> {
@@ -1294,6 +1296,15 @@ export function updateUser(
 
 export function deleteUser(id: number): Promise<void> {
   return request(`/users/${id}`, { method: 'DELETE' })
+}
+
+export interface PasswordSetupLink {
+  setup_token: string
+  expires_at: string
+}
+
+export function mintPasswordSetupLink(id: number): Promise<PasswordSetupLink> {
+  return request(`/users/${id}/password-setup-link`, { method: 'POST' })
 }
 
 export function bulkUpdateUserProgram(

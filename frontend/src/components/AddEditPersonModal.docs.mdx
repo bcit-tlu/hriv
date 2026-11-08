@@ -1,0 +1,13 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as PersonStories from './AddEditPersonModal.stories'
+
+<Meta of={PersonStories} />
+<Title />
+
+Admins can set a password now or invite a guest without a password. Invite mode
+omits the password field from the create request. Local-password accounts can be
+flagged for rotation, or have their password cleared after confirmation. SSO and
+passwordless accounts explain why credential actions are unavailable.
+
+<Primary />
+<Stories includePrimary={false} />

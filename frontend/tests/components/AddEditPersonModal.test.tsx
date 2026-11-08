@@ -27,6 +27,74 @@ const existingUser: ApiUser = {
 }
 
 describe('AddEditPersonModal', () => {
+  it('creates in invite mode without a password field', async () => {
+    const actor = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={onSave} programs={programs} />)
+    await actor.click(screen.getByLabelText('Invite by link (user sets their own password)'))
+    await actor.type(screen.getByLabelText('Full name'), 'Invited Guest')
+    await actor.type(screen.getByLabelText('Email'), 'guest@example.invalid')
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Add', exact: true }))
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('password')
+  })
+
+  it.each([
+    [true, true, true, 'Managed by the identity provider'],
+    [false, false, true, 'Set a local password before requiring a password change'],
+    [false, true, false, ''],
+  ] as const)(
+    'controls forced change for oidc=%s password=%s',
+    async (oidc, local, disabled, tooltip) => {
+      const actor = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <AddEditPersonModal
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          programs={programs}
+          user={{ ...existingUser, oidc_linked: oidc, has_local_password: local }}
+        />,
+      )
+      const toggle = screen.getByRole('switch', { name: 'Force password change on next login' })
+      if (disabled) {
+        expect(toggle).toBeDisabled()
+        await actor.hover(screen.getByText('Force password change on next login'))
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(tooltip)
+      } else {
+        await actor.click(toggle)
+        await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: true }))
+      }
+    },
+  )
+
+  it('confirms clearing a local password and leaves the confirm open on failure', async () => {
+    const actor = userEvent.setup()
+    const clear = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onClearPassword={clear}
+        programs={programs}
+        user={{ ...existingUser, has_local_password: true }}
+      />,
+    )
+    await actor.click(screen.getByRole('button', { name: 'Clear password' }))
+    expect(clear).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Clear password?' })).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Clear password' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not clear the password. Please retry.',
+    )
+    await actor.click(screen.getByRole('button', { name: 'Clear password' }))
+    expect(clear).toHaveBeenCalledTimes(2)
+  })
+
   beforeEach(() => vi.clearAllMocks())
 
   it('renders "Add Person" title when no user is provided', () => {

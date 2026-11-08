@@ -1049,3 +1049,28 @@ named users. Restore all temporary configuration changes after testing.
 These cases are a validation checklist, not a claim that local E2E or the
 instructor feel-test on `latest` has passed. See
 [object counting](object-counting.md) for troubleshooting and rollout gates.
+
+### People password-management UI (#1761)
+
+Automated coverage: `components/AddEditPersonModal.test.tsx`,
+`components/PeoplePage.test.tsx`, `components/PasswordSetupLinkDialog.test.tsx`,
+and the User API cases in `api.test.ts`.
+
+- Add a person in set-password mode: password is required and validated. Switch
+  to Invite by link: no password input or request field; success opens minting.
+- Fail minting after creation: the account still exists. Close and retry the row
+  action without creating again. Exercise mint 403, 409, 422 and transport errors.
+- Check SSO/Local/Invite pending badges and the Must change password chip.
+  OIDC and inactive row actions are disabled with explanatory tooltips; eligible
+  active local/passwordless accounts can open minting. Staff cannot mutate.
+- Verify setup URL composition, local-time expiry, clipboard success/fallback
+  and manual-copy error feedback. Close during mint and reopen: no old token is
+  retained. No setup credential is written to storage or application logs.
+- Edit a local-password account and toggle forced change. Passwordless and SSO
+  accounts have disabled switches with suitable explanations.
+- Clear a local password: no request before confirmation; confirm sends null,
+  removes the forced-change flag, and shows an optional new-link offer. Cancel
+  or close does not mint; clearing errors leave confirmation available to retry.
+- Preview Storybook AddEditPersonModal, PeoplePage and PasswordSetupLinkDialog
+  states in light/dark themes; inspect row badges, invite mode, credential dialog
+  and clear-password confirmation before merging.

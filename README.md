@@ -54,7 +54,7 @@ All seed users share the password `password`.
 | Manage changelog entries                               | Yes   | No         | No    | No      |
 | Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
 | User management (add/delete)                           | Yes   | No         | No    | No      |
-| Mint local password-setup links (API)                  | Yes   | No         | No    | No      |
+| Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
 | Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
 | People tab (view users)                                | Yes   | No         | Yes‡  | No      |
 | List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |

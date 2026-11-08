@@ -66,6 +66,13 @@ Password-management/session changes are covered by `passwordSession.test.tsx`,
 `components/AppShell.test.tsx`. Preview the setup, change dialog, and forced-change
 Storybook states; the auth gate lives above the shell in `AuthContext.tsx`.
 
+Admin invitation changes also require `components/PeoplePage.test.tsx`,
+`components/AddEditPersonModal.test.tsx`, `components/PasswordSetupLinkDialog.test.tsx`
+and User API cases in `api.test.ts`. Check both create modes, disabled SSO/inactive
+actions, null-password confirmation, mint retry after creation, and clipboard
+feedback. Never persist or log the setup credential; its state belongs only to
+the mounted link dialog.
+
 ```bash
 npm run format:check
 ```

@@ -25,6 +25,7 @@ import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import Typography from '@mui/material/Typography'
+import Tooltip from '@mui/material/Tooltip'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
@@ -57,6 +58,8 @@ import {
   useTableFilterPreferences,
 } from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
+import type { PersonFormData } from './AddEditPersonModal'
+import PasswordSetupLinkDialog from './PasswordSetupLinkDialog'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
@@ -221,6 +224,9 @@ export default function PeoplePage({
   // Modal state
   const [addEditOpen, setAddEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
+  const [setupUser, setSetupUser] = useState<{ user: ApiUser; passwordCleared: boolean } | null>(
+    null,
+  )
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
   const [bulkActiveOpen, setBulkActiveOpen] = useState(false)
@@ -622,26 +628,20 @@ export default function PeoplePage({
     setAddEditOpen(true)
   }
 
-  const handleSavePerson = async (data: {
-    name: string
-    email: string
-    role: Role
-    active: boolean
-    password?: string
-    program_ids?: number[]
-  }) => {
+  const handleSavePerson = async (data: PersonFormData) => {
     if (editingUser) {
       await updateUser(editingUser.id, data)
     } else {
-      if (!data.password) return
-      await createUser({
+      const created = await createUser({
         name: data.name,
         email: data.email,
         role: data.role,
         active: data.active,
-        password: data.password,
+        ...(data.password === undefined ? {} : { password: data.password }),
         program_ids: data.program_ids,
       })
+      setUsers((prev) => [...prev, created])
+      if (data.password === undefined) setSetupUser({ user: created, passwordCleared: false })
     }
     setAddEditOpen(false)
     setEditingUser(null)
@@ -996,7 +996,9 @@ export default function PeoplePage({
   }
 
   return (
-    <Box>
+    <Box
+      sx={{ '& button[aria-haspopup="menu"] .MuiTypography-caption': { color: 'text.primary' } }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -1156,6 +1158,7 @@ export default function PeoplePage({
                       indeterminate={selectedInView > 0 && selectedInView < pageUsers.length}
                       checked={pageUsers.length > 0 && selectedInView === pageUsers.length}
                       onChange={(e) => handleSelectAll(e.target.checked)}
+                      slotProps={{ input: { 'aria-label': 'Select all people' } }}
                     />
                   </TableCell>
                 )}
@@ -1180,6 +1183,22 @@ export default function PeoplePage({
                         {user.name}
                         {currentUserId != null && user.id === currentUserId && (
                           <Chip size="small" label="You" data-testid="people-you-chip" />
+                        )}
+                      </Box>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            user.oidc_linked
+                              ? 'SSO'
+                              : user.has_local_password
+                                ? 'Local'
+                                : 'Invite pending'
+                          }
+                        />
+                        {user.must_change_password && (
+                          <Chip size="small" variant="outlined" label="Must change password" />
                         )}
                       </Box>
                     </TableCell>
@@ -1255,6 +1274,7 @@ export default function PeoplePage({
                         <Checkbox
                           checked={selected.has(user.id)}
                           onChange={(e) => handleSelectOne(user.id, e.target.checked)}
+                          slotProps={{ input: { 'aria-label': `Select ${user.name}` } }}
                         />
                       </TableCell>
                     )}
@@ -1263,6 +1283,26 @@ export default function PeoplePage({
                     ))}
                     {!readOnly && (
                       <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                        <Tooltip
+                          title={
+                            user.oidc_linked
+                              ? 'Managed by the identity provider'
+                              : !user.active
+                                ? 'Activate this account before creating a setup link'
+                                : ''
+                          }
+                          describeChild
+                        >
+                          <span>
+                            <Button
+                              size="small"
+                              disabled={Boolean(user.oidc_linked) || !user.active}
+                              onClick={() => setSetupUser({ user, passwordCleared: false })}
+                            >
+                              Copy password-setup link
+                            </Button>
+                          </span>
+                        </Tooltip>
                         <Button
                           size="small"
                           color="error"
@@ -1328,7 +1368,37 @@ export default function PeoplePage({
         onSave={handleSavePerson}
         programs={programs}
         user={editingUser}
+        onClearPassword={
+          editingUser
+            ? async () => {
+                const updated = await updateUser(editingUser.id, { password: null })
+                setUsers((prev) =>
+                  prev.map((person) => (person.id === updated.id ? updated : person)),
+                )
+                setEditingUser(null)
+                setAddEditOpen(false)
+                setSetupUser({ user: updated, passwordCleared: true })
+                try {
+                  await loadData()
+                } catch (err) {
+                  setErrorSnack(
+                    userMessage(
+                      err,
+                      'Password cleared, but the people list could not be refreshed.',
+                    ),
+                  )
+                }
+              }
+            : undefined
+        }
       />
+      {setupUser && (
+        <PasswordSetupLinkDialog
+          user={setupUser.user}
+          passwordCleared={setupUser.passwordCleared}
+          onClose={() => setSetupUser(null)}
+        />
+      )}
 
       <BulkEditModal
         open={bulkEditOpen}
