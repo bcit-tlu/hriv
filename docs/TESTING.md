@@ -356,8 +356,11 @@ separate from this backend schema foundation.
 - Full user responses (admin/staff directory, admin mutations, `/api/auth/me`,
   and the `/api/auth/login` user payload) include `has_local_password`,
   `oidc_linked`, and `must_change_password`. Check local-only `(true, false)`,
-  OIDC-only `(false, true)`, dual `(true, true)`, and passwordless-unlinked
-  `(false, false)` derived flags. Hashes, OIDC subjects and invite nonces must
+  OIDC-only `(false, true)`, and passwordless-unlinked `(false, false)`
+  derived flags. A dual `(true, true)` state can no longer be reached through
+  linking, migration `0040_oidc_clear_password`, admin updates or imports; check
+  it only with a legacy fixture written by direct SQL, and confirm password
+  login for that fixture still returns the generic 401. Hashes, OIDC subjects and invite nonces must
   never appear. Instructor directory projections omit all three flags.
 - Automated coverage: `tests/test_schemas.py`, `tests/test_router_users.py`,
   `tests/test_router_auth.py`; run `tests/test_migrations_bootstrap.py` and a
