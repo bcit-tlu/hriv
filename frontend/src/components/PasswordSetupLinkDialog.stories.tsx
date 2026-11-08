@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, within } from 'storybook/test'
+import { expect, fn, waitFor, within } from 'storybook/test'
 import PasswordSetupLinkDialog from './PasswordSetupLinkDialog'
 
 const meta = {
@@ -32,23 +32,27 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
-    await expect(
-      await within(canvasElement.ownerDocument.body).findByLabelText('Setup URL'),
-    ).toBeVisible()
+    await waitFor(() =>
+      expect(within(canvasElement.ownerDocument.body).getByLabelText('Setup URL')).toBeVisible(),
+    )
   },
 }
-export const Creating: Story = { parameters: { mintState: 'pending' } }
+export const Creating: Story = {
+  args: { user: { id: 10, name: 'Guest Student', active: true } },
+  parameters: { mintState: 'pending' },
+}
 export const MintFailed: Story = {
   parameters: { mintState: 'error' },
   play: async ({ canvasElement }) => {
-    await expect(
-      await within(canvasElement.ownerDocument.body).findByText(
-        'Could not create a setup link. Retry here or from the person’s row.',
-      ),
-    ).toBeVisible()
+    await waitFor(() =>
+      expect(
+        within(canvasElement.ownerDocument.body).getByText(
+          'Could not create a setup link. Try again from Edit Person.',
+        ),
+      ).toBeVisible(),
+    )
   },
 }
-export const PasswordCleared: Story = { args: { passwordCleared: true } }
 export const InactiveAccount: Story = {
   args: { user: { id: 9, name: 'Inactive Guest', active: false } },
 }

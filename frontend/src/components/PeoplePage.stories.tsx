@@ -71,6 +71,8 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     await expect(await within(canvasElement).findByText('Local Guest')).toBeVisible()
+    await expect(within(canvasElement).getByRole('columnheader', { name: 'Sign-in' })).toBeVisible()
+    await expect(within(canvasElement).getByRole('cell', { name: /^Local Guest$/ })).toBeVisible()
   },
 }
 export const ReadOnlyDirectory: Story = { args: { readOnly: true }, play: Basic.play }
