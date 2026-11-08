@@ -124,7 +124,7 @@ A successful manifest is versioned and records at least:
     "wal_fence_committed_at": "<UTC timestamp>",
     "wal_fence_archived_at": "<UTC timestamp>",
     "logical_dump_role": "not-included",
-    "migration_version": "<Alembic head observed by the WAL-fence boundary query>"
+    "migration_version": "<Alembic head at the WAL fence>"
   },
   "versions": {
     "hriv": "<version>",
