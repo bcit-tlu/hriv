@@ -1310,7 +1310,7 @@ async def test_list_findings_sorts_by_column_then_image_name(sort, expected) -> 
     rows = MagicMock()
     rows.all.return_value = []
     db.execute.return_value = rows
-    await router.list_findings(_user(), db, "approved", None, None, sort, 50, 0)
+    await router.list_findings(_user(), db, "pending", None, None, sort, 50, 0)
     sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
     assert "WITH RECURSIVE category_paths" in sql
     order = sql.split("ORDER BY", 1)[1]
@@ -1338,3 +1338,15 @@ async def test_reject_response_carries_category_path() -> None:
     assert out.category_path == "Hematology › Blood films"
     sql = str(db.scalar.await_args.args[0].compile(dialect=postgresql.dialect()))
     assert "WITH RECURSIVE category_paths" in sql
+
+
+async def test_approved_objective_sort_uses_approved_objective() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 0
+    rows = MagicMock()
+    rows.all.return_value = []
+    db.execute.return_value = rows
+    await router.list_findings(_user(), db, "approved", None, None, "objective_desc", 50, 0)
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    order = sql.split("ORDER BY", 1)[1].strip()
+    assert order.startswith("CAST(measurement_findings.approved_objective AS FLOAT) DESC")

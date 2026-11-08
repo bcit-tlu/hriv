@@ -89,7 +89,9 @@ def _category_paths() -> CTE:
     )
 
 
-def _order_by(sort: str, path: CTE) -> tuple[ColumnElement, ...]:
+def _order_by(
+    sort: str, path: CTE, status: str = "pending"
+) -> tuple[ColumnElement, ...]:
     """Sort columns; ties fall back to image name so related rows stay together."""
     key, direction = sort.rsplit("_", 1)
     if key == "created":
@@ -98,7 +100,13 @@ def _order_by(sort: str, path: CTE) -> tuple[ColumnElement, ...]:
         "confidence": MeasurementFinding.confidence,
         "name": func.lower(Image.name),
         "category": func.lower(path.c.path),
-        "objective": cast(MeasurementFinding.objective, Float),
+        # Approved rows show the objective the approval wrote, so sort on that.
+        "objective": cast(
+            MeasurementFinding.approved_objective
+            if status == "approved"
+            else MeasurementFinding.objective,
+            Float,
+        ),
         "proposed": MeasurementFinding.proposed_scale,
     }[key]
     ordered = column.asc() if direction == "asc" else column.desc()
@@ -298,7 +306,7 @@ async def list_findings(
     )
     rows = (
         await db.execute(
-            base.order_by(*_order_by(sort, paths)).limit(limit).offset(offset)
+            base.order_by(*_order_by(sort, paths, status)).limit(limit).offset(offset)
         )
     ).all()
     return MeasurementFindingsPageOut(
