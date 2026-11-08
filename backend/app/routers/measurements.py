@@ -10,7 +10,7 @@ import logging
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import Float, Text, cast, func, literal, select
+from sqlalchemy import CTE, ColumnElement, Float, Text, cast, func, literal, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -73,7 +73,7 @@ FindingSort = Literal[
 CATEGORY_PATH_SEPARATOR = " › "
 
 
-def _category_paths():
+def _category_paths() -> CTE:
     """Recursive CTE of ``(id, path)``, e.g. ``Hematology › Blood films``."""
     root = (
         select(Category.id.label("id"), cast(Category.label, Text).label("path"))
@@ -89,7 +89,7 @@ def _category_paths():
     )
 
 
-def _order_by(sort: str, path):
+def _order_by(sort: str, path: CTE) -> tuple[ColumnElement, ...]:
     """Sort columns; ties fall back to image name so related rows stay together."""
     key, direction = sort.rsplit("_", 1)
     if key == "created":
