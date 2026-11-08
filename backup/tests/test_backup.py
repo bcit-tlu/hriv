@@ -6474,9 +6474,11 @@ def _barman_info(
     status="DONE",
     timeline=7,
     end_xlog="52/960014E0",
+    backup_id="20261031T030004",
 ):
+    id_line = "" if backup_id is None else f"backup_id={backup_id}\n"
     return (
-        f"backup_name={backup_name}\nstatus={status}\ntimeline={timeline}\n"
+        f"{id_line}backup_name={backup_name}\nstatus={status}\ntimeline={timeline}\n"
         f"end_xlog={end_xlog}\nbegin_wal=0000000{timeline}0000005200000096\n"
     ).encode()
 
@@ -6498,10 +6500,10 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
                 "backup-20261031030001", timeline=7, end_xlog="52/960014E0"
             ),
             "stable/pg-core/pg-core/base/20261101T030001/backup.info": _barman_info(
-                "backup-20261101030001", timeline=8, end_xlog="53/68000060"
+                "backup-20261101030001", timeline=8, end_xlog="53/68000060", backup_id="20261101T030001"
             ),
             "stable/pg-core/pg-core/base/20261025T104212/backup.info": _barman_info(
-                "backup-20261025104212", status="FAILED", timeline=7, end_xlog="52/80000000"
+                "backup-20261025104212", status="FAILED", timeline=7, end_xlog="52/80000000", backup_id="20261025T104212"
             ),
             "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
                 _history([(7, "52/960014E0")]).encode()
@@ -6522,13 +6524,13 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         result = backup._select_cnpg_base_backup(
             self._container(), "stable/pg-core/pg-core", "52/BE000C00", 8
         )
-        self.assertEqual(result, "backup-20261031030001")
+        self.assertEqual(result, "20261031T030004")
 
     def test_same_timeline_backup_preferred(self):
         result = backup._select_cnpg_base_backup(
             self._container(), "stable/pg-core/pg-core", "54/00000000", 8
         )
-        self.assertEqual(result, "backup-20261101030001")
+        self.assertEqual(result, "20261101T030001")
 
     def test_no_candidate_when_all_backups_too_new(self):
         with self.assertRaises(backup.ValidationFailure) as raised:
@@ -6585,7 +6587,7 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         result = backup._select_cnpg_base_backup(
             container, "stable/pg-core/pg-core", "52/BE000C00", 8
         )
-        self.assertEqual(result, "backup-20261031030001")
+        self.assertEqual(result, "20261031T030004")
 
     def test_missing_history_file_rejects_ancestor(self):
         container = self._container()
@@ -6605,7 +6607,7 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         result = backup._select_cnpg_base_backup(
             container, "stable/pg-core/pg-core", "52/BE000C00", 8
         )
-        self.assertEqual(result, "backup-20261031030001")
+        self.assertEqual(result, "20261031T030004")
 
     def test_unfinished_and_malformed_backups_skipped(self):
         container = _FakeBarmanContainer(
@@ -6616,7 +6618,7 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
             blobs={
                 "stable/pg-core/pg-core/base/20261031T030004/backup.info": b"not-an-info",
                 "stable/pg-core/pg-core/base/20261030T030000/backup.info": _barman_info(
-                    "backup-20261030030000", status="STARTED", timeline=8, end_xlog="52/01000000"
+                    "backup-20261030030000", status="STARTED", timeline=8, end_xlog="52/01000000", backup_id="20261030T030000"
                 ),
             },
         )
@@ -6625,6 +6627,41 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
                 container, "stable/pg-core/pg-core", "52/BE000C00", 8
             )
         self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
+
+    def test_backup_id_not_backup_name_is_bound(self):
+        # barman-cloud plugin backups carry backup_name=backup-<ts> but CNPG
+        # resolves recoveryTarget.backupID against backup_id (the directory
+        # name); binding backup_name made every plugin-era drill fail with
+        # "no backup found with ID backup-...".
+        container = self._container()
+        for blob in container.blobs.values():
+            self.assertNotIn(b"backup_id=backup-", blob)
+        result = backup._select_cnpg_base_backup(
+            container, "stable/pg-core/pg-core", "52/BE000C00", 8
+        )
+        self.assertEqual(result, "20261031T030004")
+        self.assertRegex(result, r"^[0-9]{8}T[0-9]{6}$")
+
+    def test_backup_id_missing_or_mismatching_directory_skipped(self):
+        for info in (
+            _barman_info("backup-20261031030001", timeline=7, end_xlog="52/960014E0", backup_id=None),
+            _barman_info("backup-20261031030001", timeline=7, end_xlog="52/960014E0", backup_id="20261031T030005"),
+            _barman_info("backup-20261031030001", timeline=7, end_xlog="52/960014E0", backup_id="backup-20261031030001"),
+        ):
+            container = _FakeBarmanContainer(
+                directories=["stable/pg-core/pg-core/base/20261031T030004/"],
+                blobs={
+                    "stable/pg-core/pg-core/base/20261031T030004/backup.info": info,
+                    "stable/pg-core/pg-core/wals/00000008.history.gz": gzip.compress(
+                        _history([(7, "52/960014E0")]).encode()
+                    ),
+                },
+            )
+            with self.assertRaises(backup.ValidationFailure) as raised:
+                backup._select_cnpg_base_backup(
+                    container, "stable/pg-core/pg-core", "52/BE000C00", 8
+                )
+            self.assertEqual(raised.exception.code, "CNPG_BASE_BACKUP_UNAVAILABLE")
 
     def test_barman_destination_joins_server_name(self):
         # barman-cloud stores the catalog under <destinationPath>/<serverName>/;
@@ -6669,7 +6706,7 @@ class CnpgBaseBackupSelectionTestCase(_BackupTestCase):
         result = backup._select_cnpg_base_backup(
             container, "", "52/BE000C00", 8
         )
-        self.assertEqual(result, "backup-20261031030001")
+        self.assertEqual(result, "20261031T030004")
 
 
 if __name__ == "__main__":
