@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.18...restore-validation-v0.2.0) (2026-11-08)
+
+
+### Features
+
+* **restore-validation:** validate the restored Alembic head against the manifest ([#1796](https://github.com/bcit-tlu/hriv/issues/1796)) ([d1812dc](https://github.com/bcit-tlu/hriv/commit/d1812dc6b9863e83a9493eadfc6eaceb83f0843f))
+
 ## [0.1.18](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.17...restore-validation-v0.1.18) (2026-11-04)
 
 
