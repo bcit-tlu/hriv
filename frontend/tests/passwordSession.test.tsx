@@ -24,8 +24,10 @@ const user = {
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 let ctx: AuthContextValue
+let previousUrl: string
 
 beforeEach(() => {
+  previousUrl = window.location.href
   vi.resetModules()
   localStorage.clear()
   window.history.replaceState({}, '', '/')
@@ -33,7 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  window.history.replaceState({}, '', '/')
+  window.history.replaceState({}, '', previousUrl)
 })
 
 async function mount() {
