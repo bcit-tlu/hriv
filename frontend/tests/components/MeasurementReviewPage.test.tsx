@@ -285,6 +285,7 @@ describe('MeasurementReviewPage', () => {
     expect(api.scan).toHaveBeenCalledWith({ all: true })
     expect(await screen.findByText(/Scanning images: 0 of 2 done/)).toBeInTheDocument()
     expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
+    expect(api.scanRemaining).toHaveBeenCalledWith({ rescan: false, maxImageId: 12 })
     expect(api.scanProgress).not.toHaveBeenCalled()
   })
 
@@ -294,7 +295,9 @@ describe('MeasurementReviewPage', () => {
     await screen.findByText('Blood film 40x')
     await userEvent.click(screen.getByRole('button', { name: 'Re-scan outdated' }))
     expect(api.scan).toHaveBeenCalledWith({ all: true, rescan: true })
-    await waitFor(() => expect(api.scanRemaining).toHaveBeenCalledWith({ rescan: true }))
+    await waitFor(() =>
+      expect(api.scanRemaining).toHaveBeenCalledWith({ rescan: true, maxImageId: 12 }),
+    )
   })
 
   it('shows reviewed findings read-only', async () => {

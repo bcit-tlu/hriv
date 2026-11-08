@@ -82,6 +82,8 @@ interface ScanState {
   minFindingId?: number
   /** Whole-library rescan progress counts stale-detector candidates. */
   rescan?: boolean
+  /** Bounds whole-library progress to the submitted candidate set. */
+  maxImageId?: number
   total: number
   done: number
 }
@@ -170,6 +172,7 @@ export default function MeasurementReviewPage({
   const scanIds = scan?.imageIds
   const scanMinFindingId = scan?.minFindingId
   const scanRescan = scan?.rescan === true
+  const scanMaxImageId = scan?.maxImageId
   const scanTotal = scan?.total
   useEffect(() => {
     if (!scanActive || scanTotal == null) return
@@ -181,8 +184,11 @@ export default function MeasurementReviewPage({
       scanIds
         ? api.scanProgress(scanIds, scanMinFindingId)
         : api
-            .scanRemaining({ rescan: scanRescan })
-            .then(({ remaining }) => ({ total: scanTotal, done: scanTotal - remaining }))
+            .scanRemaining({ rescan: scanRescan, maxImageId: scanMaxImageId })
+            .then(({ remaining }) => ({
+              total: scanTotal,
+              done: Math.min(scanTotal, scanTotal - remaining),
+            }))
     const poll = () => {
       timer = setTimeout(() => {
         check()
@@ -225,6 +231,7 @@ export default function MeasurementReviewPage({
     scanIds,
     scanMinFindingId,
     scanRescan,
+    scanMaxImageId,
     scanTotal,
     scanPollMs,
     scanStallMs,
@@ -258,7 +265,11 @@ export default function MeasurementReviewPage({
     run(async () => {
       const result = await api.scan({ all: true })
       if (result.image_ids.length === 0) return 'Every image has already been scanned.'
-      setScan({ total: result.image_ids.length, done: 0 })
+      setScan({
+        total: result.image_ids.length,
+        done: 0,
+        maxImageId: Math.max(...result.image_ids),
+      })
       return null
     })
 
@@ -268,7 +279,12 @@ export default function MeasurementReviewPage({
       if (result.image_ids.length === 0) {
         return 'Every unscaled image already has a finding from the current detector.'
       }
-      setScan({ total: result.image_ids.length, done: 0, rescan: true })
+      setScan({
+        total: result.image_ids.length,
+        done: 0,
+        rescan: true,
+        maxImageId: Math.max(...result.image_ids),
+      })
       return null
     })
 

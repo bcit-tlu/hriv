@@ -167,6 +167,18 @@ async def scan_image(
         await db.execute(select(Image.id).where(Image.id == image.id).with_for_update())
         if rescan:
             await _retire_findings(db, image.id, LIVE_FINDING_STATUSES)
+            finding = record_existing(db, image)
+            meta = image.metadata_ or {}
+            if meta.get(FINDING_KEY) is not None:
+                # The scale still credits a finding we just superseded. The
+                # re-recorded finding takes over ownership so a later reset
+                # can still undo it; carry the stored provenance onto the
+                # finding so the reset guard recognizes the write as its own.
+                await db.flush()
+                finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
+                image.metadata_ = {**meta, FINDING_KEY: finding.id}
+                image.version = image.version + 1
+            return finding
         elif await db.scalar(
             select(MeasurementFinding.id)
             .where(
@@ -306,11 +318,22 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
     """
     meta = image.metadata_ or {}
     stripped = False
+    # The source the approval wrote, reconstructed the same way
+    # ``approve_finding`` chose it (reviewer corrections store "manual").
+    expected_source = (
+        "manual"
+        if (
+            finding.approved_scale != finding.proposed_scale
+            or finding.approved_unit != finding.proposed_unit
+        )
+        else finding.source
+    )
     if (
         finding.status == "approved"
         and meta.get(FINDING_KEY) == finding.id
         and meta.get(SCALE_KEY) == finding.approved_scale
         and meta.get(UNIT_KEY) == finding.approved_unit
+        and meta.get(SOURCE_KEY) == expected_source
     ):
         image.metadata_ = {
             k: v for k, v in meta.items() if k not in _MEASUREMENT_METADATA_KEYS

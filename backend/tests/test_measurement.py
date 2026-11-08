@@ -940,3 +940,125 @@ async def test_scan_remaining_reports_candidate_count() -> None:
     db.scalar.return_value = 17
     out = await router.scan_remaining(_user(), db, rescan=True, category_id=None)
     assert out.remaining == 17
+
+
+async def test_scan_remaining_max_image_id_bounds_count() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 3
+    out = await router.scan_remaining(
+        _user(), db, rescan=False, category_id=None, max_image_id=42
+    )
+    assert out.remaining == 3
+    sql = str(
+        db.scalar.await_args.args[0].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "image.id <= 42" in sql or "images.id <= 42" in sql
+
+
+async def test_scan_partial_enqueue_failure_falls_back_for_rest(monkeypatch) -> None:
+    """A mid-enqueue queue failure must not strand or re-queue submitted work."""
+    db = AsyncMock()
+    db.execute.return_value = _scalars(list(range(1, 61)))
+    enqueue = AsyncMock(
+        side_effect=[
+            EnqueueResult("queued", "submitted"),
+            TaskQueueUnavailableError("queue_unavailable"),
+        ]
+    )
+    monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
+    bg = BackgroundTasks()
+    out = await router.scan(MeasurementScanRequest(all=True), bg, _user(), db)
+    assert out.mode == "queued"
+    assert enqueue.await_count == 2
+    assert len(bg.tasks) == 1
+    assert bg.tasks[0].args[1] == list(range(51, 61))
+
+
+async def test_scan_enqueue_failure_on_first_chunk_503s(monkeypatch) -> None:
+    """Nothing accepted + queue down = the old 503 contract."""
+    db = AsyncMock()
+    db.execute.return_value = _scalars([1, 2, 3])
+    monkeypatch.setattr(
+        router,
+        "enqueue_measurement_scan",
+        AsyncMock(side_effect=TaskQueueUnavailableError("queue_unavailable")),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await router.scan(MeasurementScanRequest(), BackgroundTasks(), _user(), db)
+    assert exc.value.status_code == 503
+
+
+def test_reset_finding_keeps_scale_when_source_changed_after_approval() -> None:
+    """A later edit touching only the source must not be undone by reset."""
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "manual",  # was "rbc" at approval
+            "measurement_finding_id": 5,
+        }
+    )
+    assert service.reset_finding(finding, image) is False
+    assert image.metadata_["measurement_scale"] == 7.3
+    assert image.metadata_["measurement_scale_source"] == "manual"
+    assert finding.status == "pending"
+
+
+def test_reset_finding_strips_when_reviewer_corrected_at_approval() -> None:
+    """A corrected approval wrote source 'manual'; reset recognizes its own write."""
+    finding = _finding(
+        status="approved",
+        proposed_scale=7.3,
+        approved_scale=8.1,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 8.1,
+            "measurement_unit": "um",
+            "measurement_scale_source": "manual",
+            "measurement_finding_id": 5,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {}
+
+
+async def test_scan_image_rescan_repoints_scale_ownership() -> None:
+    """Re-recording a scale moves measurement_finding_id to the new finding.
+
+    The re-recorded finding inherits the stored provenance so a later reset
+    can still strip the scale it now owns.
+    """
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+
+    async def _flush() -> None:  # emulate autoincrement on commit
+        for call in db.add.call_args_list:
+            if call.args[0].id is None:
+                call.args[0].id = 77
+
+    db.flush = AsyncMock(side_effect=_flush)
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,  # the old approved finding, now superseded
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.status == "approved"
+    db.flush.assert_awaited_once()
+    assert finding.id == 77
+    assert image.metadata_["measurement_finding_id"] == 77
+    assert image.metadata_["measurement_scale"] == 4.0
+    assert finding.source == "rbc"
+    assert image.version == 5
+    # The full undo round-trip: resetting the new owner strips the scale.
+    assert service.reset_finding(finding, image) is True
+    assert "measurement_scale" not in image.metadata_

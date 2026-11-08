@@ -2730,10 +2730,13 @@ export function fetchMeasurementScanProgress(
 export function fetchMeasurementScanRemaining(query: {
   rescan?: boolean
   categoryId?: number
+  /** Only count candidates up to this image id (the set a scan covered). */
+  maxImageId?: number
 }): Promise<{ remaining: number }> {
   const qs = new URLSearchParams()
   if (query.rescan) qs.set('rescan', 'true')
   if (query.categoryId != null) qs.set('category_id', String(query.categoryId))
+  if (query.maxImageId != null) qs.set('max_image_id', String(query.maxImageId))
   const suffix = qs.toString()
   return request(`/measurement-findings/scan-remaining${suffix ? `?${suffix}` : ''}`)
 }

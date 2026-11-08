@@ -219,7 +219,7 @@ async def _enqueue(
     job_name: str,
     *args: Any,
     job_type: str,
-    job_kwargs: dict[str, Any] | None = None,
+    job_kwargs: dict[str, object] | None = None,
 ) -> EnqueueResult:
     """Apply the single queue-vs-fallback policy for all task submissions."""
     def _fallback_or_reject(

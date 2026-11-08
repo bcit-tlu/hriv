@@ -103,14 +103,26 @@ async def _enqueue_scan(
         for i in range(0, len(image_ids), _SCAN_JOB_CHUNK)
     ]
     fallback_ids: list[int] = []
-    try:
-        for chunk in chunks:
+    queued = False
+    failed_at: int | None = None
+    for i, chunk in enumerate(chunks):
+        try:
             result = await enqueue_measurement_scan(chunk, rescan)
-            if not result.queued:
-                fallback_ids.extend(chunk)
-    except TaskQueueUnavailableError:
-        raise HTTPException(status_code=503, detail="task_queue_unavailable")
-    mode = "fallback" if fallback_ids == image_ids else "queued"
+        except TaskQueueUnavailableError:
+            failed_at = i
+            break
+        if result.queued:
+            queued = True
+        else:
+            fallback_ids.extend(chunk)
+    if failed_at is not None:
+        if not queued and not fallback_ids:
+            raise HTTPException(status_code=503, detail="task_queue_unavailable")
+        # The queue died mid-enqueue: run the unsubmitted chunks in-process
+        # rather than drop them (a retry would duplicate the accepted jobs).
+        for chunk in chunks[failed_at:]:
+            fallback_ids.extend(chunk)
+    mode = "fallback" if not queued else "queued"
     if fallback_ids:
         background_tasks.add_task(scan_images, async_session, fallback_ids, rescan)
     logger.info(
@@ -155,12 +167,18 @@ async def scan_remaining(
     db: AsyncSession = Depends(get_db),
     rescan: bool = False,
     category_id: int | None = None,
+    max_image_id: int | None = None,
 ) -> MeasurementScanRemainingOut:
-    """How many scan candidates are still unprocessed (whole-scan progress)."""
+    """How many scan candidates are still unprocessed (whole-scan progress).
+
+    ``max_image_id`` bounds the count to the images a scan submission
+    actually covered — newer uploads must not hold its progress open.
+    """
     stmt = rescan_candidates_stmt if rescan else scan_candidates_stmt
-    remaining = await db.scalar(
-        select(func.count()).select_from(stmt(None, category_id).subquery())
-    )
+    stmt = stmt(None, category_id)
+    if max_image_id is not None:
+        stmt = stmt.where(Image.id <= max_image_id)
+    remaining = await db.scalar(select(func.count()).select_from(stmt.subquery()))
     return MeasurementScanRemainingOut(remaining=remaining or 0)
 
 
