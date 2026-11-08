@@ -227,9 +227,10 @@ recorded `timeline` equals the fence timeline or is an ancestor of it, proven
 by walking the archived `wals/*.history` files. Unfinished or malformed catalog
 entries are skipped. The bound `backupID` is barman's `backup_id` (the catalog
 directory name, `YYYYMMDDTHHMMSS`), which the barman-cloud plugin resolves;
-the controller also accepts the legacy `backup-YYYYMMDDHHMMSS` form recorded by
-`backup` releases before 0.17.1 (equal to `backup_id` only under the in-tree
-barman method). The catalog root is `<destinationPath>/<serverName>/`
+the controller also accepts the legacy `backup-YYYYMMDDHHMMSS` form that
+`validation-select` in `backup` images before 0.17.1 emitted (equal to
+`backup_id` only under the in-tree barman method). The ID is derived from the
+live catalog at selection time, not read from the manifest. The catalog root is `<destinationPath>/<serverName>/`
 (barman-cloud appends the server name); selection MUST join the profile's
 `server_name`, delivered via `BARMAN_SERVER_NAME`, onto the destination prefix
 or no catalog entries will ever match. When no eligible base backup exists —
