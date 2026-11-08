@@ -5412,7 +5412,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
         self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
         self.assertEqual(result["completed_at"], "2026-01-01T02:01:00Z")
-        self.assertNotIn("migration_version", result)
+        self.assertEqual(result["migration_version"], "0038_user_auth_state")
         self.assertNotIn("source_files", result)
         self.assertTrue(
             all(operation in {"get", "head", "download"} for operation, _ in calls)

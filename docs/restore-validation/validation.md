@@ -8,8 +8,10 @@ explicit derived timeline. The controller MUST NOT use manifest `database_name` 
 default-generated application Secret as evidence that source database/owner recovery was correct.
 
 Database checks compare the expected system identifier and promoted-timeline/recovery evidence,
-complete database inventory, owner and static-role inventory, schema migration version,
-representative row counts and key invariants, source-image rows, selected synthetic
+complete database inventory, owner and static-role inventory, schema migration version
+(the Alembic head recorded in the selected recovery-set manifest, falling back to the
+profile's `expected_migration_version` only for manifests captured before backups
+recorded one), representative row counts and key invariants, source-image rows, selected synthetic
 user/category/image metadata, and the recovery WAL-fence boundary. Unexpected bootstrap-created
 databases or roles, wrong ownership, a target beyond/short of the requested boundary, a promoted
 timeline that is not a direct descendant of `target_timeline` or whose switchpoint precedes

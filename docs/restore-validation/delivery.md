@@ -107,7 +107,9 @@ profile contains no static source-image count. `requiredDatabaseInventory` and
 owner/connection flag or complete attributes/memberships must match exactly, while unrelated
 shared-cluster databases and static roles are allowed. Duplicate configured names remain invalid,
 and configured dynamic Vault role prefixes are filtered before matching. Alembic migration remains
-exact. `minimumRowCounts` are lower bounds and observed counts are reported. Synthetic identity is
+exact against the head recorded in the selected manifest; `expectedMigrationVersion` is only the
+fallback for recovery sets that predate that field and no longer needs a bump per migration
+release. `minimumRowCounts` are lower bounds and observed counts are reported. Synthetic identity is
 only `{id,email_sha256}`; the validator lowercases the recovered email, hashes it with SHA-256, and
 never emits the email.
 

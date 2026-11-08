@@ -4514,6 +4514,7 @@ def validation_select(
         "wal_fence_committed_at": summary["wal_fence_committed_at"],
         "wal_fence_archived_at": summary["wal_fence_archived_at"],
         "completed_at": summary["completed_at"],
+        "migration_version": summary["migration_version"],
         "_manifest": manifest,
         "_manifest_bytes": sidecar_payload,
         "_container": read_container,

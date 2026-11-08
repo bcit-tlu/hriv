@@ -184,6 +184,16 @@ missed deliveries — it is not the rollout path.
   otherwise `validation-select` rejects new backups with
   `COMPONENT_INCOHERENT`. Newer readers accept older documents, so
   bumping forward is safe.
+- **`sourceProfile.expectedMigrationVersion` is a fallback, not a per-release
+  pin.** `validate-database` compares the restored Alembic head against
+  `database_recovery.migration_version` from the selected recovery-set
+  manifest (recorded by `backup` >= the release that shipped #1637) and
+  only falls back to the overlay value for manifests captured before that
+  field existed. A backend release that ships a migration therefore needs
+  no restore-validation overlay change; the value can stay as last
+  reviewed. Bump `images.backupChild` and `images.orchestrator` together
+  when adopting this behaviour, because the orchestrator rejects a
+  `validation-select` payload with fields it does not know.
 - **`pr-title-lint` skips bot-authored PRs.** Release-please's own PRs
   (author type `Bot`) bypass the lint. Without this guard every
   release-please PR would be held under "1 workflow awaiting approval"
