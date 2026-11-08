@@ -43,6 +43,7 @@ interface AddEditPersonModalProps {
   /** If provided, we are editing; otherwise adding. */
   user?: ApiUser | null
   onClearPassword?: () => Promise<void>
+  selfProfile?: boolean
 }
 
 function AddEditPersonForm({
@@ -52,6 +53,7 @@ function AddEditPersonForm({
   programs,
   user,
   onClearPassword,
+  selfProfile = false,
 }: Omit<AddEditPersonModalProps, 'open'> & { onSavingChange?: (saving: boolean) => void }) {
   const isEdit = Boolean(user)
   const [name, setName] = useState(user?.name ?? '')
@@ -97,7 +99,7 @@ function AddEditPersonForm({
     if (password && (isEdit ? !user?.oidc_linked : !invite)) {
       data.password = password
     }
-    if (isEdit && !forceDisabledReason) data.must_change_password = mustChange
+    if (isEdit && !selfProfile && !forceDisabledReason) data.must_change_password = mustChange
     setSaving(true)
     onSavingChange?.(true)
     setSaveError(null)
@@ -205,7 +207,7 @@ function AddEditPersonForm({
             }}
           />
         )}
-        {isEdit && (
+        {isEdit && !selfProfile && (
           <>
             <Tooltip title={forceDisabledReason} describeChild>
               <span>
@@ -325,7 +327,7 @@ function AddEditPersonForm({
         </Button>
       </DialogActions>
       <Dialog
-        open={clearOpen}
+        open={clearOpen && !selfProfile}
         onClose={saving ? undefined : () => setClearOpen(false)}
         aria-labelledby="clear-password-title"
         maxWidth="xs"
@@ -352,7 +354,7 @@ function AddEditPersonForm({
             color="error"
             disabled={saving}
             onClick={async () => {
-              if (!onClearPassword) return
+              if (!onClearPassword || selfProfile) return
               setSaving(true)
               onSavingChange?.(true)
               setSaveError(null)
@@ -382,6 +384,7 @@ export default function AddEditPersonModal({
   programs,
   user,
   onClearPassword,
+  selfProfile = false,
 }: AddEditPersonModalProps) {
   const [saving, setSaving] = useState(false)
   useEffect(() => {
@@ -405,6 +408,7 @@ export default function AddEditPersonModal({
         onClose={onClose}
         onSave={onSave}
         onClearPassword={onClearPassword}
+        selfProfile={selfProfile}
         onSavingChange={setSaving}
         programs={programs}
         user={user}

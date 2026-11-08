@@ -84,6 +84,9 @@ describe('useUserProfile', () => {
         email: 'jane@test.com',
         role: 'instructor',
         active: false,
+        has_local_password: false,
+        oidc_linked: false,
+        must_change_password: false,
         program_ids: [1, 2],
         program_names: ['P1', 'P2'],
         group_ids: [7],
@@ -99,6 +102,28 @@ describe('useUserProfile', () => {
       const deps = makeDeps({ currentUser: null })
       const { result } = renderHook(() => useUserProfile(deps))
       expect(result.current.currentApiUser).toBeNull()
+    })
+
+    it.each([
+      [true, false, true],
+      [false, true, false],
+    ])('preserves local=%s oidc=%s forced=%s credential flags', (local, oidc, forced) => {
+      const { result } = renderHook(() =>
+        useUserProfile(
+          makeDeps({
+            currentUser: makeUser({
+              has_local_password: local,
+              oidc_linked: oidc,
+              must_change_password: forced,
+            }),
+          }),
+        ),
+      )
+      expect(result.current.currentApiUser).toMatchObject({
+        has_local_password: local,
+        oidc_linked: oidc,
+        must_change_password: forced,
+      })
     })
 
     it('handles missing lastAccess gracefully', () => {

@@ -1368,6 +1368,7 @@ export default function PeoplePage({
         onSave={handleSavePerson}
         programs={programs}
         user={editingUser}
+        selfProfile={editingUser?.id === currentUserId}
         onClearPassword={
           editingUser
             ? async () => {

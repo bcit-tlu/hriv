@@ -223,3 +223,9 @@ Reopening a link dialog while an earlier mint for the same person is still in
 flight waits for that request to settle before issuing a replacement. Only the
 request-completion signal is shared across dialogs, never the setup credential.
 Closed waiting dialogs do not issue a mint, and other people’s mints are independent.
+
+The self-profile editor and an administrator’s own People row hide the admin
+force-change and clear-password controls, and do not send the forced-change flag
+on profile saves. The profile’s API projection retains all three authoritative
+credential flags. Use the profile menu’s **Change password** action for self-service
+password rotation; clearing your own password is not offered.

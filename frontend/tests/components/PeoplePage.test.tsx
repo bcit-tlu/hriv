@@ -121,6 +121,16 @@ function createDeferred<T>() {
 }
 
 describe('PeoplePage', () => {
+  it('hides admin credential controls when editing the signed-in person’s own row', async () => {
+    const actor = userEvent.setup()
+    vi.mocked(fetchUsers).mockResolvedValue([{ ...USERS[0], has_local_password: true }])
+    render(<PeoplePage programs={programs} groups={groups} currentUserId={USERS[0].id} />)
+    await actor.click(await screen.findByText(USERS[0].name))
+    expect(
+      screen.queryByRole('switch', { name: 'Force password change on next login' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear password' })).not.toBeInTheDocument()
+  })
   it('shows auth badges and disables minting for SSO and inactive accounts', async () => {
     const actor = userEvent.setup()
     vi.mocked(fetchUsers).mockResolvedValue([

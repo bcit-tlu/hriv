@@ -27,6 +27,30 @@ const existingUser: ApiUser = {
 }
 
 describe('AddEditPersonModal', () => {
+  it('hides admin credential controls and omits the forced-change flag in self-profile mode', async () => {
+    const actor = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const clear = vi.fn()
+    render(
+      <AddEditPersonModal
+        open
+        selfProfile
+        onClose={vi.fn()}
+        onSave={onSave}
+        onClearPassword={clear}
+        programs={programs}
+        user={{ ...existingUser, has_local_password: true, must_change_password: true }}
+      />,
+    )
+    expect(
+      screen.queryByRole('switch', { name: 'Force password change on next login' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear password' })).not.toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('must_change_password')
+    expect(clear).not.toHaveBeenCalled()
+  })
   it('creates in invite mode without a password field', async () => {
     const actor = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)

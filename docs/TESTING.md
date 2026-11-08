@@ -1074,3 +1074,9 @@ and the User API cases in `api.test.ts`.
 - Preview Storybook AddEditPersonModal, PeoplePage and PasswordSetupLinkDialog
   states in light/dark themes; inspect row badges, invite mode, credential dialog
   and clear-password confirmation before merging.
+
+People review regressions also cover mint serialization across close/reopen,
+release after mint errors, independent people, and skipping closed waiters.
+Self-profile and own-row editing hide force-change/clear-password controls and
+omit the forced-change flag on save. `useUserProfile.test.ts` checks credential
+flags in the profile’s `ApiUser` projection.
