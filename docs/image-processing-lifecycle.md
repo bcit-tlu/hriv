@@ -319,6 +319,12 @@ TIFF resolution conversion: libvips stores resolution in pixels/mm, so
 `mpp_x = 1000.0 / xres`. Values outside 0.01–100 µm/px are discarded
 as unreasonable for microscopy.
 
+After a successful upload or replacement commits, processing calls
+`scan_after_processing`, which queues a one-image measurement scan (or runs it
+inline when the queue is unavailable). An embedded scale is recorded as an
+approved `embedded` finding; other images get a pending RBC proposal. See
+[measurement-review.md](measurement-review.md#scans-after-upload-and-replacement).
+
 ## Image replacement
 
 `process_replace_image(source_image_id, target_image_id)`:
