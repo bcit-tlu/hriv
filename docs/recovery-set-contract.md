@@ -177,9 +177,14 @@ database. High-cardinality mismatch details belong in the manifest and
 structured logs, not metric labels.
 
 `database_recovery.migration_version` is the `alembic_version.version_num`
-read inside the fence transaction and re-read by the post-commit boundary
-query that binds `target_lsn`; capture fails closed if the two differ, so the
-value is the schema head a database restored to that LSN must report. It is
+read inside the fence transaction and re-read in a separate statement after
+the post-commit boundary query has bound `target_lsn`. Capture fails closed
+(publishing nothing, like any other fence failure) if the two reads differ,
+even when the migration actually committed after `target_lsn`: the two reads
+cannot order a concurrent migration against the LSN, so the conservative
+outcome is a skipped run rather than a manifest whose head could disagree
+with a database restored to that LSN. The recorded value is therefore the
+schema head such a database must report. It is
 additive to format 2: manifests captured before it was recorded omit the key
 (an explicit `null` is malformed), and `validation-select` summarizes the
 absence as unknown rather than as a mismatch. Restore validation still checks
