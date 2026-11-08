@@ -52,11 +52,11 @@ ordinary bearer-protected endpoints. Nonces are compared in constant time.
 `auth.passwordSetupTokenTtlMinutes`. A stable shared JWT secret is required across
 replicas; changing the secret invalidates setup credentials too.
 
-Before signature/password work, separate Redis buckets apply the existing login
-budgets: per-client-IP `rate:pwsetup:{ip}` uses `RATE_LIMIT_LOGIN_MAX/WINDOW`, while
-a hashed token-subject bucket uses `RATE_LIMIT_LOGIN_EMAIL_MAX/WINDOW`. Subject
-claims are decoded without verification solely to select a throttle bucket;
-they never authorize access. Malformed subjects still consume the IP budget.
+Separate Redis buckets apply the existing login budgets: before signature work,
+per-client-IP `rate:pwsetup:{ip}` uses `RATE_LIMIT_LOGIN_MAX/WINDOW`. Only after
+signature, expiry, and claims validation, a hashed verified-subject bucket uses
+`RATE_LIMIT_LOGIN_EMAIL_MAX/WINDOW`. Invalid tokens consume only the IP budget,
+so forged subjects cannot exhaust another guest's subject budget.
 Subject budgets survive IP changes and nonce rotations. Redis failure is
 fail-open, following the login limiter; no public endpoint mints links.
 

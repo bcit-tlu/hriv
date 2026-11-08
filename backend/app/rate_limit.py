@@ -8,7 +8,6 @@ import hashlib
 import logging
 import time
 
-import jwt
 from redis.asyncio import Redis
 
 from .database import settings
@@ -138,26 +137,16 @@ async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
     )
 
 
-async def check_password_setup_rate_limit(client_ip: str, token: str) -> int | None:
-    """Unverified subjects select throttle buckets only, never authorize access."""
-    ip_retry = await check_rate_limit(
+async def check_password_setup_ip_rate_limit(client_ip: str) -> int | None:
+    return await check_rate_limit(
         f"rate:pwsetup:{client_ip}",
         settings.rate_limit_login_window,
         settings.rate_limit_login_max,
     )
-    if ip_retry is not None:
-        return ip_retry
-    try:
-        subject = jwt.decode(token, options={"verify_signature": False}).get("sub")
-    except jwt.PyJWTError:
-        return None
-    if (
-        not isinstance(subject, str)
-        or not subject.isascii()
-        or not subject.isdigit()
-        or len(subject) > 10
-    ):
-        return None
+
+
+async def check_password_setup_subject_rate_limit(subject: str) -> int | None:
+    """Charge only subjects from validated password-setup credentials."""
     digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()
     return await check_rate_limit(
         f"rate:pwsetup:subject:{digest}",

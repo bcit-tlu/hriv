@@ -65,7 +65,12 @@ def app(db: AsyncMock, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
         id=1, role="admin"
     )
     monkeypatch.setattr(
-        auth_router, "check_password_setup_rate_limit", AsyncMock(return_value=None)
+        auth_router, "check_password_setup_ip_rate_limit", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        auth_router,
+        "check_password_setup_subject_rate_limit",
+        AsyncMock(return_value=None),
     )
     return application
 
@@ -380,7 +385,7 @@ async def test_redeem_rate_limit_first(
     app: FastAPI, db: AsyncMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        auth_router, "check_password_setup_rate_limit", AsyncMock(return_value=42)
+        auth_router, "check_password_setup_ip_rate_limit", AsyncMock(return_value=42)
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -403,38 +408,76 @@ def test_setup_password_validation(password: str) -> None:
 @pytest.mark.parametrize(
     "ip_retry,subject_retry", [(None, None), (None, 30), (20, None)]
 )
-async def test_dual_rate_limit(
-    monkeypatch: pytest.MonkeyPatch, ip_retry, subject_retry
-) -> None:
+async def test_dual_rate_limit(app, monkeypatch, ip_retry, subject_retry) -> None:
     checker = AsyncMock(side_effect=[ip_retry, subject_retry])
     monkeypatch.setattr(rate_limit, "check_rate_limit", checker)
-    result = await rate_limit.check_password_setup_rate_limit(
-        "127.0.0.1", _sign(_claims())
+    monkeypatch.setattr(
+        auth_router,
+        "check_password_setup_ip_rate_limit",
+        rate_limit.check_password_setup_ip_rate_limit,
     )
-    assert result == (ip_retry if ip_retry is not None else subject_retry)
+    monkeypatch.setattr(
+        auth_router,
+        "check_password_setup_subject_rate_limit",
+        rate_limit.check_password_setup_subject_rate_limit,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        result = await client.post(
+            "/api/auth/password-setup",
+            json={"token": _sign(_claims()), "password": "password"},
+        )
+    assert result.status_code == (
+        429 if ip_retry is not None or subject_retry is not None else 200
+    )
     assert checker.await_args_list[0].args[0] == "rate:pwsetup:127.0.0.1"
     assert checker.await_count == (1 if ip_retry is not None else 2)
     if ip_retry is None:
         assert checker.await_args_list[1].args[0].startswith("rate:pwsetup:subject:")
 
 
-@pytest.mark.parametrize(
-    "token", ["invalid", _sign(_claims(sub=None)), _sign(_claims(sub="invalid"))]
-)
-async def test_invalid_subject_is_ip_limited(
-    monkeypatch: pytest.MonkeyPatch, token: str
-) -> None:
-    checker = AsyncMock(return_value=None)
-    monkeypatch.setattr(rate_limit, "check_rate_limit", checker)
-    assert await rate_limit.check_password_setup_rate_limit("ip", token) is None
-    checker.assert_awaited_once()
+async def test_forged_tokens_do_not_exhaust_subject_budget(app, monkeypatch) -> None:
+    counts = {}
 
+    async def charge(key, window, maximum):
+        counts[key] = counts.get(key, 0) + 1
+        return 30 if ":subject:" in key and counts[key] > 1 else None
 
-async def test_subject_budget_shared_across_ips_and_rotations(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    checker = AsyncMock(return_value=None)
-    monkeypatch.setattr(rate_limit, "check_rate_limit", checker)
-    await rate_limit.check_password_setup_rate_limit("ip1", _sign(_claims(nonce="one")))
-    await rate_limit.check_password_setup_rate_limit("ip2", _sign(_claims(nonce="two")))
-    assert checker.await_args_list[1].args == checker.await_args_list[3].args
+    monkeypatch.setattr(rate_limit, "check_rate_limit", charge)
+    monkeypatch.setattr(
+        auth_router,
+        "check_password_setup_ip_rate_limit",
+        rate_limit.check_password_setup_ip_rate_limit,
+    )
+    monkeypatch.setattr(
+        auth_router,
+        "check_password_setup_subject_rate_limit",
+        rate_limit.check_password_setup_subject_rate_limit,
+    )
+    forged = jwt.encode(
+        _claims(), "forged-signing-key-not-the-real-secret", algorithm="HS256"
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        for token in [
+            forged,
+            forged,
+            "invalid",
+            _sign(_claims(purpose="tile")),
+            _sign(_claims(exp=1)),
+        ]:
+            response = await client.post(
+                "/api/auth/password-setup",
+                json={"token": token, "password": "password"},
+            )
+            assert response.status_code == 401
+        assert not any(":subject:" in key for key in counts)
+        valid = await client.post(
+            "/api/auth/password-setup",
+            json={"token": _sign(_claims()), "password": "password"},
+        )
+        assert valid.status_code == 200
+    assert counts["rate:pwsetup:127.0.0.1"] == 6
+    assert sum(value for key, value in counts.items() if ":subject:" in key) == 1

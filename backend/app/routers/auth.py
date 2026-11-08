@@ -23,7 +23,8 @@ from ..middleware import get_client_ip
 from ..rate_limit import (
     check_login_rate_limit,
     reset_login_rate_limit,
-    check_password_setup_rate_limit,
+    check_password_setup_ip_rate_limit,
+    check_password_setup_subject_rate_limit,
 )
 from ..schemas import UserOut, PasswordSetupRequest
 from ..serializers import user_to_out
@@ -159,9 +160,7 @@ async def password_setup(
 ) -> LoginResponse:
     user = None
     try:
-        retry_after = await check_password_setup_rate_limit(
-            get_client_ip(request.scope), body.token
-        )
+        retry_after = await check_password_setup_ip_rate_limit(get_client_ip(request.scope))
         if retry_after is not None:
             raise HTTPException(
                 429, "rate_limited", headers={"Retry-After": str(retry_after)}
@@ -170,6 +169,11 @@ async def password_setup(
             claims = validate_password_setup_token(body.token)
         except PasswordSetupTokenError as exc:
             raise HTTPException(exc.status_code, exc.detail) from None
+        retry_after = await check_password_setup_subject_rate_limit(claims["sub"])
+        if retry_after is not None:
+            raise HTTPException(
+                429, "rate_limited", headers={"Retry-After": str(retry_after)}
+            )
         result = await db.execute(
             select(User)
             .where(User.id == int(claims["sub"]))
