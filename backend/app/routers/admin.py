@@ -40,7 +40,7 @@ from ..admin_ops import (
     run_files_import,
     run_rebuild_tiles,
 )
-from ..auth import auth_settings, require_role
+from ..auth import auth_settings, require_role, require_password_changed
 from ..backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
@@ -1541,6 +1541,7 @@ async def download_task_result(
     user = await db.get(User, int(user_id_str))
     if user is None or user.role != "admin" or not user.active:
         raise HTTPException(status_code=403, detail="Forbidden")
+    require_password_changed(user)
 
     task = await db.get(AdminTask, task_id)
     if task is None:

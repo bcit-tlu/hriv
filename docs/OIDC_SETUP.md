@@ -11,6 +11,11 @@ authenticates through an external Identity Provider (IdP) instead of
 local email/password credentials. Local login is kept as a fallback for
 admin bootstrap accounts.
 
+Local users can change their password via `POST /api/auth/change-password`;
+OIDC-linked accounts receive 403 `oidc_linked`, even if a local hash remains.
+Forced-change enforcement and recovery exceptions are documented in
+[password management](password-setup.md).
+
 Local credentials also remain available for guest accounts. OIDC-linked accounts
 (`users.oidc_subject` set) are reported through the `oidc_linked` API flag and
 cannot be flagged `must_change_password`; linking an existing local account to

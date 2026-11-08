@@ -48,6 +48,11 @@ nonce rotation/single-use, route authorization, events, and dual-bucket limiting
 See [the password-setup contract](../../../docs/password-setup.md) for TTL bounds
 and error codes; Redis remains fail-open, matching the login limiter.
 
+Password-change/enforcement changes use `tests/test_change_password.py`,
+`tests/test_router_admin.py`, and `tests/test_telemetry.py`. Only `/auth/me` and
+change-password bypass the forced-change gate for user bearer credentials;
+already-issued image-scoped tile tokens retain their bounded expiry window.
+
 Run the full backend suite before a PR when practical:
 
 ```bash

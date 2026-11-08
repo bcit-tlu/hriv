@@ -33,7 +33,12 @@ from pydantic.config import ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import get_current_user, get_user_from_token, oauth2_scheme_optional
+from ..auth import (
+    get_current_user,
+    get_user_from_token,
+    oauth2_scheme_optional,
+    require_password_changed,
+)
 from ..auth_events import is_synthetic_user
 from ..database import get_db, settings
 from ..models import Category, Image, User
@@ -549,6 +554,7 @@ async def ingest_synthetic_result(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         user = await get_user_from_token(bearer_token, db)
+        require_password_changed(user)
         if not is_synthetic_user(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

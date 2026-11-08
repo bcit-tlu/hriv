@@ -672,10 +672,20 @@ tokens, bearer rejection, password validation, structured events, and separate
 per-IP/per-subject throttling. Run `cd backend && poetry run pytest` for the full
 coverage gate. See [password setup](password-setup.md) for the API/error contract.
 
+`backend/tests/test_change_password.py` verifies forced-change blocking (including
+role dependency inheritance), `/auth/me` recovery, successful password changes
+and reopening protected endpoints, current/new-password validation, throttling
+before password verification, and structured success/failure events. Download
+cookie and synthetic bearer enforcement are covered in `test_router_admin.py`
+and `test_telemetry.py`. Existing tile tokens retain the bounded expiry window
+documented in [user deactivation](user-deactivation.md).
+
 | Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                                                                                                                                                                |
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | /api/auth/login                                                                                           | No            | —                                                                                                                                                                                                                                           |
 | POST   | /api/auth/password-setup                                                                                  | No            | — (purpose-scoped setup token required; app-credential)                                                                                                                                                                                     |
+| GET    | /api/auth/me                                                                                              | Yes           | any authenticated role; allowed while password change is required                                                                                                                                                                           |
+| POST   | /api/auth/change-password                                                                                 | Yes           | any authenticated local role; allowed while password change is required                                                                                                                                                                     |
 | GET    | /api/health                                                                                               | No            | —                                                                                                                                                                                                                                           |
 | GET    | /api/features                                                                                             | No            | — (deployment feature flags, e.g. `collections`)                                                                                                                                                                                            |
 | GET    | /api/health/ready                                                                                         | No            | —                                                                                                                                                                                                                                           |
