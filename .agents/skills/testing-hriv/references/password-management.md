@@ -32,8 +32,11 @@ project’s DB accidentally. Use the same `-p` on every subsequent compose comma
 3. Mint with `POST /api/users/$GUEST_ID/password-setup-link`. Capture
    `setup_token` and `expires_at` in memory; they are not `token`/`url` response
    fields. Build `http://localhost:5173/#password_setup=<setup_token>` yourself.
-4. For browser validation start the frontend (`cd frontend && npm ci && npm run dev`)
-   or compose frontend. Open that URL in a fresh private session, confirm the
+4. For browser validation start the Compose frontend from the worktree root:
+   `docker compose -p hriv-password-validation up -d --build frontend`.
+   Vite’s `/api` proxy targets `http://backend:8000` in `frontend/vite.config.ts`
+   with no environment override; a host-run `npm run dev` cannot resolve that
+   Compose service name. Open the setup URL in a fresh private session, confirm the
    fragment disappears, enter matching passwords, and verify the signed-in shell.
    Also paste into an already-open tab to check same-document hash handling.
 5. For API-only validation call `POST /api/auth/password-setup` with JSON
