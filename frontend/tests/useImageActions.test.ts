@@ -10,15 +10,38 @@ vi.mock('../src/api', async () => {
   const actual = await vi.importActual<typeof api>('../src/api')
   return {
     ...actual,
+    fetchImage: vi.fn(),
     updateImage: vi.fn(),
     deleteImage: vi.fn(),
     replaceImage: vi.fn(),
   }
 })
 
+const mockFetchImage = vi.mocked(api.fetchImage)
 const mockUpdateImage = vi.mocked(api.updateImage)
 const mockDeleteImage = vi.mocked(api.deleteImage)
 const mockReplaceImage = vi.mocked(api.replaceImage)
+
+function makeApiImage(id: number): api.ApiImage {
+  return {
+    id,
+    name: `Slide ${id}`,
+    thumb: `/api/tiles/${id}/thumb.jpeg`,
+    tile_sources: `/api/tiles/${id}/info.json`,
+    category_id: 4,
+    copyright: null,
+    note: null,
+    active: true,
+    sort_order: 0,
+    metadata_extra: null,
+    version: 7,
+    width: 2880,
+    height: 2048,
+    file_size: 12345,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-02T00:00:00Z',
+  }
+}
 
 function makeDeps(overrides: Partial<UseImageActionsDeps> = {}): UseImageActionsDeps {
   return {
@@ -48,6 +71,7 @@ function makeDeps(overrides: Partial<UseImageActionsDeps> = {}): UseImageActions
 
 describe('useImageActions', () => {
   beforeEach(() => {
+    mockFetchImage.mockReset()
     mockUpdateImage.mockReset()
     mockDeleteImage.mockReset()
     mockReplaceImage.mockReset()
@@ -631,6 +655,39 @@ describe('useImageActions', () => {
       })
 
       expect(mockDeleteImage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('openBrowseEditImageById', () => {
+    it('fetches the image and opens the browse edit dialog', async () => {
+      const deps = makeDeps()
+      mockFetchImage.mockResolvedValue(makeApiImage(11))
+      const { result } = renderHook(() => useImageActions(deps))
+
+      await act(async () => {
+        await result.current.openBrowseEditImageById(11)
+      })
+
+      expect(mockFetchImage).toHaveBeenCalledWith(11)
+      expect(result.current.browseEditImage).toMatchObject({
+        id: 11,
+        name: 'Slide 11',
+        categoryId: 4,
+        version: 7,
+      })
+    })
+
+    it('reports the error and leaves the dialog closed when the fetch fails', async () => {
+      const deps = makeDeps()
+      mockFetchImage.mockRejectedValue(new Error('nope'))
+      const { result } = renderHook(() => useImageActions(deps))
+
+      await act(async () => {
+        await result.current.openBrowseEditImageById(11)
+      })
+
+      expect(result.current.browseEditImage).toBeNull()
+      expect(deps.setErrorSnack).toHaveBeenCalled()
     })
   })
 })

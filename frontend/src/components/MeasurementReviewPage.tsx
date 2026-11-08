@@ -75,6 +75,8 @@ export interface MeasurementReviewPageProps {
   onOpenImage?: (imageId: number) => void
   /** Open the image's edit dialog (name link). */
   onEditImage?: (imageId: number) => void
+  /** Bump to force the findings list to refetch (e.g. after an image edit). */
+  refreshToken?: number
   /** Scan-progress poll interval; shortened in tests. */
   scanPollMs?: number
   /** Give up tracking after this long without progress; shortened in tests. */
@@ -114,6 +116,7 @@ export default function MeasurementReviewPage({
   api = defaultApi,
   onOpenImage,
   onEditImage,
+  refreshToken = 0,
   scanPollMs = SCAN_POLL_MS,
   scanStallMs = SCAN_STALL_MS,
 }: MeasurementReviewPageProps) {
@@ -173,7 +176,7 @@ export default function MeasurementReviewPage({
     return () => {
       cancelled = true
     }
-  }, [api, status, ascending, page, rowsPerPage, reloadToken])
+  }, [api, status, ascending, page, rowsPerPage, reloadToken, refreshToken])
 
   const scanActive = scan != null
   const scanIds = scan?.imageIds
