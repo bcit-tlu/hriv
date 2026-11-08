@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import type { User, Role } from './types'
 import { AuthContext } from './authContextValue'
@@ -55,6 +55,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     new URLSearchParams(_initialHash).get('password_setup'),
   )
   const [passwordChanged, setPasswordChanged] = useState(false)
+  const sessionVersion = useRef(0)
   // Read the OIDC error code (if any) from the URL fragment synchronously
   // during initial render. This avoids calling ``setState`` inside a
   // ``useEffect`` (which the react-hooks/set-state-in-effect rule flags
@@ -120,9 +121,37 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     setOidcError(null)
   }, [])
 
+  useEffect(() => {
+    const captureSetup = () => {
+      const params = new URLSearchParams(window.location.hash.slice(1))
+      const token = params.get('password_setup')
+      if (token === null) return
+      params.delete('password_setup')
+      params.delete('oidc_token')
+      params.delete('oidc_error')
+      const remaining = params.toString()
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + window.location.search + (remaining ? `#${remaining}` : ''),
+      )
+      sessionVersion.current += 1
+      _oidcLoginPending = false
+      clearUserStorage()
+      setCurrentUser(null)
+      setUsers([])
+      setOidcError(null)
+      setLoading(false)
+      setSetupToken(token)
+    }
+    window.addEventListener('hashchange', captureSetup)
+    return () => window.removeEventListener('hashchange', captureSetup)
+  }, [])
+
   // On mount, validate stored token by calling a protected endpoint.
   // If the token is expired or the DB was recreated, clear session.
   useEffect(() => {
+    const version = sessionVersion.current
     if (new URLSearchParams(_initialHash).has('password_setup')) {
       clearUserStorage()
       setLoading(false) // eslint-disable-line react-hooks/set-state-in-effect -- fragment-based session bootstrap
@@ -154,8 +183,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
+        if (version !== sessionVersion.current) return
         if (res.ok) {
           const data = await res.json()
+          if (version !== sessionVersion.current) return
           const freshUser = toUser(data)
           // If a different user was previously stored, clear all state
           // to prevent cross-account leakage (shared student browsers).
@@ -186,11 +217,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
+        if (version !== sessionVersion.current) return
         // Network error — clear session to be safe
         clearUserStorage()
       })
       .finally(() => {
-        setLoading(false)
+        if (version === sessionVersion.current) setLoading(false)
       })
   }, [])
 
@@ -312,8 +344,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     >
       {setupToken !== null ? (
         <PasswordSetupScreen
+          key={setupToken}
           onSubmit={async (password) => {
-            establishSession(await redeemPasswordSetup(setupToken, password))
+            const version = sessionVersion.current
+            const response = await redeemPasswordSetup(setupToken, password)
+            if (version !== sessionVersion.current) return
+            establishSession(response)
             setSetupToken(null)
           }}
           onSignIn={() => {

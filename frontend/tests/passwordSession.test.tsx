@@ -65,6 +65,68 @@ function fillChange() {
 }
 
 describe('password session routing', () => {
+  it('captures a same-document setup link, cleans the URL and discards the old session', async () => {
+    localStorage.setItem('hriv_token', 'old-session')
+    localStorage.setItem('hriv_user', JSON.stringify(user))
+    const fetchMock = vi.fn().mockResolvedValue(json(user))
+    vi.stubGlobal('fetch', fetchMock)
+    await mount()
+    expect(await screen.findByRole('navigation')).toHaveTextContent('Guest')
+    fetchMock.mockClear()
+    await act(() => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?keep=1#password_setup=new-token&view=remaining&oidc_token=ignored',
+      )
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(window.location.hash).toBe('#view=remaining')
+    expect(window.location.search).toBe('?keep=1')
+    expect(localStorage.getItem('hriv_token')).toBeNull()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    fetchMock.mockResolvedValue(json({ access_token: 'new-session', token_type: 'bearer', user }))
+    fireEvent.change(screen.getByLabelText(/^New password/), { target: { value: 'new-password' } })
+    fireEvent.change(screen.getByLabelText(/^Confirm new password/), {
+      target: { value: 'new-password' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Set password' }))
+    expect(await screen.findByRole('navigation')).toHaveTextContent('Guest')
+    expect(localStorage.getItem('hriv_token')).toBe('new-session')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining('/auth/password-setup'),
+      expect.objectContaining({
+        body: JSON.stringify({ token: 'new-token', password: 'new-password' }),
+      }),
+    )
+  })
+
+  it('does not restore an in-flight old session after same-document setup navigation', async () => {
+    localStorage.setItem('hriv_token', 'old-session')
+    localStorage.setItem('hriv_user', JSON.stringify(user))
+    let resolveSession!: (response: Response) => void
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveSession = resolve
+          }),
+      ),
+    )
+    await mount()
+    await act(() => {
+      window.history.replaceState({}, '', '/#password_setup=new-token')
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    await act(async () => {
+      resolveSession(json(user))
+    })
+    expect(screen.getByRole('heading', { name: 'Set your password' })).toBeInTheDocument()
+    expect(localStorage.getItem('hriv_token')).toBeNull()
+    expect(localStorage.getItem('hriv_user')).toBeNull()
+  })
+
   it('captures and cleans the fragment, redeems once and establishes the returned session', async () => {
     window.history.replaceState({}, '', '/?keep=1#password_setup=setup-token&view=remaining')
     const fetchMock = vi

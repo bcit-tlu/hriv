@@ -169,3 +169,8 @@ authorization remains authoritative; this frontend gate is a UX boundary.
 that omit the flags and older cached profiles are tolerated; omitted flags
 default to false and do not expose the local-password menu item. Session
 validation always refreshes the authoritative flags before normal use.
+
+Pasting a setup link into an already-open tab is handled on `hashchange` too:
+the token is captured and immediately removed while unrelated URL parameters
+are preserved. The previous session is discarded, and pending validation of
+that session cannot restore it over the setup flow.

@@ -686,6 +686,9 @@ Frontend password flows are covered in `passwordSession.test.tsx`,
 `passwordErrors.test.ts`, `components/PasswordScreens.test.tsx`, and
 `components/AppShell.test.tsx`. Manually verify:
 
+- Paste a setup link into an already-open signed-in tab: capture and strip the
+  token, preserve unrelated parameters, and discard the old session even if its
+  `/auth/me` validation is still in flight.
 - Open a fresh `/#password_setup=<token>` link: the fragment is removed, matching
   passwords redeem once, and the returned session opens the app without another
   login. Reloading the cleaned page requires reopening the original link.
