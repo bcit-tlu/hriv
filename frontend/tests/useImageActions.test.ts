@@ -303,10 +303,12 @@ describe('useImageActions', () => {
         result.current.setBrowseEditImage(img)
       })
 
+      let saved: boolean | undefined
       await act(async () => {
-        await result.current.handleSaveBrowseImage({ name: 'Updated' })
+        saved = await result.current.handleSaveBrowseImage({ name: 'Updated' })
       })
 
+      expect(saved).toBe(true)
       expect(mockUpdateImage).toHaveBeenCalledWith(50, { name: 'Updated' })
       expect(result.current.browseEditImage).toBeNull()
       expect(deps.loadCategories).toHaveBeenCalled()
@@ -317,14 +319,16 @@ describe('useImageActions', () => {
       const deps = makeDeps()
       const { result } = renderHook(() => useImageActions(deps))
 
+      let saved: boolean | undefined
       await act(async () => {
-        await result.current.handleSaveBrowseImage({ name: 'Test' })
+        saved = await result.current.handleSaveBrowseImage({ name: 'Test' })
       })
 
+      expect(saved).toBe(false)
       expect(mockUpdateImage).not.toHaveBeenCalled()
     })
 
-    it('sets error snack on failure', async () => {
+    it('sets error snack and returns false on failure', async () => {
       const img = makeImage({ id: 50 })
       const deps = makeDeps()
       mockUpdateImage.mockRejectedValue(new Error('Save failed'))
@@ -334,10 +338,12 @@ describe('useImageActions', () => {
         result.current.setBrowseEditImage(img)
       })
 
+      let saved: boolean | undefined
       await act(async () => {
-        await result.current.handleSaveBrowseImage({ name: 'X' })
+        saved = await result.current.handleSaveBrowseImage({ name: 'X' })
       })
 
+      expect(saved).toBe(false)
       expect(deps.setErrorSnack).toHaveBeenCalled()
     })
 

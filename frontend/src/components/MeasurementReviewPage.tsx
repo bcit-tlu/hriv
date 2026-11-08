@@ -141,13 +141,11 @@ export default function MeasurementReviewPage({
 
   useEffect(() => {
     let cancelled = false
-    // Selection and in-progress corrections belong to the rows on screen.
-    /* eslint-disable react-hooks/set-state-in-effect -- standard data-fetch reset before reload */
+    // Selection and in-progress corrections belong to the rows on screen;
+    // prune them to the fetched page rather than clearing, so an external
+    // refresh (e.g. an image edited in the shared dialog) doesn't discard them.
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     setLoading(true)
-    setSelected(new Set())
-    setEdits({})
-    setUnitEdits({})
-    /* eslint-enable react-hooks/set-state-in-effect */
     api
       .fetchFindings({
         status,
@@ -163,6 +161,14 @@ export default function MeasurementReviewPage({
           setPage(lastPage)
           return
         }
+        const onScreen = new Set(result.items.map((f) => f.id))
+        setSelected((prev) => new Set([...prev].filter((id) => onScreen.has(id))))
+        setEdits((prev) =>
+          Object.fromEntries(Object.entries(prev).filter(([id]) => onScreen.has(Number(id)))),
+        )
+        setUnitEdits((prev) =>
+          Object.fromEntries(Object.entries(prev).filter(([id]) => onScreen.has(Number(id)))),
+        )
         setFindings(result.items)
         setTotal(result.total)
         setError(null)

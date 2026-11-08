@@ -280,6 +280,35 @@ describe('MeasurementReviewPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
   })
 
+  it('keeps an in-progress correction across an external refresh', async () => {
+    const api = makeApi()
+    const { rerender } = render(<MeasurementReviewPage api={api} refreshToken={0} />)
+    const field = await screen.findByLabelText('Scale for Blood film 40x')
+    await userEvent.clear(field)
+    await userEvent.type(field, '2')
+    rerender(<MeasurementReviewPage api={api} refreshToken={1} />)
+    await waitFor(() => expect(api.fetchFindings).toHaveBeenCalledTimes(2))
+    expect(await screen.findByLabelText('Scale for Blood film 40x')).toHaveValue(2)
+  })
+
+  it('drops a correction only when its row leaves the fetched page', async () => {
+    const api = makeApi()
+    const { rerender } = render(<MeasurementReviewPage api={api} refreshToken={0} />)
+    const field = await screen.findByLabelText('Scale for Blood film 40x')
+    await userEvent.clear(field)
+    await userEvent.type(field, '2')
+    vi.mocked(api.fetchFindings).mockResolvedValue({ items: [], total: 0 })
+    rerender(<MeasurementReviewPage api={api} refreshToken={1} />)
+    await screen.findByText(/No findings to review/)
+    // The row is gone; a later refetch that restores it must not resurrect the edit.
+    vi.mocked(api.fetchFindings).mockResolvedValue({
+      items: [makeFinding()],
+      total: 1,
+    })
+    rerender(<MeasurementReviewPage api={api} refreshToken={2} />)
+    expect(await screen.findByLabelText('Scale for Blood film 40x')).toHaveValue(7.3)
+  })
+
   it('scans the whole library and tracks remaining candidates', async () => {
     const api = makeApi()
     vi.mocked(api.scanRemaining)

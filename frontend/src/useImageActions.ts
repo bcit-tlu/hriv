@@ -158,17 +158,19 @@ export function useImageActions(deps: UseImageActionsDeps) {
   )
 
   const handleSaveBrowseImage = useCallback(
-    async (data: ImageFormData) => {
-      if (!browseEditImage) return
+    async (data: ImageFormData): Promise<boolean> => {
+      if (!browseEditImage) return false
       try {
         await apiUpdateImage(browseEditImage.id, data)
         invalidateMovedImageScopes(browseEditImage.categoryId ?? null, data.category_id)
         setBrowseEditImage(null)
         await loadCategories()
         loadUncategorizedImages()
+        return true
       } catch (err) {
         console.error('Failed to update image', err)
         setErrorSnack(userMessage(err, 'Failed to update image.'))
+        return false
       }
     },
     [browseEditImage, loadCategories, loadUncategorizedImages, setErrorSnack],

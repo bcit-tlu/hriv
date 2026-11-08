@@ -3479,8 +3479,7 @@ export default function App() {
         open={browseEditImage != null}
         onClose={() => setBrowseEditImage(null)}
         onSave={async (data) => {
-          await handleSaveBrowseImage(data)
-          bumpMeasurementRefresh()
+          if (await handleSaveBrowseImage(data)) bumpMeasurementRefresh()
         }}
         onDelete={
           browseEditImage
