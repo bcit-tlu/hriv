@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import PasswordSetupLinkDialog from '../../src/components/PasswordSetupLinkDialog'
 import { ApiError, mintPasswordSetupLink } from '../../src/api'
 
@@ -80,7 +80,7 @@ describe('PasswordSetupLinkDialog', () => {
     expect(mintPasswordSetupLink).not.toHaveBeenCalled()
   })
 
-  it('drops a closed dialog’s pending result and mints afresh when reopened', async () => {
+  it('waits for a closed dialog’s mint to settle before minting a replacement on reopen', async () => {
     let resolve!: (value: typeof response) => void
     vi.mocked(mintPasswordSetupLink)
       .mockReturnValueOnce(
@@ -91,11 +91,51 @@ describe('PasswordSetupLinkDialog', () => {
       .mockResolvedValue({ ...response, setup_token: 'new-token' })
     const { unmount } = render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
     unmount()
-    resolve(response)
     render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled()
+    expect(mintPasswordSetupLink).toHaveBeenCalledOnce()
+    await act(async () => resolve(response))
     expect(await screen.findByLabelText('Setup URL')).toHaveValue(
       `${window.location.origin}/#password_setup=new-token`,
     )
+    expect(mintPasswordSetupLink).toHaveBeenCalledTimes(2)
+  })
+
+  it('releases the per-user mint lock on failure and skips closed waiters', async () => {
+    let reject!: (error: Error) => void
+    vi.mocked(mintPasswordSetupLink)
+      .mockReturnValueOnce(
+        new Promise((_, fail) => {
+          reject = fail
+        }),
+      )
+      .mockResolvedValue(response)
+    const first = render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
+    first.unmount()
+    const second = render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
+    second.unmount()
+    render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
+    expect(mintPasswordSetupLink).toHaveBeenCalledOnce()
+    await act(async () => reject(new Error('offline')))
+    expect(await screen.findByLabelText('Setup URL')).toBeInTheDocument()
+    expect(mintPasswordSetupLink).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not block minting for a different person', async () => {
+    let resolve!: (value: typeof response) => void
+    vi.mocked(mintPasswordSetupLink)
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done
+        }),
+      )
+      .mockResolvedValue(response)
+    const first = render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
+    first.unmount()
+    render(<PasswordSetupLinkDialog user={{ ...user, id: 10 }} onClose={vi.fn()} />)
+    expect(await screen.findByLabelText('Setup URL')).toBeInTheDocument()
+    expect(mintPasswordSetupLink).toHaveBeenCalledTimes(2)
+    await act(async () => resolve(response))
   })
 
   it('falls back to selecting the URL for copy and shows a useful error when copying fails', async () => {

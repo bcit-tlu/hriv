@@ -218,3 +218,8 @@ passwordless/unflagged state immediately, and offers to create a new setup link.
 Clearing never silently mints a credential. Inactive accounts can be cleared but
 must be activated before a new link can be minted. Staff’s read-only People
 directory shows badges without credential-management or other mutation actions.
+
+Reopening a link dialog while an earlier mint for the same person is still in
+flight waits for that request to settle before issuing a replacement. Only the
+request-completion signal is shared across dialogs, never the setup credential.
+Closed waiting dialogs do not issue a mint, and other people’s mints are independent.

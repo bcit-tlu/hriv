@@ -11,6 +11,8 @@ import Typography from '@mui/material/Typography'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { ApiError, mintPasswordSetupLink, userMessage } from '../api'
 
+const pendingMints = new Map<number, Promise<void>>()
+
 export default function PasswordSetupLinkDialog({
   user,
   onClose,
@@ -29,15 +31,25 @@ export default function PasswordSetupLinkDialog({
   useEffect(() => {
     if (!attempt) return
     let cancelled = false
-    mintPasswordSetupLink(user.id)
-      .then((data) => {
+    const mint = async () => {
+      while (pendingMints.has(user.id)) {
+        await pendingMints.get(user.id)
+        if (cancelled) return
+      }
+      const request = mintPasswordSetupLink(user.id)
+      const settled = request.then(
+        () => {},
+        () => {},
+      )
+      pendingMints.set(user.id, settled)
+      try {
+        const data = await request
         if (cancelled) return
         setLink({
           url: `${window.location.origin}/#password_setup=${encodeURIComponent(data.setup_token)}`,
           expiresAt: data.expires_at,
         })
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         if (cancelled) return
         setError(
           err instanceof ApiError && err.status === 409
@@ -51,10 +63,12 @@ export default function PasswordSetupLinkDialog({
                     'Could not create a setup link. Retry here or from the person’s row.',
                   ),
         )
-      })
-      .finally(() => {
+      } finally {
+        if (pendingMints.get(user.id) === settled) pendingMints.delete(user.id)
         if (!cancelled) setBusy(false)
-      })
+      }
+    }
+    void mint()
     return () => {
       cancelled = true
     }
