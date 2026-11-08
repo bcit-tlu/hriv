@@ -621,6 +621,7 @@ async def process_source_image(source_image_id: int) -> None:
     """
     span = trace.get_current_span()
     span.set_attribute("source_image.id", source_image_id)
+    scan_image_id: int | None = None
 
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
@@ -868,7 +869,7 @@ async def process_source_image(source_image_id: int) -> None:
                     **actor_log_fields(uploader),
                 },
             )
-            await scan_after_processing(async_session, img.id)
+            scan_image_id = img.id
 
         except Exception as exc:
             span.record_exception(exc)
@@ -894,6 +895,10 @@ async def process_source_image(source_image_id: int) -> None:
                 src.status_message = "Failed"
                 await db.commit()
 
+    # Outside the session so an inline scan never waits on this connection.
+    if scan_image_id is not None:
+        await scan_after_processing(async_session, scan_image_id)
+
 
 async def process_replace_image(
     source_image_id: int, target_image_id: int,
@@ -911,6 +916,7 @@ async def process_replace_image(
         "source_image.id": source_image_id,
         "target_image.id": target_image_id,
     })
+    scan_image_id: int | None = None
 
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
@@ -1151,7 +1157,7 @@ async def process_replace_image(
                 },
             )
             # Replacement superseded the old findings, so the image is eligible again.
-            await scan_after_processing(async_session, img.id)
+            scan_image_id = img.id
 
         except Exception as exc:
             span.record_exception(exc)
@@ -1177,6 +1183,9 @@ async def process_replace_image(
                 )
                 src.status_message = "Failed"
                 await db.commit()
+
+    if scan_image_id is not None:
+        await scan_after_processing(async_session, scan_image_id)
 
 
 # ── Stale SourceImage reconciliation ──────────────────────
