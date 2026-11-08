@@ -49,7 +49,7 @@ Boundaries, in order of importance:
 
 ## Assets and sensitivity
 
-- Course image content (source images, DZI tiles, thumbnails) hidden from students by program/group/hidden-subtree rules — the main confidentiality asset.
+- Course image content (source images, DZI tiles, thumbnails) hidden from students by program/group/hidden-subtree rules — the main confidentiality asset. Exception: category card covers (`card_thumb`) may show a thumbnail of an otherwise hidden image via a thumbnail-only `thumb` token; full tiles stay hidden.
 - User records: names, emails, roles, program/group memberships, password hashes, password-setup tokens.
 - Credentials: `JWT_SECRET` (signs sessions, tile tokens, download tokens), OIDC client secret, SMTP relay, Vault DB creds, Azure backup credentials, synthetic ingest token.
 - Integrity of the catalogue: categories, annotations/`metadata_` JSONB, measurement scale, collections.
