@@ -366,6 +366,37 @@ jobs:
 
   # Container image builds (reusable workflow)
 
+  # The single status check the main-protection ruleset requires. GitHub never
+  # treats a path-filter-skipped job as a satisfied required check, so pointing
+  # the ruleset at per-component jobs made component-only PRs unmergeable
+  # without bypass. This job always runs and passes only when every gate
+  # succeeded or was legitimately skipped.
+  ci:
+    needs:
+      [
+        changes,
+        agent-docs,
+        backend-tests,
+        backup-tests,
+        restore-validation-tests,
+        frontend-checks,
+        synthetic-checks,
+        helm-lint,
+      ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every gate to succeed or be skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e '[.[] | .result] | all(. == "success" or . == "skipped")' >/dev/null; then
+            exit 0
+          fi
+          echo "::error::a component gate failed or was cancelled"
+          exit 1
+
   build-frontend:
     needs: [changes, frontend-checks]
     if: >-

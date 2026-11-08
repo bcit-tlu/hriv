@@ -49,7 +49,7 @@ released semver (`synthetic-monitoring-pin.yaml`) that must be bumped when a
 
 | When                              | Inputs                           | Workflow                                                                                                                                                                | GHCR artifacts                                             |
 | --------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| PR opened / synced against `main` | PR title                         | `pr-title-lint.yaml` (humans only; bot-authored PRs skipped)                                                                                                            | —                                                          |
+| PR opened / synced against `main` | PR title                         | `pr-title-lint.yaml` (every author except `bcit-tlu-release-please[bot]`)                                                                                               | —                                                          |
 | PR opened / synced against `main` | component path change            | `ci.yaml` builds but does **not** push                                                                                                                                  | —                                                          |
 | Push to `main`                    | commits since last component tag | `ci.yaml` computes next `<ver>` from `git log` conventional-commit analysis (`feat:` → minor, `!:`/`BREAKING CHANGE:` → major, else patch), builds per-component images | image: `sha-<fullsha>` + `<ver>-rc.<ts>.g<short>`          |
 | Push to `main`                    | component path change            | `ci.yaml` `helm-publish` job packages `charts/<component>` and pushes to OCI (cosign-signed)                                                                            | chart: `hriv-<component>:<ver>-rc.<ts>.g<short>`           |
@@ -66,8 +66,11 @@ OCIRepository semver filter on the flux-fleet side, described below.
 `ci.yaml` uses path filters to run each component's quality gate only when its
 source or directly coupled build configuration changes. Workflow changes run
 all component gates; `helm-lint` remains a required, unconditional check.
-Skipped component jobs satisfy their required check status, while the
-corresponding reusable OCI build is skipped as well.
+GitHub does **not** treat a path-filter-skipped job as a satisfied required
+check, so the `main-protection` ruleset requires the always-running `ci`
+aggregate job (success when every component gate is `success` or `skipped`)
+rather than the per-component jobs. A skipped component gate also skips the
+corresponding reusable OCI build.
 
 ### Initial restore-validation release
 
@@ -194,12 +197,13 @@ missed deliveries — it is not the rollout path.
   reviewed. Bump `images.backupChild` and `images.orchestrator` together
   when adopting this behaviour, because the orchestrator rejects a
   `validation-select` payload with fields it does not know.
-- **`pr-title-lint` skips bot-authored PRs.** Release-please's own PRs
-  (author type `Bot`) bypass the lint. Without this guard every
-  release-please PR would be held under "1 workflow awaiting approval"
-  because `pr-title-lint` is the only `pull_request_target` workflow in
-  the repo and the repo's Actions settings require approval for
-  first-time contributors.
+- **`pr-title-lint` skips only release-please's PRs.** Its `lint` job is a
+  required check, and `pr-title-lint` is the only `pull_request_target`
+  workflow in the repo, so release-please's PRs (author
+  `bcit-tlu-release-please[bot]`) skip it to avoid being held under "1
+  workflow awaiting approval". Every other author — including app-authored
+  PRs such as Devin's — is linted; skipping all `Bot` authors left their
+  required `lint` check permanently unsatisfied.
 - **`release-as` is a one-shot override, not a pinning mechanism.** If
   you use it to unstick release-please, remove it once the manifest
   catches up — the staleness guard in `release-please.yaml` will fail
