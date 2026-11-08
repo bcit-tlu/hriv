@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.2.0...restore-validation-v0.2.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **restore-validation:** accept barman-cloud plugin backup IDs in CNPG_BACKUP_ID_RE ([#1804](https://github.com/bcit-tlu/hriv/issues/1804)) ([bdda2ad](https://github.com/bcit-tlu/hriv/commit/bdda2ad7fc9e32026a8bff8eaf95c2f68c18947c))
+
 ## [0.2.0](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.18...restore-validation-v0.2.0) (2026-11-08)
 
 

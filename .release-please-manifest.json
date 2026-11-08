@@ -2,6 +2,6 @@
   "frontend": "0.67.0",
   "backend": "0.67.0",
   "backup": "0.17.1",
-  "restore-validation": "0.2.0",
+  "restore-validation": "0.2.1",
   "synthetic-monitoring": "1.2.9"
 }
