@@ -37,6 +37,7 @@ project’s DB accidentally. Use the same `-p` on every subsequent compose comma
    (for curl, `--data "$GUEST_BODY"`). Keep the email for later guest logins.
    Expect 201, `has_local_password:false`, `oidc_linked:false`,
    `must_change_password:false`. Save its numeric `id` as `GUEST_ID`.
+
 3. Mint with `POST /api/users/$GUEST_ID/password-setup-link`. Capture
    `setup_token` and `expires_at` in memory; they are not `token`/`url` response
    fields. Build `http://localhost:5173/#password_setup=<setup_token>` yourself.
