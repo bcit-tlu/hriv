@@ -170,6 +170,12 @@ that omit the flags and older cached profiles are tolerated; omitted flags
 default to false and do not expose the local-password menu item. Session
 validation always refreshes the authoritative flags before normal use.
 
+The `hriv_user` cache omits `has_local_password` and `must_change_password` at
+every write. Missing cached flags default to false and never authorize access:
+bootstrap keeps the current user unset and the shell loading until `/auth/me`
+returns. A forced-change flag from that response renders the change screen
+instead of the shell, even though the flag was not persisted across the reload.
+
 Pasting a setup link into an already-open tab is handled on `hashchange` too:
 the token is captured and immediately removed while unrelated URL parameters
 are preserved. The previous session is discarded, and pending validation of

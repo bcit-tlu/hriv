@@ -32,6 +32,26 @@ function clearUserStorage(): void {
   tileOrderingCoordinator.reset()
 }
 
+function persistCachedUser(user: User): void {
+  localStorage.setItem(
+    'hriv_user',
+    JSON.stringify({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      active: user.active,
+      oidc_linked: user.oidc_linked,
+      program_ids: user.program_ids,
+      program_names: user.program_names,
+      group_ids: user.group_ids,
+      group_names: user.group_names,
+      lastAccess: user.lastAccess,
+      metadataExtra: user.metadataExtra,
+    }),
+  )
+}
+
 // Capture the URL fragment immediately at module-load time.  In React,
 // children’s effects fire before their parents’ effects.  App (a child of
 // AuthProvider) has a URL-sync effect that calls
@@ -171,9 +191,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    let cachedUser: Partial<User> | null = null
     if (stored) {
       try {
-        JSON.parse(stored)
+        cachedUser = {
+          has_local_password: false,
+          must_change_password: false,
+          ...JSON.parse(stored),
+        }
       } catch {
         clearUserStorage()
         setLoading(false)
@@ -193,19 +218,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           const freshUser = toUser(data)
           // If a different user was previously stored, clear all state
           // to prevent cross-account leakage (shared student browsers).
-          if (stored) {
-            try {
-              const prevUser = JSON.parse(stored) as { id?: number }
-              if (prevUser.id !== freshUser.id) {
-                clearUserStorage()
-              }
-            } catch {
-              clearUserStorage()
-            }
-          }
+          if (cachedUser && cachedUser.id !== freshUser.id) clearUserStorage()
           setCurrentUser(freshUser)
           setToken(token)
-          localStorage.setItem('hriv_user', JSON.stringify(freshUser))
+          persistCachedUser(freshUser)
           if (_oidcLoginPending) {
             _oidcLoginPending = false
             emitEventNow({
@@ -239,7 +255,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const refreshCurrentUser = useCallback(async () => {
     const user = toUser(await fetchCurrentUser())
     setCurrentUser(user)
-    localStorage.setItem('hriv_user', JSON.stringify(user))
+    persistCachedUser(user)
   }, [])
 
   // Load users list when an admin is authenticated
@@ -257,7 +273,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     const prev = localStorage.getItem('hriv_user')
     if (prev) {
       try {
-        const prevUser = JSON.parse(prev) as { id?: number }
+        const prevUser: Partial<User> = {
+          has_local_password: false,
+          must_change_password: false,
+          ...JSON.parse(prev),
+        }
         if (prevUser.id !== user.id) {
           clearUserStorage()
         }
@@ -267,7 +287,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(resp.access_token)
     setCurrentUser(user)
-    localStorage.setItem('hriv_user', JSON.stringify(user))
+    persistCachedUser(user)
     emitEventNow({
       event: 'auth.login_succeeded',
       action: 'login',

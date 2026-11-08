@@ -43,6 +43,7 @@ async function mount() {
   const { useAuth } = await import('../src/useAuth')
   function Shell() {
     ctx = useAuth()
+    if (ctx.loading) return <div role="status">Loading session</div>
     return (
       <nav aria-label="Application">
         <span>{ctx.currentUser?.name ?? 'Signed out'}</span>
@@ -64,6 +65,13 @@ function fillChange() {
   fireEvent.change(screen.getByLabelText(/^Confirm new password/), {
     target: { value: 'new-password' },
   })
+}
+
+function expectCachedProfileWithoutPasswordFlags() {
+  const cached = JSON.parse(localStorage.getItem('hriv_user')!)
+  expect(cached).not.toHaveProperty('has_local_password')
+  expect(cached).not.toHaveProperty('must_change_password')
+  expect(cached).toMatchObject({ id: user.id, name: user.name, email: user.email })
 }
 
 describe('password session routing', () => {
@@ -190,7 +198,8 @@ describe('password session routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Set password' }))
     expect(await screen.findByRole('navigation')).toHaveTextContent('Guest')
     expect(localStorage.getItem('hriv_token')).toBe('session-token')
-    expect(JSON.parse(localStorage.getItem('hriv_user')!).has_local_password).toBe(true)
+    expectCachedProfileWithoutPasswordFlags()
+    expect(ctx.currentUser?.has_local_password).toBe(true)
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
       expect.stringContaining('/auth/password-setup'),
       expect.objectContaining({
@@ -232,6 +241,7 @@ describe('password session routing', () => {
     await mount()
     await act(() => ctx.login('guest@example.invalid', 'old-password'))
     expect(screen.getByRole('heading', { name: 'Change your password' })).toBeInTheDocument()
+    expectCachedProfileWithoutPasswordFlags()
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
     fillChange()
@@ -239,7 +249,48 @@ describe('password session routing', () => {
     expect(await screen.findByRole('navigation')).toHaveTextContent('Guest')
     expect(await screen.findByText('Password changed successfully.')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/auth/me'), expect.anything())
-    expect(JSON.parse(localStorage.getItem('hriv_user')!).must_change_password).toBe(false)
+    expectCachedProfileWithoutPasswordFlags()
+    expect(ctx.currentUser?.must_change_password).toBe(false)
+  })
+
+  it('waits for /auth/me before exposing navigation when cached password flags are absent', async () => {
+    const cached = { ...user, has_local_password: undefined, must_change_password: undefined }
+    localStorage.setItem('hriv_token', 'session-token')
+    localStorage.setItem('hriv_user', JSON.stringify(cached))
+    let resolveSession!: (response: Response) => void
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveSession = resolve
+          }),
+      ),
+    )
+    await mount()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading session')
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expect(ctx.currentUser).toBeNull()
+    await act(async () => {
+      resolveSession(json({ ...user, must_change_password: true }))
+    })
+    expect(screen.getByRole('heading', { name: 'Change your password' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    expectCachedProfileWithoutPasswordFlags()
+  })
+
+  it('tolerates omitted password flags without trusting the cached profile', async () => {
+    const profile = { ...user, has_local_password: undefined, must_change_password: undefined }
+    localStorage.setItem('hriv_token', 'session-token')
+    localStorage.setItem('hriv_user', JSON.stringify(profile))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(profile)))
+    await mount()
+    expect(await screen.findByRole('navigation')).toHaveTextContent('Guest')
+    expect(ctx.currentUser).toMatchObject({
+      has_local_password: false,
+      must_change_password: false,
+    })
+    expectCachedProfileWithoutPasswordFlags()
   })
 
   it('revalidates a stored session and gates a flag set while signed out of the tab', async () => {
