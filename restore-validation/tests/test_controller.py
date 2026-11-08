@@ -117,8 +117,17 @@ class ControllerTests(unittest.TestCase):
         for tli in ("current", "latest", "0", "-1", "1.5", ""):
             with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": "backup-20260114030000", "targetLSN": "A/1234", "targetTLI": tli}}}}})
 
+    def test_cnpg_accepts_plugin_backup_id(self) -> None:
+        # barman-cloud plugin backups are identified by backup_id
+        # (YYYYMMDDTHHMMSS), not the legacy backup-<14 digits> backup_name.
+        for backup_id in ("20260114T030001", "backup-20260114030000"):
+            Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": backup_id, "targetLSN": "A/1234", "targetTLI": "7"}}}}})
+        fake = gateway(); fake.results["selection"] = json.dumps(selection_document(cnpg_backup_id="20260114T030001")); drive(controller(fake))
+        cluster = next(item for item in fake.created if item["kind"] == "Cluster")
+        self.assertEqual("20260114T030001", cluster["spec"]["bootstrap"]["recovery"]["recoveryTarget"]["backupID"])
+
     def test_cnpg_rejects_bad_backup_id(self) -> None:
-        for backup_id in ("", "latest", "backup-1", "backup-abcdefghijklmn", 20260114030000):
+        for backup_id in ("", "latest", "backup-1", "backup-abcdefghijklmn", 20260114030000, "20260114T03000", "20260114t030001", "20260114T030001/"):
             with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": backup_id, "targetLSN": "A/1234", "targetTLI": "7"}}}}})
         with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"targetLSN": "A/1234", "targetTLI": "7"}}}}})
 
