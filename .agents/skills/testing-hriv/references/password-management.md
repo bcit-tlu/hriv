@@ -25,8 +25,16 @@ project’s DB accidentally. Use the same `-p` on every subsequent compose comma
 
 1. Login as `admin@example.ca` / `password` using `POST /api/auth/login`. Keep
    `access_token` in memory as `ADMIN`; do not print it or store the response.
-2. `POST /api/users/` with an admin bearer header and JSON
-   `{"name":"Disposable guest","email":"password-validation@example.test","role":"student","active":true}`.
+2. Generate a fresh identity for every run, including reruns on retained volumes:
+
+   ```bash
+   RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
+   GUEST_EMAIL="password-validation-${RUN_ID}@example.test"
+   GUEST_BODY=$(printf '{"name":"Disposable guest","email":"%s","role":"student","active":true}' "$GUEST_EMAIL")
+   ```
+
+   `POST /api/users/` with an admin bearer header and JSON body `$GUEST_BODY`
+   (for curl, `--data "$GUEST_BODY"`). Keep the email for later guest logins.
    Expect 201, `has_local_password:false`, `oidc_linked:false`,
    `must_change_password:false`. Save its numeric `id` as `GUEST_ID`.
 3. Mint with `POST /api/users/$GUEST_ID/password-setup-link`. Capture
@@ -69,9 +77,11 @@ and own-row editing must not show Clear password or force-change controls.
 ## OIDC fixture and reporting
 
 In this isolated local database only, create a separate disposable passworded
-account, obtain its login JWT, then set `users.oidc_subject` to a unique dummy
+account using email `password-validation-oidc-${RUN_ID}@example.test`, obtain its
+login JWT, then set `users.oidc_subject` to a unique dummy
 value with `docker compose -p hriv-password-validation exec -T db psql -U hriv -d hriv`.
-For example, `UPDATE users SET oidc_subject='password-validation-oidc' WHERE id=<fixture_id>;`.
+For example, `UPDATE users SET oidc_subject='password-validation-oidc-<RUN_ID>' WHERE id=<fixture_id>;`
+(substitute this run’s actual `RUN_ID` and numeric fixture ID).
 Never change a real IdP identity or a deployed DB for this test.
 
 Check `/auth/me` reports `oidc_linked:true`, admin mint returns **422
