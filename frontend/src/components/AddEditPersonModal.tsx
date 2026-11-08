@@ -77,6 +77,7 @@ function AddEditPersonForm({
     !user.oidc_linked &&
     user.has_local_password,
   )
+  if (!canResendLink && resendLink) setResendLink(false)
   const resending = canResendLink && resendLink
   const setupDisabledReason = user?.oidc_linked
     ? 'Managed by the identity provider'

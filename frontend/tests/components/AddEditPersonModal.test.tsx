@@ -239,6 +239,35 @@ describe('AddEditPersonModal', () => {
     expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
   })
 
+  it('discards re-send intent when hidden by deactivation, including after reactivation', async () => {
+    const actor = userEvent.setup()
+    const save = vi.fn().mockResolvedValue(undefined)
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={save}
+        onSetupLink={vi.fn()}
+        programs={programs}
+        user={{ ...existingUser, active: true, has_local_password: true }}
+      />,
+    )
+    await actor.click(screen.getByRole('checkbox', { name: 'Re-send password link' }))
+    await actor.click(screen.getByRole('switch', { name: 'Account active' }))
+    expect(
+      screen.queryByRole('checkbox', { name: 'Re-send password link' }),
+    ).not.toBeInTheDocument()
+    await actor.click(screen.getByRole('switch', { name: 'Account inactive' }))
+    expect(screen.getByRole('checkbox', { name: 'Re-send password link' })).not.toBeChecked()
+    expect(screen.getByLabelText('Password (leave blank to keep)')).toBeEnabled()
+    expect(
+      screen.getByRole('switch', { name: 'Force password change on next login' }),
+    ).toBeEnabled()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(save).toHaveBeenCalledOnce()
+    expect(save.mock.calls[0][0]).not.toHaveProperty('password')
+  })
+
   it('cancels a checked re-send without saving', async () => {
     const actor = userEvent.setup()
     const save = vi.fn()
