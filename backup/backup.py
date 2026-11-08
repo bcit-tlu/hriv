@@ -1617,7 +1617,7 @@ def _read_blob_container_client() -> _ReadContainer:
 
 _AZURE_ACCOUNT_NAME_RE = re.compile(r"^[a-z0-9]{3,24}$")
 _BARMAN_SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
-_BARMAN_BACKUP_ID_RE = re.compile(r"backup-[0-9]{14}")
+_BARMAN_BACKUP_ID_RE = re.compile(r"[0-9]{8}T[0-9]{6}")
 _BARMAN_BACKUP_DIR_RE = re.compile(r"[0-9]{8}T[0-9]{6}/")
 _MAX_BARMAN_CATALOG_BACKUPS = 512
 _MAX_BARMAN_INFO_BYTES = 64 * 1024
@@ -1726,8 +1726,15 @@ def _barman_base_backup_candidates(
         except ValueError:
             continue
         end_lsn = _postgres_lsn_value(info.get("end_xlog", ""))
-        backup_id = info.get("backup_name", "")
-        if end_lsn is None or _BARMAN_BACKUP_ID_RE.fullmatch(backup_id) is None:
+        # CNPG resolves ``recoveryTarget.backupID`` against barman's
+        # ``backup_id`` (the catalog directory name), not ``backup_name``;
+        # the barman-cloud plugin sets the two to different values.
+        backup_id = info.get("backup_id", "")
+        if (
+            end_lsn is None
+            or _BARMAN_BACKUP_ID_RE.fullmatch(backup_id) is None
+            or backup_id != relative[:-1]
+        ):
             continue
         candidates.append((end_lsn, timeline, backup_id))
     return candidates

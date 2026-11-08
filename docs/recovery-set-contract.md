@@ -220,7 +220,7 @@ Production restoration is component-selective:
    without a format version remain valid only when their `files` map supplies a
    valid size and SHA-256 for every selected member; manifestless archives fail
    closed.
-2. Restore PostgreSQL through CNPG with `recoveryTarget.targetLSN` set to the manifest's authoritative `database_recovery.target_lsn`; `target_time` is audit metadata, not the restore target. Where the orchestrator pins `recoveryTarget.backupID`, the bound backup must be the newest completed base backup ending before `target_lsn` on the fence timeline or an archived ancestor of it.
+2. Restore PostgreSQL through CNPG with `recoveryTarget.targetLSN` set to the manifest's authoritative `database_recovery.target_lsn`; `target_time` is audit metadata, not the restore target. Where the orchestrator pins `recoveryTarget.backupID`, the bound backup must be the newest completed base backup ending before `target_lsn` on the fence timeline or an archived ancestor of it. `cnpg_backup_id` carries barman's `backup_id` (the catalog directory name, `YYYYMMDDTHHMMSS`), which is what CNPG resolves `backupID` against; manifests produced before `backup` 0.17.1 recorded barman's `backup_name` (`backup-YYYYMMDDHHMMSS`) instead, which the barman-cloud plugin cannot resolve, so those recovery sets need a manually chosen `backupID`.
 3. Restore source images using filesystem-only mode to a fresh empty target PVC
    sized from manifest bytes plus headroom. A populated target may temporarily
    require staged restored bytes plus quarantined existing bytes, approaching
