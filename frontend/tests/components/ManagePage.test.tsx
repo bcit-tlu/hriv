@@ -335,6 +335,51 @@ describe('ManagePage', () => {
     ).not.toBeInTheDocument()
   }, 30_000)
 
+  it('shows stored objectives in the optional Objective column', async () => {
+    const user = userEvent.setup()
+    const base = {
+      thumb: '/thumb-a.jpg',
+      tile_sources: '/tile-a.dzi',
+      category_id: 10,
+      copyright: null,
+      note: null,
+      active: true,
+      version: 1,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        ...base,
+        id: 201,
+        name: 'Oil film',
+        sort_order: 0,
+        metadata_extra: { objective_power: 100 },
+      },
+      { ...base, id: 202, name: 'Phone shot', sort_order: 1, metadata_extra: null },
+    ])
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Oil film')
+    expect(screen.queryByRole('columnheader', { name: 'Objective' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Objective' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('columnheader', { name: 'Objective' })).toBeInTheDocument()
+    })
+    const oilRow = screen.getByText('Oil film').closest('tr') as HTMLElement
+    const phoneRow = screen.getByText('Phone shot').closest('tr') as HTMLElement
+    expect(within(oilRow).getByText('×100')).toBeInTheDocument()
+    expect(within(phoneRow).queryByText(/^×/)).not.toBeInTheDocument()
+  }, 30_000)
+
   it('keeps the filter bar in sync with visible columns', async () => {
     const user = userEvent.setup()
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)
@@ -520,6 +565,7 @@ describe('ManagePage', () => {
         'dimensions',
         'file_size',
         'measurement',
+        'objective',
         'annotations',
       ]),
     )

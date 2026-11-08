@@ -22,6 +22,7 @@ SCALE_KEY = "measurement_scale"
 UNIT_KEY = "measurement_unit"
 SOURCE_KEY = "measurement_scale_source"
 FINDING_KEY = "measurement_finding_id"
+OBJECTIVE_KEY = "objective_power"
 
 # Slide scans this large shrink cells below detection in the work thumbnail.
 RBC_MAX_SIDE_PX = 8000
@@ -184,6 +185,7 @@ async def scan_image(
                 # edited since approval stays externally owned instead.
                 await db.flush()
                 finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
+                finding.approved_objective = owner.approved_objective
                 image.metadata_ = {**meta, FINDING_KEY: finding.id}
                 image.version = image.version + 1
             return finding
@@ -311,8 +313,13 @@ async def approve_finding(
     reviewer_id: int,
     scale: float | None = None,
     unit: str | None = None,
+    objective: str | None = None,
 ) -> None:
-    """Promote a pending finding into the image's metadata (caller commits)."""
+    """Promote a pending finding into the image's metadata (caller commits).
+
+    ``objective`` is written to ``objective_power`` unless the image already
+    has one (e.g. embedded scanner metadata), which stays authoritative.
+    """
     edited = (scale is not None and scale != finding.proposed_scale) or (
         unit is not None and unit != finding.proposed_unit
     )
@@ -327,8 +334,13 @@ async def approve_finding(
         "manual" if edited else finding.source,
         finding.id,
     )
+    written_objective = None
+    if objective and image.metadata_.get(OBJECTIVE_KEY) is None:
+        image.metadata_ = {**image.metadata_, OBJECTIVE_KEY: float(objective)}
+        written_objective = objective
     image.version = image.version + 1
     finding.status = "approved"
+    finding.approved_objective = written_objective
     finding.approved_scale = final_scale
     finding.approved_unit = final_unit
     finding.reviewed_by = reviewer_id
@@ -391,9 +403,14 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
         image.metadata_ = {
             k: v for k, v in meta.items() if k not in _MEASUREMENT_METADATA_KEYS
         }
+        if finding.approved_objective is not None and meta.get(OBJECTIVE_KEY) == float(
+            finding.approved_objective
+        ):
+            image.metadata_.pop(OBJECTIVE_KEY, None)
         image.version = image.version + 1
         stripped = True
     finding.status = "pending"
+    finding.approved_objective = None
     finding.reviewed_by = None
     finding.reviewed_at = None
     return stripped

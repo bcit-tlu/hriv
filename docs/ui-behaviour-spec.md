@@ -152,7 +152,7 @@ images> / Empty` format used on category tiles.
 - **When** opened, **Then** a right-anchored panel slides in over the viewport
   (it does not resize OSD) listing one field per non-wrapping line — ellipsis
   with the full value in `title`: Copyright, Program(s), Group(s), Created,
-  Modified, Dimensions, Size, Measurement, Original file, File type, and (for
+  Modified, Dimensions, Size, Measurement, Objective, Original file, File type, and (for
   admins and instructors) Uploaded by. Empty fields are omitted; "No details
   available." shows when none render. The field list is the only scroll
   region; the viewer instructions (a bulleted list: "Scroll or tap to
@@ -1112,6 +1112,10 @@ committed on Save) in the edit modals.
 - The `Annotations` column is available in the column chooser but is off by
   default; it indicates whether an image has canvas edit annotations in
   `metadata_extra.canvas_annotations`.
+- The `Objective` column is available in the column chooser but is off by
+  default; it shows `metadata_extra.objective_power` as `×40` (or `—`). The
+  Edit image dialog edits the same key with an **Objective** dropdown below the
+  scale and unit fields; it is independent of the scale.
 - The `Collections` column is available in the column chooser but is off by
   default (and only offered while `COLLECTIONS_ENABLED` is on); it lists the
   caller-visible collections each image belongs to as clickable chips —

@@ -38,6 +38,8 @@ import type { ApiMeasurementFinding, MeasurementFindingStatus, MeasurementUnit }
 import { evidenceSummary } from '../measurementEvidence'
 import { measurementUnitLabel } from '../measurementUnits'
 import MeasurementScaleFields from './MeasurementScaleFields'
+import MeasurementObjectiveSelect from './MeasurementObjectiveSelect'
+import { objectiveLabel } from '../measurementUnits'
 import RenewingThumbnail from './RenewingThumbnail'
 
 export const SCAN_BATCH_SIZE = 10
@@ -95,7 +97,7 @@ interface ScanState {
 }
 
 type ReviewStatus = Exclude<MeasurementFindingStatus, 'superseded'>
-type Correction = { scale?: number; unit?: MeasurementUnit }
+type Correction = { scale?: number; unit?: MeasurementUnit; objective?: string | null }
 
 function formatScale(scale: number | null): string {
   if (scale == null) return '—'
@@ -133,6 +135,7 @@ export default function MeasurementReviewPage({
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [edits, setEdits] = useState<Record<number, string>>({})
   const [unitEdits, setUnitEdits] = useState<Record<number, MeasurementUnit>>({})
+  const [objectiveEdits, setObjectiveEdits] = useState<Record<number, string>>({})
   const [reloadToken, setReloadToken] = useState(0)
   const [scan, setScan] = useState<ScanState | null>(null)
   const [learnMoreOpen, setLearnMoreOpen] = useState(false)
@@ -167,6 +170,9 @@ export default function MeasurementReviewPage({
           Object.fromEntries(Object.entries(prev).filter(([id]) => onScreen.has(Number(id)))),
         )
         setUnitEdits((prev) =>
+          Object.fromEntries(Object.entries(prev).filter(([id]) => onScreen.has(Number(id)))),
+        )
+        setObjectiveEdits((prev) =>
           Object.fromEntries(Object.entries(prev).filter(([id]) => onScreen.has(Number(id)))),
         )
         setFindings(result.items)
@@ -308,7 +314,7 @@ export default function MeasurementReviewPage({
       return `Reset “${finding.image_name}” to pending.`
     })
 
-  /** `{}` to accept the proposal, `{ scale?, unit? }` for a correction, `null` if the edit is invalid. */
+  /** `{}` to accept the proposal, `{ scale?, unit?, objective? }` for a correction, `null` if the edit is invalid. */
   const correctionFor = (finding: ApiMeasurementFinding): Correction | null => {
     const correction: Correction = {}
     const edited = edits[finding.id]
@@ -319,7 +325,20 @@ export default function MeasurementReviewPage({
     }
     const unit = unitEdits[finding.id]
     if (unit != null && unit !== finding.proposed_unit) correction.unit = unit
+    const objective = objectiveEdits[finding.id]
+    if (objective != null && objective !== (finding.objective ?? ''))
+      correction.objective = objective || null
     return correction
+  }
+
+  // Known cameras have a calibrated scale per objective, so picking one fills it in.
+  const handleObjectiveChange = (finding: ApiMeasurementFinding, value: string) => {
+    setObjectiveEdits((prev) => ({ ...prev, [finding.id]: value }))
+    const calibrated = value ? finding.objective_scales?.[value] : undefined
+    if (calibrated != null) {
+      setEdits((prev) => ({ ...prev, [finding.id]: String(calibrated) }))
+      setUnitEdits((prev) => ({ ...prev, [finding.id]: 'um' }))
+    }
   }
 
   const handleApprove = (finding: ApiMeasurementFinding) =>
@@ -528,7 +547,7 @@ export default function MeasurementReviewPage({
               )}
               <TableCell>Image</TableCell>
               <TableCell>
-                <Tooltip title="Microscope objective lens (×10, ×40 or ×100) the detector matched for this camera. Its calibrated px/µm is the proposed scale. Blank for unknown cameras.">
+                <Tooltip title="Microscope objective lens (×10, ×40 or ×100) the detector matched for this camera. Its calibrated px/µm is the proposed scale; picking another objective fills in its calibrated scale. Approving saves it as the image's objective unless one is already stored. Blank for unknown cameras.">
                   <span>Detected objective</span>
                 </Tooltip>
               </TableCell>
@@ -623,7 +642,22 @@ export default function MeasurementReviewPage({
                       </Box>
                     </Stack>
                   </TableCell>
-                  <TableCell>{f.objective ? `×${f.objective}` : '—'}</TableCell>
+                  <TableCell>
+                    {pending ? (
+                      <MeasurementObjectiveSelect
+                        size="small"
+                        ariaLabel={f.image_name}
+                        value={objectiveEdits[f.id] ?? f.objective ?? ''}
+                        onChange={(value) => handleObjectiveChange(f, value)}
+                      />
+                    ) : (
+                      objectiveLabel(
+                        f.status === 'approved'
+                          ? (f.approved_objective ?? f.objective)
+                          : f.objective,
+                      ) || '—'
+                    )}
+                  </TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {formatWithUnit(f.proposed_scale, f.proposed_unit)}
                   </TableCell>

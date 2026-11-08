@@ -174,6 +174,7 @@ def _finding(**kw) -> SimpleNamespace:
         detector_version=DETECTOR_VERSION,
         approved_scale=None,
         approved_unit=None,
+        approved_objective=None,
         reviewed_by=None,
         reviewed_at=None,
         created_at=datetime.now(timezone.utc),
@@ -1185,3 +1186,95 @@ async def test_scan_after_processing_never_raises(monkeypatch, caplog, error) ->
     assert any(
         getattr(r, "event", None) == "measurement.upload_scan_failed" for r in caplog.records
     )
+
+
+# ── objective_power on approval ───────────────────────────
+
+
+async def test_approve_finding_writes_objective_power() -> None:
+    finding, image = _finding(), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3, objective="40")
+    assert image.metadata_["objective_power"] == 40.0
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+    assert finding.approved_objective == "40"
+
+
+async def test_approve_finding_keeps_existing_objective_power() -> None:
+    finding = _finding()
+    image = _image(metadata_={"objective_power": 20.0})
+    await service.approve_finding(AsyncMock(), finding, image, 3, objective="40")
+    assert image.metadata_["objective_power"] == 20.0
+    assert finding.approved_objective is None
+
+
+async def test_approve_finding_without_objective_writes_none() -> None:
+    finding, image = _finding(), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert "objective_power" not in image.metadata_
+    assert finding.approved_objective is None
+
+
+async def test_approve_endpoint_uses_detected_objective_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    finding, image = _finding(), _image()
+    out = await router.approve(5, _user(), None, _db_with(finding, image))
+    assert image.metadata_["objective_power"] == 40.0
+    assert out.approved_objective == "40"
+    assert out.objective_scales == {"10": 2.0, "40": 7.3, "100": 18.7}
+
+
+@pytest.mark.parametrize("objective,expected", [("100", 100.0), (None, None)])
+async def test_approve_endpoint_objective_correction(
+    monkeypatch, objective, expected
+) -> None:
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    finding, image = _finding(), _image()
+    body = MeasurementApprove(scale=18.7, objective=objective)
+    await router.approve(5, _user(), body, _db_with(finding, image))
+    assert image.metadata_.get("objective_power") == expected
+
+
+def test_approve_schema_rejects_unknown_objective() -> None:
+    with pytest.raises(ValidationError):
+        MeasurementApprove(objective="45")
+
+
+def test_out_has_no_objective_scales_for_unknown_camera() -> None:
+    out = router._out(_finding(), _image(width=1000, height=800))
+    assert out.objective_scales is None
+
+
+def test_reset_finding_strips_objective_it_wrote() -> None:
+    finding = _finding(
+        status="approved",
+        approved_scale=7.3,
+        approved_unit="um",
+        approved_objective="40",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": 5,
+            "objective_power": 40.0,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {}
+    assert finding.approved_objective is None
+
+
+def test_reset_finding_keeps_objective_it_did_not_write() -> None:
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": 5,
+            "objective_power": 20.0,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {"objective_power": 20.0}
