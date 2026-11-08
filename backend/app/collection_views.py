@@ -29,6 +29,7 @@ from .authz import (
     can_transfer_collection,
     can_view_collection,
 )
+from .database import settings
 from .models import Collection, CollectionImage, Image, User
 from .schemas import (
     CollectionOut,
@@ -38,6 +39,10 @@ from .schemas import (
     ImageOut,
 )
 from .visibility import get_student_excluded_category_ids
+
+
+def collections_accessible_to(user: User) -> bool:
+    return user.role != "student" or settings.collections_student_access
 
 
 class _ViewerContext:
@@ -76,6 +81,8 @@ class _ViewerContext:
         A curatorially hidden collection (#1559) drops out of student view
         unless the student is a user-owner — owners keep access.
         """
+        if not collections_accessible_to(self.user):
+            return False
         if (
             collection.hidden
             and self.excluded_category_ids is not None

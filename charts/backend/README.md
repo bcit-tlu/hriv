@@ -196,8 +196,8 @@ so unrelated fixes keep shipping through the normal release-please flow while
 the feature lands piecemeal: with the flag off every `/api/collections` route
 answers `404` and the frontend — which reads `GET /api/features` at boot —
 hides the Collections tab and ignores `?collection=` deep links. The `latest`
-`flux-fleet` overlay sets `collections.enabled: true`; `stable` inherits the
-chart default until the epic is promoted. Only the API pod needs the variable
+`flux-fleet` overlay sets `collections.enabled: true`; `stable` controls student
+exposure separately via `collections.studentAccess` below. Only the API pod needs the variable
 (the worker never serves the router). Flipping it is a rollout-only change
 (no migration: the collections tables are additive and already present). See
 [`docs/collections.md`](../../docs/collections.md).
@@ -205,6 +205,18 @@ chart default until the epic is promoted. Only the API pod needs the variable
 `collections.homeShelf` renders `COLLECTIONS_HOME_SHELF` and defaults to
 `false`. The drawer is effective only when `collections.enabled` is also true;
 the `latest` overlay may enable it independently of `stable`.
+
+`collections.studentAccess` renders `COLLECTIONS_STUDENT_ACCESS` on the API
+pod and defaults to `true`. With collections enabled, setting it to `false`
+hides all collections surfaces from students (404, including owned collections)
+without changing admin, instructor or staff access. The stable flux-fleet
+overlay pins it false (flux-fleet#399); latest leaves it unpinned. Re-enablement
+is an overlay values change and rollout only (flux-fleet#400), with no data
+migration or hriv release. `GET /api/features` reports
+`collections_student_access`; the frontend applies it to navigation, deep links
+and the shelf. Students may still be pre-staged as co-owners by authorized
+curators while access is disabled. See the
+[student-access contract](../../docs/collections.md#student-access-collections_student_access-1748).
 
 ## API configuration
 
@@ -360,6 +372,73 @@ psql client image comes from `bootstrapAdmin.image` (default
 `postgres:16-alpine`), deliberately decoupled from `postgres.cluster.image`
 so installs with `postgres.enabled=false` (external database) do not pull
 the CNPG cluster image just to run psql.
+
+## Object counting worker (`counting.*`, `countingWorker.*`)
+
+Counting uses a dedicated arq queue and CPU-only image,
+`ghcr.io/bcit-tlu/hriv/hriv-counting-worker`, built from the backend Dockerfile's
+`counting-worker` target. The image installs the optional Poetry `counting`
+and `counting-ml` groups and bakes the InstanSeg nuclei model; it does not
+download weights at startup. Cells use classical watershed; cyto3 is deferred.
+The worker mounts tiles read-only, has no source-images mount or database
+credentials, and does not compete with the tile-worker queue.
+
+Both flags are opt-in. Example values (merge with your environment's storage,
+Redis and observability configuration):
+
+```yaml
+counting:
+  enabled: true
+countingWorker:
+  enabled: true
+  replicaCount: 2
+```
+
+The chart requires `redis.enabled=true`, `persistence.enabled=true`, and a
+**ReadWriteMany** tiles PVC when the worker is enabled; invalid combinations
+fail rendering. Enabling only the API flag leaves requests unavailable without
+a live worker. `counting.*` budgets are shared by API pre-flight and the worker;
+outliner selection also feeds the API so it uses the correct mode's budget.
+
+| Values key                                                                      | Default                                                           | Purpose                                                                            |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `counting.enabled`                                                              | `false`                                                           | API feature flag (`COUNTING_ENABLED`).                                             |
+| `counting.queueName`                                                            | `arq:counting`                                                    | Dedicated queue.                                                                   |
+| `counting.maxPixels` / `classicalMaxPixels`                                     | `750000` / `2000000`                                              | ML / classical stitched-pixel budgets.                                             |
+| `counting.maxDownsample` / `marginPx`                                           | `8` / `32`                                                        | Maximum power-of-two downsample / processing-level margin.                         |
+| `counting.maxActivePerUser`                                                     | `3`                                                               | Queued/running per-user cap.                                                       |
+| `counting.resultTtlSeconds` / `jobTimeoutSeconds`                               | `600` / `60`                                                      | Ephemeral result TTL / hard job timeout.                                           |
+| `counting.maxObjects`                                                           | `3000`                                                            | Maximum returned objects.                                                          |
+| `countingWorker.enabled` / `replicaCount`                                       | `false` / `1`                                                     | Render worker Deployment / static replicas.                                        |
+| `countingWorker.image.repository`                                               | `ghcr.io/bcit-tlu/hriv/hriv-counting-worker`                      | Dedicated image.                                                                   |
+| `countingWorker.image.tag` / `pullPolicy`                                       | `''` / `IfNotPresent`                                             | Empty tag falls back to backend `image.tag`, then `Chart.AppVersion`.              |
+| `countingWorker.cellsOutliner` / `nucleiOutliner`                               | `classical` / `instanseg`                                         | Cells: classical or stub; nuclei: instanseg, classical or stub. Stub is test-only. |
+| `countingWorker.torchThreads`                                                   | `2`                                                               | CPU torch threads per process.                                                     |
+| `countingWorker.terminationGracePeriodSeconds`                                  | `30`                                                              | Pod shutdown grace.                                                                |
+| `countingWorker.probes.liveness.enabled`                                        | `true`                                                            | arq worker health probe.                                                           |
+| `countingWorker.probes.liveness.initialDelaySeconds` / `periodSeconds`          | `60` / `60`                                                       | Startup allowance / probe interval.                                                |
+| `countingWorker.probes.liveness.timeoutSeconds` / `failureThreshold`            | `15` / `10`                                                       | Probe timeout / failure threshold.                                                 |
+| `countingWorker.resources.requests`                                             | CPU `2`, memory `1.5Gi`                                           | Per-replica resource requests.                                                     |
+| `countingWorker.resources.limits`                                               | CPU `2`, memory `3Gi`                                             | Per-replica limits.                                                                |
+| `countingWorker.autoscaling.enabled`                                            | `false`                                                           | Optional CPU HPA; static sizing preferred for short bursts.                        |
+| `countingWorker.autoscaling.minReplicas` / `maxReplicas`                        | `1` / `5`                                                         | HPA bounds.                                                                        |
+| `countingWorker.autoscaling.targetCPUUtilizationPercentage`                     | `70`                                                              | HPA target.                                                                        |
+| `countingWorker.networkPolicy.enabled`                                          | `false`                                                           | Deny ingress; allow selected Redis, DNS and OTel egress.                           |
+| `countingWorker.networkPolicy.redis.podSelector` / `namespaceSelector` / `port` | `app.kubernetes.io/name: hriv-redis` / `{}` / `6379`              | Redis peer selection.                                                              |
+| `countingWorker.networkPolicy.dns.namespaceSelector` / `port`                   | `kubernetes.io/metadata.name: kube-system` / `53`                 | DNS peer selection.                                                                |
+| `countingWorker.networkPolicy.otel.podSelector` / `namespaceSelector` / `port`  | `app.kubernetes.io/name: opentelemetry-collector` / `{}` / `4317` | Collector peer; rendered only with `observability.openTelemetry.enabled`.          |
+
+Selector label mappings above are `matchLabels` entries. Set selectors to the
+actual environment peers before enabling the policy. Defaults and full nesting
+are in [values.yaml](values.yaml); all backend `COUNTING_*` settings are in
+[the feature guide](../../docs/object-counting.md#feature-flag-and-settings).
+
+Keep one job per process and `torchThreads: 2` matched to the 2-CPU limit.
+Start with one replica on staging and two for stable availability; budget-limit
+Nuclei lab bursts can need four. CPU HPA reacts too late for minute-long bursts,
+so size replicas before class rather than increasing per-process concurrency.
+See [Capacity](../../docs/object-counting.md#capacity-1670) for measured load,
+resource assumptions and the instructor-validation gate before stable enablement.
 
 ## Upgrade Notes
 

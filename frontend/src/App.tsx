@@ -200,7 +200,9 @@ export default function App() {
   // Deployment flags (`GET /api/features`). Collections are dark-launched:
   // the tab and `?collection=` deep links only exist once the flag is on.
   const features = useFeatures()
-  const collectionsEnabled = features?.collections === true
+  const collectionsEnabled =
+    features?.collections === true &&
+    (currentUser?.role !== 'student' || features?.collectionsStudentAccess === true)
 
   // `?collection={id}` implies the Collections page (deep link, #1414);
   // `&item={image_id}` is the sequence viewer position (#1416).
@@ -252,19 +254,19 @@ export default function App() {
       ? 'browse'
       : (page === 'admin' && !canManageUsers) || (page === 'people' && !canViewPeople)
         ? 'browse'
-        : page === 'collections' && features != null && !features.collections
+        : page === 'collections' && features != null && !collectionsEnabled
           ? 'browse'
           : page
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
   useEffect(() => {
-    if (features == null || features.collections || page !== 'collections') return
+    if (features == null || collectionsEnabled || page !== 'collections') return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
     setPage('browse')
     setSelectedCollectionId(null)
     setCollectionFromBrowse(false)
-  }, [features, page])
+  }, [features, collectionsEnabled, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
@@ -506,6 +508,7 @@ export default function App() {
   })
 
   const myCollectionsShelfEnabled =
+    collectionsEnabled &&
     features?.collectionsHomeShelf === true &&
     currentUser != null &&
     (page === 'browse' || page === 'collections')
@@ -1098,6 +1101,7 @@ export default function App() {
     handleReplaceBrowseImage,
     handleDeleteViewerImage,
     handleDeleteBrowseImage,
+    openBrowseEditImageById,
   } = useImageActions({
     categories,
     setCategories,
@@ -2311,6 +2315,11 @@ export default function App() {
     [handleOpenCollectionImage],
   )
 
+  // Saving/deleting from the shared edit modal can change an image's stored
+  // scale; bump this so a mounted Measurement Review list refetches.
+  const [measurementRefresh, setMeasurementRefresh] = useState(0)
+  const bumpMeasurementRefresh = useCallback(() => setMeasurementRefresh((n) => n + 1), [])
+
   // Show loading spinner while users are loading
   if (usersLoading) {
     return (
@@ -2446,7 +2455,11 @@ export default function App() {
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'measurement' && canEditContent ? (
-            <MeasurementReviewPage />
+            <MeasurementReviewPage
+              onOpenImage={handleOpenGraphImage}
+              onEditImage={openBrowseEditImageById}
+              refreshToken={measurementRefresh}
+            />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
               currentUser={currentUser}
@@ -3465,8 +3478,17 @@ export default function App() {
       <EditImageModal
         open={browseEditImage != null}
         onClose={() => setBrowseEditImage(null)}
-        onSave={handleSaveBrowseImage}
-        onDelete={browseEditImage ? handleDeleteBrowseImage : undefined}
+        onSave={async (data) => {
+          if (await handleSaveBrowseImage(data)) bumpMeasurementRefresh()
+        }}
+        onDelete={
+          browseEditImage
+            ? async () => {
+                await handleDeleteBrowseImage()
+                bumpMeasurementRefresh()
+              }
+            : undefined
+        }
         onReplace={handleReplaceBrowseImage}
         onCancelReplace={cancelReplace}
         replaceUploadProgress={browseReplaceUploadProgress}
@@ -3488,6 +3510,9 @@ export default function App() {
                       ? findCategoryPath(categories, browseEditImage.categoryId)
                       : null
                   setPath(catPath ?? [])
+                  // The modal can be opened off the browse page (e.g. from
+                  // Measurement Review), so switch the page explicitly.
+                  setPage('browse')
                   pushNavState('browse', catPath?.map((c) => c.id) ?? [], browseEditImage.id)
                 })
               }

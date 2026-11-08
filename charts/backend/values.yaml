@@ -231,6 +231,9 @@ tasks:
 collections:
   enabled: false
   homeShelf: false
+  # Allow student access when collections is enabled. Set false to hide all
+  # collections surfaces from students (404); non-students retain access.
+  studentAccess: true
 
 api:
   # SQLAlchemy pool sizing for the API process (DB_POOL_SIZE /

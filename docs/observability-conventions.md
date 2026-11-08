@@ -1101,10 +1101,19 @@ API's single atomic Redis read, mirroring the task-queue semantics.
 `{mode, outcome}`, plus `reason` on `failed` (the job error code:
 `timeout`/`too_large`/`too_many_objects`/`no_tiles`/`internal`) and on
 `rejected_*`/`queue_unavailable` outcomes (the API detail code).
-`outcome` ∈ `enqueued`/`done`/`failed`/`cancelled`/`rejected_too_large`/
+`outcome` ∈ `enqueued`/`done`/`failed`/`cancelled`/`expired`/`rejected_too_large`/
 `rejected_rate_limited`/`queue_unavailable`. `cancelled` counts only a
 DELETE of a queued/running job; deleting a finished (done/failed) job is
 a "clear" — logged as `count.cleared`, not counted.
+
+`expired` counts a worker dequeue whose Redis job record has vanished, with
+a matching `count.expired` event (`job_id`, `image_id`, `mode`). New enqueues
+carry mode/image ID separately from the expiring record; older queued jobs
+use bounded mode `unknown` and a null image ID. Redis deletion and TTL expiry
+are indistinguishable here: a cancelled job that still reaches the worker
+can also emit `expired`. This is an observation counter, not an exclusive
+terminal-state ledger. Poll/DELETE of an unknown ID cannot distinguish TTL
+expiry from an invented ID or a cancelled job, so they do not count expiry.
 
 ### `hriv.count.wait` histogram (s, `{mode}`)
 
@@ -1115,7 +1124,13 @@ stored on the job record (`created_at` is only second-precision).
 
 Per-step pipeline duration. `step` ∈ `plan` (size-driven level rule incl.
 the probe stitch), `stitch`, `outline`, `objects` (objects_from_labels +
-filters), `group`, `preview`, `total`.
+filters), `group`, `preview`, `serialise`, `total`.
+
+`serialise` measures result JSON serialization and its Redis write in the
+worker, including failed writes, with a `count.serialise` child span.
+The existing `total` step remains pipeline-only; the completed event's
+`duration_ms` includes the result write and `timings_ms.serialise` reports
+that step separately. Instrument names and the `step` label are unchanged.
 
 ### `hriv.count.objects` / `hriv.count.pixels` histograms (`{mode}`)
 
@@ -1138,3 +1153,12 @@ Child spans `count.<step>` under the `count_objects_task` task span, with
 attributes `count.mode`, `count.level`, `count.downsample`, `count.pixels`,
 `count.objects`, `count.groups`, `count.outliner`. No image content or user
 PII; `image.id`/`count.job_id` follow the existing span conventions.
+
+### Lifecycle log timings
+
+`count.started.wait_seconds` is enqueue-to-start latency, matching the wait
+histogram. `count.cancelled.duration_ms` is the job's age since enqueue
+(including queue wait), not just worker execution time. Both are null if a
+legacy record has no `enqueued_at` timestamp, and non-negative otherwise.
+`count.completed` retains `duration_ms` and per-step `timings_ms`;
+`count.failed` retains `duration_ms`. Enqueued/rejected events are unchanged.

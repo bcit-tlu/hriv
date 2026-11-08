@@ -33,7 +33,7 @@ All seed users share the password `password`.
 | Browse categories & view images                        | Yes   | Yes        | Yes   | Yes†    |
 | Count objects in a selection (when `COUNTING_ENABLED`) | Yes   | Yes        | Yes   | Yes†    |
 | View image uploader name                               | Yes   | Yes        | No    | No      |
-| View collections (API)                                 | Yes   | Yes        | Yes   | Yes¶    |
+| View collections (API; student deployment gate¶)       | Yes   | Yes        | Yes   | Yes¶    |
 | Create collections‖                                    | Yes   | Yes        | Yes   | Yes     |
 | Edit co-owned collections‖                             | Yes   | Yes        | Yes   | Yes     |
 | Delete own collections‖                                | Yes   | Yes        | Yes\* | Yes\*   |
@@ -73,6 +73,11 @@ open are omitted from collection responses. Admins, instructors and staff see
 every collection. Edit/delete/owner-management authority (admin, co-owner, or
 instructor in the owning program) is described in
 [docs/collections.md](docs/collections.md).
+
+All collections capabilities require `COLLECTIONS_ENABLED=true`; student
+capabilities additionally require `COLLECTIONS_STUDENT_ACCESS=true` (default).
+The stable overlay pins student access off: students receive 404 even for
+owned collections and see no collections UI; other roles are unchanged.
 
 ‖ Collections support multiple user co-owners plus, or instead of, a program
 owner. Every role may create collections (the creator becomes the first user

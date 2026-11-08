@@ -3,6 +3,7 @@ import {
   diag,
   DiagConsoleLogger,
   DiagLogLevel,
+  propagation,
   SpanStatusCode,
   trace,
   type Span,
@@ -12,7 +13,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
 import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch'
 import { resourceFromAttributes } from '@opentelemetry/resources'
-import { BatchSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web'
+import { BatchSpanProcessor, StackContextManager, TracerProvider } from '@opentelemetry/sdk-trace'
 import {
   ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
   ATTR_SERVICE_NAME,
@@ -163,7 +164,7 @@ export interface FrontendPerformanceEventOptions {
   categoryId?: number
 }
 
-let _tracerProvider: WebTracerProvider | null = null
+let _tracerProvider: TracerProvider | null = null
 let _initialized = false
 
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -599,13 +600,15 @@ export function initObservability(): void {
     const traceExporter = new OTLPTraceExporter({
       url: `${endpoint}/v1/traces`,
     })
-    _tracerProvider = new WebTracerProvider({
+    _tracerProvider = new TracerProvider({
       resource,
-      spanProcessors: [new BatchSpanProcessor(traceExporter)],
+      spanProcessors: [new BatchSpanProcessor({ exporter: traceExporter })],
     })
-    _tracerProvider.register({
-      propagator: new W3CTraceContextPropagator(),
-    })
+    // WebTracerProvider.register() folded these three calls into one; the
+    // unified 3.x SDK registers each global through the API directly.
+    context.setGlobalContextManager(new StackContextManager())
+    propagation.setGlobalPropagator(new W3CTraceContextPropagator())
+    trace.setGlobalTracerProvider(_tracerProvider)
 
     const fetchConfig: { clearTimingResources: boolean; propagateTraceHeaderCorsUrls?: RegExp[] } =
       {

@@ -635,6 +635,18 @@ async def test_features_endpoint_reports_effective_collection_flags(monkeypatch)
         assert result.collections_home_shelf is expected_shelf
 
 
+async def test_features_reports_student_access_per_request(monkeypatch):
+    from app.database import Settings, settings
+    from app.main import features
+
+    assert Settings().collections_student_access is True
+    for enabled in (False, True):
+        monkeypatch.setattr(settings, "collections_enabled", enabled)
+        for student_access in (False, True):
+            monkeypatch.setattr(settings, "collections_student_access", student_access)
+            assert (await features()).collections_student_access is student_access
+
+
 def test_otel_route_details_resolves_included_routes() -> None:
     """``_get_route_details`` must resolve routes from the real app tree.
 

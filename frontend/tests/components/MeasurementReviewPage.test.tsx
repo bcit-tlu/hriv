@@ -38,8 +38,10 @@ function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementR
     fetchFindings: vi.fn(async () => ({ items, total: items.length })),
     scan: vi.fn(async () => ({ image_ids: [11, 12], mode: 'queued' as const })),
     scanProgress: vi.fn(async () => ({ total: 2, done: 2 })),
+    scanRemaining: vi.fn(async () => ({ remaining: 0 })),
     approve: vi.fn(async (id: number) => makeFinding({ id, status: 'approved' })),
     reject: vi.fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
+    reset: vi.fn(async (id: number) => makeFinding({ id, status: 'pending' })),
     bulkApprove: vi.fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),
   }
 }
@@ -235,6 +237,107 @@ describe('MeasurementReviewPage', () => {
       expect(api.fetchFindings).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 })),
     )
     expect(await screen.findByText('Blood film 40x')).toBeInTheDocument()
+  })
+
+  it('resets an approved finding back to pending', async () => {
+    const api = makeApi([makeFinding({ status: 'approved', approved_scale: 7.3 })])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset Blood film 40x' }))
+    expect(api.reset).toHaveBeenCalledWith(1)
+    expect(await screen.findByText('Reset “Blood film 40x” to pending.')).toBeInTheDocument()
+  })
+
+  it('resets a rejected finding back to pending', async () => {
+    const api = makeApi([makeFinding({ status: 'rejected' })])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Rejected' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset Blood film 40x' }))
+    expect(api.reset).toHaveBeenCalledWith(1)
+  })
+
+  it('links the thumbnail to the viewer and the name to the edit dialog', async () => {
+    const api = makeApi()
+    const onOpenImage = vi.fn()
+    const onEditImage = vi.fn()
+    render(<MeasurementReviewPage api={api} onOpenImage={onOpenImage} onEditImage={onEditImage} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Open Blood film 40x' }))
+    expect(onOpenImage).toHaveBeenCalledWith(11)
+    await userEvent.click(screen.getByRole('button', { name: 'Blood film 40x' }))
+    expect(onEditImage).toHaveBeenCalledWith(11)
+  })
+
+  it('opens the learn-more dialog from the description link', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Learn more' }))
+    expect(await screen.findByText('How measurement review works')).toBeInTheDocument()
+    expect(screen.getByText(/how many cells were measured/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+  })
+
+  it('keeps an in-progress correction across an external refresh', async () => {
+    const api = makeApi()
+    const { rerender } = render(<MeasurementReviewPage api={api} refreshToken={0} />)
+    const field = await screen.findByLabelText('Scale for Blood film 40x')
+    await userEvent.clear(field)
+    await userEvent.type(field, '2')
+    vi.mocked(api.fetchFindings).mockResolvedValue({
+      items: [makeFinding({ confidence: 0.55 })],
+      total: 1,
+    })
+    rerender(<MeasurementReviewPage api={api} refreshToken={1} />)
+    // Wait for the refreshed row to render before checking the edit survived.
+    await screen.findByText('55%')
+    expect(screen.getByLabelText('Scale for Blood film 40x')).toHaveValue(2)
+  })
+
+  it('drops a correction only when its row leaves the fetched page', async () => {
+    const api = makeApi()
+    const { rerender } = render(<MeasurementReviewPage api={api} refreshToken={0} />)
+    const field = await screen.findByLabelText('Scale for Blood film 40x')
+    await userEvent.clear(field)
+    await userEvent.type(field, '2')
+    vi.mocked(api.fetchFindings).mockResolvedValue({ items: [], total: 0 })
+    rerender(<MeasurementReviewPage api={api} refreshToken={1} />)
+    await screen.findByText(/No findings to review/)
+    // The row is gone; a later refetch that restores it must not resurrect the edit.
+    vi.mocked(api.fetchFindings).mockResolvedValue({
+      items: [makeFinding()],
+      total: 1,
+    })
+    rerender(<MeasurementReviewPage api={api} refreshToken={2} />)
+    expect(await screen.findByLabelText('Scale for Blood film 40x')).toHaveValue(7.3)
+  })
+
+  it('scans the whole library and tracks remaining candidates', async () => {
+    const api = makeApi()
+    vi.mocked(api.scanRemaining)
+      .mockResolvedValueOnce({ remaining: 2 })
+      .mockResolvedValueOnce({ remaining: 0 })
+    render(<MeasurementReviewPage api={api} scanPollMs={10} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Scan all' }))
+    expect(api.scan).toHaveBeenCalledWith({ all: true })
+    expect(await screen.findByText(/Scanning images: 0 of 2 done/)).toBeInTheDocument()
+    expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
+    expect(api.scanRemaining).toHaveBeenCalledWith({ rescan: false, maxImageId: 12 })
+    expect(api.scanProgress).not.toHaveBeenCalled()
+  })
+
+  it('re-scans every image with an outdated finding', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} scanPollMs={10} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Re-scan outdated' }))
+    expect(api.scan).toHaveBeenCalledWith({ all: true, rescan: true })
+    await waitFor(() =>
+      expect(api.scanRemaining).toHaveBeenCalledWith({ rescan: true, maxImageId: 12 }),
+    )
   })
 
   it('shows reviewed findings read-only', async () => {

@@ -8,6 +8,7 @@ import pyvips
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
 from app.measurement import service
@@ -378,7 +379,7 @@ async def test_scan_enqueues(monkeypatch) -> None:
     bg = BackgroundTasks()
     out = await router.scan(MeasurementScanRequest(), bg, _user(), db)
     assert out.image_ids == [4, 5] and out.mode == "queued"
-    enqueue.assert_awaited_once_with([4, 5])
+    enqueue.assert_awaited_once_with([4, 5], False)
     assert not bg.tasks
 
 
@@ -685,3 +686,446 @@ async def test_scan_progress_counts_live_findings_and_deleted_images() -> None:
     db.execute.side_effect = [found, present]
     out = await router.scan_progress(_user(), db, [11, 12, 13])
     assert (out.total, out.done) == (3, 2)
+
+
+async def test_scan_progress_min_finding_id_filters_older_rows() -> None:
+    db = AsyncMock()
+    found, present = MagicMock(), MagicMock()
+    found.scalars.return_value = []
+    present.scalars.return_value = [11]
+    db.execute.side_effect = [found, present]
+    out = await router.scan_progress(_user(), db, [11], min_finding_id=9)
+    assert (out.total, out.done) == (1, 0)
+    sql = str(
+        db.execute.await_args_list[0].args[0].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "measurement_findings.id > 9" in sql
+
+
+# ── rescan / reset / whole-library scans ──────────────────
+
+
+def test_rescan_candidates_stmt_needs_stale_finding_and_no_scale() -> None:
+    sql = str(
+        service.rescan_candidates_stmt(10, category_id=4).compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "detector_version" in sql and DETECTOR_VERSION in sql
+    assert "measurement_findings.status != 'superseded'" in sql
+    assert "jsonb_typeof" in sql  # scaled images excluded
+    assert "images.category_id = 4" in sql
+    assert "LIMIT 10" in sql
+
+
+def test_scan_candidates_stmt_without_limit_selects_all() -> None:
+    sql = str(
+        service.scan_candidates_stmt(None).compile(dialect=postgresql.dialect())
+    )
+    assert "LIMIT" not in sql
+
+
+async def test_scan_image_rescan_supersedes_reviewed_findings() -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=None)
+    db.add = MagicMock()
+    await service.scan_image(db, _image(), rescan=True)
+    sql = str(
+        db.execute.await_args.args[0].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    for status in ("pending", "approved", "rejected"):
+        assert status in sql
+    assert "superseded" in sql
+
+
+async def test_scan_image_rescan_rerecords_scaled_image() -> None:
+    """A rescan refreshes even an already-recorded stored scale."""
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)  # an approved finding exists
+    db.add = MagicMock()
+    meta = {"measurement_scale": 4.0, "measurement_unit": "um"}
+    finding = await service.scan_image(db, _image(metadata_=meta), rescan=True)
+    assert finding is not None and finding.status == "approved"
+    assert finding.approved_scale == 4.0
+    db.add.assert_called_once()
+
+
+def test_reset_finding_rejected_clears_review() -> None:
+    finding = _finding(status="rejected", reviewed_by=7)
+    image = _image(metadata_={"measurement_scale": 9.9})
+    assert service.reset_finding(finding, image) is False
+    assert finding.status == "pending"
+    assert finding.reviewed_by is None and finding.reviewed_at is None
+    # Rejected findings never wrote metadata; an existing scale stays.
+    assert image.metadata_ == {"measurement_scale": 9.9}
+
+
+def test_reset_finding_approved_strips_its_own_scale() -> None:
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": 5,
+            "canvas_annotations": [{"id": "x"}],
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {"canvas_annotations": [{"id": "x"}]}
+    assert image.version == 5
+    assert finding.status == "pending"
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        # Scale belongs to another finding or was entered manually.
+        {"measurement_scale": 7.3, "measurement_finding_id": 8},
+        # The stored scale was changed after this finding promoted it.
+        {
+            "measurement_scale": 9.9,
+            "measurement_unit": "um",
+            "measurement_finding_id": 5,
+        },
+    ],
+)
+def test_reset_finding_keeps_scales_it_did_not_write(meta) -> None:
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(metadata_=dict(meta))
+    assert service.reset_finding(finding, image) is False
+    assert image.metadata_["measurement_scale"] == meta["measurement_scale"]
+    assert image.version == 4
+    assert finding.status == "pending"
+
+
+async def test_reset_endpoint_rejected_to_pending() -> None:
+    finding = _finding(status="rejected", reviewed_by=7)
+    db = _db_with(finding, _image())
+    db.scalar = AsyncMock(return_value=None)  # no other pending finding
+    out = await router.reset(5, _user(), db)
+    assert out.status == "pending"
+    assert finding.reviewed_by is None
+    db.commit.assert_awaited_once()
+
+
+async def test_reset_endpoint_approved_strips_metadata_and_bumps(monkeypatch) -> None:
+    bump = AsyncMock()
+    monkeypatch.setattr(router, "bump_browse_revision", bump)
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": 5,
+        }
+    )
+    db = _db_with(finding, image)
+    db.scalar = AsyncMock(return_value=None)
+    out = await router.reset(5, _user(), db)
+    assert out.status == "pending"
+    assert "measurement_scale" not in image.metadata_
+    bump.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["pending", "superseded"],
+)
+async def test_reset_endpoint_rejects_non_reviewed_status(status) -> None:
+    db = _db_with(_finding(status=status), _image())
+    with pytest.raises(HTTPException) as exc:
+        await router.reset(5, _user(), db)
+    assert exc.value.status_code == 409
+
+
+async def test_reset_endpoint_404s() -> None:
+    db = _db_with(None, None)
+    with pytest.raises(HTTPException) as exc:
+        await router.reset(5, _user(), db)
+    assert exc.value.status_code == 404
+
+
+async def test_reset_endpoint_conflict_when_newer_pending_exists() -> None:
+    finding = _finding(status="rejected")
+    db = _db_with(finding, _image())
+    db.scalar = AsyncMock(return_value=77)  # another pending finding
+    with pytest.raises(HTTPException) as exc:
+        await router.reset(5, _user(), db)
+    assert exc.value.status_code == 409
+    assert finding.status == "rejected"
+
+
+async def test_rescan_endpoint_enqueues_image_with_rescan(monkeypatch) -> None:
+    finding = _finding(status="rejected")
+    db = AsyncMock()
+    db.get.return_value = finding
+    enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+    monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
+    out = await router.rescan(5, BackgroundTasks(), _user(), db)
+    assert out.image_ids == [11] and out.mode == "queued"
+    enqueue.assert_awaited_once_with([11], True)
+
+
+async def test_rescan_endpoint_404() -> None:
+    db = AsyncMock()
+    db.get.return_value = None
+    with pytest.raises(HTTPException) as exc:
+        await router.rescan(5, BackgroundTasks(), _user(), db)
+    assert exc.value.status_code == 404
+
+
+async def test_scan_rescan_uses_rescan_candidates_and_flag(monkeypatch) -> None:
+    db = AsyncMock()
+    db.execute.return_value = _scalars([8])
+    enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+    monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
+    picked = MagicMock(return_value=select(MeasurementFinding.id))
+    monkeypatch.setattr(router, "rescan_candidates_stmt", picked)
+    out = await router.scan(
+        MeasurementScanRequest(rescan=True), BackgroundTasks(), _user(), db
+    )
+    picked.assert_called_once_with(10, None)
+    assert out.image_ids == [8]
+    enqueue.assert_awaited_once_with([8], True)
+
+
+async def test_scan_all_chunks_enqueue_jobs(monkeypatch) -> None:
+    db = AsyncMock()
+    db.execute.return_value = _scalars(list(range(1, 121)))
+    enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+    monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
+    bg = BackgroundTasks()
+    out = await router.scan(
+        MeasurementScanRequest(all=True), bg, _user(), db
+    )
+    assert out.image_ids == list(range(1, 121)) and out.mode == "queued"
+    assert [c.args[0] for c in enqueue.await_args_list] == [
+        list(range(1, 51)),
+        list(range(51, 101)),
+        list(range(101, 121)),
+    ]
+    assert not bg.tasks
+
+
+async def test_scan_mixed_queue_fallback_runs_rest_in_process(monkeypatch) -> None:
+    db = AsyncMock()
+    db.execute.return_value = _scalars(list(range(1, 61)))
+    enqueue = AsyncMock(
+        side_effect=[
+            EnqueueResult("queued", "submitted"),
+            EnqueueResult("fallback", "queue_unavailable"),
+        ]
+    )
+    monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
+    bg = BackgroundTasks()
+    out = await router.scan(MeasurementScanRequest(all=True), bg, _user(), db)
+    assert out.mode == "queued"
+    assert len(bg.tasks) == 1
+    assert bg.tasks[0].func is router.scan_images
+    assert bg.tasks[0].args[0] is router.async_session
+    assert bg.tasks[0].args[1] == list(range(51, 61))
+    assert bg.tasks[0].args[2] is False
+
+
+async def test_scan_remaining_reports_candidate_count() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 17
+    out = await router.scan_remaining(_user(), db, rescan=True, category_id=None)
+    assert out.remaining == 17
+
+
+async def test_scan_remaining_max_image_id_bounds_count() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 3
+    out = await router.scan_remaining(
+        _user(), db, rescan=False, category_id=None, max_image_id=42
+    )
+    assert out.remaining == 3
+    sql = str(
+        db.scalar.await_args.args[0].compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "image.id <= 42" in sql or "images.id <= 42" in sql
+
+
+async def test_scan_partial_enqueue_failure_503s_with_accepted_count(
+    monkeypatch,
+) -> None:
+    """Mid-enqueue queue failure preserves the required-mode 503 contract and
+    discloses the chunks already accepted."""
+    db = AsyncMock()
+    db.execute.return_value = _scalars(list(range(1, 61)))
+    enqueue = AsyncMock(
+        side_effect=[
+            EnqueueResult("queued", "submitted"),
+            TaskQueueUnavailableError("queue_unavailable"),
+        ]
+    )
+    monkeypatch.setattr(router, "enqueue_measurement_scan", enqueue)
+    bg = BackgroundTasks()
+    with pytest.raises(HTTPException) as exc:
+        await router.scan(MeasurementScanRequest(all=True), bg, _user(), db)
+    assert exc.value.status_code == 503
+    assert "50 images already accepted" in exc.value.detail
+    assert enqueue.await_count == 2
+    assert not bg.tasks
+
+
+async def test_scan_enqueue_failure_on_first_chunk_503s(monkeypatch) -> None:
+    """Nothing accepted + queue down = the plain 503 contract."""
+    db = AsyncMock()
+    db.execute.return_value = _scalars([1, 2, 3])
+    monkeypatch.setattr(
+        router,
+        "enqueue_measurement_scan",
+        AsyncMock(side_effect=TaskQueueUnavailableError("queue_unavailable")),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await router.scan(MeasurementScanRequest(), BackgroundTasks(), _user(), db)
+    assert exc.value.status_code == 503
+
+
+def test_reset_finding_keeps_scale_when_source_changed_after_approval() -> None:
+    """A later edit touching only the source must not be undone by reset."""
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "manual",  # was "rbc" at approval
+            "measurement_finding_id": 5,
+        }
+    )
+    assert service.reset_finding(finding, image) is False
+    assert image.metadata_["measurement_scale"] == 7.3
+    assert image.metadata_["measurement_scale_source"] == "manual"
+    assert finding.status == "pending"
+
+
+def test_reset_finding_strips_when_reviewer_corrected_at_approval() -> None:
+    """A corrected approval wrote source 'manual'; reset recognizes its own write."""
+    finding = _finding(
+        status="approved",
+        proposed_scale=7.3,
+        approved_scale=8.1,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 8.1,
+            "measurement_unit": "um",
+            "measurement_scale_source": "manual",
+            "measurement_finding_id": 5,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {}
+
+
+async def test_scan_image_rescan_repoints_scale_ownership() -> None:
+    """Re-recording a scale moves measurement_finding_id to the new finding.
+
+    The re-recorded finding inherits the stored provenance so a later reset
+    can still strip the scale it now owns.
+    """
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+
+    async def _flush() -> None:  # emulate autoincrement on commit
+        for call in db.add.call_args_list:
+            if call.args[0].id is None:
+                call.args[0].id = 77
+
+    db.flush = AsyncMock(side_effect=_flush)
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,  # the old approved finding, now superseded
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.status == "approved"
+    db.flush.assert_awaited_once()
+    assert finding.id == 77
+    assert image.metadata_["measurement_finding_id"] == 77
+    assert image.metadata_["measurement_scale"] == 4.0
+    assert finding.source == "rbc"
+    assert image.version == 5
+    # The full undo round-trip: resetting the new owner strips the scale.
+    assert service.reset_finding(finding, image) is True
+    assert "measurement_scale" not in image.metadata_
+
+
+async def test_scan_image_rescan_keeps_edited_scale_unowned() -> None:
+    """A scale edited after approval is not handed to the re-recorded
+    finding — resetting that finding must leave the edit alone."""
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+    db.flush = AsyncMock()
+    meta = {
+        "measurement_scale": 5.0,  # edited after the approval wrote 4.0
+        "measurement_unit": "um",
+        "measurement_scale_source": "manual",
+        "measurement_finding_id": 9,
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.status == "approved"
+    assert image.metadata_["measurement_finding_id"] == 9  # stale pointer kept
+    assert image.version == 4  # metadata untouched
+    # The new finding records the edited value but cannot undo it.
+    assert service.reset_finding(finding, image) is False
+    assert image.metadata_["measurement_scale"] == 5.0
+
+
+def test_reset_finding_strips_when_only_unit_corrected_at_approval() -> None:
+    """Unit-only corrections also wrote source 'manual' and can be undone."""
+    finding = _finding(
+        status="approved",
+        proposed_scale=7.3,
+        proposed_unit="um",
+        approved_scale=7.3,
+        approved_unit="nm",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "nm",
+            "measurement_scale_source": "manual",
+            "measurement_finding_id": 5,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {}

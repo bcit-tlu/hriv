@@ -6,6 +6,14 @@ local compose; every role gets the **Collections** tab. Full behaviour
 contract: `docs/collections.md`; UI manual scenarios: `docs/TESTING.md`
 Test Case 11 (Collections pages + manage table) and Test Case 12 (Browse hierarchy).
 
+Student flows additionally require `COLLECTIONS_STUDENT_ACCESS=true` (default;
+Helm `collections.studentAccess`). With it false, students get 404 on all
+collections routes and both image collection-membership endpoints, including
+for owned collections; the tree has no collections, navigation/shelf are hidden
+and deep links fall back to Browse. Non-students are unchanged. Authorized
+curators may still add active students as co-owners for pre-staging, and their
+data persists without migration. See `docs/TESTING.md` Test Case 9b.
+
 ### Quick flow
 
 1. **Create:** Collections tab → **Sequence** or **Synchronized** sub-menu

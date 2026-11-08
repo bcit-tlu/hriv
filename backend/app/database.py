@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     # collections router answers 404 and the frontend hides the tab; the chart
     # defaults it off and the `latest` overlay turns it on (docs/collections.md).
     collections_enabled: bool = False
+    collections_student_access: bool = True
 
     # My collections Browse shelf (#1583), gated by collections_enabled.
     collections_home_shelf: bool = False

@@ -35,7 +35,7 @@ from ..logging_config import setup_logging
 from ..queue_metrics import HEALTH_CHECK_INTERVAL_SECONDS
 from ..worker import _parse_redis_settings
 from . import jobs, pipeline
-from .metrics import record_objects, record_pixels, record_wait
+from .metrics import record_objects, record_pixels, record_run_step, record_wait
 from .outliners import Outliner, build_outliners
 from .stitch import CountingRegionError
 
@@ -53,7 +53,8 @@ _ERROR_CODE_MAP = {
 
 
 async def count_objects_task(
-    ctx: dict[str, Any], job_id: str, carrier: dict[str, str] | None = None
+    ctx: dict[str, Any], job_id: str, carrier: dict[str, str] | None = None,
+    mode: str = "unknown", image_id: int | None = None,
 ) -> None:
     """arq task: run one count job end-to-end."""
     parent_ctx = extract(carrier) if carrier else None
@@ -62,25 +63,34 @@ async def count_objects_task(
         with tracer.start_as_current_span(
             "count_objects_task", attributes={"count.job_id": job_id}
         ):
-            await _run(ctx, job_id)
+            await _run(ctx, job_id, mode, image_id)
     finally:
         if token is not None:
             detach(token)
 
 
-async def _run(ctx: dict[str, Any], job_id: str) -> None:
+async def _run(
+    ctx: dict[str, Any], job_id: str, queued_mode: str, queued_image_id: int | None
+) -> None:
     redis = ctx["redis"]
     record = await jobs.get_record(redis, job_id)
     if record is None:
-        # Cancelled (record deleted) or expired before the worker dequeued.
+        jobs.record_count_job(queued_mode, jobs.COUNT_OUTCOME_EXPIRED)
+        logger.info(
+            "count job record missing at dequeue",
+            extra={"event": "count.expired", "job_id": job_id,
+                   "image_id": queued_image_id, "mode": queued_mode},
+        )
         return
 
     mode = str(record.get("mode", ""))
     image_id = record.get("image_id")
     started = time.monotonic()
     enqueued_at = record.get("enqueued_at")
+    wait_seconds = None
     if isinstance(enqueued_at, (int, float)):
-        record_wait(mode, max(0.0, time.time() - float(enqueued_at)))
+        wait_seconds = max(0.0, time.time() - float(enqueued_at))
+        record_wait(mode, wait_seconds)
     outliners: dict[str, Outliner] = ctx.get("outliners") or {}
     outliner = outliners.get(record.get("mode", "cells"))
     if outliner is None:
@@ -100,6 +110,7 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
         "count job started",
         extra={
             "event": "count.started",
+            "wait_seconds": wait_seconds,
             "job_id": job_id,
             "image_id": image_id,
             "mode": mode,
@@ -169,10 +180,19 @@ async def _run(ctx: dict[str, Any], job_id: str) -> None:
         raise
 
     meta = result.pop("_meta", {})
+    serialise_started = time.monotonic()
+    try:
+        with tracer.start_as_current_span(
+            "count.serialise", attributes={"count.mode": mode}
+        ):
+            await jobs.write_result(
+                redis, job_id, result, settings.counting_result_ttl_seconds
+            )
+    finally:
+        serialise_seconds = time.monotonic() - serialise_started
+        record_run_step(mode, "serialise", serialise_seconds)
+        meta.setdefault("timings_ms", {})["serialise"] = round(serialise_seconds * 1000)
     duration_ms = round((time.monotonic() - started) * 1000)
-    await jobs.write_result(
-        redis, job_id, result, settings.counting_result_ttl_seconds
-    )
     if not await jobs.update_status(redis, job_id, jobs.STATUS_DONE):
         return  # cancelled between pipeline end and status flip
     jobs.record_count_job(mode, jobs.COUNT_OUTCOME_DONE)

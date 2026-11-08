@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import {
+  fetchImage as apiFetchImage,
   updateImage as apiUpdateImage,
   deleteImage as apiDeleteImage,
   replaceImage as apiReplaceImage,
@@ -8,6 +9,7 @@ import {
 import type { ApiImage } from './api'
 import type { ImageFormData, ReplaceImageData } from './components/EditImageModal'
 import type { Category, ImageItem } from './types'
+import { apiImageToItem } from './collectionUtils'
 import { findCategoryPath, findImageInTree, updateImageInTree } from './treeUtils'
 import { invalidateMovedImageScopes } from './tileOrdering'
 
@@ -156,17 +158,19 @@ export function useImageActions(deps: UseImageActionsDeps) {
   )
 
   const handleSaveBrowseImage = useCallback(
-    async (data: ImageFormData) => {
-      if (!browseEditImage) return
+    async (data: ImageFormData): Promise<boolean> => {
+      if (!browseEditImage) return false
       try {
         await apiUpdateImage(browseEditImage.id, data)
         invalidateMovedImageScopes(browseEditImage.categoryId ?? null, data.category_id)
         setBrowseEditImage(null)
         await loadCategories()
         loadUncategorizedImages()
+        return true
       } catch (err) {
         console.error('Failed to update image', err)
         setErrorSnack(userMessage(err, 'Failed to update image.'))
+        return false
       }
     },
     [browseEditImage, loadCategories, loadUncategorizedImages, setErrorSnack],
@@ -336,6 +340,20 @@ export function useImageActions(deps: UseImageActionsDeps) {
     loadUncategorizedImages()
   }, [selectedImage, clearImage, loadCategories, loadUncategorizedImages])
 
+  // Pages that only carry an image id (e.g. Measurement Review) fetch the
+  // record before the shared browse edit modal can open it.
+  const openBrowseEditImageById = useCallback(
+    async (imageId: number) => {
+      try {
+        const img = await apiFetchImage(imageId)
+        setBrowseEditImage(apiImageToItem(img))
+      } catch (err) {
+        setErrorSnack(userMessage(err, 'Failed to load the image.'))
+      }
+    },
+    [setErrorSnack],
+  )
+
   const handleDeleteBrowseImage = useCallback(async () => {
     if (!browseEditImage) return
     await apiDeleteImage(browseEditImage.id)
@@ -358,5 +376,6 @@ export function useImageActions(deps: UseImageActionsDeps) {
     handleReplaceBrowseImage,
     handleDeleteViewerImage,
     handleDeleteBrowseImage,
+    openBrowseEditImageById,
   }
 }
