@@ -213,14 +213,14 @@ def test_required_string_schemas_trim_and_reject_blank_values() -> None:
 
 
 def test_user_create_trims_and_rejects_blank_name_and_email() -> None:
-    user = UserCreate(name="  Alice  ", email="  alice@example.com  ", password="pw")
+    user = UserCreate(name="  Alice  ", email="  alice@example.com  ", password="password")
     assert user.name == "Alice"
     assert user.email == "alice@example.com"
 
     with pytest.raises(ValidationError, match="must not be blank"):
-        UserCreate(name="   ", email="alice@example.com", password="pw")
+        UserCreate(name="   ", email="alice@example.com", password="password")
     with pytest.raises(ValidationError, match="must not be blank"):
-        UserCreate(name="Alice", email="   ", password="pw")
+        UserCreate(name="Alice", email="   ", password="password")
 
 
 def test_user_update_allows_none_and_rejects_blank_name_and_email() -> None:
@@ -443,6 +443,23 @@ def test_metadata_extra_and_merge_mutually_exclusive() -> None:
             metadata_extra={"key": "val"},
             metadata_extra_merge={"other": "val"},
         )
+
+
+@pytest.mark.parametrize("password", ["", "short", "1234567"])
+def test_user_password_minimum_length(password: str) -> None:
+    with pytest.raises(ValidationError):
+        UserCreate(name="Guest", email="guest@example.com", password=password)
+    with pytest.raises(ValidationError):
+        UserUpdate(password=password)
+
+
+def test_user_optional_password_and_patch_presence() -> None:
+    assert UserCreate(name="Guest", email="guest@example.com").password is None
+    assert UserCreate(name="Guest", email="guest@example.com", password=None).password is None
+    assert UserCreate(name="Guest", email="guest@example.com", password="12345678").password == "12345678"
+    assert UserUpdate().model_dump(exclude_unset=True) == {}
+    assert UserUpdate(password=None).model_dump(exclude_unset=True) == {"password": None}
+    assert UserUpdate(password="12345678").password == "12345678"
 
 
 def test_metadata_extra_null_and_merge_mutually_exclusive() -> None:

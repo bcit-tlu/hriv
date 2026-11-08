@@ -18,6 +18,7 @@ from ..schemas import (
     UserBulkActiveUpdate,
     UserBulkDelete,
     UserOut,
+    UserMiniOut,
 )
 from ..serializers import user_to_mini_out, user_to_out
 
@@ -108,7 +109,7 @@ async def _set_user_programs(
         user.programs = []
 
 
-@router.get("/", response_model=list[UserOut])
+@router.get("/", response_model=list[UserOut | UserMiniOut])
 async def list_users(
     _user: Annotated[User, Depends(_people_viewer)],
     db: AsyncSession = Depends(get_db),
@@ -206,10 +207,13 @@ async def create_user(
 ):
     if body.role not in VALID_ROLES:
         raise HTTPException(422, f"Invalid role: {body.role}")
+    if body.must_change_password and body.password is None:
+        raise HTTPException(422, "must_change_password requires a local password and no OIDC link")
     user = User(
         name=body.name,
         email=body.email.lower(),
-        password_hash=hash_password(body.password),
+        password_hash=hash_password(body.password) if body.password else None,
+        must_change_password=body.must_change_password,
         role=body.role,
         active=body.active,
         metadata_=body.metadata_extra or {},
@@ -355,10 +359,21 @@ async def update_user(
     program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
+    must_change_password = update_data.pop("must_change_password", None)
+    if must_change_password is not None:
+        update_data["must_change_password"] = must_change_password
     if "password" in update_data:
         pwd = update_data.pop("password")
         if pwd is not None:
             update_data["password_hash"] = hash_password(pwd)
+        else:
+            update_data["password_hash"] = None
+            update_data["invite_nonce"] = None
+    if update_data.get("must_change_password", user.must_change_password) and (
+        user.oidc_subject is not None
+        or update_data.get("password_hash", user.password_hash) is None
+    ):
+        raise HTTPException(422, "must_change_password requires a local password and no OIDC link")
     if "email" in update_data and update_data["email"] is not None:
         update_data["email"] = update_data["email"].lower()
     # The owner's name renders on filed collection tiles and their role

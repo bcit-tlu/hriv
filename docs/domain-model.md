@@ -17,6 +17,21 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   layer); `active`
   (default `true`, controls authentication eligibility);
   `last_access`; `metadata_` (JSONB, DB column `metadata`).
+- **Local credential state:** `invite_nonce` (`String(64)`, nullable) binds the
+  current password-setup token; each mint replaces it, and redeeming a token or
+  clearing a password clears it. `must_change_password` is non-nullable, defaults
+  to `false`, and may be true only for an unlinked local account with a password.
+  Admin create/patch requests reject invalid forced-change states with 422.
+  Passwords are optional on create; supplied passwords require at least eight
+  characters. On patch, omission leaves credentials unchanged, explicit `null`
+  clears both `password_hash` and `invite_nonce`, and a string sets the password.
+- **API flags:** full `UserOut`, `/auth/me`, and the login user payload expose
+  `has_local_password` (`password_hash IS NOT NULL`), `oidc_linked`
+  (`oidc_subject IS NOT NULL`), and `must_change_password`. Both derived flags
+  can be true (dual credentials) or false (passwordless, unlinked account).
+  Instructor directory projections omit these flags. This schema foundation
+  does not yet enforce forced changes on authenticated requests; that is a
+  separate part of the self-service password workflow.
 - **Relationships:** `programs` (M2M via `user_programs`); `groups` (M2M via
   `group_members`, `viewonly` — the user's group memberships).
 - **Deletion:** no cascade targets; `admin_tasks.created_by` and

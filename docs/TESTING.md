@@ -335,6 +335,33 @@ pinned image is not otherwise visible, without granting tile access.
 13. Delete the newly created user.
 14. **Assert:** User is removed from the list.
 
+### User auth-state API contract
+
+Use an admin bearer token for user mutations; UI invite/password workflows are
+separate from this backend schema foundation.
+
+- `POST /api/users/` accepts omitted or null `password` for a passwordless
+  account; supplied strings on create and patch must be at least eight
+  characters (short or empty strings return 422).
+- `PATCH /api/users/{id}` with omitted `password` leaves credentials unchanged;
+  `{"password": null}` clears the password hash and any pending invite nonce.
+  A string sets the password. Admin password edits remain allowed on OIDC-linked
+  accounts.
+- Create accepts `must_change_password` (default false); patch accepts true or
+  false, with omission/null leaving the flag unchanged. True requires a
+  password and no OIDC link in the resulting state (422 otherwise). Clearing a
+  flagged account's password requires also setting `must_change_password: false`.
+- Full user responses (admin/staff directory, admin mutations, `/api/auth/me`,
+  and the `/api/auth/login` user payload) include `has_local_password`,
+  `oidc_linked`, and `must_change_password`. Check local-only `(true, false)`,
+  OIDC-only `(false, true)`, dual `(true, true)`, and passwordless-unlinked
+  `(false, false)` derived flags. Hashes, OIDC subjects and invite nonces must
+  never appear. Instructor directory projections omit all three flags.
+- Automated coverage: `tests/test_schemas.py`, `tests/test_router_users.py`,
+  `tests/test_router_auth.py`; run `tests/test_migrations_bootstrap.py` and a
+  fresh PostgreSQL `python -m app.migrations_bootstrap` for migration validation.
+  Forced-change request blocking is implemented separately from these flags.
+
 ---
 
 ## Test Case 8: Admin Database Export/Import

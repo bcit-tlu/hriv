@@ -653,7 +653,8 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str | None = Field(default=None, min_length=8)
+    must_change_password: bool = False
 
     _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
     _validate_email = field_validator("email", mode="before")(normalize_nonblank_value)
@@ -665,7 +666,8 @@ class UserUpdate(BaseModel):
     role: str | None = None
     active: bool | None = None
     program_ids: list[int] | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=8)
+    must_change_password: bool | None = None
     metadata_extra: dict | None = None
 
     _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
@@ -707,7 +709,7 @@ class ImageBulkDelete(BaseModel):
     image_ids: list[int]
 
 
-class UserOut(UserBase):
+class UserMiniOut(UserBase):
     id: int
     last_access: datetime | None = None
     created_at: datetime
@@ -717,6 +719,12 @@ class UserOut(UserBase):
     group_names: list[str] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class UserOut(UserMiniOut):
+    has_local_password: bool
+    oidc_linked: bool
+    must_change_password: bool
 
 
 # ── Collection ────────────────────────────────────────────
