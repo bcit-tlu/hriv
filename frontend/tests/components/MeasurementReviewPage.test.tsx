@@ -42,7 +42,6 @@ function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementR
     approve: vi.fn(async (id: number) => makeFinding({ id, status: 'approved' })),
     reject: vi.fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
     reset: vi.fn(async (id: number) => makeFinding({ id, status: 'pending' })),
-    rescan: vi.fn(async () => ({ image_ids: [11], mode: 'queued' as const })),
     bulkApprove: vi.fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),
   }
 }
@@ -86,7 +85,7 @@ describe('MeasurementReviewPage', () => {
     expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeDisabled()
     finish({ total: 2, done: 2 })
     expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
-    expect(api.scanProgress).toHaveBeenCalledWith([11, 12], undefined)
+    expect(api.scanProgress).toHaveBeenCalledWith([11, 12])
     // Initial load, after queueing, and after the scan finished.
     await waitFor(() => expect(api.fetchFindings).toHaveBeenCalledTimes(3))
     expect(screen.queryByText(/Scanning images/)).not.toBeInTheDocument()
@@ -240,38 +239,45 @@ describe('MeasurementReviewPage', () => {
     expect(await screen.findByText('Blood film 40x')).toBeInTheDocument()
   })
 
-  it('moves an approved finding back to pending', async () => {
+  it('resets an approved finding back to pending', async () => {
     const api = makeApi([makeFinding({ status: 'approved', approved_scale: 7.3 })])
     render(<MeasurementReviewPage api={api} />)
     await screen.findByText('Blood film 40x')
     await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Move Blood film 40x to pending' }),
-    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset Blood film 40x' }))
     expect(api.reset).toHaveBeenCalledWith(1)
-    expect(await screen.findByText('Moved “Blood film 40x” back to pending.')).toBeInTheDocument()
+    expect(await screen.findByText('Reset “Blood film 40x” to pending.')).toBeInTheDocument()
   })
 
-  it('moves a rejected finding back to pending', async () => {
+  it('resets a rejected finding back to pending', async () => {
     const api = makeApi([makeFinding({ status: 'rejected' })])
     render(<MeasurementReviewPage api={api} />)
     await screen.findByText('Blood film 40x')
     await userEvent.click(screen.getByRole('button', { name: 'Rejected' }))
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Move Blood film 40x to pending' }),
-    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset Blood film 40x' }))
     expect(api.reset).toHaveBeenCalledWith(1)
   })
 
-  it('re-scans a finding and tracks the new finding past the superseded one', async () => {
-    const api = makeApi([makeFinding({ status: 'rejected' })])
-    render(<MeasurementReviewPage api={api} scanPollMs={10} />)
+  it('links the thumbnail to the viewer and the name to the edit dialog', async () => {
+    const api = makeApi()
+    const onOpenImage = vi.fn()
+    const onEditImage = vi.fn()
+    render(<MeasurementReviewPage api={api} onOpenImage={onOpenImage} onEditImage={onEditImage} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Rejected' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Re-scan Blood film 40x' }))
-    expect(api.rescan).toHaveBeenCalledWith(1)
-    await waitFor(() => expect(api.scanProgress).toHaveBeenCalledWith([11], 1))
-    expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Open Blood film 40x' }))
+    expect(onOpenImage).toHaveBeenCalledWith(11)
+    await userEvent.click(screen.getByRole('button', { name: 'Blood film 40x' }))
+    expect(onEditImage).toHaveBeenCalledWith(11)
+  })
+
+  it('opens the learn-more dialog from the description link', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Learn more' }))
+    expect(await screen.findByText('How measurement review works')).toBeInTheDocument()
+    expect(screen.getByText(/how many cells were measured/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
   })
 
   it('scans the whole library and tracks remaining candidates', async () => {

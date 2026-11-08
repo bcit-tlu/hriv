@@ -2314,6 +2314,17 @@ export default function App() {
     [handleOpenCollectionImage],
   )
 
+  // "Edit image" from the measurement review list: the table only carries
+  // image ids, so fetch the record before handing it to the browse edit modal.
+  const handleEditMeasurementImage = useCallback(
+    (imageId: number) => {
+      void apiFetchImage(imageId)
+        .then((api) => setBrowseEditImage(apiImageToItem(api)))
+        .catch((err) => setErrorSnack(userMessage(err, 'Failed to load the image.')))
+    },
+    [setBrowseEditImage, setErrorSnack],
+  )
+
   // Show loading spinner while users are loading
   if (usersLoading) {
     return (
@@ -2449,7 +2460,10 @@ export default function App() {
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'measurement' && canEditContent ? (
-            <MeasurementReviewPage />
+            <MeasurementReviewPage
+              onOpenImage={handleOpenGraphImage}
+              onEditImage={handleEditMeasurementImage}
+            />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
               currentUser={currentUser}

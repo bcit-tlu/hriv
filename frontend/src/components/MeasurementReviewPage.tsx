@@ -3,7 +3,12 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import LinearProgress from '@mui/material/LinearProgress'
+import Link from '@mui/material/Link'
 import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
@@ -25,7 +30,6 @@ import {
   fetchMeasurementScanProgress,
   fetchMeasurementScanRemaining,
   rejectMeasurementFinding,
-  rescanMeasurementFinding,
   resetMeasurementFinding,
   scanMeasurements,
   userMessage,
@@ -50,7 +54,6 @@ export interface MeasurementReviewApi {
   approve: typeof approveMeasurementFinding
   reject: typeof rejectMeasurementFinding
   reset: typeof resetMeasurementFinding
-  rescan: typeof rescanMeasurementFinding
   bulkApprove: typeof bulkApproveMeasurementFindings
 }
 
@@ -62,13 +65,16 @@ const defaultApi: MeasurementReviewApi = {
   approve: approveMeasurementFinding,
   reject: rejectMeasurementFinding,
   reset: resetMeasurementFinding,
-  rescan: rescanMeasurementFinding,
   bulkApprove: bulkApproveMeasurementFindings,
 }
 
 export interface MeasurementReviewPageProps {
   /** Injected for stories/tests; defaults to the real API client. */
   api?: MeasurementReviewApi
+  /** Open the image in the viewer (thumbnail link). */
+  onOpenImage?: (imageId: number) => void
+  /** Open the image's edit dialog (name link). */
+  onEditImage?: (imageId: number) => void
   /** Scan-progress poll interval; shortened in tests. */
   scanPollMs?: number
   /** Give up tracking after this long without progress; shortened in tests. */
@@ -78,8 +84,6 @@ export interface MeasurementReviewPageProps {
 interface ScanState {
   /** Per-image tracking when set; absent for whole-library scans. */
   imageIds?: number[]
-  /** A rescan is done once a finding newer than this row exists. */
-  minFindingId?: number
   /** Whole-library rescan progress counts stale-detector candidates. */
   rescan?: boolean
   /** Bounds whole-library progress to the submitted candidate set. */
@@ -108,6 +112,8 @@ function parseScale(value: string): number | null {
 
 export default function MeasurementReviewPage({
   api = defaultApi,
+  onOpenImage,
+  onEditImage,
   scanPollMs = SCAN_POLL_MS,
   scanStallMs = SCAN_STALL_MS,
 }: MeasurementReviewPageProps) {
@@ -126,6 +132,7 @@ export default function MeasurementReviewPage({
   const [unitEdits, setUnitEdits] = useState<Record<number, MeasurementUnit>>({})
   const [reloadToken, setReloadToken] = useState(0)
   const [scan, setScan] = useState<ScanState | null>(null)
+  const [learnMoreOpen, setLearnMoreOpen] = useState(false)
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), [])
 
@@ -170,7 +177,6 @@ export default function MeasurementReviewPage({
 
   const scanActive = scan != null
   const scanIds = scan?.imageIds
-  const scanMinFindingId = scan?.minFindingId
   const scanRescan = scan?.rescan === true
   const scanMaxImageId = scan?.maxImageId
   const scanTotal = scan?.total
@@ -182,7 +188,7 @@ export default function MeasurementReviewPage({
     let lastChange = Date.now()
     const check = (): Promise<{ total: number; done: number }> =>
       scanIds
-        ? api.scanProgress(scanIds, scanMinFindingId)
+        ? api.scanProgress(scanIds)
         : api
             .scanRemaining({ rescan: scanRescan, maxImageId: scanMaxImageId })
             .then(({ remaining }) => ({
@@ -229,7 +235,6 @@ export default function MeasurementReviewPage({
     api,
     scanActive,
     scanIds,
-    scanMinFindingId,
     scanRescan,
     scanMaxImageId,
     scanTotal,
@@ -291,19 +296,7 @@ export default function MeasurementReviewPage({
   const handleReset = (finding: ApiMeasurementFinding) =>
     run(async () => {
       await api.reset(finding.id)
-      return `Moved “${finding.image_name}” back to pending.`
-    })
-
-  const handleRescan = (finding: ApiMeasurementFinding) =>
-    run(async () => {
-      const result = await api.rescan(finding.id)
-      setScan({
-        imageIds: result.image_ids,
-        minFindingId: finding.id,
-        total: result.image_ids.length,
-        done: 0,
-      })
-      return `Re-scan queued for “${finding.image_name}”; the new proposal lands in Pending.`
+      return `Reset “${finding.image_name}” to pending.`
     })
 
   /** `{}` to accept the proposal, `{ scale?, unit? }` for a correction, `null` if the edit is invalid. */
@@ -366,21 +359,75 @@ export default function MeasurementReviewPage({
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.paper', minHeight: '100%' }}>
-      <Typography variant="h5" component="h1" gutterBottom>
-        Measurement review
-      </Typography>
+      <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ mb: 1 }}>
+        <Typography variant="h5" component="h1" sx={{ flexGrow: 1 }}>
+          Measurement review
+        </Typography>
+        <Button variant="outlined" onClick={handleScanAll} disabled={busy || scan != null}>
+          Scan all
+        </Button>
+      </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        Sets each image&apos;s scale so students can take real-world measurements in the viewer.
-        Scan images (a batch or the whole library), then approve, correct or reject each proposed
-        scale. Approvals and rejections can be moved back to pending, and any image can be
-        re-scanned after the detector changes.
+        Give every image a scale so students can take real-world measurements in the viewer. Click{' '}
+        <strong>Scan next {SCAN_BATCH_SIZE}</strong> to generate proposals, then approve, correct or
+        reject each one below.{' '}
+        <Link
+          component="button"
+          variant="body2"
+          onClick={() => setLearnMoreOpen(true)}
+          sx={{ verticalAlign: 'baseline' }}
+        >
+          Learn more
+        </Link>
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        Proposed image scales (pixels per unit, µm by default) from the red-blood-cell detector.
-        Nothing reaches image metadata until a finding is approved. Correct a scale before approving
-        if the proposal is wrong. Scales already stored on an image are listed under Approved as
-        existing values or embedded calibration and are never overwritten.
-      </Typography>
+
+      <Dialog
+        open={learnMoreOpen}
+        onClose={() => setLearnMoreOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        aria-labelledby="measurement-learn-more-title"
+      >
+        <DialogTitle id="measurement-learn-more-title">How measurement review works</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" component="div" sx={{ '& p': { mt: 0, mb: 1.5 } }}>
+            <p>
+              Scanning proposes each image&apos;s scale — pixels per unit — so students can measure
+              real-world distances in the viewer. The detector measures red blood cells (their known
+              ~7.5 µm diameter) to estimate the scale; images that already carry a scale are
+              recorded as-is, since stored values are authoritative and never overwritten.
+            </p>
+            <p>
+              <strong>Pending</strong> — approve a proposal, correct the scale/unit first and
+              approve, or reject it. Nothing reaches image metadata until a finding is approved.
+              <br />
+              <strong>Approved</strong> — the scale is live on the image. <strong>Reset</strong>{' '}
+              sends the finding back to Pending and removes the scale that approval wrote (a scale
+              changed since then stays put).
+              <br />
+              <strong>Rejected</strong> — out of the review queue; <strong>Reset</strong> returns it
+              to Pending.
+            </p>
+            <p>
+              <strong>Scan next {SCAN_BATCH_SIZE}</strong> processes a small batch;{' '}
+              <strong>Scan all</strong> queues the whole library in the background.{' '}
+              <strong>Re-scan outdated</strong> re-runs detection on unscaled images whose findings
+              came from an older detector version — use it after a detector or calibration update.
+            </p>
+            <p>
+              <strong>Confidence</strong> combines how much of the detected cell population agrees
+              on one size peak with how many cells were measured (full credit near 100 cells). On
+              known cameras it is scaled by how clearly the measurement points to one
+              objective&apos;s calibrated value, and halved when it lands more than ~1.5× off the
+              nearest objective. Unknown cameras cap at 30%; a scale already stored on the image
+              records 100%.
+            </p>
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLearnMoreOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }} useFlexGap>
         <ToggleButtonGroup
@@ -414,9 +461,6 @@ export default function MeasurementReviewPage({
         )}
         <Button variant="contained" onClick={handleScan} disabled={busy || scan != null}>
           Scan next {SCAN_BATCH_SIZE}
-        </Button>
-        <Button variant="outlined" onClick={handleScanAll} disabled={busy || scan != null}>
-          Scan all
         </Button>
         <Tooltip title="Re-run detection on unscaled images whose findings were made by an older detector version.">
           <span>
@@ -529,15 +573,41 @@ export default function MeasurementReviewPage({
                   )}
                   <TableCell>
                     <Stack direction="row" spacing={1.5} alignItems="center">
-                      <RenewingThumbnail
-                        image={{ id: f.image_id, thumb: f.image_thumb }}
-                        alt=""
-                        sx={{ width: 56, height: 40, objectFit: 'cover', borderRadius: 0.5 }}
-                      />
+                      {onOpenImage ? (
+                        <Link
+                          component="button"
+                          onClick={() => onOpenImage(f.image_id)}
+                          aria-label={`Open ${f.image_name}`}
+                          sx={{ display: 'block', lineHeight: 0 }}
+                        >
+                          <RenewingThumbnail
+                            image={{ id: f.image_id, thumb: f.image_thumb }}
+                            alt=""
+                            sx={{ width: 56, height: 40, objectFit: 'cover', borderRadius: 0.5 }}
+                          />
+                        </Link>
+                      ) : (
+                        <RenewingThumbnail
+                          image={{ id: f.image_id, thumb: f.image_thumb }}
+                          alt=""
+                          sx={{ width: 56, height: 40, objectFit: 'cover', borderRadius: 0.5 }}
+                        />
+                      )}
                       <Box>
-                        <Typography variant="body2">{f.image_name}</Typography>
+                        {onEditImage ? (
+                          <Link
+                            component="button"
+                            variant="body2"
+                            onClick={() => onEditImage(f.image_id)}
+                            sx={{ textAlign: 'left' }}
+                          >
+                            {f.image_name}
+                          </Link>
+                        ) : (
+                          <Typography variant="body2">{f.image_name}</Typography>
+                        )}
                         {f.image_width != null && f.image_height != null && (
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" color="text.secondary" display="block">
                             {f.image_width}×{f.image_height}
                           </Typography>
                         )}
@@ -605,19 +675,11 @@ export default function MeasurementReviewPage({
                         size="small"
                         onClick={() => handleReset(f)}
                         disabled={busy}
-                        aria-label={`Move ${f.image_name} to pending`}
+                        aria-label={`Reset ${f.image_name}`}
                       >
-                        Move to pending
+                        Reset
                       </Button>
                     )}
-                    <Button
-                      size="small"
-                      onClick={() => handleRescan(f)}
-                      disabled={busy || scan != null}
-                      aria-label={`Re-scan ${f.image_name}`}
-                    >
-                      Re-scan
-                    </Button>
                   </TableCell>
                 </TableRow>
               )

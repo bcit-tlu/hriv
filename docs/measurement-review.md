@@ -152,11 +152,12 @@ lists findings from `GET /api/measurement-findings`:
 
 - **Pending / Approved / Rejected** tabs; pending is the default, sorted by
   confidence (highest first, click the column header to flip).
-- A short purpose statement heads the page: the tool sets image scales so
-  students can measure in real units.
+- A one-line purpose statement heads the page, with a **Learn more** link
+  opening a dialog covering the workflow and how confidence is calculated.
 - **Scan next 10** calls `POST /api/measurement-findings/scan` with
-  `limit: 10`, **Scan all** calls it with `all: true` to queue the whole
-  library in the background, and **Re-scan outdated** calls it with
+  `limit: 10`, **Scan all** (top right, a one-time bulk action) calls it
+  with `all: true` to queue the whole library in the background, and
+  **Re-scan outdated** calls it with
   `all: true, rescan: true` to re-detect images whose findings predate the
   current detector (use after a detector or calibration change bumps
   `DETECTOR_VERSION`). A snackbar ("Scanning images: N of M done", with a
@@ -166,6 +167,8 @@ lists findings from `GET /api/measurement-findings`:
   meanwhile. A progress error ends tracking and is shown as an error. After 10 minutes
   with no progress (a busy queue or stopped worker) tracking stops with a
   notice to use **Refresh**; the scan itself may still finish.
+- Each row's thumbnail opens the image in the viewer and its name opens the
+  Edit image dialog (where manual scale values live).
 - Each pending row shows the thumbnail, name and size, the **detected
   objective** (the ×10/×40/×100 objective lens matched for the known camera;
   a tooltip explains it), the read-only **proposed** scale in px/µm, an
@@ -179,11 +182,11 @@ lists findings from `GET /api/measurement-findings`:
   component, also used by the Edit image dialog's Measurement Settings.
 - **Approve selected** calls the bulk endpoint for unedited rows and approves
   rows with a scale or unit correction one by one; skipped IDs are reported.
-- Every row carries a **Re-scan** action that re-runs detection on its image
-  (the row's findings are superseded and the new proposal lands in Pending),
-  plus — on Approved and Rejected rows — **Move to pending**, which returns
-  the finding to the review queue; reverting an approval also removes the
-  scale it wrote when it is still the stored value.
+- Approved and Rejected rows carry a **Reset** action that returns the
+  finding to the review queue; reverting an approval also removes the scale
+  it wrote when it is still the stored value. Per-image re-detection is
+  available via `POST /api/measurement-findings/{id}/rescan` (not surfaced
+  in the UI — use Re-scan outdated for bulk re-detection).
 
 ## Not yet built
 

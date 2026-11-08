@@ -2760,13 +2760,6 @@ export function resetMeasurementFinding(id: number): Promise<ApiMeasurementFindi
   return request(`/measurement-findings/${id}/reset`, { method: 'POST' })
 }
 
-/** Re-run detection on the finding's image; its live findings are superseded. */
-export function rescanMeasurementFinding(
-  id: number,
-): Promise<{ image_ids: number[]; mode: 'queued' | 'fallback' }> {
-  return request(`/measurement-findings/${id}/rescan`, { method: 'POST' })
-}
-
 export function bulkApproveMeasurementFindings(
   ids: number[],
 ): Promise<{ approved: number[]; skipped: number[] }> {
