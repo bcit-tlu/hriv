@@ -194,6 +194,9 @@ describe('observability', () => {
       expect.objectContaining({ spanProcessors: expect.any(Array) }),
     )
     expect(mocks.registerInstrumentations).toHaveBeenCalledOnce()
+    expect(mocks.setGlobalContextManager).toHaveBeenCalledOnce()
+    expect(mocks.setGlobalPropagator).toHaveBeenCalledOnce()
+    expect(mocks.setGlobalTracerProvider).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith(
       '/api/telemetry/events',
       expect.objectContaining({ keepalive: true }),
