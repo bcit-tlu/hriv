@@ -24,7 +24,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   Admin create/patch requests reject invalid forced-change states with 422.
   Passwords are optional on create; supplied passwords require at least eight
   characters. On patch, omission leaves credentials unchanged, explicit `null`
-  clears both `password_hash` and `invite_nonce`, and a string sets the password.
+  clears both `password_hash` and `invite_nonce` and automatically resets
+  `must_change_password` to false, and a string sets the password. An explicit
+  `must_change_password: true` alongside `password: null` is rejected with 422.
 - **API flags:** full `UserOut`, `/auth/me`, and the login user payload expose
   `has_local_password` (`password_hash IS NOT NULL`), `oidc_linked`
   (`oidc_subject IS NOT NULL`), and `must_change_password`. Both derived flags

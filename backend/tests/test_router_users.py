@@ -218,20 +218,34 @@ async def test_admin_can_edit_oidc_user_password(password: str | None) -> None:
     assert result["oidc_linked"] is True
 
 
-async def test_clear_flagged_user_password_requires_unflagging() -> None:
+@pytest.mark.parametrize("flag_payload", [{}, {"must_change_password": False}, {"must_change_password": None}])
+async def test_clear_flagged_user_password_automatically_unflags(flag_payload: dict) -> None:
+    user = _make_user()
+    user.must_change_password = True
+    user.invite_nonce = "nonce"
+    db = AsyncMock()
+    db.get.return_value = user
+    result = await update_user(1, UserUpdate(password=None, **flag_payload),
+                               _make_user(role="admin"), db)
+    assert result["must_change_password"] is False
+    assert result["has_local_password"] is False
+    assert user.invite_nonce is None
+
+
+async def test_clear_flagged_user_password_rejects_explicit_true() -> None:
     user = _make_user()
     user.must_change_password = True
     user.invite_nonce = "nonce"
     db = AsyncMock()
     db.get.return_value = user
     with pytest.raises(HTTPException) as exc:
-        await update_user(1, UserUpdate(password=None), _make_user(role="admin"), db)
+        await update_user(1, UserUpdate(password=None, must_change_password=True),
+                          _make_user(role="admin"), db)
     assert exc.value.status_code == 422
-    result = await update_user(1, UserUpdate(password=None, must_change_password=False),
-                               _make_user(role="admin"), db)
-    assert result["must_change_password"] is False
-    assert result["has_local_password"] is False
-    assert user.invite_nonce is None
+    assert user.password_hash == "hashed"
+    assert user.invite_nonce == "nonce"
+    assert user.must_change_password is True
+    db.commit.assert_not_awaited()
 
 
 def test_user_to_out_includes_groups() -> None:

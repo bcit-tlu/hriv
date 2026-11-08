@@ -369,6 +369,8 @@ async def update_user(
         else:
             update_data["password_hash"] = None
             update_data["invite_nonce"] = None
+            if must_change_password is not True:
+                update_data["must_change_password"] = False
     if update_data.get("must_change_password", user.must_change_password) and (
         user.oidc_subject is not None
         or update_data.get("password_hash", user.password_hash) is None

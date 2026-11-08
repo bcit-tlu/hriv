@@ -344,13 +344,15 @@ separate from this backend schema foundation.
   account; supplied strings on create and patch must be at least eight
   characters (short or empty strings return 422).
 - `PATCH /api/users/{id}` with omitted `password` leaves credentials unchanged;
-  `{"password": null}` clears the password hash and any pending invite nonce.
+  `{"password": null}` clears the password hash, any pending invite nonce, and
+  `must_change_password` automatically.
   A string sets the password. Admin password edits remain allowed on OIDC-linked
   accounts.
 - Create accepts `must_change_password` (default false); patch accepts true or
   false, with omission/null leaving the flag unchanged. True requires a
   password and no OIDC link in the resulting state (422 otherwise). Clearing a
-  flagged account's password requires also setting `must_change_password: false`.
+  flagged account's password needs no explicit flag update; only an explicit
+  `must_change_password: true` alongside `password: null` returns 422.
 - Full user responses (admin/staff directory, admin mutations, `/api/auth/me`,
   and the `/api/auth/login` user payload) include `has_local_password`,
   `oidc_linked`, and `must_change_password`. Check local-only `(true, false)`,
