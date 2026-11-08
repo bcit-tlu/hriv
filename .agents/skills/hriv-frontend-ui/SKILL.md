@@ -61,7 +61,8 @@ npm test -- <test file or pattern>
 Check repo formatting when you touch frontend files or docs:
 
 Password-management/session changes are covered by `passwordSession.test.tsx`,
-`passwordErrors.test.ts`, `components/PasswordScreens.test.tsx`, and
+`passwordErrors.test.ts`, `components/PasswordSetupScreen.test.tsx`,
+`components/ChangePasswordDialog.test.tsx`, `components/ForcedPasswordChangeScreen.test.tsx`, and
 `components/AppShell.test.tsx`. Preview the setup, change dialog, and forced-change
 Storybook states; the auth gate lives above the shell in `AuthContext.tsx`.
 

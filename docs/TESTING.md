@@ -683,7 +683,8 @@ and `test_telemetry.py`. Existing tile tokens retain the bounded expiry window
 documented in [user deactivation](user-deactivation.md).
 
 Frontend password flows are covered in `passwordSession.test.tsx`,
-`passwordErrors.test.ts`, `components/PasswordScreens.test.tsx`, and
+`passwordErrors.test.ts`, `components/PasswordSetupScreen.test.tsx`,
+`components/ChangePasswordDialog.test.tsx`, `components/ForcedPasswordChangeScreen.test.tsx`, and
 `components/AppShell.test.tsx`. Manually verify:
 
 - Paste a setup link into an already-open signed-in tab: capture and strip the
