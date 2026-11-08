@@ -7,16 +7,22 @@ vi.mock('../../src/api', async (original) => ({
   ...(await original<typeof import('../../src/api')>()),
   mintPasswordSetupLink: vi.fn(),
 }))
+const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.mocked(mintPasswordSetupLink).mockReset()
+  if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+  else Reflect.deleteProperty(document, 'execCommand')
 })
 const user = { id: 9, name: 'Guest', active: true }
 const response = { setup_token: 'test-token', expires_at: '2030-01-02T12:00:00Z' }
 
 describe('PasswordSetupLinkDialog', () => {
+  it('starts with the original execCommand property', () => {
+    expect(Object.getOwnPropertyDescriptor(document, 'execCommand')).toEqual(originalExecCommand)
+  })
   it('composes the URL, shows local expiry and copies without persisting it', async () => {
     vi.mocked(mintPasswordSetupLink).mockResolvedValue(response)
     const writeText = vi.fn().mockResolvedValue(undefined)
