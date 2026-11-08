@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
@@ -23,6 +24,8 @@ from ..measurement.service import (
     has_scale,
     has_scale_sql,
     reject_finding,
+    rescan_candidates_stmt,
+    reset_finding,
     scan_candidates_stmt,
     scan_images,
 )
@@ -35,6 +38,7 @@ from ..schemas import (
     MeasurementFindingsPageOut,
     MeasurementScanOut,
     MeasurementScanProgressOut,
+    MeasurementScanRemainingOut,
     MeasurementScanRequest,
 )
 from ..worker import TaskQueueUnavailableError, enqueue_measurement_scan
@@ -44,6 +48,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/measurement-findings", tags=["measurement-findings"])
 
 _Reviewer = Annotated[User, Depends(require_role("admin", "instructor"))]
+
+# Whole-library scans are split into jobs of this size so one queued job never
+# holds a worker slot for hours and progress stays resumable.
+_SCAN_JOB_CHUNK = 50
 
 _SORTS = {
     "confidence_desc": (MeasurementFinding.confidence.desc(), MeasurementFinding.id),
@@ -77,6 +85,58 @@ def _out(finding: MeasurementFinding, image: Image) -> MeasurementFindingOut:
     )
 
 
+async def _enqueue_scan(
+    image_ids: list[int],
+    background_tasks: BackgroundTasks,
+    user: User,
+    rescan: bool,
+) -> MeasurementScanOut:
+    """Queue ``image_ids`` for scanning, chunked so no job runs for hours.
+
+    Queue-unavailable chunks run in-process (local mode) so a Redis blip
+    mid-enqueue never drops images; ``required`` mode surfaces 503 instead.
+    """
+    if not image_ids:
+        return MeasurementScanOut(image_ids=[], mode="queued")
+    chunks = [
+        image_ids[i : i + _SCAN_JOB_CHUNK]
+        for i in range(0, len(image_ids), _SCAN_JOB_CHUNK)
+    ]
+    fallback_ids: list[int] = []
+    accepted = 0
+    try:
+        for chunk in chunks:
+            result = await enqueue_measurement_scan(chunk, rescan)
+            if result.queued:
+                accepted += len(chunk)
+            else:
+                fallback_ids.extend(chunk)
+    except TaskQueueUnavailableError as exc:
+        # Required-mode contract: never run scans on the API process during
+        # a queue outage. Earlier chunks stay queued — disclose that partial
+        # acceptance so a retry isn't assumed to start from zero (re-scan
+        # work is idempotent per image: it just supersedes again).
+        detail = "task_queue_unavailable"
+        if accepted or fallback_ids:
+            detail += f"; {accepted + len(fallback_ids)} images already accepted"
+        raise HTTPException(status_code=503, detail=detail) from exc
+    mode = "fallback" if not accepted else "queued"
+    if fallback_ids:
+        background_tasks.add_task(scan_images, async_session, fallback_ids, rescan)
+    logger.info(
+        "Measurement scan requested",
+        extra={
+            "event": "measurement.scan_requested",
+            "image_count": len(image_ids),
+            "mode": mode,
+            "rescan": rescan,
+            "job_count": len(chunks),
+            **actor_log_fields(user),
+        },
+    )
+    return MeasurementScanOut(image_ids=image_ids, mode=mode)
+
+
 @router.post("/scan", response_model=MeasurementScanOut, status_code=202)
 async def scan(
     body: MeasurementScanRequest,
@@ -84,29 +144,40 @@ async def scan(
     user: _Reviewer,
     db: AsyncSession = Depends(get_db),
 ) -> MeasurementScanOut:
-    """Queue the next ``limit`` unscaled, unreviewed images for detection."""
+    """Queue images for detection.
+
+    Default: the next ``limit`` images with no live finding. ``rescan``
+    instead picks unscaled images lacking a current-detector finding (and
+    supersedes their old findings when they are processed). ``all`` queues
+    every candidate, ignoring ``limit``.
+    """
+    stmt = rescan_candidates_stmt if body.rescan else scan_candidates_stmt
     image_ids = list(
-        (await db.execute(scan_candidates_stmt(body.limit, body.category_id))).scalars()
+        (await db.execute(stmt(None if body.all else body.limit, body.category_id)))
+        .scalars()
     )
-    if not image_ids:
-        return MeasurementScanOut(image_ids=[], mode="queued")
-    try:
-        result = await enqueue_measurement_scan(image_ids)
-    except TaskQueueUnavailableError:
-        raise HTTPException(status_code=503, detail="task_queue_unavailable")
-    mode = "queued" if result.queued else "fallback"
-    if mode == "fallback":
-        background_tasks.add_task(scan_images, async_session, image_ids)
-    logger.info(
-        "Measurement scan requested",
-        extra={
-            "event": "measurement.scan_requested",
-            "image_count": len(image_ids),
-            "mode": mode,
-            **actor_log_fields(user),
-        },
-    )
-    return MeasurementScanOut(image_ids=image_ids, mode=mode)
+    return await _enqueue_scan(image_ids, background_tasks, user, body.rescan)
+
+
+@router.get("/scan-remaining", response_model=MeasurementScanRemainingOut)
+async def scan_remaining(
+    _user: _Reviewer,
+    db: AsyncSession = Depends(get_db),
+    rescan: bool = False,
+    category_id: int | None = None,
+    max_image_id: int | None = None,
+) -> MeasurementScanRemainingOut:
+    """How many scan candidates are still unprocessed (whole-scan progress).
+
+    ``max_image_id`` bounds the count to the images a scan submission
+    actually covered — newer uploads must not hold its progress open.
+    """
+    stmt = rescan_candidates_stmt if rescan else scan_candidates_stmt
+    stmt = stmt(None, category_id)
+    if max_image_id is not None:
+        stmt = stmt.where(Image.id <= max_image_id)
+    remaining = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    return MeasurementScanRemainingOut(remaining=remaining or 0)
 
 
 @router.get("/scan-progress", response_model=MeasurementScanProgressOut)
@@ -114,18 +185,24 @@ async def scan_progress(
     _user: _Reviewer,
     db: AsyncSession = Depends(get_db),
     image_ids: list[int] = Query(..., min_length=1, max_length=200),
+    min_finding_id: int | None = None,
 ) -> MeasurementScanProgressOut:
-    """How many of a scan's images have been processed (a live finding, or deleted)."""
+    """How many of a scan's images have been processed (a live finding, or deleted).
+
+    ``min_finding_id`` counts only findings newer than that row, which lets a
+    re-scan be tracked past the finding it supersedes.
+    """
     ids = set(image_ids)
+    filters = [
+        MeasurementFinding.image_id.in_(ids),
+        MeasurementFinding.status != "superseded",
+    ]
+    if min_finding_id is not None:
+        filters.append(MeasurementFinding.id > min_finding_id)
     scanned = set(
         (
             await db.execute(
-                select(MeasurementFinding.image_id)
-                .where(
-                    MeasurementFinding.image_id.in_(ids),
-                    MeasurementFinding.status != "superseded",
-                )
-                .distinct()
+                select(MeasurementFinding.image_id).where(*filters).distinct()
             )
         ).scalars()
     )
@@ -298,3 +375,75 @@ async def reject(
     await db.commit()
     await db.refresh(finding)
     return _out(finding, image)
+
+
+@router.post("/{finding_id}/reset", response_model=MeasurementFindingOut)
+async def reset(
+    finding_id: int,
+    user: _Reviewer,
+    db: AsyncSession = Depends(get_db),
+) -> MeasurementFindingOut:
+    """Return an approved or rejected finding to pending.
+
+    Reverting an approval also strips the scale it wrote; see
+    :func:`reset_finding` for when metadata is and is not touched.
+    """
+    finding, image = await _lock_finding_and_image(db, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if finding.status not in ("approved", "rejected"):
+        raise HTTPException(status_code=409, detail=f"Finding is {finding.status}")
+    if image is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    if await db.scalar(
+        select(MeasurementFinding.id)
+        .where(
+            MeasurementFinding.image_id == image.id,
+            MeasurementFinding.status == "pending",
+            MeasurementFinding.id != finding.id,
+        )
+        .limit(1)
+    ):
+        # A newer proposal is already waiting; this row stays history.
+        raise HTTPException(
+            status_code=409, detail="Image already has a pending finding"
+        )
+    stripped = reset_finding(finding, image)
+    if stripped:
+        await _bump_if_browsable(db, [image])
+    try:
+        await db.commit()
+    except IntegrityError:
+        # A pending finding slipped in concurrently; unique index held.
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Image already has a pending finding"
+        )
+    await db.refresh(finding)
+    logger.info(
+        "Measurement finding reset to pending",
+        extra={
+            "event": "measurement.reset",
+            "finding_id": finding.id,
+            "image_id": image.id,
+            "metadata_stripped": stripped,
+            **actor_log_fields(user),
+        },
+    )
+    return _out(finding, image)
+
+
+@router.post("/{finding_id}/rescan", response_model=MeasurementScanOut, status_code=202)
+async def rescan(
+    finding_id: int,
+    background_tasks: BackgroundTasks,
+    user: _Reviewer,
+    db: AsyncSession = Depends(get_db),
+) -> MeasurementScanOut:
+    """Re-run detection on the finding's image; its live findings are superseded."""
+    finding = await db.get(MeasurementFinding, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return await _enqueue_scan(
+        [finding.image_id], background_tasks, user, rescan=True
+    )

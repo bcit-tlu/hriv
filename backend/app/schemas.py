@@ -1152,6 +1152,10 @@ class CountJobOut(BaseModel):
 class MeasurementScanRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
     category_id: int | None = None
+    """True: re-detect images whose findings predate the current detector."""
+    rescan: bool = False
+    """True: queue every candidate, ignoring ``limit``."""
+    all: bool = False
 
 
 class MeasurementScanOut(BaseModel):
@@ -1162,6 +1166,10 @@ class MeasurementScanOut(BaseModel):
 class MeasurementScanProgressOut(BaseModel):
     total: int
     done: int
+
+
+class MeasurementScanRemainingOut(BaseModel):
+    remaining: int
 
 
 class MeasurementFindingOut(BaseModel):

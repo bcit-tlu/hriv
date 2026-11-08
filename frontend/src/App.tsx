@@ -1101,6 +1101,7 @@ export default function App() {
     handleReplaceBrowseImage,
     handleDeleteViewerImage,
     handleDeleteBrowseImage,
+    openBrowseEditImageById,
   } = useImageActions({
     categories,
     setCategories,
@@ -2314,6 +2315,11 @@ export default function App() {
     [handleOpenCollectionImage],
   )
 
+  // Saving/deleting from the shared edit modal can change an image's stored
+  // scale; bump this so a mounted Measurement Review list refetches.
+  const [measurementRefresh, setMeasurementRefresh] = useState(0)
+  const bumpMeasurementRefresh = useCallback(() => setMeasurementRefresh((n) => n + 1), [])
+
   // Show loading spinner while users are loading
   if (usersLoading) {
     return (
@@ -2449,7 +2455,11 @@ export default function App() {
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'measurement' && canEditContent ? (
-            <MeasurementReviewPage />
+            <MeasurementReviewPage
+              onOpenImage={handleOpenGraphImage}
+              onEditImage={openBrowseEditImageById}
+              refreshToken={measurementRefresh}
+            />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
               currentUser={currentUser}
@@ -3468,8 +3478,17 @@ export default function App() {
       <EditImageModal
         open={browseEditImage != null}
         onClose={() => setBrowseEditImage(null)}
-        onSave={handleSaveBrowseImage}
-        onDelete={browseEditImage ? handleDeleteBrowseImage : undefined}
+        onSave={async (data) => {
+          if (await handleSaveBrowseImage(data)) bumpMeasurementRefresh()
+        }}
+        onDelete={
+          browseEditImage
+            ? async () => {
+                await handleDeleteBrowseImage()
+                bumpMeasurementRefresh()
+              }
+            : undefined
+        }
         onReplace={handleReplaceBrowseImage}
         onCancelReplace={cancelReplace}
         replaceUploadProgress={browseReplaceUploadProgress}
@@ -3491,6 +3510,9 @@ export default function App() {
                       ? findCategoryPath(categories, browseEditImage.categoryId)
                       : null
                   setPath(catPath ?? [])
+                  // The modal can be opened off the browse page (e.g. from
+                  // Measurement Review), so switch the page explicitly.
+                  setPage('browse')
                   pushNavState('browse', catPath?.map((c) => c.id) ?? [], browseEditImage.id)
                 })
               }

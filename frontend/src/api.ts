@@ -2704,6 +2704,10 @@ export function fetchMeasurementFindings(
 export function scanMeasurements(body: {
   limit?: number
   category_id?: number | null
+  /** Re-detect images whose findings predate the current detector. */
+  rescan?: boolean
+  /** Queue every candidate, ignoring `limit`. */
+  all?: boolean
 }): Promise<{ image_ids: number[]; mode: 'queued' | 'fallback' }> {
   return request('/measurement-findings/scan', {
     method: 'POST',
@@ -2714,10 +2718,27 @@ export function scanMeasurements(body: {
 /** How many of a scan's images have a finding yet (deleted images count as done). */
 export function fetchMeasurementScanProgress(
   imageIds: number[],
+  minFindingId?: number,
 ): Promise<{ total: number; done: number }> {
   const qs = new URLSearchParams()
   for (const id of imageIds) qs.append('image_ids', String(id))
+  if (minFindingId != null) qs.set('min_finding_id', String(minFindingId))
   return request(`/measurement-findings/scan-progress?${qs.toString()}`)
+}
+
+/** How many scan candidates remain unprocessed (whole-library scan progress). */
+export function fetchMeasurementScanRemaining(query: {
+  rescan?: boolean
+  categoryId?: number
+  /** Only count candidates up to this image id (the set a scan covered). */
+  maxImageId?: number
+}): Promise<{ remaining: number }> {
+  const qs = new URLSearchParams()
+  if (query.rescan) qs.set('rescan', 'true')
+  if (query.categoryId != null) qs.set('category_id', String(query.categoryId))
+  if (query.maxImageId != null) qs.set('max_image_id', String(query.maxImageId))
+  const suffix = qs.toString()
+  return request(`/measurement-findings/scan-remaining${suffix ? `?${suffix}` : ''}`)
 }
 
 export function approveMeasurementFinding(
@@ -2732,6 +2753,11 @@ export function approveMeasurementFinding(
 
 export function rejectMeasurementFinding(id: number): Promise<ApiMeasurementFinding> {
   return request(`/measurement-findings/${id}/reject`, { method: 'POST' })
+}
+
+/** Return an approved or rejected finding to pending (undoes an approval's scale). */
+export function resetMeasurementFinding(id: number): Promise<ApiMeasurementFinding> {
+  return request(`/measurement-findings/${id}/reset`, { method: 'POST' })
 }
 
 export function bulkApproveMeasurementFindings(

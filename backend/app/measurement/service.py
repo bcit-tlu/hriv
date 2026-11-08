@@ -42,23 +42,50 @@ def has_scale_sql():
     )
 
 
-def scan_candidates_stmt(limit: int, category_id: int | None = None):
+LIVE_FINDING_STATUSES = ("pending", "approved", "rejected")
+
+
+def scan_candidates_stmt(limit: int | None, category_id: int | None = None):
     """Images with no live (pending/approved/rejected) finding.
 
     Rejected and approved findings stop an image being re-proposed; only
     superseded findings leave it eligible again. Already-scaled images are
     included so their stored value is recorded as an authoritative finding.
+    ``limit=None`` selects every candidate (whole-library scans).
     """
     reviewed = exists().where(
         MeasurementFinding.image_id == Image.id,
         MeasurementFinding.status != "superseded",
     )
+    stmt = select(Image.id).where(~reviewed).order_by(Image.id)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    if category_id is not None:
+        stmt = stmt.where(Image.category_id == category_id)
+    return stmt
+
+
+def rescan_candidates_stmt(limit: int | None, category_id: int | None = None):
+    """Unscaled images lacking a live finding from the current detector.
+
+    Picks up never-scanned images plus images whose only findings were made
+    by an older ``DETECTOR_VERSION`` (e.g. after a detector or calibration
+    change); a rescan supersedes those findings and proposes again. Scaled
+    images are excluded: detection never runs on them, so there is nothing
+    new to detect.
+    """
+    current = exists().where(
+        MeasurementFinding.image_id == Image.id,
+        MeasurementFinding.status != "superseded",
+        MeasurementFinding.detector_version == DETECTOR_VERSION,
+    )
     stmt = (
         select(Image.id)
-        .where(~reviewed)
+        .where(~current, ~has_scale_sql())
         .order_by(Image.id)
-        .limit(limit)
     )
+    if limit is not None:
+        stmt = stmt.limit(limit)
     if category_id is not None:
         stmt = stmt.where(Image.category_id == category_id)
     return stmt
@@ -108,26 +135,58 @@ def record_existing(db: AsyncSession, image: Image) -> MeasurementFinding:
     return finding
 
 
-async def _retire_pending(db: AsyncSession, image_id: int) -> None:
+async def _retire_findings(
+    db: AsyncSession, image_id: int, statuses: tuple[str, ...] = ("pending",)
+) -> None:
     await db.execute(
         update(MeasurementFinding)
         .where(
             MeasurementFinding.image_id == image_id,
-            MeasurementFinding.status == "pending",
+            MeasurementFinding.status.in_(statuses),
         )
         .values(status="superseded")
     )
 
 
-async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding | None:
+async def _retire_pending(db: AsyncSession, image_id: int) -> None:
+    await _retire_findings(db, image_id)
+
+
+async def scan_image(
+    db: AsyncSession, image: Image, rescan: bool = False
+) -> MeasurementFinding | None:
     """Record a stored scale, or run the RBC detector and record a pending finding.
 
-    Returns ``None`` when an overlapping scan already recorded the stored scale.
+    ``rescan=True`` supersedes every live finding first, so the image is
+    re-detected (or its stored scale re-recorded) even when a reviewer
+    already approved or rejected an earlier proposal. Returns ``None`` when
+    an overlapping scan already recorded the stored scale.
     """
     if has_scale(image.metadata_):
         # Serialize overlapping scans of this image; approved rows have no unique index.
         await db.execute(select(Image.id).where(Image.id == image.id).with_for_update())
-        if await db.scalar(
+        if rescan:
+            meta = image.metadata_ or {}
+            owner_id = meta.get(FINDING_KEY)
+            owner = (
+                await db.get(MeasurementFinding, owner_id)
+                if owner_id is not None
+                else None
+            )
+            await _retire_findings(db, image.id, LIVE_FINDING_STATUSES)
+            finding = record_existing(db, image)
+            if owner is not None and _scale_promoted_by(meta, owner):
+                # The stored scale is still exactly what the superseded
+                # finding promoted — hand its undoable ownership to the
+                # re-recorded finding (and carry the stored provenance so
+                # the reset guard recognizes the write as its own). A scale
+                # edited since approval stays externally owned instead.
+                await db.flush()
+                finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
+                image.metadata_ = {**meta, FINDING_KEY: finding.id}
+                image.version = image.version + 1
+            return finding
+        elif await db.scalar(
             select(MeasurementFinding.id)
             .where(
                 MeasurementFinding.image_id == image.id,
@@ -161,7 +220,9 @@ async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding | Non
             if estimate is None:
                 evidence["reason"] = "no_rbc_population"
 
-    await _retire_pending(db, image.id)
+    await _retire_findings(
+        db, image.id, LIVE_FINDING_STATUSES if rescan else ("pending",)
+    )
     finding = MeasurementFinding(
         image_id=image.id,
         status="pending",
@@ -177,7 +238,9 @@ async def scan_image(db: AsyncSession, image: Image) -> MeasurementFinding | Non
     return finding
 
 
-async def scan_images(session_factory, image_ids: list[int]) -> int:
+async def scan_images(
+    session_factory, image_ids: list[int], rescan: bool = False
+) -> int:
     """Scan each image in its own transaction; returns findings created."""
     created = 0
     for image_id in image_ids:
@@ -185,7 +248,7 @@ async def scan_images(session_factory, image_ids: list[int]) -> int:
             image = await db.get(Image, image_id)
             if image is None:
                 continue
-            if await scan_image(db, image) is None:
+            if await scan_image(db, image, rescan) is None:
                 await db.rollback()
                 continue
             try:
@@ -245,3 +308,61 @@ def reject_finding(finding: MeasurementFinding, reviewer_id: int) -> None:
     finding.status = "rejected"
     finding.reviewed_by = reviewer_id
     finding.reviewed_at = datetime.now(timezone.utc)
+
+
+_MEASUREMENT_METADATA_KEYS = frozenset({SCALE_KEY, UNIT_KEY, SOURCE_KEY, FINDING_KEY})
+
+
+def _promoted_source(finding: MeasurementFinding) -> str:
+    """The scale_source an approval of ``finding`` would have written.
+
+    Reconstructed the same way ``approve_finding`` chose it — reviewer
+    corrections store ``"manual"``, unedited approvals store the finding's
+    own detection source.
+    """
+    return (
+        "manual"
+        if (
+            finding.approved_scale != finding.proposed_scale
+            or finding.approved_unit != finding.proposed_unit
+        )
+        else finding.source
+    )
+
+
+def _scale_promoted_by(meta: dict, finding: MeasurementFinding) -> bool:
+    """True while ``meta``'s scale is still exactly what ``finding`` promoted.
+
+    Any later edit — even one that only touched ``measurement_scale_source``
+    — makes the stored values authoritative rather than an undoable write.
+    """
+    return (
+        meta.get(FINDING_KEY) == finding.id
+        and meta.get(SCALE_KEY) == finding.approved_scale
+        and meta.get(UNIT_KEY) == finding.approved_unit
+        and meta.get(SOURCE_KEY) == _promoted_source(finding)
+    )
+
+
+def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
+    """Move an approved or rejected finding back to pending (caller commits).
+
+    Undoing an approval also removes the measurement keys it wrote, so a
+    mistaken approval does not leave a wrong scale on the image. The strip
+    only runs while the stored scale is still exactly the value this finding
+    promoted — a scale since changed by anything else is authoritative and
+    left alone (the finding still returns to pending, where the list hides
+    it while a scale exists). Returns True when image metadata changed.
+    """
+    meta = image.metadata_ or {}
+    stripped = False
+    if finding.status == "approved" and _scale_promoted_by(meta, finding):
+        image.metadata_ = {
+            k: v for k, v in meta.items() if k not in _MEASUREMENT_METADATA_KEYS
+        }
+        image.version = image.version + 1
+        stripped = True
+    finding.status = "pending"
+    finding.reviewed_by = None
+    finding.reviewed_at = None
+    return stripped

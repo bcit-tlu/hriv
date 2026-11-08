@@ -143,6 +143,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Common mistakes:**
   - Findings never change image metadata until approved; approval merges only
     the measurement keys into `Image.metadata_`.
+  - Approved/rejected findings can return to `pending` via `reset`; only a
+    `reset` of the approving finding strips the scale it wrote, and only while
+    the stored value still matches what it promoted.
 
 ### SourceImage
 
