@@ -228,6 +228,23 @@ describe('ImageDetailsDrawer', () => {
     expectField('Measurement:', expected)
   })
 
+  it.each([
+    [{ objective_power: 40 }, '×40'],
+    [{ objective_power: 2.5 }, '×2.5'],
+  ])('shows the stored objective %#', async (metadataExtra, expected) => {
+    render(<Harness {...makeProps({ image: { metadataExtra } })} />)
+    fireEvent.click(trigger())
+    await screen.findByRole('heading', { name: 'Image details' })
+    expectField('Objective:', expected)
+  })
+
+  it('omits the objective row when none is stored', async () => {
+    render(<Harness {...makeProps({ image: { metadataExtra: { measurement_scale: 4 } } })} />)
+    fireEvent.click(trigger())
+    await screen.findByRole('heading', { name: 'Image details' })
+    expect(screen.queryByText('Objective:')).not.toBeInTheDocument()
+  })
+
   it('does not contain notes or collections; instructions live in the footer', async () => {
     render(<Harness {...populatedProps} />)
     fireEvent.click(trigger())

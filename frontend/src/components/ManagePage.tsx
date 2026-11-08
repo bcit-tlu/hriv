@@ -72,6 +72,7 @@ import NoteDisplay from './NoteDisplay'
 import RenewingThumbnail from './RenewingThumbnail'
 import UploadImageModal from './UploadImageModal'
 import { mergeRenewedApiImageUrls } from '../tileTokenRenewal'
+import { objectiveFromMetadata, objectiveLabel } from '../measurementUnits'
 import {
   getFilterTerms,
   hasFilterTerms,
@@ -117,6 +118,7 @@ type ManageTableColumn =
   | 'dimensions'
   | 'file_size'
   | 'measurement'
+  | 'objective'
   | 'annotations'
 
 const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[] = [
@@ -135,6 +137,7 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'dimensions', label: 'Dimensions' },
   { key: 'file_size', label: 'File Size' },
   { key: 'measurement', label: 'Measurement' },
+  { key: 'objective', label: 'Objective' },
   { key: 'annotations', label: 'Annotations' },
 ]
 
@@ -1184,6 +1187,7 @@ export default function ManagePage({
     dimensions: sortableHeaderCell('dimensions', 'Dimensions'),
     file_size: sortableHeaderCell('file_size', 'File Size'),
     measurement: <TableCell>Measurement</TableCell>,
+    objective: <TableCell>Objective</TableCell>,
     annotations: sortableHeaderCell('annotations', 'Annotations'),
   }
 
@@ -1897,6 +1901,11 @@ export default function ManagePage({
                         if (scale == null) return '—'
                         return unit ? `${scale} px/${unit}` : `${scale} px`
                       })()}
+                    </TableCell>
+                  ),
+                  objective: (
+                    <TableCell {...dimAttr}>
+                      {objectiveLabel(objectiveFromMetadata(img.metadata_extra)) || '—'}
                     </TableCell>
                   ),
                   annotations: (

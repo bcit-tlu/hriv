@@ -1227,6 +1227,9 @@ class MeasurementFindingOut(BaseModel):
     detector_version: str
     approved_scale: float | None
     approved_unit: str | None
+    approved_objective: str | None
+    # Calibrated px/µm per objective for this camera; None for unknown cameras.
+    objective_scales: dict[str, float] | None
     reviewed_by: int | None
     reviewed_at: datetime | None
     created_at: datetime
@@ -1248,6 +1251,8 @@ class MeasurementApprove(BaseModel):
 
     scale: float | None = Field(default=None, gt=0)
     unit: Literal["um", "nm", "mm", "cm"] | None = None
+    # Omitted keeps the detected objective; an explicit null approves without one.
+    objective: Literal["4", "10", "20", "40", "50", "60", "100"] | None = None
 
 
 class MeasurementBulkApprove(BaseModel):

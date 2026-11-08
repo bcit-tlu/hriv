@@ -22,6 +22,8 @@ import { isCategoryHiddenInTree } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import MeasurementScaleFields from './MeasurementScaleFields'
+import MeasurementObjectiveSelect from './MeasurementObjectiveSelect'
+import { objectiveFromMetadata } from '../measurementUnits'
 import { MAX_NOTE_LENGTH } from '../constants'
 
 export interface ImageFormData {
@@ -135,6 +137,9 @@ function EditImageForm({
   const [measurementUnit, setMeasurementUnit] = useState<string>(
     typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '',
   )
+  const initialObjective = objectiveFromMetadata(meta)
+  const [objective, setObjective] = useState<string>(initialObjective)
+  const objectiveChanged = objective !== initialObjective
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -157,7 +162,8 @@ function EditImageForm({
     note !== (image?.note ?? '') ||
     activeChanged ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
-    measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '')
+    measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '') ||
+    objectiveChanged
 
   const handleDelete = async () => {
     if (!onDelete) return
@@ -195,11 +201,17 @@ function EditImageForm({
       active,
     }
 
-    if (hasScale || hasUnit || hadMeasurement) {
+    const measurementTouched = hasScale || hasUnit || hadMeasurement
+    if (measurementTouched || objectiveChanged) {
       formData.metadata_extra = {
         ...existingMeta,
-        measurement_scale: hasScale ? scaleNum : null,
-        measurement_unit: hasUnit ? unitStr : null,
+        ...(measurementTouched
+          ? {
+              measurement_scale: hasScale ? scaleNum : null,
+              measurement_unit: hasUnit ? unitStr : null,
+            }
+          : {}),
+        ...(objectiveChanged ? { objective_power: objective ? Number(objective) : null } : {}),
       }
     }
 
@@ -502,6 +514,12 @@ function EditImageForm({
           onUnitChange={setMeasurementUnit}
           scaleHelperText="Image pixels per real-world unit"
           allowEmptyUnit
+        />
+        <MeasurementObjectiveSelect
+          label="Objective"
+          value={objective}
+          onChange={setObjective}
+          helperText="Microscope objective magnification"
         />
         {image && image.created_at && image.updated_at && (
           <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
