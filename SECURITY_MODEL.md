@@ -1,6 +1,6 @@
 # HRIV Image Library — threat model
 
-Scope: `bcit-tlu/hriv` at `main` (backend 0.48+ / frontend 0.50+). Context only (not scanned): `bcit-tlu/flux-fleet` overlays `apps/overlays/{latest,stable}/hriv`.
+Scope: `bcit-tlu/hriv` at `main` (backend 0.48+ / frontend 0.50+). Context only (not scanned): the deployment overlays for the `latest`/`stable` environments, which live in a separate private repo.
 Status: **draft inferred from code and repo docs** (first written for a Devin security scan, 2026-11). Statements are a reading of the code unless marked _(maintainer)_; edit this file as decisions are made so later scans start from it.
 
 ## System overview and trust boundaries
@@ -22,7 +22,7 @@ Boundaries, in order of importance:
 2. **Role boundary**: admin > instructor > staff > student (`auth.py`, `authz.py`, `require_role`). OIDC maps IdP groups to roles (`routers/oidc.py` `_resolve_role`, highest wins) and programs (`Program.oidc_group`).
 3. **Student visibility boundary**: dual program AND group gate up the category ancestor chain (`visibility.py`, enforced in `routers/categories.py`, `routers/images.py`, `routers/collections.py`). Frontend filtering is UX only.
 4. **Tile content boundary**: stateless HMAC `tile_token` (`tile_tokens.py`), validated DB-free by nginx `auth_request`; `thumb` purpose is restricted to `thumbnail.jpeg` (`docs/tile-delivery-boundary.md`).
-5. **Cluster-internal**: `/api/metrics`, `/api/health/{ready,storage}`, `/api/_probe` are 404'd by frontend nginx; the backend NetworkPolicy (`charts/backend/templates/networkpolicy.yaml`) is opt-in — enabled in the flux-fleet `latest` overlay, **not seen in the `stable` overlay** (inferred, to confirm).
+5. **Cluster-internal**: `/api/metrics`, `/api/health/{ready,storage}`, `/api/_probe` are 404'd by frontend nginx; the backend API NetworkPolicy (`charts/backend/templates/networkpolicy.yaml`, `networkPolicy.enabled`) is opt-in and **currently off in both overlays** (chart default `enabled: false`), so nothing restricts which cluster pods can reach the API port. The only backend NetworkPolicy deployed is the latest-only counting worker's egress-only policy (`countingWorker.networkPolicy`), which rides with that preview feature.
 6. **Worker/file boundary**: user-supplied images and admin archives are parsed by pyvips, `tarfile` (`filter="data"`), `pg_restore`/`psql` subprocesses in `admin_ops.py`.
 
 ## Components
@@ -42,7 +42,7 @@ Boundaries, in order of importance:
 
 - Public: `POST /api/auth/login` (Redis rate limit per IP+email and per email), OIDC login/callback, `GET /api/auth/oidc/enabled`, password-setup redemption (purpose-scoped token in body), `/version`, `/runtime-config.js`, health/liveness. `POST /api/telemetry/synthetic-result` takes a static `X-Synthetic-Ingest-Token` or synthetic-account JWT.
 - Signed-credential: `/api/tiles/**` (`tile_token` query string), admin task download (`download-token` cookie).
-- Any authenticated user: browse tree, images, collections (students gated by `COLLECTIONS_STUDENT_ACCESS`, off on stable), issue reports, telemetry events, profile/password change.
+- Any authenticated user: browse tree, images, collections (student access gated by `COLLECTIONS_STUDENT_ACCESS`, a deployment-configurable switch), issue reports, telemetry events, profile/password change.
 - Instructor/admin: uploads (`/api/source-images/upload`, image replace), bulk import, categories/groups/programs management, measurements review.
 - Admin only: DB export/import, files export/import, chunked uploads, tile rebuilds, file restore, backup archives/snapshots, maintenance mode, user management, source-image download.
 - In-cluster: `/api/metrics` (Prometheus), probes, Redis, Postgres.
@@ -53,7 +53,7 @@ Boundaries, in order of importance:
 - User records: names, emails, roles, program/group memberships, password hashes, password-setup tokens.
 - Credentials: `JWT_SECRET` (signs sessions, tile tokens, download tokens), OIDC client secret, SMTP relay, Vault DB creds, Azure backup credentials, synthetic ingest token.
 - Integrity of the catalogue: categories, annotations/`metadata_` JSONB, measurement scale, collections.
-- Availability of `stable` during teaching.
+- Availability of the production (`stable`) deployment during teaching.
 
 ## Attacker profiles (inferred)
 
@@ -67,7 +67,7 @@ Boundaries, in order of importance:
 
 - Default-authenticated routes with a documented allowlist (`docs/unauthenticated-routes.md`); no optional-auth pattern.
 - `require_password_changed` on `get_current_user`; JWT epoch for session rotation; `REQUIRE_JWT_SECRET` in charts.
-- Login rate limiting (Redis, fails open) with right-anchored XFF parsing (`TRUSTED_PROXY_HOPS=3` on fleet).
+- Login rate limiting (Redis, fails open) with right-anchored XFF parsing (hop count configured per deployment via `TRUSTED_PROXY_HOPS`).
 - CORS: explicit origin list with credentials; wildcard rejected in `required` mode.
 - Tile HMAC tokens scoped to one `source_image_id`, ~15 min TTL, `Cache-Control: private`.
 - Archive extraction with `tarfile` `filter="data"` and manifest validation; upload size caps enforced by backend streaming middleware (`_upload_body_limits` in `middleware.py`) for source-image upload/replace and bulk import; frontend nginx sets `client_max_body_size 0` on upload routes. Admin import uploads (`/api/admin/tasks/db-import`, `files-import`, `PUT tasks/<id>/upload`; chunked `PATCH` uploads are capped at 512 MiB per request) have no body cap and rely on admins being trusted.
@@ -82,4 +82,4 @@ Boundaries, in order of importance:
 
 - Which assets matter most; which attackers count; whether admins are trusted.
 - Whether dev-only docker-compose exposure, synthetic-monitoring and restore-validation are in scope.
-- Is the backend NetworkPolicy enabled on `stable` (not in `apps/overlays/stable/hriv/backend/values-stable.yaml`)?
+- Whether to enable the backend API NetworkPolicy — currently off in all overlays (`networkPolicy.enabled` defaults false); enabling it is a hardening backlog item, not an env discrepancy.
