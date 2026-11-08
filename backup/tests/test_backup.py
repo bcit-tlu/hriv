@@ -2052,8 +2052,9 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertIn("pg_current_wal_lsn() AS fence_lsn", psql_queries[3])
         self.assertIn("pg_walfile_name(fence_lsn - 1)", psql_queries[3])
         self.assertIn("AT TIME ZONE 'UTC'", psql_queries[3])
-        self.assertIn("pg_stat_archiver", psql_queries[4])
-        self.assertIn("AT TIME ZONE 'UTC'", psql_queries[4])
+        self.assertIn("SELECT version_num AS migration_version", psql_queries[4])
+        self.assertIn("pg_stat_archiver", psql_queries[5])
+        self.assertIn("AT TIME ZONE 'UTC'", psql_queries[5])
 
 
 class AzurePublicationTestCase(_BackupTestCase):
@@ -2694,20 +2695,20 @@ class AzurePublicationTestCase(_BackupTestCase):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         db = backup._parse_db_url(backup.DATABASE_URL)
         valid = (
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n"
-            "0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,0038_user_auth_state\n"
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
+            "0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n"
         )
+        update = "generation,migration_version\n1,0038_user_auth_state\n"
+        post = "migration_version\n0038_user_auth_state\n"
         for payload in (
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\nnot-an-lsn,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,0038_user_auth_state\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,not-a-wal,2026-01-02T03:04:06.000000Z,16777216,0038_user_auth_state\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,not-a-time,16777216,0038_user_auth_state\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777217,0038_user_auth_state\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,524288,0038_user_auth_state\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,\n",
-            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216,bad version\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\nnot-an-lsn,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,not-a-wal,2026-01-02T03:04:06.000000Z,16777216\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,not-a-time,16777216\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777217\n",
+            "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,524288\n",
         ):
             with self.subTest(payload=payload):
-                responses = iter((f"generation,migration_version\n1,0038_user_auth_state\n", payload))
+                responses = iter((update, payload, post))
                 def invalid_boundary(_cmd, **_kwargs):
                     return MagicMock(returncode=0, stdout=next(responses), stderr="")
                 with (
@@ -2716,7 +2717,7 @@ class AzurePublicationTestCase(_BackupTestCase):
                 ):
                     backup._emit_wal_fence(db)
 
-        responses = iter((f"generation,migration_version\n1,0038_user_auth_state\n", valid))
+        responses = iter((update, valid, post))
         def valid_boundary(_cmd, **_kwargs):
             return MagicMock(returncode=0, stdout=next(responses), stderr="")
         with patch.object(backup.subprocess, "run", side_effect=valid_boundary):
@@ -2731,13 +2732,16 @@ class AzurePublicationTestCase(_BackupTestCase):
                 backup._emit_wal_fence(db),
             )
 
-        for update_payload, message in (
-            ("generation,migration_version\n1,0037_measurement_findings\n", "migration between the fence"),
-            ("generation,migration_version\n1,\n", "invalid migration version"),
-            ("generation\n1\n", "backup WAL fence transaction"),
+        for update_payload, post_payload, message in (
+            (update, "migration_version\n0037_measurement_findings\n", "migration between the fence"),
+            (update, "migration_version\n", "backup WAL fence migration query"),
+            (update, "migration_version\nbad version\n", "migration query returned an invalid migration version"),
+            (update, "generation\n1\n", "backup WAL fence migration query"),
+            ("generation,migration_version\n1,\n", post, "invalid migration version"),
+            ("generation\n1\n", post, "backup WAL fence transaction"),
         ):
-            with self.subTest(update_payload=update_payload):
-                responses = iter((update_payload, valid))
+            with self.subTest(update_payload=update_payload, post_payload=post_payload):
+                responses = iter((update_payload, valid, post_payload))
                 def drifted(_cmd, **_kwargs):
                     return MagicMock(returncode=0, stdout=next(responses), stderr="")
                 with (
@@ -3297,12 +3301,18 @@ def _production_inventory_run(
                 stdout=f"generation,migration_version\n1,{migration_version}\n",
                 stderr="",
             )
+        if "FROM public.alembic_version" in query:
+            return MagicMock(
+                returncode=0,
+                stdout=f"migration_version\n{migration_version}\n",
+                stderr="",
+            )
         if "pg_walfile_name" in query:
             return MagicMock(
                 returncode=0,
                 stdout=(
-                    "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes,migration_version\n"
-                    f"{fence_lsn},{fence_file},2026-01-02T03:04:06.000000Z,{wal_segment_size},{migration_version}\n"
+                    "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
+                    f"{fence_lsn},{fence_file},2026-01-02T03:04:06.000000Z,{wal_segment_size}\n"
                 ),
                 stderr="",
             )
