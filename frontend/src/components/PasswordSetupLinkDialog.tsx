@@ -16,20 +16,17 @@ const pendingMints = new Map<number, Promise<void>>()
 export default function PasswordSetupLinkDialog({
   user,
   onClose,
-  passwordCleared = false,
 }: {
   user: { id: number; name: string; active: boolean }
   onClose: () => void
-  passwordCleared?: boolean
 }) {
-  const [attempt, setAttempt] = useState(passwordCleared || !user.active ? 0 : 1)
-  const [busy, setBusy] = useState(!passwordCleared && user.active)
+  const [busy, setBusy] = useState(user.active)
   const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    if (!attempt) return
+    if (!user.active) return
     let cancelled = false
     const mint = async () => {
       while (pendingMints.has(user.id)) {
@@ -52,16 +49,11 @@ export default function PasswordSetupLinkDialog({
       } catch (err: unknown) {
         if (cancelled) return
         setError(
-          err instanceof ApiError && err.status === 409
-            ? 'This account already has a password. Clear it before creating a setup link.'
-            : err instanceof ApiError && err.detail === 'oidc_linked'
-              ? 'Managed by the identity provider'
-              : err instanceof ApiError && err.detail === 'account_inactive'
-                ? 'Activate this account before creating a setup link.'
-                : userMessage(
-                    err,
-                    'Could not create a setup link. Retry here or from the person’s row.',
-                  ),
+          err instanceof ApiError && err.detail === 'oidc_linked'
+            ? 'Managed by the identity provider'
+            : err instanceof ApiError && err.detail === 'account_inactive'
+              ? 'Activate this account before creating a setup link.'
+              : userMessage(err, 'Could not create a setup link. Try again from Edit Person.'),
         )
       } finally {
         if (pendingMints.get(user.id) === settled) pendingMints.delete(user.id)
@@ -72,7 +64,7 @@ export default function PasswordSetupLinkDialog({
     return () => {
       cancelled = true
     }
-  }, [attempt, user.id])
+  }, [user.id, user.active])
 
   const copy = async () => {
     if (!link) return
@@ -107,19 +99,7 @@ export default function PasswordSetupLinkDialog({
       <DialogTitle id="setup-link-title">Password-setup link</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         <Typography>Create a password-setup link for {user.name}.</Typography>
-        <Typography variant="body2" color="text.secondary">
-          The account already exists. If link creation fails, retry here or close and retry from the
-          person’s row.
-        </Typography>
-        <Alert severity="warning">
-          This link is a credential and works only once. Send it privately to this person. Creating
-          another link replaces the previous one.
-        </Alert>
-        {passwordCleared && (
-          <Alert severity="success">
-            Password cleared. Create a new setup link so this person can choose a password.
-          </Alert>
-        )}
+        <Alert severity="warning">Single-use link. Share it privately.</Alert>
         {!user.active && (
           <Alert severity="info">Activate this account before creating a setup link.</Alert>
         )}
@@ -143,21 +123,9 @@ export default function PasswordSetupLinkDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
-        {link ? (
+        {link && (
           <Button variant="contained" startIcon={<ContentCopyIcon />} onClick={() => void copy()}>
             Copy link
-          </Button>
-        ) : (
-          <Button
-            variant="contained"
-            disabled={busy || !user.active}
-            onClick={() => {
-              setBusy(true)
-              setError(null)
-              setAttempt((value) => value + 1)
-            }}
-          >
-            {attempt ? 'Retry' : 'Create setup link'}
           </Button>
         )}
       </DialogActions>

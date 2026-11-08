@@ -43,17 +43,17 @@ describe('PasswordSetupLinkDialog', () => {
     expect(close).toHaveBeenCalledOnce()
   })
 
-  it('retries a mint error without retaining a previous link', async () => {
+  it('directs a mint failure back to Edit Person without offering a dialog retry', async () => {
     vi.mocked(mintPasswordSetupLink)
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValue(response)
-    render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
+    const { unmount } = render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
     expect(
-      await screen.findByText(
-        'Could not create a setup link. Retry here or from the person’s row.',
-      ),
+      await screen.findByText('Could not create a setup link. Try again from Edit Person.'),
     ).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    unmount()
+    render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
     expect(await screen.findByLabelText('Setup URL')).toBeInTheDocument()
     expect(mintPasswordSetupLink).toHaveBeenCalledTimes(2)
   })
@@ -61,7 +61,6 @@ describe('PasswordSetupLinkDialog', () => {
   it.each([
     [403, 'account_inactive', 'Activate this account'],
     [422, 'oidc_linked', 'Managed by'],
-    [409, 'password_already_set', 'Clear it before'],
   ])('maps mint error %s', async (status, detail, copy) => {
     vi.mocked(mintPasswordSetupLink).mockRejectedValue(
       new ApiError(status as number, detail as string),
@@ -71,18 +70,12 @@ describe('PasswordSetupLinkDialog', () => {
     expect(screen.queryByLabelText('Setup URL')).not.toBeInTheDocument()
   })
 
-  it('offers a new link only on demand after clearing, and blocks inactive accounts', async () => {
+  it('blocks inactive accounts without minting', () => {
     vi.mocked(mintPasswordSetupLink).mockResolvedValue(response)
-    const { unmount } = render(
-      <PasswordSetupLinkDialog user={user} passwordCleared onClose={vi.fn()} />,
-    )
-    expect(mintPasswordSetupLink).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Create setup link' }))
-    expect(await screen.findByLabelText('Setup URL')).toBeInTheDocument()
-    unmount()
-    vi.mocked(mintPasswordSetupLink).mockClear()
     render(<PasswordSetupLinkDialog user={{ ...user, active: false }} onClose={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Create setup link' })).toBeDisabled()
+    expect(
+      screen.getByText('Activate this account before creating a setup link.'),
+    ).toBeInTheDocument()
     expect(mintPasswordSetupLink).not.toHaveBeenCalled()
   })
 
@@ -98,7 +91,7 @@ describe('PasswordSetupLinkDialog', () => {
     const { unmount } = render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
     unmount()
     render(<PasswordSetupLinkDialog user={user} onClose={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled()
+    expect(screen.getByLabelText('Creating setup link')).toBeInTheDocument()
     expect(mintPasswordSetupLink).toHaveBeenCalledOnce()
     await act(async () => resolve(response))
     expect(await screen.findByLabelText('Setup URL')).toHaveValue(
