@@ -432,7 +432,7 @@ async def test_list_findings_serializes_and_tokenizes_thumb() -> None:
     db = AsyncMock()
     db.scalar.return_value = 1
     rows = MagicMock()
-    rows.all.return_value = [(_finding(), _image())]
+    rows.all.return_value = [(_finding(), _image(), "Hematology › Blood films")]
     db.execute.return_value = rows
     page = await router.list_findings(
         _user(), db, "pending", None, 0.4, "confidence_desc", 50, 0
@@ -442,6 +442,7 @@ async def test_list_findings_serializes_and_tokenizes_thumb() -> None:
     assert item["image_name"] == "slide"
     assert "tile_token=" in item["image_thumb"]
     assert item["objective"] == "40"
+    assert item["category_path"] == "Hematology › Blood films"
 
 
 def _db_with(finding, image) -> AsyncMock:
@@ -1290,3 +1291,40 @@ def test_reset_finding_strips_owned_objective_after_scale_edit() -> None:
     assert service.reset_finding(finding, image) is True
     assert image.metadata_ == {"measurement_scale": 9.0, "measurement_unit": "um"}
     assert image.version == 5
+
+
+@pytest.mark.parametrize(
+    "sort,expected",
+    [
+        ("name_asc", "lower(images.name) ASC NULLS LAST"),
+        ("category_desc", "lower(category_paths.path) DESC NULLS LAST"),
+        ("objective_asc", "CAST(measurement_findings.objective AS FLOAT) ASC NULLS LAST"),
+        ("proposed_desc", "measurement_findings.proposed_scale DESC NULLS LAST"),
+        ("confidence_desc", "measurement_findings.confidence DESC NULLS LAST"),
+    ],
+)
+async def test_list_findings_sorts_by_column_then_image_name(sort, expected) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 0
+    rows = MagicMock()
+    rows.all.return_value = []
+    db.execute.return_value = rows
+    await router.list_findings(_user(), db, "approved", None, None, sort, 50, 0)
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "WITH RECURSIVE category_paths" in sql
+    order = sql.split("ORDER BY", 1)[1]
+    assert order.strip().startswith(expected)
+    assert "lower(images.name)" in order
+
+
+async def test_list_finding_categories_returns_paths_with_counts() -> None:
+    db = AsyncMock()
+    rows = MagicMock()
+    rows.all.return_value = [(3, "Hematology › Blood films", 12)]
+    db.execute.return_value = rows
+    out = await router.list_finding_categories(_user(), db, "pending")
+    assert [c.model_dump() for c in out] == [
+        {"id": 3, "path": "Hematology › Blood films", "count": 12}
+    ]
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "jsonb_typeof" in sql

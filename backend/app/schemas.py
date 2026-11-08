@@ -1215,6 +1215,7 @@ class MeasurementFindingOut(BaseModel):
     image_name: str
     image_thumb: str
     category_id: int | None
+    category_path: str | None = None
     image_width: int | None
     image_height: int | None
     status: str
@@ -1239,6 +1240,13 @@ class MeasurementFindingOut(BaseModel):
         from .tile_tokens import append_tile_token
 
         return append_tile_token(value)
+
+
+class MeasurementFindingCategoryOut(BaseModel):
+    id: int
+    # Full path from the root, e.g. "Hematology › Blood films".
+    path: str
+    count: int
 
 
 class MeasurementFindingsPageOut(BaseModel):

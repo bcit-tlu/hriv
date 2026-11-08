@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
+import Divider from '@mui/material/Divider'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import LinearProgress from '@mui/material/LinearProgress'
 import Link from '@mui/material/Link'
+import ListItemText from '@mui/material/ListItemText'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
@@ -19,13 +23,16 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
+import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import {
   approveMeasurementFinding,
   bulkApproveMeasurementFindings,
+  fetchMeasurementFindingCategories,
   fetchMeasurementFindings,
   fetchMeasurementScanProgress,
   fetchMeasurementScanRemaining,
@@ -34,7 +41,13 @@ import {
   scanMeasurements,
   userMessage,
 } from '../api'
-import type { ApiMeasurementFinding, MeasurementFindingStatus, MeasurementUnit } from '../api'
+import type {
+  ApiMeasurementFinding,
+  MeasurementFindingCategory,
+  MeasurementFindingSortKey,
+  MeasurementFindingStatus,
+  MeasurementUnit,
+} from '../api'
 import { evidenceSummary } from '../measurementEvidence'
 import { measurementUnitLabel } from '../measurementUnits'
 import MeasurementScaleFields from './MeasurementScaleFields'
@@ -50,6 +63,7 @@ const ROWS_PER_PAGE_OPTIONS = [25, 50, 100]
 
 export interface MeasurementReviewApi {
   fetchFindings: typeof fetchMeasurementFindings
+  fetchCategories: typeof fetchMeasurementFindingCategories
   scan: typeof scanMeasurements
   scanProgress: typeof fetchMeasurementScanProgress
   scanRemaining: typeof fetchMeasurementScanRemaining
@@ -61,6 +75,7 @@ export interface MeasurementReviewApi {
 
 const defaultApi: MeasurementReviewApi = {
   fetchFindings: fetchMeasurementFindings,
+  fetchCategories: fetchMeasurementFindingCategories,
   scan: scanMeasurements,
   scanProgress: fetchMeasurementScanProgress,
   scanRemaining: fetchMeasurementScanRemaining,
@@ -123,7 +138,11 @@ export default function MeasurementReviewPage({
   scanStallMs = SCAN_STALL_MS,
 }: MeasurementReviewPageProps) {
   const [status, setStatus] = useState<ReviewStatus>('pending')
-  const [ascending, setAscending] = useState(false)
+  const [sortKey, setSortKey] = useState<MeasurementFindingSortKey>('confidence')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [categories, setCategories] = useState<MeasurementFindingCategory[]>([])
+  const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
   const [page, setPage] = useState(0)
   const [rowsPerPage, setRowsPerPage] = useState(ROWS_PER_PAGE_OPTIONS[0])
   const [findings, setFindings] = useState<ApiMeasurementFinding[]>([])
@@ -152,7 +171,8 @@ export default function MeasurementReviewPage({
     api
       .fetchFindings({
         status,
-        sort: ascending ? 'confidence_asc' : 'confidence_desc',
+        sort: `${sortKey}_${sortDir}`,
+        ...(categoryId != null ? { categoryId } : {}),
         limit: rowsPerPage,
         offset: page * rowsPerPage,
       })
@@ -188,7 +208,55 @@ export default function MeasurementReviewPage({
     return () => {
       cancelled = true
     }
-  }, [api, status, ascending, page, rowsPerPage, reloadToken, refreshToken])
+  }, [api, status, sortKey, sortDir, categoryId, page, rowsPerPage, reloadToken, refreshToken])
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .fetchCategories(status)
+      .then((result) => {
+        if (!cancelled) setCategories(result)
+      })
+      // The filter is a convenience; the table still loads without it.
+      .catch(() => {
+        if (!cancelled) setCategories([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, status, reloadToken, refreshToken])
+
+  const handleSort = (key: MeasurementFindingSortKey) => {
+    if (key === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else {
+      setSortKey(key)
+      setSortDir(key === 'confidence' ? 'desc' : 'asc')
+    }
+    setPage(0)
+  }
+
+  const sortLabel = (key: MeasurementFindingSortKey, label: ReactNode) => (
+    <TableSortLabel
+      active={sortKey === key}
+      direction={sortKey === key ? sortDir : 'asc'}
+      onClick={() => handleSort(key)}
+    >
+      {label}
+    </TableSortLabel>
+  )
+
+  const sortDirection = (key: MeasurementFindingSortKey) => (sortKey === key ? sortDir : false)
+
+  const runAction = (action: () => void) => {
+    setActionsAnchor(null)
+    action()
+  }
+
+  // Keep the chosen category selectable even after its last finding is reviewed.
+  const categoryOptions =
+    categoryId != null && !categories.some((c) => c.id === categoryId)
+      ? [...categories, { id: categoryId, path: 'Selected category', count: 0 }]
+      : categories
 
   const scanActive = scan != null
   const scanIds = scan?.imageIds
@@ -391,14 +459,11 @@ export default function MeasurementReviewPage({
         <Typography variant="h5" component="h1" sx={{ flexGrow: 1 }}>
           Measurement review
         </Typography>
-        <Button variant="outlined" onClick={handleScanAll} disabled={busy || scan != null}>
-          Scan all
-        </Button>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: 720 }}>
-        Give every image a scale so students can take real-world measurements in the viewer. Click{' '}
-        <strong>Scan next {SCAN_BATCH_SIZE}</strong> to generate proposals, then approve, correct or
-        reject each one below.{' '}
+        Give every image a scale so students can take real-world measurements in the viewer. Use{' '}
+        <strong>Actions → Scan next {SCAN_BATCH_SIZE}</strong> to generate proposals, then approve,
+        correct or reject each one below.{' '}
         <Link
           component="button"
           variant="body2"
@@ -474,10 +539,25 @@ export default function MeasurementReviewPage({
           <ToggleButton value="approved">Approved</ToggleButton>
           <ToggleButton value="rejected">Rejected</ToggleButton>
         </ToggleButtonGroup>
+        <TextField
+          select
+          size="small"
+          label="Category"
+          value={categoryId ?? ''}
+          onChange={(e) => {
+            setCategoryId(e.target.value === '' ? null : Number(e.target.value))
+            setPage(0)
+          }}
+          sx={{ minWidth: 220 }}
+        >
+          <MenuItem value="">All categories</MenuItem>
+          {categoryOptions.map((c) => (
+            <MenuItem key={c.id} value={c.id}>
+              {c.path} ({c.count})
+            </MenuItem>
+          ))}
+        </TextField>
         <Box sx={{ flexGrow: 1 }} />
-        <Button variant="outlined" onClick={reload} disabled={busy}>
-          Refresh
-        </Button>
         {pending && (
           <Button
             variant="outlined"
@@ -487,16 +567,49 @@ export default function MeasurementReviewPage({
             Approve selected ({selected.size})
           </Button>
         )}
-        <Button variant="contained" onClick={handleScan} disabled={busy || scan != null}>
-          Scan next {SCAN_BATCH_SIZE}
+        <Button
+          variant="contained"
+          endIcon={<ArrowDropDownIcon />}
+          onClick={(e) => setActionsAnchor(e.currentTarget)}
+          aria-haspopup="menu"
+          aria-expanded={actionsAnchor != null}
+          aria-controls={actionsAnchor ? 'measurement-actions-menu' : undefined}
+          id="measurement-actions-button"
+        >
+          Actions
         </Button>
-        <Tooltip title="Re-run detection on unscaled images whose findings were made by an older detector version.">
-          <span>
-            <Button variant="outlined" onClick={handleRescanAll} disabled={busy || scan != null}>
-              Re-scan outdated
-            </Button>
-          </span>
-        </Tooltip>
+        <Menu
+          id="measurement-actions-menu"
+          anchorEl={actionsAnchor}
+          open={actionsAnchor != null}
+          onClose={() => setActionsAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{ list: { 'aria-labelledby': 'measurement-actions-button' } }}
+        >
+          <MenuItem onClick={() => runAction(handleScan)} disabled={busy || scan != null}>
+            <ListItemText
+              primary={`Scan next ${SCAN_BATCH_SIZE}`}
+              secondary="Propose scales for a small batch of unscaled images"
+            />
+          </MenuItem>
+          <MenuItem onClick={() => runAction(handleScanAll)} disabled={busy || scan != null}>
+            <ListItemText
+              primary="Scan all"
+              secondary="Queue every remaining image in the background"
+            />
+          </MenuItem>
+          <MenuItem onClick={() => runAction(handleRescanAll)} disabled={busy || scan != null}>
+            <ListItemText
+              primary="Re-scan outdated"
+              secondary="Re-run detection on findings from an older detector version"
+            />
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={() => runAction(reload)} disabled={busy}>
+            <ListItemText primary="Refresh" />
+          </MenuItem>
+        </Menu>
       </Stack>
 
       {error && (
@@ -545,27 +658,25 @@ export default function MeasurementReviewPage({
                   />
                 </TableCell>
               )}
-              <TableCell>Image</TableCell>
-              <TableCell>
+              <TableCell sortDirection={sortDirection('name')}>
+                {sortLabel('name', 'Image')}
+              </TableCell>
+              <TableCell sortDirection={sortDirection('category')}>
+                {sortLabel('category', 'Category')}
+              </TableCell>
+              <TableCell sortDirection={sortDirection('objective')}>
                 <Tooltip title="Microscope objective lens (×10, ×40 or ×100) the detector matched for this camera. Its calibrated px/µm is the proposed scale; picking another objective fills in its calibrated scale. Approving saves it as the image's objective unless one is already stored. Blank for unknown cameras.">
-                  <span>Detected objective</span>
+                  <span>{sortLabel('objective', 'Detected objective')}</span>
                 </Tooltip>
               </TableCell>
-              <TableCell>Proposed</TableCell>
+              <TableCell sortDirection={sortDirection('proposed')}>
+                {sortLabel('proposed', 'Proposed')}
+              </TableCell>
               <TableCell>
                 {pending ? 'Scale (px per unit) and unit' : 'Scale (px per unit)'}
               </TableCell>
-              <TableCell sortDirection={ascending ? 'asc' : 'desc'}>
-                <TableSortLabel
-                  active
-                  direction={ascending ? 'asc' : 'desc'}
-                  onClick={() => {
-                    setAscending((a) => !a)
-                    setPage(0)
-                  }}
-                >
-                  Confidence
-                </TableSortLabel>
+              <TableCell sortDirection={sortDirection('confidence')}>
+                {sortLabel('confidence', 'Confidence')}
               </TableCell>
               <TableCell>Evidence</TableCell>
               <TableCell align="right">Actions</TableCell>
@@ -574,7 +685,7 @@ export default function MeasurementReviewPage({
           <TableBody>
             {!loading && findings.length === 0 && (
               <TableRow>
-                <TableCell colSpan={pending ? 8 : 7}>
+                <TableCell colSpan={pending ? 9 : 8}>
                   <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                     {pending
                       ? `No findings to review. Use “Scan next ${SCAN_BATCH_SIZE}” or “Scan all” to assess more images.`
@@ -641,6 +752,14 @@ export default function MeasurementReviewPage({
                         )}
                       </Box>
                     </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Typography
+                      variant="body2"
+                      color={f.category_path ? 'text.primary' : 'text.secondary'}
+                    >
+                      {f.category_path ?? 'Uncategorized'}
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     {pending ? (

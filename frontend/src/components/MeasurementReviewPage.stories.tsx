@@ -17,6 +17,7 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     image_name: 'Peripheral blood film ×40',
     image_thumb: THUMB,
     category_id: 3,
+    category_path: 'Hematology › Blood films',
     image_width: 2880,
     image_height: 2048,
     status: 'pending',
@@ -63,6 +64,9 @@ const pendingFindings = [
 function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {
   return {
     fetchFindings: fn(async () => ({ items, total: items.length })),
+    fetchCategories: fn(async () => [
+      { id: 3, path: 'Hematology › Blood films', count: items.length },
+    ]),
     scan: fn(async () => ({ image_ids: [21, 22, 23], mode: 'queued' as const })),
     scanProgress: fn(async () => ({ total: 3, done: 3 })),
     scanRemaining: fn(async () => ({ remaining: 0 })),
