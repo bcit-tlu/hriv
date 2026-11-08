@@ -1278,3 +1278,15 @@ def test_reset_finding_keeps_objective_it_did_not_write() -> None:
     )
     assert service.reset_finding(finding, image) is True
     assert image.metadata_ == {"objective_power": 20.0}
+
+
+def test_reset_finding_strips_owned_objective_after_scale_edit() -> None:
+    finding = _finding(
+        status="approved", approved_scale=7.3, approved_unit="um", approved_objective="40"
+    )
+    image = _image(
+        metadata_={"measurement_scale": 9.0, "measurement_unit": "um", "objective_power": 40.0}
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {"measurement_scale": 9.0, "measurement_unit": "um"}
+    assert image.version == 5

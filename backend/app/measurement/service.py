@@ -395,20 +395,26 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
     only runs while the stored scale is still exactly the value this finding
     promoted — a scale since changed by anything else is authoritative and
     left alone (the finding still returns to pending, where the list hides
-    it while a scale exists). Returns True when image metadata changed.
+    it while a scale exists). The objective it wrote (``approved_objective``)
+    is removed whenever it is still the stored value. Returns True when image
+    metadata changed.
     """
     meta = image.metadata_ or {}
     stripped = False
-    if finding.status == "approved" and _scale_promoted_by(meta, finding):
-        image.metadata_ = {
-            k: v for k, v in meta.items() if k not in _MEASUREMENT_METADATA_KEYS
-        }
+    if finding.status == "approved":
+        kept = dict(meta)
+        if _scale_promoted_by(meta, finding):
+            kept = {k: v for k, v in kept.items() if k not in _MEASUREMENT_METADATA_KEYS}
+        # The objective is owned separately: a scale edited since approval does
+        # not make the objective this approval wrote any less its own.
         if finding.approved_objective is not None and meta.get(OBJECTIVE_KEY) == float(
             finding.approved_objective
         ):
-            image.metadata_.pop(OBJECTIVE_KEY, None)
-        image.version = image.version + 1
-        stripped = True
+            kept.pop(OBJECTIVE_KEY, None)
+        if kept != meta:
+            image.metadata_ = kept
+            image.version = image.version + 1
+            stripped = True
     finding.status = "pending"
     finding.approved_objective = None
     finding.reviewed_by = None
