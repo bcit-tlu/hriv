@@ -70,10 +70,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   // On mount, try to restore session from stored token by fetching users
   // If the token is invalid the API will 401 and we clear it
   const loadUsers = useCallback(async () => {
+    const version = sessionVersion.current
     try {
       const data = await apiFetchUsers()
+      if (version !== sessionVersion.current) return
       setUsers(data.map(toUser))
     } catch (err) {
+      if (version !== sessionVersion.current) return
       console.error('Failed to load users', err)
       // If we get a 401, clear the entire session
       if (err instanceof Error && err.message.includes('401')) {
@@ -81,7 +84,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         clearUserStorage()
       }
     } finally {
-      setLoading(false)
+      if (version === sessionVersion.current) setLoading(false)
     }
   }, [])
 
@@ -247,6 +250,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, [currentUser, loadUsers])
 
   const establishSession = useCallback((resp: LoginResponse) => {
+    sessionVersion.current += 1
     const user = toUser(resp.user)
     // If a different user was previously logged in, clear all stored state
     // to prevent cross-account leakage (common with shared student browsers).
@@ -279,6 +283,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(() => {
+    sessionVersion.current += 1
     emitEventNow({
       event: 'auth.logout_selected',
       action: 'logout',

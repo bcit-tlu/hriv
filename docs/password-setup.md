@@ -174,6 +174,8 @@ Pasting a setup link into an already-open tab is handled on `hashchange` too:
 the token is captured and immediately removed while unrelated URL parameters
 are preserved. The previous session is discarded, and pending validation of
 that session cannot restore it over the setup flow.
+Pending admin user-list responses are also ignored across session transitions:
+neither their data nor a stale 401 may replace or clear the new guest session.
 
 For password changes, 401 `Invalid current password` asks the user to retry
 their current password. A 401 `Invalid or expired token` (or missing bearer

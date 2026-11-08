@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { AuthContextValue } from '../src/authContextValue'
 
 vi.mock('../src/observability', () => ({ emitEventNow: vi.fn() }))
@@ -67,6 +67,50 @@ function fillChange() {
 }
 
 describe('password session routing', () => {
+  it.each([200, 401])(
+    'ignores a stale admin user-list response (%s) after setup redemption',
+    async (status) => {
+      const admin = { ...user, name: 'Old admin', role: 'admin' }
+      localStorage.setItem('hriv_token', 'old-admin-session')
+      localStorage.setItem('hriv_user', JSON.stringify(admin))
+      let resolveUsers!: (response: Response) => void
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url.endsWith('/auth/me')) return Promise.resolve(json(admin))
+        if (url.includes('/users'))
+          return new Promise<Response>((resolve) => {
+            resolveUsers = resolve
+          })
+        return Promise.resolve(json({ access_token: 'guest-session', token_type: 'bearer', user }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      await mount()
+      await waitFor(() => expect(resolveUsers).toBeTypeOf('function'))
+      expect(screen.getByRole('navigation')).toHaveTextContent('Old admin')
+      await act(() => {
+        window.history.replaceState({}, '', '/#password_setup=guest-setup')
+        window.dispatchEvent(new HashChangeEvent('hashchange'))
+      })
+      fireEvent.change(screen.getByLabelText(/^New password/), {
+        target: { value: 'new-password' },
+      })
+      fireEvent.change(screen.getByLabelText(/^Confirm new password/), {
+        target: { value: 'new-password' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Set password' }))
+      expect(await screen.findByRole('navigation')).toHaveTextContent('Guest')
+      await act(async () => {
+        resolveUsers(
+          status === 200 ? json([admin]) : json({ detail: 'Invalid or expired token' }, status),
+        )
+      })
+      expect(screen.getByRole('navigation')).toHaveTextContent('Guest')
+      expect(localStorage.getItem('hriv_token')).toBe('guest-session')
+      expect(JSON.parse(localStorage.getItem('hriv_user')!).id).toBe(user.id)
+      expect(ctx.users).toEqual([])
+      expect(ctx.loading).toBe(false)
+    },
+  )
+
   it('captures a same-document setup link, cleans the URL and discards the old session', async () => {
     localStorage.setItem('hriv_token', 'old-session')
     localStorage.setItem('hriv_user', JSON.stringify(user))
