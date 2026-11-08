@@ -85,7 +85,7 @@ export const Basic: Story = {
 
 export const Open: Story = {
   args: {
-    image: IMAGE,
+    image: { ...IMAGE, metadataExtra: { objective_power: 40 } },
     programNames: ['Architecture', 'European Art'],
     groupNames: ['Image Research'],
     measurement: { scale: 12, unit: 'mm' },

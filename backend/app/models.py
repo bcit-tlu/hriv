@@ -929,6 +929,8 @@ class MeasurementFinding(Base):
     detector_version: Mapped[str] = mapped_column(String(50), nullable=False)
     approved_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
     approved_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Objective this approval wrote to ``objective_power``; None when it wrote none.
+    approved_objective: Mapped[str | None] = mapped_column(String(20), nullable=True)
     reviewed_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

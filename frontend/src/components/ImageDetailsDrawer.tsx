@@ -11,6 +11,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import type { ImageItem, ImageSourceInfo } from '../types'
 import { formatFileSize } from '../formatUtils'
 import type { MeasurementConfig } from './imageViewerUtils'
+import { objectiveFromMetadata, objectiveLabel } from '../measurementUnits'
 
 export interface ImageDetailsTriggerProps {
   open: boolean
@@ -79,7 +80,10 @@ export function ImageDetailsTrigger({
 }
 
 export interface ImageDetailsDrawerProps {
-  image: Pick<ImageItem, 'copyright' | 'createdAt' | 'updatedAt' | 'width' | 'height' | 'fileSize'>
+  image: Pick<
+    ImageItem,
+    'copyright' | 'createdAt' | 'updatedAt' | 'width' | 'height' | 'fileSize' | 'metadataExtra'
+  >
   programNames: string[]
   groupNames: string[]
   measurement?: MeasurementConfig | null
@@ -194,6 +198,8 @@ export default function ImageDetailsDrawer({
           : (measurement.unit ?? '')
     if (value) fields.push({ label: 'Measurement:', value })
   }
+  const objective = objectiveFromMetadata(image.metadataExtra)
+  if (objective) fields.push({ label: 'Objective:', value: objectiveLabel(objective) })
   if (sourceInfo?.originalFilename != null)
     fields.push({ label: 'Original file:', value: sourceInfo.originalFilename })
   if (sourceInfo?.fileType != null) fields.push({ label: 'File type:', value: sourceInfo.fileType })

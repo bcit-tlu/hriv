@@ -19,6 +19,7 @@ from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
 from ..collection_views import image_ids_in_collections
 from ..database import async_session, get_db
+from ..measurement.calibration import CAMERA_PROFILES
 from ..measurement.service import (
     approve_finding,
     has_scale,
@@ -79,6 +80,8 @@ def _out(finding: MeasurementFinding, image: Image) -> MeasurementFindingOut:
         detector_version=finding.detector_version,
         approved_scale=finding.approved_scale,
         approved_unit=finding.approved_unit,
+        approved_objective=finding.approved_objective,
+        objective_scales=CAMERA_PROFILES.get((image.width or 0, image.height or 0)),
         reviewed_by=finding.reviewed_by,
         reviewed_at=finding.reviewed_at,
         created_at=finding.created_at,
@@ -308,7 +311,7 @@ async def bulk_approve(
             superseded = True
             skipped.append(finding_id)
             continue
-        await approve_finding(db, finding, image, user.id)
+        await approve_finding(db, finding, image, user.id, objective=finding.objective)
         approved.append(finding_id)
         touched.append(image)
     if approved:
@@ -343,7 +346,14 @@ async def approve(
         raise HTTPException(status_code=409, detail="Image already has a scale")
     body = body or MeasurementApprove()
     try:
-        await approve_finding(db, finding, image, user.id, body.scale, body.unit)
+        objective = (
+            body.objective
+            if "objective" in body.model_fields_set
+            else finding.objective
+        )
+        await approve_finding(
+            db, finding, image, user.id, body.scale, body.unit, objective
+        )
     except ValueError:
         raise HTTPException(
             status_code=422, detail="Finding has no proposed scale; supply one"

@@ -1,0 +1,32 @@
+import { Controls, Meta, Primary, Stories, Subtitle, Title } from '@storybook/addon-docs/blocks'
+import * as MeasurementObjectiveSelectStories from './MeasurementObjectiveSelect.stories'
+
+<Meta of={MeasurementObjectiveSelectStories} />
+
+<Title />
+
+<Subtitle>Microscope objective picker for the `objective_power` image metadata key.</Subtitle>
+
+## When to use
+
+Shared by the Edit image dialog's Measurement Settings and the Measurement
+review table so both edit the objective the same way. Options are **None**,
+×4, ×10, ×20, ×40, ×50, ×60 and ×100; a stored value outside that list (e.g.
+×2.5 from a slide scanner) stays selectable rather than being dropped.
+
+- Dialogs pass `label` (and optionally `helperText`).
+- Dense table rows use `size="small"` and `ariaLabel` (the image name) instead
+  of a visible label.
+
+The picker only edits the objective. Measurement review fills in the
+calibrated scale for known cameras itself; Edit image keeps the two independent.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={MeasurementObjectiveSelectStories.Basic} />
+
+## All stories
+
+<Stories />
