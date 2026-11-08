@@ -54,6 +54,7 @@ All seed users share the password `password`.
 | Manage changelog entries                               | Yes   | No         | No    | No      |
 | Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
 | User management (add/delete)                           | Yes   | No         | No    | No      |
+| Mint local password-setup links (API)                  | Yes   | No         | No    | No      |
 | People tab (view users)                                | Yes   | No         | Yes‡  | No      |
 | List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
 
@@ -181,6 +182,7 @@ reconciliation model for both environments.
 | [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                               | "I changed X → run Y" decision tree for targeted test runs                       |
 | [docs/TESTING.md](docs/TESTING.md)                                                   | Test plan, API endpoint → minimum-role table                                     |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                        |
+| [docs/password-setup.md](docs/password-setup.md)                                     | Admin-issued, single-use local password setup links                              |
 | [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                     | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
 | [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                     | Standing rule and audit for unauthenticated routes and enforcement layers        |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                      |

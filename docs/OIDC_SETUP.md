@@ -1,5 +1,11 @@
 # OIDC / OAuth 2.0 — Identity Provider Setup
 
+Local guests can use admin-issued, single-use password-setup tokens via
+`POST /api/users/{id}/password-setup-link` and public
+`POST /api/auth/password-setup`. OIDC-linked accounts cannot mint these links;
+linking after mint also prevents redemption. This does not manage IdP passwords
+or provide public password recovery. See [password setup](password-setup.md).
+
 HRIV supports OpenID Connect (OIDC) single sign-on so that every user
 authenticates through an external Identity Provider (IdP) instead of
 local email/password credentials. Local login is kept as a fallback for
