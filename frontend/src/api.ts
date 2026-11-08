@@ -2701,7 +2701,17 @@ export async function cancelCount(jobId: string, opts?: { keepalive?: boolean })
 
 export type MeasurementFindingStatus = 'pending' | 'approved' | 'rejected' | 'superseded'
 export type MeasurementUnit = 'um' | 'nm' | 'mm' | 'cm'
-export type MeasurementFindingSort = 'confidence_desc' | 'confidence_asc' | 'created_desc'
+export type MeasurementFindingSortKey =
+  'name' | 'category' | 'objective' | 'proposed' | 'confidence'
+export type MeasurementFindingSort =
+  `${MeasurementFindingSortKey}_${'asc' | 'desc'}` | 'created_desc'
+
+export interface MeasurementFindingCategory {
+  id: number
+  /** Full path from the root, e.g. "Hematology › Blood films". */
+  path: string
+  count: number
+}
 
 export interface ApiMeasurementFinding {
   id: number
@@ -2709,6 +2719,8 @@ export interface ApiMeasurementFinding {
   image_name: string
   image_thumb: string
   category_id: number | null
+  /** Full category path, e.g. "Hematology › Blood films"; null when uncategorized. */
+  category_path: string | null
   image_width: number | null
   image_height: number | null
   status: MeasurementFindingStatus
@@ -2757,6 +2769,13 @@ export function fetchMeasurementFindings(
   if (query.offset != null) qs.set('offset', String(query.offset))
   const suffix = qs.toString()
   return request(`/measurement-findings${suffix ? `?${suffix}` : ''}`)
+}
+
+/** Categories holding findings in `status`, with their full paths, for the review filter. */
+export function fetchMeasurementFindingCategories(
+  status: MeasurementFindingStatus = 'pending',
+): Promise<MeasurementFindingCategory[]> {
+  return request(`/measurement-findings/categories?status=${status}`)
 }
 
 export function scanMeasurements(body: {

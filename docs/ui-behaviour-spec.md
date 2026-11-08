@@ -1116,6 +1116,13 @@ committed on Save) in the edit modals.
   default; it shows `metadata_extra.objective_power` as `×40` (or `—`). The
   Edit image dialog edits the same key with an **Objective** dropdown below the
   scale and unit fields; it is independent of the scale.
+- Manage → Measurement review (`MeasurementReviewPage.tsx`) groups Scan next
+  10, Scan all, Re-scan outdated and Refresh in an **Actions** menu; **Approve
+  selected** stays a standalone button. A **Category** column shows the full
+  category path (or "Uncategorized") and a **Category** filter beside the
+  status tabs narrows the list. Image, Category, Detected objective, Proposed
+  and Confidence headers sort server-side across all pages (ties by image
+  name); Scale, Evidence and Actions are not sortable.
 - The `Collections` column is available in the column chooser but is off by
   default (and only offered while `COLLECTIONS_ENABLED` is on); it lists the
   caller-visible collections each image belongs to as clickable chips —

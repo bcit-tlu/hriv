@@ -72,7 +72,8 @@ All endpoints require **admin or instructor** (`require_role("admin",
 | Method | Path                                       | Behaviour                                                                                                                                                                                                                                                                                                                                                                                          |
 | ------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/measurement-findings/scan`           | `{limit: 1–50 (default 10), category_id?, rescan?, all?}`. Picks images with no non-superseded finding (scaled or not) and queues them in chunks of 50. `rescan` instead picks unscaled images with no live finding from the current `DETECTOR_VERSION` (never-scanned or stale-detector) and supersedes their old findings when processed. `all` ignores `limit` and queues every candidate. 202. |
-| GET    | `/api/measurement-findings`                | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`), `limit`, `offset`.                                                                                                                                                                                                                                            |
+| GET    | `/api/measurement-findings`                | `status` (default `pending`), `category_id`, `min_confidence`, `sort` (`confidence_desc` default, `confidence_asc`, `created_desc`, or `name`/`category`/`objective`/`proposed` with `_asc`/`_desc`; ties sort by image name), `limit`, `offset`. Each item carries `category_path` (e.g. `Hematology › Blood films`, `null` when uncategorized).                                                  |
+| GET    | `/api/measurement-findings/categories`     | `status` (default `pending`); returns `[{id, path, count}]` for categories holding findings in that status, ordered by path — feeds the review page's Category filter.                                                                                                                                                                                                                             |
 | POST   | `/api/measurement-findings/{id}/approve`   | Optional `{scale, unit, objective}` correction (`unit`: `um`, `nm`, `mm`, `cm`; `objective`: `4`, `10`, `20`, `40`, `50`, `60`, `100` or `null` for none — omitted keeps the detected objective). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale.                                                                   |
 | POST   | `/api/measurement-findings/{id}/reject`    | Marks rejected; metadata untouched. The image is not proposed again (a rescan overrides).                                                                                                                                                                                                                                                                                                          |
 | POST   | `/api/measurement-findings/{id}/reset`     | Returns an approved or rejected finding to `pending` and clears `reviewed_by`/`reviewed_at`. Reverting an approval whose stored scale is still the promoted value also removes the four measurement keys from `Image.metadata_` and bumps `Image.version`; a scale changed since is left alone. 409 if not reviewed or another pending finding already exists for the image.                       |
@@ -165,10 +166,22 @@ lists findings from `GET /api/measurement-findings`:
 
 - **Pending / Approved / Rejected** tabs; pending is the default, sorted by
   confidence (highest first, click the column header to flip).
+- **Image**, **Category**, **Detected objective**, **Proposed** and
+  **Confidence** headers sort server-side across all pages (first click
+  ascending, except Confidence which starts highest first; click again to
+  flip). Ties fall back to image name, so sorting by Category groups a
+  category's images in a stable order. Scale, Evidence and Actions are not
+  sortable.
+- A **Category** column shows each image's full category path
+  (`Parent › Child`) or "Uncategorized", and a **Category** filter beside the
+  tabs limits the list to one category (options come from
+  `GET /api/measurement-findings/categories`, with finding counts).
+- Scan next 10, Scan all, Re-scan outdated and Refresh live in an **Actions**
+  menu at the top right; **Approve selected** stays a separate button.
 - A one-line purpose statement heads the page, with a **Learn more** link
   opening a dialog covering the workflow and how confidence is calculated.
 - **Scan next 10** calls `POST /api/measurement-findings/scan` with
-  `limit: 10`, **Scan all** (top right, a one-time bulk action) calls it
+  `limit: 10`, **Scan all** (a one-time bulk action) calls it
   with `all: true` to queue the whole library in the background, and
   **Re-scan outdated** calls it with
   `all: true, rescan: true` to re-detect images whose findings predate the

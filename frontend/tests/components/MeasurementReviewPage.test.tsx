@@ -14,6 +14,7 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     image_name: 'Blood film 40x',
     image_thumb: '/api/tiles/11/thumb.jpg',
     category_id: 3,
+    category_path: 'Hematology › Blood films',
     image_width: 2880,
     image_height: 2048,
     status: 'pending',
@@ -38,6 +39,9 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
 function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementReviewApi {
   return {
     fetchFindings: vi.fn(async () => ({ items, total: items.length })),
+    fetchCategories: vi.fn(async () => [
+      { id: 3, path: 'Hematology › Blood films', count: items.length },
+    ]),
     scan: vi.fn(async () => ({ image_ids: [11, 12], mode: 'queued' as const })),
     scanProgress: vi.fn(async () => ({ total: 2, done: 2 })),
     scanRemaining: vi.fn(async () => ({ remaining: 0 })),
@@ -48,7 +52,105 @@ function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementR
   }
 }
 
+async function openAction(name: string) {
+  await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
+  return screen.findByRole('menuitem', { name: new RegExp(`^${name}`) })
+}
+
+async function chooseAction(name: string) {
+  await userEvent.click(await openAction(name))
+}
+
 describe('MeasurementReviewPage', () => {
+  it('groups scans and refresh under Actions and keeps Approve selected outside', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    expect(screen.getByRole('button', { name: /Approve selected/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Scan next 10' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
+    const items = screen.getAllByRole('menuitem').map((el) => el.textContent)
+    expect(items).toEqual([
+      expect.stringMatching(/^Scan next 10/),
+      expect.stringMatching(/^Scan all/),
+      expect.stringMatching(/^Re-scan outdated/),
+      'Refresh',
+    ])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Refresh' }))
+    await waitFor(() => expect(api.fetchFindings).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('shows each finding’s category path, or Uncategorized', async () => {
+    const api = makeApi([
+      makeFinding(),
+      makeFinding({ id: 2, image_name: 'Loose', category_id: null, category_path: null }),
+    ])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    const rows = screen.getAllByRole('row')
+    expect(within(rows[1]).getByText('Hematology › Blood films')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('Uncategorized')).toBeInTheDocument()
+  })
+
+  it('filters findings by category', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    expect(api.fetchCategories).toHaveBeenCalledWith('pending')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Category' }))
+    await userEvent.click(
+      await screen.findByRole('option', { name: 'Hematology › Blood films (1)' }),
+    )
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ categoryId: 3, offset: 0 }),
+      ),
+    )
+    await userEvent.click(screen.getByRole('combobox', { name: 'Category' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'All categories' }))
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ categoryId: expect.anything() }),
+      ),
+    )
+  })
+
+  it.each([
+    ['Image', 'name'],
+    ['Category', 'category'],
+    ['Detected objective', 'objective'],
+    ['Proposed', 'proposed'],
+  ])('sorts by %s on the server, ascending first then descending', async (label, key) => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    const header = within(screen.getAllByRole('row')[0]).getByText(label)
+    await userEvent.click(header)
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: `${key}_asc`, offset: 0 }),
+      ),
+    )
+    await userEvent.click(header)
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort: `${key}_desc` }),
+      ),
+    )
+  })
+
+  it('leaves Scale, Evidence and Actions unsortable', async () => {
+    const api = makeApi()
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    const head = screen.getAllByRole('row')[0]
+    for (const label of ['Scale (px per unit) and unit', 'Evidence', 'Actions']) {
+      expect(within(head).getByText(label).closest('.MuiTableSortLabel-root')).toBeNull()
+    }
+  })
+
   it('loads pending findings sorted by confidence (highest first)', async () => {
     const api = makeApi()
     render(<MeasurementReviewPage api={api} />)
@@ -80,11 +182,12 @@ describe('MeasurementReviewPage', () => {
       .mockReturnValueOnce(new Promise((resolve) => (finish = resolve)))
     render(<MeasurementReviewPage api={api} scanPollMs={10} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    await chooseAction('Scan next 10')
     expect(api.scan).toHaveBeenCalledWith({ limit: 10 })
     expect(await screen.findByText(/Scanning images: 1 of 2 done/)).toBeInTheDocument()
     await waitFor(() => expect(api.scanProgress).toHaveBeenCalledTimes(2))
-    expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeDisabled()
+    expect(await openAction('Scan next 10')).toHaveAttribute('aria-disabled', 'true')
+    await userEvent.keyboard('{Escape}')
     finish({ total: 2, done: 2 })
     expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
     expect(api.scanProgress).toHaveBeenCalledWith([11, 12])
@@ -98,11 +201,11 @@ describe('MeasurementReviewPage', () => {
     vi.mocked(api.scanProgress).mockResolvedValue({ total: 2, done: 1 })
     render(<MeasurementReviewPage api={api} scanPollMs={10} scanStallMs={30} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    await chooseAction('Scan next 10')
     expect(
       await screen.findByText(/No scan progress for a while \(1 of 2 done\)/),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeEnabled()
+    expect(await openAction('Scan next 10')).not.toHaveAttribute('aria-disabled')
   })
 
   it('reports when there is nothing left to scan', async () => {
@@ -110,7 +213,7 @@ describe('MeasurementReviewPage', () => {
     vi.mocked(api.scan).mockResolvedValueOnce({ image_ids: [], mode: 'queued' })
     render(<MeasurementReviewPage api={api} scanPollMs={10} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    await chooseAction('Scan next 10')
     expect(await screen.findByText('Every image has already been scanned.')).toBeInTheDocument()
     expect(api.scanProgress).not.toHaveBeenCalled()
   })
@@ -120,9 +223,9 @@ describe('MeasurementReviewPage', () => {
     vi.mocked(api.scanProgress).mockRejectedValueOnce(new Error('boom'))
     render(<MeasurementReviewPage api={api} scanPollMs={10} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Scan next 10' }))
+    await chooseAction('Scan next 10')
     expect(await screen.findByText(/boom|Could not check scan progress/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Scan next 10' })).toBeEnabled()
+    expect(await openAction('Scan next 10')).not.toHaveAttribute('aria-disabled')
   })
 
   it('labels existing and embedded scales in the evidence column', async () => {
@@ -382,7 +485,7 @@ describe('MeasurementReviewPage', () => {
       .mockResolvedValueOnce({ remaining: 0 })
     render(<MeasurementReviewPage api={api} scanPollMs={10} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Scan all' }))
+    await chooseAction('Scan all')
     expect(api.scan).toHaveBeenCalledWith({ all: true })
     expect(await screen.findByText(/Scanning images: 0 of 2 done/)).toBeInTheDocument()
     expect(await screen.findByText('Scan finished: 2 images processed.')).toBeInTheDocument()
@@ -394,7 +497,7 @@ describe('MeasurementReviewPage', () => {
     const api = makeApi()
     render(<MeasurementReviewPage api={api} scanPollMs={10} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Re-scan outdated' }))
+    await chooseAction('Re-scan outdated')
     expect(api.scan).toHaveBeenCalledWith({ all: true, rescan: true })
     await waitFor(() =>
       expect(api.scanRemaining).toHaveBeenCalledWith({ rescan: true, maxImageId: 12 }),
