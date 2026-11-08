@@ -53,3 +53,26 @@ Use the test matrix, then usually run targeted backend and frontend tests around
 - `backend/tests/test_router_users.py`
 - `frontend/tests/**/*categoryUtils*`
 - relevant dialog/component tests for restriction chips or category editing
+
+## Local password management
+
+Read `../../../docs/password-management.md` and the detailed
+`../../../docs/password-setup.md` before changing guest credentials. User state
+includes nullable `password_hash`, `oidc_subject`, `invite_nonce`, and non-null
+`must_change_password` (migration `0038_user_auth_state`). API flags are
+`has_local_password`, `oidc_linked`, and `must_change_password`; never expose the
+hash, nonce, or raw subject. Invite mint/redemption and self-service password
+changes require `oidc_subject IS NULL` even when a linked account retains a hash.
+
+Admin mint, public credential-scoped redemption, and authenticated self-change
+are in `references/access-control-map.md`. `get_current_user` blocks flagged
+users with 403 `password_change_required`; `require_role` inherits that guard.
+Only `/auth/me` and change-password use `get_user_from_token` for recovery.
+Explicit password null clears the nonce and forced flag; simultaneous explicit
+true is 422. OIDC linking clears the flag. Existing tile/thumbnail tokens retain
+the bounded expiry exception described in the feature docs.
+
+Run `test_password_setup.py`, `test_change_password.py`, `test_router_users.py`,
+`test_router_auth.py`, and relevant People/password frontend tests. Use the
+testing-hriv skill’s local password-management reference for a live curl flow;
+do not claim mocked UI tests validate an IdP login or a deployed environment.

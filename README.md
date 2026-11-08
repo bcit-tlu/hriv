@@ -18,6 +18,9 @@ Source files in `frontend/src/` and `backend/app/` are bind-mounted into the con
 
 All seed users share the password `password`.
 
+No passwordless guest is seeded. Create a disposable guest through People or the
+API for the [password-management validation flow](docs/password-management.md).
+
 | **User**              | **Email**                    | **Password** | **Role**   |
 | --------------------- | ---------------------------- | ------------ | ---------- |
 | Haruki Tanaka         | admin@example.ca             | password     | admin      |
@@ -56,6 +59,7 @@ All seed users share the password `password`.
 | User management (add/delete)                           | Yes   | No         | No    | No      |
 | Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
 | Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
+| Clear/force another local password (People)            | Yes   | No         | No    | No      |
 | People tab (view users)                                | Yes   | No         | Yes‡  | No      |
 | List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
 
@@ -184,6 +188,7 @@ reconciliation model for both environments.
 | [docs/TESTING.md](docs/TESTING.md)                                                   | Test plan, API endpoint → minimum-role table                                     |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                        |
 | [docs/password-setup.md](docs/password-setup.md)                                     | Admin-issued, single-use local password setup links                              |
+| [docs/password-management.md](docs/password-management.md)                           | Credential states, administrator password runbook, and stable rollout            |
 | [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                     | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
 | [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                     | Standing rule and audit for unauthenticated routes and enforcement layers        |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                      |
