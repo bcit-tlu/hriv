@@ -187,10 +187,9 @@ with a database restored to that LSN. The recorded value is therefore the
 schema head such a database must report. It is
 additive to format 2: manifests captured before it was recorded omit the key
 (an explicit `null` is malformed), and `validation-select` summarizes the
-absence as unknown rather than as a mismatch. Restore validation still checks
-the restored head against the profile's `expected_migration_version`; adopting
-the manifest value, with the profile pin as the fallback for manifests that
-predate it, is the follow-up tracked in bcit-tlu/hriv#1637.
+absence as unknown rather than as a mismatch. Restore validation compares the
+restored head against this value and uses the profile's
+`expected_migration_version` only when the selected manifest predates it.
 
 ## Candidate state model
 

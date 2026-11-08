@@ -105,7 +105,7 @@ def _all(connection: Any, query: Any, params: tuple[Any, ...] = ()) -> list[dict
     return rows
 
 
-def validate_database(profile: SourceProfile, host: str, capture_started_at: str, wal_fence_committed_at: str, target_lsn: str, target_tli: int, expected_source_image_count: int, credentials: Path, *, connect: Callable[..., Any] = psycopg.connect, recovery_attempts: int = 12, sleeper: Callable[[float], None] = time.sleep) -> dict[str, Any]:
+def validate_database(profile: SourceProfile, host: str, capture_started_at: str, wal_fence_committed_at: str, target_lsn: str, target_tli: int, expected_source_image_count: int, expected_migration_version: str, credentials: Path, *, connect: Callable[..., Any] = psycopg.connect, recovery_attempts: int = 12, sleeper: Callable[[float], None] = time.sleep) -> dict[str, Any]:
     bounded_string(host, "host", 253)
     capture_started = _strict_utc(capture_started_at)
     fence_committed = _strict_utc(wal_fence_committed_at)
@@ -171,7 +171,7 @@ def validate_database(profile: SourceProfile, host: str, capture_started_at: str
         and ancestry is not None
         and observed_required_databases == required_databases
         and observed_required_roles == required_roles
-        and migration.get("version_num") == profile.expected_migration_version
+        and migration.get("version_num") == expected_migration_version
         and all(row_counts[name] >= minimum for name, minimum in profile.minimum_row_counts.items())
         and source_count == expected_source_image_count
         and synthetic == [profile.synthetic_row]

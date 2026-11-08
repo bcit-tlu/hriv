@@ -203,7 +203,7 @@ class ReleaseConfigTests(unittest.TestCase):
 
 class CliTests(unittest.TestCase):
     def test_run_command(self): self.assertEqual("run", parser().parse_args(["run"]).command)
-    def test_database_command(self): self.assertEqual(7, parser().parse_args(["validate-database", "--host", "db", "--capture-started-at", "2026-01-15T09:00:00Z", "--wal-fence-committed-at", "2026-01-15T09:01:00Z", "--target-lsn", "A/1", "--target-tli", "7", "--expected-source-image-count", "2"]).target_tli)
+    def test_database_command(self): self.assertEqual(7, parser().parse_args(["validate-database", "--host", "db", "--capture-started-at", "2026-01-15T09:00:00Z", "--wal-fence-committed-at", "2026-01-15T09:01:00Z", "--target-lsn", "A/1", "--target-tli", "7", "--expected-source-image-count", "2", "--expected-migration-version", "abc123"]).target_tli)
     def test_consistency_command(self): self.assertEqual("/restore/data/source_images", parser().parse_args(["validate-consistency", "--host", "db", "--source", "/restore/data/source_images", "--selected-source-state", '{"missing_sources":[],"orphan_sources":[]}']).source)
     def test_no_scheduler_commands(self):
         source = inspect.getsource(parser); self.assertNotIn("scheduler", source); self.assertNotIn("reaper", source); self.assertNotIn("exporter", source)
@@ -211,7 +211,7 @@ class CliTests(unittest.TestCase):
     def test_unexpected_child_exception_emits_one_bounded_type_only_failure(self):
         output = io.StringIO()
         with patch("hriv_restore_validation.cli._read", return_value=b"{}"), patch("hriv_restore_validation.cli.SourceProfile.parse", side_effect=RuntimeError("https://secret.invalid/?sig=secret")), self.assertLogs("hriv_restore_validation", level="ERROR") as logs, redirect_stdout(output):
-            self.assertEqual(1, main(["validate-database", "--host", "db", "--capture-started-at", "2026-01-15T09:00:00Z", "--wal-fence-committed-at", "2026-01-15T09:01:00Z", "--target-lsn", "A/1", "--target-tli", "7", "--expected-source-image-count", "2"]))
+            self.assertEqual(1, main(["validate-database", "--host", "db", "--capture-started-at", "2026-01-15T09:00:00Z", "--wal-fence-committed-at", "2026-01-15T09:01:00Z", "--target-lsn", "A/1", "--target-tli", "7", "--expected-source-image-count", "2", "--expected-migration-version", "abc123"]))
         lines = output.getvalue().splitlines(); self.assertEqual(1, len(lines))
         self.assertEqual({"schema_version": 1, "operation": "validate-database", "success": False, "failure_code": "INTERNAL_FAILURE"}, json.loads(lines[0]))
         self.assertIn("RuntimeError", "\n".join(logs.output)); self.assertNotIn("secret.invalid", "\n".join(logs.output))
