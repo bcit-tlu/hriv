@@ -127,6 +127,8 @@ corsOrigins: ''
 # email/password login (see bootstrapAdmin below). Enable and supply
 # issuer + client credentials for SSO.
 auth:
+  # Password-setup link lifetime in minutes (60–43200; default seven days).
+  passwordSetupTokenTtlMinutes: 10080
   openidConnect:
     enabled: false
     # Full issuer URL — backend appends /.well-known/openid-configuration.

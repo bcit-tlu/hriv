@@ -652,6 +652,23 @@ class UserBase(BaseModel):
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
 
+class PasswordSetupRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
+
+class PasswordSetupLinkOut(BaseModel):
+    setup_token: str
+    expires_at: datetime
+
+
 class UserCreate(UserBase):
     password: str | None = Field(default=None, min_length=8)
     must_change_password: bool = False

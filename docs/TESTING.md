@@ -654,16 +654,28 @@ persistent modes, and stays off the Manage, People, Admin, and Guide pages.
 
 ---
 
-All endpoints except login require a valid JWT bearer token in the `Authorization` header.
+User-authenticated endpoints require a valid JWT bearer token in the
+`Authorization` header. `POST /api/auth/login` and `POST /api/auth/password-setup`
+do not require a bearer token; password setup instead requires a purpose-scoped
+setup token in the request body. Other public/credential-scoped exceptions are
+listed in the table below and in [unauthenticated routes](unauthenticated-routes.md).
 
 Collections gate: all `/api/collections*` routes and the two image collection
 reads below return 404 when `COLLECTIONS_ENABLED=false`, or for students when
 `COLLECTIONS_STUDENT_ACCESS=false`, including owners. Non-student permissions
 are unchanged by the student gate. See Test Case 9b.
 
+Password setup regression coverage lives in `backend/tests/test_password_setup.py`:
+admin-only minting, nonce rotation, configured expiry, inactive/OIDC/passworded
+guards, public redemption, replay rejection, malformed/expired/wrong-purpose
+tokens, bearer rejection, password validation, structured events, and separate
+per-IP/per-subject throttling. Run `cd backend && poetry run pytest` for the full
+coverage gate. See [password setup](password-setup.md) for the API/error contract.
+
 | Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                                                                                                                                                                |
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | /api/auth/login                                                                                           | No            | —                                                                                                                                                                                                                                           |
+| POST   | /api/auth/password-setup                                                                                  | No            | — (purpose-scoped setup token required; app-credential)                                                                                                                                                                                     |
 | GET    | /api/health                                                                                               | No            | —                                                                                                                                                                                                                                           |
 | GET    | /api/features                                                                                             | No            | — (deployment feature flags, e.g. `collections`)                                                                                                                                                                                            |
 | GET    | /api/health/ready                                                                                         | No            | —                                                                                                                                                                                                                                           |
@@ -694,6 +706,7 @@ are unchanged by the student gate. See Test Case 9b.
 | GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token (`thumb` purpose additionally path-restricted)                                                                                                                                                                             |
 | GET    | /api/users/                                                                                               | Yes           | staff ¶                                                                                                                                                                                                                                     |
 | POST   | /api/users/                                                                                               | Yes           | admin                                                                                                                                                                                                                                       |
+| POST   | /api/users/{id}/password-setup-link                                                                       | Yes           | admin (app-authz)                                                                                                                                                                                                                           |
 | GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
 | PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
 | DELETE | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |

@@ -43,6 +43,11 @@ changes normally run:
 cd backend && poetry run pytest <targeted tests>
 ```
 
+Password-setup changes use `tests/test_password_setup.py` for token purposes,
+nonce rotation/single-use, route authorization, events, and dual-bucket limiting.
+See [the password-setup contract](../../../docs/password-setup.md) for TTL bounds
+and error codes; Redis remains fail-open, matching the login limiter.
+
 Run the full backend suite before a PR when practical:
 
 ```bash

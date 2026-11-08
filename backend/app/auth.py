@@ -36,6 +36,7 @@ class AuthSettings(Settings):
     # Bounded (1 minute – 24 hours) so a configuration typo cannot mint
     # long-lived credentials.
     tile_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
+    password_setup_token_ttl_minutes: int = Field(default=10080, ge=60, le=43200)
     # When true, the application refuses to start unless ``JWT_SECRET``
     # is set explicitly.  Multi-worker (``uvicorn --workers N``) and
     # multi-replica deployments MUST enable this, otherwise each worker

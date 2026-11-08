@@ -1,5 +1,12 @@
 # hriv-backend chart notes
 
+## Password-setup link lifetime
+
+`auth.passwordSetupTokenTtlMinutes` defaults to `10080` (seven days) and injects
+`PASSWORD_SETUP_TOKEN_TTL_MINUTES`. The backend accepts 60–43200 minutes and
+rejects out-of-range configuration. Links use the shared `JWT_SECRET`; see
+[password setup](../../docs/password-setup.md).
+
 ## Feedback delivery (`feedback.provider`)
 
 The backend accepts in-app feedback via `POST /api/issues/report`, then routes
