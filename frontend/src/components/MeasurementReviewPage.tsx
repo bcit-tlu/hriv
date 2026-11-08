@@ -652,9 +652,8 @@ export default function MeasurementReviewPage({
                       />
                     ) : (
                       objectiveLabel(
-                        f.status === 'approved'
-                          ? (f.approved_objective ?? f.objective)
-                          : f.objective,
+                        // Approved rows show what the approval stored, not the detection.
+                        f.status === 'approved' ? f.approved_objective : f.objective,
                       ) || '—'
                     )}
                   </TableCell>

@@ -210,6 +210,20 @@ describe('MeasurementReviewPage', () => {
     expect(within(table).getByText('×100')).toBeInTheDocument()
   })
 
+  it('does not show a detected objective the approval did not store', async () => {
+    const api = makeApi([makeFinding({ status: 'approved', approved_scale: 7.3 })])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    await waitFor(() =>
+      expect(api.fetchFindings).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'approved' }),
+      ),
+    )
+    const table = screen.getByRole('table', { name: 'Measurement findings' })
+    expect(within(table).queryByText('×40')).not.toBeInTheDocument()
+  })
+
   it('approves unit-only corrections individually during bulk approval', async () => {
     const api = makeApi([makeFinding(), makeFinding({ id: 2, image_id: 12, image_name: 'Film B' })])
     render(<MeasurementReviewPage api={api} />)
