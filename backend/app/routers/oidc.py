@@ -425,6 +425,8 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             result = await db.execute(
                 select(User)
                 .where(User.oidc_subject == sub)
+                .with_for_update(of=User)
+                .execution_options(populate_existing=True)
             )
             user = result.scalars().first()
 
@@ -440,6 +442,8 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     result = await db.execute(
                         select(User)
                         .where(func.lower(User.email) == email.lower())
+                        .with_for_update(of=User)
+                        .execution_options(populate_existing=True)
                     )
                     user = result.scalars().first()
                 else:
@@ -506,8 +510,23 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         user=user,
                     )
                 if not user.oidc_subject:
+                    password_cleared = user.password_hash is not None
                     user.oidc_subject = sub
+                    user.password_hash = None
+                    user.invite_nonce = None
                     user.must_change_password = False
+                    if password_cleared:
+                        logger.info(
+                            "OIDC linking cleared local credentials",
+                            extra={
+                                "event": "oidc.local_password_cleared",
+                                **auth_event_fields(
+                                    method=AUTH_METHOD_OIDC,
+                                    outcome=AUTH_OUTCOME_SUCCESS,
+                                    user=user,
+                                ),
+                            },
+                        )
                 # Only update role when a group actually matched a mapping entry;
                 # this preserves admin-assigned promotions when the IdP sends
                 # unrecognised groups or no groups at all. A role change feeds

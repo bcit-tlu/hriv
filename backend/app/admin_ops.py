@@ -1572,7 +1572,11 @@ async def run_db_import(task_id: int) -> None:
                         id=u["id"],
                         name=u["name"],
                         email=u["email"].lower(),
-                        password_hash=u.get("password_hash"),
+                        password_hash=(
+                            u.get("password_hash")
+                            if u.get("oidc_subject") is None
+                            else None
+                        ),
                         oidc_subject=u.get("oidc_subject"),
                         role=u.get("role", "student"),
                         active=u.get("active", True),

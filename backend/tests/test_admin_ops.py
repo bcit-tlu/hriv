@@ -1469,6 +1469,7 @@ def _full_dump() -> dict:
                 "id": 1,
                 "name": "Alice",
                 "email": "alice@example.com",
+                "password_hash": "local-hash",
                 "role": "admin",
                 "program_id": 1,
                 "last_access": "2025-01-01T00:00:00+00:00",
@@ -1638,7 +1639,11 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert len(imported_users) == 2
     by_email = {u.email: u for u in imported_users}
     assert by_email["alice@example.com"].active is True
+    assert by_email["alice@example.com"].password_hash == "local-hash"
     assert by_email["bob@example.com"].active is False
+    assert by_email["bob@example.com"].oidc_subject == "sub-2"
+    assert by_email["bob@example.com"].password_hash is None
+    assert by_email["bob@example.com"].invite_nonce is None
     imported_sources = [obj for obj in add_calls if type(obj).__name__ == "SourceImage"]
     assert len(imported_sources) == 1
     assert imported_sources[0].uploaded_by == 1

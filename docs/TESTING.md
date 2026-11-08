@@ -346,8 +346,8 @@ separate from this backend schema foundation.
 - `PATCH /api/users/{id}` with omitted `password` leaves credentials unchanged;
   `{"password": null}` clears the password hash, any pending invite nonce, and
   `must_change_password` automatically.
-  A string sets the password. Admin password edits remain allowed on OIDC-linked
-  accounts.
+  A string sets the password for local-only users. OIDC-linked accounts reject
+  non-null password updates with 422 `oidc_linked`; null clearing remains allowed.
 - Create accepts `must_change_password` (default false); patch accepts true or
   false, with omission/null leaving the flag unchanged. True requires a
   password and no OIDC link in the resulting state (422 otherwise). Clearing a
@@ -356,13 +356,24 @@ separate from this backend schema foundation.
 - Full user responses (admin/staff directory, admin mutations, `/api/auth/me`,
   and the `/api/auth/login` user payload) include `has_local_password`,
   `oidc_linked`, and `must_change_password`. Check local-only `(true, false)`,
-  OIDC-only `(false, true)`, dual `(true, true)`, and passwordless-unlinked
-  `(false, false)` derived flags. Hashes, OIDC subjects and invite nonces must
+  OIDC-only `(false, true)`, and passwordless-unlinked `(false, false)`
+  derived flags. A dual `(true, true)` state can no longer be reached through
+  linking, migration `0040_oidc_clear_password`, admin updates or imports; check
+  it only with a legacy fixture written by direct SQL, and confirm password
+  login for that fixture still returns the generic 401. Hashes, OIDC subjects and invite nonces must
   never appear. Instructor directory projections omit all three flags.
 - Automated coverage: `tests/test_schemas.py`, `tests/test_router_users.py`,
   `tests/test_router_auth.py`; run `tests/test_migrations_bootstrap.py` and a
   fresh PostgreSQL `python -m app.migrations_bootstrap` for migration validation.
   Forced-change request blocking is implemented separately from these flags.
+
+For SSO-only enforcement (#1807), link an existing account by verified email and
+assert its hash, invite nonce and forced-change flag are cleared. An old setup
+link must fail with 401; password login must return generic 401 even for a legacy
+linked account with a hash, while still consuming the login rate limit. Import a
+legacy linked-user dump and verify its hash is discarded. Run
+`tests/test_router_oidc.py`, `tests/test_migration_oidc_credentials.py` and
+`tests/test_admin_ops.py`; migration 0040 must leave local guests untouched.
 
 ---
 

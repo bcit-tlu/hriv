@@ -352,3 +352,22 @@ setup-link and force-change controls are disabled with **Managed by the identity
 copy. Active non-OIDC accounts use the local/invite workflow described in
 [password setup](password-setup.md#admin-workflow-in-people).
 Regenerate password link is a switch for active local-password users only, never OIDC users.
+
+### OIDC-linked accounts are SSO-only
+
+On first verified-email linking (or trusted-email linking when configured), the
+callback clears the local password hash, outstanding invite nonce and forced-change
+flag. A structured `oidc.local_password_cleared` event is emitted only when a
+password existed; no hash, nonce or token is logged. Previously issued setup links
+can no longer be redeemed after linking.
+
+Password login rejects every account with `oidc_subject IS NOT NULL`, including
+legacy accounts with retained hashes, using the generic 401 **Invalid email or
+password**. These attempts still consume the normal login rate limit and log the
+reason `oidc_linked`. Administrators cannot set a local password on linked users:
+`PATCH /api/users/{id}` returns 422 `oidc_linked` for a non-null password; clearing
+with `password: null` remains allowed. Database import discards linked-user hashes.
+
+Migration `0040_oidc_clear_password` clears hashes, invite nonces and forced-change
+flags for all existing linked accounts. Its downgrade is deliberately a no-op:
+cleared credentials cannot be restored. Guest/local-only accounts are unchanged.

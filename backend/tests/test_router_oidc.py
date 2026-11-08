@@ -1,5 +1,6 @@
 """Tests for the OIDC router helper functions and endpoints."""
 
+import logging
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -12,6 +13,9 @@ from fastapi import HTTPException
 
 from fastapi.responses import HTMLResponse
 
+from app.password_tokens import issue_password_setup_token
+from app.routers import auth as auth_router
+from app.schemas import PasswordSetupRequest
 from app.routers.oidc import (
     _parse_role_mapping, _resolve_role, _resolve_programs, _sync_programs,
     _ensure_oidc_enabled,
@@ -695,14 +699,23 @@ async def test_oidc_callback_userinfo_fallback_failure() -> None:
 
 
 @pytest.mark.parametrize("must_change_password", [False, True])
-async def test_oidc_callback_email_linking_with_trusted_email(must_change_password: bool) -> None:
-    """When trust_email is True, links by email for first-time OIDC login."""
+@pytest.mark.parametrize("password_hash", [None, "old-hash"])
+@pytest.mark.parametrize("trust_email", [False, True])
+async def test_oidc_callback_email_linking_with_verified_or_trusted_email(
+    must_change_password: bool,
+    password_hash: str | None,
+    trust_email: bool,
+    caplog,
+    monkeypatch,
+) -> None:
+    """Both verified and explicitly trusted email linking discard credentials."""
     request = MagicMock()
     mock_client = AsyncMock()
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "new-oidc-sub",
             "email": "user@example.ca",
+            "email_verified": not trust_email,
             "name": "User",
             "groups": [],
         },
@@ -714,9 +727,18 @@ async def test_oidc_callback_email_linking_with_trusted_email(must_change_passwo
 
     # Second query (by email) returns existing user without oidc_subject
     existing_user = SimpleNamespace(
-        id=2, name="User", email="user@example.ca",
-        oidc_subject=None, role="student", must_change_password=must_change_password,
-        active=True, programs=[], last_access=None, metadata_=None,
+        id=2,
+        name="User",
+        email="user@example.ca",
+        oidc_subject=None,
+        role="student",
+        must_change_password=must_change_password,
+        password_hash=password_hash,
+        invite_nonce="old-nonce",
+        active=True,
+        programs=[],
+        last_access=None,
+        metadata_=None,
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -725,10 +747,12 @@ async def test_oidc_callback_email_linking_with_trusted_email(must_change_passwo
     db.execute = AsyncMock(side_effect=[mock_result_empty, mock_result_found])
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    old_token = issue_password_setup_token(existing_user, existing_user.invite_nonce)
+    caplog.set_level(logging.INFO)
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
-        mock_settings.oidc_trust_email = True
+        mock_settings.oidc_trust_email = trust_email
         mock_settings.oidc_post_login_redirect = "http://localhost:3000"
         mock_settings.cors_origins = "*"
         with patch("app.routers.oidc.oauth") as mock_oauth:
@@ -739,6 +763,42 @@ async def test_oidc_callback_email_linking_with_trusted_email(must_change_passwo
     assert result.status_code == 200
     assert existing_user.oidc_subject == "new-oidc-sub"
     assert existing_user.must_change_password is False
+    assert existing_user.password_hash is None
+    assert existing_user.invite_nonce is None
+    for call in db.execute.await_args_list:
+        assert "FOR UPDATE" in str(call.args[0])
+    cleared = [
+        r
+        for r in caplog.records
+        if getattr(r, "event", None) == "oidc.local_password_cleared"
+    ]
+    assert len(cleared) == (1 if password_hash is not None else 0)
+    if cleared:
+        assert cleared[0].__dict__["auth.method"] == "oidc"
+        assert cleared[0].__dict__["auth.outcome"] == "success"
+        assert cleared[0].__dict__["auth.user_id"] == existing_user.id
+        assert "old-hash" not in str(cleared[0].__dict__)
+        assert "old-nonce" not in str(cleared[0].__dict__)
+        assert old_token not in str(cleared[0].__dict__)
+    monkeypatch.setattr(
+        auth_router, "check_password_setup_ip_rate_limit", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        auth_router,
+        "check_password_setup_subject_rate_limit",
+        AsyncMock(return_value=None),
+    )
+    setup_db = AsyncMock()
+    setup_db.execute.return_value = MagicMock()
+    setup_db.execute.return_value.scalar_one_or_none.return_value = existing_user
+    with pytest.raises(HTTPException) as exc:
+        await auth_router.password_setup(
+            PasswordSetupRequest(token=old_token, password="new-password"),
+            MagicMock(),
+            setup_db,
+        )
+    assert exc.value.status_code == 401
+    setup_db.commit.assert_not_awaited()
 
 
 async def test_oidc_callback_email_linking_case_insensitive() -> None:
@@ -760,9 +820,17 @@ async def test_oidc_callback_email_linking_case_insensitive() -> None:
 
     # Second query (case-insensitive email) returns existing user with mixed-case email
     existing_user = SimpleNamespace(
-        id=2, name="Kyle Hunter", email="Kyle_Hunter@bcit.ca",
-        oidc_subject=None, role="admin",
-        active=True, programs=[], last_access=None, metadata_=None,
+        id=2,
+        name="Kyle Hunter",
+        email="Kyle_Hunter@bcit.ca",
+        oidc_subject=None,
+        role="admin",
+        password_hash=None,
+        invite_nonce=None,
+        active=True,
+        programs=[],
+        last_access=None,
+        metadata_=None,
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
