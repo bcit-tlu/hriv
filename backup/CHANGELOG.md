@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.8...backup-v0.17.0) (2026-11-08)
+
+
+### Features
+
+* **backup:** record the Alembic head in the recovery manifest ([#1795](https://github.com/bcit-tlu/hriv/issues/1795)) ([1fb8a68](https://github.com/bcit-tlu/hriv/commit/1fb8a68d1e6a1da031344d0088e6969b00c97e30))
+* **restore-validation:** validate the restored Alembic head against the manifest ([#1796](https://github.com/bcit-tlu/hriv/issues/1796)) ([d1812dc](https://github.com/bcit-tlu/hriv/commit/d1812dc6b9863e83a9493eadfc6eaceb83f0843f))
+
 ## [0.16.8](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.7...backup-v0.16.8) (2026-11-04)
 
 
