@@ -12,6 +12,29 @@ for where each feature lives.
 
 ---
 
+## Login and local-password session UX
+
+- **Given** a `#password_setup=<token>` fragment, **Then** bootstrap captures it
+  before URL synchronization, strips it from the URL, and replaces the current
+  session with the password-setup screen in the shared login layout. The setup
+  token is never written to persistent storage.
+- **When** new and confirmation passwords match and satisfy eight Unicode
+  characters / 72 UTF-8 bytes, **Then** setup can be submitted. Success establishes
+  the returned session directly. **Sign in instead** discards setup. Error copy
+  distinguishes expired/replaced links, disabled accounts, existing passwords,
+  validation, and throttling; see [password management](password-setup.md).
+- **Given** a local-password, non-OIDC-linked user, **Then** the profile menu
+  offers **Change password**, regardless of role. OIDC-linked and passwordless
+  users do not see it. The admin-only **Update** action is unchanged.
+- **When** a password change succeeds, **Then** refresh `/auth/me`, close the
+  dialog, and show a success snackbar. Inline errors preserve the form. If only
+  the refresh fails, retry refresh rather than submitting the old password again.
+- **Given** `must_change_password` at login/reload, or a protected API response
+  with 403 `password_change_required` mid-session, **Then** replace the shell
+  with the forced-change screen: no navigation, only password change or sign out.
+  An unrelated 403 must not trigger this gate. The same form validation applies;
+  successful change plus profile refresh restores the normal shell.
+
 ## Role-gated behaviour (who sees what)
 
 Three capability flags in `AuthContext.tsx` drive all gating:

@@ -132,3 +132,58 @@ bytes cannot be revoked. See [user deactivation](user-deactivation.md).
 `tests/test_change_password.py`, `tests/test_router_admin.py`, and
 `tests/test_telemetry.py` cover these user-authentication boundaries, successful
 recovery, current/new-password validation, rate-limit ordering, and audit events.
+
+## Frontend password management
+
+Open an administrator-provided `/#password_setup=<token>` link to set a guest
+password. Bootstrap captures the fragment before child effects can strip it,
+removes it from the address bar, and keeps the token only in memory. Reloading
+the cleaned page loses the token; reopen the original link if needed. Setup
+replaces any existing session on a shared browser. A successful redemption uses
+the returned login response directly, without a second login or `/auth/login`
+request. **Sign in instead** discards setup and returns to the login screen.
+
+The setup screen uses the login layout and requires a matching confirmation,
+at least eight Unicode characters, and at most 72 UTF-8 bytes. Expired/replaced
+links ask the user to request a new link; already-passworded accounts are told
+to sign in, disabled accounts use the standard activation guidance, and
+throttling asks the user to try later. No public password-reset flow is added.
+
+The profile menu shows **Change password** only when `has_local_password` is
+true and `oidc_linked` is false, independently of the admin-only **Update** item.
+The dialog collects current, new, and confirmation passwords. Wrong-current,
+unchanged-password, validation, OIDC, and throttling errors remain inline. On
+success it refreshes `/auth/me`, closes, and shows a success snackbar. If that
+refresh fails after the change, retry refresh without submitting the old
+password again.
+
+Flagged sessions (from login or reload-time `/auth/me`) render only the forced
+password-change screen, not the application shell. The shared API error path
+also catches 403 `password_change_required`, including upload/XHR errors, and
+switches a mid-session user to this gate. Ordinary 403s do not trigger it. The
+gate permits password change or sign out only; after a successful change and
+profile refresh, normal navigation resumes with a success snackbar. Backend
+authorization remains authoritative; this frontend gate is a UX boundary.
+
+`api.ts` maps the three auth flags to the domain user. Directory projections
+that omit the flags and older cached profiles are tolerated; omitted flags
+default to false and do not expose the local-password menu item. Session
+validation always refreshes the authoritative flags before normal use.
+
+The `hriv_user` cache omits `has_local_password` and `must_change_password` at
+every write. Missing cached flags default to false and never authorize access:
+bootstrap keeps the current user unset and the shell loading until `/auth/me`
+returns. A forced-change flag from that response renders the change screen
+instead of the shell, even though the flag was not persisted across the reload.
+
+Pasting a setup link into an already-open tab is handled on `hashchange` too:
+the token is captured and immediately removed while unrelated URL parameters
+are preserved. The previous session is discarded, and pending validation of
+that session cannot restore it over the setup flow.
+Pending admin user-list responses are also ignored across session transitions:
+neither their data nor a stale 401 may replace or clear the new guest session.
+
+For password changes, 401 `Invalid current password` asks the user to retry
+their current password. A 401 `Invalid or expired token` (or missing bearer
+credentials) instead explains that the session expired or is invalid and asks
+the user to sign in again; it is not presented as a wrong current password.

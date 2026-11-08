@@ -23,7 +23,8 @@ const mockCreateUser = vi.fn()
 const mockDeleteUser = vi.fn()
 let currentToken: string | null = null
 
-vi.mock('../src/api', () => ({
+vi.mock('../src/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/api')>()),
   fetchUsers: (...args: unknown[]) => mockFetchUsers(...args),
   loginUser: (...args: unknown[]) => mockLoginUser(...args),
   createUser: (...args: unknown[]) => mockCreateUser(...args),

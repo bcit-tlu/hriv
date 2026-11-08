@@ -54,6 +54,9 @@ export interface User {
   email: string
   role: Role
   active: boolean
+  has_local_password?: boolean
+  oidc_linked?: boolean
+  must_change_password?: boolean
   program_ids: number[]
   program_names: string[]
   group_ids: number[]

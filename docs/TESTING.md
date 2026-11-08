@@ -682,6 +682,33 @@ cookie and synthetic bearer enforcement are covered in `test_router_admin.py`
 and `test_telemetry.py`. Existing tile tokens retain the bounded expiry window
 documented in [user deactivation](user-deactivation.md).
 
+Frontend password flows are covered in `passwordSession.test.tsx`,
+`passwordErrors.test.ts`, `components/PasswordSetupScreen.test.tsx`,
+`components/ChangePasswordDialog.test.tsx`, `components/ForcedPasswordChangeScreen.test.tsx`, and
+`components/AppShell.test.tsx`. Manually verify:
+
+- Paste a setup link into an already-open signed-in tab: capture and strip the
+  token, preserve unrelated parameters, and discard the old session even if its
+  `/auth/me` validation is still in flight.
+- Open a fresh `/#password_setup=<token>` link: the fragment is removed, matching
+  passwords redeem once, and the returned session opens the app without another
+  login. Reloading the cleaned page requires reopening the original link.
+- Try expired/replaced, disabled, already-passworded, and throttled links:
+  actionable inline messages appear, with **Sign in instead** available.
+- Only local, unlinked accounts see **Change password** in the profile menu;
+  the admin **Update** item remains unchanged. Wrong-current, unchanged-password,
+  minimum-length, UTF-8 byte-limit, mismatch, and rate-limit failures stay inline.
+- Flag an account: login and reload render the forced-change screen without
+  navigation. Flag a signed-in account and trigger a protected request: the
+  same gate appears on 403 `password_change_required`, but not an unrelated 403.
+- Complete the change: `/auth/me` is refreshed, navigation reopens, and a success
+  snackbar appears. A failed refresh can be retried without changing again.
+  Sign out from the forced screen clears the session.
+
+Storybook includes fresh, submitting, and error setup states, the change dialog,
+confirmation mismatch, and the forced screen; check desktop/mobile and both
+themes. See [password management](password-setup.md#frontend-password-management).
+
 | Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                                                                                                                                                                |
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | /api/auth/login                                                                                           | No            | —                                                                                                                                                                                                                                           |
