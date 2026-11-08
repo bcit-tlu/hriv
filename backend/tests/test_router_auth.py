@@ -47,6 +47,39 @@ def _make_user(
     )
 
 
+@pytest.mark.parametrize("password_hash", [None, "old-hash"])
+async def test_login_rejects_oidc_linked_account(password_hash, caplog) -> None:
+    user = _make_user(password_hash=password_hash)
+    user.oidc_subject = "subject"
+    db = AsyncMock()
+    db.execute.return_value = MagicMock()
+    db.execute.return_value.scalars.return_value.first.return_value = user
+    body = LoginRequest(email=user.email, password="old-password")
+    with (
+        patch(
+            "app.routers.auth.check_login_rate_limit",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as limit,
+        patch("app.routers.auth.verify_password") as verify,
+        patch("app.routers.auth.create_access_token") as mint,
+        pytest.raises(HTTPException) as exc,
+    ):
+        await login(body, _mock_request(), db)
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid email or password"
+    limit.assert_awaited_once()
+    verify.assert_not_called()
+    mint.assert_not_called()
+    db.commit.assert_not_awaited()
+    record = next(
+        r for r in caplog.records if getattr(r, "reason", None) == "oidc_linked"
+    )
+    assert record.__dict__["auth.method"] == "local"
+    assert record.__dict__["auth.outcome"] == "failure"
+    assert "old-password" not in caplog.text
+
+
 async def test_login_success() -> None:
     user = _make_user(password_hash="hashed")
 

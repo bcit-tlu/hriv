@@ -208,14 +208,25 @@ async def test_update_user_simultaneous_password_and_force_change() -> None:
 
 
 @pytest.mark.parametrize("password", [None, "newpassword"])
-async def test_admin_can_edit_oidc_user_password(password: str | None) -> None:
+async def test_admin_cannot_set_oidc_user_password(password: str | None) -> None:
     user = _make_user()
     user.oidc_subject = "subject"
     db = AsyncMock()
     db.get.return_value = user
-    result = await update_user(1, UserUpdate(password=password), _make_user(role="admin"), db)
-    assert result["has_local_password"] is (password is not None)
-    assert result["oidc_linked"] is True
+    if password is not None:
+        with pytest.raises(HTTPException) as exc:
+            await update_user(
+                1, UserUpdate(password=password), _make_user(role="admin"), db
+            )
+        assert exc.value.status_code == 422
+        assert exc.value.detail == "oidc_linked"
+        db.commit.assert_not_awaited()
+    else:
+        result = await update_user(
+            1, UserUpdate(password=None), _make_user(role="admin"), db
+        )
+        assert result["has_local_password"] is False
+        assert result["oidc_linked"] is True
 
 
 @pytest.mark.parametrize("flag_payload", [{}, {"must_change_password": False}, {"must_change_password": None}])

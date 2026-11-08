@@ -394,7 +394,7 @@ async def update_user(
     _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
-    user = await db.get(User, user_id)
+    user = await db.get(User, user_id, with_for_update=True, populate_existing=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if body.active is False and _user.id == user_id:
@@ -413,6 +413,8 @@ async def update_user(
     if "password" in update_data:
         pwd = update_data.pop("password")
         if pwd is not None:
+            if user.oidc_subject is not None:
+                raise HTTPException(422, "oidc_linked")
             update_data["password_hash"] = hash_password(pwd)
         else:
             update_data["password_hash"] = None

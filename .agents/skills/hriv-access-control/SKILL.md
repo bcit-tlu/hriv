@@ -76,3 +76,13 @@ Run `test_password_setup.py`, `test_change_password.py`, `test_router_users.py`,
 `test_router_auth.py`, and relevant People/password frontend tests. Use the
 testing-hriv skill’s local password-management reference for a live curl flow;
 do not claim mocked UI tests validate an IdP login or a deployed environment.
+
+OIDC-linked accounts are SSO-only: first email-linking clears the hash, invite
+nonce and forced-change flag. Migration `0040_oidc_clear_password` cleans existing
+linked accounts (irreversible data cleanup; downgrade is a no-op). Password login
+rejects linked users with generic 401 and reason `oidc_linked`, still charging the
+normal rate limit. Admin non-null password updates return 422 `oidc_linked`;
+database imports discard linked-user hashes. Credential-changing paths lock and
+refresh the user row so concurrent setup/change cannot restore a hash after linking.
+Test `test_router_oidc.py`, `test_migration_oidc_credentials.py`, and
+`test_admin_ops.py` alongside the password/auth/user suites for this invariant.

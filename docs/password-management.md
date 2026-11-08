@@ -30,6 +30,14 @@ clears the flag unless that same request explicitly asks for true (422).
 OIDC linking also clears it. See the [domain model](domain-model.md) and
 [OIDC setup](OIDC_SETUP.md).
 
+OIDC-linked accounts are SSO-only. First linking also clears `password_hash` and
+`invite_nonce`, invalidating outstanding invitations. Migration
+`0040_oidc_clear_password` removes those credentials and forced-change flags from
+previously linked accounts; it does not affect local-only guests and cannot restore
+credentials on downgrade. A linked account always receives generic 401 **Invalid
+email or password** on password login, even if an old hash is present. Admin password
+assignment returns 422 `oidc_linked`; database import drops linked-user hashes.
+
 Login and `/api/auth/me` provide authoritative flags. Instructor directory
 projections omit them. The frontend does not cache `has_local_password` or
 `must_change_password` in localStorage and validates `/auth/me` before opening

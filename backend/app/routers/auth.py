@@ -69,6 +69,24 @@ async def login(
     )
     user = result.scalars().first()
 
+    if user and user.oidc_subject is not None:
+        logger.warning(
+            "Login failed: OIDC-linked account",
+            extra={
+                "event": "auth.login_failed",
+                "reason": "oidc_linked",
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                    user=user,
+                ),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
     if not user or not user.password_hash:
         logger.warning(
             "Login failed: unknown email or no password set",

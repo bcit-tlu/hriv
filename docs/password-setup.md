@@ -31,6 +31,14 @@ Redemption sets the password hash and `last_access`, clears `invite_nonce` and
 `must_change_password`, and immediately signs in the guest. User responses never
 expose hashes, nonces, or raw OIDC subjects.
 
+Linking an existing local account to OIDC clears its hash, nonce and forced-change
+flag, so an outstanding setup link fails with 401 after linking. Migration
+`0040_oidc_clear_password` applies the same cleanup to existing linked accounts.
+Password login also refuses linked accounts with generic 401 **Invalid email or
+password**, consuming the normal login rate limit even if a legacy hash remains.
+Admin updates may clear a linked account's password with null, but cannot set a
+non-null password (422 `oidc_linked`). Legacy database imports discard such hashes.
+
 Redemption errors:
 
 | Status | Meaning                                                                                                         |
