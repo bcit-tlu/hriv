@@ -2254,9 +2254,10 @@ def _query_archive_timeout_seconds(db: dict[str, str]) -> int:
 def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int, str]:
     """Commit the sole production backup write, then bind its post-commit LSN.
 
-    The Alembic head is read in the fence transaction and again by the
-    boundary query; both must agree so that no migration commit can sit
-    between the recorded head and the recovery target LSN.
+    The Alembic head is read in the fence transaction and again in a
+    separate statement after the boundary query bound the target LSN; both
+    must agree, so a migration committed anywhere before the target LSN was
+    read would be observed and fail the capture closed.
     """
     update_payload = _run_psql_text(
         db,
@@ -2297,9 +2298,7 @@ def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int, str]:
         "pg_walfile_name(fence_lsn - 1) AS wal_fence_file, committed_at AS "
         "wal_fence_committed_at, "
         "pg_size_bytes(current_setting('wal_segment_size')) AS "
-        "wal_segment_size_bytes, "
-        "(SELECT version_num FROM public.alembic_version) AS migration_version "
-        "FROM boundary) "
+        "wal_segment_size_bytes FROM boundary) "
         "TO STDOUT WITH (FORMAT csv, HEADER true)",
         "backup WAL fence boundary query",
     )
@@ -2310,12 +2309,10 @@ def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int, str]:
             "wal_fence_file",
             "wal_fence_committed_at",
             "wal_segment_size_bytes",
-            "migration_version",
         ],
         "backup WAL fence boundary query",
     )
     wal_fence_lsn = row["wal_fence_lsn"]
-    migration_version = row["migration_version"]
     wal_file = row["wal_fence_file"]
     committed_at = _parse_utc_sql_timestamp(row["wal_fence_committed_at"])
     raw_segment_size = row["wal_segment_size_bytes"]
@@ -2332,9 +2329,26 @@ def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int, str]:
         or not _WAL_FILE_RE.fullmatch(wal_file)
         or committed_at is None
         or _postgres_wal_segment_size(wal_segment_size) is None
-        or _MIGRATION_VERSION_RE.fullmatch(migration_version) is None
     ):
         raise RuntimeError("backup WAL fence boundary query returned invalid values")
+
+    # A fresh snapshot taken after the target LSN was read: if it still shows
+    # the head seen inside the fence transaction, no migration committed
+    # before that LSN.
+    migration_payload = _run_psql_text(
+        db,
+        "COPY (SELECT version_num AS migration_version "
+        "FROM public.alembic_version) "
+        "TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "backup WAL fence migration query",
+    )
+    migration_version = _single_csv_row(
+        migration_payload, ["migration_version"], "backup WAL fence migration query"
+    )["migration_version"]
+    if _MIGRATION_VERSION_RE.fullmatch(migration_version) is None:
+        raise RuntimeError(
+            "backup WAL fence migration query returned an invalid migration version"
+        )
     if migration_version != fenced_migration_version:
         raise RuntimeError(
             "backup WAL fence observed a migration between the fence and its boundary"
