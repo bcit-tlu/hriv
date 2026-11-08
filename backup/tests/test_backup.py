@@ -1995,6 +1995,9 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(
             manifest["database_recovery"]["logical_dump_role"], "not-included"
         )
+        self.assertEqual(
+            manifest["database_recovery"]["migration_version"], "0038_user_auth_state"
+        )
         self.assertEqual(manifest["file_count"], 1)
         self.assertEqual(manifest["total_bytes"], len(b"source"))
         self.assertIn("data/source_images/img.jpg", manifest["files"])
@@ -2049,8 +2052,9 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertIn("pg_current_wal_lsn() AS fence_lsn", psql_queries[3])
         self.assertIn("pg_walfile_name(fence_lsn - 1)", psql_queries[3])
         self.assertIn("AT TIME ZONE 'UTC'", psql_queries[3])
-        self.assertIn("pg_stat_archiver", psql_queries[4])
-        self.assertIn("AT TIME ZONE 'UTC'", psql_queries[4])
+        self.assertIn("SELECT version_num AS migration_version", psql_queries[4])
+        self.assertIn("pg_stat_archiver", psql_queries[5])
+        self.assertIn("AT TIME ZONE 'UTC'", psql_queries[5])
 
 
 class AzurePublicationTestCase(_BackupTestCase):
@@ -2663,11 +2667,12 @@ class AzurePublicationTestCase(_BackupTestCase):
         self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
         db = backup._parse_db_url(backup.DATABASE_URL)
         for payload in (
-            "generation\n",
-            "generation\n0\n",
-            "generation\ninvalid\n",
-            "generation\n1\n2\n",
-            "wrong_column\n1\n",
+            "generation,migration_version\n",
+            "generation,migration_version\n0,0038_user_auth_state\n",
+            "generation,migration_version\ninvalid,0038_user_auth_state\n",
+            "generation,migration_version\n1,0038_user_auth_state\n2,0038_user_auth_state\n",
+            "generation\n1\n",
+            "wrong_column,migration_version\n1,0038_user_auth_state\n",
         ):
             with self.subTest(payload=payload):
                 commands = []
@@ -2693,6 +2698,8 @@ class AzurePublicationTestCase(_BackupTestCase):
             "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n"
             "0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n"
         )
+        update = "generation,migration_version\n1,0038_user_auth_state\n"
+        post = "migration_version\n0038_user_auth_state\n"
         for payload in (
             "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\nnot-an-lsn,000000010000000000000006,2026-01-02T03:04:06.000000Z,16777216\n",
             "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,not-a-wal,2026-01-02T03:04:06.000000Z,16777216\n",
@@ -2701,7 +2708,7 @@ class AzurePublicationTestCase(_BackupTestCase):
             "wal_fence_lsn,wal_fence_file,wal_fence_committed_at,wal_segment_size_bytes\n0/60001FE,000000010000000000000006,2026-01-02T03:04:06.000000Z,524288\n",
         ):
             with self.subTest(payload=payload):
-                responses = iter(("generation\n1\n", payload))
+                responses = iter((update, payload, post))
                 def invalid_boundary(_cmd, **_kwargs):
                     return MagicMock(returncode=0, stdout=next(responses), stderr="")
                 with (
@@ -2710,7 +2717,7 @@ class AzurePublicationTestCase(_BackupTestCase):
                 ):
                     backup._emit_wal_fence(db)
 
-        responses = iter(("generation\n1\n", valid))
+        responses = iter((update, valid, post))
         def valid_boundary(_cmd, **_kwargs):
             return MagicMock(returncode=0, stdout=next(responses), stderr="")
         with patch.object(backup.subprocess, "run", side_effect=valid_boundary):
@@ -2720,9 +2727,28 @@ class AzurePublicationTestCase(_BackupTestCase):
                     "000000010000000000000006",
                     datetime(2026, 1, 2, 3, 4, 6, tzinfo=timezone.utc),
                     16777216,
+                    "0038_user_auth_state",
                 ),
                 backup._emit_wal_fence(db),
             )
+
+        for update_payload, post_payload, message in (
+            (update, "migration_version\n0037_measurement_findings\n", "migration between the fence"),
+            (update, "migration_version\n", "backup WAL fence migration query"),
+            (update, "migration_version\nbad version\n", "migration query returned an invalid migration version"),
+            (update, "generation\n1\n", "backup WAL fence migration query"),
+            ("generation,migration_version\n1,\n", post, "invalid migration version"),
+            ("generation\n1\n", post, "backup WAL fence transaction"),
+        ):
+            with self.subTest(update_payload=update_payload, post_payload=post_payload):
+                responses = iter((update_payload, valid, post_payload))
+                def drifted(_cmd, **_kwargs):
+                    return MagicMock(returncode=0, stdout=next(responses), stderr="")
+                with (
+                    patch.object(backup.subprocess, "run", side_effect=drifted),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    backup._emit_wal_fence(db)
 
     def test_postgres_lsn_and_wal_file_boundaries(self):
         self.assertEqual((0x1A << 32) + 0x1000000, backup._postgres_lsn_value("1A/1000000"))
@@ -3237,6 +3263,7 @@ def _production_inventory_run(
     fence_lsn="0/60001FE",
     fence_file="000000010000000000000006",
     wal_segment_size=16 * 1024 * 1024,
+    migration_version="0038_user_auth_state",
     archived_files=None,
     after_boundary=None,
 ):
@@ -3271,7 +3298,13 @@ def _production_inventory_run(
         if "UPDATE public.backup_recovery_wal_fence" in query:
             return MagicMock(
                 returncode=0,
-                stdout="generation\n1\n",
+                stdout=f"generation,migration_version\n1,{migration_version}\n",
+                stderr="",
+            )
+        if "FROM public.alembic_version" in query:
+            return MagicMock(
+                returncode=0,
+                stdout=f"migration_version\n{migration_version}\n",
                 stderr="",
             )
         if "pg_walfile_name" in query:
@@ -5210,6 +5243,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
                 "wal_fence_committed_at": "2026-01-01T02:00:10+00:00",
                 "wal_fence_archived_at": "2026-01-01T02:00:20+00:00",
                 "logical_dump_role": "not-included",
+                "migration_version": "0038_user_auth_state",
             },
         }
         sidecar = json.dumps(manifest, indent=2).encode()
@@ -5388,6 +5422,7 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         self.assertEqual(result["wal_fence_committed_at"], "2026-01-01T02:00:10Z")
         self.assertEqual(result["wal_fence_archived_at"], "2026-01-01T02:00:20Z")
         self.assertEqual(result["completed_at"], "2026-01-01T02:01:00Z")
+        self.assertNotIn("migration_version", result)
         self.assertNotIn("source_files", result)
         self.assertTrue(
             all(operation in {"get", "head", "download"} for operation, _ in calls)
@@ -5408,6 +5443,25 @@ class ReadOnlyValidationTestCase(_BackupTestCase):
         with self.assertRaises(backup.ValidationFailure) as raised:
             backup.validation_select(snapshot + "x", container=container)
         self.assertEqual(raised.exception.code, "SNAPSHOT_MISMATCH")
+
+    def test_manifest_summary_migration_version_is_optional_but_strict(self):
+        _snapshot, manifest, _sidecar, _blobs, _container, _calls = self._fixture()
+        self.assertEqual(
+            backup._validation_manifest_summary(manifest)["migration_version"],
+            "0038_user_auth_state",
+        )
+        legacy = copy.deepcopy(manifest)
+        del legacy["database_recovery"]["migration_version"]
+        self.assertIsNone(
+            backup._validation_manifest_summary(legacy)["migration_version"]
+        )
+        for invalid in (None, "", "bad version", 38, True, "x" * 129):
+            with self.subTest(invalid=invalid):
+                broken = copy.deepcopy(manifest)
+                broken["database_recovery"]["migration_version"] = invalid
+                with self.assertRaises(backup.ValidationFailure) as raised:
+                    backup._validation_manifest_summary(broken)
+                self.assertEqual(raised.exception.code, "CNPG_METADATA_INVALID")
 
     def test_selection_emits_canonical_source_files_digest_without_inventory(self):
         snapshot, manifest, _sidecar, _blobs, container, _calls = self._fixture()

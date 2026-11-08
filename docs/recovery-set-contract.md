@@ -123,7 +123,8 @@ A successful manifest is versioned and records at least:
     "wal_segment_size_bytes": 16777216,
     "wal_fence_committed_at": "<UTC timestamp>",
     "wal_fence_archived_at": "<UTC timestamp>",
-    "logical_dump_role": "not-included"
+    "logical_dump_role": "not-included",
+    "migration_version": "<Alembic head at the WAL fence>"
   },
   "versions": {
     "hriv": "<version>",
@@ -174,6 +175,22 @@ safely waits until `pg_stat_archiver` reaches that bound on the same timeline,
 making the fence-containing target reachable even on an otherwise idle
 database. High-cardinality mismatch details belong in the manifest and
 structured logs, not metric labels.
+
+`database_recovery.migration_version` is the `alembic_version.version_num`
+read inside the fence transaction and re-read in a separate statement after
+the post-commit boundary query has bound `target_lsn`. Capture fails closed
+(publishing nothing, like any other fence failure) if the two reads differ,
+even when the migration actually committed after `target_lsn`: the two reads
+cannot order a concurrent migration against the LSN, so the conservative
+outcome is a skipped run rather than a manifest whose head could disagree
+with a database restored to that LSN. The recorded value is therefore the
+schema head such a database must report. It is
+additive to format 2: manifests captured before it was recorded omit the key
+(an explicit `null` is malformed), and `validation-select` summarizes the
+absence as unknown rather than as a mismatch. Restore validation still checks
+the restored head against the profile's `expected_migration_version`; adopting
+the manifest value, with the profile pin as the fallback for manifests that
+predate it, is the follow-up tracked in bcit-tlu/hriv#1637.
 
 ## Candidate state model
 

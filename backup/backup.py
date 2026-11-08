@@ -1978,6 +1978,7 @@ _POSTGRES_LSN_PART_MAX = 0xFFFFFFFF
 _WAL_SEGMENT_MIN_BYTES = 1024 * 1024
 _WAL_SEGMENT_MAX_BYTES = 1024 * 1024 * 1024
 _WAL_FILE_RE = re.compile(r"^[0-9A-F]{24}$")
+_MIGRATION_VERSION_RE = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 _ARCHIVED_WAL_FILE_RE = re.compile(r"^([0-9A-F]{24})(?:\.partial)?$")
 _WAL_TIMELINE_PREFIX_RE = re.compile(r"^([0-9A-F]{8})")
 _UTC_SQL_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
@@ -2250,21 +2251,34 @@ def _query_archive_timeout_seconds(db: dict[str, str]) -> int:
     return archive_timeout_seconds
 
 
-def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int]:
-    """Commit the sole production backup write, then bind its post-commit LSN."""
+def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int, str]:
+    """Commit the sole production backup write, then bind its post-commit LSN.
+
+    The Alembic head is read in the fence transaction and again in a
+    separate statement after the boundary query bound the target LSN; both
+    must agree, so a migration committed anywhere before the target LSN was
+    read would be observed and fail the capture closed.
+    """
     update_payload = _run_psql_text(
         db,
         "COPY (WITH fence AS (UPDATE public.backup_recovery_wal_fence "
         "SET generation = generation + 1, fenced_at = CURRENT_TIMESTAMP "
-        "WHERE singleton RETURNING generation) SELECT generation FROM fence) "
+        "WHERE singleton RETURNING generation) SELECT generation, "
+        "(SELECT version_num FROM public.alembic_version) AS migration_version "
+        "FROM fence) "
         "TO STDOUT WITH (FORMAT csv, HEADER true)",
         "backup WAL fence transaction",
     )
     update_row = _single_csv_row(
         update_payload,
-        ["generation"],
+        ["generation", "migration_version"],
         "backup WAL fence transaction",
     )
+    fenced_migration_version = update_row["migration_version"]
+    if _MIGRATION_VERSION_RE.fullmatch(fenced_migration_version) is None:
+        raise RuntimeError(
+            "backup WAL fence transaction returned an invalid migration version"
+        )
     try:
         generation = int(update_row["generation"])
     except ValueError as exc:
@@ -2317,7 +2331,29 @@ def _emit_wal_fence(db: dict[str, str]) -> tuple[str, str, datetime, int]:
         or _postgres_wal_segment_size(wal_segment_size) is None
     ):
         raise RuntimeError("backup WAL fence boundary query returned invalid values")
-    return wal_fence_lsn, wal_file, committed_at, wal_segment_size
+
+    # A fresh snapshot taken after the target LSN was read: if it still shows
+    # the head seen inside the fence transaction, no migration committed
+    # before that LSN.
+    migration_payload = _run_psql_text(
+        db,
+        "COPY (SELECT version_num AS migration_version "
+        "FROM public.alembic_version) "
+        "TO STDOUT WITH (FORMAT csv, HEADER true)",
+        "backup WAL fence migration query",
+    )
+    migration_version = _single_csv_row(
+        migration_payload, ["migration_version"], "backup WAL fence migration query"
+    )["migration_version"]
+    if _MIGRATION_VERSION_RE.fullmatch(migration_version) is None:
+        raise RuntimeError(
+            "backup WAL fence migration query returned an invalid migration version"
+        )
+    if migration_version != fenced_migration_version:
+        raise RuntimeError(
+            "backup WAL fence observed a migration between the fence and its boundary"
+        )
+    return wal_fence_lsn, wal_file, committed_at, wal_segment_size, migration_version
 
 
 def _query_last_archived_wal(
@@ -2675,6 +2711,7 @@ def _run_backup_inner() -> Path | None:
                         wal_fence_file,
                         wal_fence_committed_at,
                         wal_segment_size,
+                        migration_version,
                     ) = _emit_wal_fence(db)
                     _validate_recovery_boundary(
                         boundary_lsn,
@@ -2691,6 +2728,7 @@ def _run_backup_inner() -> Path | None:
                     wal_fence_file = None
                     wal_fence_committed_at = None
                     wal_segment_size = None
+                    migration_version = None
                     inventory_counts = {
                         "database_row_count": 0,
                         "included_row_count": len(inventory),
@@ -2720,6 +2758,7 @@ def _run_backup_inner() -> Path | None:
                     "wal_fence_committed_at": wal_fence_committed_at.isoformat(),
                     "wal_fence_archived_at": wal_fence_archived_at.isoformat(),
                     "logical_dump_role": "not-included",
+                    "migration_version": migration_version,
                 }
             else:
                 database_recovery = {
@@ -4005,6 +4044,17 @@ def _validation_manifest_summary(manifest: dict) -> dict:
     target_time = _strict_utc_timestamp(
         recovery.get("target_time"), "CNPG_METADATA_INVALID"
     )
+    # Additive format-2 field: manifests captured before the backup service
+    # recorded the Alembic head omit the key and summarize as None; a present
+    # key must carry a valid head (an explicit null is malformed).
+    migration_version = None
+    if "migration_version" in recovery:
+        migration_version = recovery["migration_version"]
+        if (
+            not isinstance(migration_version, str)
+            or _MIGRATION_VERSION_RE.fullmatch(migration_version) is None
+        ):
+            raise ValidationFailure("CNPG_METADATA_INVALID", "manifest")
     committed = _strict_utc_timestamp(
         recovery.get("wal_fence_committed_at"), "WAL_FENCE_TIMESTAMP_INVALID"
     )
@@ -4036,6 +4086,7 @@ def _validation_manifest_summary(manifest: dict) -> dict:
         "wal_fence_committed_at": _utc_rfc3339(committed),
         "wal_fence_archived_at": _utc_rfc3339(archived),
         "completed_at": _utc_rfc3339(completed),
+        "migration_version": migration_version,
     }
 
 
