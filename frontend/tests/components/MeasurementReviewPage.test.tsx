@@ -286,9 +286,14 @@ describe('MeasurementReviewPage', () => {
     const field = await screen.findByLabelText('Scale for Blood film 40x')
     await userEvent.clear(field)
     await userEvent.type(field, '2')
+    vi.mocked(api.fetchFindings).mockResolvedValue({
+      items: [makeFinding({ confidence: 0.55 })],
+      total: 1,
+    })
     rerender(<MeasurementReviewPage api={api} refreshToken={1} />)
-    await waitFor(() => expect(api.fetchFindings).toHaveBeenCalledTimes(2))
-    expect(await screen.findByLabelText('Scale for Blood film 40x')).toHaveValue(2)
+    // Wait for the refreshed row to render before checking the edit survived.
+    await screen.findByText('55%')
+    expect(screen.getByLabelText('Scale for Blood film 40x')).toHaveValue(2)
   })
 
   it('drops a correction only when its row leaves the fetched page', async () => {
