@@ -55,6 +55,7 @@ import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto'
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts'
 import StraightenIcon from '@mui/icons-material/Straighten'
 import LogoutIcon from '@mui/icons-material/Logout'
+import LockIcon from '@mui/icons-material/Lock'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -89,6 +90,8 @@ export interface AppShellProps {
     role: Role
     program_names: string[]
     group_names: string[]
+    has_local_password?: boolean
+    oidc_linked?: boolean
   }
   announcement: string
   annMessage: string
@@ -99,6 +102,7 @@ export interface AppShellProps {
   setProfileOpen: Dispatch<SetStateAction<boolean>>
   avatarRef: RefObject<HTMLButtonElement | null>
   openEditProfile: () => void
+  onChangePassword?: () => void
   logout: () => void
   // Manage menu
   onOpenCategories: () => void
@@ -143,6 +147,7 @@ export default function AppShell(props: AppShellProps) {
     setProfileOpen,
     avatarRef,
     openEditProfile,
+    onChangePassword,
     logout,
     onOpenCategories,
     onOpenPrograms,
@@ -630,6 +635,22 @@ export default function AppShell(props: AppShellProps) {
                         <ListItemText>Update</ListItemText>
                       </MenuItem>
                     )}
+                    {currentUser.has_local_password &&
+                      !currentUser.oidc_linked &&
+                      onChangePassword && (
+                        <MenuItem
+                          sx={{ py: 1.25 }}
+                          onClick={() => {
+                            setProfileOpen(false)
+                            onChangePassword()
+                          }}
+                        >
+                          <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                            <LockIcon fontSize="small" />
+                          </ListItemIcon>
+                          <ListItemText>Change password</ListItemText>
+                        </MenuItem>
+                      )}
                     {showViewAnnLink && (
                       <MenuItem
                         sx={{ py: 1.25 }}

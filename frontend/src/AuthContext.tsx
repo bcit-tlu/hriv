@@ -10,8 +10,15 @@ import {
   setToken,
   getToken,
   clearUserStorage as apiClearUserStorage,
+  toUser,
+  fetchCurrentUser,
+  redeemPasswordSetup,
 } from './api'
-import type { ApiUser } from './api'
+import type { LoginResponse } from './api'
+import Snackbar from '@mui/material/Snackbar'
+import Alert from '@mui/material/Alert'
+import PasswordSetupScreen from './components/PasswordSetupScreen'
+import { ForcedPasswordChangeScreen } from './components/ChangePasswordDialog'
 import { emitEventNow } from './observability'
 import { tileOrderingCoordinator } from './tileOrdering'
 
@@ -36,28 +43,18 @@ const _initialHash = window.location.hash.replace(/^#/, '')
 // True only on the document load that carries a fresh OIDC callback token,
 // so `auth.login_succeeded` fires once per OIDC login rather than on every
 // mount-time token revalidation.
-let _oidcLoginPending = new URLSearchParams(_initialHash).get('oidc_token') !== null
-
-function toUser(u: ApiUser): User {
-  return {
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role as Role,
-    active: u.active,
-    program_ids: u.program_ids ?? [],
-    program_names: u.program_names ?? [],
-    group_ids: u.group_ids ?? [],
-    group_names: u.group_names ?? [],
-    lastAccess: u.last_access,
-    metadataExtra: u.metadata_extra,
-  }
-}
+let _oidcLoginPending =
+  new URLSearchParams(_initialHash).has('oidc_token') &&
+  !new URLSearchParams(_initialHash).has('password_setup')
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [setupToken, setSetupToken] = useState(() =>
+    new URLSearchParams(_initialHash).get('password_setup'),
+  )
+  const [passwordChanged, setPasswordChanged] = useState(false)
   // Read the OIDC error code (if any) from the URL fragment synchronously
   // during initial render. This avoids calling ``setState`` inside a
   // ``useEffect`` (which the react-hooks/set-state-in-effect rule flags
@@ -99,17 +96,19 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     const params = new URLSearchParams(_initialHash)
     const oidcToken = params.get('oidc_token')
     const oidcErr = params.get('oidc_error')
-    if (oidcToken) {
+    const passwordSetup = params.get('password_setup')
+    if (oidcToken && passwordSetup === null) {
       setToken(oidcToken)
-      params.delete('oidc_token')
     }
+    params.delete('oidc_token')
     if (oidcErr) {
       // Log the raw code for developer debugging; LoginScreen maps the
       // code to a user-facing message.
       console.warn('OIDC callback returned error:', oidcErr)
       params.delete('oidc_error')
     }
-    if (oidcToken || oidcErr) {
+    params.delete('password_setup')
+    if (oidcToken || oidcErr || passwordSetup !== null) {
       const remaining = params.toString()
       const cleanUrl =
         window.location.pathname + window.location.search + (remaining ? `#${remaining}` : '')
@@ -124,13 +123,18 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   // On mount, validate stored token by calling a protected endpoint.
   // If the token is expired or the DB was recreated, clear session.
   useEffect(() => {
+    if (new URLSearchParams(_initialHash).has('password_setup')) {
+      clearUserStorage()
+      setLoading(false) // eslint-disable-line react-hooks/set-state-in-effect -- fragment-based session bootstrap
+      return
+    }
     const stored = localStorage.getItem('hriv_user')
     const token = getToken()
     if (!token || !stored) {
       // If we just got an OIDC token but have no stored user yet, still
       // attempt validation so the session is bootstrapped.
       if (!token) {
-        setLoading(false) // eslint-disable-line react-hooks/set-state-in-effect -- early-return in mount-only validation effect
+        setLoading(false)
         return
       }
     }
@@ -190,15 +194,27 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       })
   }, [])
 
+  useEffect(() => {
+    const requireChange = () =>
+      setCurrentUser((user) => (user ? { ...user, must_change_password: true } : user))
+    window.addEventListener('hriv:password-change-required', requireChange)
+    return () => window.removeEventListener('hriv:password-change-required', requireChange)
+  }, [])
+
+  const refreshCurrentUser = useCallback(async () => {
+    const user = toUser(await fetchCurrentUser())
+    setCurrentUser(user)
+    localStorage.setItem('hriv_user', JSON.stringify(user))
+  }, [])
+
   // Load users list when an admin is authenticated
   useEffect(() => {
-    if (currentUser?.role === 'admin') {
+    if (currentUser?.role === 'admin' && !currentUser.must_change_password) {
       loadUsers() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on auth state change
     }
   }, [currentUser, loadUsers])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const resp = await apiLoginUser(email, password)
+  const establishSession = useCallback((resp: LoginResponse) => {
     const user = toUser(resp.user)
     // If a different user was previously logged in, clear all stored state
     // to prevent cross-account leakage (common with shared student browsers).
@@ -222,6 +238,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       outcome: 'success',
     })
   }, [])
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      establishSession(await apiLoginUser(email, password))
+    },
+    [establishSession],
+  )
 
   const logout = useCallback(() => {
     emitEventNow({
@@ -279,6 +302,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         addUser,
         deleteUser,
         refreshUsers: loadUsers,
+        refreshCurrentUser,
         canManageUsers,
         canEditContent,
         canViewPeople,
@@ -286,7 +310,37 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         clearOidcError,
       }}
     >
-      {children}
+      {setupToken !== null ? (
+        <PasswordSetupScreen
+          onSubmit={async (password) => {
+            establishSession(await redeemPasswordSetup(setupToken, password))
+            setSetupToken(null)
+          }}
+          onSignIn={() => {
+            setSetupToken(null)
+            logout()
+          }}
+        />
+      ) : currentUser?.must_change_password ? (
+        <ForcedPasswordChangeScreen
+          onSuccess={async () => {
+            await refreshCurrentUser()
+            setPasswordChanged(true)
+          }}
+          onSignOut={logout}
+        />
+      ) : (
+        children
+      )}
+      <Snackbar
+        open={passwordChanged}
+        autoHideDuration={6000}
+        onClose={() => setPasswordChanged(false)}
+      >
+        <Alert severity="success" onClose={() => setPasswordChanged(false)}>
+          Password changed successfully.
+        </Alert>
+      </Snackbar>
     </AuthContext.Provider>
   )
 }

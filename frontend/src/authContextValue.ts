@@ -16,6 +16,7 @@ export interface AuthContextValue {
   ) => void
   deleteUser: (userId: number) => void
   refreshUsers: () => void
+  refreshCurrentUser: () => Promise<void>
   canManageUsers: boolean
   canEditContent: boolean
   // True for admin and staff — grants read access to the People page.

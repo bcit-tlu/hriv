@@ -32,6 +32,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
+import ChangePasswordDialog from './components/ChangePasswordDialog'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
@@ -190,10 +191,12 @@ export default function App() {
     loading: usersLoading,
     login,
     logout,
+    refreshCurrentUser,
     canManageUsers,
     canEditContent,
     canViewPeople,
   } = useAuth()
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
 
@@ -2198,7 +2201,7 @@ export default function App() {
         },
       })
     },
-    [handleOpenCollection],
+    [handleOpenCollection, setSuccessSnack],
   )
 
   const handleAddToCollection = useCallback(
@@ -2364,6 +2367,7 @@ export default function App() {
       avatarRef={avatarRef}
       openEditProfile={openEditProfile}
       logout={handleLogout}
+      onChangePassword={() => setChangePasswordOpen(true)}
       onOpenCategories={() => setDialogOpen(true)}
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
@@ -4240,6 +4244,17 @@ export default function App() {
           otherScopesFailed={activeTileOrdering.otherScopesFailed}
           onRetryFailedScopes={activeTileOrdering.retryFailedScopes}
           onCountChange={setReorderCount}
+        />
+      )}
+      {changePasswordOpen && (
+        <ChangePasswordDialog
+          open
+          onClose={() => setChangePasswordOpen(false)}
+          onSuccess={async () => {
+            await refreshCurrentUser()
+            setChangePasswordOpen(false)
+            setSuccessSnack({ message: 'Password changed successfully.' })
+          }}
         />
       )}
     </AppShell>

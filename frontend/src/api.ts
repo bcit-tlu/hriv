@@ -1,5 +1,5 @@
 import { getClientSyntheticMode } from './syntheticMode'
-import type { ImageSourceInfo } from './types'
+import type { ImageSourceInfo, User, Role } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -156,6 +156,9 @@ export class ApiError extends Error {
     this.requestId = context?.requestId
     this.method = context?.method
     this.path = context?.path
+    if (status === 403 && detail === 'password_change_required') {
+      window.dispatchEvent(new Event('hriv:password-change-required'))
+    }
   }
 }
 
@@ -426,6 +429,9 @@ export interface ApiUser {
   email: string
   role: string
   active: boolean
+  has_local_password?: boolean
+  oidc_linked?: boolean
+  must_change_password?: boolean
   program_ids: number[]
   program_names: string[]
   group_ids: number[]
@@ -1215,6 +1221,43 @@ export function loginUser(email: string, password: string): Promise<LoginRespons
   return request('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export function toUser(u: ApiUser): User {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role as Role,
+    active: u.active,
+    has_local_password: u.has_local_password ?? false,
+    oidc_linked: u.oidc_linked ?? false,
+    must_change_password: u.must_change_password ?? false,
+    program_ids: u.program_ids ?? [],
+    program_names: u.program_names ?? [],
+    group_ids: u.group_ids ?? [],
+    group_names: u.group_names ?? [],
+    lastAccess: u.last_access,
+    metadataExtra: u.metadata_extra,
+  }
+}
+
+export function fetchCurrentUser(): Promise<ApiUser> {
+  return request('/auth/me')
+}
+
+export function redeemPasswordSetup(token: string, password: string): Promise<LoginResponse> {
+  return request('/auth/password-setup', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  })
+}
+
+export function changePassword(current: string, newPassword: string): Promise<void> {
+  return request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: current, new_password: newPassword }),
   })
 }
 

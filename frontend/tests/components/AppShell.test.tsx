@@ -49,6 +49,33 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
 }
 
 describe('AppShell', () => {
+  describe('password menu', () => {
+    it.each([
+      [true, false, true],
+      [true, true, false],
+      [false, false, false],
+      [false, true, false],
+    ])(
+      'shows change password only for local, unlinked credentials',
+      (hasPassword, oidcLinked, visible) => {
+        const props = makeProps({ profileOpen: true, onChangePassword: vi.fn() })
+        props.currentUser = {
+          ...props.currentUser,
+          has_local_password: hasPassword,
+          oidc_linked: oidcLinked,
+        }
+        render(<AppShell {...props} />)
+        const item = screen.queryByRole('menuitem', { name: 'Change password' })
+        expect(Boolean(item)).toBe(visible)
+        expect(screen.getByRole('menuitem', { name: 'Update' })).toBeInTheDocument()
+        if (item) {
+          fireEvent.click(item)
+          expect(props.onChangePassword).toHaveBeenCalledOnce()
+          expect(props.setProfileOpen).toHaveBeenCalledWith(false)
+        }
+      },
+    )
+  })
   describe('rendering', () => {
     it('renders toolbar with HRIV title', () => {
       render(<AppShell {...makeProps()} />)

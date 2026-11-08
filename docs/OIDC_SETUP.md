@@ -16,6 +16,10 @@ OIDC-linked accounts receive 403 `oidc_linked`, even if a local hash remains.
 Forced-change enforcement and recovery exceptions are documented in
 [password management](password-setup.md).
 
+The profile-menu **Change password** action is hidden for OIDC-linked accounts,
+even if a local hash remains. Guest setup and forced-change screens reuse the
+login layout; see the [frontend flow](password-setup.md#frontend-password-management).
+
 Local credentials also remain available for guest accounts. OIDC-linked accounts
 (`users.oidc_subject` set) are reported through the `oidc_linked` API flag and
 cannot be flagged `must_change_password`; linking an existing local account to
