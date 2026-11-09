@@ -157,7 +157,7 @@ describe('useNavigationHistory', () => {
       expect(nav.collectionFromBrowse).toBe(true)
     })
 
-    it('writes a bare ?collection={id} for a browse-root open (flag in state only)', () => {
+    it('marks a browse-root open with ?from=browse so reloads keep the origin (#1592)', () => {
       const onPopState = vi.fn()
       const { result } = renderHook(() => useNavigationHistory(onPopState))
 
@@ -174,7 +174,7 @@ describe('useNavigationHistory', () => {
       })
 
       const [state, , url] = pushStateSpy.mock.calls[0]
-      expect(url).toBe(`${window.location.pathname}?collection=12`)
+      expect(url).toBe(`${window.location.pathname}?from=browse&collection=12`)
       expect((state as NavHistoryState).collectionFromBrowse).toBe(true)
     })
 
