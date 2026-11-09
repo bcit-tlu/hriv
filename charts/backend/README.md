@@ -118,6 +118,12 @@ runtime paths stored in the database:
 For multi-replica API or worker deployments, both PVCs must use
 `ReadWriteMany`.
 
+For Longhorn-backed clusters, choose the StorageClass per volume using
+[`docs/longhorn-storage-classes.md`](../../docs/longhorn-storage-classes.md) —
+it maps each persistence key to a recommended class and documents the
+replica/locality/reclaim tradeoffs. Ready-to-apply example manifests live in
+[`deploy/longhorn-storageclasses.yaml`](../../deploy/longhorn-storageclasses.yaml).
+
 ## Tiles sidecar and tile authorization (`tiles.*`)
 
 When `tiles.enabled=true`, an `nginx:alpine` sidecar container serves
