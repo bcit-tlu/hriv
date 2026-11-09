@@ -1,5 +1,5 @@
 import { getClientSyntheticMode } from './syntheticMode'
-import type { ImageSourceInfo } from './types'
+import type { ImageSourceInfo, User, Role } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -156,6 +156,9 @@ export class ApiError extends Error {
     this.requestId = context?.requestId
     this.method = context?.method
     this.path = context?.path
+    if (status === 403 && detail === 'password_change_required') {
+      window.dispatchEvent(new Event('hriv:password-change-required'))
+    }
   }
 }
 
@@ -426,6 +429,9 @@ export interface ApiUser {
   email: string
   role: string
   active: boolean
+  has_local_password?: boolean
+  oidc_linked?: boolean
+  must_change_password?: boolean
   program_ids: number[]
   program_names: string[]
   group_ids: number[]
@@ -1218,11 +1224,49 @@ export function loginUser(email: string, password: string): Promise<LoginRespons
   })
 }
 
+export function toUser(u: ApiUser): User {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role as Role,
+    active: u.active,
+    has_local_password: u.has_local_password ?? false,
+    oidc_linked: u.oidc_linked ?? false,
+    must_change_password: u.must_change_password ?? false,
+    program_ids: u.program_ids ?? [],
+    program_names: u.program_names ?? [],
+    group_ids: u.group_ids ?? [],
+    group_names: u.group_names ?? [],
+    lastAccess: u.last_access,
+    metadataExtra: u.metadata_extra,
+  }
+}
+
+export function fetchCurrentUser(): Promise<ApiUser> {
+  return request('/auth/me')
+}
+
+export function redeemPasswordSetup(token: string, password: string): Promise<LoginResponse> {
+  return request('/auth/password-setup', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  })
+}
+
+export function changePassword(current: string, newPassword: string): Promise<void> {
+  return request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: current, new_password: newPassword }),
+  })
+}
+
 export function createUser(body: {
   name: string
   email: string
   role: string
-  password: string
+  password?: string
+  must_change_password?: boolean
   active?: boolean
   program_ids?: number[]
 }): Promise<ApiUser> {
@@ -1239,7 +1283,8 @@ export function updateUser(
     email?: string
     role?: string
     active?: boolean
-    password?: string
+    password?: string | null
+    must_change_password?: boolean
     program_ids?: number[]
   },
 ): Promise<ApiUser> {
@@ -1251,6 +1296,15 @@ export function updateUser(
 
 export function deleteUser(id: number): Promise<void> {
   return request(`/users/${id}`, { method: 'DELETE' })
+}
+
+export interface PasswordSetupLink {
+  setup_token: string
+  expires_at: string
+}
+
+export function mintPasswordSetupLink(id: number): Promise<PasswordSetupLink> {
+  return request(`/users/${id}/password-setup-link`, { method: 'POST' })
 }
 
 export function bulkUpdateUserProgram(
@@ -2647,7 +2701,17 @@ export async function cancelCount(jobId: string, opts?: { keepalive?: boolean })
 
 export type MeasurementFindingStatus = 'pending' | 'approved' | 'rejected' | 'superseded'
 export type MeasurementUnit = 'um' | 'nm' | 'mm' | 'cm'
-export type MeasurementFindingSort = 'confidence_desc' | 'confidence_asc' | 'created_desc'
+export type MeasurementFindingSortKey =
+  'name' | 'category' | 'objective' | 'proposed' | 'confidence'
+export type MeasurementFindingSort =
+  `${MeasurementFindingSortKey}_${'asc' | 'desc'}` | 'created_desc'
+
+export interface MeasurementFindingCategory {
+  id: number
+  /** Full path from the root, e.g. "Hematology › Blood films". */
+  path: string
+  count: number
+}
 
 export interface ApiMeasurementFinding {
   id: number
@@ -2655,6 +2719,8 @@ export interface ApiMeasurementFinding {
   image_name: string
   image_thumb: string
   category_id: number | null
+  /** Full category path, e.g. "Hematology › Blood films"; null when uncategorized. */
+  category_path: string | null
   image_width: number | null
   image_height: number | null
   status: MeasurementFindingStatus
@@ -2668,6 +2734,10 @@ export interface ApiMeasurementFinding {
   detector_version: string
   approved_scale: number | null
   approved_unit: string | null
+  /** Objective the approval wrote to `objective_power`; null when it wrote none. */
+  approved_objective: string | null
+  /** Calibrated px/µm per objective for this camera; null for unknown cameras. */
+  objective_scales: Record<string, number> | null
   reviewed_by: number | null
   reviewed_at: string | null
   created_at: string
@@ -2699,6 +2769,13 @@ export function fetchMeasurementFindings(
   if (query.offset != null) qs.set('offset', String(query.offset))
   const suffix = qs.toString()
   return request(`/measurement-findings${suffix ? `?${suffix}` : ''}`)
+}
+
+/** Categories holding findings in `status`, with their full paths, for the review filter. */
+export function fetchMeasurementFindingCategories(
+  status: MeasurementFindingStatus = 'pending',
+): Promise<MeasurementFindingCategory[]> {
+  return request(`/measurement-findings/categories?status=${status}`)
 }
 
 export function scanMeasurements(body: {
@@ -2741,9 +2818,16 @@ export function fetchMeasurementScanRemaining(query: {
   return request(`/measurement-findings/scan-remaining${suffix ? `?${suffix}` : ''}`)
 }
 
+/** Omitted fields keep the proposal; `objective: null` approves without an objective. */
+export interface MeasurementCorrection {
+  scale?: number
+  unit?: MeasurementUnit
+  objective?: string | null
+}
+
 export function approveMeasurementFinding(
   id: number,
-  correction: { scale?: number; unit?: MeasurementUnit } = {},
+  correction: MeasurementCorrection = {},
 ): Promise<ApiMeasurementFinding> {
   return request(`/measurement-findings/${id}/approve`, {
     method: 'POST',

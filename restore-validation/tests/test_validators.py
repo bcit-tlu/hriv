@@ -60,58 +60,64 @@ def database_factory(**change):
 
 
 class ValidatorTests(unittest.TestCase):
+    def test_database_rejects_unexpected_migration_head(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw); credentials(root)
+            with self.assertRaises(ValidationError) as raised: validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "0038_user_auth_state", root, connect=database_factory())
+            self.assertEqual("DATABASE_FIDELITY_MISMATCH", raised.exception.code)
+
     def test_database_success(self):
         with tempfile.TemporaryDirectory() as raw:
-            root = Path(raw); credentials(root); result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory())
+            root = Path(raw); credentials(root); result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory())
         self.assertTrue(result["success"]); self.assertEqual("hriv", profile().application_database)
         self.assertEqual(8, result["timeline"]); self.assertEqual(7, result["target_tli"])
 
     def test_database_wrong_system(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(identity="1"))
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(identity="1"))
 
     def test_database_recovery_not_complete(self):
         recovery = [{"in_recovery": True, "timeline": 7}] * 12
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
 
     def test_database_requires_promoted_target_timeline(self):
         recovery = [{"in_recovery": False, "timeline": 7}] * 12
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
 
     def test_database_accepts_next_unused_promoted_timeline(self):
         recovery = {"in_recovery": False, "timeline": 9, "timeline_history": "7 A/1234 no recovery target specified"}
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery=recovery))
+            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(recovery=recovery))
         self.assertEqual(9, result["timeline"]); self.assertEqual(7, result["timeline_parent"]); self.assertEqual("A/1234", result["timeline_switchpoint"])
 
     def test_database_rejects_non_target_timeline_parent(self):
         recovery = [{"in_recovery": False, "timeline": 9, "timeline_history": "8 A/1234 no recovery target specified"}] * 12
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
 
     def test_database_rejects_timeline_fork_before_target_lsn(self):
         recovery = [{"in_recovery": False, "timeline": 9, "timeline_history": "7 A/1233 no recovery target specified"}] * 12
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(recovery_sequence=recovery), sleeper=lambda _: None)
 
     def test_database_fence_exact(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(fence={"generation": 0, "fenced_at": datetime(2026, 1, 15, 9, 0, 30, tzinfo=timezone.utc)}))
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(fence={"generation": 0, "fenced_at": datetime(2026, 1, 15, 9, 0, 30, tzinfo=timezone.utc)}))
 
     def test_database_fence_uses_backup_second_precision(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
             fence = {"generation": 9, "fenced_at": datetime(2026, 1, 15, 9, 1, 0, 999999, tzinfo=timezone.utc)}
-            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(fence=fence))
+            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(fence=fence))
         self.assertEqual("2026-01-15T09:01:00.999999Z", result["fence_fenced_at"])
 
     def test_database_fence_fractional_commit_uses_exact_precision(self):
@@ -119,13 +125,13 @@ class ValidatorTests(unittest.TestCase):
             root = Path(raw); credentials(root)
             fence = {"generation": 9, "fenced_at": datetime(2026, 1, 15, 9, 1, 0, 900000, tzinfo=timezone.utc)}
             with self.assertRaises(ValidationError):
-                validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00.100000Z", "A/1234", 7, 2, root, connect=database_factory(fence=fence))
+                validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00.100000Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(fence=fence))
 
     def test_database_fence_outside_bound_window(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
             fence = {"generation": 9, "fenced_at": datetime(2026, 1, 15, 8, 59, 59, tzinfo=timezone.utc)}
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(fence=fence))
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(fence=fence))
 
     def test_database_inventory_excludes_nonconnectable(self):
         import inspect
@@ -138,7 +144,7 @@ class ValidatorTests(unittest.TestCase):
         sequence = [{"in_recovery": True, "timeline": 6}, {"in_recovery": False, "timeline": 8, "timeline_history": "7 A/1234 no recovery target specified"}]
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(recovery_sequence=sequence), sleeper=sleeps.append)
+            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(recovery_sequence=sequence), sleeper=sleeps.append)
         self.assertTrue(result["recovery_complete"]); self.assertEqual([5.0], sleeps)
 
     def test_database_requires_exactly_one_fence_row(self):
@@ -146,16 +152,16 @@ class ValidatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
             with self.assertRaises(ValidationError):
-                validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(fence=[fence, fence]))
+                validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(fence=[fence, fence]))
 
     def test_database_rejects_latest(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "latest", 7, 2, root, connect=database_factory())
+            with self.assertRaises(ValidationError): validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "latest", 7, 2, "abc123", root, connect=database_factory())
 
     def test_dynamic_vault_role_ignored(self):
         with tempfile.TemporaryDirectory() as raw:
-            root = Path(raw); credentials(root); result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory())
+            root = Path(raw); credentials(root); result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory())
         self.assertEqual(["app"], [item["name"] for item in result["required_static_role_inventory"]])
 
     def test_database_allows_unrelated_inventory_and_higher_minimum_counts(self):
@@ -164,14 +170,14 @@ class ValidatorTests(unittest.TestCase):
         roles = [{"name": "app", "attributes": ROLE_ATTRS, "memberships": []}, {"name": "static_unrelated", "attributes": ROLE_ATTRS, "memberships": []}]
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            result = validate_database(p, "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(databases=databases, roles=roles, row_counts=[5, 6, 7, 8]))
+            result = validate_database(p, "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(databases=databases, roles=roles, row_counts=[5, 6, 7, 8]))
         self.assertEqual({"categories": 5, "images": 6, "source_images": 7, "users": 8}, result["observed_row_counts"])
         self.assertNotIn("unrelated", json.dumps(result["required_database_inventory"]))
 
     def test_database_hashes_lowercase_email_without_emitting_email(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw); credentials(root)
-            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, root, connect=database_factory(synthetic=[{"id": "1", "email": "Synthetic@Example.Invalid"}]))
+            result = validate_database(profile(), "db", "2026-01-15T09:00:00Z", "2026-01-15T09:01:00Z", "A/1234", 7, 2, "abc123", root, connect=database_factory(synthetic=[{"id": "1", "email": "Synthetic@Example.Invalid"}]))
         self.assertEqual(profile().synthetic_row, result["synthetic_row"])
         self.assertNotIn("Synthetic@", json.dumps(result))
 

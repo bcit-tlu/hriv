@@ -1,9 +1,37 @@
 # OIDC / OAuth 2.0 — Identity Provider Setup
 
+Local guests can use admin-issued, single-use password-setup tokens via
+`POST /api/users/{id}/password-setup-link` and public
+`POST /api/auth/password-setup`. OIDC-linked accounts cannot mint these links;
+linking after mint also prevents redemption. This does not manage IdP passwords
+or provide public password recovery. See [password setup](password-setup.md).
+
 HRIV supports OpenID Connect (OIDC) single sign-on so that every user
 authenticates through an external Identity Provider (IdP) instead of
 local email/password credentials. Local login is kept as a fallback for
 admin bootstrap accounts.
+
+Local users can change their password via `POST /api/auth/change-password`;
+OIDC-linked accounts receive 403 `oidc_linked`, even if a local hash remains.
+Forced-change enforcement and recovery exceptions are documented in
+[password management](password-setup.md).
+
+The profile-menu **Change password** action is hidden for OIDC-linked accounts,
+even if a local hash remains. Guest setup and forced-change screens reuse the
+login layout; see the [frontend flow](password-setup.md#frontend-password-management).
+
+Local credentials also remain available for guest accounts. OIDC-linked accounts
+(`users.oidc_subject` set) are reported through the `oidc_linked` API flag and
+cannot be flagged `must_change_password`; linking an existing local account to
+OIDC automatically clears that flag. The Add/Edit Person form requires at least
+eight characters when entering a password; leaving it blank while editing keeps
+the existing password.
+
+The consolidated [password-management runbook](password-management.md) covers
+credential states, invitations and stable rollout. Minting for an OIDC-linked
+account returns **422 `oidc_linked`**; changing its password returns **403
+`oidc_linked`**, regardless of a retained local hash. These endpoints do not
+change IdP credentials or replace the existing OIDC login flow.
 
 ---
 
@@ -318,3 +346,28 @@ curl -s http://localhost:8000/api/auth/me \
 | Redirect loop or blank page                | Frontend redirect misconfigured                  | Verify `OIDC_POST_LOGIN_REDIRECT=http://localhost:5173` and `CORS_ORIGINS` includes it                     |
 | `IdP did not return required claims` (401) | ID token missing `sub` or `email`                | Check Vault OIDC scope template includes `email` and `sub` claims                                          |
 | `email_verified` linking skipped           | `OIDC_TRUST_EMAIL` not set                       | Set `OIDC_TRUST_EMAIL=true` for Vault                                                                      |
+
+In People’s Sign-in column, OIDC-linked accounts show an **SSO** badge. Edit Person’s
+setup-link and force-change controls are disabled with **Managed by the identity provider**
+copy. Active non-OIDC accounts use the local/invite workflow described in
+[password setup](password-setup.md#admin-workflow-in-people).
+Regenerate password link is a switch for active local-password users only, never OIDC users.
+
+### OIDC-linked accounts are SSO-only
+
+On first verified-email linking (or trusted-email linking when configured), the
+callback clears the local password hash, outstanding invite nonce and forced-change
+flag. A structured `oidc.local_password_cleared` event is emitted only when a
+password existed; no hash, nonce or token is logged. Previously issued setup links
+can no longer be redeemed after linking.
+
+Password login rejects every account with `oidc_subject IS NOT NULL`, including
+legacy accounts with retained hashes, using the generic 401 **Invalid email or
+password**. These attempts still consume the normal login rate limit and log the
+reason `oidc_linked`. Administrators cannot set a local password on linked users:
+`PATCH /api/users/{id}` returns 422 `oidc_linked` for a non-null password; clearing
+with `password: null` remains allowed. Database import discards linked-user hashes.
+
+Migration `0040_oidc_clear_password` clears hashes, invite nonces and forced-change
+flags for all existing linked accounts. Its downgrade is deliberately a no-op:
+cleared credentials cannot be restored. Guest/local-only accounts are unchanged.

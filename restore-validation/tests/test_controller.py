@@ -117,8 +117,17 @@ class ControllerTests(unittest.TestCase):
         for tli in ("current", "latest", "0", "-1", "1.5", ""):
             with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": "backup-20260114030000", "targetLSN": "A/1234", "targetTLI": tli}}}}})
 
+    def test_cnpg_accepts_plugin_backup_id(self) -> None:
+        # barman-cloud plugin backups are identified by backup_id
+        # (YYYYMMDDTHHMMSS), not the legacy backup-<14 digits> backup_name.
+        for backup_id in ("20260114T030001", "backup-20260114030000"):
+            Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": backup_id, "targetLSN": "A/1234", "targetTLI": "7"}}}}})
+        fake = gateway(); fake.results["selection"] = json.dumps(selection_document(cnpg_backup_id="20260114T030001")); drive(controller(fake))
+        cluster = next(item for item in fake.created if item["kind"] == "Cluster")
+        self.assertEqual("20260114T030001", cluster["spec"]["bootstrap"]["recovery"]["recoveryTarget"]["backupID"])
+
     def test_cnpg_rejects_bad_backup_id(self) -> None:
-        for backup_id in ("", "latest", "backup-1", "backup-abcdefghijklmn", 20260114030000):
+        for backup_id in ("", "latest", "backup-1", "backup-abcdefghijklmn", 20260114030000, "20260114T03000", "20260114t030001", "20260114T030001/"):
             with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"backupID": backup_id, "targetLSN": "A/1234", "targetTLI": "7"}}}}})
         with self.assertRaises(ValidationError): Controller._validate_cluster_target({"spec": {"bootstrap": {"recovery": {"recoveryTarget": {"targetLSN": "A/1234", "targetTLI": "7"}}}}})
 
@@ -179,6 +188,46 @@ class ControllerTests(unittest.TestCase):
         fake = gateway(); controller(fake).run(TRIGGER, RUN)
         selection = fake.created[0]
         self.assertIn({"name": "CNPG_CLUSTER_NAME", "value": "pg-core"}, selection["spec"]["template"]["spec"]["containers"][0]["env"])
+
+    def test_database_expects_manifest_migration_head_with_profile_fallback(self) -> None:
+        def db_args(fake):
+            job = next(item for item in fake.created if item["metadata"]["labels"].get("hriv.bcit.ca/restore-validation-role") == "db-validation")
+            args = job["spec"]["template"]["spec"]["containers"][0]["args"]
+            return args[args.index("--expected-migration-version") + 1]
+
+        fake = gateway(); self.assertEqual("succeeded", drive(controller(fake)))
+        self.assertEqual("abc123", db_args(fake))
+        self.assertEqual("abc123", parse_state(fake.state_raw, NOW)["latest_run"]["selected_source"]["migration_version"])
+
+        legacy = gateway(); legacy.results["selection"] = json.dumps(selection_document(migration_version=None))
+        self.assertEqual("succeeded", drive(controller(legacy)))
+        self.assertEqual("abc123", db_args(legacy))
+        self.assertIsNone(parse_state(legacy.state_raw, NOW)["latest_run"]["selected_source"]["migration_version"])
+
+        advanced = gateway(); advanced.results["selection"] = json.dumps(selection_document(migration_version="0038_user_auth_state"))
+        advanced.results["db-validation"] = json.dumps(database_result(migration_version="0038_user_auth_state"))
+        self.assertEqual("succeeded", drive(controller(advanced)))
+        self.assertEqual("0038_user_auth_state", db_args(advanced))
+
+        newer = gateway(); newer.results["selection"] = json.dumps(selection_document(migration_version="0038_user_auth_state"))
+        self.assertEqual("retained", drive(controller(newer)))
+        self.assertEqual("0038_user_auth_state", db_args(newer))
+        self.assertEqual("DB_VALIDATION_INVALID", parse_state(newer.state_raw, NOW)["latest_run"]["failure_code"])
+
+        for invalid in (38, "", "bad version", "x" * 129):
+            with self.subTest(invalid=invalid):
+                broken = gateway(); broken.results["selection"] = json.dumps(selection_document(migration_version=invalid))
+                self.assertEqual("retained", controller(broken).run(TRIGGER, RUN))
+                self.assertEqual("SELECTION_RESULT_INVALID", parse_state(broken.state_raw, NOW)["latest_run"]["failure_code"])
+
+    def test_persisted_binding_without_migration_version_is_accepted(self) -> None:
+        fake = gateway(); controller(fake).run(TRIGGER, RUN)
+        state = parse_state(fake.state_raw, NOW)
+        del state["latest_run"]["selected_source"]["migration_version"]
+        fake.state_raw = json.dumps(state)
+        fresh = Controller(fake, config(), profile(), policy(), templates(), clock=lambda: NOW)
+        self.assertNotEqual("retained", fresh.run(TRIGGER, RUN))
+        self.assertIsNone(parse_state(fake.state_raw, NOW)["latest_run"]["failure_code"])
 
     def test_database_receives_bound_fence_window(self) -> None:
         fake = gateway(); drive(controller(fake))
@@ -283,6 +332,7 @@ class ControllerTests(unittest.TestCase):
             "server": ("server_name", "other", "IMMUTABLE_BINDING_INVALID"),
             "external cluster": ("external_cluster", "other", "IMMUTABLE_BINDING_INVALID"),
             "object store": ("object_store", "other", "IMMUTABLE_BINDING_INVALID"),
+            "migration version": ("migration_version", "bad version", "IMMUTABLE_BINDING_INVALID"),
         }
         for name, (field, replacement, expected_code) in mutations.items():
             with self.subTest(name=name):

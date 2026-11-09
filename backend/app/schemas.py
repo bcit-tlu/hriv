@@ -652,8 +652,38 @@ class UserBase(BaseModel):
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
 
+class PasswordSetupRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str | None = None
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
+
+class PasswordSetupLinkOut(BaseModel):
+    setup_token: str
+    expires_at: datetime
+
+
 class UserCreate(UserBase):
-    password: str
+    password: str | None = Field(default=None, min_length=8)
+    must_change_password: bool = False
 
     _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
     _validate_email = field_validator("email", mode="before")(normalize_nonblank_value)
@@ -665,7 +695,8 @@ class UserUpdate(BaseModel):
     role: str | None = None
     active: bool | None = None
     program_ids: list[int] | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, min_length=8)
+    must_change_password: bool | None = None
     metadata_extra: dict | None = None
 
     _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
@@ -707,7 +738,7 @@ class ImageBulkDelete(BaseModel):
     image_ids: list[int]
 
 
-class UserOut(UserBase):
+class UserMiniOut(UserBase):
     id: int
     last_access: datetime | None = None
     created_at: datetime
@@ -717,6 +748,12 @@ class UserOut(UserBase):
     group_names: list[str] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class UserOut(UserMiniOut):
+    has_local_password: bool
+    oidc_linked: bool
+    must_change_password: bool
 
 
 # ── Collection ────────────────────────────────────────────
@@ -1178,6 +1215,7 @@ class MeasurementFindingOut(BaseModel):
     image_name: str
     image_thumb: str
     category_id: int | None
+    category_path: str | None = None
     image_width: int | None
     image_height: int | None
     status: str
@@ -1190,6 +1228,9 @@ class MeasurementFindingOut(BaseModel):
     detector_version: str
     approved_scale: float | None
     approved_unit: str | None
+    approved_objective: str | None
+    # Calibrated px/µm per objective for this camera; None for unknown cameras.
+    objective_scales: dict[str, float] | None
     reviewed_by: int | None
     reviewed_at: datetime | None
     created_at: datetime
@@ -1199,6 +1240,13 @@ class MeasurementFindingOut(BaseModel):
         from .tile_tokens import append_tile_token
 
         return append_tile_token(value)
+
+
+class MeasurementFindingCategoryOut(BaseModel):
+    id: int
+    # Full path from the root, e.g. "Hematology › Blood films".
+    path: str
+    count: int
 
 
 class MeasurementFindingsPageOut(BaseModel):
@@ -1211,6 +1259,8 @@ class MeasurementApprove(BaseModel):
 
     scale: float | None = Field(default=None, gt=0)
     unit: Literal["um", "nm", "mm", "cm"] | None = None
+    # Omitted keeps the detected objective; an explicit null approves without one.
+    objective: Literal["4", "10", "20", "40", "50", "60", "100"] | None = None
 
 
 class MeasurementBulkApprove(BaseModel):

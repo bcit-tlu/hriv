@@ -1,0 +1,263 @@
+# Local guest password setup
+
+For the credential-state overview, administrator runbook, and stable rollout,
+see [password management](password-management.md). This page remains the
+detailed API and frontend reference.
+
+Admins can provision local guests without an initial password, mint a personally
+delivered setup credential, and let the guest set a password and sign in. No SMTP,
+public forgot-password flow, or OIDC credential management is provided here.
+The frontend setup page and admin copy-link UI are implemented; their behavior
+is documented below.
+
+## API contract
+
+`POST /api/users/{id}/password-setup-link` requires an authenticated admin. It
+returns `{ "setup_token": "<jwt>", "expires_at": "<ISO-8601 UTC>" }`, not a URL.
+The target must be active, passwordless, and not OIDC-linked. Missing accounts
+return 404; inactive accounts return 403 `account_inactive`; OIDC-linked accounts
+return 422 `oidc_linked`; passworded accounts return 409 `password_already_set`.
+Each mint replaces `users.invite_nonce` with `secrets.token_urlsafe(16)`, so a new
+link invalidates every previous link. Minting never clears an existing password.
+An admin can first clear a local password with `PATCH /api/users/{id}` using
+`{ "password": null }`, which also clears the nonce and forced-change flag.
+
+`POST /api/auth/password-setup` is public (no bearer JWT required) and accepts
+`{ "token": "<jwt>", "password": "<new password>" }`. Passwords require at least
+eight characters and at most 72 UTF-8 bytes (the bcrypt limit); invalid request
+bodies return 422. The successful response is the standard `LoginResponse`:
+`{ "access_token": "<access jwt>", "token_type": "bearer", "user": { ... } }`.
+Redemption sets the password hash and `last_access`, clears `invite_nonce` and
+`must_change_password`, and immediately signs in the guest. User responses never
+expose hashes, nonces, or raw OIDC subjects.
+
+Linking an existing local account to OIDC clears its hash, nonce and forced-change
+flag, so an outstanding setup link fails with 401 after linking. Migration
+`0040_oidc_clear_password` applies the same cleanup to existing linked accounts.
+Password login also refuses linked accounts with generic 401 **Invalid email or
+password**, consuming the normal login rate limit even if a legacy hash remains.
+Admin updates may clear a linked account's password with null, but cannot set a
+non-null password (422 `oidc_linked`). Legacy database imports discard such hashes.
+
+Redemption errors:
+
+| Status | Meaning                                                                                                         |
+| ------ | --------------------------------------------------------------------------------------------------------------- |
+| 401    | Invalid, expired, wrong-purpose, missing-user, or nonce-mismatched token; also a user linked to OIDC after mint |
+| 403    | `account_inactive`                                                                                              |
+| 409    | `password_already_set` (including replay after a successful setup)                                              |
+| 429    | `rate_limited`, with `Retry-After` seconds                                                                      |
+
+Mint and redeem lock the user row until commit, serializing nonce rotations and
+redemptions. Concurrent redeems cannot both change the password. Password clearing
+also revokes any outstanding setup credential. Revocation of existing access
+tokens is outside this feature's scope.
+
+## Token configuration and enforcement
+
+`app/password_tokens.py` issues JWTs signed by `JWT_SECRET` with the configured
+algorithm and claims `purpose="password_setup"`, `sub=str(user.id)`, `nonce`, and
+`exp`. Validation requires all four claims. These credentials cannot authorize
+ordinary bearer-protected endpoints. Nonces are compared in constant time.
+
+`PASSWORD_SETUP_TOKEN_TTL_MINUTES` defaults to `10080` (seven days), with bounds
+60–43200 (one hour through 30 days). Helm exposes it as
+`auth.passwordSetupTokenTtlMinutes`. A stable shared JWT secret is required across
+replicas; changing the secret invalidates setup credentials too.
+
+Separate Redis buckets apply the existing login budgets: before signature work,
+per-client-IP `rate:pwsetup:{ip}` uses `RATE_LIMIT_LOGIN_MAX/WINDOW`. Only after
+signature, expiry, and claims validation, a hashed verified-subject bucket uses
+`RATE_LIMIT_LOGIN_EMAIL_MAX/WINDOW`. Invalid tokens consume only the IP budget,
+so forged subjects cannot exhaust another guest's subject budget.
+Subject budgets survive IP changes and nonce rotations. Redis failure is
+fail-open, following the login limiter; no public endpoint mints links.
+
+Structured `auth.invite_minted` and `auth.password_setup` events use canonical
+`auth.*` fields. Mint events additionally include `admin_id`; setup events report
+success/failure without logging tokens, passwords, or nonces.
+
+## Regression coverage
+
+`backend/tests/test_password_setup.py` covers claims/expiry/settings, bearer
+rejection, role gates, rotation, success/replay, account/nonce/error guards,
+password validation, structured events, and both rate-limit budgets. Full backend
+verification: `cd backend && poetry run pytest` (80% coverage gate).
+
+## Authenticated password change
+
+`POST /api/auth/change-password` requires a valid bearer JWT and accepts
+`{ "current_password": "<old>", "new_password": "<new>" }`. Any local user role
+can use it, including a user flagged `must_change_password`. Success is **204 No
+Content**: the hash is replaced and `must_change_password` is cleared in the same
+transaction. Existing bearer JWTs remain valid; a replacement JWT is not needed.
+
+OIDC-linked accounts receive 403 `oidc_linked`. Missing, empty, wrong, or overlong
+current passwords, and passwordless local accounts, receive 401. A new password
+must have at least eight characters and at most 72 UTF-8 bytes (bcrypt's limit),
+otherwise validation returns 422. A missing bearer JWT also returns 401.
+
+After verifying the current password, reusing it as the new password returns
+422 `password_unchanged`. The hash and forced-change flag remain unchanged, so
+a forced rotation cannot be satisfied by resubmitting the existing password.
+
+The per-user Redis bucket `rate:pwchange:{user.id}` runs **before password
+verification**, using `RATE_LIMIT_LOGIN_MAX` and `RATE_LIMIT_LOGIN_WINDOW` (default
+5 attempts per 60 seconds). Exhaustion returns 429 `rate_limited` with
+`Retry-After` seconds. Redis failure remains fail-open, matching login. Structured
+`auth.password_change` events record success/failure with canonical `auth.*`
+fields, never either password. Concurrent changes serialize on the user row.
+
+## Forced password changes and auth-path audit
+
+Admins can set `must_change_password: true` on a local, passworded account. Login
+still succeeds and returns that flag. On subsequent bearer requests,
+`get_current_user` returns 403 `password_change_required`; all `require_role`
+dependencies inherit the block, including admins. Image/category serialization
+is blocked too, preventing new tile/thumbnail credentials from being minted.
+`GET /api/auth/me` and change-password deliberately use `get_user_from_token`
+directly, so the guest can recover their session and clear the flag. Logout is
+client-side token removal; there is no backend logout endpoint.
+
+The admin download-cookie path rechecks the persisted user and forced-change
+flag before serving a file. Synthetic-result **bearer** ingestion also enforces
+the flag, even for synthetic accounts; admins must not flag monitor accounts.
+The operator-provisioned synthetic ingest token is an independent service
+credential, not user authentication, and retains its existing behavior.
+
+OIDC callback establishes IdP identity independently. Linking an existing local
+account clears the flag; OIDC-linked accounts cannot be flagged through the API.
+Password setup cannot bypass forced change for a passworded account (409).
+Request middleware decodes JWT identity only for logging, not authorization.
+Public health/configuration and operator-authenticated routes remain independent
+of this user-authentication gate.
+
+### Existing tile/thumbnail credentials
+
+Already-issued image-scoped tile/thumbnail tokens remain valid until expiry
+after deactivation or a forced-password-change flag. They have no user subject
+and validate without a database lookup. The default remaining window is at most
+15 minutes (`TILE_TOKEN_TTL_MINUTES`, configurable 1–1440). Both the FastAPI tile
+fallback and nginx `tiles-auth` validator preserve this bounded exception; new
+credentials cannot be minted by blocked users. Previously cached/downloaded
+bytes cannot be revoked. See [user deactivation](user-deactivation.md).
+
+`tests/test_change_password.py`, `tests/test_router_admin.py`, and
+`tests/test_telemetry.py` cover these user-authentication boundaries, successful
+recovery, current/new-password validation, rate-limit ordering, and audit events.
+
+## Frontend password management
+
+Open an administrator-provided `/#password_setup=<token>` link to set a guest
+password. Bootstrap captures the fragment before child effects can strip it,
+removes it from the address bar, and keeps the token only in memory. Reloading
+the cleaned page loses the token; reopen the original link if needed. Setup
+replaces any existing session on a shared browser. A successful redemption uses
+the returned login response directly, without a second login or `/auth/login`
+request. **Sign in instead** discards setup and returns to the login screen.
+
+The setup screen uses the login layout and requires a matching confirmation,
+at least eight Unicode characters, and at most 72 UTF-8 bytes. Expired/replaced
+links ask the user to request a new link; already-passworded accounts are told
+to sign in, disabled accounts use the standard activation guidance, and
+throttling asks the user to try later. No public password-reset flow is added.
+
+The profile menu shows **Change password** only when `has_local_password` is
+true and `oidc_linked` is false, independently of the admin-only **Update** item.
+The dialog collects current, new, and confirmation passwords. Wrong-current,
+unchanged-password, validation, OIDC, and throttling errors remain inline. On
+success it refreshes `/auth/me`, closes, and shows a success snackbar. If that
+refresh fails after the change, retry refresh without submitting the old
+password again.
+
+Flagged sessions (from login or reload-time `/auth/me`) render only the forced
+password-change screen, not the application shell. The shared API error path
+also catches 403 `password_change_required`, including upload/XHR errors, and
+switches a mid-session user to this gate. Ordinary 403s do not trigger it. The
+gate permits password change or sign out only; after a successful change and
+profile refresh, normal navigation resumes with a success snackbar. Backend
+authorization remains authoritative; this frontend gate is a UX boundary.
+
+`api.ts` maps the three auth flags to the domain user. Directory projections
+that omit the flags and older cached profiles are tolerated; omitted flags
+default to false and do not expose the local-password menu item. Session
+validation always refreshes the authoritative flags before normal use.
+
+The `hriv_user` cache omits `has_local_password` and `must_change_password` at
+every write. Missing cached flags default to false and never authorize access:
+bootstrap keeps the current user unset and the shell loading until `/auth/me`
+returns. A forced-change flag from that response renders the change screen
+instead of the shell, even though the flag was not persisted across the reload.
+
+Pasting a setup link into an already-open tab is handled on `hashchange` too:
+the token is captured and immediately removed while unrelated URL parameters
+are preserved. The previous session is discarded, and pending validation of
+that session cannot restore it over the setup flow.
+Pending admin user-list responses are also ignored across session transitions:
+neither their data nor a stale 401 may replace or clear the new guest session.
+
+For password changes, 401 `Invalid current password` asks the user to retry
+their current password. A 401 `Invalid or expired token` (or missing bearer
+credentials) instead explains that the session expired or is invalid and asks
+the user to sign in again; it is not presented as a wrong current password.
+
+## Admin workflow in People
+
+Administrators can choose **Set password now** or **Invite by link (user sets
+their own password)** when adding a person. Invite mode sends no `password`
+field. Once creation succeeds, the account exists independently of link minting:
+the setup-link dialog mints a credential for that account. A mint failure does
+not undo creation; close the link dialog and reopen **Edit Person**, then choose
+**Copy password-setup link**. Do not recreate the account after a mint failure.
+
+The dialog composes `${window.location.origin}/#password_setup=<setup_token>`
+using the backend’s `setup_token` and `expires_at` response fields. It shows the
+full URL, local-time expiry, a copy action, and a warning to deliver it privately.
+Each link works once; minting another replaces the previous one. The credential
+is never logged or persisted: only the mounted dialog holds it, and closing
+discards it, including a pending response. Reopening mints a new link.
+
+The hideable **Sign-in** column shows **SSO**, **Local**, or **Invite pending**,
+plus an outlined **Must change password** chip when flagged. It is visible by
+default; Name cells no longer contain credential chips. Edit Person link actions are disabled for inactive accounts
+(activate first) and OIDC-linked accounts (**Managed by the identity provider**).
+An already-passworded local account has a disabled button with **This account already
+has a password**; no special already-passworded error copy is shown in the link dialog.
+Eligibility uses saved flags, not unsaved Active or Password values.
+
+Editing an eligible local-password account exposes **Force password change on
+next login**. The switch is disabled with explanatory tooltips for SSO and
+passwordless accounts. There is no Clear password button or confirmation.
+The Password helper explains entering a new password to change it,
+or leaving blank to keep the current one. Failed saves retain the entered value.
+An admin editing another active, local-password user can enable **Regenerate
+password link**. While enabled, Password and forced change are disabled. Save sends
+`password: null` without a forced-change flag, clears both saved credential flags,
+then automatically opens the link dialog to mint. Cancel does not clear or mint.
+If minting fails, reopen Edit Person and retry its enabled link button; the
+account is already passwordless. A failed save retains the enabled switch for retry.
+The switch is hidden for self-profile, OIDC, inactive and passwordless users.
+Inactive accounts can still be cleared via the API but
+must be activated before a new link can be minted. Staff’s read-only People
+directory shows badges without credential-management or other mutation actions.
+
+Reopening a link dialog while an earlier mint for the same person is still in
+flight waits for that request to settle before issuing a replacement. Only the
+request-completion signal is shared across dialogs, never the setup credential.
+Closed waiting dialogs do not issue a mint, and other people’s mints are independent.
+
+The self-profile editor and an administrator’s own People row hide the admin
+force-change and setup-link controls, and do not send the forced-change flag
+on profile saves. The profile’s API projection retains all three authoritative
+credential flags. Use the profile menu’s **Change password** action for self-service
+password rotation; clearing your own password is not offered.
+
+The password field remains the direct admin password-editing control. Regenerate
+password link is an explicit save-time switch, styled like forced change below it.
+API clearing with `password:null` also remains
+available independently of the UI re-invitation flow.
+
+The link dialog’s warning is **Single-use link. Share it privately.** It keeps
+the URL, local expiry and copy feedback, without the old account-exists paragraph.
+Mint failures direct the admin back to Edit Person; the dialog has no mint retry
+button. Automatic opening after invite-mode creation is unchanged.

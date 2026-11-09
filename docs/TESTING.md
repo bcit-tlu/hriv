@@ -335,6 +335,46 @@ pinned image is not otherwise visible, without granting tile access.
 13. Delete the newly created user.
 14. **Assert:** User is removed from the list.
 
+### User auth-state API contract
+
+Use an admin bearer token for user mutations; UI invite/password workflows are
+separate from this backend schema foundation.
+
+- `POST /api/users/` accepts omitted or null `password` for a passwordless
+  account; supplied strings on create and patch must be at least eight
+  characters (short or empty strings return 422).
+- `PATCH /api/users/{id}` with omitted `password` leaves credentials unchanged;
+  `{"password": null}` clears the password hash, any pending invite nonce, and
+  `must_change_password` automatically.
+  A string sets the password for local-only users. OIDC-linked accounts reject
+  non-null password updates with 422 `oidc_linked`; null clearing remains allowed.
+- Create accepts `must_change_password` (default false); patch accepts true or
+  false, with omission/null leaving the flag unchanged. True requires a
+  password and no OIDC link in the resulting state (422 otherwise). Clearing a
+  flagged account's password needs no explicit flag update; only an explicit
+  `must_change_password: true` alongside `password: null` returns 422.
+- Full user responses (admin/staff directory, admin mutations, `/api/auth/me`,
+  and the `/api/auth/login` user payload) include `has_local_password`,
+  `oidc_linked`, and `must_change_password`. Check local-only `(true, false)`,
+  OIDC-only `(false, true)`, and passwordless-unlinked `(false, false)`
+  derived flags. A dual `(true, true)` state can no longer be reached through
+  linking, migration `0040_oidc_clear_password`, admin updates or imports; check
+  it only with a legacy fixture written by direct SQL, and confirm password
+  login for that fixture still returns the generic 401. Hashes, OIDC subjects and invite nonces must
+  never appear. Instructor directory projections omit all three flags.
+- Automated coverage: `tests/test_schemas.py`, `tests/test_router_users.py`,
+  `tests/test_router_auth.py`; run `tests/test_migrations_bootstrap.py` and a
+  fresh PostgreSQL `python -m app.migrations_bootstrap` for migration validation.
+  Forced-change request blocking is implemented separately from these flags.
+
+For SSO-only enforcement (#1807), link an existing account by verified email and
+assert its hash, invite nonce and forced-change flag are cleared. An old setup
+link must fail with 401; password login must return generic 401 even for a legacy
+linked account with a hash, while still consuming the login rate limit. Import a
+legacy linked-user dump and verify its hash is discarded. Run
+`tests/test_router_oidc.py`, `tests/test_migration_oidc_credentials.py` and
+`tests/test_admin_ops.py`; migration 0040 must leave local guests untouched.
+
 ---
 
 ## Test Case 8: Admin Database Export/Import
@@ -625,16 +665,73 @@ persistent modes, and stays off the Manage, People, Admin, and Guide pages.
 
 ---
 
-All endpoints except login require a valid JWT bearer token in the `Authorization` header.
+User-authenticated endpoints require a valid JWT bearer token in the
+`Authorization` header. `POST /api/auth/login` and `POST /api/auth/password-setup`
+do not require a bearer token; password setup instead requires a purpose-scoped
+setup token in the request body. Other public/credential-scoped exceptions are
+listed in the table below and in [unauthenticated routes](unauthenticated-routes.md).
 
 Collections gate: all `/api/collections*` routes and the two image collection
 reads below return 404 when `COLLECTIONS_ENABLED=false`, or for students when
 `COLLECTIONS_STUDENT_ACCESS=false`, including owners. Non-student permissions
 are unchanged by the student gate. See Test Case 9b.
 
+Password setup regression coverage lives in `backend/tests/test_password_setup.py`:
+admin-only minting, nonce rotation, configured expiry, inactive/OIDC/passworded
+guards, public redemption, replay rejection, malformed/expired/wrong-purpose
+tokens, bearer rejection, password validation, structured events, and separate
+per-IP/per-subject throttling. Run `cd backend && poetry run pytest` for the full
+coverage gate. See [password setup](password-setup.md) for the API/error contract.
+
+The consolidated [password-management runbook](password-management.md) covers
+credential state, administrator recovery and stable rollout. The existing
+endpoint-role table below already includes admin mint, public app-credential
+redemption and authenticated self-change; keep those entries rather than adding
+duplicate routes.
+
+`backend/tests/test_change_password.py` verifies forced-change blocking (including
+role dependency inheritance), `/auth/me` recovery, successful password changes
+and 422 `password_unchanged` rejection after current-password verification
+(without clearing the forced-change flag),
+and reopening protected endpoints, current/new-password validation, throttling
+before password verification, and structured success/failure events. Download
+cookie and synthetic bearer enforcement are covered in `test_router_admin.py`
+and `test_telemetry.py`. Existing tile tokens retain the bounded expiry window
+documented in [user deactivation](user-deactivation.md).
+
+Frontend password flows are covered in `passwordSession.test.tsx`,
+`passwordErrors.test.ts`, `components/PasswordSetupScreen.test.tsx`,
+`components/ChangePasswordDialog.test.tsx`, `components/ForcedPasswordChangeScreen.test.tsx`, and
+`components/AppShell.test.tsx`. Manually verify:
+
+- Paste a setup link into an already-open signed-in tab: capture and strip the
+  token, preserve unrelated parameters, and discard the old session even if its
+  `/auth/me` validation is still in flight.
+- Open a fresh `/#password_setup=<token>` link: the fragment is removed, matching
+  passwords redeem once, and the returned session opens the app without another
+  login. Reloading the cleaned page requires reopening the original link.
+- Try expired/replaced, disabled, already-passworded, and throttled links:
+  actionable inline messages appear, with **Sign in instead** available.
+- Only local, unlinked accounts see **Change password** in the profile menu;
+  the admin **Update** item remains unchanged. Wrong-current, unchanged-password,
+  minimum-length, UTF-8 byte-limit, mismatch, and rate-limit failures stay inline.
+- Flag an account: login and reload render the forced-change screen without
+  navigation. Flag a signed-in account and trigger a protected request: the
+  same gate appears on 403 `password_change_required`, but not an unrelated 403.
+- Complete the change: `/auth/me` is refreshed, navigation reopens, and a success
+  snackbar appears. A failed refresh can be retried without changing again.
+  Sign out from the forced screen clears the session.
+
+Storybook includes fresh, submitting, and error setup states, the change dialog,
+confirmation mismatch, and the forced screen; check desktop/mobile and both
+themes. See [password management](password-setup.md#frontend-password-management).
+
 | Method | Endpoint                                                                                                  | Auth Required | Minimum Role                                                                                                                                                                                                                                |
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | /api/auth/login                                                                                           | No            | —                                                                                                                                                                                                                                           |
+| POST   | /api/auth/password-setup                                                                                  | No            | — (purpose-scoped setup token required; app-credential)                                                                                                                                                                                     |
+| GET    | /api/auth/me                                                                                              | Yes           | any authenticated role; allowed while password change is required                                                                                                                                                                           |
+| POST   | /api/auth/change-password                                                                                 | Yes           | any authenticated local role; allowed while password change is required                                                                                                                                                                     |
 | GET    | /api/health                                                                                               | No            | —                                                                                                                                                                                                                                           |
 | GET    | /api/features                                                                                             | No            | — (deployment feature flags, e.g. `collections`)                                                                                                                                                                                            |
 | GET    | /api/health/ready                                                                                         | No            | —                                                                                                                                                                                                                                           |
@@ -665,6 +762,7 @@ are unchanged by the student gate. See Test Case 9b.
 | GET    | /api/tiles-auth (nginx `auth_request` validator; 204/401/403)                                             | Yes           | valid tile token (`thumb` purpose additionally path-restricted)                                                                                                                                                                             |
 | GET    | /api/users/                                                                                               | Yes           | staff ¶                                                                                                                                                                                                                                     |
 | POST   | /api/users/                                                                                               | Yes           | admin                                                                                                                                                                                                                                       |
+| POST   | /api/users/{id}/password-setup-link                                                                       | Yes           | admin (app-authz)                                                                                                                                                                                                                           |
 | GET    | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
 | PATCH  | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
 | DELETE | /api/users/{id}                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
@@ -732,9 +830,10 @@ are unchanged by the student gate. See Test Case 9b.
 | GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin                                                                                                                                                                                                                                       |
 | DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin                                                                                                                                                                                                                                       |
 | POST   | /api/measurement-findings/scan                                                                            | Yes           | instructor (admin/instructor; queue next 1–50 unscanned images, or `all`/`rescan` for whole-library and stale-detector passes; stored scales recorded as authoritative)                                                                     |
-| GET    | /api/measurement-findings                                                                                 | Yes           | instructor (admin/instructor; list findings by status, sorted by confidence)                                                                                                                                                                |
+| GET    | /api/measurement-findings                                                                                 | Yes           | instructor (admin/instructor; list findings by status and category; sortable by image, category path, objective, proposed scale or confidence)                                                                                              |
 | GET    | /api/measurement-findings/scan-progress                                                                   | Yes           | instructor (admin/instructor; scan progress for queued image IDs; `min_finding_id` tracks rescans)                                                                                                                                          |
-| POST   | /api/measurement-findings/{id}/approve                                                                    | Yes           | instructor (admin/instructor; optional corrected scale; merges into image metadata)                                                                                                                                                         |
+| GET    | /api/measurement-findings/categories                                                                      | Yes           | instructor (admin/instructor; categories holding findings in a status, with full paths and counts)                                                                                                                                          |
+| POST   | /api/measurement-findings/{id}/approve                                                                    | Yes           | instructor (admin/instructor; optional corrected scale, unit or objective; merges into image metadata)                                                                                                                                      |
 | POST   | /api/measurement-findings/{id}/reject                                                                     | Yes           | instructor (admin/instructor)                                                                                                                                                                                                               |
 | GET    | /api/measurement-findings/scan-remaining                                                                  | Yes           | instructor (admin/instructor; unprocessed scan-candidate count for whole-library scans)                                                                                                                                                     |
 | POST   | /api/measurement-findings/{id}/reset                                                                      | Yes           | instructor (admin/instructor; returns approved/rejected to pending; reverts the approval's scale)                                                                                                                                           |
@@ -968,3 +1067,76 @@ named users. Restore all temporary configuration changes after testing.
 These cases are a validation checklist, not a claim that local E2E or the
 instructor feel-test on `latest` has passed. See
 [object counting](object-counting.md) for troubleshooting and rollout gates.
+
+### People password-management UI (#1761)
+
+Automated coverage: `components/AddEditPersonModal.test.tsx`,
+`components/PeoplePage.test.tsx`, `components/PasswordSetupLinkDialog.test.tsx`,
+and the User API cases in `api.test.ts`.
+
+- Add a person in set-password mode: password is required and validated. Switch
+  to Invite by link: no password input or request field; success opens minting.
+- Fail minting after creation: the account still exists. Close and retry from
+  Edit Person without creating again. Exercise mint 403, 422 and transport errors.
+- Check SSO/Local/Invite pending badges and the Must change password chip.
+  These live in the default-visible, hideable Sign-in column, not Name. There is
+  no row mint action. OIDC, inactive and passworded Edit Person link buttons are
+  disabled with explanatory tooltips; only saved active passwordless local
+  accounts can mint. Staff and self-profile editors have no credential actions.
+- Verify setup URL composition, local-time expiry, clipboard success/fallback
+  and manual-copy error feedback. Close during mint and reopen: no old token is
+  retained. No setup credential is written to storage or application logs.
+- Edit a local-password account and toggle forced change. Passwordless and SSO
+  accounts have disabled switches with suitable explanations.
+- Check there is no Clear password action or confirm dialog.
+  Enter a new Password and Save: the value is sent; blank omits it and keeps
+  the current password. Save errors retain typed values. Helper text explains
+  both options. Unsaved activation cannot enable minting for an inactive user.
+  Passworded users show “This account already has a password” on the disabled link.
+- Re-invite: only an admin editing another active local-password user sees the
+  Regenerate password link switch. Enabling it disables Password and forced
+  change; Save sends `password:null` without a forced-change flag and immediately
+  opens minting. Cancel does not clear or mint; save errors retain the selection.
+  Unsaved deactivation hides the switch and resets it. It is absent for OIDC, inactive,
+  passwordless and self-profile users. The direct Password edit path still works.
+  Turn Active off and on again after enabling regeneration: it must remain off,
+  Password and forced change re-enable, and Save must not submit a null password.
+- Fail that mint: the returned flags show Invite pending without forced change.
+  Close and reopen Edit Person; the enabled link button retries without another
+  clear/update. Direct API clearing via `password:null` remains supported too.
+- Preview Storybook AddEditPersonModal, PeoplePage and PasswordSetupLinkDialog
+  states in light/dark themes; inspect row badges, invite mode, credential dialog
+  and local-password/passwordless Edit Person states before merging.
+
+People review regressions also cover mint serialization across close/reopen,
+release after mint errors, independent people, and skipping closed waiters.
+Self-profile and own-row editing hide force-change/setup-link controls and
+omit the forced-change flag on save. `useUserProfile.test.ts` checks credential
+flags in the profile’s `ApiUser` projection.
+
+## Password-management local validation (#1763)
+
+When `latest` cannot be reached, use the testing-hriv skill’s
+[local password-management reference](../.agents/skills/testing-hriv/references/password-management.md).
+Run the real backend against an isolated migrated/seeded Postgres and Redis,
+then use curl, not mocked API handlers, for these acceptance cases:
+
+| Scenario                            | Required evidence                                                                                                                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Passwordless create → mint → redeem | 201 user with false credential flags; mint returns `setup_token`/`expires_at`; redeem returns 200 `LoginResponse`.                                             |
+| Single use and replacement          | Reuse after success is 409 `password_already_set`; after clearing, mint B then C and redeem B → 401 before redeeming C → 200.                                  |
+| Clear/re-invite                     | Admin explicit `password:null` removes local/forced flags; a new setup succeeds.                                                                               |
+| Forced rotation                     | PATCH flag true; `/auth/me` → 200 with true; `/api/categories/` → 403 `password_change_required`; change → 204; `/auth/me` reports false and categories → 200. |
+| Rejected rotation                   | Wrong current → 401; unchanged verified password → 422 `password_unchanged`; neither clears the flag.                                                          |
+| OIDC fixture                        | Local DB-only dummy `oidc_subject`; `/auth/me` reports linked, mint → 422 `oidc_linked`, change-password → 403 `oidc_linked`.                                  |
+
+Keep HTTP statuses and JSON in an external transcript (for this issue,
+`/home/ubuntu/1763-validation.md`). Redact credentials before writing output,
+including both token response fields and all password input fields. Record the
+source revision, startup command, migration/seed completion, and whether the run
+was local or deployed. Do not commit the transcript or change documented seeds.
+
+Separately verify the browser acceptance cases above: copy link into a fresh
+session and land signed in, force-screen navigation/reload and central 403
+handling, OIDC menu/action exclusions, and a real SSO login. Curl proves API
+session issuance and guards, not those visual or external-provider outcomes.

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -100,6 +101,176 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   const showOidcDefault = oidcEnabled && !showLocalForm
 
   return (
+    <LoginLayout title="High Resolution Image Viewer (HRIV) Login" announcement={announcement}>
+      {oidcErrorMessage && (
+        <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
+          {oidcErrorMessage}
+        </Alert>
+      )}
+
+      {showOidcDefault ? (
+        /* ── OIDC-primary view ─────────────────── */
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 2,
+          }}
+        >
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={handleOidcLogin}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 600,
+              py: 1.25,
+              fontSize: '0.95rem',
+            }}
+          >
+            Sign in with BCIT
+          </Button>
+          <Link
+            component="button"
+            variant="body2"
+            underline="hover"
+            onClick={() => setShowLocalForm(true)}
+          >
+            Sign in with a guest account
+          </Link>
+        </Box>
+      ) : (
+        /* ── Local-credentials view ────────────── */
+        <Box
+          component="form"
+          onSubmit={handleSubmit}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+          }}
+        >
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+
+          <TextField
+            label="Username"
+            placeholder="username@example.ca"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            fullWidth
+            autoFocus
+            autoComplete="email"
+            variant="standard"
+          />
+
+          <TextField
+            label="Password"
+            placeholder="Password"
+            type={showPassword ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            fullWidth
+            autoComplete="current-password"
+            variant="standard"
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label="toggle password visibility"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      edge="end"
+                      size="small"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Button
+              type="button"
+              variant="text"
+              onClick={() => setForgotPasswordOpen(true)}
+              sx={{
+                px: 0,
+                fontWeight: 600,
+                letterSpacing: 1,
+                color: 'text.disabled',
+              }}
+            >
+              Forgot Password?
+            </Button>
+            <Button
+              type="submit"
+              variant="text"
+              disabled={loading || !email || !password}
+              startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
+              sx={{
+                fontWeight: 600,
+                letterSpacing: 1,
+              }}
+            >
+              {loading ? 'Signing in...' : 'LOGIN'}
+            </Button>
+          </Box>
+
+          {oidcEnabled && (
+            <Box sx={{ textAlign: 'center', mt: 1 }}>
+              <Link
+                component="button"
+                type="button"
+                variant="body2"
+                underline="hover"
+                onClick={() => setShowLocalForm(false)}
+              >
+                Sign in with BCIT
+              </Link>
+            </Box>
+          )}
+        </Box>
+      )}
+      <Dialog
+        open={forgotPasswordOpen}
+        onClose={() => setForgotPasswordOpen(false)}
+        aria-labelledby="forgot-password-dialog-title"
+      >
+        <DialogTitle id="forgot-password-dialog-title">Forgot Password</DialogTitle>
+        <DialogContent>
+          <Typography>Please contact the TLU Lab via Teams to reset your password.</Typography>
+        </DialogContent>
+      </Dialog>
+    </LoginLayout>
+  )
+}
+
+export function LoginLayout({
+  title,
+  announcement,
+  children,
+}: {
+  title: string
+  announcement?: string
+  children: ReactNode
+}) {
+  return (
     <Box
       sx={{
         minHeight: '100vh',
@@ -108,213 +279,31 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
         bgcolor: 'background.paper',
       }}
     >
-      <Box
-        sx={{
-          flex: '1 1 auto',
-          minHeight: 0,
-          display: 'flex',
-          position: 'relative',
-        }}
-      >
-        {/* Theme toggle (Light / Dark / Auto) */}
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 16,
-            right: 16,
-            zIndex: 1,
-          }}
-        >
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
+        <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
           <ColorModeToggle iconButtonSx={{ color: 'text.secondary' }} />
         </Box>
-
-        {/* Left side — form */}
         <Box
           sx={{
-            flex: { sm: '1 1 100%', md: '0 0 50%' },
+            flex: { xs: '1 1 100%', md: '0 0 50%' },
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             px: { xs: 3, sm: 6, md: 8 },
+            py: 8,
           }}
         >
           <Box sx={{ width: '100%', maxWidth: 400 }}>
             {announcement && <AnnouncementBanner message={announcement} variant="login" />}
-
-            {/* BCIT logo + Login heading */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                mb: 5,
-              }}
-            >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
               <Box component="img" src="/bcit-logo.svg" alt="BCIT" sx={{ height: 48 }} />
-              <Typography variant="h5" sx={{ fontWeight: 400 }}>
-                High Resolution Image Viewer (HRIV) Login
+              <Typography component="h1" variant="h5" sx={{ fontWeight: 400 }}>
+                {title}
               </Typography>
             </Box>
-
-            {oidcErrorMessage && (
-              <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
-                {oidcErrorMessage}
-              </Alert>
-            )}
-
-            {showOidcDefault ? (
-              /* ── OIDC-primary view ─────────────────── */
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 2,
-                }}
-              >
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={handleOidcLogin}
-                  sx={{
-                    textTransform: 'none',
-                    fontWeight: 600,
-                    py: 1.25,
-                    fontSize: '0.95rem',
-                  }}
-                >
-                  Sign in with BCIT
-                </Button>
-                <Link
-                  component="button"
-                  variant="body2"
-                  underline="hover"
-                  onClick={() => setShowLocalForm(true)}
-                >
-                  Sign in with a guest account
-                </Link>
-              </Box>
-            ) : (
-              /* ── Local-credentials view ────────────── */
-              <Box
-                component="form"
-                onSubmit={handleSubmit}
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                }}
-              >
-                {error && (
-                  <Alert severity="error" onClose={() => setError(null)}>
-                    {error}
-                  </Alert>
-                )}
-
-                <TextField
-                  label="Username"
-                  placeholder="username@example.ca"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  fullWidth
-                  autoFocus
-                  autoComplete="email"
-                  variant="standard"
-                />
-
-                <TextField
-                  label="Password"
-                  placeholder="Password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  fullWidth
-                  autoComplete="current-password"
-                  variant="standard"
-                  slotProps={{
-                    input: {
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            aria-label="toggle password visibility"
-                            onClick={() => setShowPassword((prev) => !prev)}
-                            edge="end"
-                            size="small"
-                          >
-                            {showPassword ? <VisibilityOff /> : <Visibility />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                />
-
-                <Box
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Button
-                    type="button"
-                    variant="text"
-                    onClick={() => setForgotPasswordOpen(true)}
-                    sx={{
-                      px: 0,
-                      fontWeight: 600,
-                      letterSpacing: 1,
-                      color: 'text.disabled',
-                    }}
-                  >
-                    Forgot Password?
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="text"
-                    disabled={loading || !email || !password}
-                    startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
-                    sx={{
-                      fontWeight: 600,
-                      letterSpacing: 1,
-                    }}
-                  >
-                    {loading ? 'Signing in...' : 'LOGIN'}
-                  </Button>
-                </Box>
-
-                {oidcEnabled && (
-                  <Box sx={{ textAlign: 'center', mt: 1 }}>
-                    <Link
-                      component="button"
-                      type="button"
-                      variant="body2"
-                      underline="hover"
-                      onClick={() => setShowLocalForm(false)}
-                    >
-                      Sign in with BCIT
-                    </Link>
-                  </Box>
-                )}
-              </Box>
-            )}
+            {children}
           </Box>
         </Box>
-
-        <Dialog
-          open={forgotPasswordOpen}
-          onClose={() => setForgotPasswordOpen(false)}
-          aria-labelledby="forgot-password-dialog-title"
-        >
-          <DialogTitle id="forgot-password-dialog-title">Forgot Password</DialogTitle>
-          <DialogContent>
-            <Typography>Please contact the TLU Lab via Teams to reset your password.</Typography>
-          </DialogContent>
-        </Dialog>
-
         <LoginSplashImage />
       </Box>
       <FooterBar canManageUsers={false} />

@@ -15,7 +15,8 @@ from .strict import LSN_RE, RFC3339_RE, UID_RE, ValidationError, bounded_string,
 MANAGED_BY = "hriv-restore-validation"
 RUN_LABEL = "hriv.bcit.ca/restore-validation-run-id"
 ROLE_LABEL = "hriv.bcit.ca/restore-validation-role"
-SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at", "cnpg_backup_id"}
+MIGRATION_VERSION_RE = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+SELECTION_FIELDS = {"schema_version", "operation", "success", "snapshot_name", "recovery_set_id", "run_id", "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "target_lsn", "target_timeline", "wal_segment_size_bytes", "source_file_count", "source_total_bytes", "source_files_sha256", "database_row_count", "missing_count", "orphan_count", "exclusion_count", "source_state", "source_state_sha256", "excluded_artifacts", "capture_started_at", "wal_fence_file", "wal_fence_committed_at", "wal_fence_archived_at", "completed_at", "cnpg_backup_id", "migration_version"}
 SELECTED_SOURCE_FIELDS = {
     "selection_schema_version", "selection_operation", "backup_run_id", "snapshot_name", "recovery_set_id", "cnpg_backup_id",
     "manifest_sha256", "archive_blob", "archive_size", "archive_etag", "completed_at", "target_lsn",
@@ -28,7 +29,7 @@ SELECTED_SOURCE_FIELDS = {
 }
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 SNAPSHOT_RE = re.compile(r"hriv-backup-\d{8}-\d{6}(?:-[0-9a-f]{8})?")
-CNPG_BACKUP_ID_RE = re.compile(r"backup-[0-9]{14}")
+CNPG_BACKUP_ID_RE = re.compile(r"(?:backup-[0-9]{14}|[0-9]{8}T[0-9]{6})")
 ETAG_TOKEN_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 _WAL_SEGMENT_MIN_BYTES = 1024 * 1024
 _WAL_SEGMENT_MAX_BYTES = 1024 * 1024 * 1024
@@ -404,7 +405,7 @@ class Controller:
         elif stage == "VALIDATE_DB":
             selected = self.store.read()[0]["latest_run"]["selected_source"]
             manifest = self._database_manifest(run_id, self.templates.db_validation_job)
-            self._container(manifest)["args"] = ["validate-database", "--host", f"{child_name(run_id, 'cnpg')}-rw", "--capture-started-at", selected["capture_started_at"], "--wal-fence-committed-at", selected["wal_fence_committed_at"], "--target-lsn", selected["target_lsn"], "--target-tli", str(selected["target_timeline"]), "--expected-source-image-count", str(selected["database_row_count"])]
+            self._container(manifest)["args"] = ["validate-database", "--host", f"{child_name(run_id, 'cnpg')}-rw", "--capture-started-at", selected["capture_started_at"], "--wal-fence-committed-at", selected["wal_fence_committed_at"], "--target-lsn", selected["target_lsn"], "--target-tli", str(selected["target_timeline"]), "--expected-source-image-count", str(selected["database_row_count"]), "--expected-migration-version", self._expected_migration_version(selected)]
             result = self._job(run_id, "db-validation", manifest)
             if result is None:
                 return "running"
@@ -618,9 +619,16 @@ class Controller:
             raise ValidationError("IMMUTABLE_BINDING_INVALID")
         return f'"{token}"'
 
+    def _expected_migration_version(self, selected: dict[str, Any]) -> str:
+        # The head recorded in the recovery-set manifest is authoritative; the
+        # profile pin only covers recovery sets captured before backups recorded one.
+        return selected.get("migration_version") or self.profile.expected_migration_version
+
     def _validate_selected_source(self, binding: Any) -> dict[str, Any]:
         try:
-            value = exact_object(binding, required=SELECTED_SOURCE_FIELDS)
+            value = exact_object(binding, required=SELECTED_SOURCE_FIELDS, optional={"migration_version"})
+            if value.get("migration_version") is not None:
+                bounded_string(value["migration_version"], "migration_version", 128, MIGRATION_VERSION_RE)
             if integer(value["selection_schema_version"], "selection_schema_version", 1, 1) != 1 or value["selection_operation"] != "validation-select":
                 raise ValidationError("IMMUTABLE_BINDING_INVALID")
             bounded_string(value["backup_run_id"], "backup_run_id", 128, re.compile(r"[A-Za-z0-9._:-]{1,128}"))
@@ -696,6 +704,9 @@ class Controller:
             raise ValidationError("SELECTION_RESULT_INVALID") from exc
         if source_state_sha256 != value["source_state_sha256"]:
             raise ValidationError("SOURCE_POLICY_MISMATCH")
+        migration_version = value["migration_version"]
+        if migration_version is not None and (not isinstance(migration_version, str) or MIGRATION_VERSION_RE.fullmatch(migration_version) is None):
+            raise ValidationError("SELECTION_RESULT_INVALID")
         binding = {
             "selection_schema_version": 1, "selection_operation": "validation-select", "backup_run_id": value["run_id"],
             "snapshot_name": value["snapshot_name"], "recovery_set_id": value["recovery_set_id"], "cnpg_backup_id": value["cnpg_backup_id"], "manifest_sha256": value["manifest_sha256"],
@@ -706,6 +717,7 @@ class Controller:
             "missing_count": value["missing_count"], "orphan_count": value["orphan_count"], "exclusion_count": value["exclusion_count"],
             "source_state": source_state, "source_state_sha256": source_state_sha256, "excluded_artifacts": copy.deepcopy(value["excluded_artifacts"]),
             "capture_started_at": value["capture_started_at"], "wal_fence_file": value["wal_fence_file"], "wal_fence_committed_at": value["wal_fence_committed_at"], "wal_fence_archived_at": value["wal_fence_archived_at"],
+            "migration_version": migration_version,
             "source_profile_id": self.profile.profile_id, "source_profile_version": self.profile.profile_version, "source_profile_sha256": self.profile.sha256,
             "source_state_policy_version": self.policy.policy_version, "source_state_policy_sha256": self.policy.identity_sha256,
             "database": self.profile.database, "owner": self.profile.owner, "expected_system_identifier": self.profile.expected_system_identifier,
@@ -719,7 +731,7 @@ class Controller:
         fenced_text, fenced_at = _strict_utc(value.get("fence_fenced_at"), "fence_fenced_at")
         _, capture_started = _strict_utc(selected["capture_started_at"], "capture_started_at")
         _, fence_committed = _strict_utc(selected["wal_fence_committed_at"], "wal_fence_committed_at")
-        expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": value.get("timeline"), "timeline_parent": selected["target_timeline"], "timeline_switchpoint": value.get("timeline_switchpoint"), "target_tli": selected["target_timeline"], "recovery_complete": True, "required_database_inventory": [dict(item) for item in self.profile.required_database_inventory], "required_static_role_inventory": [dict(item) for item in self.profile.required_static_role_inventory], "migration_version": self.profile.expected_migration_version, "observed_row_counts": value.get("observed_row_counts"), "source_image_count": selected["database_row_count"], "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
+        expected = {"schema_version": 1, "operation": "validate-database", "success": True, "system_identifier": self.profile.expected_system_identifier, "timeline": value.get("timeline"), "timeline_parent": selected["target_timeline"], "timeline_switchpoint": value.get("timeline_switchpoint"), "target_tli": selected["target_timeline"], "recovery_complete": True, "required_database_inventory": [dict(item) for item in self.profile.required_database_inventory], "required_static_role_inventory": [dict(item) for item in self.profile.required_static_role_inventory], "migration_version": self._expected_migration_version(selected), "observed_row_counts": value.get("observed_row_counts"), "source_image_count": selected["database_row_count"], "synthetic_row": self.profile.synthetic_row, "current_lsn": value.get("current_lsn"), "target_lsn": selected["target_lsn"], "fence_generation": value.get("fence_generation"), "fence_fenced_at": fenced_text}
         row_counts = value.get("observed_row_counts")
         rows_valid = isinstance(row_counts, dict) and set(row_counts) == set(self.profile.minimum_row_counts) and all(isinstance(row_counts[name], int) and not isinstance(row_counts[name], bool) and row_counts[name] >= minimum for name, minimum in self.profile.minimum_row_counts.items())
         generation = value.get("fence_generation")

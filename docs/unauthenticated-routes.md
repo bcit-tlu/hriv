@@ -74,6 +74,7 @@ credentials removed as a default).
 | `GET /api/tiles/{source_image_id}/{path}` | Short-lived JWT in query string, `purpose=tile`, scoped to `source_image_id`                                                                                                                                                                        | FastAPI fallback route added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); responses use `Cache-Control: private, max-age=2592000`.                                                                                                                                                                                                                                                            |
 | `GET /api/tiles-auth`                     | Same tile token, supplied by query string, `X-Tile-Token`, or `X-Original-URI` from nginx `auth_request`                                                                                                                                            | DB-free validator added by PR [#1159](https://github.com/bcit-tlu/hriv/pull/1159); sidecar enforcement/cache wiring added by PR [#1163](https://github.com/bcit-tlu/hriv/pull/1163).                                                                                                                                                                                                                        |
 | `POST /api/telemetry/synthetic-result`    | `X-Synthetic-Ingest-Token` header — operator-provisioned shared static secret (Vault `synthetic-ingest` path → `SYNTHETIC_INGEST_TOKEN`), validated by constant-time compare with no database access; OR the synthetic monitor account's Bearer JWT | Dual credential added for #1495 so the monitor can publish failure results during auth/DB outages, when a user JWT cannot be obtained. Token is scoped to this endpoint only — it unlocks no user or content surface — and the path carries its own rate limit (`rate:synthetic-ingest`, 30/60 s) independent of the per-IP defaults.                                                                       |
+| `POST /api/auth/password-setup`           | Signed JWT with `purpose=password_setup`, expiry, user subject, and matching persisted invite nonce                                                                                                                                                 | Admin-delivered single-use credential for active, passwordless local guests. The IP Redis budget runs before validation; the subject budget is charged only after signature/claims validation. Setup tokens are rejected as bearer JWTs. See [password setup](password-setup.md).                                                                                                                           |
 
 ### FastAPI — cluster-internal (edge-restricted)
 
@@ -162,6 +163,12 @@ empty or wildcard value.
 | `tile_token` still travels in the query string — same `http.url` span / access-log exposure the admin download credential shed in #1302; deliberate for `<img>` delivery, but worth revisiting | residual follow-up to #1153                                                                      |
 
 ## Related
+
+Password setup’s app-credential row above accepts the purpose-scoped token in
+the JSON request body (`token`), not a bearer login JWT or a public recovery
+request. Successful redemption returns a login response and consumes the nonce.
+See the [password-management runbook](password-management.md) for the final
+invite/re-invite and rollout workflow.
 
 - [`docs/category-visibility-and-programs.md`](category-visibility-and-programs.md) — the visibility model tile delivery must honour
 - [`docs/TESTING.md`](TESTING.md) — endpoint → minimum-role table

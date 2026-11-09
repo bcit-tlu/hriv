@@ -1,0 +1,17 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as PeopleStories from './PeoplePage.stories'
+
+<Meta of={PeopleStories} />
+<Title />
+
+Auth badges distinguish SSO, local passwords, and pending invitations. A subtle
+rotation chip identifies forced changes in the hideable Sign-in column. Edit Person
+can mint setup links for another saved active passwordless non-SSO user;
+disabled actions explain their eligibility. Staff see
+the read-only directory without mutation actions.
+The Name column contains no credential chips. Passwords change through the edit
+field. The Regenerate password link switch saves null, then opens minting; failures
+leave the saved passwordless account ready for retry through Edit Person.
+
+<Primary />
+<Stories includePrimary={false} />

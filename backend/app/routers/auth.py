@@ -1,14 +1,15 @@
 """Authentication endpoints."""
 
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..auth import verify_password, create_access_token, get_current_user
+from ..auth import verify_password, create_access_token, get_user_from_token, hash_password
 from ..auth_events import (
     AUTH_METHOD_LOCAL,
     AUTH_OUTCOME_FAILURE,
@@ -17,9 +18,17 @@ from ..auth_events import (
 )
 from ..database import get_db
 from ..models import User
+from ..password_tokens import PasswordSetupTokenError, validate_password_setup_token
 from ..middleware import get_client_ip
-from ..rate_limit import check_login_rate_limit, reset_login_rate_limit
-from ..schemas import UserOut
+from ..rate_limit import (
+    check_login_rate_limit,
+    reset_login_rate_limit,
+    check_password_setup_ip_rate_limit,
+    check_password_setup_subject_rate_limit,
+    check_password_change_rate_limit,
+)
+from ..schemas import UserOut, PasswordSetupRequest, ChangePasswordRequest
+from ..serializers import user_to_out
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +68,24 @@ async def login(
         select(User).where(func.lower(User.email) == email_lower)
     )
     user = result.scalars().first()
+
+    if user and user.oidc_subject is not None:
+        logger.warning(
+            "Login failed: OIDC-linked account",
+            extra={
+                "event": "auth.login_failed",
+                "reason": "oidc_linked",
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                    user=user,
+                ),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
 
     if not user or not user.password_hash:
         logger.warning(
@@ -138,30 +165,152 @@ async def login(
 
     token = create_access_token(user)
     await db.refresh(user, ["programs", "groups"])
-    user_data = {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "role": user.role,
-        "active": user.active,
-        "program_ids": [p.id for p in user.programs],
-        "program_names": [p.name for p in user.programs],
-        "group_ids": [g.id for g in user.groups],
-        "group_names": [g.name for g in user.groups],
-        "metadata_extra": user.metadata_,
-        "last_access": user.last_access,
-        "created_at": user.created_at,
-        "updated_at": user.updated_at,
-    }
     return LoginResponse(
         access_token=token,
-        user=UserOut(**user_data),
+        user=UserOut(**user_to_out(user)),
     )
+
+
+@router.post("/password-setup", response_model=LoginResponse)
+async def password_setup(
+    body: PasswordSetupRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    user = None
+    try:
+        retry_after = await check_password_setup_ip_rate_limit(get_client_ip(request.scope))
+        if retry_after is not None:
+            raise HTTPException(
+                429, "rate_limited", headers={"Retry-After": str(retry_after)}
+            )
+        try:
+            claims = validate_password_setup_token(body.token)
+        except PasswordSetupTokenError as exc:
+            raise HTTPException(exc.status_code, exc.detail) from None
+        retry_after = await check_password_setup_subject_rate_limit(claims["sub"])
+        if retry_after is not None:
+            raise HTTPException(
+                429, "rate_limited", headers={"Retry-After": str(retry_after)}
+            )
+        result = await db.execute(
+            select(User)
+            .where(User.id == int(claims["sub"]))
+            .with_for_update(of=User)
+            .execution_options(populate_existing=True)
+        )
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(401, "Invalid or expired password setup token")
+        if not user.active:
+            raise HTTPException(403, "account_inactive")
+        if user.password_hash is not None:
+            raise HTTPException(409, "password_already_set")
+        if user.oidc_subject is not None:
+            raise HTTPException(401, "Invalid or expired password setup token")
+        if not user.invite_nonce or not secrets.compare_digest(
+            user.invite_nonce, claims["nonce"]
+        ):
+            raise HTTPException(401, "Invalid or expired password setup token")
+        user.password_hash = hash_password(body.password)
+        user.invite_nonce = None
+        user.must_change_password = False
+        user.last_access = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(user)
+        await db.refresh(user, ["programs", "groups"])
+    except HTTPException as exc:
+        logger.warning(
+            "Password setup failed",
+            extra={
+                "event": "auth.password_setup",
+                "status_code": exc.status_code,
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL, outcome=AUTH_OUTCOME_FAILURE, user=user
+                ),
+            },
+        )
+        raise
+    logger.info(
+        "Password setup successful",
+        extra={
+            "event": "auth.password_setup",
+            **auth_event_fields(
+                method=AUTH_METHOD_LOCAL, outcome=AUTH_OUTCOME_SUCCESS, user=user
+            ),
+        },
+    )
+    return LoginResponse(
+        access_token=create_access_token(user), user=UserOut(**user_to_out(user))
+    )
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: Annotated[User, Depends(get_user_from_token)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    try:
+        if current_user.oidc_subject is not None:
+            raise HTTPException(403, "oidc_linked")
+        retry_after = await check_password_change_rate_limit(current_user.id)
+        if retry_after is not None:
+            raise HTTPException(
+                429, "rate_limited", headers={"Retry-After": str(retry_after)}
+            )
+        result = await db.execute(
+            select(User)
+            .where(User.id == current_user.id)
+            .with_for_update(of=User)
+            .execution_options(populate_existing=True)
+        )
+        user = result.scalar_one_or_none()
+        if user is None or not user.active:
+            raise HTTPException(401, "Invalid or expired token")
+        if user.oidc_subject is not None:
+            raise HTTPException(403, "oidc_linked")
+        if (
+            not user.password_hash
+            or not body.current_password
+            or len(body.current_password.encode("utf-8")) > 72
+            or not verify_password(body.current_password, user.password_hash)
+        ):
+            raise HTTPException(401, "Invalid current password")
+        if body.new_password == body.current_password:
+            raise HTTPException(422, "password_unchanged")
+        user.password_hash = hash_password(body.new_password)
+        user.must_change_password = False
+        await db.commit()
+    except HTTPException as exc:
+        logger.warning(
+            "Password change failed",
+            extra={
+                "event": "auth.password_change",
+                "status_code": exc.status_code,
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                    user=current_user,
+                ),
+            },
+        )
+        raise
+    logger.info(
+        "Password change successful",
+        extra={
+            "event": "auth.password_change",
+            **auth_event_fields(
+                method=AUTH_METHOD_LOCAL, outcome=AUTH_OUTCOME_SUCCESS, user=current_user
+            ),
+        },
+    )
+    return Response(status_code=204)
 
 
 @router.get("/me", response_model=UserOut)
 async def get_me(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_user_from_token)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Return the currently authenticated user. Any role can access this.
@@ -171,18 +320,4 @@ async def get_me(
     program chips.
     """
     await db.refresh(current_user, ["programs", "groups"])
-    return UserOut(
-        id=current_user.id,
-        name=current_user.name,
-        email=current_user.email,
-        role=current_user.role,
-        active=current_user.active,
-        program_ids=[p.id for p in current_user.programs],
-        program_names=[p.name for p in current_user.programs],
-        group_ids=[g.id for g in current_user.groups],
-        group_names=[g.name for g in current_user.groups],
-        metadata_extra=current_user.metadata_,
-        last_access=current_user.last_access,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at,
-    )
+    return UserOut(**user_to_out(current_user))

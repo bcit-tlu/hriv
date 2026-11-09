@@ -319,6 +319,12 @@ TIFF resolution conversion: libvips stores resolution in pixels/mm, so
 `mpp_x = 1000.0 / xres`. Values outside 0.01–100 µm/px are discarded
 as unreasonable for microscopy.
 
+After a successful upload or replacement commits, processing calls
+`scan_after_processing`, which queues a one-image measurement scan (or runs it
+inline when the queue is unavailable). An embedded scale is recorded as an
+approved `embedded` finding; other images get a pending RBC proposal. See
+[measurement-review.md](measurement-review.md#scans-after-upload-and-replacement).
+
 ## Image replacement
 
 `process_replace_image(source_image_id, target_image_id)`:
@@ -373,7 +379,19 @@ staleness rules and API surface.
 Bulk-import coordinators distinguish a lost child job from a stopped worker.
 New bulk-import requests run their lightweight coordinator via the API
 `BackgroundTasks` path so the coordinator never occupies an arq worker slot
-while it waits for child image jobs. Child image processing still prefers the
+while it waits for child image jobs. Coordination is durable (#1173): the
+import snapshots one `JobItem` per staged file under a `job_type="bulk_import"`
+supervisor `Job`, the coordinator holds a PostgreSQL lease on that row, and
+every API replica runs a periodic sweep that re-claims expired leases — so an
+API restart, crash, rolling deploy, or OOM kill resumes the import instead of
+abandoning it, without duplicating `SourceImage` rows or leaking staged files.
+`BULK_IMPORT_COORDINATOR_LEASE_SECONDS` (120),
+`BULK_IMPORT_COORDINATOR_HEARTBEAT_SECONDS` (30),
+`BULK_IMPORT_ITEM_LEASE_SECONDS` (300),
+`BULK_IMPORT_MAX_COORDINATOR_CLAIMS` (10),
+`BULK_IMPORT_MAX_ITEM_ATTEMPTS` (3), and
+`BULK_IMPORT_COORDINATOR_SWEEP_SECONDS` (30) tune the resume machinery.
+Child image processing still prefers the
 arq worker queue, and `TASK_EXECUTION_MODE=required` still rejects child queue
 submission failures rather than processing images in the API process.
 Coordinators register liveness in Redis. The bulk-import endpoint returns HTTP

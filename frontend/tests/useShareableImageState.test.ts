@@ -347,6 +347,43 @@ describe('useShareableImageState', () => {
       )
       expect(setPath).toHaveBeenCalledWith([root, child])
     })
+
+    it('resolves ?cat= by the leaf when ancestor ids are stale (#1590)', () => {
+      // The link was recorded while Leaf (3) sat under Old (1); it has since
+      // moved under New (2), so the stored ancestry no longer walks.
+      window.history.replaceState(null, '', '/?cat=1,3')
+      const setPath = vi.fn()
+      const leaf = makeCategory({ id: 3, label: 'Leaf' })
+      const newParent = makeCategory({ id: 2, label: 'New', children: [leaf] })
+      const oldParent = makeCategory({ id: 1, label: 'Old' })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setPath,
+            categories: [oldParent, newParent],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(setPath).toHaveBeenCalledWith([newParent, leaf])
+    })
+
+    it('falls back to the positional ?cat= prefix when the leaf is gone (#1590)', () => {
+      window.history.replaceState(null, '', '/?cat=1,2,9')
+      const setPath = vi.fn()
+      const child = makeCategory({ id: 2, label: 'Child' })
+      const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setPath,
+            categories: [root],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(setPath).toHaveBeenCalledWith([root, child])
+    })
   })
 
   describe('pending image resolution', () => {
@@ -473,7 +510,22 @@ describe('useShareableImageState', () => {
       expect(url).toBe('/?cat=3&collection=12')
     })
 
-    it('omits ?cat= for a collection opened outside Browse', () => {
+    it('marks a Browse-root detail with ?from=browse (#1592)', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            page: 'collections',
+            collectionId: 12,
+            collectionFromBrowse: true,
+            path: [],
+          }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?from=browse&collection=12')
+    })
+
+    it('omits ?cat= and ?from= for a collection opened outside Browse', () => {
       const cat = makeCategory({ id: 3, label: 'Scope' })
       renderHook(() =>
         useShareableImageState(makeDeps({ page: 'collections', collectionId: 12, path: [cat] })),
@@ -483,8 +535,9 @@ describe('useShareableImageState', () => {
     })
 
     it('keeps collectionFromBrowse in history state on URL sync (#1529)', () => {
-      // A root-scope Browse origin has no `?cat=` to mark it, so the state
-      // flag is the only carrier — the replaceState must not strip it.
+      // Back/forward traversal reads the flag from history.state; the URL
+      // marker (`?cat=`/`?from=browse`) only covers reloads and copies — the
+      // replaceState must not strip the flag either way.
       renderHook(() =>
         useShareableImageState(
           makeDeps({ page: 'collections', collectionId: 12, collectionFromBrowse: true }),

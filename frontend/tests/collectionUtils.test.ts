@@ -8,6 +8,7 @@ import {
   canUseRestrictedVisibility,
   collectionFullMessage,
   collectionImageCap,
+  collectionLinkFromBrowse,
   describeCollectionOwner,
   describeCollectionOwners,
   ownedCollectionCounts,
@@ -335,5 +336,31 @@ describe('parseCollectionItemParam', () => {
 
   it('rejects integers that cannot be represented exactly', () => {
     expect(parseCollectionItemParam('?collection=12&item=9007199254740993')).toBeNull()
+  })
+})
+
+describe('collectionLinkFromBrowse', () => {
+  it('is true for a ?cat=-carrying collection link (#1529)', () => {
+    expect(collectionLinkFromBrowse('?collection=12&cat=1%2C2')).toBe(true)
+    expect(collectionLinkFromBrowse('?cat=3&collection=7')).toBe(true)
+  })
+
+  it('is true for a ?from=browse root-scope link (#1592)', () => {
+    expect(collectionLinkFromBrowse('?collection=12&from=browse')).toBe(true)
+    expect(collectionLinkFromBrowse('?from=browse&collection=7&item=9')).toBe(true)
+  })
+
+  it('is false for a plain Collections-list deep link', () => {
+    expect(collectionLinkFromBrowse('?collection=12')).toBe(false)
+    expect(collectionLinkFromBrowse('?collection=12&item=99')).toBe(false)
+    expect(collectionLinkFromBrowse('?collection=12&from=collections')).toBe(false)
+  })
+
+  it('requires a valid ?collection= param', () => {
+    expect(collectionLinkFromBrowse('?from=browse')).toBe(false)
+    expect(collectionLinkFromBrowse('?cat=1')).toBe(false)
+    expect(collectionLinkFromBrowse('?page=collections')).toBe(false)
+    expect(collectionLinkFromBrowse('?collection=abc&from=browse')).toBe(false)
+    expect(collectionLinkFromBrowse('')).toBe(false)
   })
 })

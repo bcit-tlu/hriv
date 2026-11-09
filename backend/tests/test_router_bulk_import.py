@@ -38,10 +38,13 @@ from app.routers.bulk_import import (
     _BulkImportProgress,
     _bulk_import_coordinator_liveness_loop,
     _cleanup_orphaned_bulk_import_files,
+    _get_or_create_bulk_source_image,
     _is_image_filename,
     _process_bulk_import,
     _process_bulk_import_impl,
     _STALE_BULK_IMPORT_SECONDS,
+    _SourceImageTerminalState,
+    _track_bulk_import_item,
     _write_source_image_abort_latch,
     _zip_declared_entry_count,
     _wait_for_source_image_terminal_state,
@@ -49,8 +52,9 @@ from app.routers.bulk_import import (
     get_bulk_import_job,
     list_bulk_import_jobs,
     reconcile_stale_bulk_import_jobs,
+    sweep_bulk_import_coordinators,
 )
-from app.worker import EnqueueResult, WorkerSettings
+from app.worker import EnqueueResult, TaskQueueUnavailableError, WorkerSettings
 
 
 # ── Global fixture: default child-image enqueue to fallback (no Redis) ─────
@@ -66,6 +70,12 @@ def _patch_child_image_enqueue():
             "app.routers.bulk_import.collect_queue_state",
             new_callable=AsyncMock,
             return_value={"queue_up": True, "worker_up": True},
+        ),
+        # The durable Job/JobItem snapshot is covered by dedicated service
+        # tests; endpoint tests only need it not to touch the mocked session.
+        patch(
+            "app.routers.bulk_import._create_bulk_import_job",
+            new_callable=AsyncMock,
         ),
     ):
         yield
@@ -580,13 +590,13 @@ async def test_bulk_import_images_extracts_zip_entries(tmp_path) -> None:
             db=db,
         )
 
-    # Only the two recognised images were extracted
+    # Only the two recognised images were extracted — they are handed to
+    # the durable JobItem snapshot, not the background task.
     stored = list(tmp_path.iterdir())
     assert len(stored) == 2
-
-    # And only those two are passed to the background task
-    _, args, _ = bg.add_task.mock_calls[0]
-    file_entries = args[2]  # (filename, stored_path) tuples
+    create_job = bulk_import_module._create_bulk_import_job
+    # The autouse fixture patched it; fetch the mock via the module attr.
+    file_entries = create_job.await_args.kwargs["file_entries"]
     basenames = {entry[0] for entry in file_entries}
     assert basenames == {"cell_a.png", "cell_b.jpg"}
 
@@ -1066,38 +1076,65 @@ def _make_async_session_factory(db) -> MagicMock:
     return factory
 
 
-async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
-    job = SimpleNamespace(
+def _durable_ctx(*, bulk_status="pending", sup_status="running", metadata=None):
+    """(BulkImportJob, Job) stand-ins for ``_load_bulk_import_supervisor``."""
+    bulk = SimpleNamespace(
         id=1,
-        status="pending",
-        total_count=1,
-        completed_count=0,
-        failed_count=0,
+        status=bulk_status,
         category_id=1,
         requested_by=1,
-        errors=[],
     )
-    src = SimpleNamespace(
-        id=10,
-        status="completed",
-        error_message=None,
-        status_message=None,
+    sup = SimpleNamespace(
+        id=55,
+        status=sup_status,
+        metadata_=metadata
+        if metadata is not None
+        else {
+            "coordinator_lease_seconds": 120,
+            "coordinator_heartbeat_seconds": 30,
+            "item_lease_seconds": 300,
+            "max_coordinator_claims": 10,
+            "max_item_attempts": 3,
+            "coordinator_claims": 0,
+            "copyright": "CC0",
+            "note": None,
+            "active": True,
+        },
     )
+    return bulk, sup
 
+
+def _impl_db(bulk_status="processing", sup_status="running"):
+    """Mock session for the coordinator's claim/heartbeat loop."""
     db = AsyncMock()
-    # db.get() is called with (BulkImportJob, id) three times, interleaved
-    # with (SourceImage, id) once.  Return the right object per model.
-    def _get(model, pk):
+
+    def _get(model, pk, **kwargs):
         name = getattr(model, "__name__", "")
         if name == "BulkImportJob":
-            return job
-        return src
+            return SimpleNamespace(id=1, status=bulk_status)
+        if name == "Job":
+            return SimpleNamespace(id=55, status=sup_status)
+        return None
 
     db.get = AsyncMock(side_effect=_get)
-    db.add = MagicMock()
     db.commit = AsyncMock()
-    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
     db.execute = AsyncMock()
+    return db
+
+
+async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
+    """Happy path: claim the lease, track one item, finalize the import."""
+    bulk, sup = _durable_ctx()
+    db = _impl_db()
+    item = SimpleNamespace(
+        id=5,
+        claim_token="tok-5",
+        metadata_={
+            "original_filename": "a.png",
+            "stored_path": str(tmp_path / "a.png"),
+        },
+    )
+    track = AsyncMock()
 
     with (
         patch(
@@ -1105,20 +1142,251 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
             _make_async_session_factory(db),
         ),
         patch(
-            "app.routers.bulk_import.process_source_image",
+            "app.routers.bulk_import._load_bulk_import_supervisor",
+            new_callable=AsyncMock,
+            return_value=(bulk, sup),
+        ),
+        patch(
+            "app.routers.bulk_import._try_claim_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as claim_mock,
+        patch(
+            "app.routers.bulk_import._increment_coordinator_claims",
+            new_callable=AsyncMock,
+            return_value=1,
+        ),
+        patch(
+            "app.routers.bulk_import._requeue_orphaned_bulk_import_items",
+            new_callable=AsyncMock,
+            return_value=0,
+        ),
+        patch(
+            "app.routers.bulk_import._heartbeat_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "app.routers.bulk_import._heartbeat_job_item",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "app.routers.bulk_import._reclaim_expired_bulk_import_items",
+            new_callable=AsyncMock,
+            return_value=(0, 0),
+        ),
+        patch(
+            "app.routers.bulk_import._claim_job_items",
+            new_callable=AsyncMock,
+            side_effect=[[item], []],
+        ),
+        patch(
+            "app.routers.bulk_import._track_bulk_import_item",
+            track,
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_supervisor",
+            new_callable=AsyncMock,
+        ) as finalize_sup,
+        patch(
+            "app.routers.bulk_import._release_bulk_import_coordinator",
+            new_callable=AsyncMock,
+        ) as release_mock,
+    ):
+        await _process_bulk_import(1)
+
+    claim_mock.assert_awaited_once()
+    track.assert_awaited_once()
+    track_kwargs = track.await_args.kwargs
+    assert track_kwargs["bulk_import_job_id"] == 1
+    assert track_kwargs["supervisor_job_id"] == 55
+    assert track_kwargs["item_id"] == 5
+    assert track_kwargs["claim_token"] == "tok-5"
+    assert track_kwargs["original_filename"] == "a.png"
+    finalize_sup.assert_awaited_once_with(job_id=55, bulk_import_job_id=1)
+    release_mock.assert_awaited_once()
+
+
+async def test_process_bulk_import_impl_skips_terminal_bulk() -> None:
+    """A BulkImportJob already finalized elsewhere ends coordination."""
+    bulk, sup = _durable_ctx(bulk_status="completed")
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(_impl_db()),
+        ),
+        patch(
+            "app.routers.bulk_import._load_bulk_import_supervisor",
+            new_callable=AsyncMock,
+            return_value=(bulk, sup),
+        ),
+        patch(
+            "app.routers.bulk_import._try_claim_bulk_import_coordinator",
+            new_callable=AsyncMock,
+        ) as claim_mock,
+    ):
+        await _process_bulk_import_impl(1)
+
+    claim_mock.assert_not_awaited()
+
+
+async def test_process_bulk_import_impl_skips_missing_supervisor() -> None:
+    """Legacy rows without a durable link have nothing to coordinate."""
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(_impl_db()),
+        ),
+        patch(
+            "app.routers.bulk_import._load_bulk_import_supervisor",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "app.routers.bulk_import._try_claim_bulk_import_coordinator",
+            new_callable=AsyncMock,
+        ) as claim_mock,
+    ):
+        await _process_bulk_import_impl(999)
+
+    claim_mock.assert_not_awaited()
+
+
+async def test_process_bulk_import_impl_claim_lost_exits() -> None:
+    """A peer holding the supervisor lease wins; this coordinator exits."""
+    bulk, sup = _durable_ctx()
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(_impl_db()),
+        ),
+        patch(
+            "app.routers.bulk_import._load_bulk_import_supervisor",
+            new_callable=AsyncMock,
+            return_value=(bulk, sup),
+        ),
+        patch(
+            "app.routers.bulk_import._try_claim_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_supervisor",
+            new_callable=AsyncMock,
+        ) as finalize_sup,
+    ):
+        await _process_bulk_import_impl(1)
+
+    finalize_sup.assert_not_awaited()
+
+
+async def test_process_bulk_import_impl_claim_cap_abandons() -> None:
+    """A crash-looping import is finalized once claims hit the cap."""
+    bulk, sup = _durable_ctx(
+        metadata={
+            "coordinator_lease_seconds": 120,
+            "coordinator_heartbeat_seconds": 30,
+            "item_lease_seconds": 300,
+            "max_coordinator_claims": 2,
+            "max_item_attempts": 3,
+            "coordinator_claims": 2,
+        }
+    )
+    db = _impl_db()
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(db),
+        ),
+        patch(
+            "app.routers.bulk_import._load_bulk_import_supervisor",
+            new_callable=AsyncMock,
+            return_value=(bulk, sup),
+        ),
+        patch(
+            "app.routers.bulk_import._try_claim_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as claim_mock,
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_abandoned",
+            new_callable=AsyncMock,
+        ) as abandoned_mock,
+        patch(
+            "app.routers.bulk_import._cleanup_orphaned_bulk_import_files",
+            new_callable=AsyncMock,
+        ) as cleanup_mock,
+    ):
+        await _process_bulk_import_impl(1)
+
+    # The lease must be won before the cap may abandon — a peer that lost
+    # the CAS can never cancel a live coordinator's items. The claim is
+    # committed (not rolled back) so the previous coordinator's token
+    # stays fenced out while abandonment runs.
+    claim_mock.assert_awaited_once()
+    db.commit.assert_awaited()
+    abandoned_mock.assert_awaited_once()
+    assert abandoned_mock.await_args.kwargs["bulk_import_job_id"] == 1
+    assert abandoned_mock.await_args.kwargs["job_id"] == 55
+    cleanup_mock.assert_awaited_once()
+
+
+async def test_process_bulk_import_impl_lease_lost_stops_pump() -> None:
+    """Losing the supervisor heartbeat mid-run ends the pump cleanly."""
+    bulk, sup = _durable_ctx()
+    db = _impl_db()
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(db),
+        ),
+        patch(
+            "app.routers.bulk_import._load_bulk_import_supervisor",
+            new_callable=AsyncMock,
+            return_value=(bulk, sup),
+        ),
+        patch(
+            "app.routers.bulk_import._try_claim_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "app.routers.bulk_import._increment_coordinator_claims",
+            new_callable=AsyncMock,
+            return_value=1,
+        ),
+        patch(
+            "app.routers.bulk_import._requeue_orphaned_bulk_import_items",
+            new_callable=AsyncMock,
+            return_value=0,
+        ),
+        patch(
+            "app.routers.bulk_import._heartbeat_bulk_import_coordinator",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch(
+            "app.routers.bulk_import._claim_job_items",
+            new_callable=AsyncMock,
+        ) as claim_items,
+        patch(
+            "app.routers.bulk_import._track_bulk_import_item",
+            new_callable=AsyncMock,
+        ) as track,
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_supervisor",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.routers.bulk_import._release_bulk_import_coordinator",
             new_callable=AsyncMock,
         ),
     ):
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[("a.png", str(tmp_path / "a.png"))],
-            copyright="CC0",
-            note=None,
-            active=True,
-        )
+        await _process_bulk_import_impl(1)
 
-    # Final status is "completed" and the completed_count was incremented
-    assert job.status == "completed"
+    claim_items.assert_not_awaited()
+    track.assert_not_awaited()
 
 
 async def test_bulk_import_coordinator_registers_and_cleans_up_liveness() -> None:
@@ -1135,12 +1403,9 @@ async def test_bulk_import_coordinator_registers_and_cleans_up_liveness() -> Non
             new_callable=AsyncMock,
         ) as process_impl,
     ):
-        await _process_bulk_import(
-            job_id=77,
-            file_entries=[],
-        )
+        await _process_bulk_import(77)
 
-    process_impl.assert_awaited_once()
+    process_impl.assert_awaited_once_with(77)
     assert pool.zadd.await_count == 1
     assert pool.zrem.await_count == 1
     assert pool.zremrangebyscore.await_count == 1
@@ -1150,19 +1415,6 @@ async def test_bulk_import_coordinator_registers_and_cleans_up_liveness() -> Non
     assert pool.zremrangebyscore.await_args.args[1] == "-inf"
     assert pool.zadd.await_args.args[0] == "hriv:bulk_import:coordinators"
     assert pool.zrem.await_args.args[0] == "hriv:bulk_import:coordinators"
-
-
-async def test_process_bulk_import_impl_skips_terminal_job() -> None:
-    job = SimpleNamespace(status="failed")
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=job)
-    db.__aenter__ = AsyncMock(return_value=db)
-    db.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("app.routers.bulk_import.async_session", return_value=db):
-        await _process_bulk_import_impl(27, [])
-
-    db.commit.assert_not_awaited()
 
 
 async def test_bulk_import_conflict_rejected_before_staging() -> None:
@@ -1316,7 +1568,7 @@ async def test_bulk_import_conflict_allows_abandoned_recent_processing_row(
     pending_result = MagicMock()
     pending_result.all.return_value = []
     finalize_result = MagicMock()
-    finalize_result.all.return_value = [(27,)]
+    finalize_result.all.return_value = [(27, None)]
     cleanup_manifest_result = MagicMock()
     cleanup_manifest_result.all.return_value = []
     db = AsyncMock()
@@ -1381,7 +1633,7 @@ async def test_bulk_import_schedules_job_even_when_abandoned_cleanup_fails(
     pending_result = MagicMock()
     pending_result.all.return_value = []
     finalize_result = MagicMock()
-    finalize_result.all.return_value = [(27,)]
+    finalize_result.all.return_value = [(27, None)]
     db = AsyncMock()
     db.execute = AsyncMock(
         side_effect=[
@@ -1497,7 +1749,7 @@ async def test_bulk_import_finalizes_stale_row_when_redis_unavailable(
         (27, datetime.now(timezone.utc) - timedelta(seconds=_STALE_BULK_IMPORT_SECONDS + 1))
     ]
     finalize_result = MagicMock()
-    finalize_result.all.return_value = [(27,)]
+    finalize_result.all.return_value = [(27, None)]
     db = AsyncMock()
     db.execute = AsyncMock(
         side_effect=[
@@ -1578,207 +1830,257 @@ async def test_bulk_import_blocks_recent_row_when_redis_unavailable(
     db.add.assert_not_called()
 
 
-async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
-    job = SimpleNamespace(
-        id=1,
-        status="pending",
-        total_count=1,
-        completed_count=1,
-        failed_count=0,
-        category_id=1,
-        requested_by=1,
-        errors=[],
-    )
-    src = SimpleNamespace(
-        id=10,
-        status="completed",
-        error_message=None,
-        status_message=None,
-    )
+def _track_kwargs(tmp_path, filename="a.png") -> dict:
+    stored = tmp_path / filename
+    stored.write_bytes(b"img")
+    return {
+        "bulk_import_job_id": 1,
+        "supervisor_job_id": 55,
+        "item_id": 5,
+        "claim_token": "tok-5",
+        "original_filename": filename,
+        "stored_path": str(stored),
+        "category_id": 1,
+        "copyright": "CC0",
+        "note": None,
+        "active": True,
+        "requested_by": 1,
+        "batch_progress": _BulkImportProgress(last_child_advanced_at=time.monotonic()),
+    }
 
+
+async def test_get_or_create_bulk_source_image_returns_existing(tmp_path) -> None:
+    """An existing (bulk job, stored path) row is reused, never duplicated."""
+    existing = SimpleNamespace(id=10, status="completed")
     db = AsyncMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = existing
+    db.execute = AsyncMock(return_value=result)
 
-    def _get(model, pk):
-        name = getattr(model, "__name__", "")
-        if name == "BulkImportJob":
-            return job
-        return src
+    src = await _get_or_create_bulk_source_image(
+        db,
+        bulk_import_job_id=1,
+        original_filename="a.png",
+        stored_path=str(tmp_path / "a.png"),
+        category_id=1,
+        copyright="CC0",
+        note=None,
+        active=True,
+        requested_by=1,
+    )
 
-    db.get = AsyncMock(side_effect=_get)
+    assert src is existing
+    db.add.assert_not_called()
+
+
+async def test_get_or_create_bulk_source_image_creates_row(tmp_path) -> None:
+    """No existing row → a new pending SourceImage is flushed."""
+    db = AsyncMock()
     db.add = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
-    db.execute = AsyncMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    db.execute = AsyncMock(return_value=result)
+
+    src = await _get_or_create_bulk_source_image(
+        db,
+        bulk_import_job_id=1,
+        original_filename="a.png",
+        stored_path=str(tmp_path / "a.png"),
+        category_id=1,
+        copyright="",
+        note=None,
+        active=True,
+        requested_by=1,
+    )
+
+    assert src.status == "pending"
+    assert src.bulk_import_job_id == 1
+    assert src.copyright == "Public Domain"  # empty string falls back
+    db.add.assert_called_once_with(src)
+    db.flush.assert_awaited_once()
+
+
+async def test_track_bulk_import_item_completes_via_queue(tmp_path) -> None:
+    """Queued child → terminal detector → item finalized as completed."""
+    src = SimpleNamespace(id=10, status="pending")
+    terminal = _SourceImageTerminalState(
+        status="completed", error_message=None, status_message="Completed"
+    )
+    finalize = AsyncMock(return_value=True)
 
     with (
         patch(
             "app.routers.bulk_import.async_session",
-            _make_async_session_factory(db),
+            _make_async_session_factory(AsyncMock()),
         ),
         patch(
-            "app.routers.bulk_import.process_source_image",
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
             new_callable=AsyncMock,
+            return_value=src,
+        ),
+        patch(
+            "app.routers.bulk_import.enqueue_process_source_image",
+            new_callable=AsyncMock,
+            return_value=EnqueueResult("queued", "submitted"),
+        ) as enqueue_mock,
+        patch(
+            "app.routers.bulk_import._wait_for_source_image_terminal_state",
+            new_callable=AsyncMock,
+            return_value=terminal,
+        ) as wait_mock,
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            finalize,
         ),
     ):
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[("a.png", str(tmp_path / "a.png"))],
-            note="",
-        )
+        await _track_bulk_import_item(**_track_kwargs(tmp_path))
 
-    src_record = db.add.call_args_list[0].args[0]
-    assert src_record.note is None
+    enqueue_mock.assert_awaited_once()
+    assert enqueue_mock.await_args.args[0] == 10
+    wait_mock.assert_awaited_once()
+    finalize.assert_awaited_once()
+    assert finalize.await_args.kwargs["terminal_status"] == "completed"
+    assert finalize.await_args.kwargs["item_id"] == 5
 
 
-async def test_process_bulk_import_records_failure_for_failed_source(tmp_path) -> None:
-    """When ``process_source_image`` completes but the SourceImage row is
-    marked as ``failed``, the helper must bump ``failed_count`` and append to
-    ``errors`` rather than treating the image as successful."""
-    job = SimpleNamespace(
-        id=1,
-        status="pending",
-        total_count=1,
-        completed_count=0,
-        failed_count=1,  # simulate what the execute(update(...)) will do
-        category_id=1,
-        requested_by=1,
-        errors=[{"filename": "a.png", "error": "bad header"}],
-    )
+async def test_track_bulk_import_item_folds_terminal_source(tmp_path) -> None:
+    """A SourceImage already terminal (prior coordinator) skips dispatch."""
     src = SimpleNamespace(
-        id=10,
+        id=10, status="completed", error_message=None, status_message=None
+    )
+    finalize = AsyncMock(return_value=True)
+
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(AsyncMock()),
+        ),
+        patch(
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
+            new_callable=AsyncMock,
+            return_value=src,
+        ),
+        patch(
+            "app.routers.bulk_import.enqueue_process_source_image",
+            new_callable=AsyncMock,
+        ) as enqueue_mock,
+        patch(
+            "app.routers.bulk_import._wait_for_source_image_terminal_state",
+            new_callable=AsyncMock,
+        ) as wait_mock,
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            finalize,
+        ),
+    ):
+        await _track_bulk_import_item(**_track_kwargs(tmp_path))
+
+    enqueue_mock.assert_not_awaited()
+    wait_mock.assert_not_awaited()
+    finalize.assert_awaited_once()
+    assert finalize.await_args.kwargs["terminal_status"] == "completed"
+
+
+async def test_track_bulk_import_item_records_failed_source(tmp_path) -> None:
+    """A failed terminal state finalizes the item as failed with detail."""
+    src = SimpleNamespace(id=10, status="pending")
+    terminal = _SourceImageTerminalState(
         status="failed",
         error_message="bad header",
-        status_message=None,
+        status_message="Failed",
     )
-
-    db = AsyncMock()
-
-    def _get(model, pk):
-        return job if getattr(model, "__name__", "") == "BulkImportJob" else src
-
-    db.get = AsyncMock(side_effect=_get)
-    db.add = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
-    db.execute = AsyncMock()
+    finalize = AsyncMock(return_value=True)
 
     with (
         patch(
             "app.routers.bulk_import.async_session",
-            _make_async_session_factory(db),
+            _make_async_session_factory(AsyncMock()),
         ),
         patch(
-            "app.routers.bulk_import.process_source_image",
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
             new_callable=AsyncMock,
+            return_value=src,
+        ),
+        patch(
+            "app.routers.bulk_import.enqueue_process_source_image",
+            new_callable=AsyncMock,
+            return_value=EnqueueResult("queued", "submitted"),
+        ),
+        patch(
+            "app.routers.bulk_import._wait_for_source_image_terminal_state",
+            new_callable=AsyncMock,
+            return_value=terminal,
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            finalize,
         ),
     ):
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[("a.png", str(tmp_path / "a.png"))],
-        )
+        await _track_bulk_import_item(**_track_kwargs(tmp_path))
 
-    # All-failed -> overall status is "failed"
-    assert job.status == "failed"
+    finalize.assert_awaited_once()
+    assert finalize.await_args.kwargs["terminal_status"] == "failed"
+    assert finalize.await_args.kwargs["error_message"] == "bad header"
 
 
-async def test_process_bulk_import_records_failure_when_processing_raises(tmp_path) -> None:
-    """``process_source_image`` raising is the explicit per-image failure path."""
-    job = SimpleNamespace(
-        id=1,
-        status="pending",
-        total_count=1,
-        completed_count=0,
-        failed_count=1,  # mutated by the update(...) after processing raises
-        category_id=1,
-        requested_by=1,
-        errors=[{"filename": "a.png", "error": "boom"}],
-    )
+async def test_track_bulk_import_item_fallback_processes_directly(tmp_path) -> None:
+    """Queue-unavailable fallback runs the pipeline in-process."""
     src = SimpleNamespace(
-        id=10,
-        status="pending",
-        error_message=None,
-        status_message=None,
+        id=10, status="pending", error_message=None, status_message=None
     )
-
+    done = SimpleNamespace(
+        id=10, status="completed", error_message=None, status_message="Completed"
+    )
     db = AsyncMock()
-    db.get = AsyncMock(
-        side_effect=lambda model, pk: job
-        if getattr(model, "__name__", "") == "BulkImportJob"
-        else src,
-    )
-    db.add = MagicMock()
+    db.get = AsyncMock(return_value=done)
     db.commit = AsyncMock()
-    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
-    db.execute = AsyncMock()
+    finalize = AsyncMock(return_value=True)
 
     with (
         patch(
             "app.routers.bulk_import.async_session",
             _make_async_session_factory(db),
         ),
+        patch(
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
+            new_callable=AsyncMock,
+            return_value=src,
+        ),
+        patch(
+            "app.routers.bulk_import.enqueue_process_source_image",
+            new_callable=AsyncMock,
+            return_value=EnqueueResult("fallback", "queue_unavailable"),
+        ),
+        patch(
+            "app.routers.bulk_import._wait_for_source_image_terminal_state",
+            new_callable=AsyncMock,
+        ) as wait_mock,
         patch(
             "app.routers.bulk_import.process_source_image",
             new_callable=AsyncMock,
-            side_effect=RuntimeError("boom"),
+        ) as direct_mock,
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            finalize,
         ),
     ):
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[("a.png", str(tmp_path / "a.png"))],
-        )
+        await _track_bulk_import_item(**_track_kwargs(tmp_path))
 
-    assert job.status == "failed"
+    direct_mock.assert_awaited_once_with(10)
+    wait_mock.assert_not_awaited()
+    finalize.assert_awaited_once()
+    assert finalize.await_args.kwargs["terminal_status"] == "completed"
 
 
-async def test_process_bulk_import_partial_success(tmp_path) -> None:
-    """Two images, one succeeds and one fails -> overall status is
-    ``completed`` (partial success)."""
-    job = SimpleNamespace(
-        id=1,
-        status="pending",
-        total_count=2,
-        completed_count=1,  # one succeeded
-        failed_count=1,  # one failed
-        category_id=1,
-        requested_by=1,
-        errors=[{"filename": "bad.png", "error": "oops"}],
-    )
-
-    # Two SourceImage objects; the second one is flagged as failed.
-    src_rows = {
-        10: SimpleNamespace(
-            id=10,
-            status="completed",
-            error_message=None,
-            status_message=None,
-        ),
-        11: SimpleNamespace(
-            id=11,
-            status="failed",
-            error_message="oops",
-            status_message=None,
-        ),
-    }
-    next_id = [10]
-
+async def test_track_bulk_import_item_queue_rejection_marks_failed(tmp_path) -> None:
+    """Required-mode rejection marks the source failed and finalizes failed."""
+    src = SimpleNamespace(id=10, status="pending")
+    failed_src = SimpleNamespace(id=10, status="pending")
     db = AsyncMock()
-
-    def _get(model, pk):
-        name = getattr(model, "__name__", "")
-        if name == "BulkImportJob":
-            return job
-        return src_rows[pk]
-
-    db.get = AsyncMock(side_effect=_get)
-    db.add = MagicMock()
+    db.get = AsyncMock(return_value=failed_src)
     db.commit = AsyncMock()
-
-    def _refresh(obj) -> None:
-        obj.id = next_id[0]
-        next_id[0] += 1
-
-    db.refresh = AsyncMock(side_effect=_refresh)
-    db.execute = AsyncMock()
+    finalize = AsyncMock(return_value=True)
+    kwargs = _track_kwargs(tmp_path)
 
     with (
         patch(
@@ -1786,133 +2088,141 @@ async def test_process_bulk_import_partial_success(tmp_path) -> None:
             _make_async_session_factory(db),
         ),
         patch(
-            "app.routers.bulk_import.process_source_image",
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
             new_callable=AsyncMock,
-        ),
-    ):
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[
-                ("good.png", str(tmp_path / "good.png")),
-                ("bad.png", str(tmp_path / "bad.png")),
-            ],
-        )
-
-    # Partial success keeps status = "completed" per the router's contract.
-    assert job.status == "completed"
-
-
-async def test_process_bulk_import_skips_when_job_missing(tmp_path) -> None:
-    """If the job row disappears between scheduling and execution, the
-    per-image handler returns early and never invokes ``process_source_image``."""
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=None)  # Job row missing
-    db.add = MagicMock()
-    db.commit = AsyncMock()
-
-    process_mock = AsyncMock()
-    with (
-        patch(
-            "app.routers.bulk_import.async_session",
-            _make_async_session_factory(db),
+            return_value=src,
         ),
         patch(
-            "app.routers.bulk_import.process_source_image",
-            process_mock,
-        ),
-    ):
-        await _process_bulk_import(
-            job_id=999,
-            file_entries=[("a.png", str(tmp_path / "a.png"))],
-        )
-
-    process_mock.assert_not_awaited()
-
-
-async def test_process_bulk_import_counter_update_survives_db_error(tmp_path) -> None:
-    """If the outer ``update(BulkImportJob)`` itself raises, the helper must
-    log and continue rather than propagate the exception out of the
-    background task."""
-    job = SimpleNamespace(
-        id=1,
-        status="pending",
-        total_count=1,
-        completed_count=0,
-        failed_count=0,
-        category_id=1,
-        requested_by=1,
-        errors=[],
-    )
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=job)
-    db.add = MagicMock(side_effect=RuntimeError("simulated outer failure"))
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    db.execute = AsyncMock(side_effect=RuntimeError("update also failed"))
-
-    with (
-        patch(
-            "app.routers.bulk_import.async_session",
-            _make_async_session_factory(db),
-        ),
-        patch(
-            "app.routers.bulk_import.process_source_image",
+            "app.routers.bulk_import.enqueue_process_source_image",
             new_callable=AsyncMock,
+            side_effect=TaskQueueUnavailableError("queue_unavailable"),
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            finalize,
         ),
     ):
-        # Should not raise
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[("a.png", str(tmp_path / "a.png"))],
-        )
+        await _track_bulk_import_item(**kwargs)
+
+    assert failed_src.status == "failed"
+    assert "not started" in failed_src.error_message
+    finalize.assert_awaited_once()
+    assert finalize.await_args.kwargs["terminal_status"] == "failed"
 
 
-async def test_process_bulk_import_uses_queued_processing_when_available(tmp_path) -> None:
-    """Bulk import should reuse the queued single-image worker path when available."""
-    job = SimpleNamespace(
-        id=1,
-        status="pending",
-        total_count=1,
-        completed_count=1,
-        failed_count=0,
-        category_id=1,
-        requested_by=1,
-        errors=[],
-    )
+async def test_track_bulk_import_item_unexpected_error_finalizes_failed(
+    tmp_path,
+) -> None:
+    """An unexpected per-item error still finalizes the item as failed."""
+    finalize = AsyncMock(return_value=True)
+
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(AsyncMock()),
+        ),
+        patch(
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("db exploded"),
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            finalize,
+        ),
+    ):
+        await _track_bulk_import_item(**_track_kwargs(tmp_path))
+
+    finalize.assert_awaited_once()
+    assert finalize.await_args.kwargs["terminal_status"] == "failed"
+    assert finalize.await_args.kwargs["error_message"] == "db exploded"
+
+
+async def test_track_bulk_import_item_finalize_claim_lost_is_safe(
+    tmp_path,
+) -> None:
+    """Losing the item claim at finalize is logged, not raised."""
     src = SimpleNamespace(
-        id=10,
-        status="completed",
-        error_message=None,
-        status_message=None,
+        id=10, status="completed", error_message=None, status_message=None
     )
-
-    db = AsyncMock()
-    db.get = AsyncMock(side_effect=lambda model, pk: job if getattr(model, "__name__", "") == "BulkImportJob" else src)
-    db.add = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
-    db.execute = AsyncMock()
 
     with (
-        patch("app.routers.bulk_import.async_session", _make_async_session_factory(db)),
-        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=EnqueueResult("queued", "submitted")) as enqueue_mock,
-        patch("app.routers.bulk_import._wait_for_source_image_terminal_state", new_callable=AsyncMock, return_value=src) as wait_mock,
-        patch("app.routers.bulk_import.process_source_image", new_callable=AsyncMock) as direct_mock,
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(AsyncMock()),
+        ),
+        patch(
+            "app.routers.bulk_import._get_or_create_bulk_source_image",
+            new_callable=AsyncMock,
+            return_value=src,
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_bulk_import_item",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
     ):
-        await _process_bulk_import(
-            job_id=1,
-            file_entries=[("queued.png", str(tmp_path / "queued.png"))],
-        )
+        # Must not raise even though the finalize lost its claim.
+        await _track_bulk_import_item(**_track_kwargs(tmp_path))
 
-    enqueue_mock.assert_awaited_once_with(10)
-    wait_mock.assert_awaited_once_with(
-        10,
-        "queued.png",
-        enqueue_result=EnqueueResult("queued", "submitted"),
-    )
-    direct_mock.assert_not_awaited()
-    assert job.status == "completed"
+
+async def test_sweep_bulk_import_coordinators_spawns_and_closes(
+    tmp_path,
+) -> None:
+    """The sweep nudges lease-free imports and closes stranded rows."""
+    rows = [
+        # lease-free active import → spawn a coordinator
+        {
+            "bulk_import_job_id": 1,
+            "supervisor_status": "running",
+            "lease_free": True,
+        },
+        # lease held by a live coordinator → skip
+        {
+            "bulk_import_job_id": 2,
+            "supervisor_status": "running",
+            "lease_free": False,
+        },
+        # supervisor terminal but domain row still active → close
+        {
+            "bulk_import_job_id": 3,
+            "supervisor_status": "completed",
+            "lease_free": True,
+        },
+    ]
+    proc_mock = AsyncMock()
+
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(AsyncMock()),
+        ),
+        patch(
+            "app.routers.bulk_import._list_active_bulk_import_supervisors",
+            new_callable=AsyncMock,
+            return_value=rows,
+        ),
+        patch(
+            "app.routers.bulk_import._finalize_abandoned_bulk_import_jobs",
+            new_callable=AsyncMock,
+            return_value=[3],
+        ),
+        patch(
+            "app.routers.bulk_import._cleanup_orphaned_bulk_import_files",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.routers.bulk_import._process_bulk_import",
+            proc_mock,
+        ),
+    ):
+        result = await sweep_bulk_import_coordinators()
+        # Let the spawned coordinator tasks run their mocked bodies.
+        for _ in range(3):
+            await asyncio.sleep(0)
+
+    assert result == {"spawned": 1, "closed": 1}
+    proc_mock.assert_awaited_once_with(1)
 
 
 async def test_wait_for_source_image_terminal_state_marks_stale_source_failed(
@@ -3506,8 +3816,11 @@ async def test_bulk_import_images_strips_directory_prefix_from_zip(tmp_path) -> 
             db=db,
         )
 
-    _, args, _ = bg.add_task.mock_calls[0]
-    file_entries = args[2]
+    file_entries = (
+        bulk_import_module._create_bulk_import_job.await_args.kwargs[
+            "file_entries"
+        ]
+    )
     assert len(file_entries) == 1
     # Basename only — no "nested/dir/" prefix.
     assert file_entries[0][0] == "inner.tif"
@@ -3550,11 +3863,21 @@ async def test_bulk_import_uses_api_hosted_coordinator(tmp_path) -> None:
     _, args, kwargs = bg.add_task.mock_calls[0]
     assert args[0] is _process_bulk_import
     assert args[1] == 99
-    assert kwargs["active"] is True
+    assert kwargs == {}
     # The manifest is persisted before scheduling so startup reconciliation
-    # can clean up staged files if the coordinator never finishes.
+    # can clean up staged files if the coordinator never finishes; the same
+    # entries are also snapshotted into durable JobItems.
+    file_entries = (
+        bulk_import_module._create_bulk_import_job.await_args.kwargs[
+            "file_entries"
+        ]
+    )
     added_job = db.add.call_args.args[0]
-    assert added_job.file_manifest == [list(entry) for entry in args[2]]
+    assert added_job.file_manifest == [list(entry) for entry in file_entries]
+    create_kwargs = bulk_import_module._create_bulk_import_job.await_args.kwargs
+    assert create_kwargs["bulk_import_job"] is added_job
+    assert create_kwargs["copyright"] is None
+    assert create_kwargs["active"] is True
 
 
 async def test_bulk_import_required_mode_still_schedules_api_coordinator(tmp_path) -> None:

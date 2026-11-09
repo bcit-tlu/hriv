@@ -32,6 +32,7 @@ function makeAuth(user: User): AuthContextValue {
     addUser: () => undefined,
     deleteUser: () => undefined,
     refreshUsers: () => undefined,
+    refreshCurrentUser: async () => undefined,
     canManageUsers: false,
     canEditContent: true,
     canViewPeople: true,

@@ -225,7 +225,12 @@ the newest completed (`status=DONE`) barman base backup in the bound
 `ObjectStore` destination whose `end_xlog` precedes `target_lsn` and whose
 recorded `timeline` equals the fence timeline or is an ancestor of it, proven
 by walking the archived `wals/*.history` files. Unfinished or malformed catalog
-entries are skipped. The catalog root is `<destinationPath>/<serverName>/`
+entries are skipped. The bound `backupID` is barman's `backup_id` (the catalog
+directory name, `YYYYMMDDTHHMMSS`), which the barman-cloud plugin resolves;
+the controller also accepts the legacy `backup-YYYYMMDDHHMMSS` form that
+`validation-select` in `backup` images before 0.17.1 emitted (equal to
+`backup_id` only under the in-tree barman method). The ID is derived from the
+live catalog at selection time, not read from the manifest. The catalog root is `<destinationPath>/<serverName>/`
 (barman-cloud appends the server name); selection MUST join the profile's
 `server_name`, delivered via `BARMAN_SERVER_NAME`, onto the destination prefix
 or no catalog entries will ever match. When no eligible base backup exists —
@@ -404,19 +409,19 @@ removes its terminal Job/Pod.
 
 The stages are ordered gates:
 
-| Stage                       | Required result                                                                                                                                                                                           |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ACQUIRE_LEASE`             | Acquire by CAS or perform only guarded terminal/stale/abandoned-initialization recovery.                                                                                                                  |
-| `ADMISSION_PREFLIGHT`       | Before accepted state, prove retained count is below 2 and quota reserves one run plus its failure-transfer slot; reject and release otherwise.                                                           |
-| `INIT_OWNING_STATE`         | Install matching `active_run`/`latest_run` before every non-coordination side effect.                                                                                                                     |
-| `SELECT`                    | Verify and immutably bind the latest fully published set and exact LSN.                                                                                                                                   |
-| `PREFLIGHT`                 | Prove declared namespace quota plus run/retention bounds without claiming physical capacity.                                                                                                              |
-| `PROVISION`                 | Create fresh labelled PVCs, CNPG Cluster, and validation-only support objects.                                                                                                                            |
-| `WAIT_CNPG`                 | Observe CNPG recovery to the exact target LSN and readiness within deadline.                                                                                                                              |
-| `VALIDATE_DB`               | Validate source system identity, all database/owner/static-role inventory, schema migration version, representative row counts and metadata, exact synthetic row, and WAL/fence boundary before mutation. |
-| `INIT_SYNTHETIC_CREDENTIAL` | Run the one-shot credential-init Job and record its one-row post-fidelity password-hash mutation.                                                                                                         |
-| `RESTORE_FILES`             | Use read-only stateless filesystem restore into the fresh source PVC; never execute SQL or update backup state.                                                                                           |
-| `VALIDATE_CONSISTENCY`      | Verify archive/per-file checksums, counts, paths, DB rows versus files, and exact source-state policy.                                                                                                    |
+| Stage                       | Required result                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ACQUIRE_LEASE`             | Acquire by CAS or perform only guarded terminal/stale/abandoned-initialization recovery.                                                                                                                                                                           |
+| `ADMISSION_PREFLIGHT`       | Before accepted state, prove retained count is below 2 and quota reserves one run plus its failure-transfer slot; reject and release otherwise.                                                                                                                    |
+| `INIT_OWNING_STATE`         | Install matching `active_run`/`latest_run` before every non-coordination side effect.                                                                                                                                                                              |
+| `SELECT`                    | Verify and immutably bind the latest fully published set and exact LSN.                                                                                                                                                                                            |
+| `PREFLIGHT`                 | Prove declared namespace quota plus run/retention bounds without claiming physical capacity.                                                                                                                                                                       |
+| `PROVISION`                 | Create fresh labelled PVCs, CNPG Cluster, and validation-only support objects.                                                                                                                                                                                     |
+| `WAIT_CNPG`                 | Observe CNPG recovery to the exact target LSN and readiness within deadline.                                                                                                                                                                                       |
+| `VALIDATE_DB`               | Validate source system identity, all database/owner/static-role inventory, schema migration version (manifest-recorded head, profile pin as legacy fallback), representative row counts and metadata, exact synthetic row, and WAL/fence boundary before mutation. |
+| `INIT_SYNTHETIC_CREDENTIAL` | Run the one-shot credential-init Job and record its one-row post-fidelity password-hash mutation.                                                                                                                                                                  |
+| `RESTORE_FILES`             | Use read-only stateless filesystem restore into the fresh source PVC; never execute SQL or update backup state.                                                                                                                                                    |
+| `VALIDATE_CONSISTENCY`      | Verify archive/per-file checksums, counts, paths, DB rows versus files, and exact source-state policy.                                                                                                                                                             |
 
 Database inventory includes only `pg_database.datallowconn` databases, matching the source-profile
 contract. Source consistency preserves and checks every recovered `source_images` row regardless of

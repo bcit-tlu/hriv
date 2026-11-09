@@ -17,6 +17,7 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     image_name: 'Peripheral blood film ×40',
     image_thumb: THUMB,
     category_id: 3,
+    category_path: 'Hematology › Blood films',
     image_width: 2880,
     image_height: 2048,
     status: 'pending',
@@ -29,6 +30,8 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     detector_version: 'rbc-1',
     approved_scale: null,
     approved_unit: null,
+    approved_objective: null,
+    objective_scales: { '10': 2, '40': 7.3, '100': 18.7 },
     reviewed_by: null,
     reviewed_at: null,
     created_at: FIXED_NOW,
@@ -61,6 +64,9 @@ const pendingFindings = [
 function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {
   return {
     fetchFindings: fn(async () => ({ items, total: items.length })),
+    fetchCategories: fn(async () => [
+      { id: 3, path: 'Hematology › Blood films', count: items.length },
+    ]),
     scan: fn(async () => ({ image_ids: [21, 22, 23], mode: 'queued' as const })),
     scanProgress: fn(async () => ({ total: 3, done: 3 })),
     scanRemaining: fn(async () => ({ remaining: 0 })),
@@ -91,5 +97,15 @@ export const ScanQueued: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Scan next 10' }))
     await expect(await canvas.findByText(/Scanning images: 0 of 3 done/)).toBeInTheDocument()
+  },
+}
+
+export const ObjectiveSetsScale: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByLabelText('Objective for Peripheral blood film ×40'))
+    const body = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await body.findByRole('option', { name: '×100' }))
+    await expect(canvas.getByLabelText('Scale for Peripheral blood film ×40')).toHaveValue(18.7)
   },
 }

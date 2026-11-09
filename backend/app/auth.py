@@ -36,6 +36,7 @@ class AuthSettings(Settings):
     # Bounded (1 minute – 24 hours) so a configuration typo cannot mint
     # long-lived credentials.
     tile_token_ttl_minutes: int = Field(default=15, ge=1, le=1440)
+    password_setup_token_ttl_minutes: int = Field(default=10080, ge=60, le=43200)
     # When true, the application refuses to start unless ``JWT_SECRET``
     # is set explicitly.  Multi-worker (``uvicorn --workers N``) and
     # multi-replica deployments MUST enable this, otherwise each worker
@@ -161,7 +162,8 @@ def create_access_token(user: User) -> str:
 
 
 async def get_user_from_token(
-    token: str, db: AsyncSession
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -197,12 +199,19 @@ async def get_user_from_token(
 
 # ── FastAPI dependencies ─────────────────────────────────
 
+def require_password_changed(user: User) -> None:
+    if user.must_change_password:
+        raise HTTPException(status_code=403, detail="password_change_required")
+
+
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Dependency: require a valid JWT and return the authenticated User."""
-    return await get_user_from_token(token, db)
+    user = await get_user_from_token(token, db)
+    require_password_changed(user)
+    return user
 
 
 def require_role(*allowed_roles: str):

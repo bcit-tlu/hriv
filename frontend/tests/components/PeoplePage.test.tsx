@@ -8,6 +8,7 @@ vi.mock('../../src/api', async (importOriginal) => {
     ...actual,
     fetchUsers: vi.fn(),
     createUser: vi.fn(),
+    mintPasswordSetupLink: vi.fn(),
     updateUser: vi.fn(),
     deleteUser: vi.fn(),
     bulkUpdateUserProgram: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../../src/api', async (importOriginal) => {
 import {
   fetchUsers,
   createUser,
+  mintPasswordSetupLink,
   updateUser,
   deleteUser,
   bulkUpdateUserProgram,
@@ -119,11 +121,170 @@ function createDeferred<T>() {
 }
 
 describe('PeoplePage', () => {
+  it('hides admin credential controls when editing the signed-in person’s own row', async () => {
+    const actor = userEvent.setup()
+    vi.mocked(fetchUsers).mockResolvedValue([{ ...USERS[0], has_local_password: true }])
+    render(<PeoplePage programs={programs} groups={groups} currentUserId={USERS[0].id} />)
+    await actor.click(await screen.findByText(USERS[0].name))
+    expect(
+      screen.queryByRole('switch', { name: 'Force password change on next login' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Copy password-setup link' }),
+    ).not.toBeInTheDocument()
+  })
+  it('puts auth badges in a hideable Sign-in column instead of Name, with no row mint action', async () => {
+    const actor = userEvent.setup()
+    vi.mocked(fetchUsers).mockResolvedValue([
+      { ...USERS[0], has_local_password: true, must_change_password: true },
+      { ...USERS[1], oidc_linked: true },
+      { ...USERS[1], id: 3, name: 'Pending Guest', has_local_password: false },
+      { ...USERS[1], id: 4, name: 'Inactive Guest', active: false },
+    ])
+    render(<PeoplePage programs={programs} groups={groups} />)
+    const local = (await screen.findByText('Admin User')).closest('tr')!
+    expect(within(local).getByText('Local')).toBeInTheDocument()
+    expect(within(local).getByText('Must change password')).toBeInTheDocument()
+    expect(within(local).getByRole('cell', { name: 'Admin User', exact: true })).toHaveTextContent(
+      /^Admin User$/,
+    )
+    expect(
+      within(local).getByRole('cell', { name: 'Local Must change password' }),
+    ).toBeInTheDocument()
+    const sso = screen.getByText('Test Student').closest('tr')!
+    expect(within(sso).getByText('SSO')).toBeInTheDocument()
+    const pending = screen.getByText('Pending Guest').closest('tr')!
+    expect(within(pending).getByText('Invite pending')).toBeInTheDocument()
+    const inactive = screen.getByText('Inactive Guest').closest('tr')!
+    expect(within(inactive).getByText('Invite pending')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Copy password-setup link' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Sign-in' })).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const chooser = await screen.findByRole('dialog', { name: 'Choose people table columns' })
+    await actor.click(within(chooser).getByRole('checkbox', { name: 'Sign-in' }))
+    await actor.click(within(chooser).getByRole('button', { name: 'Done' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('columnheader', { name: 'Sign-in' })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText('Must change password')).not.toBeInTheDocument()
+  })
+
+  it('keeps an invite-created account after mint failure and retries from Edit Person without creating twice', async () => {
+    const actor = userEvent.setup()
+    const guest = { ...USERS[1], id: 9, name: 'Invited Guest', has_local_password: false }
+    vi.mocked(createUser).mockResolvedValue(guest)
+    vi.mocked(mintPasswordSetupLink)
+      .mockRejectedValueOnce(new Error('Mint failed'))
+      .mockResolvedValue({ setup_token: 'new-token', expires_at: '2030-01-02T12:00:00Z' })
+    render(<PeoplePage programs={programs} groups={groups} />)
+    await screen.findByText('Admin User')
+    vi.mocked(fetchUsers).mockResolvedValue([...USERS, guest])
+    await actor.click(screen.getByRole('button', { name: /Add Person/i }))
+    await actor.click(screen.getByLabelText('Invite by link (user sets their own password)'))
+    await actor.type(screen.getByLabelText('Full name'), guest.name)
+    await actor.type(
+      within(screen.getByRole('dialog', { name: 'Add Person' })).getByLabelText('Email'),
+      guest.email,
+    )
+    await actor.click(screen.getByRole('button', { name: 'Add', exact: true }))
+    expect(
+      await screen.findByText('Could not create a setup link. Try again from Edit Person.'),
+    ).toBeInTheDocument()
+    expect(vi.mocked(createUser).mock.calls[0][0]).not.toHaveProperty('password')
+    await actor.click(screen.getByRole('button', { name: 'Close', exact: true }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Password-setup link' })).not.toBeInTheDocument(),
+    )
+    await actor.click(await screen.findByText(guest.name))
+    await actor.click(screen.getByRole('button', { name: 'Copy password-setup link' }))
+    expect(await screen.findByLabelText('Setup URL')).toHaveValue(
+      `${window.location.origin}/#password_setup=new-token`,
+    )
+    expect(createUser).toHaveBeenCalledOnce()
+    expect(mintPasswordSetupLink).toHaveBeenCalledTimes(2)
+  })
+
+  it('changes a password by typing without automatic minting', async () => {
+    const actor = userEvent.setup()
+    const local = { ...USERS[1], has_local_password: true, must_change_password: true }
+    vi.mocked(fetchUsers).mockResolvedValue([local])
+    vi.mocked(updateUser).mockResolvedValue(local)
+    render(<PeoplePage programs={programs} groups={groups} />)
+    await actor.click(await screen.findByText(local.name))
+    expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear password' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy password-setup link' })).toBeDisabled()
+    await actor.type(screen.getByLabelText('Password (leave blank to keep)'), 'updated-password')
+    expect(updateUser).not.toHaveBeenCalled()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    await waitFor(() => expect(updateUser).toHaveBeenCalledOnce())
+    expect(updateUser).toHaveBeenCalledExactlyOnceWith(
+      local.id,
+      expect.objectContaining({ password: 'updated-password' }),
+    )
+    expect(mintPasswordSetupLink).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Edit Person' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByText('Local')).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     vi.resetAllMocks()
     localStorage.clear()
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
     vi.mocked(fetchUsers).mockResolvedValue(USERS)
+  })
+
+  it('regenerates on save with null, automatically opens minting, and retries a mint failure from Edit Person', async () => {
+    const actor = userEvent.setup()
+    const local = {
+      ...USERS[1],
+      active: true,
+      has_local_password: true,
+      must_change_password: true,
+    }
+    const cleared = { ...local, has_local_password: false, must_change_password: false }
+    vi.mocked(fetchUsers).mockResolvedValue([local])
+    vi.mocked(updateUser).mockResolvedValue(cleared)
+    vi.mocked(mintPasswordSetupLink)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ setup_token: 'replacement-token', expires_at: '2030-01-02T12:00:00Z' })
+    render(<PeoplePage programs={programs} groups={groups} />)
+    await actor.click(await screen.findByText(local.name))
+    await actor.click(screen.getByRole('switch', { name: 'Regenerate password link' }))
+    expect(updateUser).not.toHaveBeenCalled()
+    expect(mintPasswordSetupLink).not.toHaveBeenCalled()
+    vi.mocked(fetchUsers).mockResolvedValue([cleared])
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(
+      await screen.findByText('Could not create a setup link. Try again from Edit Person.'),
+    ).toBeInTheDocument()
+    expect(updateUser).toHaveBeenCalledExactlyOnceWith(
+      local.id,
+      expect.objectContaining({ password: null }),
+    )
+    expect(vi.mocked(updateUser).mock.calls[0][1]).not.toHaveProperty('must_change_password')
+    await actor.click(screen.getByRole('button', { name: 'Close', exact: true }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Password-setup link' })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText('Must change password')).not.toBeInTheDocument()
+    expect(screen.getByText('Invite pending')).toBeInTheDocument()
+    await actor.click(screen.getByText(local.name))
+    const linkButton = screen.getByRole('button', { name: 'Copy password-setup link' })
+    expect(linkButton).toBeEnabled()
+    expect(
+      screen.queryByRole('switch', { name: 'Regenerate password link' }),
+    ).not.toBeInTheDocument()
+    await actor.click(linkButton)
+    expect(await screen.findByLabelText('Setup URL')).toHaveValue(
+      `${window.location.origin}/#password_setup=replacement-token`,
+    )
+    expect(mintPasswordSetupLink).toHaveBeenCalledTimes(2)
   })
 
   afterEach(() => {
@@ -348,7 +509,9 @@ describe('PeoplePage', () => {
     const cellTexts = within(row)
       .getAllByRole('cell')
       .map((cell) => cell.textContent ?? '')
-    expect(cellTexts.indexOf('admin@example.ca')).toBeLessThan(cellTexts.indexOf('Admin User'))
+    expect(cellTexts.indexOf('admin@example.ca')).toBeLessThan(
+      cellTexts.findIndex((text) => text.startsWith('Admin User')),
+    )
   })
 
   it('lists column chooser options in the persisted column order', async () => {
@@ -624,8 +787,8 @@ describe('PeoplePage', () => {
     await user.click(nameFilterButton)
 
     // Only Test Student should be visible
-    expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: /^Admin User/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: /^Test Student/ })).toBeInTheDocument()
   })
 
   it('matches comma-separated name filters with AND semantics', async () => {
@@ -642,8 +805,8 @@ describe('PeoplePage', () => {
     await user.type(screen.getByPlaceholderText('Search name'), 'Admin, User')
     await user.click(nameFilterButton)
 
-    expect(screen.getByRole('cell', { name: 'Admin User' })).toBeInTheDocument()
-    expect(screen.queryByRole('cell', { name: 'Test Student' })).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: /^Admin User/ })).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: /^Test Student/ })).not.toBeInTheDocument()
     expect(within(filterBar).getByText('Name: Admin')).toBeInTheDocument()
     expect(within(filterBar).getByText('Name: User')).toBeInTheDocument()
     expect(within(filterBar).queryByText('Name: Admin, User')).not.toBeInTheDocument()
@@ -662,8 +825,8 @@ describe('PeoplePage', () => {
     await user.click(within(filterBar).getByRole('button', { name: 'Role' }))
     await user.click(await screen.findByRole('menuitemcheckbox', { name: 'student' }))
 
-    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
-    expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: /^Test Student/ })).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: /^Admin User/ })).not.toBeInTheDocument()
     expect(screen.queryByText('0 of 2 people')).not.toBeInTheDocument()
     expect(screen.getByText('1 of 2 people')).toBeInTheDocument()
   })

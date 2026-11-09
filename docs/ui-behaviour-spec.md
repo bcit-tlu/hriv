@@ -12,6 +12,29 @@ for where each feature lives.
 
 ---
 
+## Login and local-password session UX
+
+- **Given** a `#password_setup=<token>` fragment, **Then** bootstrap captures it
+  before URL synchronization, strips it from the URL, and replaces the current
+  session with the password-setup screen in the shared login layout. The setup
+  token is never written to persistent storage.
+- **When** new and confirmation passwords match and satisfy eight Unicode
+  characters / 72 UTF-8 bytes, **Then** setup can be submitted. Success establishes
+  the returned session directly. **Sign in instead** discards setup. Error copy
+  distinguishes expired/replaced links, disabled accounts, existing passwords,
+  validation, and throttling; see [password management](password-setup.md).
+- **Given** a local-password, non-OIDC-linked user, **Then** the profile menu
+  offers **Change password**, regardless of role. OIDC-linked and passwordless
+  users do not see it. The admin-only **Update** action is unchanged.
+- **When** a password change succeeds, **Then** refresh `/auth/me`, close the
+  dialog, and show a success snackbar. Inline errors preserve the form. If only
+  the refresh fails, retry refresh rather than submitting the old password again.
+- **Given** `must_change_password` at login/reload, or a protected API response
+  with 403 `password_change_required` mid-session, **Then** replace the shell
+  with the forced-change screen: no navigation, only password change or sign out.
+  An unrelated 403 must not trigger this gate. The same form validation applies;
+  successful change plus profile refresh restores the normal shell.
+
 ## Role-gated behaviour (who sees what)
 
 Three capability flags in `AuthContext.tsx` drive all gating:
@@ -101,8 +124,12 @@ images> / Empty` format used on category tiles.
   (including its descendant-incompatibility warning) follow the leaf's live ancestry (`useBrowseData.liveCategoryPath`,
   resolved by leaf id), not the navigation-time `path` entries. If the leaf has
   left the tree (deleted or no longer visible), the scope resolves empty rather
-  than falling back to root. Breadcrumb labels still render the `path` entries
-  until the user navigates.
+  than falling back to root and the stale `path` is kept (no implicit
+  navigation). Otherwise the stored `path` is reconciled to the leaf's live
+  ancestry when the tree changes, so breadcrumb labels, the `?cat=` URL, and
+  the current history entry follow renames/reparents without adding a history
+  entry; links and history entries recorded with stale ancestor ids still open
+  the leaf via leaf-id resolution (#1590).
 
 ### Category visibility (dual gate)
 
@@ -129,7 +156,7 @@ images> / Empty` format used on category tiles.
 - **When** opened, **Then** a right-anchored panel slides in over the viewport
   (it does not resize OSD) listing one field per non-wrapping line — ellipsis
   with the full value in `title`: Copyright, Program(s), Group(s), Created,
-  Modified, Dimensions, Size, Measurement, Original file, File type, and (for
+  Modified, Dimensions, Size, Measurement, Objective, Original file, File type, and (for
   admins and instructors) Uploaded by. Empty fields are omitted; "No details
   available." shows when none render. The field list is the only scroll
   region; the viewer instructions (a bulleted list: "Scroll or tap to
@@ -576,11 +603,12 @@ returned by the API (UX only — the backend re-checks).
   Moving to `null` unfiles the collection, removes its tile from Browse, and
   shows the snackbar **Removed “<name>” from Browse**.
 - **Given** a collection opened from a Browse tile, **Then** the URL carries
-  `?collection={id}&cat={path}`, and the error-state close action returns to
-  the originating scope; the detail breadcrumb always shows the collection's
-  _filed_ location (#1559). **Given** a
-  `?collection={id}` link without `?cat=`, **Then** the detail opens in the
-  Collections list context as before.
+  `?collection={id}&cat={path}` — or `?collection={id}&from=browse` when the
+  scope is the param-less root (#1592) — and the error-state close action
+  returns to the originating scope; the detail breadcrumb always shows the
+  collection's _filed_ location (#1559). **Given** a
+  `?collection={id}` link without `?cat=` or `?from=browse`, **Then** the
+  detail opens in the Collections list context as before.
 - **Given** a category containing collections, **Then** its tile detail line
   includes `N collections` summed over descendants; **Given** a Browse scope
   holding only collections, **Then** the empty-state message does not render.
@@ -1089,6 +1117,17 @@ committed on Save) in the edit modals.
 - The `Annotations` column is available in the column chooser but is off by
   default; it indicates whether an image has canvas edit annotations in
   `metadata_extra.canvas_annotations`.
+- The `Objective` column is available in the column chooser but is off by
+  default; it shows `metadata_extra.objective_power` as `×40` (or `—`). The
+  Edit image dialog edits the same key with an **Objective** dropdown below the
+  scale and unit fields; it is independent of the scale.
+- Manage → Measurement review (`MeasurementReviewPage.tsx`) groups Scan next
+  10, Scan all, Re-scan outdated and Refresh in an **Actions** menu; **Approve
+  selected** stays a standalone button. A **Category** column shows the full
+  category path (or "Uncategorized") and a **Category** filter beside the
+  status tabs narrows the list. Image, Category, Detected objective, Proposed
+  and Confidence headers sort server-side across all pages (ties by image
+  name); Scale, Evidence and Actions are not sortable.
 - The `Collections` column is available in the column chooser but is off by
   default (and only offered while `COLLECTIONS_ENABLED` is on); it lists the
   caller-visible collections each image belongs to as clickable chips —
@@ -1251,3 +1290,40 @@ selection MouseTracker ignores their presses.
 - Everything renders inside `viewer.container` so it survives OSD
   full-page mode; dialogs receive the same container to stay above the
   canvas.
+
+### Admin password setup in People
+
+- Add Person defaults to setting a password now. Invite-by-link mode removes
+  the password requirement and omits the password field from creation. Once
+  created, minting opens a copy dialog; a mint failure leaves the account intact
+  and can be retried from Edit Person without creating another person.
+- A separate Sign-in column shows SSO, Local, or Invite pending, with an additional subtle
+  Must change password chip for forced rotation. Staff see the same indicators
+  in their read-only directory without mutation controls.
+- Sign-in is visible by default and hideable/reorderable in Choose columns.
+  Name cells return to their original vertical alignment without auth chips.
+- Copy password-setup link lives in Edit Person, not a row action, and appears
+  only for admins editing another user. It is enabled only for saved active,
+  non-OIDC, passwordless accounts; unsaved changes do not affect eligibility.
+  Disabled actions explain identity-provider management or required activation.
+  Already-passworded accounts show the disabled tooltip “This account already has a password”.
+- The dialog shows the one-use credential URL and local-time expiry. Copy uses
+  the clipboard API or selection fallback, with inline success/failure feedback.
+  Tokens live only within the mounted dialog, never in storage or logs; closing
+  discards them and reopening creates a replacement link.
+- Edit Person enables forced change only for non-OIDC accounts that already
+  have a local password. There is no Clear password action or confirmation.
+  Enter a new Password to change it, or leave blank to keep the current
+  one; helper text states both options. Save errors retain the entered value.
+- Regenerate password link is a switch for admins editing another saved active
+  local user with a password. It is hidden for OIDC, inactive, passwordless and
+  self-profile users. While enabled, Password and forced change are disabled.
+  Save sends `password:null` without the forced-change flag, then immediately
+  opens the setup-link dialog to mint. Failed saves retain the enabled switch; Cancel
+  does nothing. Mint failures leave a saved passwordless account and direct the
+  admin back to Edit Person’s now-enabled link button. Unsaved deactivation
+  hides the switch and prevents regeneration, even after reactivation.
+- The link dialog warning is “Single-use link. Share it privately.” There is no
+  account-exists paragraph or dialog mint-retry action. Failed automatic minting
+  after create directs the admin back to Edit Person. Credentials remain local
+  to the mounted dialog and same-user mint serialization is retained.

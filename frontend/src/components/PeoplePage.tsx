@@ -57,6 +57,8 @@ import {
   useTableFilterPreferences,
 } from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
+import type { PersonFormData } from './AddEditPersonModal'
+import PasswordSetupLinkDialog from './PasswordSetupLinkDialog'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
@@ -95,13 +97,13 @@ function buildPeopleFilterSnapshot(
 type SortableColumn =
   'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
-type PeopleTableColumn =
-  'id' | 'name' | 'email' | 'role' | 'active' | 'program' | 'group' | 'last_access' | 'created_at'
+type PeopleTableColumn = SortableColumn | 'sign_in'
 
 const ROLES: Role[] = ['admin', 'instructor', 'staff', 'student']
 const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
   { key: 'id', label: 'ID' },
   { key: 'name', label: 'Name' },
+  { key: 'sign_in', label: 'Sign-in' },
   { key: 'email', label: 'Email' },
   { key: 'role', label: 'Role' },
   { key: 'active', label: 'Status' },
@@ -113,6 +115,7 @@ const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[
 
 const PEOPLE_DEFAULT_VISIBLE_COLUMNS: readonly PeopleTableColumn[] = [
   'name',
+  'sign_in',
   'email',
   'role',
   'active',
@@ -221,6 +224,7 @@ export default function PeoplePage({
   // Modal state
   const [addEditOpen, setAddEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
+  const [setupUser, setSetupUser] = useState<ApiUser | null>(null)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
   const [bulkActiveOpen, setBulkActiveOpen] = useState(false)
@@ -622,26 +626,24 @@ export default function PeoplePage({
     setAddEditOpen(true)
   }
 
-  const handleSavePerson = async (data: {
-    name: string
-    email: string
-    role: Role
-    active: boolean
-    password?: string
-    program_ids?: number[]
-  }) => {
+  const handleSavePerson = async (data: PersonFormData) => {
     if (editingUser) {
-      await updateUser(editingUser.id, data)
+      const updated = await updateUser(editingUser.id, data)
+      if (data.password === null) {
+        setUsers((prev) => prev.map((person) => (person.id === updated.id ? updated : person)))
+        setSetupUser(updated)
+      }
     } else {
-      if (!data.password) return
-      await createUser({
+      const created = await createUser({
         name: data.name,
         email: data.email,
         role: data.role,
         active: data.active,
-        password: data.password,
+        ...(typeof data.password === 'string' ? { password: data.password } : {}),
         program_ids: data.program_ids,
       })
+      setUsers((prev) => [...prev, created])
+      if (data.password === undefined) setSetupUser(created)
     }
     setAddEditOpen(false)
     setEditingUser(null)
@@ -876,7 +878,7 @@ export default function PeoplePage({
   // and row cells are rendered in the user's persisted column order via
   // `orderedVisibleColumns` — visibility filtering happens there, so the
   // map entries themselves render unconditionally.
-  const sortableHeaderCell = (column: PeopleTableColumn, label: string) => (
+  const sortableHeaderCell = (column: SortableColumn, label: string) => (
     <TableCell sortDirection={sortColumn === column ? sortDirection : false}>
       <TableSortLabel
         active={sortColumn === column}
@@ -891,6 +893,7 @@ export default function PeoplePage({
   const columnHeaderCells: Record<PeopleTableColumn, ReactNode> = {
     id: sortableHeaderCell('id', 'ID'),
     name: sortableHeaderCell('name', 'Name'),
+    sign_in: <TableCell>Sign-in</TableCell>,
     email: sortableHeaderCell('email', 'Email'),
     role: sortableHeaderCell('role', 'Role'),
     active: sortableHeaderCell('active', 'Status'),
@@ -996,7 +999,9 @@ export default function PeoplePage({
   }
 
   return (
-    <Box>
+    <Box
+      sx={{ '& button[aria-haspopup="menu"] .MuiTypography-caption': { color: 'text.primary' } }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -1156,6 +1161,7 @@ export default function PeoplePage({
                       indeterminate={selectedInView > 0 && selectedInView < pageUsers.length}
                       checked={pageUsers.length > 0 && selectedInView === pageUsers.length}
                       onChange={(e) => handleSelectAll(e.target.checked)}
+                      slotProps={{ input: { 'aria-label': 'Select all people' } }}
                     />
                   </TableCell>
                 )}
@@ -1180,6 +1186,26 @@ export default function PeoplePage({
                         {user.name}
                         {currentUserId != null && user.id === currentUserId && (
                           <Chip size="small" label="You" data-testid="people-you-chip" />
+                        )}
+                      </Box>
+                    </TableCell>
+                  ),
+                  sign_in: (
+                    <TableCell>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            user.oidc_linked
+                              ? 'SSO'
+                              : user.has_local_password
+                                ? 'Local'
+                                : 'Invite pending'
+                          }
+                        />
+                        {user.must_change_password && (
+                          <Chip size="small" variant="outlined" label="Must change password" />
                         )}
                       </Box>
                     </TableCell>
@@ -1255,6 +1281,7 @@ export default function PeoplePage({
                         <Checkbox
                           checked={selected.has(user.id)}
                           onChange={(e) => handleSelectOne(user.id, e.target.checked)}
+                          slotProps={{ input: { 'aria-label': `Select ${user.name}` } }}
                         />
                       </TableCell>
                     )}
@@ -1328,7 +1355,18 @@ export default function PeoplePage({
         onSave={handleSavePerson}
         programs={programs}
         user={editingUser}
+        selfProfile={editingUser?.id === currentUserId}
+        onSetupLink={
+          editingUser && !readOnly && editingUser.id !== currentUserId
+            ? () => {
+                setSetupUser(editingUser)
+                setAddEditOpen(false)
+                setEditingUser(null)
+              }
+            : undefined
+        }
       />
+      {setupUser && <PasswordSetupLinkDialog user={setupUser} onClose={() => setSetupUser(null)} />}
 
       <BulkEditModal
         open={bulkEditOpen}

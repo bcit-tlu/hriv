@@ -18,6 +18,9 @@ Source files in `frontend/src/` and `backend/app/` are bind-mounted into the con
 
 All seed users share the password `password`.
 
+No passwordless guest is seeded. Create a disposable guest through People or the
+API for the [password-management validation flow](docs/password-management.md).
+
 | **User**              | **Email**                    | **Password** | **Role**   |
 | --------------------- | ---------------------------- | ------------ | ---------- |
 | Haruki Tanaka         | admin@example.ca             | password     | admin      |
@@ -54,6 +57,9 @@ All seed users share the password `password`.
 | Manage changelog entries                               | Yes   | No         | No    | No      |
 | Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
 | User management (add/delete)                           | Yes   | No         | No    | No      |
+| Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
+| Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
+| Set/regenerate/force another local password (People)   | Yes   | No         | No    | No      |
 | People tab (view users)                                | Yes   | No         | Yes‡  | No      |
 | List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
 
@@ -181,6 +187,8 @@ reconciliation model for both environments.
 | [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                                     | "I changed X → run Y" decision tree for targeted test runs                       |
 | [docs/TESTING.md](docs/TESTING.md)                                                         | Test plan, API endpoint → minimum-role table                                     |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                                   | OIDC / auth configuration                                                        |
+| [docs/password-setup.md](docs/password-setup.md)                                           | Admin-issued, single-use local password setup links                              |
+| [docs/password-management.md](docs/password-management.md)                               | Credential states, administrator password runbook, and stable rollout            |
 | [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                           | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
 | [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                           | Standing rule and audit for unauthenticated routes and enforcement layers        |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md)                                             | Tile drag-and-drop move-vs-reorder contract                                      |
@@ -195,6 +203,7 @@ reconciliation model for both environments.
 | [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)                   | Image processing pipeline stages, tile generation, and worker configuration      |
 | [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                             | Tile-cache provenance fields and current/missing/stale/failed status rules       |
 | [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)               | Production backup and DR strategy, volume layout, restore order, and runbook     |
+| [docs/longhorn-storage-classes.md](docs/longhorn-storage-classes.md)                       | Longhorn StorageClass guidance per HRIV volume, tradeoffs, and example manifests |
 | [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                             | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                                     | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                         | Release-please + Flux deploy flow                                                |

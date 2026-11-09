@@ -3,7 +3,7 @@ import type { ViewportState, OverlayRect } from './components/imageViewerUtils'
 import { MAX_SHARE_OVERLAYS } from './components/imageViewerUtils'
 import { buildNavHistoryState } from './useNavigationHistory'
 import { emitEvent } from './observability'
-import { findImageInTree, resolveCategoryPath } from './treeUtils'
+import { findImageInTree, resolveCategoryPathByLeaf } from './treeUtils'
 import { parseCollectionIdParam, parseCollectionItemParam } from './collectionUtils'
 import type { Category, ImageItem } from './types'
 
@@ -132,7 +132,8 @@ export interface UseShareableImageStateDeps {
   collectionItemId?: number | null
   /**
    * Collection detail opened from a Browse tile (#1529): the URL sync keeps
-   * `?cat=` next to `?collection=` so the deep link restores the Browse scope.
+   * `?cat=` next to `?collection=` so the deep link restores the Browse scope
+   * — or `?from=browse` when that scope is the param-less root (#1592).
    */
   collectionFromBrowse?: boolean
   /**
@@ -277,7 +278,7 @@ export function useShareableImageState(
     if (pendingCatIds.current === null || categoriesLoading) return
     const ids = pendingCatIds.current
     pendingCatIds.current = null
-    const resolved = resolveCategoryPath(categories, ids)
+    const resolved = resolveCategoryPathByLeaf(categories, ids)
     if (resolved.length > 0) {
       setPath(resolved)
     }
@@ -293,9 +294,15 @@ export function useShareableImageState(
     const params = new URLSearchParams()
     if (page === 'collections' && collectionId != null) {
       // A collection detail opened from Browse keeps `?cat=` so the link
-      // restores the Browse scope behind it (#1529).
-      if (collectionFromBrowse && path.length > 0) {
-        params.set('cat', path.map((c) => c.id).join(','))
+      // restores the Browse scope behind it (#1529); the param-less root
+      // scope is marked `?from=browse` instead so reloads and copied links
+      // keep the return path (#1592).
+      if (collectionFromBrowse) {
+        if (path.length > 0) {
+          params.set('cat', path.map((c) => c.id).join(','))
+        } else {
+          params.set('from', 'browse')
+        }
       }
       params.set('collection', String(collectionId))
       if (collectionItemId != null) params.set('item', String(collectionItemId))

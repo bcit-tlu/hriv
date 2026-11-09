@@ -37,6 +37,7 @@ def parser() -> argparse.ArgumentParser:
     database.add_argument("--target-lsn", required=True)
     database.add_argument("--target-tli", required=True, type=int)
     database.add_argument("--expected-source-image-count", required=True, type=int)
+    database.add_argument("--expected-migration-version", required=True)
     consistency = commands.add_parser("validate-consistency")
     consistency.add_argument("--host", required=True)
     consistency.add_argument("--source", required=True)
@@ -50,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         profile = SourceProfile.parse(_read("RESTORE_VALIDATION_PROFILE", "/etc/hriv/profile.json"))
         if args.command == "validate-database":
-            emit_result(validate_database(profile, args.host, args.capture_started_at, args.wal_fence_committed_at, args.target_lsn, args.target_tli, args.expected_source_image_count, _path("RESTORE_VALIDATION_DB_CREDENTIALS", "/credentials")))
+            emit_result(validate_database(profile, args.host, args.capture_started_at, args.wal_fence_committed_at, args.target_lsn, args.target_tli, args.expected_source_image_count, args.expected_migration_version, _path("RESTORE_VALIDATION_DB_CREDENTIALS", "/credentials")))
             return 0
         policy = SourcePolicy.parse(_read("RESTORE_VALIDATION_POLICY", "/etc/hriv/policy.json"))
         if args.command == "validate-consistency":

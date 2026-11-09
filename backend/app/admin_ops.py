@@ -1365,6 +1365,7 @@ async def run_db_export(task_id: int) -> None:
                         "detector_version": f.detector_version,
                         "approved_scale": f.approved_scale,
                         "approved_unit": f.approved_unit,
+                        "approved_objective": f.approved_objective,
                         "reviewed_by": f.reviewed_by,
                         "reviewed_at": dt(f.reviewed_at),
                         "created_at": dt(f.created_at),
@@ -1571,7 +1572,11 @@ async def run_db_import(task_id: int) -> None:
                         id=u["id"],
                         name=u["name"],
                         email=u["email"].lower(),
-                        password_hash=u.get("password_hash"),
+                        password_hash=(
+                            u.get("password_hash")
+                            if u.get("oidc_subject") is None
+                            else None
+                        ),
                         oidc_subject=u.get("oidc_subject"),
                         role=u.get("role", "student"),
                         active=u.get("active", True),
@@ -1829,6 +1834,7 @@ async def run_db_import(task_id: int) -> None:
                             detector_version=f["detector_version"],
                             approved_scale=f.get("approved_scale"),
                             approved_unit=f.get("approved_unit"),
+                            approved_objective=f.get("approved_objective"),
                             reviewed_by=f.get("reviewed_by"),
                             reviewed_at=_parse_dt(f.get("reviewed_at")),
                             created_at=_parse_dt(f.get("created_at")),

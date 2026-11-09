@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.68.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.67.0...backend-v0.68.0) (2026-11-09)
+
+
+### Features
+
+* authoritative existing scales, approval guard and scan progress for Measurement review ([#1742](https://github.com/bcit-tlu/hriv/issues/1742)) ([fdc5917](https://github.com/bcit-tlu/hriv/commit/fdc59173b887572b2c2c1bb3641c6c75c6387acc))
+* **auth:** password-setup link minting and public redeem endpoint ([#1787](https://github.com/bcit-tlu/hriv/issues/1787)) ([616fcd2](https://github.com/bcit-tlu/hriv/commit/616fcd2d83c2cbb73e2311c49afacbf1f08a7c3d))
+* **auth:** self-service change-password and must_change_password enforcement ([#1789](https://github.com/bcit-tlu/hriv/issues/1789)) ([6e9e8a4](https://github.com/bcit-tlu/hriv/commit/6e9e8a40c056777f3f10bcfb6d5e23730e7d5a44))
+* **backend:** collections graph endpoints ([#1632](https://github.com/bcit-tlu/hriv/issues/1632)) ([84686a3](https://github.com/bcit-tlu/hriv/commit/84686a3f55c48ff84d198795ef076bb623bf9305))
+* **backend:** collections graph order=3 category nodes ([#1634](https://github.com/bcit-tlu/hriv/issues/1634)) ([4bcf091](https://github.com/bcit-tlu/hriv/commit/4bcf091b76a7d5ca795eb3f61a438d41aa1aff34))
+* **backend:** counting-worker image, Helm deployment and CI ([#1718](https://github.com/bcit-tlu/hriv/issues/1718)) ([a713d20](https://github.com/bcit-tlu/hriv/commit/a713d20c92169ba47328a52a5fb9bd5c9b0c5b3b))
+* **backend:** ephemeral object-count job API with DZI region stitching ([#1709](https://github.com/bcit-tlu/hriv/issues/1709)) ([d0917fc](https://github.com/bcit-tlu/hriv/commit/d0917fcfdb9bb18920a64f7b21f41b43a1bd3597))
+* **backend:** fill counting observability gaps ([#1754](https://github.com/bcit-tlu/hriv/issues/1754)) ([b57b9e7](https://github.com/bcit-tlu/hriv/commit/b57b9e7897182f35f265d009aba368fb6014b0c5))
+* **backend:** make bulk imports resumable across API restarts ([#1173](https://github.com/bcit-tlu/hriv/issues/1173)) ([#1816](https://github.com/bcit-tlu/hriv/issues/1816)) ([8b4d6c7](https://github.com/bcit-tlu/hriv/commit/8b4d6c7ff6b45497e3b1ecbf2c6b6d06b4bbf7b9))
+* **backend:** measurement review findings with RBC scale detector ([#1720](https://github.com/bcit-tlu/hriv/issues/1720)) ([64b33fb](https://github.com/bcit-tlu/hriv/commit/64b33fbb7f87c51e55867f312d7e412b6c6276b7))
+* **backend:** object-counting metrics, traces and queue gauges ([#1724](https://github.com/bcit-tlu/hriv/issues/1724)) ([29ae249](https://github.com/bcit-tlu/hriv/commit/29ae2492e794592ca41255ac649a1b52117fbee3))
+* **backend:** real counting worker pipeline with InstanSeg nuclei and classical cells ([#1717](https://github.com/bcit-tlu/hriv/issues/1717)) ([df42267](https://github.com/bcit-tlu/hriv/commit/df422676f4992b6cf0bc67d71e9086d58e9d1945))
+* **collections:** defer student access behind COLLECTIONS_STUDENT_ACCESS ([#1776](https://github.com/bcit-tlu/hriv/issues/1776)) ([62e2ed7](https://github.com/bcit-tlu/hriv/commit/62e2ed773d8a113805a831dd9b6bd4bcaabc0fdd))
+* **collections:** mark student-curated collections across views ([#1698](https://github.com/bcit-tlu/hriv/issues/1698)) ([32ec6a8](https://github.com/bcit-tlu/hriv/commit/32ec6a87706404179591066d3e30fd339cde7f01))
+* **counting:** lab-burst load test results, capacity sizing and cleared-job metric fix ([#1739](https://github.com/bcit-tlu/hriv/issues/1739)) ([bd91422](https://github.com/bcit-tlu/hriv/commit/bd91422fb6f9bd5f19d0dd4e3e071de6c5bcdcd5))
+* **frontend:** Manage → Measurement review page ([#1725](https://github.com/bcit-tlu/hriv/issues/1725)) ([e7212b8](https://github.com/bcit-tlu/hriv/commit/e7212b80ffd0af629c8cfe2ca654cf17908b0121))
+* **frontend:** move image metadata into an "Image information" accordion ([#1622](https://github.com/bcit-tlu/hriv/issues/1622)) ([c5627a4](https://github.com/bcit-tlu/hriv/commit/c5627a4941d57280a995ff375e9c495cf3cbeac4))
+* **measurements:** add Actions menu, Category column/filter and sortable columns to Measurement review ([#1801](https://github.com/bcit-tlu/hriv/issues/1801)) ([d96d02a](https://github.com/bcit-tlu/hriv/commit/d96d02a2e96efc9dda68132c7270d4c16a611a57))
+* **measurements:** editable objective across Measurement review, Edit image, details and Manage ([#1797](https://github.com/bcit-tlu/hriv/issues/1797)) ([2df3bcc](https://github.com/bcit-tlu/hriv/commit/2df3bccda38210a21d30d26927b4d86c69244aea))
+* **measurements:** reversible review, re-scan, and whole-library scans ([#1777](https://github.com/bcit-tlu/hriv/issues/1777)) ([d33e829](https://github.com/bcit-tlu/hriv/commit/d33e829ba4a99eee615f719fc8c3c05b9e3e5dac))
+* **measurements:** scan new and replaced images after processing ([#1788](https://github.com/bcit-tlu/hriv/issues/1788)) ([520f8fa](https://github.com/bcit-tlu/hriv/commit/520f8faaf38bc20864ca8ac1866d0e0151ab4068))
+* **observability:** record OpenSeadragon viewer-open failure messages ([#1673](https://github.com/bcit-tlu/hriv/issues/1673)) ([a1125db](https://github.com/bcit-tlu/hriv/commit/a1125dbbaaa0f7f3d9104eed28cae9d8d6035a69))
+* **ops:** add purge script + runbook for orphaned failed source images ([#1694](https://github.com/bcit-tlu/hriv/issues/1694)) ([6723c2a](https://github.com/bcit-tlu/hriv/commit/6723c2a7159c55af59306078e7977c4647fccb58))
+* revision-based ETag/304 for GET /api/collections ([#1654](https://github.com/bcit-tlu/hriv/issues/1654)) ([79550b6](https://github.com/bcit-tlu/hriv/commit/79550b62a2d39a757623f1f310112bff1e7ef0bf))
+* scale unit picker shared by Measurement review and Edit image ([#1741](https://github.com/bcit-tlu/hriv/issues/1741)) ([1cae492](https://github.com/bcit-tlu/hriv/commit/1cae492f5fc43fa5c491f60af47ee05c676dc963))
+* server-side search, sort and paging for GET /api/collections ([#1650](https://github.com/bcit-tlu/hriv/issues/1650)) ([dba702b](https://github.com/bcit-tlu/hriv/commit/dba702b2c5b3ec43e22f60c9822ebb577a4a09ba))
+* **users:** user auth-state schema and UserOut credential flags ([#1786](https://github.com/bcit-tlu/hriv/issues/1786)) ([41c03b7](https://github.com/bcit-tlu/hriv/commit/41c03b77ecb269de594376477e5b8f6a7bc0ab2a))
+
+
+### Bug Fixes
+
+* **auth:** clear local password when an account is linked to SSO ([#1808](https://github.com/bcit-tlu/hriv/issues/1808)) ([96067d0](https://github.com/bcit-tlu/hriv/commit/96067d02059c51f575951c5b525faff0744bcef7))
+* **backend:** bound backup metrics render and scope archive classification ([#1817](https://github.com/bcit-tlu/hriv/issues/1817)) ([cda30f5](https://github.com/bcit-tlu/hriv/commit/cda30f5c4ffb101dff783cd8767f08925478ddbc))
+* **backend:** include measurement findings in database export/import ([#1723](https://github.com/bcit-tlu/hriv/issues/1723)) ([0f942e5](https://github.com/bcit-tlu/hriv/commit/0f942e5b652bc3568ac1e1a30906e34ad48bde2e))
+* **backend:** read database export from one REPEATABLE READ snapshot ([#1740](https://github.com/bcit-tlu/hriv/issues/1740)) ([7e21b9e](https://github.com/bcit-tlu/hriv/commit/7e21b9e92211fcb6638d57b2c7a1d7fcd0f1b859))
+* **backend:** require 10 cells in the RBC size window before proposing a scale ([#1727](https://github.com/bcit-tlu/hriv/issues/1727)) ([ca0304e](https://github.com/bcit-tlu/hriv/commit/ca0304e5779be4672489f1156eeb565231b71ffb))
+* **counting:** classical pixel budget, orphaned distutils .pth, Cells vs Nuclei help ([#1719](https://github.com/bcit-tlu/hriv/issues/1719)) ([2421ba4](https://github.com/bcit-tlu/hriv/commit/2421ba41166094fe7adef2c76dfe11adf89651c8))
+* **counting:** stop the level rule over-coarsening dense fields ([#1728](https://github.com/bcit-tlu/hriv/issues/1728)) ([b1335a1](https://github.com/bcit-tlu/hriv/commit/b1335a14d375717d89550e839c38aa28818a413c))
+* **ops:** run purge script find/apply in a single event loop ([#1695](https://github.com/bcit-tlu/hriv/issues/1695)) ([195b805](https://github.com/bcit-tlu/hriv/commit/195b8057f65d27769e4b36db56f0c017cfe4d265))
+* resolve category card covers server-side so students see them ([#1646](https://github.com/bcit-tlu/hriv/issues/1646)) ([50cf478](https://github.com/bcit-tlu/hriv/commit/50cf47843d68d479de22df5122b0a7b8289645f6))
+* viewer polish follow-ups and no-op image PATCH 500 ([#1681](https://github.com/bcit-tlu/hriv/issues/1681)) ([bf3cc64](https://github.com/bcit-tlu/hriv/commit/bf3cc64650b0c244c0edad3081ba04a496ef5be0))
+
 ## [0.67.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.66.0...backend-v0.67.0) (2026-10-10)
 
 

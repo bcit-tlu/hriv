@@ -1,3 +1,6 @@
+import logging
+import secrets
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -5,10 +8,12 @@ from sqlalchemy import func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
+from ..auth_events import AUTH_METHOD_LOCAL, AUTH_OUTCOME_SUCCESS, auth_event_fields
 from ..authz import ADMIN_PROGRAM_NAME
 from ..browse_state import bump_browse_revision
 from ..database import get_db
 from ..models import Collection, Program, User
+from ..password_tokens import issue_password_setup_token, validate_password_setup_token
 from ..tile_order import bump_scopes, collection_scope_keys
 from ..schemas import (
     UserCreate,
@@ -18,10 +23,13 @@ from ..schemas import (
     UserBulkActiveUpdate,
     UserBulkDelete,
     UserOut,
+    UserMiniOut,
+    PasswordSetupLinkOut,
 )
 from ..serializers import user_to_mini_out, user_to_out
 
 router = APIRouter(prefix="/users", tags=["users"])
+logger = logging.getLogger(__name__)
 
 _admin = require_role("admin")
 # Staff get read-only user listings for the People tab; instructors get a
@@ -108,7 +116,7 @@ async def _set_user_programs(
         user.programs = []
 
 
-@router.get("/", response_model=list[UserOut])
+@router.get("/", response_model=list[UserOut | UserMiniOut])
 async def list_users(
     _user: Annotated[User, Depends(_people_viewer)],
     db: AsyncSession = Depends(get_db),
@@ -206,10 +214,13 @@ async def create_user(
 ):
     if body.role not in VALID_ROLES:
         raise HTTPException(422, f"Invalid role: {body.role}")
+    if body.must_change_password and body.password is None:
+        raise HTTPException(422, "must_change_password requires a local password and no OIDC link")
     user = User(
         name=body.name,
         email=body.email.lower(),
-        password_hash=hash_password(body.password),
+        password_hash=hash_password(body.password) if body.password else None,
+        must_change_password=body.must_change_password,
         role=body.role,
         active=body.active,
         metadata_=body.metadata_extra or {},
@@ -335,6 +346,47 @@ async def get_user(
     return user_to_out(user)
 
 
+@router.post("/{user_id}/password-setup-link", response_model=PasswordSetupLinkOut)
+async def password_setup_link(
+    user_id: int,
+    admin: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+) -> PasswordSetupLinkOut:
+    result = await db.execute(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update(of=User)
+        .execution_options(populate_existing=True)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(404, "User not found")
+    if not user.active:
+        raise HTTPException(403, "account_inactive")
+    if user.oidc_subject is not None:
+        raise HTTPException(422, "oidc_linked")
+    if user.password_hash is not None:
+        raise HTTPException(409, "password_already_set")
+    nonce = secrets.token_urlsafe(16)
+    token = issue_password_setup_token(user, nonce)
+    expires_at = datetime.fromtimestamp(
+        validate_password_setup_token(token)["exp"], timezone.utc
+    )
+    user.invite_nonce = nonce
+    await db.commit()
+    logger.info(
+        "Password setup link minted",
+        extra={
+            "event": "auth.invite_minted",
+            "admin_id": admin.id,
+            **auth_event_fields(
+                method=AUTH_METHOD_LOCAL, outcome=AUTH_OUTCOME_SUCCESS, user=user
+            ),
+        },
+    )
+    return PasswordSetupLinkOut(setup_token=token, expires_at=expires_at)
+
+
 @router.patch("/{user_id}", response_model=UserOut)
 async def update_user(
     user_id: int,
@@ -342,7 +394,7 @@ async def update_user(
     _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
-    user = await db.get(User, user_id)
+    user = await db.get(User, user_id, with_for_update=True, populate_existing=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if body.active is False and _user.id == user_id:
@@ -355,10 +407,25 @@ async def update_user(
     program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
+    must_change_password = update_data.pop("must_change_password", None)
+    if must_change_password is not None:
+        update_data["must_change_password"] = must_change_password
     if "password" in update_data:
         pwd = update_data.pop("password")
         if pwd is not None:
+            if user.oidc_subject is not None:
+                raise HTTPException(422, "oidc_linked")
             update_data["password_hash"] = hash_password(pwd)
+        else:
+            update_data["password_hash"] = None
+            update_data["invite_nonce"] = None
+            if must_change_password is not True:
+                update_data["must_change_password"] = False
+    if update_data.get("must_change_password", user.must_change_password) and (
+        user.oidc_subject is not None
+        or update_data.get("password_hash", user.password_hash) is None
+    ):
+        raise HTTPException(422, "must_change_password requires a local password and no OIDC link")
     if "email" in update_data and update_data["email"] is not None:
         update_data["email"] = update_data["email"].lower()
     # The owner's name renders on filed collection tiles and their role

@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.17.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.2...backup-v0.17.3) (2026-11-09)
+
+
+### Documentation
+
+* add recommended Longhorn StorageClasses for split media volumes ([#1812](https://github.com/bcit-tlu/hriv/issues/1812)) ([5862c45](https://github.com/bcit-tlu/hriv/commit/5862c45f53de6176fda26653d3a38ea1b20be43f))
+
+## [0.17.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.1...backup-v0.17.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **backup:** bind the barman catalog directory name as the CNPG backupID ([#1809](https://github.com/bcit-tlu/hriv/issues/1809)) ([9e9fde2](https://github.com/bcit-tlu/hriv/commit/9e9fde2775f7e47ea752d5ce2c5d6e1a2963df65))
+
+## [0.17.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.0...backup-v0.17.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **backup:** bind barman backup_id, not backup_name, as the CNPG recovery backupID ([#1803](https://github.com/bcit-tlu/hriv/issues/1803)) ([28feff4](https://github.com/bcit-tlu/hriv/commit/28feff42008f8d63fec3f093b94db3f48344855a))
+
+## [0.17.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.8...backup-v0.17.0) (2026-11-08)
+
+
+### Features
+
+* **backup:** record the Alembic head in the recovery manifest ([#1795](https://github.com/bcit-tlu/hriv/issues/1795)) ([1fb8a68](https://github.com/bcit-tlu/hriv/commit/1fb8a68d1e6a1da031344d0088e6969b00c97e30))
+* **restore-validation:** validate the restored Alembic head against the manifest ([#1796](https://github.com/bcit-tlu/hriv/issues/1796)) ([d1812dc](https://github.com/bcit-tlu/hriv/commit/d1812dc6b9863e83a9493eadfc6eaceb83f0843f))
+
 ## [0.16.8](https://github.com/bcit-tlu/hriv/compare/backup-v0.16.7...backup-v0.16.8) (2026-11-04)
 
 

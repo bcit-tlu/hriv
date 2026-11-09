@@ -22,6 +22,7 @@ SCALE_KEY = "measurement_scale"
 UNIT_KEY = "measurement_unit"
 SOURCE_KEY = "measurement_scale_source"
 FINDING_KEY = "measurement_finding_id"
+OBJECTIVE_KEY = "objective_power"
 
 # Slide scans this large shrink cells below detection in the work thumbnail.
 RBC_MAX_SIDE_PX = 8000
@@ -160,7 +161,8 @@ async def scan_image(
     ``rescan=True`` supersedes every live finding first, so the image is
     re-detected (or its stored scale re-recorded) even when a reviewer
     already approved or rejected an earlier proposal. Returns ``None`` when
-    an overlapping scan already recorded the stored scale.
+    an overlapping scan already recorded the stored scale, or (without
+    ``rescan``) when a reviewer already approved or rejected a finding.
     """
     if has_scale(image.metadata_):
         # Serialize overlapping scans of this image; approved rows have no unique index.
@@ -183,6 +185,7 @@ async def scan_image(
                 # edited since approval stays externally owned instead.
                 await db.flush()
                 finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
+                finding.approved_objective = owner.approved_objective
                 image.metadata_ = {**meta, FINDING_KEY: finding.id}
                 image.version = image.version + 1
             return finding
@@ -198,6 +201,16 @@ async def scan_image(
         # A proposal made before the scale was stored must not resurface later.
         await _retire_pending(db, image.id)
         return record_existing(db, image)
+    if not rescan and await db.scalar(
+        select(MeasurementFinding.id)
+        .where(
+            MeasurementFinding.image_id == image.id,
+            MeasurementFinding.status.in_(("approved", "rejected")),
+        )
+        .limit(1)
+    ):
+        # A delayed scan (e.g. queued after upload) must not reopen a reviewed image.
+        return None
     path = await _latest_source_path(db, image.id)
     estimate: ScaleEstimate | None = None
     evidence: dict = {}
@@ -261,6 +274,26 @@ async def scan_images(
     return created
 
 
+async def scan_after_processing(session_factory, image_id: int) -> None:
+    """Best-effort scan of a freshly processed image; never raises.
+
+    Runs on the worker when the queue is up, otherwise inline. A failure
+    only leaves the image for a later "Scan next" pass.
+    """
+    from ..worker import enqueue_measurement_scan  # worker imports processing
+
+    try:
+        result = await enqueue_measurement_scan([image_id])
+        if not result.queued:
+            await scan_images(session_factory, [image_id])
+    except Exception:
+        logger.warning(
+            "Measurement scan after processing failed",
+            extra={"event": "measurement.upload_scan_failed", "image_id": image_id},
+            exc_info=True,
+        )
+
+
 def merged_measurement_metadata(
     current: dict | None, scale: float, unit: str, source: str, finding_id: int
 ) -> dict:
@@ -280,8 +313,13 @@ async def approve_finding(
     reviewer_id: int,
     scale: float | None = None,
     unit: str | None = None,
+    objective: str | None = None,
 ) -> None:
-    """Promote a pending finding into the image's metadata (caller commits)."""
+    """Promote a pending finding into the image's metadata (caller commits).
+
+    ``objective`` is written to ``objective_power`` unless the image already
+    has one (e.g. embedded scanner metadata), which stays authoritative.
+    """
     edited = (scale is not None and scale != finding.proposed_scale) or (
         unit is not None and unit != finding.proposed_unit
     )
@@ -296,8 +334,13 @@ async def approve_finding(
         "manual" if edited else finding.source,
         finding.id,
     )
+    written_objective = None
+    if objective and image.metadata_.get(OBJECTIVE_KEY) is None:
+        image.metadata_ = {**image.metadata_, OBJECTIVE_KEY: float(objective)}
+        written_objective = objective
     image.version = image.version + 1
     finding.status = "approved"
+    finding.approved_objective = written_objective
     finding.approved_scale = final_scale
     finding.approved_unit = final_unit
     finding.reviewed_by = reviewer_id
@@ -352,17 +395,28 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
     only runs while the stored scale is still exactly the value this finding
     promoted — a scale since changed by anything else is authoritative and
     left alone (the finding still returns to pending, where the list hides
-    it while a scale exists). Returns True when image metadata changed.
+    it while a scale exists). The objective it wrote (``approved_objective``)
+    is removed whenever it is still the stored value. Returns True when image
+    metadata changed.
     """
     meta = image.metadata_ or {}
     stripped = False
-    if finding.status == "approved" and _scale_promoted_by(meta, finding):
-        image.metadata_ = {
-            k: v for k, v in meta.items() if k not in _MEASUREMENT_METADATA_KEYS
-        }
-        image.version = image.version + 1
-        stripped = True
+    if finding.status == "approved":
+        kept = dict(meta)
+        if _scale_promoted_by(meta, finding):
+            kept = {k: v for k, v in kept.items() if k not in _MEASUREMENT_METADATA_KEYS}
+        # The objective is owned separately: a scale edited since approval does
+        # not make the objective this approval wrote any less its own.
+        if finding.approved_objective is not None and meta.get(OBJECTIVE_KEY) == float(
+            finding.approved_objective
+        ):
+            kept.pop(OBJECTIVE_KEY, None)
+        if kept != meta:
+            image.metadata_ = kept
+            image.version = image.version + 1
+            stripped = True
     finding.status = "pending"
+    finding.approved_objective = None
     finding.reviewed_by = None
     finding.reviewed_at = None
     return stripped

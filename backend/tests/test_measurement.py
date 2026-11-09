@@ -174,6 +174,7 @@ def _finding(**kw) -> SimpleNamespace:
         detector_version=DETECTOR_VERSION,
         approved_scale=None,
         approved_unit=None,
+        approved_objective=None,
         reviewed_by=None,
         reviewed_at=None,
         created_at=datetime.now(timezone.utc),
@@ -254,7 +255,7 @@ async def test_scan_image_records_estimate(monkeypatch, tmp_path) -> None:
     src.write_bytes(b"x")
     db = AsyncMock()
     db.add = MagicMock()
-    db.scalar.return_value = str(src)
+    db.scalar.side_effect = [None, str(src)]  # no reviewed finding; source path
     monkeypatch.setattr(
         service,
         "_detect",
@@ -272,7 +273,7 @@ async def test_scan_image_records_detector_failure(monkeypatch, tmp_path) -> Non
     src.write_bytes(b"x")
     db = AsyncMock()
     db.add = MagicMock()
-    db.scalar.return_value = str(src)
+    db.scalar.side_effect = [None, str(src)]  # no reviewed finding; source path
 
     def boom(*_a):
         raise pyvips.Error("bad file")
@@ -431,7 +432,7 @@ async def test_list_findings_serializes_and_tokenizes_thumb() -> None:
     db = AsyncMock()
     db.scalar.return_value = 1
     rows = MagicMock()
-    rows.all.return_value = [(_finding(), _image())]
+    rows.all.return_value = [(_finding(), _image(), "Hematology › Blood films")]
     db.execute.return_value = rows
     page = await router.list_findings(
         _user(), db, "pending", None, 0.4, "confidence_desc", 50, 0
@@ -441,6 +442,7 @@ async def test_list_findings_serializes_and_tokenizes_thumb() -> None:
     assert item["image_name"] == "slide"
     assert "tile_token=" in item["image_thumb"]
     assert item["objective"] == "40"
+    assert item["category_path"] == "Hematology › Blood films"
 
 
 def _db_with(finding, image) -> AsyncMock:
@@ -448,6 +450,7 @@ def _db_with(finding, image) -> AsyncMock:
     db.get.side_effect = lambda model, _id, **_kw: (
         finding if model is MeasurementFinding else image
     )
+    db.scalar.return_value = "Hematology › Blood films"
     return db
 
 
@@ -607,6 +610,18 @@ async def test_scan_image_skips_existing_scale_already_recorded() -> None:
     db.add.assert_not_called()
 
 
+async def test_scan_image_skips_unscaled_image_already_reviewed(monkeypatch) -> None:
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    detect = MagicMock()
+    monkeypatch.setattr(service, "_detect", detect)
+    assert await service.scan_image(db, _image()) is None
+    db.add.assert_not_called()
+    detect.assert_not_called()
+
+
 async def test_scan_images_rolls_back_when_scan_records_nothing(monkeypatch) -> None:
     db = AsyncMock()
     db.get.return_value = _image(metadata_={"measurement_scale": 4.0})
@@ -632,6 +647,7 @@ def test_has_scale_sql_requires_positive_number() -> None:
 async def test_scan_image_skips_rbc_on_whole_slide_images(monkeypatch) -> None:
     db = MagicMock()
     db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=None)
     monkeypatch.setattr(service, "_latest_source_path", AsyncMock(return_value=__file__))
     detect = MagicMock()
     monkeypatch.setattr(service, "_detect", detect)
@@ -1129,3 +1145,208 @@ def test_reset_finding_strips_when_only_unit_corrected_at_approval() -> None:
     )
     assert service.reset_finding(finding, image) is True
     assert image.metadata_ == {}
+
+
+
+# ── scan after upload/replacement processing ──────────────
+
+
+async def test_scan_after_processing_queues_on_worker(monkeypatch) -> None:
+    from app import worker
+
+    enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+    monkeypatch.setattr(worker, "enqueue_measurement_scan", enqueue)
+    inline = AsyncMock()
+    monkeypatch.setattr(service, "scan_images", inline)
+    await service.scan_after_processing("factory", 99)
+    enqueue.assert_awaited_once_with([99])
+    inline.assert_not_awaited()
+
+
+async def test_scan_after_processing_runs_inline_on_fallback(monkeypatch) -> None:
+    from app import worker
+
+    monkeypatch.setattr(
+        worker,
+        "enqueue_measurement_scan",
+        AsyncMock(return_value=EnqueueResult("fallback", "queue_unavailable")),
+    )
+    inline = AsyncMock()
+    monkeypatch.setattr(service, "scan_images", inline)
+    await service.scan_after_processing("factory", 99)
+    inline.assert_awaited_once_with("factory", [99])
+
+
+@pytest.mark.parametrize(
+    "error", [TaskQueueUnavailableError("queue_unavailable"), RuntimeError("boom")]
+)
+async def test_scan_after_processing_never_raises(monkeypatch, caplog, error) -> None:
+    from app import worker
+
+    monkeypatch.setattr(worker, "enqueue_measurement_scan", AsyncMock(side_effect=error))
+    await service.scan_after_processing("factory", 99)
+    assert any(
+        getattr(r, "event", None) == "measurement.upload_scan_failed" for r in caplog.records
+    )
+
+
+# ── objective_power on approval ───────────────────────────
+
+
+async def test_approve_finding_writes_objective_power() -> None:
+    finding, image = _finding(), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3, objective="40")
+    assert image.metadata_["objective_power"] == 40.0
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+    assert finding.approved_objective == "40"
+
+
+async def test_approve_finding_keeps_existing_objective_power() -> None:
+    finding = _finding()
+    image = _image(metadata_={"objective_power": 20.0})
+    await service.approve_finding(AsyncMock(), finding, image, 3, objective="40")
+    assert image.metadata_["objective_power"] == 20.0
+    assert finding.approved_objective is None
+
+
+async def test_approve_finding_without_objective_writes_none() -> None:
+    finding, image = _finding(), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert "objective_power" not in image.metadata_
+    assert finding.approved_objective is None
+
+
+async def test_approve_endpoint_uses_detected_objective_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    finding, image = _finding(), _image()
+    out = await router.approve(5, _user(), None, _db_with(finding, image))
+    assert image.metadata_["objective_power"] == 40.0
+    assert out.approved_objective == "40"
+    assert out.objective_scales == {"10": 2.0, "40": 7.3, "100": 18.7}
+
+
+@pytest.mark.parametrize("objective,expected", [("100", 100.0), (None, None)])
+async def test_approve_endpoint_objective_correction(
+    monkeypatch, objective, expected
+) -> None:
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    finding, image = _finding(), _image()
+    body = MeasurementApprove(scale=18.7, objective=objective)
+    await router.approve(5, _user(), body, _db_with(finding, image))
+    assert image.metadata_.get("objective_power") == expected
+
+
+def test_approve_schema_rejects_unknown_objective() -> None:
+    with pytest.raises(ValidationError):
+        MeasurementApprove(objective="45")
+
+
+def test_out_has_no_objective_scales_for_unknown_camera() -> None:
+    out = router._out(_finding(), _image(width=1000, height=800))
+    assert out.objective_scales is None
+
+
+def test_reset_finding_strips_objective_it_wrote() -> None:
+    finding = _finding(
+        status="approved",
+        approved_scale=7.3,
+        approved_unit="um",
+        approved_objective="40",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": 5,
+            "objective_power": 40.0,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {}
+    assert finding.approved_objective is None
+
+
+def test_reset_finding_keeps_objective_it_did_not_write() -> None:
+    finding = _finding(status="approved", approved_scale=7.3, approved_unit="um")
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": 5,
+            "objective_power": 20.0,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {"objective_power": 20.0}
+
+
+def test_reset_finding_strips_owned_objective_after_scale_edit() -> None:
+    finding = _finding(
+        status="approved", approved_scale=7.3, approved_unit="um", approved_objective="40"
+    )
+    image = _image(
+        metadata_={"measurement_scale": 9.0, "measurement_unit": "um", "objective_power": 40.0}
+    )
+    assert service.reset_finding(finding, image) is True
+    assert image.metadata_ == {"measurement_scale": 9.0, "measurement_unit": "um"}
+    assert image.version == 5
+
+
+@pytest.mark.parametrize(
+    "sort,expected",
+    [
+        ("name_asc", "lower(images.name) ASC NULLS LAST"),
+        ("category_desc", "lower(category_paths.path) DESC NULLS LAST"),
+        ("objective_asc", "CAST(measurement_findings.objective AS FLOAT) ASC NULLS LAST"),
+        ("proposed_desc", "measurement_findings.proposed_scale DESC NULLS LAST"),
+        ("confidence_desc", "measurement_findings.confidence DESC NULLS LAST"),
+    ],
+)
+async def test_list_findings_sorts_by_column_then_image_name(sort, expected) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 0
+    rows = MagicMock()
+    rows.all.return_value = []
+    db.execute.return_value = rows
+    await router.list_findings(_user(), db, "pending", None, None, sort, 50, 0)
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "WITH RECURSIVE category_paths" in sql
+    order = sql.split("ORDER BY", 1)[1]
+    assert order.strip().startswith(expected)
+    assert "lower(images.name)" in order
+
+
+async def test_list_finding_categories_returns_paths_with_counts() -> None:
+    db = AsyncMock()
+    rows = MagicMock()
+    rows.all.return_value = [(3, "Hematology › Blood films", 12)]
+    db.execute.return_value = rows
+    out = await router.list_finding_categories(_user(), db, "pending")
+    assert [c.model_dump() for c in out] == [
+        {"id": 3, "path": "Hematology › Blood films", "count": 12}
+    ]
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "jsonb_typeof" in sql
+
+
+async def test_reject_response_carries_category_path() -> None:
+    finding, image = _finding(), _image()
+    db = _db_with(finding, image)
+    out = await router.reject(finding.id, _user(), db)
+    assert out.category_path == "Hematology › Blood films"
+    sql = str(db.scalar.await_args.args[0].compile(dialect=postgresql.dialect()))
+    assert "WITH RECURSIVE category_paths" in sql
+
+
+async def test_approved_objective_sort_uses_approved_objective() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 0
+    rows = MagicMock()
+    rows.all.return_value = []
+    db.execute.return_value = rows
+    await router.list_findings(_user(), db, "approved", None, None, "objective_desc", 50, 0)
+    sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+    order = sql.split("ORDER BY", 1)[1].strip()
+    assert order.startswith("CAST(measurement_findings.approved_objective AS FLOAT) DESC")

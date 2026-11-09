@@ -353,6 +353,8 @@ spec:
             # so tokens signed by one worker validate on every other worker.
             - name: REQUIRE_JWT_SECRET
               value: "true"
+            - name: PASSWORD_SETUP_TOKEN_TTL_MINUTES
+              value: {{ .Values.auth.passwordSetupTokenTtlMinutes | quote }}
             {{- if .Values.auth.openidConnect.enabled }}
             {{- $oidcSecret := .Values.auth.openidConnect.existingSecret | default (printf "%s-openid-connect" (include "hriv-backend.fullname" .)) }}
             - name: OIDC_CLIENT_ID

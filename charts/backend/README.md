@@ -1,5 +1,12 @@
 # hriv-backend chart notes
 
+## Password-setup link lifetime
+
+`auth.passwordSetupTokenTtlMinutes` defaults to `10080` (seven days) and injects
+`PASSWORD_SETUP_TOKEN_TTL_MINUTES`. The backend accepts 60–43200 minutes and
+rejects out-of-range configuration. Links use the shared `JWT_SECRET`; see
+[password setup](../../docs/password-setup.md).
+
 ## Feedback delivery (`feedback.provider`)
 
 The backend accepts in-app feedback via `POST /api/issues/report`, then routes
@@ -110,6 +117,12 @@ runtime paths stored in the database:
 
 For multi-replica API or worker deployments, both PVCs must use
 `ReadWriteMany`.
+
+For Longhorn-backed clusters, choose the StorageClass per volume using
+[`docs/longhorn-storage-classes.md`](../../docs/longhorn-storage-classes.md) —
+it maps each persistence key to a recommended class and documents the
+replica/locality/reclaim tradeoffs. Ready-to-apply example manifests live in
+[`deploy/longhorn-storageclasses.yaml`](../../deploy/longhorn-storageclasses.yaml).
 
 ## Tiles sidecar and tile authorization (`tiles.*`)
 

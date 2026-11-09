@@ -123,7 +123,8 @@ A successful manifest is versioned and records at least:
     "wal_segment_size_bytes": 16777216,
     "wal_fence_committed_at": "<UTC timestamp>",
     "wal_fence_archived_at": "<UTC timestamp>",
-    "logical_dump_role": "not-included"
+    "logical_dump_role": "not-included",
+    "migration_version": "<Alembic head at the WAL fence>"
   },
   "versions": {
     "hriv": "<version>",
@@ -175,6 +176,21 @@ making the fence-containing target reachable even on an otherwise idle
 database. High-cardinality mismatch details belong in the manifest and
 structured logs, not metric labels.
 
+`database_recovery.migration_version` is the `alembic_version.version_num`
+read inside the fence transaction and re-read in a separate statement after
+the post-commit boundary query has bound `target_lsn`. Capture fails closed
+(publishing nothing, like any other fence failure) if the two reads differ,
+even when the migration actually committed after `target_lsn`: the two reads
+cannot order a concurrent migration against the LSN, so the conservative
+outcome is a skipped run rather than a manifest whose head could disagree
+with a database restored to that LSN. The recorded value is therefore the
+schema head such a database must report. It is
+additive to format 2: manifests captured before it was recorded omit the key
+(an explicit `null` is malformed), and `validation-select` summarizes the
+absence as unknown rather than as a mismatch. Restore validation compares the
+restored head against this value and uses the profile's
+`expected_migration_version` only when the selected manifest predates it.
+
 ## Candidate state model
 
 ```text
@@ -204,7 +220,7 @@ Production restoration is component-selective:
    without a format version remain valid only when their `files` map supplies a
    valid size and SHA-256 for every selected member; manifestless archives fail
    closed.
-2. Restore PostgreSQL through CNPG with `recoveryTarget.targetLSN` set to the manifest's authoritative `database_recovery.target_lsn`; `target_time` is audit metadata, not the restore target. Where the orchestrator pins `recoveryTarget.backupID`, the bound backup must be the newest completed base backup ending before `target_lsn` on the fence timeline or an archived ancestor of it.
+2. Restore PostgreSQL through CNPG with `recoveryTarget.targetLSN` set to the manifest's authoritative `database_recovery.target_lsn`; `target_time` is audit metadata, not the restore target. Where the orchestrator pins `recoveryTarget.backupID`, the bound backup must be the newest completed base backup ending before `target_lsn` on the fence timeline or an archived ancestor of it. The manifest does not store that backup: `validation-select` derives `cnpg_backup_id` from the live barman catalog at selection time and emits the barman backup ID (the `base/<YYYYMMDDTHHMMSS>/` catalog directory name; `backup.info` has no `backup_id` key), which is what CNPG resolves `backupID` against. `backup` images before 0.17.1 emitted barman's `backup_name` (`backup-YYYYMMDDHHMMSS`) instead, which the barman-cloud plugin cannot resolve, and 0.17.1 required a `backup_id` key that barman never writes (`CNPG_BASE_BACKUP_UNAVAILABLE`); because the value is derived per selection, upgrading the image fixes selection for every retained recovery set, old manifests included.
 3. Restore source images using filesystem-only mode to a fresh empty target PVC
    sized from manifest bytes plus headroom. A populated target may temporarily
    require staged restored bytes plus quarantined existing bytes, approaching

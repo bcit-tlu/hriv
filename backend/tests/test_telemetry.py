@@ -615,11 +615,27 @@ def _allow_ingest_rate_limit():
 
 def _jwt_auth(user) -> MagicMock:
     """Patcher resolving the Bearer-JWT credential path to *user*."""
+    if not hasattr(user, "must_change_password"):
+        user.must_change_password = False
     return patch(
         "app.routers.telemetry.get_user_from_token",
         new_callable=AsyncMock,
         return_value=user,
     )
+
+
+async def test_synthetic_result_requires_password_change() -> None:
+    user = SimpleNamespace(
+        id=9, role="student", metadata_={"synthetic": True}, must_change_password=True
+    )
+    with _jwt_auth(user), _allow_ingest_rate_limit():
+        with pytest.raises(HTTPException) as exc:
+            await ingest_synthetic_result(
+                result=_make_synthetic_result(), request=_make_request(),
+                db=MagicMock(), bearer_token="jwt",
+            )
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "password_change_required"
 
 
 async def test_synthetic_result_requires_synthetic_account() -> None:

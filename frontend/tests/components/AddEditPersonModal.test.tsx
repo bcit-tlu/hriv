@@ -27,7 +27,266 @@ const existingUser: ApiUser = {
 }
 
 describe('AddEditPersonModal', () => {
+  it('hides admin credential controls and omits the forced-change flag in self-profile mode', async () => {
+    const actor = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const clear = vi.fn()
+    render(
+      <AddEditPersonModal
+        open
+        selfProfile
+        onClose={vi.fn()}
+        onSave={onSave}
+        onSetupLink={clear}
+        programs={programs}
+        user={{ ...existingUser, has_local_password: true, must_change_password: true }}
+      />,
+    )
+    expect(
+      screen.queryByRole('switch', { name: 'Force password change on next login' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Copy password-setup link' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('switch', { name: 'Regenerate password link' }),
+    ).not.toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('must_change_password')
+    expect(clear).not.toHaveBeenCalled()
+  })
+  it('creates in invite mode without a password field', async () => {
+    const actor = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={onSave} programs={programs} />)
+    await actor.click(screen.getByLabelText('Invite by link (user sets their own password)'))
+    await actor.type(screen.getByLabelText('Full name'), 'Invited Guest')
+    await actor.type(screen.getByLabelText('Email'), 'guest@example.invalid')
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Add', exact: true }))
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('password')
+  })
+
+  it.each([
+    [true, true, true, 'Managed by the identity provider'],
+    [false, false, true, 'Set a local password before requiring a password change'],
+    [false, true, false, ''],
+  ] as const)(
+    'controls forced change for oidc=%s password=%s',
+    async (oidc, local, disabled, tooltip) => {
+      const actor = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <AddEditPersonModal
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          programs={programs}
+          user={{ ...existingUser, oidc_linked: oidc, has_local_password: local }}
+        />,
+      )
+      const toggle = screen.getByRole('switch', { name: 'Force password change on next login' })
+      if (disabled) {
+        expect(toggle).toBeDisabled()
+        await actor.hover(screen.getByText('Force password change on next login'))
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(tooltip)
+      } else {
+        await actor.click(toggle)
+        await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ must_change_password: true }))
+      }
+    },
+  )
+
+  it('edits passwords directly, explains blank values, and retains entered values on save failure', async () => {
+    const actor = userEvent.setup()
+    const save = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={save}
+        onSetupLink={vi.fn()}
+        programs={programs}
+        user={{ ...existingUser, has_local_password: true, must_change_password: true }}
+      />,
+    )
+    const password = screen.getByLabelText('Password (leave blank to keep)')
+    expect(
+      screen.getByText(
+        'Enter a new password to change it, or leave blank to keep the current one.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear password' })).not.toBeInTheDocument()
+    await actor.type(password, 'changed-password')
+    expect(save).not.toHaveBeenCalled()
+    expect(password).toBeEnabled()
+    expect(
+      screen.getByRole('switch', { name: 'Force password change on next login' }),
+    ).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Copy password-setup link' })).toBeDisabled()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to save. Please try again.')
+    expect(password).toHaveValue('changed-password')
+    expect(save.mock.calls[0][0]).toHaveProperty('password', 'changed-password')
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    [true, false, false, ''],
+    [true, false, true, 'This account already has a password'],
+    [true, true, false, 'Managed by the identity provider'],
+    [false, false, false, 'Activate this account before creating a setup link'],
+  ] as const)(
+    'uses saved eligibility active=%s oidc=%s password=%s',
+    async (active, oidc, local, reason) => {
+      const actor = userEvent.setup()
+      const setup = vi.fn()
+      render(
+        <AddEditPersonModal
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          onSetupLink={setup}
+          programs={programs}
+          user={{ ...existingUser, active, oidc_linked: oidc, has_local_password: local }}
+        />,
+      )
+      const button = screen.getByRole('button', { name: 'Copy password-setup link' })
+      if (reason) {
+        expect(button).toBeDisabled()
+        await actor.hover(button.parentElement!)
+        expect(await screen.findByRole('tooltip')).toHaveTextContent(reason)
+      } else {
+        expect(button).toBeEnabled()
+        await actor.click(button)
+        expect(setup).toHaveBeenCalledOnce()
+      }
+      expect(screen.queryByRole('switch', { name: 'Reset password' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('switch', { name: 'Regenerate password link' }) !== null).toBe(
+        active && !oidc && local,
+      )
+    },
+  )
+
+  it('does not enable minting for unsaved account activation, and cancelling does not save', async () => {
+    const actor = userEvent.setup()
+    const save = vi.fn()
+    const close = vi.fn()
+    render(
+      <AddEditPersonModal
+        open
+        onClose={close}
+        onSave={save}
+        onSetupLink={vi.fn()}
+        programs={programs}
+        user={{ ...existingUser, active: false, has_local_password: false }}
+      />,
+    )
+    await actor.click(screen.getByRole('switch', { name: 'Account inactive' }))
+    expect(screen.getByRole('button', { name: 'Copy password-setup link' })).toBeDisabled()
+    await actor.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(close).toHaveBeenCalledOnce()
+    expect(save).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => vi.clearAllMocks())
+
+  it('regenerates only on save, disables password and forced change, and retains selection on failure', async () => {
+    const actor = userEvent.setup()
+    const save = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={save}
+        onSetupLink={vi.fn()}
+        programs={programs}
+        user={{
+          ...existingUser,
+          active: true,
+          has_local_password: true,
+          must_change_password: true,
+        }}
+      />,
+    )
+    const password = screen.getByLabelText('Password (leave blank to keep)')
+    await actor.type(password, 'short')
+    const toggle = screen.getByRole('switch', { name: 'Regenerate password link' })
+    await actor.click(toggle)
+    expect(save).not.toHaveBeenCalled()
+    expect(password).toBeDisabled()
+    expect(
+      screen.getByRole('switch', { name: 'Force password change on next login' }),
+    ).toBeDisabled()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to save. Please try again.')
+    expect(toggle).toBeChecked()
+    expect(save.mock.calls[0][0]).toHaveProperty('password', null)
+    expect(save.mock.calls[0][0]).not.toHaveProperty('must_change_password')
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(save).toHaveBeenCalledTimes(2)
+    await actor.click(toggle)
+    expect(password).toBeEnabled()
+    expect(
+      screen.getByRole('switch', { name: 'Force password change on next login' }),
+    ).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
+  })
+
+  it('discards regeneration intent when hidden by deactivation, including after reactivation', async () => {
+    const actor = userEvent.setup()
+    const save = vi.fn().mockResolvedValue(undefined)
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={save}
+        onSetupLink={vi.fn()}
+        programs={programs}
+        user={{ ...existingUser, active: true, has_local_password: true }}
+      />,
+    )
+    await actor.click(screen.getByRole('switch', { name: 'Regenerate password link' }))
+    await actor.click(screen.getByRole('switch', { name: 'Account active' }))
+    expect(
+      screen.queryByRole('switch', { name: 'Regenerate password link' }),
+    ).not.toBeInTheDocument()
+    await actor.click(screen.getByRole('switch', { name: 'Account inactive' }))
+    expect(screen.getByRole('switch', { name: 'Regenerate password link' })).not.toBeChecked()
+    expect(screen.getByLabelText('Password (leave blank to keep)')).toBeEnabled()
+    expect(
+      screen.getByRole('switch', { name: 'Force password change on next login' }),
+    ).toBeEnabled()
+    await actor.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(save).toHaveBeenCalledOnce()
+    expect(save.mock.calls[0][0]).not.toHaveProperty('password')
+  })
+
+  it('cancels a enabled regeneration without saving', async () => {
+    const actor = userEvent.setup()
+    const save = vi.fn()
+    const close = vi.fn()
+    render(
+      <AddEditPersonModal
+        open
+        onClose={close}
+        onSave={save}
+        onSetupLink={vi.fn()}
+        programs={programs}
+        user={{ ...existingUser, active: true, has_local_password: true }}
+      />,
+    )
+    await actor.click(screen.getByRole('switch', { name: 'Regenerate password link' }))
+    await actor.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(close).toHaveBeenCalledOnce()
+    expect(save).not.toHaveBeenCalled()
+  })
 
   it('renders "Add Person" title when no user is provided', () => {
     render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
@@ -118,6 +377,40 @@ describe('AddEditPersonModal', () => {
     // Password should not be in the data when left blank
     expect(onSave.mock.calls[0][0].password).toBeUndefined()
   })
+
+  it.each([false, true])(
+    'requires eight characters for an entered password (edit=%s)',
+    async (isEdit) => {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <AddEditPersonModal
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          programs={programs}
+          user={isEdit ? existingUser : undefined}
+        />,
+      )
+      if (!isEdit) {
+        await user.type(screen.getByLabelText(/full name/i), 'New Person')
+        await user.type(screen.getByLabelText(/email/i), 'new@example.ca')
+      }
+      const submit = screen.getByRole('button', { name: isEdit ? 'Save' : 'Add' })
+      const password = screen.getByLabelText(isEdit ? 'Password (leave blank to keep)' : 'Password')
+      if (isEdit) expect(submit).not.toBeDisabled()
+      else expect(submit).toBeDisabled()
+      await user.type(password, '1234567')
+      expect(screen.getByText('Password must be at least 8 characters')).toBeInTheDocument()
+      expect(submit).toBeDisabled()
+      expect(onSave).not.toHaveBeenCalled()
+      await user.type(password, '8')
+      expect(screen.queryByText('Password must be at least 8 characters')).not.toBeInTheDocument()
+      expect(submit).not.toBeDisabled()
+      await user.click(submit)
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ password: '12345678' }))
+    },
+  )
 
   it('shows student restriction helper text when role is student', () => {
     render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)

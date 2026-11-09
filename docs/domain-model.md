@@ -17,6 +17,26 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   layer); `active`
   (default `true`, controls authentication eligibility);
   `last_access`; `metadata_` (JSONB, DB column `metadata`).
+- **Local credential state:** `invite_nonce` (`String(64)`, nullable) binds the
+  current password-setup token; each mint replaces it, and redeeming a token or
+  clearing a password clears it. `must_change_password` is non-nullable, defaults
+  to `false`, and may be true only for an unlinked local account with a password.
+  Admin create/patch requests reject invalid forced-change states with 422.
+  Passwords are optional on create; supplied passwords require at least eight
+  characters. On patch, omission leaves credentials unchanged, explicit `null`
+  clears both `password_hash` and `invite_nonce` and automatically resets
+  `must_change_password` to false, and a string sets the password. An explicit
+  `must_change_password: true` alongside `password: null` is rejected with 422.
+- **API flags:** full `UserOut`, `/auth/me`, and the login user payload expose
+  `has_local_password` (`password_hash IS NOT NULL`), `oidc_linked`
+  (`oidc_subject IS NOT NULL`), and `must_change_password`. Both derived flags
+  can be true (dual credentials) or false (passwordless, unlinked account).
+  Instructor directory projections omit these flags. `get_current_user` rejects
+  flagged users with 403 `password_change_required`; `/auth/me` and authenticated
+  `/auth/change-password` deliberately bypass that gate. Successful password
+  change clears the flag. See [password management](password-setup.md) for the
+  API, auth-path audit, and bounded existing tile-token exception, and
+  [user deactivation](user-deactivation.md) for inactive-account behavior.
 - **Relationships:** `programs` (M2M via `user_programs`); `groups` (M2M via
   `group_members`, `viewonly` — the user's group memberships).
 - **Deletion:** no cascade targets; `admin_tasks.created_by` and
@@ -155,7 +175,11 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `status_message`; `name`; `category_id` (`SET NULL`); `copyright`; `note`;
   `active`; `image_id` (FK to Image, `SET NULL` — linked after processing);
   `file_size` (BigInteger); `uploaded_by` (FK to User, `SET NULL` — audit only,
-  resolved at processing time rather than snapshotting role/synthetic metadata).
+  resolved at processing time rather than snapshotting role/synthetic metadata);
+  `bulk_import_job_id` (FK to BulkImportJob, `SET NULL` — set for rows created
+  by a bulk import; paired with `stored_path` under the partial unique index
+  `uq_source_images_bulk_import_entry` so a resumed coordinator creates each
+  source image exactly once, added in `0041_bulk_import_resume`).
 
 - **Tile-cache provenance** _(added in `0014_add_tile_provenance`)_:
   `source_checksum` (SHA-256 of the source file), `tile_settings_hash`
@@ -170,9 +194,14 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** tracks multi-file upload/import operations.
 - **Key fields:** `status` (`pending` / `processing` / `completed` / `failed`);
   `category_id` (nullable FK, `SET NULL`); `total_count`; `completed_count`;
-  `failed_count`; `errors` (JSONB array); `requested_by` (FK to User, `SET NULL`
-  — audit only).
-- **Relationships:** `category`; `requester` (nullable FK to `User`).
+  `failed_count`; `errors` (JSONB array); `file_manifest` (JSONB staged
+  `[filename, stored_path]` pairs persisted at creation for orphan cleanup);
+  `job_id` (nullable FK to Job, `SET NULL` — durable supervisor link for
+  resumable coordination, added in `0041_bulk_import_resume`; `NULL` rows keep
+  the legacy finalize-on-stale reconciliation); `requested_by` (FK to User,
+  `SET NULL` — audit only).
+- **Relationships:** `category`; `requester` (nullable FK to `User`);
+  `job` (nullable FK to `Job`).
 
 ### Job _(added in `0022_add_jobs`)_
 
@@ -184,7 +213,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `total_count`; `completed_count`; `skipped_count`; `failed_count`;
   `cancelled_count`;
   `error_message`; `metadata_` (JSONB, DB column `metadata`); `requested_by`
-  (FK to User, `SET NULL`); `started_at`; `completed_at`.
+  (FK to User, `SET NULL`); `coordinator_token` / `coordinator_heartbeat_at` /
+  `coordinator_lease_expires_at` (CAS-guarded supervisor lease used by
+  resumable bulk-import coordinators, added in `0041_bulk_import_resume`);
+  `started_at`; `completed_at`.
 - **Relationships:** `requester`; `items` (one-to-many `JobItem`, cascade
   delete).
 - **Rebuild uniqueness:** PostgreSQL has a partial unique index permitting only

@@ -161,3 +161,20 @@ export function resolveCategoryPath(tree: Category[], ids: number[]): Category[]
   }
   return result
 }
+
+/**
+ * Resolve stored category ids — a shareable `?cat=` value or a history
+ * entry's `catIds` — to a live path. The last id is the leaf the user was
+ * viewing, so it is looked up by id anywhere in the tree: ancestor ids
+ * recorded before a reparent are stale and must not truncate the walk
+ * (#1590). When the leaf has left the tree, fall back to the positional
+ * `resolveCategoryPath` prefix.
+ */
+export function resolveCategoryPathByLeaf(tree: Category[], ids: number[]): Category[] {
+  const leafId = ids[ids.length - 1]
+  if (leafId != null) {
+    const live = findCategoryPath(tree, leafId)
+    if (live) return live
+  }
+  return resolveCategoryPath(tree, ids)
+}

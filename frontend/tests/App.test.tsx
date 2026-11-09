@@ -916,6 +916,19 @@ vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
 
+// The real hook commits a new top-level array whenever the tree changes;
+// mirror that so tests can simulate a background refresh by mutating
+// mockCategories and re-rendering (#1590 path reconciliation is gated on
+// the tree commit, not on `path` alone).
+let mockCategoriesStable: { signature: string; value: MockCategory[] } | null = null
+function stableMockCategories(): MockCategory[] {
+  const signature = JSON.stringify(mockCategories)
+  if (mockCategoriesStable == null || mockCategoriesStable.signature !== signature) {
+    mockCategoriesStable = { signature, value: [...mockCategories] }
+  }
+  return mockCategoriesStable.value
+}
+
 vi.mock('../src/useBrowseData', async () => {
   const { narrowGroupIds, narrowProgramIds } =
     await vi.importActual<typeof import('../src/categoryUtils')>('../src/categoryUtils')
@@ -926,7 +939,7 @@ vi.mock('../src/useBrowseData', async () => {
     useBrowseData: ({ path }: { path: MockCategory[] }) => {
       const liveCategoryPath = findLiveCategoryPath(mockCategories, path)
       return {
-        categories: mockCategories,
+        categories: stableMockCategories(),
         categoriesLoading: false,
         setCategories: vi.fn(),
         uncategorizedImages: [],
@@ -1527,6 +1540,159 @@ describe('App breadcrumbs', () => {
     await screen.findByLabelText('category breadcrumb')
     expect(screen.queryByRole('button', { name: /^Visibility: / })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
+  })
+
+  it('reconciles the stored path to live ancestry after a background reparent (#1590)', async () => {
+    const leaf = {
+      id: 3,
+      label: 'Leaf',
+      parentId: 1,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const oldParent = {
+      id: 1,
+      label: 'Old Parent',
+      parentId: null,
+      children: [leaf],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, oldParent)
+    // The navigation-time path and the live tree agree initially.
+    mockInitialPath = [oldParent, leaf]
+
+    const { rerender } = render(<App />)
+
+    let crumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(crumb).getByText('Old Parent')).toBeInTheDocument()
+    expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
+
+    // A background refresh moves Leaf under New Parent; the stored path
+    // snapshots still carry the old ancestry.
+    const movedLeaf = { ...leaf, parentId: 2 }
+    const newParent = {
+      id: 2,
+      label: 'New Parent',
+      parentId: null,
+      children: [movedLeaf],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, newParent)
+    rerender(<App />)
+
+    await waitFor(() => {
+      crumb = screen.getByLabelText('category breadcrumb')
+      expect(within(crumb).getByText('New Parent')).toBeInTheDocument()
+    })
+    expect(within(crumb).queryByText('Old Parent')).not.toBeInTheDocument()
+    expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
+    // Reconciliation rewrites the current entry — it never pushes history.
+    expect(pushNavStateMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps a locally patched path until the tree commits the edit (#1590)', async () => {
+    // Simulates a confirmed rename whose tree refresh failed: the stored
+    // path carries the new label while `categories` still holds the old
+    // snapshot. Reconciliation is gated on the tree commit, so the patch
+    // must not be reverted to the stale object.
+    const live = {
+      id: 1,
+      label: 'Slides',
+      parentId: null,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, live)
+    mockInitialPath = [{ ...live, label: 'Renamed Slides' }]
+
+    const { rerender } = render(<App />)
+
+    let crumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(crumb).getByText('Renamed Slides')).toBeInTheDocument()
+    expect(within(crumb).queryByText('Slides')).not.toBeInTheDocument()
+
+    // Once the authoritative tree lands, the path converges to live objects.
+    live.label = 'Slides v2'
+    rerender(<App />)
+
+    await waitFor(() => {
+      crumb = screen.getByLabelText('category breadcrumb')
+      expect(within(crumb).getByText('Slides v2')).toBeInTheDocument()
+    })
+    expect(within(crumb).queryByText('Renamed Slides')).not.toBeInTheDocument()
+  })
+
+  it('restores a stale history entry by leaf id after a reparent (#1590)', async () => {
+    const leaf = {
+      id: 3,
+      label: 'Leaf',
+      parentId: 2,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const newParent = {
+      id: 2,
+      label: 'New Parent',
+      parentId: null,
+      children: [leaf],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, newParent)
+
+    render(<App />)
+    await screen.findByLabelText('category breadcrumb')
+
+    // The entry was recorded while Leaf sat under Old Parent (id 1);
+    // back/forward must still open Leaf at its live location.
+    act(() => {
+      popStateHandler!('browse', [1, 3], null)
+    })
+
+    const crumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(crumb).getByText('New Parent')).toBeInTheDocument()
+    expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
   })
 
   it('resets the notes dialog state when selecting another image', async () => {
@@ -2790,6 +2956,60 @@ describe('App collection browse context (#1529)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
     expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [1])
     await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('opens a collection tile from the Browse root and returns to Browse home on close (#1592)', async () => {
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection tile' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: true,
+      },
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('restores the Browse-root origin from ?from=browse on reload and returns to Browse home on close (#1592)', async () => {
+    window.history.replaceState(null, '', '/?collection=12&from=browse')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('restores the Browse-root origin from ?from=browse on popstate (#1592)', async () => {
+    await renderWithCollectionsEnabled()
+    expect(popStateHandler).not.toBeNull()
+
+    window.history.replaceState(null, '', '/?collection=12&from=browse')
+    act(() => {
+      popStateHandler!('collections', [], null, {})
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('keeps a bare ?collection={id} link closing to the Collections list (#1592)', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, undefined)
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
   })
 
   it('wires breadcrumb navigation and hide/show props for the detail header (#1559)', async () => {

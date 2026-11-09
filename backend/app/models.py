@@ -293,6 +293,18 @@ class SourceImage(Base):
         # ``alembic revision --autogenerate`` does not propose dropping
         # and recreating this index under a different name.
         Index("idx_source_images_status", "status"),
+        # Exactly-once source-image creation per bulk-import manifest entry
+        # (#1173): a resumed coordinator must never create a second
+        # SourceImage for the same staged file, even when two coordinators
+        # briefly overlap after a lease takeover. Partial so ordinary
+        # (non-bulk) uploads are unaffected.
+        Index(
+            "uq_source_images_bulk_import_entry",
+            "bulk_import_job_id",
+            "stored_path",
+            unique=True,
+            postgresql_where=text("bulk_import_job_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -320,6 +332,13 @@ class SourceImage(Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     uploaded_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Originating bulk-import job (#1173). Lets a resumed coordinator
+    # distinguish manifest entries already converted into SourceImage rows
+    # from untouched ones, and enforces one SourceImage per staged file via
+    # ``uq_source_images_bulk_import_entry``.
+    bulk_import_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("bulk_import_jobs.id", ondelete="SET NULL"), nullable=True
     )
     # Tile-cache provenance (see app/tile_provenance.py and docs/tile-cache-provenance.md).
     # Recorded when tiles are generated so currentness can be evaluated after a
@@ -415,6 +434,14 @@ class BulkImportJob(Base):
         default=list,
         server_default=text("'[]'::jsonb"),
     )
+    # Durable supervisor link (#1173): points at the generic ``Job`` row
+    # (``job_type="bulk_import"``) whose ``JobItem`` snapshot makes the import
+    # resumable across API restarts. ``NULL`` for rows created before the
+    # durable path shipped; those keep the legacy finalize-on-stale
+    # reconciliation behaviour.
+    job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
+    )
     requested_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -475,6 +502,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    invite_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     role: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
@@ -715,6 +746,20 @@ class Job(Base):
     requested_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )
+    # API-coordinator lease (#1173). Bulk-import supervisors are claimed by
+    # whichever API replica wins this CAS-guarded lease; heartbeat/expiry
+    # mirror the JobItem claim contract so a crashed coordinator's job can be
+    # taken over exactly once. Unused by tile-rebuild jobs (their pump is
+    # arq-scheduled) but kept generic on the shared supervisor row.
+    coordinator_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
+    coordinator_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    coordinator_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -925,6 +970,8 @@ class MeasurementFinding(Base):
     detector_version: Mapped[str] = mapped_column(String(50), nullable=False)
     approved_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
     approved_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Objective this approval wrote to ``objective_power``; None when it wrote none.
+    approved_objective: Mapped[str | None] = mapped_column(String(20), nullable=True)
     reviewed_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

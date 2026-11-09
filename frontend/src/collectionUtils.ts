@@ -216,3 +216,15 @@ export function parseCollectionItemParam(search: string): number | null {
   const id = Number(raw)
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
+
+/**
+ * Whether a `?collection=` URL encodes a Browse origin (#1529, #1592):
+ * `?cat=` carries a non-root scope and `?from=browse` marks the param-less
+ * root (where `?cat=` cannot appear). False without a valid `?collection=`
+ * param, so Collections-list deep links stay list-context.
+ */
+export function collectionLinkFromBrowse(search: string): boolean {
+  if (parseCollectionIdParam(search) == null) return false
+  const params = new URLSearchParams(search)
+  return params.get('cat') != null || params.get('from') === 'browse'
+}

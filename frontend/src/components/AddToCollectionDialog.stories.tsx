@@ -37,6 +37,7 @@ function makeAuth(user: User): AuthContextValue {
     addUser: () => undefined,
     deleteUser: () => undefined,
     refreshUsers: () => undefined,
+    refreshCurrentUser: async () => undefined,
     canManageUsers: user.role === 'admin',
     canEditContent: user.role === 'admin' || user.role === 'instructor',
     canViewPeople: user.role !== 'student',

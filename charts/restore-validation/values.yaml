@@ -28,6 +28,8 @@ sourceProfile:
         }
       memberships: []
   dynamicRolePrefixes: ['v-']
+  # Fallback Alembic head for recovery sets whose manifest predates
+  # database_recovery.migration_version; newer manifests supply the head.
   expectedMigrationVersion: unconfigured
   minimumRowCounts: { categories: 0, images: 0, source_images: 0, users: 0 }
   # Lowercase email SHA-256 only; never place the recovered email in this profile.

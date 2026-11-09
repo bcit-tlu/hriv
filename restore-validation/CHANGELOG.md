@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.1](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.2.0...restore-validation-v0.2.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **restore-validation:** accept barman-cloud plugin backup IDs in CNPG_BACKUP_ID_RE ([#1804](https://github.com/bcit-tlu/hriv/issues/1804)) ([bdda2ad](https://github.com/bcit-tlu/hriv/commit/bdda2ad7fc9e32026a8bff8eaf95c2f68c18947c))
+
+## [0.2.0](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.18...restore-validation-v0.2.0) (2026-11-08)
+
+
+### Features
+
+* **restore-validation:** validate the restored Alembic head against the manifest ([#1796](https://github.com/bcit-tlu/hriv/issues/1796)) ([d1812dc](https://github.com/bcit-tlu/hriv/commit/d1812dc6b9863e83a9493eadfc6eaceb83f0843f))
+
 ## [0.1.18](https://github.com/bcit-tlu/hriv/compare/restore-validation-v0.1.17...restore-validation-v0.1.18) (2026-11-04)
 
 

@@ -15,6 +15,9 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Switch from '@mui/material/Switch'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
+import Tooltip from '@mui/material/Tooltip'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -22,12 +25,13 @@ import type { Role, Program } from '../types'
 import type { ApiUser } from '../api'
 import { userMessage } from '../api'
 
-interface PersonFormData {
+export interface PersonFormData {
   name: string
   email: string
   role: Role
   active: boolean
-  password?: string
+  password?: string | null
+  must_change_password?: boolean
   program_ids?: number[]
 }
 
@@ -38,6 +42,8 @@ interface AddEditPersonModalProps {
   programs: Program[]
   /** If provided, we are editing; otherwise adding. */
   user?: ApiUser | null
+  onSetupLink?: () => void
+  selfProfile?: boolean
 }
 
 function AddEditPersonForm({
@@ -46,23 +52,61 @@ function AddEditPersonForm({
   onSavingChange,
   programs,
   user,
+  onSetupLink,
+  selfProfile = false,
 }: Omit<AddEditPersonModalProps, 'open'> & { onSavingChange?: (saving: boolean) => void }) {
   const isEdit = Boolean(user)
   const [name, setName] = useState(user?.name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
   const [password, setPassword] = useState('')
+  const [invite, setInvite] = useState(false)
+  const [mustChange, setMustChange] = useState(user?.must_change_password ?? false)
+  const [regenerateLink, setRegenerateLink] = useState(false)
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
   const [active, setActive] = useState(user?.active ?? true)
   const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const canRegenerateLink = Boolean(
+    isEdit &&
+    !selfProfile &&
+    onSetupLink &&
+    active &&
+    user?.active &&
+    !user.oidc_linked &&
+    user.has_local_password,
+  )
+  if (!canRegenerateLink && regenerateLink) setRegenerateLink(false)
+  const regenerating = canRegenerateLink && regenerateLink
+  const setupDisabledReason = user?.oidc_linked
+    ? 'Managed by the identity provider'
+    : !user?.active
+      ? 'Activate this account before creating a setup link'
+      : user.has_local_password
+        ? 'This account already has a password'
+        : ''
+  const passwordError =
+    !regenerating &&
+    password &&
+    (!isEdit && invite
+      ? false
+      : Array.from(password).length < 8
+        ? 'Password must be at least 8 characters'
+        : new TextEncoder().encode(password).length > 72
+          ? 'Password must be at most 72 UTF-8 bytes'
+          : false)
+  const forceDisabledReason = user?.oidc_linked
+    ? 'Managed by the identity provider'
+    : !user?.has_local_password
+      ? 'Set a local password before requiring a password change'
+      : ''
 
   const handleSave = async () => {
     const trimmedName = name.trim()
     const trimmedEmail = email.trim()
-    const trimmedPassword = password.trim()
     if (!trimmedName || !trimmedEmail) return
-    if (!isEdit && !trimmedPassword) return
+    if (!isEdit && !invite && !password) return
+    if (passwordError) return
 
     const data: PersonFormData = {
       name: trimmedName,
@@ -71,9 +115,13 @@ function AddEditPersonForm({
       active,
       program_ids: programIds,
     }
-    if (trimmedPassword) {
-      data.password = trimmedPassword
+    if (regenerating) {
+      data.password = null
+    } else if (password && (isEdit ? !user?.oidc_linked : !invite)) {
+      data.password = password
     }
+    if (isEdit && !selfProfile && !regenerating && !forceDisabledReason)
+      data.must_change_password = mustChange
     setSaving(true)
     onSavingChange?.(true)
     setSaveError(null)
@@ -103,9 +151,10 @@ function AddEditPersonForm({
 
   const canSave =
     !saving &&
+    !passwordError &&
     (isEdit
       ? name.trim() !== '' && email.trim() !== ''
-      : name.trim() !== '' && email.trim() !== '' && password.trim() !== '')
+      : name.trim() !== '' && email.trim() !== '' && (invite || password !== ''))
 
   // Build the full list of programs to show in the dropdown: active programs
   // plus any programs the user is currently assigned to that may have been
@@ -120,7 +169,7 @@ function AddEditPersonForm({
 
   return (
     <>
-      <DialogTitle>{isEdit ? 'Edit Person' : 'Add Person'}</DialogTitle>
+      <DialogTitle id="person-form-title">{isEdit ? 'Edit Person' : 'Add Person'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {saveError && (
           <Alert severity="error" onClose={() => setSaveError(null)}>
@@ -143,17 +192,90 @@ function AddEditPersonForm({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <TextField
-          label={isEdit ? 'Password (leave blank to keep)' : 'Password'}
-          type="password"
-          fullWidth
-          variant="outlined"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        {!isEdit && (
+          <FormControl>
+            <Typography id="password-mode-label" variant="body2">
+              Password setup
+            </Typography>
+            <RadioGroup
+              aria-labelledby="password-mode-label"
+              value={invite ? 'invite' : 'password'}
+              onChange={(event) => setInvite(event.target.value === 'invite')}
+            >
+              <FormControlLabel value="password" control={<Radio />} label="Set password now" />
+              <FormControlLabel
+                value="invite"
+                control={<Radio />}
+                label="Invite by link (user sets their own password)"
+              />
+            </RadioGroup>
+          </FormControl>
+        )}
+        {(isEdit || !invite) && (
+          <TextField
+            label={isEdit ? 'Password (leave blank to keep)' : 'Password'}
+            type="password"
+            fullWidth
+            variant="outlined"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={Boolean(user?.oidc_linked) || regenerating || saving}
+            error={Boolean(passwordError)}
+            helperText={
+              user?.oidc_linked
+                ? 'Managed by the identity provider'
+                : passwordError ||
+                  (isEdit
+                    ? 'Enter a new password to change it, or leave blank to keep the current one.'
+                    : undefined)
+            }
+            slotProps={{
+              formHelperText: { sx: { '&.Mui-disabled': { color: 'text.secondary' } } },
+            }}
+          />
+        )}
+        {isEdit && !selfProfile && (
+          <>
+            {canRegenerateLink && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={regenerateLink}
+                    disabled={saving}
+                    onChange={(event) => setRegenerateLink(event.target.checked)}
+                  />
+                }
+                label="Regenerate password link"
+              />
+            )}
+            <Tooltip title={forceDisabledReason} describeChild>
+              <span>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={mustChange}
+                      disabled={Boolean(forceDisabledReason) || regenerating || saving}
+                      onChange={(event) => setMustChange(event.target.checked)}
+                    />
+                  }
+                  label="Force password change on next login"
+                />
+              </span>
+            </Tooltip>
+            {onSetupLink && (
+              <Tooltip title={setupDisabledReason} describeChild>
+                <span>
+                  <Button disabled={saving || Boolean(setupDisabledReason)} onClick={onSetupLink}>
+                    Copy password-setup link
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+          </>
+        )}
         <FormControl fullWidth>
-          <InputLabel>Role</InputLabel>
-          <Select value={role} label="Role" onChange={handleRoleChange}>
+          <InputLabel id="person-role-label">Role</InputLabel>
+          <Select labelId="person-role-label" value={role} label="Role" onChange={handleRoleChange}>
             <MenuItem value="admin">Admin</MenuItem>
             <MenuItem value="instructor">Instructor</MenuItem>
             <MenuItem value="staff">Staff</MenuItem>
@@ -161,9 +283,12 @@ function AddEditPersonForm({
           </Select>
         </FormControl>
         <FormControl fullWidth>
-          <InputLabel shrink>Programs</InputLabel>
+          <InputLabel id="person-programs-label" shrink>
+            Programs
+          </InputLabel>
           <Select
             multiple
+            labelId="person-programs-label"
             value={programIds}
             label="Programs"
             onChange={handleProgramChange}
@@ -216,7 +341,11 @@ function AddEditPersonForm({
           onClick={handleSave}
           variant="contained"
           disabled={!canSave}
-          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
+          startIcon={
+            saving ? (
+              <CircularProgress size={16} color="inherit" aria-label="Saving person" />
+            ) : undefined
+          }
         >
           {isEdit ? 'Save' : 'Add'}
         </Button>
@@ -231,6 +360,8 @@ export default function AddEditPersonModal({
   onSave,
   programs,
   user,
+  onSetupLink,
+  selfProfile = false,
 }: AddEditPersonModalProps) {
   const [saving, setSaving] = useState(false)
   useEffect(() => {
@@ -243,6 +374,7 @@ export default function AddEditPersonModal({
   return (
     <Dialog
       open={open}
+      aria-labelledby="person-form-title"
       onClose={saving ? undefined : onClose}
       disableEscapeKeyDown={saving}
       maxWidth="xs"
@@ -252,6 +384,8 @@ export default function AddEditPersonModal({
         key={open ? formKey : 'closed'}
         onClose={onClose}
         onSave={onSave}
+        onSetupLink={onSetupLink}
+        selfProfile={selfProfile}
         onSavingChange={setSaving}
         programs={programs}
         user={user}

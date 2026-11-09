@@ -10,15 +10,17 @@ import logging
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import CTE, ColumnElement, Float, Text, cast, func, literal, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from ..auth import require_role
 from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
 from ..collection_views import image_ids_in_collections
 from ..database import async_session, get_db
+from ..measurement.calibration import CAMERA_PROFILES
 from ..measurement.service import (
     approve_finding,
     has_scale,
@@ -29,8 +31,9 @@ from ..measurement.service import (
     scan_candidates_stmt,
     scan_images,
 )
-from ..models import Image, MeasurementFinding, User
+from ..models import Category, Image, MeasurementFinding, User
 from ..schemas import (
+    MeasurementFindingCategoryOut,
     MeasurementApprove,
     MeasurementBulkApprove,
     MeasurementBulkApproveOut,
@@ -53,20 +56,80 @@ _Reviewer = Annotated[User, Depends(require_role("admin", "instructor"))]
 # holds a worker slot for hours and progress stays resumable.
 _SCAN_JOB_CHUNK = 50
 
-_SORTS = {
-    "confidence_desc": (MeasurementFinding.confidence.desc(), MeasurementFinding.id),
-    "confidence_asc": (MeasurementFinding.confidence.asc(), MeasurementFinding.id),
-    "created_desc": (MeasurementFinding.id.desc(),),
-}
+FindingSort = Literal[
+    "confidence_desc",
+    "confidence_asc",
+    "created_desc",
+    "name_asc",
+    "name_desc",
+    "category_asc",
+    "category_desc",
+    "objective_asc",
+    "objective_desc",
+    "proposed_asc",
+    "proposed_desc",
+]
+
+CATEGORY_PATH_SEPARATOR = " › "
 
 
-def _out(finding: MeasurementFinding, image: Image) -> MeasurementFindingOut:
+def _category_paths() -> CTE:
+    """Recursive CTE of ``(id, path)``, e.g. ``Hematology › Blood films``."""
+    root = (
+        select(Category.id.label("id"), cast(Category.label, Text).label("path"))
+        .where(Category.parent_id.is_(None))
+        .cte("category_paths", recursive=True)
+    )
+    child = aliased(Category)
+    return root.union_all(
+        select(
+            child.id,
+            cast(root.c.path + literal(CATEGORY_PATH_SEPARATOR) + child.label, Text),
+        ).join(root, child.parent_id == root.c.id)
+    )
+
+
+def _order_by(
+    sort: str, path: CTE, status: str = "pending"
+) -> tuple[ColumnElement, ...]:
+    """Sort columns; ties fall back to image name so related rows stay together."""
+    key, direction = sort.rsplit("_", 1)
+    if key == "created":
+        return (MeasurementFinding.id.desc(),)
+    column = {
+        "confidence": MeasurementFinding.confidence,
+        "name": func.lower(Image.name),
+        "category": func.lower(path.c.path),
+        # Approved rows show the objective the approval wrote, so sort on that.
+        "objective": cast(
+            MeasurementFinding.approved_objective
+            if status == "approved"
+            else MeasurementFinding.objective,
+            Float,
+        ),
+        "proposed": MeasurementFinding.proposed_scale,
+    }[key]
+    ordered = column.asc() if direction == "asc" else column.desc()
+    return (ordered.nulls_last(), func.lower(Image.name), MeasurementFinding.id)
+
+
+async def _category_path(db: AsyncSession, image: Image) -> str | None:
+    if image.category_id is None:
+        return None
+    paths = _category_paths()
+    return await db.scalar(select(paths.c.path).where(paths.c.id == image.category_id))
+
+
+def _out(
+    finding: MeasurementFinding, image: Image, category_path: str | None = None
+) -> MeasurementFindingOut:
     return MeasurementFindingOut(
         id=finding.id,
         image_id=image.id,
         image_name=image.name,
         image_thumb=image.thumb,
         category_id=image.category_id,
+        category_path=category_path,
         image_width=image.width,
         image_height=image.height,
         status=finding.status,
@@ -79,6 +142,8 @@ def _out(finding: MeasurementFinding, image: Image) -> MeasurementFindingOut:
         detector_version=finding.detector_version,
         approved_scale=finding.approved_scale,
         approved_unit=finding.approved_unit,
+        approved_objective=finding.approved_objective,
+        objective_scales=CAMERA_PROFILES.get((image.width or 0, image.height or 0)),
         reviewed_by=finding.reviewed_by,
         reviewed_at=finding.reviewed_at,
         created_at=finding.created_at,
@@ -217,7 +282,7 @@ async def list_findings(
     status: Literal["pending", "approved", "rejected", "superseded"] = "pending",
     category_id: int | None = None,
     min_confidence: float | None = Query(default=None, ge=0, le=1),
-    sort: Literal["confidence_desc", "confidence_asc", "created_desc"] = "confidence_desc",
+    sort: FindingSort = "confidence_desc",
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> MeasurementFindingsPageOut:
@@ -229,18 +294,52 @@ async def list_findings(
         filters.append(Image.category_id == category_id)
     if min_confidence is not None:
         filters.append(MeasurementFinding.confidence >= min_confidence)
-    base = select(MeasurementFinding, Image).join(
-        Image, Image.id == MeasurementFinding.image_id
-    ).where(*filters)
+    paths = _category_paths()
+    base = (
+        select(MeasurementFinding, Image, paths.c.path)
+        .join(Image, Image.id == MeasurementFinding.image_id)
+        .outerjoin(paths, paths.c.id == Image.category_id)
+        .where(*filters)
+    )
     total = await db.scalar(
         select(func.count()).select_from(base.subquery())
     )
     rows = (
-        await db.execute(base.order_by(*_SORTS[sort]).limit(limit).offset(offset))
+        await db.execute(
+            base.order_by(*_order_by(sort, paths, status)).limit(limit).offset(offset)
+        )
     ).all()
     return MeasurementFindingsPageOut(
-        items=[_out(f, img) for f, img in rows], total=total or 0
+        items=[_out(f, img, path) for f, img, path in rows], total=total or 0
     )
+
+
+@router.get("/categories", response_model=list[MeasurementFindingCategoryOut])
+async def list_finding_categories(
+    _user: _Reviewer,
+    db: AsyncSession = Depends(get_db),
+    status: Literal["pending", "approved", "rejected", "superseded"] = "pending",
+) -> list[MeasurementFindingCategoryOut]:
+    """Categories holding findings in ``status``, for the review page's filter."""
+    filters = [MeasurementFinding.status == status, Image.category_id.is_not(None)]
+    if status == "pending":
+        filters.append(~has_scale_sql())
+    paths = _category_paths()
+    rows = (
+        await db.execute(
+            select(paths.c.id, paths.c.path, func.count(MeasurementFinding.id))
+            .select_from(MeasurementFinding)
+            .join(Image, Image.id == MeasurementFinding.image_id)
+            .join(paths, paths.c.id == Image.category_id)
+            .where(*filters)
+            .group_by(paths.c.id, paths.c.path)
+            .order_by(func.lower(paths.c.path))
+        )
+    ).all()
+    return [
+        MeasurementFindingCategoryOut(id=cid, path=path, count=count)
+        for cid, path, count in rows
+    ]
 
 
 async def _pending_with_image(
@@ -308,7 +407,7 @@ async def bulk_approve(
             superseded = True
             skipped.append(finding_id)
             continue
-        await approve_finding(db, finding, image, user.id)
+        await approve_finding(db, finding, image, user.id, objective=finding.objective)
         approved.append(finding_id)
         touched.append(image)
     if approved:
@@ -343,7 +442,14 @@ async def approve(
         raise HTTPException(status_code=409, detail="Image already has a scale")
     body = body or MeasurementApprove()
     try:
-        await approve_finding(db, finding, image, user.id, body.scale, body.unit)
+        objective = (
+            body.objective
+            if "objective" in body.model_fields_set
+            else finding.objective
+        )
+        await approve_finding(
+            db, finding, image, user.id, body.scale, body.unit, objective
+        )
     except ValueError:
         raise HTTPException(
             status_code=422, detail="Finding has no proposed scale; supply one"
@@ -361,7 +467,7 @@ async def approve(
             **actor_log_fields(user),
         },
     )
-    return _out(finding, image)
+    return _out(finding, image, await _category_path(db, image))
 
 
 @router.post("/{finding_id}/reject", response_model=MeasurementFindingOut)
@@ -374,7 +480,7 @@ async def reject(
     reject_finding(finding, user.id)
     await db.commit()
     await db.refresh(finding)
-    return _out(finding, image)
+    return _out(finding, image, await _category_path(db, image))
 
 
 @router.post("/{finding_id}/reset", response_model=MeasurementFindingOut)
@@ -430,7 +536,7 @@ async def reset(
             **actor_log_fields(user),
         },
     )
-    return _out(finding, image)
+    return _out(finding, image, await _category_path(db, image))
 
 
 @router.post("/{finding_id}/rescan", response_model=MeasurementScanOut, status_code=202)
