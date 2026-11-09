@@ -21,8 +21,12 @@ import pytest
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-# Ensure pyvips can be imported even when libvips is not installed (CI)
-if "pyvips" not in sys.modules:
+# Ensure pyvips can be imported even when libvips is not installed. Only
+# stub when the real import fails — an unconditional stub would poison
+# sys.modules for later test modules that need real libvips (CI has it).
+try:
+    import pyvips  # noqa: F401
+except Exception:
     sys.modules["pyvips"] = MagicMock()
     sys.modules["pyvips.enums"] = MagicMock()
 
