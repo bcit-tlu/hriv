@@ -175,7 +175,11 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `status_message`; `name`; `category_id` (`SET NULL`); `copyright`; `note`;
   `active`; `image_id` (FK to Image, `SET NULL` — linked after processing);
   `file_size` (BigInteger); `uploaded_by` (FK to User, `SET NULL` — audit only,
-  resolved at processing time rather than snapshotting role/synthetic metadata).
+  resolved at processing time rather than snapshotting role/synthetic metadata);
+  `bulk_import_job_id` (FK to BulkImportJob, `SET NULL` — set for rows created
+  by a bulk import; paired with `stored_path` under the partial unique index
+  `uq_source_images_bulk_import_entry` so a resumed coordinator creates each
+  source image exactly once, added in `0041_bulk_import_resume`).
 
 - **Tile-cache provenance** _(added in `0014_add_tile_provenance`)_:
   `source_checksum` (SHA-256 of the source file), `tile_settings_hash`
@@ -190,9 +194,14 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** tracks multi-file upload/import operations.
 - **Key fields:** `status` (`pending` / `processing` / `completed` / `failed`);
   `category_id` (nullable FK, `SET NULL`); `total_count`; `completed_count`;
-  `failed_count`; `errors` (JSONB array); `requested_by` (FK to User, `SET NULL`
-  — audit only).
-- **Relationships:** `category`; `requester` (nullable FK to `User`).
+  `failed_count`; `errors` (JSONB array); `file_manifest` (JSONB staged
+  `[filename, stored_path]` pairs persisted at creation for orphan cleanup);
+  `job_id` (nullable FK to Job, `SET NULL` — durable supervisor link for
+  resumable coordination, added in `0041_bulk_import_resume`; `NULL` rows keep
+  the legacy finalize-on-stale reconciliation); `requested_by` (FK to User,
+  `SET NULL` — audit only).
+- **Relationships:** `category`; `requester` (nullable FK to `User`);
+  `job` (nullable FK to `Job`).
 
 ### Job _(added in `0022_add_jobs`)_
 
@@ -204,7 +213,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `total_count`; `completed_count`; `skipped_count`; `failed_count`;
   `cancelled_count`;
   `error_message`; `metadata_` (JSONB, DB column `metadata`); `requested_by`
-  (FK to User, `SET NULL`); `started_at`; `completed_at`.
+  (FK to User, `SET NULL`); `coordinator_token` / `coordinator_heartbeat_at` /
+  `coordinator_lease_expires_at` (CAS-guarded supervisor lease used by
+  resumable bulk-import coordinators, added in `0041_bulk_import_resume`);
+  `started_at`; `completed_at`.
 - **Relationships:** `requester`; `items` (one-to-many `JobItem`, cascade
   delete).
 - **Rebuild uniqueness:** PostgreSQL has a partial unique index permitting only

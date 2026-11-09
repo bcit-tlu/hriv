@@ -71,7 +71,7 @@ import {
   getCategoryHiddenStateFromPath,
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
-  resolveCategoryPath,
+  resolveCategoryPathByLeaf,
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
@@ -79,6 +79,7 @@ import {
   apiCollectionSummaryToSummary,
   apiImageToItem,
   collectionFullMessage,
+  collectionLinkFromBrowse,
   parseCollectionIdParam,
   parseCollectionItemParam,
   studentTypesAtCap,
@@ -217,11 +218,11 @@ export default function App() {
   )
   // Whether the open collection detail was reached from a Browse tile
   // (#1529): close/back then returns to the Browse scope in `path` rather
-  // than the Collections list. Deep links carrying `?cat=` start true.
-  const [collectionFromBrowse, setCollectionFromBrowse] = useState<boolean>(() => {
-    if (parseCollectionIdParam(window.location.search) == null) return false
-    return new URLSearchParams(window.location.search).get('cat') != null
-  })
+  // than the Collections list. Deep links carrying `?cat=` start true; the
+  // param-less root scope is marked `?from=browse` instead (#1592).
+  const [collectionFromBrowse, setCollectionFromBrowse] = useState<boolean>(() =>
+    collectionLinkFromBrowse(window.location.search),
+  )
   // `?type=` deep links / popstate seed the Collections page's Type filter
   // (#1629 — one unified page; the filter state owns it after the seed).
   // The nonce re-applies the seed on every collections popstate, even when
@@ -489,6 +490,26 @@ export default function App() {
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
+
+  // `path` holds navigation-time snapshots; when a background refresh
+  // commits a new tree, swap in the leaf's live ancestry so `?cat=`/history
+  // state and breadcrumb labels track it — via replaceState, never a new
+  // history entry (#1590). The check is gated on the tree commit itself so
+  // a locally confirmed edit (the rename/visibility `setPath` patch applied
+  // while a refresh failed) is not reverted until the authoritative tree
+  // lands. A leaf that has left the tree keeps its stale `path` (#1588).
+  const [reconciledCategories, setReconciledCategories] = useState(categories)
+  if (categories !== reconciledCategories) {
+    setReconciledCategories(categories)
+    if (
+      path.length > 0 &&
+      liveCategoryPath.length > 0 &&
+      (path.length !== liveCategoryPath.length ||
+        path.some((seg, i) => seg !== liveCategoryPath[i]))
+    ) {
+      setPath(liveCategoryPath)
+    }
+  }
 
   // Reported upward by CollectionsPage — the list graph fills the viewport
   // like the image/collection viewers (#1630 feedback). Declared before the
@@ -992,13 +1013,13 @@ export default function App() {
 
       if (validPage === 'collections') {
         // A collection entry pushed from a Browse tile restores the Browse
-        // scope behind it (#1529): `?cat=` rides in the popped URL and the
-        // state flag marks entries where the scope was the (param-less) root.
+        // scope behind it (#1529): `?cat=` rides in the popped URL for a
+        // non-root scope and `?from=browse` marks the param-less root
+        // (#1592); the state flag covers entries whose URL lost the marker.
         const fromBrowse =
-          poppedCollectionFromBrowse === true ||
-          new URLSearchParams(window.location.search).get('cat') != null
+          poppedCollectionFromBrowse === true || collectionLinkFromBrowse(window.location.search)
         setCollectionFromBrowse(fromBrowse)
-        setPath(fromBrowse ? resolveCategoryPath(categoriesRef.current, catIds) : [])
+        setPath(fromBrowse ? resolveCategoryPathByLeaf(categoriesRef.current, catIds) : [])
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
@@ -1019,7 +1040,7 @@ export default function App() {
       // navigates back to browse via the browser back/forward buttons.
       refreshCategories()
 
-      const catPath = resolveCategoryPath(categoriesRef.current, catIds)
+      const catPath = resolveCategoryPathByLeaf(categoriesRef.current, catIds)
       setPath(catPath)
 
       if (imageId != null) {

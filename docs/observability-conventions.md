@@ -625,6 +625,21 @@ retained-archive classification cache was last refreshed successfully, and
 not-configured states. Archive listing failures must not be rendered as zero
 retained archives.
 
+The Azure fetches behind the backup section can take several seconds when the
+caches expire together, so the scrape path bounds and de-duplicates them:
+`render_metrics` waits at most `_BACKUP_RENDER_TIMEOUT_SECONDS` (5s) for the
+backup renderer before serving the last rendered payload (or omitting the
+backup section before the first render completes), and a single-flight gate
+inside `render_backup_metrics` keeps at most one refresh in flight — renders
+arriving during a refresh return the last payload instead of queueing behind
+Azure calls. The abandoned render keeps running to completion and repopulates
+the payload cache, so a slow storage window costs at most stale gauges rather
+than a timed-out scrape. Retained-archive manifests are classified
+concurrently (bounded worker pool) to keep the refresh itself short, and the
+prefix scan only classifies archives stored directly under the environment's
+backup prefix — archives under nested sub-prefixes (for example
+`stable/<cluster>/`) belong to other environments and are ignored.
+
 `hriv_backup_last_outcome` reads `-1` ("unknown") while an attempt is in flight
 because the attempt state records `success` only at completion; the same `-1`
 covers a run that crashed before writing its outcome. Consumers must therefore

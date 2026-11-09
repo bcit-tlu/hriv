@@ -105,6 +105,11 @@ without evidence that storage permissions cannot satisfy the requirement.
 > source images. Keeping a recent Longhorn snapshot avoids a full rebuild
 > after a transient volume loss, but long-term tile backups waste storage
 > because old tile trees are invalidated by any pipeline version bump.
+>
+> The StorageClass side of this layout — which Longhorn class to bind each
+> PVC to, replica/locality/reclaim tradeoffs, and ready-to-apply example
+> manifests — is covered in
+> [longhorn-storage-classes.md](longhorn-storage-classes.md).
 
 ## Python backup service role
 

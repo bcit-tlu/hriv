@@ -5,6 +5,7 @@ import {
   findLiveCategoryPath,
   isCategoryHiddenInTree,
   resolveCategoryPath,
+  resolveCategoryPathByLeaf,
   updateImageInTree,
 } from '../src/treeUtils'
 import { makeCategory, makeImage } from './helpers/fixtures'
@@ -125,6 +126,51 @@ describe('resolveCategoryPath', () => {
   it('returns empty when first ID does not match', () => {
     const cat = makeCategory({ id: 1, label: 'Root' })
     expect(resolveCategoryPath([cat], [999])).toEqual([])
+  })
+})
+
+describe('resolveCategoryPathByLeaf', () => {
+  it('returns empty for empty ids', () => {
+    const cat = makeCategory({ id: 1, label: 'Root' })
+    expect(resolveCategoryPathByLeaf([cat], [])).toEqual([])
+  })
+
+  it('resolves a consistent path the same as resolveCategoryPath', () => {
+    const grandchild = makeCategory({ id: 3, label: 'GC' })
+    const child = makeCategory({ id: 2, label: 'Child', children: [grandchild] })
+    const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+    const result = resolveCategoryPathByLeaf([root], [1, 2, 3])
+    expect(result.map((c) => c.id)).toEqual([1, 2, 3])
+  })
+
+  it("resolves the leaf's live ancestry when ancestor ids are stale (#1590)", () => {
+    const leaf = makeCategory({ id: 3, label: 'Leaf' })
+    const newParent = makeCategory({ id: 2, label: 'New', children: [leaf] })
+    const oldParent = makeCategory({ id: 1, label: 'Old' })
+    // Stored [oldParent, leaf] predates the reparent under newParent.
+    const result = resolveCategoryPathByLeaf([oldParent, newParent], [1, 3])
+    expect(result).toEqual([newParent, leaf])
+  })
+
+  it('resolves a reparented ancestor through the leaf', () => {
+    const leaf = makeCategory({ id: 3, label: 'Leaf' })
+    const movedParent = makeCategory({ id: 2, label: 'Moved', children: [leaf] })
+    const newTop = makeCategory({ id: 4, label: 'Top', children: [movedParent] })
+    const result = resolveCategoryPathByLeaf([newTop], [1, 2, 3])
+    expect(result.map((c) => c.id)).toEqual([4, 2, 3])
+  })
+
+  it('falls back to the positional prefix when the leaf left the tree', () => {
+    const child = makeCategory({ id: 2, label: 'Child' })
+    const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+    // Leaf id 9 is gone; [1, 2] is still a valid positional prefix.
+    const result = resolveCategoryPathByLeaf([root], [1, 2, 9])
+    expect(result.map((c) => c.id)).toEqual([1, 2])
+  })
+
+  it('returns empty when neither leaf nor prefix resolves', () => {
+    const cat = makeCategory({ id: 1, label: 'Root' })
+    expect(resolveCategoryPathByLeaf([cat], [999])).toEqual([])
   })
 })
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.2...backup-v0.17.3) (2026-11-09)
+
+
+### Documentation
+
+* add recommended Longhorn StorageClasses for split media volumes ([#1812](https://github.com/bcit-tlu/hriv/issues/1812)) ([5862c45](https://github.com/bcit-tlu/hriv/commit/5862c45f53de6176fda26653d3a38ea1b20be43f))
+
 ## [0.17.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.1...backup-v0.17.2) (2026-11-08)
 
 
