@@ -249,9 +249,24 @@ async def lifespan(app: FastAPI):
     if settings.task_execution_mode == "local":
         await run_reconciliation_sweep()
 
-    yield
-    await dispose_probe_engine()
-    logger.info("Application shutting down", extra={"event": "app.shutdown"})
+    # Resumable bulk-import coordination (#1173): every API replica sweeps
+    # for active durable imports whose supervisor lease is free and nudges
+    # a coordinator. The CAS claim inside ``_process_bulk_import`` keeps
+    # this single-flight across replicas.
+    coordinator_sweep_task = asyncio.create_task(
+        bulk_import.bulk_import_coordinator_sweep_loop()
+    )
+
+    try:
+        yield
+    finally:
+        coordinator_sweep_task.cancel()
+        try:
+            await coordinator_sweep_task
+        except asyncio.CancelledError:
+            pass
+        await dispose_probe_engine()
+        logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
 
 app = FastAPI(

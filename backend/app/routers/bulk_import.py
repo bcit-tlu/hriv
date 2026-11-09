@@ -36,10 +36,28 @@ from sqlalchemy.sql import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
+from ..bulk_import_jobs import (
+    bulk_import_source_arq_job_id as _bulk_import_source_arq_job_id,
+    coordinator_claims as _coordinator_claims,
+    create_bulk_import_job as _create_bulk_import_job,
+    finalize_bulk_import_abandoned as _finalize_bulk_import_abandoned,
+    finalize_bulk_import_item as _finalize_bulk_import_item,
+    finalize_bulk_import_supervisor as _finalize_bulk_import_supervisor,
+    heartbeat_bulk_import_coordinator as _heartbeat_bulk_import_coordinator,
+    increment_coordinator_claims as _increment_coordinator_claims,
+    list_active_bulk_import_supervisors as _list_active_bulk_import_supervisors,
+    load_bulk_import_supervisor as _load_bulk_import_supervisor,
+    reclaim_expired_bulk_import_items as _reclaim_expired_bulk_import_items,
+    requeue_orphaned_bulk_import_items as _requeue_orphaned_bulk_import_items,
+    release_bulk_import_coordinator as _release_bulk_import_coordinator,
+    try_claim_bulk_import_coordinator as _try_claim_bulk_import_coordinator,
+)
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename
 from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
-from ..models import BulkImportJob, Category, SourceImage, User
+from ..job_state import claim_job_items as _claim_job_items
+from ..job_state import heartbeat_job_item as _heartbeat_job_item
+from ..models import BulkImportJob, Category, Job, JobItem, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..task_constants import (
@@ -1153,35 +1171,297 @@ async def _wait_for_source_image_terminal_state(
         await asyncio.sleep(_SOURCE_IMAGE_POLL_INTERVAL_SECONDS)
 
 
-async def _process_bulk_import(
-    job_id: int,
-    file_entries: list[tuple[str, str]],
-    copyright: str | None = None,
-    note: str | None = None,
-    active: bool = True,
-) -> None:
-    """Process a bulk import while publishing coordinator liveness."""
+async def _process_bulk_import(bulk_import_job_id: int) -> None:
+    """API-hosted durable coordinator for one bulk import (#1173).
+
+    Registers Redis liveness (still used by source-image reconciliation and
+    the POST conflict guard), runs the durable pump, and always unregisters.
+    The coordinator itself holds no arq worker slot; child image processing
+    is dispatched through the queue exactly as before.
+    """
     coordinator_pool_ref = [
-        await _register_bulk_import_coordinator(
-            job_id,
-        )
+        await _register_bulk_import_coordinator(bulk_import_job_id)
     ]
-    try:
-        await _process_bulk_import_impl(
-            job_id,
-            file_entries,
-            copyright=copyright,
-            note=note,
-            active=active,
-            coordinator_pool=coordinator_pool_ref[0],
-            coordinator_pool_ref=coordinator_pool_ref,
+    coordinator_stop_event = asyncio.Event()
+    coordinator_liveness_task = asyncio.create_task(
+        _bulk_import_coordinator_liveness_loop(
+            coordinator_pool_ref,
+            bulk_import_job_id,
+            coordinator_stop_event,
         )
+    )
+    try:
+        await _process_bulk_import_impl(bulk_import_job_id)
     finally:
+        coordinator_stop_event.set()
+        coordinator_liveness_task.cancel()
+        await asyncio.gather(
+            coordinator_liveness_task,
+            return_exceptions=True,
+        )
         if coordinator_pool_ref[0] is not None:
             await _unregister_bulk_import_coordinator(
                 coordinator_pool_ref[0],
-                job_id,
+                bulk_import_job_id,
             )
+
+
+async def _get_or_create_bulk_source_image(
+    db: AsyncSession,
+    *,
+    bulk_import_job_id: int,
+    original_filename: str,
+    stored_path: str,
+    category_id: int | None,
+    copyright: str | None,
+    note: str | None,
+    active: bool,
+    requested_by: int | None,
+) -> SourceImage:
+    """Idempotent ``SourceImage`` creation keyed by (bulk job, staged path).
+
+    The partial unique index ``uq_source_images_bulk_import_entry`` makes
+    this safe under overlapping coordinators after a lease takeover: the
+    loser of the insert race re-reads the winner's row instead of
+    duplicating it. The caller owns the transaction boundary.
+    """
+    stmt = select(SourceImage).where(
+        SourceImage.bulk_import_job_id == bulk_import_job_id,
+        SourceImage.stored_path == stored_path,
+    )
+    src = (await db.execute(stmt)).scalar_one_or_none()
+    if src is not None:
+        return src
+    src = SourceImage(
+        original_filename=original_filename,
+        stored_path=stored_path,
+        status="pending",
+        name=Path(original_filename).stem,
+        category_id=category_id,
+        copyright=copyright or "Public Domain",
+        note=note,
+        active=active,
+        uploaded_by=requested_by,
+        bulk_import_job_id=bulk_import_job_id,
+    )
+    db.add(src)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        src = (await db.execute(stmt)).scalar_one_or_none()
+        if src is None:
+            raise
+    return src
+
+
+async def _track_bulk_import_item(
+    *,
+    bulk_import_job_id: int,
+    supervisor_job_id: int,
+    item_id: int,
+    claim_token: str,
+    original_filename: str,
+    stored_path: str,
+    category_id: int | None,
+    copyright: str | None,
+    note: str | None,
+    active: bool,
+    requested_by: int | None,
+    batch_progress: _BulkImportProgress,
+) -> None:
+    """Drive one claimed ``JobItem`` to a terminal state.
+
+    Per-file lifecycle: get-or-create the ``SourceImage`` (idempotent across
+    coordinator restarts via ``uq_source_images_bulk_import_entry``), ensure
+    exactly one processing submission through the deterministic arq job ID,
+    wait for the terminal source state with the existing detector, then
+    finalize the item — token-guarded so a superseded coordinator cannot
+    double-count the file.
+    """
+    terminal_status: str | None = None
+    error_message: str | None = None
+    source_image_id: int | None = None
+    try:
+        async with async_session() as db:
+            src = await _get_or_create_bulk_source_image(
+                db,
+                bulk_import_job_id=bulk_import_job_id,
+                original_filename=original_filename,
+                stored_path=stored_path,
+                category_id=category_id,
+                copyright=copyright,
+                note=note,
+                active=active,
+                requested_by=requested_by,
+            )
+            await db.commit()
+            source_image_id = src.id
+            if src.status in {"completed", "failed"}:
+                # A previous coordinator already drove this file to a
+                # terminal state; fold the outcome into the durable ledger
+                # without re-dispatching.
+                terminal_status = src.status
+                error_message = src.error_message or src.status_message
+
+        if terminal_status is None:
+            assert source_image_id is not None
+            enqueue_result = await enqueue_process_source_image(
+                source_image_id,
+                arq_job_id=_bulk_import_source_arq_job_id(source_image_id),
+            )
+            if enqueue_result.queued:
+                terminal_state = await _wait_for_source_image_terminal_state(
+                    source_image_id,
+                    original_filename,
+                    enqueue_result=enqueue_result,
+                    batch_progress=batch_progress,
+                    bulk_import_job_id=bulk_import_job_id,
+                )
+            else:
+                # Queue unavailable in fallback mode: run the pipeline
+                # in-process, same degraded path as the legacy coordinator.
+                await process_source_image(source_image_id)
+                async with async_session() as db:
+                    src_check = await db.get(SourceImage, source_image_id)
+                    if src_check is None:
+                        raise RuntimeError(
+                            f"Source image {source_image_id} disappeared "
+                            "after processing"
+                        )
+                    terminal_state = _source_image_terminal_state(src_check)
+            terminal_status = terminal_state.status
+            if terminal_status == "failed":
+                error_message = (
+                    terminal_state.error_message
+                    or terminal_state.status_message
+                    or "Processing failed"
+                )
+
+        won = await _finalize_bulk_import_item(
+            job_id=supervisor_job_id,
+            item_id=item_id,
+            claim_token=claim_token,
+            bulk_import_job_id=bulk_import_job_id,
+            filename=original_filename,
+            terminal_status=(
+                "completed" if terminal_status == "completed" else "failed"
+            ),
+            error_message=error_message,
+        )
+        if not won:
+            logger.info(
+                "Bulk-import item finalize lost its claim",
+                extra={
+                    "event": "bulk_import.item_finalize_claim_lost",
+                    "job_id": supervisor_job_id,
+                    "item_id": item_id,
+                    "bulk_import_job_id": bulk_import_job_id,
+                    "original_filename": original_filename,
+                },
+            )
+    except TaskQueueUnavailableError as exc:
+        # Required-mode queue rejection: mark the source image failed,
+        # drop the staged file, and finalize the item — the same
+        # bookkeeping the legacy coordinator performed.
+        detail = "Task queue unavailable; image processing was not started."
+        bookkeeping_committed = False
+        if source_image_id is not None:
+            try:
+                async with async_session() as db:
+                    src_check = await db.get(SourceImage, source_image_id)
+                    if src_check is not None:
+                        src_check.status = "failed"
+                        src_check.status_message = "Failed"
+                        src_check.error_message = detail
+                        await db.commit()
+                        bookkeeping_committed = True
+            except Exception:
+                logger.exception(
+                    "Failed to mark bulk-import source image after queue rejection",
+                    extra={
+                        "event": "bulk_import.queue_rejection_bookkeeping_failed",
+                        "job_id": bulk_import_job_id,
+                        "source_image_id": source_image_id,
+                        "original_filename": original_filename,
+                    },
+                )
+            if bookkeeping_committed:
+                with contextlib.suppress(OSError):
+                    os.unlink(stored_path)
+        span = trace.get_current_span()
+        span.record_exception(exc)
+        span.set_status(StatusCode.ERROR, str(exc))
+        logger.warning(
+            "Bulk import image enqueue rejected",
+            extra={
+                "event": {
+                    "queue_unavailable": "worker.queue_unavailable",
+                    "submission_failed": "worker.submission_failed",
+                }.get(exc.reason, "worker.queue_unavailable"),
+                "job_id": bulk_import_job_id,
+                "source_image_id": source_image_id,
+                "original_filename": original_filename,
+            },
+            exc_info=True,
+        )
+        try:
+            await _finalize_bulk_import_item(
+                job_id=supervisor_job_id,
+                item_id=item_id,
+                claim_token=claim_token,
+                bulk_import_job_id=bulk_import_job_id,
+                filename=original_filename,
+                terminal_status="failed",
+                error_message=detail,
+            )
+        except Exception:
+            logger.exception(
+                "Bulk import: failed to finalize item after queue rejection",
+                extra={
+                    "event": "bulk_import.item_finalize_failed",
+                    "job_id": supervisor_job_id,
+                    "item_id": item_id,
+                    "bulk_import_job_id": bulk_import_job_id,
+                    "original_filename": original_filename,
+                },
+            )
+    except Exception as exc:
+        span = trace.get_current_span()
+        span.record_exception(exc)
+        span.set_status(StatusCode.ERROR, str(exc))
+        logger.exception(
+            "Bulk import: unexpected item error",
+            extra={
+                "event": "bulk_import.unexpected_error",
+                "job_id": supervisor_job_id,
+                "item_id": item_id,
+                "bulk_import_job_id": bulk_import_job_id,
+                "original_filename": original_filename,
+            },
+        )
+        try:
+            await _finalize_bulk_import_item(
+                job_id=supervisor_job_id,
+                item_id=item_id,
+                claim_token=claim_token,
+                bulk_import_job_id=bulk_import_job_id,
+                filename=original_filename,
+                terminal_status="failed",
+                error_message=str(exc),
+            )
+        except Exception:
+            logger.exception(
+                "Bulk import: failed to finalize item after unexpected error",
+                extra={
+                    "event": "bulk_import.item_finalize_failed",
+                    "job_id": supervisor_job_id,
+                    "item_id": item_id,
+                    "bulk_import_job_id": bulk_import_job_id,
+                    "original_filename": original_filename,
+                },
+            )
+
 
 
 async def _cleanup_orphaned_bulk_import_files(
@@ -1289,6 +1569,11 @@ async def _finalize_abandoned_bulk_import_jobs(
     replacement job). A concurrent finalizer racing for the same rows simply
     affects fewer rows here, since the ``WHERE`` clause is re-evaluated after
     the row lock is acquired — no error, no double-finalization.
+
+    Rows with a durable ``job_id`` link (#1173) also have their ``Job``
+    supervisor and non-terminal ``JobItem``s terminated in the same
+    transaction, so a superseded import cannot keep a coordinator claimable
+    or leave item state dangling.
     """
     if not job_ids:
         return []
@@ -1325,10 +1610,50 @@ async def _finalize_abandoned_bulk_import_jobs(
             ),
             updated_at=func.now(),
         )
-        .returning(BulkImportJob.id)
+        .returning(BulkImportJob.id, BulkImportJob.job_id)
     )
     result = await session.execute(stmt)
-    return [row[0] for row in result.all()]
+    rows = result.all()
+    finalized_ids = [row[0] for row in rows]
+    durable_job_ids = [row[1] for row in rows if row[1] is not None]
+    if durable_job_ids:
+        now = func.now()
+        await session.execute(
+            update(JobItem)
+            .where(
+                JobItem.job_id.in_(durable_job_ids),
+                JobItem.status.in_(("queued", "running")),
+            )
+            .values(
+                status="cancelled",
+                claim_token=None,
+                heartbeat_at=None,
+                lease_expires_at=None,
+                retry_not_before=None,
+                arq_job_id=None,
+                started_at=None,
+                completed_at=now,
+                updated_at=now,
+            )
+        )
+        await session.execute(
+            update(Job)
+            .where(
+                Job.id.in_(durable_job_ids),
+                Job.status.in_(("queued", "running", "cancelling")),
+            )
+            .values(
+                status="cancelled",
+                progress=100,
+                error_message=abandonment_note,
+                completed_at=now,
+                coordinator_token=None,
+                coordinator_heartbeat_at=None,
+                coordinator_lease_expires_at=None,
+                updated_at=now,
+            )
+        )
+    return finalized_ids
 
 
 async def reconcile_stale_bulk_import_jobs(
@@ -1340,6 +1665,10 @@ async def reconcile_stale_bulk_import_jobs(
     Also cleans up any staged files that were never picked up for processing
     (per the persisted ``file_manifest``) so an interrupted import doesn't
     leak files on disk indefinitely. See ``_cleanup_orphaned_bulk_import_files``.
+
+    Rows linked to a durable ``Job`` supervisor (``job_id`` set, #1173) are
+    excluded: their resume path is the API-side coordinator sweep plus the
+    supervisor lease/claim-cap machinery, not finalize-on-stale.
     """
     pool = await get_pool()
     live_ids: set[int] | None = None
@@ -1365,6 +1694,10 @@ async def reconcile_stale_bulk_import_jobs(
     filters = [
         BulkImportJob.status.in_(("pending", "processing")),
         BulkImportJob.updated_at < cutoff,
+        # Durable imports (#1173) are resumed by the API coordinator sweep,
+        # not finalized here — only legacy rows without a Job link are
+        # abandoned-and-finalized by this path.
+        BulkImportJob.job_id.is_(None),
     ]
     if live_ids is not None:
         filters.append(BulkImportJob.id.not_in(live_ids))
@@ -1430,298 +1763,401 @@ async def reconcile_stale_bulk_import_jobs(
     return len(ids)
 
 
-async def _process_bulk_import_impl(
-    job_id: int,
-    file_entries: list[tuple[str, str]],
-    copyright: str | None = None,
-    note: str | None = None,
-    active: bool = True,
-    coordinator_pool: ArqRedis | None = None,
-    coordinator_pool_ref: list[ArqRedis | None] | None = None,
-) -> None:
-    """Background task: process all images for a bulk import job.
+async def _process_bulk_import_impl(bulk_import_job_id: int) -> None:
+    """Durable coordinator: claim the supervisor lease and pump ``JobItem``s.
 
-    ``file_entries`` is a list of (original_filename, stored_path) tuples.
-    Each image is turned into a SourceImage record and processed via the
-    existing VIPS pipeline, with concurrency limited by a semaphore.
+    Resumable across API restarts, crashes, rolling deploys, and OOM kills
+    (#1173): every durable transition lives in PostgreSQL, so any replica's
+    sweep can re-claim an expired coordinator lease and continue from the
+    last finalized item. At most ``_MAX_CONCURRENCY`` items are in flight;
+    the rest stay ``queued`` in ``job_items`` until a slot frees.
     """
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
-    note = normalize_note_value(note)
-    coordinator_pool_ref = coordinator_pool_ref or [coordinator_pool]
-
-    async def _process_one(original_filename: str, stored_path: str) -> None:
-        try:
-            async with async_session() as db:
-                # Reload job to get current category_id
-                job = await db.get(BulkImportJob, job_id)
-                if job is None:
-                    return
-
-                name = Path(original_filename).stem
-                src = SourceImage(
-                    original_filename=original_filename,
-                    stored_path=stored_path,
-                    status="pending",
-                    name=name,
-                    category_id=job.category_id,
-                    copyright=copyright or "Public Domain",
-                    note=note,
-                    active=active,
-                    uploaded_by=job.requested_by,
-                )
-                db.add(src)
-                await db.commit()
-                await db.refresh(src)
-
-            # Process each image through the same queue-backed path used by
-            # single uploads when Redis is available. That keeps heavyweight
-            # tile generation off the request-serving pod while still letting
-            # this bulk-import coordinator observe terminal status and update
-            # per-job counters synchronously.
-            async with semaphore:
-                try:
-                    source_image_id = src.id
-                    enqueue_result = await enqueue_process_source_image(source_image_id)
-                    if enqueue_result.queued:
-                        if enqueue_result.job is not None:
-                            terminal_state = (
-                                await _wait_for_source_image_terminal_state(
-                                    source_image_id,
-                                    original_filename,
-                                    enqueue_result=enqueue_result,
-                                    batch_progress=batch_progress,
-                                    bulk_import_job_id=job_id,
-                                )
-                            )
-                        else:
-                            terminal_state = (
-                                await _wait_for_source_image_terminal_state(
-                                    source_image_id,
-                                    original_filename,
-                                    enqueue_result=enqueue_result,
-                                )
-                            )
-                    else:
-                        await process_source_image(source_image_id)
-                        async with async_session() as db:
-                            src_check = await db.get(SourceImage, source_image_id)
-                            if src_check is None:
-                                raise RuntimeError(
-                                    f"Source image {source_image_id} disappeared after processing"
-                                )
-                            terminal_state = _source_image_terminal_state(src_check)
-                except TaskQueueUnavailableError as exc:
-                    detail = "Task queue unavailable; image processing was not started."
-                    bookkeeping_committed = False
-                    try:
-                        async with async_session() as db:
-                            src_check = await db.get(SourceImage, source_image_id)
-                            if src_check is not None:
-                                src_check.status = "failed"
-                                src_check.status_message = "Failed"
-                                src_check.error_message = detail
-                                await db.commit()
-                                bookkeeping_committed = True
-                    except Exception:
-                        logger.exception(
-                            "Failed to mark bulk-import source image after queue rejection",
-                            extra={
-                                "event": "bulk_import.queue_rejection_bookkeeping_failed",
-                                "job_id": job_id,
-                                "source_image_id": source_image_id,
-                                "original_filename": original_filename,
-                            },
-                        )
-                    if bookkeeping_committed:
-                        with contextlib.suppress(OSError):
-                            os.unlink(stored_path)
-                    span = trace.get_current_span()
-                    span.record_exception(exc)
-                    span.set_status(StatusCode.ERROR, str(exc))
-                    logger.warning(
-                        "Bulk import image enqueue rejected",
-                        extra={
-                            "event": {
-                                "queue_unavailable": "worker.queue_unavailable",
-                                "submission_failed": "worker.submission_failed",
-                            }.get(exc.reason, "worker.queue_unavailable"),
-                            "job_id": job_id,
-                            "source_image_id": source_image_id,
-                            "original_filename": original_filename,
-                        },
-                        exc_info=True,
-                    )
-                    error_entry = [{"filename": original_filename, "error": detail}]
-                    async with async_session() as db:
-                        await db.execute(
-                            update(BulkImportJob)
-                            .where(BulkImportJob.id == job_id)
-                            .values(
-                                failed_count=BulkImportJob.failed_count + 1,
-                                errors=func.coalesce(BulkImportJob.errors, cast([], JSONB_type)) + cast(error_entry, JSONB_type),
-                            )
-                        )
-                        await db.commit()
-                    return
-                except Exception as exc:
-                    span = trace.get_current_span()
-                    span.record_exception(exc)
-                    span.set_status(StatusCode.ERROR, str(exc))
-                    logger.exception(
-                        "Bulk import: image processing failed",
-                        extra={
-                            "event": "bulk_import.image_failed",
-                            "job_id": job_id,
-                            "original_filename": original_filename,
-                        },
-                    )
-                    error_entry = [{"filename": original_filename, "error": str(exc)}]
-                    async with async_session() as db:
-                        await db.execute(
-                            update(BulkImportJob)
-                            .where(BulkImportJob.id == job_id)
-                            .values(
-                                failed_count=BulkImportJob.failed_count + 1,
-                                errors=func.coalesce(BulkImportJob.errors, cast([], JSONB_type)) + cast(error_entry, JSONB_type),
-                            )
-                        )
-                        await db.commit()
-                    return
-
-                # process_source_image catches its own exceptions internally
-                # and sets SourceImage.status to "failed". Check for that.
-                async with async_session() as db:
-                    if terminal_state.status == "failed":
-                        error_entry = [{"filename": original_filename, "error": terminal_state.error_message or "Processing failed"}]
-                        await db.execute(
-                            update(BulkImportJob)
-                            .where(BulkImportJob.id == job_id)
-                            .values(
-                                failed_count=BulkImportJob.failed_count + 1,
-                                errors=func.coalesce(BulkImportJob.errors, cast([], JSONB_type)) + cast(error_entry, JSONB_type),
-                            )
-                        )
-                        await db.commit()
-                    else:
-                        await db.execute(
-                            update(BulkImportJob)
-                            .where(BulkImportJob.id == job_id)
-                            .values(completed_count=BulkImportJob.completed_count + 1)
-                        )
-                        await db.commit()
-        except Exception as exc:
-            # Catch errors from SourceImage creation or any other unexpected
-            # failure so that gather(return_exceptions=True) doesn't silently
-            # swallow them without updating job counters.
-            span = trace.get_current_span()
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
-            logger.exception(
-                "Bulk import: unexpected error",
-                extra={
-                    "event": "bulk_import.unexpected_error",
-                    "job_id": job_id,
-                    "original_filename": original_filename,
-                },
-            )
-            error_entry = [{"filename": original_filename, "error": str(exc)}]
-            try:
-                async with async_session() as db:
-                    await db.execute(
-                        update(BulkImportJob)
-                        .where(BulkImportJob.id == job_id)
-                        .values(
-                            failed_count=BulkImportJob.failed_count + 1,
-                            errors=func.coalesce(BulkImportJob.errors, cast([], JSONB_type)) + cast(error_entry, JSONB_type),
-                        )
-                    )
-                    await db.commit()
-            except Exception:
-                logger.exception(
-                    "Bulk import: failed to update job counters",
-                    extra={
-                        "event": "bulk_import.counter_update_failed",
-                        "job_id": job_id,
-                        "original_filename": original_filename,
-                    },
-                )
-
-    # Mark job as processing
+    token = uuid.uuid4().hex
     async with async_session() as db:
-        job = await db.get(BulkImportJob, job_id)
-        if job is None:
-            return
-        if job.status in {"completed", "failed"}:
+        ctx = await _load_bulk_import_supervisor(db, bulk_import_job_id)
+        if ctx is None:
             logger.info(
-                "Terminal BulkImportJob found, skipping processing",
+                "Bulk import has no durable supervisor; nothing to coordinate",
                 extra={
-                    "event": "bulk_import.terminal_job_skipped",
-                    "bulk_import_job_id": job_id,
-                    "status": job.status,
+                    "event": "bulk_import.no_durable_supervisor",
+                    "bulk_import_job_id": bulk_import_job_id,
                 },
             )
             return
-        job.status = "processing"
+        bulk_job, supervisor = ctx
+        bulk_status = bulk_job.status
+        supervisor_status = supervisor.status
+        claims = _coordinator_claims(supervisor.metadata_)
+        meta = dict(supervisor.metadata_ or {})
+        supervisor_id = supervisor.id
+        bulk_id = bulk_job.id
+        category_id = bulk_job.category_id
+        requested_by = bulk_job.requested_by
+
+    if bulk_status not in {"pending", "processing"}:
+        logger.info(
+            "Terminal BulkImportJob found, skipping processing",
+            extra={
+                "event": "bulk_import.terminal_job_skipped",
+                "bulk_import_job_id": bulk_id,
+                "status": bulk_status,
+            },
+        )
+        return
+
+    terminal_supervisor_statuses = {
+        "completed",
+        "completed_with_errors",
+        "failed",
+        "cancelled",
+    }
+    if supervisor_status in terminal_supervisor_statuses:
+        # The domain row is still active but the supervisor already
+        # finished — close out the import record (defensive; the normal
+        # finalize paths write both rows in one transaction).
+        await _finalize_bulk_import_supervisor(
+            job_id=supervisor_id,
+            bulk_import_job_id=bulk_id,
+        )
+        return
+
+    def _meta_int(key: str, default: int) -> int:
+        value = meta.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            return default
+        return value
+
+    lease_seconds = _meta_int(
+        "coordinator_lease_seconds",
+        settings.bulk_import_coordinator_lease_seconds,
+    )
+    heartbeat_seconds = _meta_int(
+        "coordinator_heartbeat_seconds",
+        settings.bulk_import_coordinator_heartbeat_seconds,
+    )
+    item_lease_seconds = _meta_int(
+        "item_lease_seconds",
+        settings.bulk_import_item_lease_seconds,
+    )
+    max_item_attempts = _meta_int(
+        "max_item_attempts",
+        settings.bulk_import_max_item_attempts,
+    )
+    max_claims = _meta_int(
+        "max_coordinator_claims",
+        settings.bulk_import_max_coordinator_claims,
+    )
+
+    if claims >= max_claims:
+        await _finalize_bulk_import_abandoned(
+            bulk_import_job_id=bulk_id,
+            job_id=supervisor_id,
+            abandonment_note=(
+                "Bulk-import coordinator repeatedly failed to complete the "
+                f"import; abandoned after {max_claims} coordinator claims."
+            ),
+        )
+        # Items cancelled by the abandonment never became SourceImages;
+        # remove their staged files so nothing leaks on disk (#1173).
+        async with async_session() as db:
+            await _cleanup_orphaned_bulk_import_files(db, [bulk_id])
+            await db.commit()
+        return
+
+    # ── Coordinator claim: CAS on the supervisor lease ──
+    async with async_session() as db:
+        won = await _try_claim_bulk_import_coordinator(
+            db,
+            supervisor_id,
+            token=token,
+            lease_seconds=lease_seconds,
+        )
+        if not won:
+            logger.info(
+                "Bulk-import coordinator claim lost to a peer",
+                extra={
+                    "event": "bulk_import.coordinator_claim_lost",
+                    "bulk_import_job_id": bulk_id,
+                    "job_id": supervisor_id,
+                },
+            )
+            return
+        await _increment_coordinator_claims(db, supervisor_id)
+        requeued = await _requeue_orphaned_bulk_import_items(db, supervisor_id)
+        bulk_row = await db.get(BulkImportJob, bulk_id, populate_existing=True)
+        if bulk_row is not None and bulk_row.status == "pending":
+            bulk_row.status = "processing"
+            bulk_row.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
     logger.info(
-        "Bulk import processing started",
+        "Bulk-import coordinator claimed",
         extra={
-            "event": "bulk_import.processing_started",
-            "job_id": job_id,
-            "total_count": len(file_entries),
+            "event": "bulk_import.coordinator_claimed",
+            "bulk_import_job_id": bulk_id,
+            "job_id": supervisor_id,
+            "requeued_orphaned_items": requeued,
+            "coordinator_claims": claims + 1,
         },
     )
 
-    # Process all images concurrently (bounded by semaphore)
-    batch_progress = _BulkImportProgress(last_child_advanced_at=time.monotonic())
-    coordinator_stop_event = asyncio.Event()
-    coordinator_liveness_task = asyncio.create_task(
-        _bulk_import_coordinator_liveness_loop(
-            coordinator_pool_ref,
-            job_id,
-            coordinator_stop_event,
-        )
+    copyright = meta.get("copyright")
+    note = meta.get("note")
+    active = bool(meta.get("active", True))
+    batch_progress = _BulkImportProgress(
+        last_child_advanced_at=time.monotonic()
     )
-    tasks = [
-        asyncio.create_task(_process_one(fname, spath))
-        for fname, spath in file_entries
-    ]
+    in_flight: dict[int, tuple[asyncio.Task[None], str]] = {}
+
     try:
-        await asyncio.gather(*tasks, return_exceptions=True)
+        while True:
+            lost_item_ids: list[int] = []
+            claimed_items: list[JobItem] = []
+            bulk_done = False
+            supervisor_done = False
+            # The coordinator heartbeat commits in its own transaction so
+            # the ``jobs`` row lock is never held while item ``job_items``
+            # locks are taken below — ``finalize_bulk_import_item`` locks in
+            # the opposite order (items → bulk → jobs FOR UPDATE), and
+            # mixing the orders deadlocks (#1173).
+            async with async_session() as db:
+                owned = await _heartbeat_bulk_import_coordinator(
+                    db,
+                    supervisor_id,
+                    token,
+                    lease_seconds,
+                )
+                await db.commit()
+            if owned:
+                async with async_session() as db:
+                    for item_id, (_task, item_token) in in_flight.items():
+                        item_owned = await _heartbeat_job_item(
+                            db,
+                            item_id,
+                            item_token,
+                            item_lease_seconds,
+                        )
+                        if not item_owned:
+                            lost_item_ids.append(item_id)
+                    await _reclaim_expired_bulk_import_items(
+                        db,
+                        supervisor_id,
+                        bulk_id,
+                        max_attempts=max_item_attempts,
+                    )
+                    free_slots = _MAX_CONCURRENCY - len(in_flight)
+                    if free_slots > 0:
+                        claimed_items = await _claim_job_items(
+                            db,
+                            supervisor_id,
+                            free_slots,
+                            item_lease_seconds,
+                        )
+                    bulk_row = await db.get(
+                        BulkImportJob, bulk_id, populate_existing=True
+                    )
+                    bulk_done = (
+                        bulk_row is None
+                        or bulk_row.status not in {"pending", "processing"}
+                    )
+                    sup_row = await db.get(
+                        Job, supervisor_id, populate_existing=True
+                    )
+                    supervisor_done = (
+                        sup_row is None
+                        or sup_row.status in terminal_supervisor_statuses
+                    )
+                    await db.commit()
+
+            for item_id in lost_item_ids:
+                entry = in_flight.pop(item_id, None)
+                if entry is not None:
+                    entry[0].cancel()
+            if not owned or bulk_done or supervisor_done:
+                break
+
+            for item_id, (task, _item_token) in list(in_flight.items()):
+                if task.done():
+                    with contextlib.suppress(Exception):
+                        task.result()
+                    del in_flight[item_id]
+
+            for item in claimed_items:
+                item_meta = item.metadata_ or {}
+                task = asyncio.create_task(
+                    _track_bulk_import_item(
+                        bulk_import_job_id=bulk_id,
+                        supervisor_job_id=supervisor_id,
+                        item_id=item.id,
+                        claim_token=item.claim_token,
+                        original_filename=str(
+                            item_meta.get("original_filename") or "unknown"
+                        ),
+                        stored_path=str(item_meta.get("stored_path") or ""),
+                        category_id=category_id,
+                        copyright=copyright,
+                        note=note,
+                        active=active,
+                        requested_by=requested_by,
+                        batch_progress=batch_progress,
+                    )
+                )
+                in_flight[item.id] = (task, item.claim_token)
+
+            if not in_flight:
+                # No running items and the claim pass found nothing
+                # queued — every item is terminal, so the import is done.
+                break
+
+            await asyncio.wait(
+                [task for task, _item_token in in_flight.values()],
+                timeout=heartbeat_seconds,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
     finally:
-        if coordinator_stop_event is not None:
-            coordinator_stop_event.set()
-        if coordinator_liveness_task is not None:
-            coordinator_liveness_task.cancel()
+        for task, _item_token in in_flight.values():
+            task.cancel()
+        if in_flight:
             await asyncio.gather(
-                coordinator_liveness_task,
+                *[task for task, _item_token in in_flight.values()],
                 return_exceptions=True,
             )
-
-    # Finalise job status
-    async with async_session() as db:
-        job = await db.get(BulkImportJob, job_id)
-        if job is not None:
-            if job.failed_count > 0 and job.completed_count == 0:
-                job.status = "failed"
-            elif job.failed_count > 0:
-                job.status = "completed"  # partial success
-            else:
-                job.status = "completed"
-            await db.commit()
-
-            logger.info(
-                "Bulk import job finished",
+        try:
+            async with async_session() as db:
+                await _release_bulk_import_coordinator(
+                    db, supervisor_id, token
+                )
+                await db.commit()
+        except Exception:
+            logger.warning(
+                "Failed to release bulk-import coordinator lease",
                 extra={
-                    "event": "bulk_import.finished",
-                    "job_id": job_id,
-                    "status": job.status,
-                    "total_count": job.total_count,
-                    "completed_count": job.completed_count,
-                    "failed_count": job.failed_count,
+                    "event": "bulk_import.coordinator_release_failed",
+                    "bulk_import_job_id": bulk_id,
+                    "job_id": supervisor_id,
                 },
+                exc_info=True,
             )
+
+    await _finalize_bulk_import_supervisor(
+        job_id=supervisor_id,
+        bulk_import_job_id=bulk_id,
+    )
+    logger.info(
+        "Bulk-import coordinator finished",
+        extra={
+            "event": "bulk_import.coordinator_finished",
+            "bulk_import_job_id": bulk_id,
+            "job_id": supervisor_id,
+        },
+    )
+
+
+async def sweep_bulk_import_coordinators() -> dict[str, int]:
+    """One coordinator-sweep pass across active durable imports (#1173).
+
+    Every API replica runs this on a timer; the supervisor CAS claim keeps
+    it single-flight, so replicas only ever *nudge* — ``_process_bulk_import``
+    itself decides whether it wins the lease. Imports whose supervisor is
+    already terminal but whose domain row is still active are closed out
+    defensively (the normal paths write both rows atomically).
+    """
+    async with async_session() as db:
+        rows = await _list_active_bulk_import_supervisors(db)
+
+    terminal_supervisor_statuses = {
+        "completed",
+        "completed_with_errors",
+        "failed",
+        "cancelled",
+    }
+    stranded_ids = [
+        int(row["bulk_import_job_id"])
+        for row in rows
+        if str(row["supervisor_status"]) in terminal_supervisor_statuses
+    ]
+    closed = 0
+    if stranded_ids:
+        async with async_session() as db:
+            finalized = await _finalize_abandoned_bulk_import_jobs(
+                db,
+                stranded_ids,
+                abandonment_note=(
+                    "Durable supervisor already reached a terminal state; "
+                    "closing the stranded import record."
+                ),
+            )
+            if finalized:
+                await _cleanup_orphaned_bulk_import_files(db, finalized)
+            await db.commit()
+        closed = len(finalized)
+
+    spawned = 0
+    for row in rows:
+        if str(row["supervisor_status"]) in terminal_supervisor_statuses:
+            continue
+        if not row["lease_free"]:
+            continue
+        asyncio.create_task(
+            _process_bulk_import(int(row["bulk_import_job_id"]))
+        )
+        spawned += 1
+    if spawned or closed:
+        logger.info(
+            "Bulk-import coordinator sweep pass complete",
+            extra={
+                "event": "bulk_import.sweep_pass",
+                "spawned": spawned,
+                "closed": closed,
+                "active": len(rows),
+            },
+        )
+    return {"spawned": spawned, "closed": closed}
+
+
+async def bulk_import_coordinator_sweep_loop() -> None:
+    """Periodic coordinator sweep for the API process lifespan (#1173).
+
+    Every API replica runs this loop; ``sweep_bulk_import_coordinators``
+    only *nudges* lease-free imports and the supervisor CAS claim inside
+    ``_process_bulk_import`` keeps execution single-flight, so replicas
+    can never double-coordinate. This is what makes imports resumable
+    after an API restart, crash, rolling deploy, or OOM kill: the next
+    sweep pass re-claims the expired supervisor lease and continues from
+    the durable ``JobItem`` snapshot.
+    """
+    interval = settings.bulk_import_coordinator_sweep_seconds
+    while True:
+        try:
+            await sweep_bulk_import_coordinators()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Bulk-import coordinator sweep pass failed",
+                extra={"event": "bulk_import.sweep_failed"},
+            )
+        await asyncio.sleep(interval)
+
+
+async def bulk_import_coordinator_sweep_loop() -> None:
+    """Periodically resume durable bulk imports on this API replica.
+
+    Started from the FastAPI lifespan so every replica self-heals imports
+    orphaned by a sibling's restart, crash, rolling deploy, or OOM kill —
+    the durable counterpart to the one-shot startup reconciliation.
+    """
+    while True:
+        try:
+            await sweep_bulk_import_coordinators()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Bulk-import coordinator sweep failed",
+                extra={"event": "bulk_import.sweep_failed"},
+            )
+        await asyncio.sleep(settings.bulk_import_coordinator_sweep_seconds)
 
 
 @router.post("/", response_model=BulkImportJobOut, status_code=201)
@@ -2073,6 +2509,21 @@ async def bulk_import_images(
             )
             db.add(job)
             try:
+                # Flush assigns ``job.id`` so the durable supervisor +
+                # per-file JobItem snapshot can link back to this row —
+                # all inside the same transaction (#1173). The partial
+                # unique index fires at this INSERT, so the IntegrityError
+                # handling below covers flush as well as commit.
+                await db.flush()
+                await _create_bulk_import_job(
+                    db,
+                    bulk_import_job=job,
+                    file_entries=file_entries,
+                    copyright=copyright,
+                    note=note,
+                    active=active,
+                    parallelism=_MAX_CONCURRENCY,
+                )
                 await db.commit()
             except IntegrityError as exc:
                 # The pre-check above (SELECT for active jobs) is a
@@ -2140,19 +2591,16 @@ async def bulk_import_images(
                 },
             )
 
-            # Run the coordinator in the API process so it does not occupy an
-            # arq worker slot while waiting for child image jobs. The coordinator
-            # itself is lightweight orchestration; child image processing still
-            # goes through the worker queue when available/required.
+            # Run the durable coordinator in the API process so it does not
+            # occupy an arq worker slot while waiting for child image jobs.
+            # All per-file state lives in ``job_items``; if this process
+            # dies before or during coordination, the API-side sweep
+            # re-claims the supervisor lease and resumes (#1173).
             bulk_job_id = job.id
             span.set_attribute("bulk_import.coordinator_hosted", "api")
             background_tasks.add_task(
                 _process_bulk_import,
                 bulk_job_id,
-                file_entries,
-                copyright=copyright,
-                note=note,
-                active=active,
             )
 
             return job

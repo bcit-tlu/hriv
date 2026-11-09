@@ -246,6 +246,28 @@ async def _enqueue(
         carrier: dict[str, str] = {}
         inject(carrier)
         job = await pool.enqueue_job(job_name, *args, carrier, **(job_kwargs or {}))
+        if job is None:
+            # arq returns None when ``_job_id`` deduplicates against an
+            # existing queue entry or retained result. The job still exists,
+            # so hand back a status-polling handle: callers that passed a
+            # deterministic ID (resumable bulk-import children, #1173) can
+            # keep observing the original submission instead of enqueuing a
+            # duplicate.
+            deterministic_id = (job_kwargs or {}).get("_job_id")
+            if isinstance(deterministic_id, str):
+                job = Job(
+                    deterministic_id,
+                    redis=pool,
+                    _queue_name=pool.default_queue_name,
+                    _deserializer=pool.job_deserializer,
+                )
+                _record_enqueue(job_type, "queued", "deduplicated")
+                return EnqueueResult(
+                    "queued",
+                    "deduplicated",
+                    job=job,
+                    queued_at=time.monotonic(),
+                )
     except Exception as exc:
         logger.warning(
             "Task queue submission failed",
@@ -268,10 +290,23 @@ def _record_enqueue(job_type: str, outcome: str, reason: str) -> None:
     record_enqueue(job_type, outcome, reason)
 
 
-async def enqueue_process_source_image(source_image_id: int) -> EnqueueResult:
-    """Enqueue an image-processing job via the shared queue boundary."""
+async def enqueue_process_source_image(
+    source_image_id: int,
+    *,
+    arq_job_id: str | None = None,
+) -> EnqueueResult:
+    """Enqueue an image-processing job via the shared queue boundary.
+
+    ``arq_job_id`` requests arq's deterministic-ID deduplication: when a job
+    with that ID is already queued or has a retained result, the enqueue
+    returns a handle to the existing submission instead of queueing a
+    duplicate (#1173 resumable bulk imports).
+    """
     return await _enqueue(
-        "process_source_image_task", source_image_id, job_type="source_image"
+        "process_source_image_task",
+        source_image_id,
+        job_type="source_image",
+        job_kwargs={"_job_id": arq_job_id} if arq_job_id else None,
     )
 
 
