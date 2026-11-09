@@ -1,9 +1,17 @@
 name: pr-title-lint
 
 # Enforce Conventional Commit PR titles so release-please can parse changes.
+#
+# Runs on `pull_request`, not `pull_request_target`: GitHub blocks the latter
+# on public repositories by default
+# (https://gh.io/securely-using-pull_request_target), and this check needs no
+# write access or secrets. The job only reads the PR, so it behaves the same
+# for same-repo, Dependabot and fork PRs (their tokens are read-only).
+# Failures and scope mismatches are reported in the job summary and as
+# annotations rather than PR comments, which would need `pull-requests: write`.
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
     branches: [main]
 
@@ -12,7 +20,7 @@ env:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
 
 jobs:
   lint:
@@ -128,56 +136,52 @@ jobs:
         run: |
           echo "::warning::scope-check step failed (advisory, non-blocking). See step logs above — likely causes: gh API rate limit, network error, or bash error. Scope/changelog mismatch warnings may be missing for this PR."
 
-      - name: Post scope mismatch warning
+      - name: Report scope mismatch
         if: steps.scope-check.outputs.mismatch == 'true'
-        uses: marocchino/sticky-pull-request-comment@v3
-        with:
-          header: scope-mismatch
-          message: |
-            ## Scope vs. changed files mismatch
+        env:
+          MISMATCH_REASON: ${{ steps.scope-check.outputs.reason }}
+        run: |
+          {
+            echo '## Scope vs. changed files mismatch'
+            echo
+            printf '%s\n' "$MISMATCH_REASON"
+            cat <<'MD'
 
-            ${{ steps.scope-check.outputs.reason }}
+          release-please routes commits to changelogs by **file path**, not by scope — so changelog entries will have a misleading scope label.
 
-            release-please routes commits to changelogs by **file path**, not by scope — so changelog entries will have a misleading scope label.
+          **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
+          MD
+          } >> "$GITHUB_STEP_SUMMARY"
 
-            **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
-
-      - name: Clear scope mismatch warning
-        if: always() && steps.scope-check.outcome == 'success' && steps.scope-check.outputs.mismatch != 'true'
-        uses: marocchino/sticky-pull-request-comment@v3
-        with:
-          header: scope-mismatch
-          delete: true
-
-      - name: Post failure explainer comment
+      # On failure, explain the required format in the job summary (linked
+      # from the failed check). The action itself reports the specific
+      # reason as an error annotation; it exposes no output to reuse here.
+      - name: Explain failure
         if: failure() && steps.lint.outcome == 'failure'
-        uses: marocchino/sticky-pull-request-comment@v3
-        with:
-          header: pr-title-lint
-          message: |
-            ## PR title must follow Conventional Commits
+        run: |
+          {
+            cat <<'MD'
+          ## PR title must follow Conventional Commits
 
-            release-please uses PR titles on `main` to determine version bumps and changelog entries.
+          release-please uses PR titles on `main` to determine version bumps and changelog entries.
 
-            ```
-            <type>[optional scope][!]: <subject>
-            ```
+          The specific reason is shown in this check's annotations (set by `action-semantic-pull-request`).
 
-            - `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-            - `subject`: start lowercase, imperative mood, no trailing period
-            - breaking change: add `!` (or `BREAKING CHANGE:` in body)
+          ```
+          <type>[optional scope][!]: <subject>
+          ```
 
-            Examples:
-            - ✅ `feat: add search page`
-            - ✅ `fix: correct broken nav link`
-            - ❌ `Add search page`
-            - ❌ `feat: Add search page`
+          - `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+          - `subject`: start lowercase, imperative mood, no trailing period
+          - breaking change: add `!` (or `BREAKING CHANGE:` in body)
 
-            Edit the PR title in GitHub; this check reruns automatically.
+          Examples:
+          - ✅ `feat: add search page`
+          - ✅ `fix: correct broken nav link`
+          - ❌ `Add search page`
+          - ❌ `feat: Add search page`
 
-      - name: Clear failure explainer on success
-        if: always() && steps.lint.outcome == 'success'
-        uses: marocchino/sticky-pull-request-comment@v3
-        with:
-          header: pr-title-lint
-          delete: true
+          Edit the PR title in GitHub; this check reruns automatically. See .github/CONTRIBUTING.md.
+          MD
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=PR title must follow Conventional Commits::Edit the PR title to match <type>[optional scope][!]: <subject>. See this run's summary for the format and examples."
