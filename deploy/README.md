@@ -67,6 +67,13 @@ This means the source-images PVC also carries a small amount of shared
 operational state at the volume root. The tiles PVC remains isolated and can be
 backed up independently.
 
+For Longhorn-backed clusters, see
+[`docs/longhorn-storage-classes.md`](../docs/longhorn-storage-classes.md) for
+the recommended StorageClass per volume and ready-to-apply example manifests in
+[`deploy/longhorn-storageclasses.yaml`](longhorn-storageclasses.yaml). The bcit-tlu
+fleet already manages `longhorn-source-images-rwx` and `longhorn-tiles-rwx`
+through Flux; the examples cover clusters without equivalent classes.
+
 For an already-running pre-production system, the intended cutover is:
 
 1. Scale the backend/worker/backup pods down.

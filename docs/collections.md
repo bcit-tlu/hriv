@@ -201,8 +201,8 @@ above it. On every other page where the shelf is visible, `<main>` reserves
 
 Opening a card from the drawer keeps the caller's origin (#1529, #1608):
 opened from Browse or the image viewer, the detail sits on top of the current
-Browse scope (`?cat=`) and Close returns there; opened from a Collections
-page, Close returns to the Collections list.
+Browse scope (`?cat=`, or `?from=browse` at the root) and Close returns
+there; opened from a Collections page, Close returns to the Collections list.
 
 `GET /api/collections` accepts an optional `limit` from 1 to 100 (the
 drawer/shelf cap). It is applied after visibility filtering so inaccessible
@@ -1122,7 +1122,8 @@ The list emits `?page=collections&type=sequence|synchronized` (#1554 — bare
 defaults to `sequence`), a selected collection emits
 `?collection={id}` (no `page` param), a selected sequence item adds
 `&item={image_id}` (#1416), and a collection opened from a Browse tile adds
-`?cat=` carrying its originating scope (#1529). `popstate` parses `type` as
+`?cat=` carrying its originating scope — or `?from=browse` when that scope
+is the param-less root (#1529, #1592). `popstate` parses `type` as
 well, so back/forward restores the typed list. Both push history entries
 through `useNavigationHistory`, and `popstate` restores the selected
 collection (and sequence item) from the URL, so back/forward moves between
@@ -1252,15 +1253,16 @@ collections. The **Add to Collection** dialog remains available; unfiled
 collections no longer have root Browse tiles for drag-add.
 
 **Browse context.** Opening a collection tile keeps the originating Browse
-scope: the URL becomes `?collection={id}&cat={ancestor path}` and closing
-the detail (the error-state action) returns to that scope instead of the
-Collections list. The detail breadcrumb navigates to the collection's
-_filed_ category location regardless of where it was opened from (#1559).
-Back/forward restores both the collection
-and the scope — `useNavigationHistory` carries a `collectionFromBrowse` flag
-in history state for root-scope entries (where no `?cat=` is needed). Links
-without `?cat=` behave exactly as before (`?collection={id}` opens the
-Collections list context).
+scope: the URL becomes `?collection={id}&cat={ancestor path}` — or
+`?collection={id}&from=browse` when the scope is the param-less root (#1592)
+— and closing the detail (the error-state action) returns to that scope
+instead of the Collections list. The detail breadcrumb navigates to the
+collection's _filed_ category location regardless of where it was opened
+from (#1559). Back/forward restores both the collection and the scope —
+`useNavigationHistory` carries a `collectionFromBrowse` flag in history
+state, and the URL marker (`?cat=` or `?from=browse`) lets a reload or a
+copied link restore the same origin. Links without either marker behave
+exactly as before (`?collection={id}` opens the Collections list context).
 
 **Counts and empty states.** Category tiles include descendant collection
 counts in their detail line (`· N collections`), and the Browse empty-state

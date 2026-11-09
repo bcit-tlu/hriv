@@ -249,7 +249,8 @@ export function useNavigationHistory(
    * for the "browse" page — they are stored in state but omitted from
    * the URL for other pages, except that a `?collection=` entry opened
    * from Browse (#1529) also writes `?cat=` so the deep link restores
-   * the Browse location behind the detail view.
+   * the Browse location behind the detail view — or `?from=browse` when
+   * that location is the param-less root (#1592).
    */
   const pushNavState = useCallback(
     (
@@ -273,8 +274,14 @@ export function useNavigationHistory(
         // `?collection={id}` alone identifies the Collections page (see
         // parseShareableUrlParams); `?cat=` rides along when the detail was
         // opened from a Browse tile so the deep link restores that scope.
-        if (opts?.collectionFromBrowse && catIds.length > 0) {
-          params.set('cat', catIds.join(','))
+        // The root scope has no `?cat=` — `?from=browse` marks it instead
+        // so a reload or copied link keeps the Browse return path (#1592).
+        if (opts?.collectionFromBrowse) {
+          if (catIds.length > 0) {
+            params.set('cat', catIds.join(','))
+          } else {
+            params.set('from', 'browse')
+          }
         }
       } else if (page !== 'browse') {
         params.set('page', page)

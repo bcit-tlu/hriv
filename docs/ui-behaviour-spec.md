@@ -603,11 +603,12 @@ returned by the API (UX only — the backend re-checks).
   Moving to `null` unfiles the collection, removes its tile from Browse, and
   shows the snackbar **Removed “<name>” from Browse**.
 - **Given** a collection opened from a Browse tile, **Then** the URL carries
-  `?collection={id}&cat={path}`, and the error-state close action returns to
-  the originating scope; the detail breadcrumb always shows the collection's
-  _filed_ location (#1559). **Given** a
-  `?collection={id}` link without `?cat=`, **Then** the detail opens in the
-  Collections list context as before.
+  `?collection={id}&cat={path}` — or `?collection={id}&from=browse` when the
+  scope is the param-less root (#1592) — and the error-state close action
+  returns to the originating scope; the detail breadcrumb always shows the
+  collection's _filed_ location (#1559). **Given** a
+  `?collection={id}` link without `?cat=` or `?from=browse`, **Then** the
+  detail opens in the Collections list context as before.
 - **Given** a category containing collections, **Then** its tile detail line
   includes `N collections` summed over descendants; **Given** a Browse scope
   holding only collections, **Then** the empty-state message does not render.

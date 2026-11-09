@@ -132,7 +132,8 @@ export interface UseShareableImageStateDeps {
   collectionItemId?: number | null
   /**
    * Collection detail opened from a Browse tile (#1529): the URL sync keeps
-   * `?cat=` next to `?collection=` so the deep link restores the Browse scope.
+   * `?cat=` next to `?collection=` so the deep link restores the Browse scope
+   * — or `?from=browse` when that scope is the param-less root (#1592).
    */
   collectionFromBrowse?: boolean
   /**
@@ -293,9 +294,15 @@ export function useShareableImageState(
     const params = new URLSearchParams()
     if (page === 'collections' && collectionId != null) {
       // A collection detail opened from Browse keeps `?cat=` so the link
-      // restores the Browse scope behind it (#1529).
-      if (collectionFromBrowse && path.length > 0) {
-        params.set('cat', path.map((c) => c.id).join(','))
+      // restores the Browse scope behind it (#1529); the param-less root
+      // scope is marked `?from=browse` instead so reloads and copied links
+      // keep the return path (#1592).
+      if (collectionFromBrowse) {
+        if (path.length > 0) {
+          params.set('cat', path.map((c) => c.id).join(','))
+        } else {
+          params.set('from', 'browse')
+        }
       }
       params.set('collection', String(collectionId))
       if (collectionItemId != null) params.set('item', String(collectionItemId))

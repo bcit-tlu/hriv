@@ -2958,6 +2958,60 @@ describe('App collection browse context (#1529)', () => {
     await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
   })
 
+  it('opens a collection tile from the Browse root and returns to Browse home on close (#1592)', async () => {
+    await renderWithCollectionsEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection tile' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    expect(pushNavStateMock).toHaveBeenLastCalledWith(
+      'collections',
+      [],
+      null,
+      { collection: '5' },
+      {
+        collectionFromBrowse: true,
+      },
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('restores the Browse-root origin from ?from=browse on reload and returns to Browse home on close (#1592)', async () => {
+    window.history.replaceState(null, '', '/?collection=12&from=browse')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('restores the Browse-root origin from ?from=browse on popstate (#1592)', async () => {
+    await renderWithCollectionsEnabled()
+    expect(popStateHandler).not.toBeNull()
+
+    window.history.replaceState(null, '', '/?collection=12&from=browse')
+    act(() => {
+      popStateHandler!('collections', [], null, {})
+    })
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('browse', [])
+    await waitFor(() => expect(screen.queryByTestId('collections-page')).not.toBeInTheDocument())
+  })
+
+  it('keeps a bare ?collection={id} link closing to the Collections list (#1592)', async () => {
+    window.history.replaceState(null, '', '/?collection=12')
+    await renderWithCollectionsEnabled()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '12')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(pushNavStateMock).toHaveBeenLastCalledWith('collections', [], null, undefined)
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
   it('wires breadcrumb navigation and hide/show props for the detail header (#1559)', async () => {
     window.history.replaceState(null, '', '/?page=collections')
     await renderWithCollectionsEnabled()

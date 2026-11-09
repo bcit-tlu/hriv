@@ -22,7 +22,7 @@ Boundaries, in order of importance:
 2. **Role boundary**: admin > instructor > staff > student (`auth.py`, `authz.py`, `require_role`). OIDC maps IdP groups to roles (`routers/oidc.py` `_resolve_role`, highest wins) and programs (`Program.oidc_group`).
 3. **Student visibility boundary**: dual program AND group gate up the category ancestor chain (`visibility.py`, enforced in `routers/categories.py`, `routers/images.py`, `routers/collections.py`). Frontend filtering is UX only.
 4. **Tile content boundary**: stateless HMAC `tile_token` (`tile_tokens.py`), validated DB-free by nginx `auth_request`; `thumb` purpose is restricted to `thumbnail.jpeg` (`docs/tile-delivery-boundary.md`).
-5. **Cluster-internal**: `/api/metrics`, `/api/health/{ready,storage}`, `/api/_probe` are 404'd by frontend nginx; the backend API NetworkPolicy (`charts/backend/templates/networkpolicy.yaml`, `networkPolicy.enabled`) is opt-in and **currently off in both overlays** (chart default `enabled: false`), so nothing restricts which cluster pods can reach the API port. The only backend NetworkPolicy deployed is the latest-only counting worker's policy (deny-all ingress; egress only to Redis, kube-dns and the OTel collector) (`countingWorker.networkPolicy`), which rides with that preview feature.
+5. **Cluster-internal**: `/api/metrics`, `/api/health/{ready,storage}`, `/api/_probe` are 404'd by frontend nginx, and the backend API NetworkPolicy (`charts/backend/templates/networkpolicy.yaml`, `networkPolicy.enabled`) is **enabled in both deployment overlays** (2026-11): deny-all ingress on the API pods except the frontend proxy (`http` + `tiles` ports) and the Prometheus metrics scraper. The chart default stays `enabled: false` because the peer selectors are deployment-specific. The latest-only counting worker additionally ships its own policy (deny-all ingress; egress only to Redis, kube-dns and the OTel collector) via `countingWorker.networkPolicy`.
 6. **Worker/file boundary**: user-supplied images and admin archives are parsed by pyvips, `tarfile` (`filter="data"`), `pg_restore`/`psql` subprocesses in `admin_ops.py`.
 
 ## Components
@@ -82,4 +82,4 @@ Boundaries, in order of importance:
 
 - Which assets matter most; which attackers count; whether admins are trusted.
 - Whether dev-only docker-compose exposure, synthetic-monitoring and restore-validation are in scope.
-- Whether to enable the backend API NetworkPolicy — currently off in all overlays (`networkPolicy.enabled` defaults false); enabling it is a hardening backlog item, not an env discrepancy.
+- The backend API NetworkPolicy is enabled in both overlays (2026-11); keep the overlay's `metricsScraper` pod selectors aligned with the actual Prometheus deployment or scraping silently degrades (the policy matches zero peers rather than failing open).
