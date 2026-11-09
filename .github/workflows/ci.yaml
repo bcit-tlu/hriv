@@ -320,10 +320,27 @@ jobs:
         with:
           version: v4.3.0
 
+      # The release-asset download is anonymous and has flaked during GitHub
+      # incidents (error pages reaching tar as "not in gzip format"). Download
+      # to a file, fail on HTTP errors, validate the archive, and retry.
       - name: Install kubeconform
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
-            | sudo tar xz -C /usr/local/bin kubeconform
+          url='https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz'
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --connect-timeout 10 --max-time 120 \
+                -o /tmp/kubeconform.tar.gz "$url" \
+              && tar -tzf /tmp/kubeconform.tar.gz kubeconform >/dev/null 2>&1; then
+              sudo tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+              kubeconform -v
+              exit 0
+            fi
+            echo "::warning::kubeconform download attempt ${attempt}/5 failed"
+            if [ "$attempt" -lt 5 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "::error::Failed to download kubeconform after 5 attempts"
+          exit 1
 
       - name: Cache kubeconform schemas
         uses: actions/cache@v6
