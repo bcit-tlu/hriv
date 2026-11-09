@@ -35,7 +35,11 @@ data:
         default "";
     }
 
-    map $request_uri $tile_image_id_from_uri {
+    # The image id and path class are keyed on the normalized ``$uri`` —
+    # the path nginx actually serves via ``alias`` — not the raw
+    # ``$request_uri``, so a cached verdict can only ever be replayed for
+    # the image and path class it was issued for.
+    map $uri $tile_image_id_from_uri {
         ~^/api/tiles/([0-9]+)/ $1;
         default "";
     }
@@ -44,9 +48,20 @@ data:
     # never reused for a tile request (#1609). Matches the backend's
     # exact-path rule for ``purpose="thumb"`` tokens: only the top-level
     # ``thumbnail.jpeg`` is thumbnail scope; nested names are tile paths.
-    map $request_uri $tile_path_class_from_uri {
-        ~^/api/tiles/[0-9]+/thumbnail\.jpeg(\?|$) thumb;
+    map $uri $tile_path_class_from_uri {
+        ~^/api/tiles/[0-9]+/thumbnail\.jpeg$ thumb;
         default tiles;
+    }
+
+    # Dot segments (``.``/``..``, literal or percent-encoded, with literal
+    # or encoded slashes) in the raw request path. nginx resolves them
+    # before serving, but the validator receives the raw ``$request_uri``
+    # in ``X-Original-URI``, so ``/api/tiles/5/../6/image.dzi`` would be
+    # checked as image 5 and served from image 6. Such requests are
+    # rejected before auth. Legitimate tile URLs never contain them.
+    map $request_uri $tile_uri_has_dot_segment {
+        "~*^[^?]*(/|%2f)(\.|%2e){1,2}(/|%2f|\?|$)" 1;
+        default 0;
     }
 
     map $tile_auth_token $tile_auth_no_token {
@@ -67,6 +82,10 @@ data:
             # FastAPI validator (GET /api/tiles-auth): 204 allows, 401 is
             # returned for a missing/expired/tampered token, 403 for a
             # token bound to a different image.
+            if ($tile_uri_has_dot_segment) {
+                return 404;
+            }
+
             set $tile_auth_token $tile_auth_token_from_uri;
             set $tile_image_id $tile_image_id_from_uri;
             set $tile_path_class $tile_path_class_from_uri;

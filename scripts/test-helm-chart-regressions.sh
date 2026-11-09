@@ -94,7 +94,7 @@ assert_not_contains "$backend_explicit_tiles_pvc" "- ReadWriteOnce" \
 backend_tiles_configmap="$(extract_yaml_doc "$backend_legacy_manifest" "ConfigMap" "test-hriv-backend-nginx-tiles")"
 assert_contains "$backend_tiles_configmap" 'proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"' \
   "tiles auth verdict cache key must include the thumb-vs-tiles path class so a thumbnail verdict is never replayed for tile paths (#1609)"
-assert_contains "$backend_tiles_configmap" 'map $request_uri $tile_path_class_from_uri' \
+assert_contains "$backend_tiles_configmap" 'map $uri $tile_path_class_from_uri' \
   "tiles config should classify requests into thumb vs tiles cache classes"
 
 backup_legacy_manifest="$(helm template test charts/backup \
