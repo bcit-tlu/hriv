@@ -1586,7 +1586,11 @@ async def _finalize_abandoned_bulk_import_jobs(
             Job.id == BulkImportJob.job_id,
             Job.status.in_(("queued", "running")),
             Job.coordinator_lease_expires_at.is_not(None),
-            Job.coordinator_lease_expires_at > func.now(),
+            # statement_timestamp(), not now(): now() is frozen at
+            # transaction start, and this finalizer can run inside the
+            # long-lived upload transaction — the lease must be judged
+            # expired as of when this UPDATE executes.
+            Job.coordinator_lease_expires_at > func.statement_timestamp(),
         )
         .correlate(BulkImportJob)
     )
@@ -1883,8 +1887,11 @@ async def _process_bulk_import_impl(bulk_import_job_id: int) -> None:
         if claims >= max_claims:
             # Only the lease winner may abandon: a delayed duplicate task
             # that lost the CAS must never cancel a live coordinator's
-            # items (#1173 review).
-            await db.rollback()
+            # items (#1173 review). Commit — not rollback — the claim so
+            # the previous coordinator's token stays fenced out: its next
+            # heartbeat CAS fails instead of renewing an expired lease
+            # while abandonment is in flight.
+            await db.commit()
             await _finalize_bulk_import_abandoned(
                 bulk_import_job_id=bulk_id,
                 job_id=supervisor_id,

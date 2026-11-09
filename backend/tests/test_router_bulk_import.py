@@ -1293,10 +1293,11 @@ async def test_process_bulk_import_impl_claim_cap_abandons() -> None:
             "coordinator_claims": 2,
         }
     )
+    db = _impl_db()
     with (
         patch(
             "app.routers.bulk_import.async_session",
-            _make_async_session_factory(_impl_db()),
+            _make_async_session_factory(db),
         ),
         patch(
             "app.routers.bulk_import._load_bulk_import_supervisor",
@@ -1320,8 +1321,11 @@ async def test_process_bulk_import_impl_claim_cap_abandons() -> None:
         await _process_bulk_import_impl(1)
 
     # The lease must be won before the cap may abandon — a peer that lost
-    # the CAS can never cancel a live coordinator's items.
+    # the CAS can never cancel a live coordinator's items. The claim is
+    # committed (not rolled back) so the previous coordinator's token
+    # stays fenced out while abandonment runs.
     claim_mock.assert_awaited_once()
+    db.commit.assert_awaited()
     abandoned_mock.assert_awaited_once()
     assert abandoned_mock.await_args.kwargs["bulk_import_job_id"] == 1
     assert abandoned_mock.await_args.kwargs["job_id"] == 55
