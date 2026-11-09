@@ -119,7 +119,22 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
    descriptor and tile hierarchy. The path class (`thumb` for
    `/api/tiles/<id>/thumbnail.jpeg`, `tiles` for everything else, #1609)
    likewise stops a thumbnail-scoped verdict for a `purpose="thumb"` token
-   from being replayed for tile paths.
+   from being replayed for tile paths. Both are derived from the normalized
+   `$uri` (the path `alias` serves), not the raw `$request_uri`.
+
+   **Path confusion guard:** nginx serves the decoded, dot-segment-resolved
+   path, while `X-Original-URI` carries the raw `$request_uri`, so
+   `/api/tiles/5/../6/image.dzi` (or `%2e%2e`) could otherwise be validated
+   as image 5 and served from image 6. Two independent layers close this:
+   the sidecar returns 404 for any raw tile path containing a `.`/`..`
+   segment (literal or percent-encoded, with literal or `%2f` slashes)
+   before `auth_request` runs, and `GET /api/tiles-auth` decodes the path
+   once and returns 403 for dot or empty segments, backslashes or null
+   bytes. This is stricter than the FastAPI fallback route, which rejects
+   `..` segments and then relies on its `realpath` containment check. The raw URI is
+   still what is forwarded: `$uri` is percent-decoded, so forwarding it
+   would put decoded bytes (e.g. `%0d%0a`) into a subrequest header.
+
 2. **FastAPI fallback (dev/compose, sidecar disabled):** the unauthenticated
    `StaticFiles` mount in `main.py` is **removed**, replaced by a router route
    `GET /api/tiles/{source_image_id}/{path:path}` that validates the token and

@@ -84,7 +84,7 @@ assert_not_contains "$auth_request_line" '$' \
 # replayed for tile paths.
 assert_contains "$nginx_conf" 'proxy_cache_key "$tile_auth_token:$tile_image_id:$tile_path_class"' \
   "tiles auth verdict cache key must include the thumb-vs-tiles path class"
-assert_contains "$nginx_conf" 'map $request_uri $tile_path_class_from_uri' \
+assert_contains "$nginx_conf" 'map $uri $tile_path_class_from_uri' \
   "tiles config should classify requests into thumb vs tiles cache classes"
 
 # Resolve the sidecar image and listen port from the rendered manifest so
@@ -304,4 +304,28 @@ expect_status 200 "${image42}?tile_token=alt-42" "a different valid token should
 after_token="$(hits)"
 [[ "$after_token" -eq 11 ]] || \
   fail "a new token for a cached image must hit the validator (expected 11 hits, got $after_token)"
+# Dot-segment path confusion: the validator reads the raw request URI but
+# nginx serves the normalized one, so ``/api/tiles/42/../7/image.dzi``
+# would be authorized as image 42 and served from image 7. The stub
+# validator above deliberately keeps the naive raw first-segment check, so
+# these assertions prove the sidecar blocks the attack on its own — even
+# with a warm ``valid-42`` verdict in the cache from the burst above.
+for traversal in \
+  "42/../7/image.dzi" \
+  "42/%2e%2e/7/image.dzi" \
+  "42/%2E%2e/7/image.dzi" \
+  "42/.%2e/7/image.dzi" \
+  "42/x/../../7/image.dzi" \
+  "42/image_files/../../7/image.dzi" \
+  "42%2f..%2f7/image.dzi" \
+  "42/%2e/image.dzi" \
+  "42/./image.dzi"; do
+  got="$(curl -s --path-as-is -o "$work/traversal-body" -w '%{http_code}' \
+    "$base/api/tiles/${traversal}?tile_token=valid-42")"
+  [[ "$got" != 2* ]] || \
+    fail "dot-segment tile path /api/tiles/${traversal} must be rejected (got $got)"
+  assert_not_contains "$(cat "$work/traversal-body")" "dzi-descriptor-7" \
+    "dot-segment tile path /api/tiles/${traversal} must never serve another image's tiles"
+done
+
 echo "Tiles sidecar runtime regression checks passed."

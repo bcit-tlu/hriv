@@ -547,6 +547,91 @@ async def test_tiles_auth_non_tile_uri_returns_403(auth_app: FastAPI) -> None:
     assert resp.status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("original_uri", "expected"),
+    [
+        ("/api/tiles/42/image.dzi?tile_token=x", (42, "image.dzi")),
+        ("/api/tiles/42/image_files/0/0_0.jpeg", (42, "image_files/0/0_0.jpeg")),
+        ("/api/tiles/42/thumbnail.jpeg", (42, "thumbnail.jpeg")),
+        ("/api/tiles/42", (42, "")),
+        ("/api/tiles/%34%32/image%5Ffiles/0/0_0.jpeg", (42, "image_files/0/0_0.jpeg")),
+        ("/api/tiles/42/%252e%252e/image.dzi", (42, "%2e%2e/image.dzi")),
+        ("/api/tiles/42/../43/image.dzi", None),
+        ("/api/tiles/42/%2e%2e/43/image.dzi", None),
+        ("/api/tiles/42/./image.dzi", None),
+        ("/api/tiles/42/", None),
+        ("/api/tiles/42//image.dzi", None),
+        ("/api/tiles/42/a\\b", None),
+        ("/api/tiles/42/a%00b", None),
+        ("/api/tiles/abc/image.dzi", None),
+        ("/api/tiles/%D9%A4%D9%A2/image.dzi", None),
+        ("/api/admin/export", None),
+    ],
+)
+def test_tile_target_from_original_uri(
+    original_uri: str, expected: tuple[int, str] | None
+) -> None:
+    assert tiles_router._tile_target_from_original_uri(original_uri) == expected
+
+
+@pytest.mark.parametrize(
+    "uri_path",
+    [
+        "/api/tiles/42/../43/image.dzi",
+        "/api/tiles/42/%2e%2e/43/image.dzi",
+        "/api/tiles/42/%2E%2e/43/image.dzi",
+        "/api/tiles/42/.%2e/43/image.dzi",
+        "/api/tiles/42%2f..%2f43/image.dzi",
+        "/api/tiles/42/image_files/../../43/image.dzi",
+        "/api/tiles/42/./image.dzi",
+        "/api/tiles/42//image.dzi",
+        "/api/tiles//42/image.dzi",
+        "/api/tiles/42/image_files\\..\\..\\43/image.dzi",
+        "/api/tiles/42/image%5c..%5c..%5c43/image.dzi",
+        "/api/tiles/42/image.dzi%00",
+        "/api/tiles/%D9%A4%D9%A2/image.dzi",
+    ],
+)
+async def test_tiles_auth_rejects_dot_segment_and_suspicious_paths(
+    auth_app: FastAPI, uri_path: str
+) -> None:
+    # nginx serves the decoded, dot-segment-resolved path, so a token for
+    # image 42 must never authorize a raw URI that resolves elsewhere.
+    token = issue_tile_token(42)
+    async with _client(auth_app) as client:
+        resp = await client.get(
+            "/api/tiles-auth",
+            headers={"X-Original-URI": f"{uri_path}?tile_token={token}"},
+        )
+    assert resp.status_code == 403
+
+
+async def test_tiles_auth_decodes_percent_encoded_path_like_nginx(
+    auth_app: FastAPI,
+) -> None:
+    # nginx decodes ``%34%33`` to ``43`` before serving, so the validator
+    # must bind the token to 43, not accept a token for another image.
+    async with _client(auth_app) as client:
+        allowed = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/%34%33/image.dzi?tile_token={issue_tile_token(43)}"
+                )
+            },
+        )
+        denied = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/%34%33/image.dzi?tile_token={issue_tile_token(42)}"
+                )
+            },
+        )
+    assert allowed.status_code == 204
+    assert denied.status_code == 403
+
+
 # ── Thumbnail-only tokens (issue #1609) ───────────────────
 #
 # ``purpose="thumb"`` tokens are issued for category card covers so the

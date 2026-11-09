@@ -16,8 +16,9 @@ Two routes:
 
 import logging
 import os
+import re
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from fastapi import APIRouter, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse
@@ -26,7 +27,6 @@ from ..database import settings
 from ..tile_tokens import (
     TILE_URL_PREFIX,
     TileTokenError,
-    source_image_id_from_tile_url,
     validate_tile_token,
 )
 
@@ -54,6 +54,32 @@ def _token_from_original_uri(original_uri: str) -> str | None:
     return values[0] if values else None
 
 
+_IMAGE_ID_SEGMENT = re.compile(r"[0-9]+")
+
+
+def _tile_target_from_original_uri(original_uri: str) -> tuple[int, str] | None:
+    """Return ``(source_image_id, tile_path)`` for a forwarded tile URI.
+
+    nginx serves the percent-decoded, dot-segment-resolved path, so the
+    path is decoded once (as nginx does) and any ``.``/``..`` or empty
+    segment, backslash or null byte is rejected: otherwise
+    ``/api/tiles/5/../6/image.dzi`` would validate as image 5 while nginx
+    serves image 6. Returns ``None`` for anything that is not a plain
+    ``/api/tiles/<id>/…`` path.
+    """
+    path = unquote(urlsplit(original_uri).path)
+    if not path.startswith(TILE_URL_PREFIX):
+        return None
+    if "\x00" in path or "\\" in path:
+        return None
+    segments = path[len(TILE_URL_PREFIX):].split("/")
+    if any(segment in ("", ".", "..") for segment in segments):
+        return None
+    if not _IMAGE_ID_SEGMENT.fullmatch(segments[0]):
+        return None
+    return int(segments[0]), "/".join(segments[1:])
+
+
 @router.get("/tiles-auth", status_code=204)
 async def tiles_auth(
     tile_token: str | None = Query(default=None),
@@ -66,9 +92,10 @@ async def tiles_auth(
     """
     if not x_original_uri:
         raise HTTPException(status_code=401, detail="Missing X-Original-URI")
-    source_image_id = source_image_id_from_tile_url(x_original_uri)
-    if source_image_id is None:
+    target = _tile_target_from_original_uri(x_original_uri)
+    if target is None:
         raise HTTPException(status_code=403, detail="Not a tile URI")
+    source_image_id, tile_path = target
     token = (
         tile_token
         or x_tile_token
@@ -76,10 +103,9 @@ async def tiles_auth(
     )
     if not token:
         raise HTTPException(status_code=401, detail="Missing tile token")
-    # Path after ``/api/tiles/<sid>/`` — thumbnail-scoped tokens must match
-    # ``thumbnail.jpeg`` exactly (missing or nested segments do not).
-    rest = urlsplit(x_original_uri).path[len(TILE_URL_PREFIX):]
-    tile_path = rest.split("/", 1)[1] if "/" in rest else ""
+    # ``tile_path`` is the path after ``/api/tiles/<sid>/`` — thumbnail-scoped
+    # tokens must match ``thumbnail.jpeg`` exactly (missing or nested
+    # segments do not).
     try:
         validate_tile_token(token, source_image_id, tile_path)
     except TileTokenError as exc:
