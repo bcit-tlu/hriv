@@ -548,6 +548,33 @@ async def test_tiles_auth_non_tile_uri_returns_403(auth_app: FastAPI) -> None:
 
 
 @pytest.mark.parametrize(
+    ("original_uri", "expected"),
+    [
+        ("/api/tiles/42/image.dzi?tile_token=x", (42, "image.dzi")),
+        ("/api/tiles/42/image_files/0/0_0.jpeg", (42, "image_files/0/0_0.jpeg")),
+        ("/api/tiles/42/thumbnail.jpeg", (42, "thumbnail.jpeg")),
+        ("/api/tiles/42", (42, "")),
+        ("/api/tiles/%34%32/image%5Ffiles/0/0_0.jpeg", (42, "image_files/0/0_0.jpeg")),
+        ("/api/tiles/42/%252e%252e/image.dzi", (42, "%2e%2e/image.dzi")),
+        ("/api/tiles/42/../43/image.dzi", None),
+        ("/api/tiles/42/%2e%2e/43/image.dzi", None),
+        ("/api/tiles/42/./image.dzi", None),
+        ("/api/tiles/42/", None),
+        ("/api/tiles/42//image.dzi", None),
+        ("/api/tiles/42/a\\b", None),
+        ("/api/tiles/42/a%00b", None),
+        ("/api/tiles/abc/image.dzi", None),
+        ("/api/tiles/%D9%A4%D9%A2/image.dzi", None),
+        ("/api/admin/export", None),
+    ],
+)
+def test_tile_target_from_original_uri(
+    original_uri: str, expected: tuple[int, str] | None
+) -> None:
+    assert tiles_router._tile_target_from_original_uri(original_uri) == expected
+
+
+@pytest.mark.parametrize(
     "uri_path",
     [
         "/api/tiles/42/../43/image.dzi",
