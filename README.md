@@ -171,51 +171,52 @@ reconciliation model for both environments.
 
 ## Documentation
 
-| Doc                                                                                  | Covers                                                                           |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                 |
-| [docs/collections.md](docs/collections.md)                                           | Collections model, ownership, visibility/authorization rules, and API surface    |
-| [docs/object-counting.md](docs/object-counting.md)                                   | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
-| [docs/user-deactivation.md](docs/user-deactivation.md)                               | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
-| [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
-| [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy               |
-| [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |
-| [docs/domain-model.md](docs/domain-model.md)                                         | Data model reference (entities, junctions, conventions)                          |
-| [docs/jobs.md](docs/jobs.md)                                                         | Durable supervisor/child job model for long-running operations                   |
-| [docs/admin-import-export.md](docs/admin-import-export.md)                           | Admin import/export task lifecycle and data round-trip                           |
-| [docs/agent-feature-map.md](docs/agent-feature-map.md)                               | "Where to change what" map across frontend/backend/tests/docs                    |
-| [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                               | "I changed X → run Y" decision tree for targeted test runs                       |
-| [docs/TESTING.md](docs/TESTING.md)                                                   | Test plan, API endpoint → minimum-role table                                     |
-| [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                        |
-| [docs/password-setup.md](docs/password-setup.md)                                     | Admin-issued, single-use local password setup links                              |
-| [docs/password-management.md](docs/password-management.md)                           | Credential states, administrator password runbook, and stable rollout            |
-| [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                     | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
-| [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                     | Standing rule and audit for unauthenticated routes and enforcement layers        |
-| [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                      |
-| [docs/reorder-fixture.md](docs/reorder-fixture.md)                                   | Production-scale reorder fixture and regression scaffolding (epic #975)          |
-| [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                               | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)      |
-| [docs/tile-ordering.md](docs/tile-ordering.md)                                       | Atomic, revisioned tile-order API and ordering normalization (epic #975)         |
-| [frontend/guide/](frontend/guide/)                                                   | Instructor/admin user guide (Markdown rendered in-app at `?page=guide`)          |
-| [docs/browse-state.md](docs/browse-state.md)                                         | Monotonic browse revision and `GET /categories/tree` `304` short-circuit (#1066) |
-| [docs/reorder-performance.md](docs/reorder-performance.md)                           | Browse drag-and-drop profiling results and optimization record (epic #975)       |
-| [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                   |
-| [docs/measurement-review.md](docs/measurement-review.md)                             | Measurement-scale findings: RBC detector, review/approve API, metadata promotion |
-| [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)             | Image processing pipeline stages, tile generation, and worker configuration      |
-| [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                       | Tile-cache provenance fields and current/missing/stale/failed status rules       |
-| [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)         | Production backup and DR strategy, volume layout, restore order, and runbook     |
-| [docs/longhorn-storage-classes.md](docs/longhorn-storage-classes.md)                 | Longhorn StorageClass guidance per HRIV volume, tradeoffs, and example manifests |
-| [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                       | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
-| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
-| [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                                |
-| [docs/security-scanning.md](docs/security-scanning.md)                               | Trivy code-scanning sources, `.trivyignore` review, Dependabot PR handling       |
-| [docs/deployment-proxy-chain.md](docs/deployment-proxy-chain.md)                     | Proxy chain, `TRUSTED_PROXY_HOPS` client-IP resolution, login rate-limit buckets |
-| [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard            |
-| [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist      |
-| [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load      |
-| [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook                |
-| [docs/per-file-restore-design.md](docs/per-file-restore-design.md)                   | Per-file restore design and implemented backend/UI shape                         |
-| [docs/rebuild-architecture-design.md](docs/rebuild-architecture-design.md)           | Design plan for scalable, parallel tile rebuilds after backup restores           |
-| [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                         |
+| Doc                                                                                        | Covers                                                                           |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| [docs/groups.md](docs/groups.md)                                                           | Groups model, authorization, API surface, and frontend behaviour                 |
+| [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
+| [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
+| [docs/user-deactivation.md](docs/user-deactivation.md)                                     | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
+| [docs/changelog-notifications.md](docs/changelog-notifications.md)                         | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
+| [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                                   | In-app feedback routing, provider contract, and environment policy               |
+| [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md)       | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |
+| [docs/domain-model.md](docs/domain-model.md)                                               | Data model reference (entities, junctions, conventions)                          |
+| [docs/jobs.md](docs/jobs.md)                                                               | Durable supervisor/child job model for long-running operations                   |
+| [docs/admin-import-export.md](docs/admin-import-export.md)                                 | Admin import/export task lifecycle and data round-trip                           |
+| [docs/agent-feature-map.md](docs/agent-feature-map.md)                                     | "Where to change what" map across frontend/backend/tests/docs                    |
+| [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                                     | "I changed X → run Y" decision tree for targeted test runs                       |
+| [docs/TESTING.md](docs/TESTING.md)                                                         | Test plan, API endpoint → minimum-role table                                     |
+| [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                                   | OIDC / auth configuration                                                        |
+| [docs/password-setup.md](docs/password-setup.md)                                           | Admin-issued, single-use local password setup links                              |
+| [docs/password-management.md](docs/password-management.md)                               | Credential states, administrator password runbook, and stable rollout            |
+| [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                           | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
+| [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                           | Standing rule and audit for unauthenticated routes and enforcement layers        |
+| [docs/drag-and-drop.md](docs/drag-and-drop.md)                                             | Tile drag-and-drop move-vs-reorder contract                                      |
+| [docs/reorder-fixture.md](docs/reorder-fixture.md)                                         | Production-scale reorder fixture and regression scaffolding (epic #975)          |
+| [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                                     | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)      |
+| [docs/tile-ordering.md](docs/tile-ordering.md)                                             | Atomic, revisioned tile-order API and ordering normalization (epic #975)         |
+| [frontend/guide/](frontend/guide/)                                                         | Instructor/admin user guide (Markdown rendered in-app at `?page=guide`)          |
+| [docs/browse-state.md](docs/browse-state.md)                                               | Monotonic browse revision and `GET /categories/tree` `304` short-circuit (#1066) |
+| [docs/reorder-performance.md](docs/reorder-performance.md)                                 | Browse drag-and-drop profiling results and optimization record (epic #975)       |
+| [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)             | Image metadata, versioning, and optimistic concurrency control                   |
+| [docs/measurement-review.md](docs/measurement-review.md)                                   | Measurement-scale findings: RBC detector, review/approve API, metadata promotion |
+| [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)                   | Image processing pipeline stages, tile generation, and worker configuration      |
+| [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                             | Tile-cache provenance fields and current/missing/stale/failed status rules       |
+| [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)               | Production backup and DR strategy, volume layout, restore order, and runbook     |
+| [docs/longhorn-storage-classes.md](docs/longhorn-storage-classes.md)                       | Longhorn StorageClass guidance per HRIV volume, tradeoffs, and example manifests |
+| [docs/recovery-set-contract.md](docs/recovery-set-contract.md)                             | Normative backup boundary, mismatch policy, recovery metadata, and restore rules |
+| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                                     | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)              |
+| [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                         | Release-please + Flux deploy flow                                                |
+| [docs/security-scanning.md](docs/security-scanning.md)                                     | Trivy code-scanning sources, `.trivyignore` review, Dependabot PR handling       |
+| [docs/deployment-proxy-chain.md](docs/deployment-proxy-chain.md)                           | Proxy chain, `TRUSTED_PROXY_HOPS` client-IP resolution, login rate-limit buckets |
+| [docs/observability-conventions.md](docs/observability-conventions.md)                     | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard            |
+| [docs/observability-operations.md](docs/observability-operations.md)                       | Alert catalogue, routing policy, validation drills, and readiness checklist      |
+| [docs/observability-runbooks.md](docs/observability-runbooks.md)                           | Alert-linked operator runbooks for availability, storage, backups, and load      |
+| [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                               | Synthetic Playwright journey, configuration, and operator runbook                |
+| [docs/per-file-restore-design.md](docs/per-file-restore-design.md)                         | Per-file restore design and implemented backend/UI shape                         |
+| [docs/rebuild-architecture-design.md](docs/rebuild-architecture-design.md)                 | Design plan for scalable, parallel tile rebuilds after backup restores           |
+| [docs/3d-slice-reconstruction-exploration.md](docs/3d-slice-reconstruction-exploration.md) | Exploratory RFC for 2D slice-stack navigation and 3D anatomical reconstruction   |
+| [AGENTS.md](AGENTS.md)                                                                     | Contributor setup, workflow, and **Critical Invariants**                         |
 
 ## License
 
