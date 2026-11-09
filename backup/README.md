@@ -113,6 +113,10 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 | Generated tiles (`/data/tiles` PVC)       | Longhorn snapshot + backup (optional)           | Prefer tile rebuild from source images; restore from Longhorn only when the snapshot is newer than the last tile-pipeline change |
 | Backup archives (Azure / local PVC)       | Azure Blob Storage replication                  | Restore from an archive whose publication state, manifest, and success marker are valid                                          |
 
+For the StorageClass each volume should use (`persistence.backups.storageClass`,
+`persistence.sourceImages.storageClass`, `persistence.tiles.storageClass`),
+see [`docs/longhorn-storage-classes.md`](../docs/longhorn-storage-classes.md).
+
 ### Rebuild vs restore tiles
 
 - **Rebuild** when the database and source images are recovered but the tile volume is missing or stale. The `rebuild-tiles` admin task regenerates tiles for missing or stale sources using the current pipeline settings.

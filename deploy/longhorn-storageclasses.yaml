@@ -1,0 +1,130 @@
+# Example Longhorn StorageClasses for HRIV's split media volumes (#743).
+#
+# These manifests mirror the classes bcit-tlu already manages through Flux:
+#   - bcit-tlu/flux-fleet        infrastructure/longhorn/config/<env>/storageclass.yaml
+#   - bcit-tlu/flux-fleet-v2     infrastructure/longhorn/config-tlu/storageclass.yaml
+#
+# They are a ready-to-apply starting point for HRIV deployments on Longhorn
+# that do NOT already have equivalent classes. Do not apply them to a
+# Flux-managed cluster: the fleet repositories are the source of truth there
+# and Flux would revert or fight these objects.
+#
+# Per-parameter rationale, the volume-to-class mapping, and recommended chart
+# values live in docs/longhorn-storage-classes.md.
+#
+# Prerequisites:
+#   - Longhorn installed with a backup target when `backupTargetName` is set
+#     (flux-fleet creates a BackupTarget named `default`; rename or delete the
+#     parameter to match your cluster's backup target).
+#   - `dataEngine: v2` requires nodes to advertise enough hugepages-2Mi for the
+#     Longhorn data-engine memory size. On clusters without hugepage
+#     configuration, use `dataEngine: v1` (or omit the parameter for the
+#     Longhorn default).
+#   - `diskSelector` is intentionally omitted: bcit-tlu pins volumes to a
+#     dedicated SAN-backed disk pool via a node disk label. Add a
+#     `diskSelector` parameter if your cluster dedicates disks the same way.
+
+# ── Source images + shared /data state ──────────────────────────────────────
+# Backs the backend chart's persistence.sourceImages PVC, mounted at /data:
+# source_images/, .maintenance, and admin_tasks/ state. Authoritative user
+# uploads — the highest-durability volume in the deployment.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-source-images-rwx
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+# Retain: deleting the PVC must never delete the only copy of user uploads.
+reclaimPolicy: Retain
+# WaitForFirstConsumer lets the scheduler pick the pod's node first so
+# replica placement sees the real consumer instead of provisioning blind.
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  backupTargetName: default
+  dataEngine: v2
+  # RWX volumes are served through the Longhorn share manager (NFS), so a
+  # single consumer-node locality guarantee is weaker; durability comes from
+  # replica count and zone spreading instead.
+  dataLocality: disabled
+  disableRevisionCounter: 'true'
+  fromBackup: ''
+  fsType: ext4
+  # Authoritative uploads: 3 replicas on production-shaped clusters. Reduce
+  # to 2 only when the cluster has fewer Longhorn worker nodes (bcit-tlu
+  # latest runs 2 on three workers); never use 1 for this volume.
+  numberOfReplicas: '3'
+  replicaAutoBalance: best-effort
+  # Spread replicas across failure domains so one node/zone loss keeps the
+  # volume healthy.
+  replicaZoneSoftAntiAffinity: enabled
+  staleReplicaTimeout: '30'
+  unmapMarkSnapChainRemoved: ignored
+---
+# ── Generated DZI tiles ─────────────────────────────────────────────────────
+# Backs the backend chart's persistence.tiles PVC, mounted at /data/tiles.
+# Derived data: rebuildable from source images via the rebuild-tiles admin
+# task, so it trades durability for cost.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-tiles-rwx
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+# Retain so a recent Longhorn snapshot can restore the tile tree faster than
+# a rebuild; keep snapshot retention short (tiles are derived — see
+# docs/backup-and-disaster-recovery.md "Recommended Longhorn policies").
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  backupTargetName: default
+  dataEngine: v2
+  # best-effort keeps a replica on the node running the tile readers (API
+  # pods + nginx sidecar), the hot path for /api/tiles.
+  dataLocality: best-effort
+  disableRevisionCounter: 'true'
+  fromBackup: ''
+  fsType: ext4
+  # Derived and rebuildable: 2 replicas is enough — a lost replica is
+  # repaired from the survivor, and a lost volume is rebuilt from source.
+  numberOfReplicas: '2'
+  replicaAutoBalance: best-effort
+  # Disabled so replicaAutoBalance/dataLocality can keep the local replica
+  # near the tile readers instead of pulling it toward zone spread.
+  replicaZoneSoftAntiAffinity: disabled
+  staleReplicaTimeout: '30'
+  unmapMarkSnapChainRemoved: ignored
+---
+# ── Backup archives / backup state ──────────────────────────────────────────
+# Backs the backup chart's persistence.backups PVC, mounted at /backups.
+# Holds backup state, locks, and staging; in local-PVC-only mode (no Azure
+# container configured) it also holds the recovery archives themselves.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-backup-archives
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+# Retain: in local-PVC-only mode this volume can hold the only copy of
+# recovery archives, and even in Azure mode it holds backup state that must
+# survive a PVC recreation.
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  backupTargetName: default
+  dataEngine: v2
+  # The backup Deployment is the single writer/reader; best-effort locality
+  # keeps a replica on its node for fast archive streaming.
+  dataLocality: best-effort
+  # Keep the local replica in place; Longhorn still repairs a lost replica
+  # onto surviving nodes — autoBalance only governs voluntary movement.
+  replicaAutoBalance: disabled
+  disableRevisionCounter: 'true'
+  fromBackup: ''
+  fsType: ext4
+  # Bounded state in Azure mode, sole recovery copy in local mode: 2
+  # replicas covers both. Raise to 3 if local archives are the only
+  # protection for the deployment.
+  numberOfReplicas: '2'
+  replicaZoneSoftAntiAffinity: disabled
+  staleReplicaTimeout: '30'
+  unmapMarkSnapChainRemoved: ignored
