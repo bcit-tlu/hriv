@@ -79,6 +79,7 @@ import {
   apiCollectionSummaryToSummary,
   apiImageToItem,
   collectionFullMessage,
+  collectionLinkFromBrowse,
   parseCollectionIdParam,
   parseCollectionItemParam,
   studentTypesAtCap,
@@ -217,11 +218,11 @@ export default function App() {
   )
   // Whether the open collection detail was reached from a Browse tile
   // (#1529): close/back then returns to the Browse scope in `path` rather
-  // than the Collections list. Deep links carrying `?cat=` start true.
-  const [collectionFromBrowse, setCollectionFromBrowse] = useState<boolean>(() => {
-    if (parseCollectionIdParam(window.location.search) == null) return false
-    return new URLSearchParams(window.location.search).get('cat') != null
-  })
+  // than the Collections list. Deep links carrying `?cat=` start true; the
+  // param-less root scope is marked `?from=browse` instead (#1592).
+  const [collectionFromBrowse, setCollectionFromBrowse] = useState<boolean>(() =>
+    collectionLinkFromBrowse(window.location.search),
+  )
   // `?type=` deep links / popstate seed the Collections page's Type filter
   // (#1629 — one unified page; the filter state owns it after the seed).
   // The nonce re-applies the seed on every collections popstate, even when
@@ -992,11 +993,11 @@ export default function App() {
 
       if (validPage === 'collections') {
         // A collection entry pushed from a Browse tile restores the Browse
-        // scope behind it (#1529): `?cat=` rides in the popped URL and the
-        // state flag marks entries where the scope was the (param-less) root.
+        // scope behind it (#1529): `?cat=` rides in the popped URL for a
+        // non-root scope and `?from=browse` marks the param-less root
+        // (#1592); the state flag covers entries whose URL lost the marker.
         const fromBrowse =
-          poppedCollectionFromBrowse === true ||
-          new URLSearchParams(window.location.search).get('cat') != null
+          poppedCollectionFromBrowse === true || collectionLinkFromBrowse(window.location.search)
         setCollectionFromBrowse(fromBrowse)
         setPath(fromBrowse ? resolveCategoryPath(categoriesRef.current, catIds) : [])
         setSelectedImage(null)

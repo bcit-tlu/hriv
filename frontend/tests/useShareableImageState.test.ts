@@ -473,7 +473,22 @@ describe('useShareableImageState', () => {
       expect(url).toBe('/?cat=3&collection=12')
     })
 
-    it('omits ?cat= for a collection opened outside Browse', () => {
+    it('marks a Browse-root detail with ?from=browse (#1592)', () => {
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            page: 'collections',
+            collectionId: 12,
+            collectionFromBrowse: true,
+            path: [],
+          }),
+        ),
+      )
+      const url = replaceStateSpy.mock.calls[replaceStateSpy.mock.calls.length - 1][2] as string
+      expect(url).toBe('/?from=browse&collection=12')
+    })
+
+    it('omits ?cat= and ?from= for a collection opened outside Browse', () => {
       const cat = makeCategory({ id: 3, label: 'Scope' })
       renderHook(() =>
         useShareableImageState(makeDeps({ page: 'collections', collectionId: 12, path: [cat] })),
@@ -483,8 +498,9 @@ describe('useShareableImageState', () => {
     })
 
     it('keeps collectionFromBrowse in history state on URL sync (#1529)', () => {
-      // A root-scope Browse origin has no `?cat=` to mark it, so the state
-      // flag is the only carrier — the replaceState must not strip it.
+      // Back/forward traversal reads the flag from history.state; the URL
+      // marker (`?cat=`/`?from=browse`) only covers reloads and copies — the
+      // replaceState must not strip the flag either way.
       renderHook(() =>
         useShareableImageState(
           makeDeps({ page: 'collections', collectionId: 12, collectionFromBrowse: true }),
