@@ -198,12 +198,20 @@ missed deliveries — it is not the rollout path.
   when adopting this behaviour, because the orchestrator rejects a
   `validation-select` payload with fields it does not know.
 - **`pr-title-lint` skips only release-please's PRs.** Its `lint` job is a
-  required check, and `pr-title-lint` is the only `pull_request_target`
-  workflow in the repo, so release-please's PRs (author
-  `bcit-tlu-release-please[bot]`) skip it to avoid being held under "1
+  required check. release-please's PRs (author
+  `bcit-tlu-release-please[bot]`) skip it, which dates from when the
+  workflow used `pull_request_target` and their runs were held under "1
   workflow awaiting approval". Every other author — including app-authored
   PRs such as Devin's — is linted; skipping all `Bot` authors left their
   required `lint` check permanently unsatisfied.
+- **`pr-title-lint` runs on `pull_request` with a read-only token.** GitHub
+  blocks `pull_request_target` on public repositories by default
+  ([policy](https://gh.io/securely-using-pull_request_target)), so the
+  workflow must not move back to it. Because the token cannot comment, a
+  failing title or a scope/changed-files mismatch is reported in the run's
+  job summary and as an annotation, not as a PR comment. On
+  `pull_request` the workflow file comes from the PR branch, so changes to
+  it are reviewed like any other code.
 - **`release-as` is a one-shot override, not a pinning mechanism.** If
   you use it to unstick release-please, remove it once the manifest
   catches up — the staleness guard in `release-please.yaml` will fail

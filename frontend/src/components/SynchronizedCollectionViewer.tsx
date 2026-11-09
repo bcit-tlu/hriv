@@ -411,6 +411,14 @@ export default function SynchronizedCollectionViewer({
   }, [panes, onSaveViewport, onError])
 
   const handleReset = useCallback(() => {
+    // The default view is defined across linked panes, so Restore re-links any
+    // pane the user unlinked — otherwise it keeps ignoring the others' moves
+    // after the reset (#1684).
+    if (unpinnedRef.current.size > 0) {
+      const relinked = new Set<number>()
+      unpinnedRef.current = relinked
+      setUnpinnedIds(relinked)
+    }
     const apply = (image: ImageItem) => {
       const viewer = viewersByImage.current.get(image.id)
       const viewport = viewer?.viewport

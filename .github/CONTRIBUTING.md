@@ -70,9 +70,10 @@ and starve the release pipeline.
 
 ### If the lint fails
 
-The check posts a comment on your PR with the specific failing reason
-(unknown type / uppercase subject / missing `:` / etc.) and a link back
-to this file. Edit the PR title in the GitHub UI and the check re-runs
+The failed check shows the specific failing reason (unknown type /
+uppercase subject / missing `:` / etc.) as an annotation, and its job
+summary shows the expected format and examples; open it from the check's
+**Details** link. Edit the PR title in the GitHub UI and the check re-runs
 automatically within seconds — no need to push a new commit.
 
 ### Further reading
