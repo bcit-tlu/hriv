@@ -71,7 +71,7 @@ import {
   getCategoryHiddenStateFromPath,
   getCategoryHiddenStateInTree,
   isCategoryHiddenInTree,
-  resolveCategoryPath,
+  resolveCategoryPathByLeaf,
   updateImageInTree,
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
@@ -490,6 +490,26 @@ export default function App() {
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
+
+  // `path` holds navigation-time snapshots; when a background refresh
+  // commits a new tree, swap in the leaf's live ancestry so `?cat=`/history
+  // state and breadcrumb labels track it — via replaceState, never a new
+  // history entry (#1590). The check is gated on the tree commit itself so
+  // a locally confirmed edit (the rename/visibility `setPath` patch applied
+  // while a refresh failed) is not reverted until the authoritative tree
+  // lands. A leaf that has left the tree keeps its stale `path` (#1588).
+  const [reconciledCategories, setReconciledCategories] = useState(categories)
+  if (categories !== reconciledCategories) {
+    setReconciledCategories(categories)
+    if (
+      path.length > 0 &&
+      liveCategoryPath.length > 0 &&
+      (path.length !== liveCategoryPath.length ||
+        path.some((seg, i) => seg !== liveCategoryPath[i]))
+    ) {
+      setPath(liveCategoryPath)
+    }
+  }
 
   // Reported upward by CollectionsPage — the list graph fills the viewport
   // like the image/collection viewers (#1630 feedback). Declared before the
@@ -999,7 +1019,7 @@ export default function App() {
         const fromBrowse =
           poppedCollectionFromBrowse === true || collectionLinkFromBrowse(window.location.search)
         setCollectionFromBrowse(fromBrowse)
-        setPath(fromBrowse ? resolveCategoryPath(categoriesRef.current, catIds) : [])
+        setPath(fromBrowse ? resolveCategoryPathByLeaf(categoriesRef.current, catIds) : [])
         setSelectedImage(null)
         setViewportState(undefined)
         setOverlays([])
@@ -1020,7 +1040,7 @@ export default function App() {
       // navigates back to browse via the browser back/forward buttons.
       refreshCategories()
 
-      const catPath = resolveCategoryPath(categoriesRef.current, catIds)
+      const catPath = resolveCategoryPathByLeaf(categoriesRef.current, catIds)
       setPath(catPath)
 
       if (imageId != null) {
