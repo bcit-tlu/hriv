@@ -9,10 +9,12 @@ specified in detail.
 
 - Only admins can see or download source images; instructors and students
   never can. See [`category-visibility-and-programs.md`](category-visibility-and-programs.md).
-- Program membership comes from the OIDC group → program mapping
-  (`Program.oidc_group`), never from manual assignment; programs and groups
-  remain independent dimensions. See [`groups.md`](groups.md) and
-  [`OIDC_SETUP.md`](OIDC_SETUP.md).
+- Program membership for OIDC users is driven by the OIDC group → program
+  mapping (`Program.oidc_group`): login sync adds and removes mapped programs,
+  while assignments to programs that have no `oidc_group` are manual and are
+  preserved by sync. Do not add other automatic sources of membership.
+  Programs and groups remain independent dimensions. See
+  [`groups.md`](groups.md) and [`OIDC_SETUP.md`](OIDC_SETUP.md).
 - Instructor-set collection visibility overrides student scope.
   See [`collections.md`](collections.md).
 
