@@ -547,6 +547,64 @@ async def test_tiles_auth_non_tile_uri_returns_403(auth_app: FastAPI) -> None:
     assert resp.status_code == 403
 
 
+@pytest.mark.parametrize(
+    "uri_path",
+    [
+        "/api/tiles/42/../43/image.dzi",
+        "/api/tiles/42/%2e%2e/43/image.dzi",
+        "/api/tiles/42/%2E%2e/43/image.dzi",
+        "/api/tiles/42/.%2e/43/image.dzi",
+        "/api/tiles/42%2f..%2f43/image.dzi",
+        "/api/tiles/42/image_files/../../43/image.dzi",
+        "/api/tiles/42/./image.dzi",
+        "/api/tiles/42//image.dzi",
+        "/api/tiles//42/image.dzi",
+        "/api/tiles/42/image_files\\..\\..\\43/image.dzi",
+        "/api/tiles/42/image%5c..%5c..%5c43/image.dzi",
+        "/api/tiles/42/image.dzi%00",
+        "/api/tiles/%D9%A4%D9%A2/image.dzi",
+    ],
+)
+async def test_tiles_auth_rejects_dot_segment_and_suspicious_paths(
+    auth_app: FastAPI, uri_path: str
+) -> None:
+    # nginx serves the decoded, dot-segment-resolved path, so a token for
+    # image 42 must never authorize a raw URI that resolves elsewhere.
+    token = issue_tile_token(42)
+    async with _client(auth_app) as client:
+        resp = await client.get(
+            "/api/tiles-auth",
+            headers={"X-Original-URI": f"{uri_path}?tile_token={token}"},
+        )
+    assert resp.status_code == 403
+
+
+async def test_tiles_auth_decodes_percent_encoded_path_like_nginx(
+    auth_app: FastAPI,
+) -> None:
+    # nginx decodes ``%34%33`` to ``43`` before serving, so the validator
+    # must bind the token to 43, not accept a token for another image.
+    async with _client(auth_app) as client:
+        allowed = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/%34%33/image.dzi?tile_token={issue_tile_token(43)}"
+                )
+            },
+        )
+        denied = await client.get(
+            "/api/tiles-auth",
+            headers={
+                "X-Original-URI": (
+                    f"/api/tiles/%34%33/image.dzi?tile_token={issue_tile_token(42)}"
+                )
+            },
+        )
+    assert allowed.status_code == 204
+    assert denied.status_code == 403
+
+
 # ── Thumbnail-only tokens (issue #1609) ───────────────────
 #
 # ``purpose="thumb"`` tokens are issued for category card covers so the

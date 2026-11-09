@@ -138,10 +138,17 @@ parameter on every tile request:
   same pod (`127.0.0.1:8000`, `GET /api/tiles-auth`), forwarding only
   `X-Original-URI: $request_uri`; the validator extracts the token from the
   original URI's query string. 204 allows, 401 means missing/expired/tampered
-  token, 403 means the token is bound to a different image.
+  token, 403 means the token is bound to a different image or the forwarded
+  path (decoded once, as nginx does) has dot (`.`/`..`) or empty segments,
+  backslashes or null bytes.
+- Raw request paths containing dot segments (literal or percent-encoded,
+  e.g. `/api/tiles/5/../6/image.dzi`) are rejected with 404 before auth:
+  nginx would serve the normalized path while the validator sees the raw
+  one.
 - Auth verdicts are cached in a `proxy_cache` zone (`tile_auth`, 1m keys,
-  8m max) keyed on `$tile_auth_token:$tile_image_id` — never on client
-  identity. Valid (204) verdicts are cached for 30 seconds (≤ 60s); 401/403
+  8m max) keyed on `$tile_auth_token:$tile_image_id:$tile_path_class` (id
+  and path class taken from the normalized `$uri`, i.e. the path nginx
+  serves) — never on client identity. Valid (204) verdicts are cached for 30 seconds (≤ 60s); 401/403
   verdicts are not cached. Requests without a token bypass the cache entirely.
 - Tile responses carry `Cache-Control: private, max-age=2592000` — browsers
   cache aggressively, but shared caches/CDNs must not store them.
