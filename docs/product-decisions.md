@@ -9,22 +9,26 @@ specified in detail.
 
 - Only admins can see or download source images; instructors and students
   never can. See [`category-visibility-and-programs.md`](category-visibility-and-programs.md).
-- Program-based features stay out until OIDC program mapping exists; programs
-  and groups remain independent dimensions. See [`groups.md`](groups.md).
+- Program membership comes from the OIDC group → program mapping
+  (`Program.oidc_group`), never from manual assignment; programs and groups
+  remain independent dimensions. See [`groups.md`](groups.md) and
+  [`OIDC_SETUP.md`](OIDC_SETUP.md).
 - Instructor-set collection visibility overrides student scope.
   See [`collections.md`](collections.md).
 
 ## Collections
 
-- Students own at most 10 collections per type and a sequence holds at most
-  20 images.
+- Student caps: at most 10 owned collections per type and at most 20 images
+  in a student's sequence collection; admins and instructors are not capped.
+  See [`collections.md`](collections.md).
 - Concurrent edits use validate-then-compare-and-swap; no server-side sync of
   `hrivpref:` browser preferences.
 
 ## Measurement review
 
-- Findings are promoted to `measurement_scale` / `measurement_unit` only on
-  approval, with an 85% accuracy floor.
+- Detector findings are promoted to `measurement_scale` / `measurement_unit`
+  only when a reviewer approves them (optionally corrected); nothing is
+  written automatically.
 - Existing values are authoritative (very high confidence): never re-detected
   or overwritten. `objective_power` is authoritative once present; approval
   writes it only when absent and records ownership in
