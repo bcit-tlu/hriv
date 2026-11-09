@@ -1529,6 +1529,120 @@ describe('App breadcrumbs', () => {
     expect(screen.queryByRole('button', { name: 'Add Category' })).not.toBeInTheDocument()
   })
 
+  it('reconciles the stored path to live ancestry after a background reparent (#1590)', async () => {
+    const leaf = {
+      id: 3,
+      label: 'Leaf',
+      parentId: 1,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const oldParent = {
+      id: 1,
+      label: 'Old Parent',
+      parentId: null,
+      children: [leaf],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, oldParent)
+    // The navigation-time path and the live tree agree initially.
+    mockInitialPath = [oldParent, leaf]
+
+    const { rerender } = render(<App />)
+
+    let crumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(crumb).getByText('Old Parent')).toBeInTheDocument()
+    expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
+
+    // A background refresh moves Leaf under New Parent; the stored path
+    // snapshots still carry the old ancestry.
+    const movedLeaf = { ...leaf, parentId: 2 }
+    const newParent = {
+      id: 2,
+      label: 'New Parent',
+      parentId: null,
+      children: [movedLeaf],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, newParent)
+    rerender(<App />)
+
+    await waitFor(() => {
+      crumb = screen.getByLabelText('category breadcrumb')
+      expect(within(crumb).getByText('New Parent')).toBeInTheDocument()
+    })
+    expect(within(crumb).queryByText('Old Parent')).not.toBeInTheDocument()
+    expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
+    // Reconciliation rewrites the current entry — it never pushes history.
+    expect(pushNavStateMock).not.toHaveBeenCalled()
+  })
+
+  it('restores a stale history entry by leaf id after a reparent (#1590)', async () => {
+    const leaf = {
+      id: 3,
+      label: 'Leaf',
+      parentId: 2,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    const newParent = {
+      id: 2,
+      label: 'New Parent',
+      parentId: null,
+      children: [leaf],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, newParent)
+
+    render(<App />)
+    await screen.findByLabelText('category breadcrumb')
+
+    // The entry was recorded while Leaf sat under Old Parent (id 1);
+    // back/forward must still open Leaf at its live location.
+    act(() => {
+      popStateHandler!('browse', [1, 3], null)
+    })
+
+    const crumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(crumb).getByText('New Parent')).toBeInTheDocument()
+    expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
+  })
+
   it('resets the notes dialog state when selecting another image', async () => {
     mockImage.note = 'A'.repeat(350)
     mockSecondImage.note = 'B'.repeat(350)

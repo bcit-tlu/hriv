@@ -347,6 +347,43 @@ describe('useShareableImageState', () => {
       )
       expect(setPath).toHaveBeenCalledWith([root, child])
     })
+
+    it('resolves ?cat= by the leaf when ancestor ids are stale (#1590)', () => {
+      // The link was recorded while Leaf (3) sat under Old (1); it has since
+      // moved under New (2), so the stored ancestry no longer walks.
+      window.history.replaceState(null, '', '/?cat=1,3')
+      const setPath = vi.fn()
+      const leaf = makeCategory({ id: 3, label: 'Leaf' })
+      const newParent = makeCategory({ id: 2, label: 'New', children: [leaf] })
+      const oldParent = makeCategory({ id: 1, label: 'Old' })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setPath,
+            categories: [oldParent, newParent],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(setPath).toHaveBeenCalledWith([newParent, leaf])
+    })
+
+    it('falls back to the positional ?cat= prefix when the leaf is gone (#1590)', () => {
+      window.history.replaceState(null, '', '/?cat=1,2,9')
+      const setPath = vi.fn()
+      const child = makeCategory({ id: 2, label: 'Child' })
+      const root = makeCategory({ id: 1, label: 'Root', children: [child] })
+      renderHook(() =>
+        useShareableImageState(
+          makeDeps({
+            setPath,
+            categories: [root],
+            categoriesLoading: false,
+          }),
+        ),
+      )
+      expect(setPath).toHaveBeenCalledWith([root, child])
+    })
   })
 
   describe('pending image resolution', () => {

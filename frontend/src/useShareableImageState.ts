@@ -3,7 +3,7 @@ import type { ViewportState, OverlayRect } from './components/imageViewerUtils'
 import { MAX_SHARE_OVERLAYS } from './components/imageViewerUtils'
 import { buildNavHistoryState } from './useNavigationHistory'
 import { emitEvent } from './observability'
-import { findImageInTree, resolveCategoryPath } from './treeUtils'
+import { findImageInTree, resolveCategoryPathByLeaf } from './treeUtils'
 import { parseCollectionIdParam, parseCollectionItemParam } from './collectionUtils'
 import type { Category, ImageItem } from './types'
 
@@ -277,7 +277,7 @@ export function useShareableImageState(
     if (pendingCatIds.current === null || categoriesLoading) return
     const ids = pendingCatIds.current
     pendingCatIds.current = null
-    const resolved = resolveCategoryPath(categories, ids)
+    const resolved = resolveCategoryPathByLeaf(categories, ids)
     if (resolved.length > 0) {
       setPath(resolved)
     }
