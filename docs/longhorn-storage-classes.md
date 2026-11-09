@@ -104,7 +104,8 @@ not by multi-attaching the block device. Consequences:
 
 - The data path gains a hop through the share-manager pod; expect lower
   throughput/latency than raw RWO block attach. HRIV tolerates this —
-  tiles are small immutable files cached by the nginx sidecar, and source
+  tiles are small immutable files served by the nginx sidecar and cached
+  by browsers (`Cache-Control: private, max-age=2592000`), and source
   images are written once and read in bulk.
 - `fsGroup` is **not** applied to RWX volumes by Longhorn's
   `ReadWriteOnceWithFSType` CSI policy (unlike RWO volumes). Directory
