@@ -491,17 +491,23 @@ export default function App() {
   } = useBrowseData({ path, currentUser, dragActive, collectionsEnabled })
 
   // `path` holds navigation-time snapshots; when a background refresh
-  // changes the leaf's ancestry (reparent) or the categories themselves
-  // (rename, restrictions, counts), swap in the leaf's live ancestry so
-  // `?cat=`/history state and breadcrumb labels track the current tree —
-  // via replaceState, never a new history entry (#1590). A leaf that has
-  // left the tree keeps its stale `path` so the scope stays empty (#1588).
-  if (
-    path.length > 0 &&
-    liveCategoryPath.length > 0 &&
-    (path.length !== liveCategoryPath.length || path.some((seg, i) => seg !== liveCategoryPath[i]))
-  ) {
-    setPath(liveCategoryPath)
+  // commits a new tree, swap in the leaf's live ancestry so `?cat=`/history
+  // state and breadcrumb labels track it — via replaceState, never a new
+  // history entry (#1590). The check is gated on the tree commit itself so
+  // a locally confirmed edit (the rename/visibility `setPath` patch applied
+  // while a refresh failed) is not reverted until the authoritative tree
+  // lands. A leaf that has left the tree keeps its stale `path` (#1588).
+  const [reconciledCategories, setReconciledCategories] = useState(categories)
+  if (categories !== reconciledCategories) {
+    setReconciledCategories(categories)
+    if (
+      path.length > 0 &&
+      liveCategoryPath.length > 0 &&
+      (path.length !== liveCategoryPath.length ||
+        path.some((seg, i) => seg !== liveCategoryPath[i]))
+    ) {
+      setPath(liveCategoryPath)
+    }
   }
 
   // Reported upward by CollectionsPage — the list graph fills the viewport

@@ -916,6 +916,19 @@ vi.mock('../src/useColorMode', () => ({
   useColorMode: () => ({ mode: 'light' }),
 }))
 
+// The real hook commits a new top-level array whenever the tree changes;
+// mirror that so tests can simulate a background refresh by mutating
+// mockCategories and re-rendering (#1590 path reconciliation is gated on
+// the tree commit, not on `path` alone).
+let mockCategoriesStable: { signature: string; value: MockCategory[] } | null = null
+function stableMockCategories(): MockCategory[] {
+  const signature = JSON.stringify(mockCategories)
+  if (mockCategoriesStable == null || mockCategoriesStable.signature !== signature) {
+    mockCategoriesStable = { signature, value: [...mockCategories] }
+  }
+  return mockCategoriesStable.value
+}
+
 vi.mock('../src/useBrowseData', async () => {
   const { narrowGroupIds, narrowProgramIds } =
     await vi.importActual<typeof import('../src/categoryUtils')>('../src/categoryUtils')
@@ -926,7 +939,7 @@ vi.mock('../src/useBrowseData', async () => {
     useBrowseData: ({ path }: { path: MockCategory[] }) => {
       const liveCategoryPath = findLiveCategoryPath(mockCategories, path)
       return {
-        categories: mockCategories,
+        categories: stableMockCategories(),
         categoriesLoading: false,
         setCategories: vi.fn(),
         uncategorizedImages: [],
@@ -1596,6 +1609,45 @@ describe('App breadcrumbs', () => {
     expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
     // Reconciliation rewrites the current entry — it never pushes history.
     expect(pushNavStateMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps a locally patched path until the tree commits the edit (#1590)', async () => {
+    // Simulates a confirmed rename whose tree refresh failed: the stored
+    // path carries the new label while `categories` still holds the old
+    // snapshot. Reconciliation is gated on the tree commit, so the patch
+    // must not be reverted to the stale object.
+    const live = {
+      id: 1,
+      label: 'Slides',
+      parentId: null,
+      children: [],
+      images: [],
+      programIds: [],
+      groupIds: [],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    }
+    mockCategories.splice(0, mockCategories.length, live)
+    mockInitialPath = [{ ...live, label: 'Renamed Slides' }]
+
+    const { rerender } = render(<App />)
+
+    let crumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(crumb).getByText('Renamed Slides')).toBeInTheDocument()
+    expect(within(crumb).queryByText('Slides')).not.toBeInTheDocument()
+
+    // Once the authoritative tree lands, the path converges to live objects.
+    live.label = 'Slides v2'
+    rerender(<App />)
+
+    await waitFor(() => {
+      crumb = screen.getByLabelText('category breadcrumb')
+      expect(within(crumb).getByText('Slides v2')).toBeInTheDocument()
+    })
+    expect(within(crumb).queryByText('Renamed Slides')).not.toBeInTheDocument()
   })
 
   it('restores a stale history entry by leaf id after a reparent (#1590)', async () => {
