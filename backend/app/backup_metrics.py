@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 _registry = CollectorRegistry()
 _render_lock = Lock()
 
+# Single-flight refresh gate: only one thread at a time performs the backing
+# Azure refresh chain. Concurrent renders must never queue behind it — a slow
+# storage call would otherwise hold every scrape open past the ServiceMonitor
+# timeout — so they serve the last rendered payload instead.
+_refresh_gate = Lock()
+
+_last_payload: tuple[bytes, str] | None = None
+_last_payload_lock = Lock()
+
 _BACKUP_TYPES = ("database", "filesystem")
 _RESTORE_TYPES = ("database", "filesystem")
 _RESTORE_PURPOSES = ("operator", "test")
@@ -330,105 +339,135 @@ def _purpose_section(state: dict | None, purpose: str) -> dict | None:
     return section if isinstance(section, dict) else None
 
 
+def last_backup_metrics_payload() -> tuple[bytes, str] | None:
+    """Return the most recently rendered payload, or None before the first render."""
+    with _last_payload_lock:
+        return _last_payload
+
+
 def render_backup_metrics() -> tuple[bytes, str]:
-    """Return Prometheus exposition text for backup and restore state."""
-    backup_state, backup_configured = _fetch_backup_state()
-    archive_summary, archive_configured, archive_last_refresh_monotonic, archive_fetch_succeeded = (
-        _fetch_archive_summary()
-    )
-    restore_state, restore_configured = _fetch_restore_state()
+    """Return Prometheus exposition text for backup and restore state.
 
-    with _render_lock:
-        _backup_configured.set(1 if backup_configured else 0)
-        _backup_age.set(_compatibility_backup_age(backup_configured, backup_state))
+    The backing Azure fetches can take several seconds when the caches expire
+    together, so a single-flight gate keeps at most one refresh in flight:
+    renders arriving during a refresh return the last rendered payload (or the
+    current registry state before the first render completes) instead of
+    queueing behind the Azure calls.
+    """
+    global _last_payload
 
-        if not archive_configured:
-            _backup_archive_listing_last_outcome.set(-1)
-            _backup_archive_listing_last_refresh.set(float("nan"))
-            archive_summary = _empty_summary()
-        else:
-            _backup_archive_listing_last_outcome.set(1 if archive_fetch_succeeded else 0)
-            if archive_last_refresh_monotonic is None:
+    owns_refresh = _refresh_gate.acquire(blocking=False)
+    if not owns_refresh:
+        with _last_payload_lock:
+            if _last_payload is not None:
+                return _last_payload
+        with _render_lock:
+            return generate_latest(_registry), CONTENT_TYPE_LATEST
+
+    try:
+        backup_state, backup_configured = _fetch_backup_state()
+        archive_summary, archive_configured, archive_last_refresh_monotonic, archive_fetch_succeeded = (
+            _fetch_archive_summary()
+        )
+        restore_state, restore_configured = _fetch_restore_state()
+
+        with _render_lock:
+            _backup_configured.set(1 if backup_configured else 0)
+            _backup_age.set(_compatibility_backup_age(backup_configured, backup_state))
+
+            if not archive_configured:
+                _backup_archive_listing_last_outcome.set(-1)
                 _backup_archive_listing_last_refresh.set(float("nan"))
+                archive_summary = _empty_summary()
             else:
-                elapsed = max(monotonic() - archive_last_refresh_monotonic, 0.0)
-                _backup_archive_listing_last_refresh.set(
-                    max(datetime.now(timezone.utc).timestamp() - elapsed, 0.0)
-                )
-            archive_summary = archive_summary or _empty_summary()
+                _backup_archive_listing_last_outcome.set(1 if archive_fetch_succeeded else 0)
+                if archive_last_refresh_monotonic is None:
+                    _backup_archive_listing_last_refresh.set(float("nan"))
+                else:
+                    elapsed = max(monotonic() - archive_last_refresh_monotonic, 0.0)
+                    _backup_archive_listing_last_refresh.set(
+                        max(datetime.now(timezone.utc).timestamp() - elapsed, 0.0)
+                    )
+                archive_summary = archive_summary or _empty_summary()
 
-        for backup_type in _BACKUP_TYPES:
-            section = backup_state.get(backup_type) if isinstance(backup_state, dict) else None
-            summary = archive_summary.get(backup_type, {})
-            attempt_started = _parse_timestamp(section.get("started_at")) if isinstance(section, dict) else None
-            success_completed = (
-                _parse_timestamp(section.get("last_success_completed_at"))
-                if isinstance(section, dict)
-                else None
-            )
-
-            _set_or_nan(
-                _backup_last_attempt.labels(backup_type=backup_type),
-                attempt_started.timestamp() if attempt_started else None,
-            )
-            _set_or_nan(
-                _backup_last_success.labels(backup_type=backup_type),
-                success_completed.timestamp() if success_completed else None,
-            )
-            _backup_last_outcome.labels(backup_type=backup_type).set(_attempt_outcome_value(section))
-            _set_or_nan(
-                _backup_attempt_in_progress.labels(backup_type=backup_type),
-                (
-                    1.0
-                    if attempt_started is not None and section.get("success") is None
-                    else 0.0
-                )
-                if isinstance(section, dict)
-                else None,
-            )
-            _set_or_nan(
-                _backup_last_duration.labels(backup_type=backup_type),
-                _parse_numeric(section.get("duration_seconds")) if isinstance(section, dict) else None,
-            )
-            _set_or_nan(
-                _backup_last_size.labels(backup_type=backup_type),
-                _last_success_size(backup_state, backup_type),
-            )
-            _backup_archives_retained.labels(backup_type=backup_type).set(float(summary.get("count", 0) or 0))
-            _set_or_nan(
-                _backup_oldest_archive.labels(backup_type=backup_type),
-                summary["oldest_created_at"].timestamp() if isinstance(summary.get("oldest_created_at"), datetime) else None,
-            )
-            _set_or_nan(
-                _backup_newest_archive.labels(backup_type=backup_type),
-                summary["newest_created_at"].timestamp() if isinstance(summary.get("newest_created_at"), datetime) else None,
-            )
-
-        restore_available = restore_configured and isinstance(restore_state, dict)
-        for purpose in _RESTORE_PURPOSES:
-            purpose_state = _purpose_section(restore_state, purpose) if restore_available else None
-            for restore_type in _RESTORE_TYPES:
-                section = purpose_state.get(restore_type) if isinstance(purpose_state, dict) else None
-                attempt_started = (
-                    _parse_timestamp(section.get("started_at")) if isinstance(section, dict) else None
-                )
+            for backup_type in _BACKUP_TYPES:
+                section = backup_state.get(backup_type) if isinstance(backup_state, dict) else None
+                summary = archive_summary.get(backup_type, {})
+                attempt_started = _parse_timestamp(section.get("started_at")) if isinstance(section, dict) else None
                 success_completed = (
-                    _parse_timestamp(section.get("last_success_completed_at")) if isinstance(section, dict) else None
+                    _parse_timestamp(section.get("last_success_completed_at"))
+                    if isinstance(section, dict)
+                    else None
                 )
+
                 _set_or_nan(
-                    _restore_last_attempt.labels(restore_type=restore_type, purpose=purpose),
+                    _backup_last_attempt.labels(backup_type=backup_type),
                     attempt_started.timestamp() if attempt_started else None,
                 )
                 _set_or_nan(
-                    _restore_last_success.labels(restore_type=restore_type, purpose=purpose),
+                    _backup_last_success.labels(backup_type=backup_type),
                     success_completed.timestamp() if success_completed else None,
                 )
-                _restore_last_outcome.labels(restore_type=restore_type, purpose=purpose).set(
-                    _attempt_outcome_value(section)
+                _backup_last_outcome.labels(backup_type=backup_type).set(_attempt_outcome_value(section))
+                _set_or_nan(
+                    _backup_attempt_in_progress.labels(backup_type=backup_type),
+                    (
+                        1.0
+                        if attempt_started is not None and section.get("success") is None
+                        else 0.0
+                    )
+                    if isinstance(section, dict)
+                    else None,
                 )
                 _set_or_nan(
-                    _restore_last_duration.labels(restore_type=restore_type, purpose=purpose),
+                    _backup_last_duration.labels(backup_type=backup_type),
                     _parse_numeric(section.get("duration_seconds")) if isinstance(section, dict) else None,
                 )
+                _set_or_nan(
+                    _backup_last_size.labels(backup_type=backup_type),
+                    _last_success_size(backup_state, backup_type),
+                )
+                _backup_archives_retained.labels(backup_type=backup_type).set(float(summary.get("count", 0) or 0))
+                _set_or_nan(
+                    _backup_oldest_archive.labels(backup_type=backup_type),
+                    summary["oldest_created_at"].timestamp() if isinstance(summary.get("oldest_created_at"), datetime) else None,
+                )
+                _set_or_nan(
+                    _backup_newest_archive.labels(backup_type=backup_type),
+                    summary["newest_created_at"].timestamp() if isinstance(summary.get("newest_created_at"), datetime) else None,
+                )
 
-        return generate_latest(_registry), CONTENT_TYPE_LATEST
+            restore_available = restore_configured and isinstance(restore_state, dict)
+            for purpose in _RESTORE_PURPOSES:
+                purpose_state = _purpose_section(restore_state, purpose) if restore_available else None
+                for restore_type in _RESTORE_TYPES:
+                    section = purpose_state.get(restore_type) if isinstance(purpose_state, dict) else None
+                    attempt_started = (
+                        _parse_timestamp(section.get("started_at")) if isinstance(section, dict) else None
+                    )
+                    success_completed = (
+                        _parse_timestamp(section.get("last_success_completed_at")) if isinstance(section, dict) else None
+                    )
+                    _set_or_nan(
+                        _restore_last_attempt.labels(restore_type=restore_type, purpose=purpose),
+                        attempt_started.timestamp() if attempt_started else None,
+                    )
+                    _set_or_nan(
+                        _restore_last_success.labels(restore_type=restore_type, purpose=purpose),
+                        success_completed.timestamp() if success_completed else None,
+                    )
+                    _restore_last_outcome.labels(restore_type=restore_type, purpose=purpose).set(
+                        _attempt_outcome_value(section)
+                    )
+                    _set_or_nan(
+                        _restore_last_duration.labels(restore_type=restore_type, purpose=purpose),
+                        _parse_numeric(section.get("duration_seconds")) if isinstance(section, dict) else None,
+                    )
+
+            payload = generate_latest(_registry), CONTENT_TYPE_LATEST
+    finally:
+        _refresh_gate.release()
+
+    with _last_payload_lock:
+        _last_payload = payload
+    return payload

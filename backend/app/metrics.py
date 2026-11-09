@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
-from .backup_metrics import render_backup_metrics
+from prometheus_client import CONTENT_TYPE_LATEST
+
+from .backup_metrics import last_backup_metrics_payload, render_backup_metrics
 from .build_info_metrics import render_build_info_metrics
 from .db_pool_metrics import render_db_pool_metrics
 from .reorder_metrics import render_reorder_metrics
@@ -22,6 +24,25 @@ def _join_metric_payloads(*payloads: bytes) -> bytes:
     return b"\n\n".join(chunks) + b"\n"
 
 
+# Bound the backup renderer so a slow Azure refresh can never hold the scrape
+# open past the ServiceMonitor timeout. The abandoned worker thread keeps
+# running and stores the refreshed payload for subsequent scrapes.
+_BACKUP_RENDER_TIMEOUT_SECONDS = 5.0
+
+
+async def _render_backup_metrics_bounded() -> tuple[bytes, str]:
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(render_backup_metrics),
+            timeout=_BACKUP_RENDER_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        payload = last_backup_metrics_payload()
+        if payload is not None:
+            return payload
+        return b"", CONTENT_TYPE_LATEST
+
+
 async def render_metrics() -> tuple[bytes, str]:
     """Render the full Prometheus scrape payload for `/api/metrics`."""
     synthetic_state = await load_stored_synthetic_result_state()
@@ -32,7 +53,7 @@ async def render_metrics() -> tuple[bytes, str]:
         (queue_content, queue_media_type),
         (rebuild_content, rebuild_media_type),
     ) = await asyncio.gather(
-        asyncio.to_thread(render_backup_metrics),
+        _render_backup_metrics_bounded(),
         render_build_info_metrics(synthetic_state),
         render_synthetic_metrics(synthetic_state),
         render_queue_metrics(),

@@ -10,6 +10,7 @@ import posixpath
 import re
 import tarfile
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -309,12 +310,46 @@ def _update_retention_summary(
         current["newest_created_at"] = created_at
 
 
+_MANIFEST_FETCH_WORKERS = 8
+
+
+def _is_direct_archive_blob(blob_name: str, prefix: str) -> bool:
+    """Return True when *blob_name* names an archive directly under *prefix*.
+
+    The prefix scan also matches nested sub-prefixes used by other
+    environments (for example ``stable/<cluster>/``); their archive names
+    would be rewritten to nonexistent paths by the callers, so they are not
+    this environment's retained archives.
+    """
+    return "/" not in blob_name[len(prefix) :]
+
+
+def _classify_archive_manifest(snapshot_name: str) -> dict | None:
+    """Fetch and classify one archive manifest, or None when unclassifiable."""
+    try:
+        manifest = get_snapshot_manifest(snapshot_name)
+        return _classify_backup_types(manifest)
+    except BackupSnapshotManifestError:
+        logger.warning(
+            "Skipping unclassifiable backup archive %s: invalid or incomplete manifest",
+            snapshot_name,
+        )
+    except BackupSnapshotNotFoundError:
+        logger.warning(
+            "Skipping unclassifiable backup archive %s: archive disappeared during classification",
+            snapshot_name,
+        )
+    return None
+
+
 def list_retained_backup_archives() -> dict[str, dict[str, datetime | int | None]]:
     """Classify retained snapshot archives by backup type.
 
     The archive listing itself is a cheap Azure prefix scan. Type classification
     reuses each snapshot's manifest so the backend can distinguish whether the
-    archive protects the database, the filesystem, or both.
+    archive protects the database, the filesystem, or both. Manifest fetches
+    are independent per archive and run concurrently; each worker builds its
+    own container client via ``get_snapshot_manifest``.
     """
     container = _container_client()
     prefix = _backup_prefix()
@@ -329,8 +364,10 @@ def list_retained_backup_archives() -> dict[str, dict[str, datetime | int | None
 
     archives: list[tuple[str, datetime | None]] = []
     for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
-        if not blob.name.endswith(".tar.gz") or not _archive_metadata_is_selectable(
-            getattr(blob, "metadata", None)
+        if (
+            not blob.name.endswith(".tar.gz")
+            or not _is_direct_archive_blob(blob.name, prefix)
+            or not _archive_metadata_is_selectable(getattr(blob, "metadata", None))
         ):
             continue
         name = blob.name.rsplit("/", 1)[-1]
@@ -339,26 +376,21 @@ def list_retained_backup_archives() -> dict[str, dict[str, datetime | int | None
         ) or _created_at_from_snapshot_name(name)
         archives.append((name, created_at))
 
-    for snapshot_name, created_at in archives:
-        try:
-            manifest = get_snapshot_manifest(snapshot_name)
-            supported_types = _classify_backup_types(manifest)
-        except BackupSnapshotManifestError:
-            logger.warning(
-                "Skipping unclassifiable backup archive %s: invalid or incomplete manifest",
-                snapshot_name,
+    if archives:
+        with ThreadPoolExecutor(
+            max_workers=min(len(archives), _MANIFEST_FETCH_WORKERS),
+            thread_name_prefix="hriv-backup-classify",
+        ) as pool:
+            classified = list(
+                pool.map(_classify_archive_manifest, [name for name, _ in archives])
             )
-            continue
-        except BackupSnapshotNotFoundError:
-            logger.warning(
-                "Skipping unclassifiable backup archive %s: archive disappeared during classification",
-                snapshot_name,
-            )
-            continue
 
-        for backup_type, is_supported in supported_types.items():
-            if is_supported:
-                _update_retention_summary(summary, backup_type, created_at)
+        for (_, created_at), supported_types in zip(archives, classified):
+            if supported_types is None:
+                continue
+            for backup_type, is_supported in supported_types.items():
+                if is_supported:
+                    _update_retention_summary(summary, backup_type, created_at)
 
     return summary
 
@@ -370,8 +402,10 @@ def list_snapshots() -> list[dict]:
     snapshots: list[dict] = []
 
     for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
-        if not blob.name.endswith(".tar.gz") or not _archive_metadata_is_selectable(
-            getattr(blob, "metadata", None)
+        if (
+            not blob.name.endswith(".tar.gz")
+            or not _is_direct_archive_blob(blob.name, prefix)
+            or not _archive_metadata_is_selectable(getattr(blob, "metadata", None))
         ):
             continue
         name = blob.name.rsplit("/", 1)[-1]
