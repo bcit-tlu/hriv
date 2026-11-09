@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -18,6 +20,8 @@ def _clear_caches() -> None:
         backup_metrics._archive_cache = None
     with backup_metrics._restore_cache_lock:
         backup_metrics._restore_cache = None
+    with backup_metrics._last_payload_lock:
+        backup_metrics._last_payload = None
 
 
 @pytest.fixture(autouse=True)
@@ -251,6 +255,108 @@ async def test_marker_cache_avoids_repeated_calls() -> None:
     assert state_fetch.call_count == 1
     assert archive_fetch.call_count == 1
     assert restore_fetch.call_count == 1
+
+
+async def test_last_payload_updated_by_render() -> None:
+    assert backup_metrics.last_backup_metrics_payload() is None
+
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=_state()),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
+        patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
+    ):
+        payload = backup_metrics.render_backup_metrics()
+
+    assert backup_metrics.last_backup_metrics_payload() == payload
+
+
+def test_render_serves_last_payload_while_refresh_in_flight() -> None:
+    """A render concurrent with a slow refresh serves the stale payload."""
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=_state()),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
+        patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
+    ):
+        first = backup_metrics.render_backup_metrics()
+
+    _clear_caches()
+    release = threading.Event()
+    started = threading.Event()
+
+    def _blocking_state() -> dict:
+        started.set()
+        release.wait(timeout=10)
+        return _state()
+
+    worker = threading.Thread(
+        target=backup_metrics.render_backup_metrics, daemon=True
+    )
+    try:
+        with (
+            patch(
+                "app.backup_metrics.get_backup_observability_state",
+                side_effect=_blocking_state,
+            ),
+            patch(
+                "app.backup_metrics.get_restore_observability_state",
+                return_value=_restore_state(),
+            ),
+            patch(
+                "app.backup_metrics.list_retained_backup_archives",
+                return_value=_archive_summary(),
+            ),
+        ):
+            worker.start()
+            assert started.wait(timeout=5)
+
+            began = time.monotonic()
+            served = backup_metrics.render_backup_metrics()
+            assert time.monotonic() - began < 5
+            assert served == first
+    finally:
+        release.set()
+        worker.join(timeout=10)
+
+
+def test_render_cold_start_returns_immediately_during_refresh() -> None:
+    """Before the first render completes, a concurrent render cannot block."""
+    release = threading.Event()
+    started = threading.Event()
+
+    def _blocking_state() -> dict:
+        started.set()
+        release.wait(timeout=10)
+        return _state()
+
+    worker = threading.Thread(
+        target=backup_metrics.render_backup_metrics, daemon=True
+    )
+    try:
+        with (
+            patch(
+                "app.backup_metrics.get_backup_observability_state",
+                side_effect=_blocking_state,
+            ),
+            patch(
+                "app.backup_metrics.get_restore_observability_state",
+                return_value=_restore_state(),
+            ),
+            patch(
+                "app.backup_metrics.list_retained_backup_archives",
+                return_value=_archive_summary(),
+            ),
+        ):
+            worker.start()
+            assert started.wait(timeout=5)
+
+            began = time.monotonic()
+            content, media_type = backup_metrics.render_backup_metrics()
+            assert time.monotonic() - began < 5
+            assert isinstance(content, bytes)
+            assert media_type
+    finally:
+        release.set()
+        worker.join(timeout=10)
 
 
 async def test_cache_refreshes_after_ttl(monkeypatch) -> None:

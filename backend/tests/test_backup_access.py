@@ -487,6 +487,47 @@ def test_list_retained_backup_archives_skips_unclassifiable_archive(
     assert "Skipping unclassifiable backup archive" in caplog.text
 
 
+def test_lists_ignore_nested_prefix_archives(monkeypatch, tmp_path) -> None:
+    """Archives under nested sub-prefixes belong to other environments.
+
+    The prefix scan also matches e.g. ``hriv-backups/tlu-c02/*.tar.gz``; those
+    must be ignored or their rewritten archive paths would not resolve.
+    """
+    now = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    blobs = [
+        SimpleNamespace(
+            name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
+            size=1234,
+            last_modified=now,
+        ),
+        SimpleNamespace(
+            name="hriv-backups/tlu-c02/hriv-backup-20260103-020000.tar.gz",
+            size=2345,
+            last_modified=now,
+        ),
+    ]
+    fake_container = _FakeContainer(blobs, {})
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    assert [item["name"] for item in list_snapshots()] == [
+        "hriv-backup-20260102-020000.tar.gz"
+    ]
+
+    fetched: list[str] = []
+
+    def _manifest(snapshot_name: str) -> dict:
+        fetched.append(snapshot_name)
+        return {"files": {"data/source_images/a.jpg": {"size": 20}}}
+
+    with patch.object(
+        backup_access, "get_snapshot_manifest", side_effect=_manifest
+    ):
+        summary = list_retained_backup_archives()
+
+    assert fetched == ["hriv-backup-20260102-020000.tar.gz"]
+    assert summary["filesystem"]["count"] == 1
+
+
 def test_get_snapshot_manifest_prefers_sidecar(monkeypatch, tmp_path) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     manifest = _snapshot_manifest(
