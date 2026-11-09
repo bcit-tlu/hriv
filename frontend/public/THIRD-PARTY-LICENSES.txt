@@ -328,7 +328,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-@dnd-kit/abstract@0.5.1
+@dnd-kit/abstract@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -356,7 +356,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/collision@0.5.1
+@dnd-kit/collision@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -384,7 +384,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/dom@0.5.1
+@dnd-kit/dom@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -412,7 +412,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/geometry@0.5.1
+@dnd-kit/geometry@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -440,7 +440,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/helpers@0.5.1
+@dnd-kit/helpers@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -468,7 +468,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/react@0.5.1
+@dnd-kit/react@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -496,7 +496,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-@dnd-kit/state@0.5.1
+@dnd-kit/state@0.5.3
 License: MIT
 Repository: https://github.com/clauderic/dnd-kit
 ================================================================================
@@ -4259,12 +4259,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-drag@3.0.0
+d3-drag@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-drag.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4314,12 +4314,12 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-d3-force@3.0.0
+d3-force@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-force.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4354,12 +4354,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-quadtree@3.0.1
+d3-quadtree@3.0.2
 License: ISC
 Repository: https://github.com/d3/d3-quadtree.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4374,12 +4374,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-selection@3.0.0
+d3-selection@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-selection.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4414,12 +4414,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-transition@3.0.1
+d3-transition@3.0.2
 License: ISC
 Repository: https://github.com/d3/d3-transition.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
@@ -4434,12 +4434,12 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ================================================================================
-d3-zoom@3.0.0
+d3-zoom@3.0.1
 License: ISC
 Repository: https://github.com/d3/d3-zoom.git
 ================================================================================
 
-Copyright 2010-2021 Mike Bostock
+Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
 with or without fee is hereby granted, provided that the above copyright notice
