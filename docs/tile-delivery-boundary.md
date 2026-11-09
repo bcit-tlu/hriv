@@ -130,7 +130,8 @@ client ──GET /api/tiles/<id>/…?tile_token=…──▶ frontend nginx ─�
    segment (literal or percent-encoded, with literal or `%2f` slashes)
    before `auth_request` runs, and `GET /api/tiles-auth` decodes the path
    once and returns 403 for dot or empty segments, backslashes or null
-   bytes — the same rules as the FastAPI fallback route. The raw URI is
+   bytes. This is stricter than the FastAPI fallback route, which rejects
+   `..` segments and then relies on its `realpath` containment check. The raw URI is
    still what is forwarded: `$uri` is percent-decoded, so forwarding it
    would put decoded bytes (e.g. `%0d%0a`) into a subrequest header.
 
