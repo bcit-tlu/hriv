@@ -1306,6 +1306,7 @@ async def test_process_bulk_import_impl_claim_cap_abandons() -> None:
         patch(
             "app.routers.bulk_import._try_claim_bulk_import_coordinator",
             new_callable=AsyncMock,
+            return_value=True,
         ) as claim_mock,
         patch(
             "app.routers.bulk_import._finalize_bulk_import_abandoned",
@@ -1318,7 +1319,9 @@ async def test_process_bulk_import_impl_claim_cap_abandons() -> None:
     ):
         await _process_bulk_import_impl(1)
 
-    claim_mock.assert_not_awaited()
+    # The lease must be won before the cap may abandon — a peer that lost
+    # the CAS can never cancel a live coordinator's items.
+    claim_mock.assert_awaited_once()
     abandoned_mock.assert_awaited_once()
     assert abandoned_mock.await_args.kwargs["bulk_import_job_id"] == 1
     assert abandoned_mock.await_args.kwargs["job_id"] == 55

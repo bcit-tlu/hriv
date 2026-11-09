@@ -264,6 +264,8 @@ async def lifespan(app: FastAPI):
         try:
             await coordinator_sweep_task
         except asyncio.CancelledError:
+            # Expected: the sweep loop only exits via cancellation on
+            # shutdown; swallow it so lifespan teardown stays clean.
             pass
         await dispose_probe_engine()
         logger.info("Application shutting down", extra={"event": "app.shutdown"})

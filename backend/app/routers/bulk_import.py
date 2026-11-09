@@ -29,7 +29,7 @@ from asyncpg.exceptions import PostgresError as AsyncpgPostgresError
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import case, cast, select, update
+from sqlalchemy import case, cast, exists, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql import func
@@ -1577,11 +1577,25 @@ async def _finalize_abandoned_bulk_import_jobs(
     """
     if not job_ids:
         return []
+    # A durable import whose supervisor lease is still live belongs to a
+    # running coordinator — never finalize it out from under that
+    # coordinator, no matter how stale the domain row looks (#1173).
+    live_coordinator_lease = exists(
+        select(Job.id)
+        .where(
+            Job.id == BulkImportJob.job_id,
+            Job.status.in_(("queued", "running")),
+            Job.coordinator_lease_expires_at.is_not(None),
+            Job.coordinator_lease_expires_at > func.now(),
+        )
+        .correlate(BulkImportJob)
+    )
     stmt = (
         update(BulkImportJob)
         .where(
             BulkImportJob.id.in_(job_ids),
             BulkImportJob.status.in_(("pending", "processing")),
+            ~live_coordinator_lease,
         )
         .values(
             # Match the coordinator finalizer: any completed image counts as
@@ -1848,22 +1862,6 @@ async def _process_bulk_import_impl(bulk_import_job_id: int) -> None:
         settings.bulk_import_max_coordinator_claims,
     )
 
-    if claims >= max_claims:
-        await _finalize_bulk_import_abandoned(
-            bulk_import_job_id=bulk_id,
-            job_id=supervisor_id,
-            abandonment_note=(
-                "Bulk-import coordinator repeatedly failed to complete the "
-                f"import; abandoned after {max_claims} coordinator claims."
-            ),
-        )
-        # Items cancelled by the abandonment never became SourceImages;
-        # remove their staged files so nothing leaks on disk (#1173).
-        async with async_session() as db:
-            await _cleanup_orphaned_bulk_import_files(db, [bulk_id])
-            await db.commit()
-        return
-
     # ── Coordinator claim: CAS on the supervisor lease ──
     async with async_session() as db:
         won = await _try_claim_bulk_import_coordinator(
@@ -1881,6 +1879,26 @@ async def _process_bulk_import_impl(bulk_import_job_id: int) -> None:
                     "job_id": supervisor_id,
                 },
             )
+            return
+        if claims >= max_claims:
+            # Only the lease winner may abandon: a delayed duplicate task
+            # that lost the CAS must never cancel a live coordinator's
+            # items (#1173 review).
+            await db.rollback()
+            await _finalize_bulk_import_abandoned(
+                bulk_import_job_id=bulk_id,
+                job_id=supervisor_id,
+                abandonment_note=(
+                    "Bulk-import coordinator repeatedly failed to complete "
+                    f"the import; abandoned after {max_claims} coordinator "
+                    "claims."
+                ),
+            )
+            async with async_session() as cleanup_db:
+                await _cleanup_orphaned_bulk_import_files(
+                    cleanup_db, [bulk_id]
+                )
+                await cleanup_db.commit()
             return
         await _increment_coordinator_claims(db, supervisor_id)
         requeued = await _requeue_orphaned_bulk_import_items(db, supervisor_id)
@@ -2116,37 +2134,16 @@ async def sweep_bulk_import_coordinators() -> dict[str, int]:
 
 
 async def bulk_import_coordinator_sweep_loop() -> None:
-    """Periodic coordinator sweep for the API process lifespan (#1173).
-
-    Every API replica runs this loop; ``sweep_bulk_import_coordinators``
-    only *nudges* lease-free imports and the supervisor CAS claim inside
-    ``_process_bulk_import`` keeps execution single-flight, so replicas
-    can never double-coordinate. This is what makes imports resumable
-    after an API restart, crash, rolling deploy, or OOM kill: the next
-    sweep pass re-claims the expired supervisor lease and continues from
-    the durable ``JobItem`` snapshot.
-    """
-    interval = settings.bulk_import_coordinator_sweep_seconds
-    while True:
-        try:
-            await sweep_bulk_import_coordinators()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception(
-                "Bulk-import coordinator sweep pass failed",
-                extra={"event": "bulk_import.sweep_failed"},
-            )
-        await asyncio.sleep(interval)
-
-
-async def bulk_import_coordinator_sweep_loop() -> None:
     """Periodically resume durable bulk imports on this API replica.
 
     Started from the FastAPI lifespan so every replica self-heals imports
     orphaned by a sibling's restart, crash, rolling deploy, or OOM kill —
     the durable counterpart to the one-shot startup reconciliation.
+    ``sweep_bulk_import_coordinators`` only *nudges* lease-free imports and
+    the supervisor CAS claim inside ``_process_bulk_import`` keeps execution
+    single-flight, so replicas can never double-coordinate.
     """
+    interval = settings.bulk_import_coordinator_sweep_seconds
     while True:
         try:
             await sweep_bulk_import_coordinators()
@@ -2157,7 +2154,7 @@ async def bulk_import_coordinator_sweep_loop() -> None:
                 "Bulk-import coordinator sweep failed",
                 extra={"event": "bulk_import.sweep_failed"},
             )
-        await asyncio.sleep(settings.bulk_import_coordinator_sweep_seconds)
+        await asyncio.sleep(interval)
 
 
 @router.post("/", response_model=BulkImportJobOut, status_code=201)

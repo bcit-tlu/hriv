@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app import bulk_import_jobs as svc
-from app.models import BulkImportJob, Job, JobItem
+from app.models import BulkImportJob
 
 
 def _session():

@@ -10,6 +10,7 @@ Run with ``REORDER_FIXTURE_DATABASE_URL`` pointing at a migrated
 database; skipped otherwise (CI provides one).
 """
 
+import importlib
 import os
 import sys
 import time
@@ -25,7 +26,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 # stub when the real import fails — an unconditional stub would poison
 # sys.modules for later test modules that need real libvips (CI has it).
 try:
-    import pyvips  # noqa: F401
+    importlib.import_module("pyvips")
 except Exception:
     sys.modules["pyvips"] = MagicMock()
     sys.modules["pyvips.enums"] = MagicMock()
