@@ -65,8 +65,11 @@ async def mark_seen_atomic(
     db: AsyncSession, user: User, announcements: Iterable[Announcement]
 ) -> dict[str, str]:
     """Merge seen markers in SQL (``jsonb ||``) so concurrent requests for
-    different announcements cannot overwrite each other's marker, then mirror
-    the result on the in-memory user. Callers commit."""
+    different announcements cannot overwrite each other's marker.
+
+    The ORM instance is *refreshed* from the row rather than assigned, so the
+    commit does not issue a second, wholesale ``metadata`` UPDATE from a stale
+    snapshot. Callers commit. Returns the markers written by this call."""
     import json
 
     markers = {
@@ -83,11 +86,8 @@ async def mark_seen_atomic(
             ),
             {"key": SEEN_METADATA_KEY, "markers": json.dumps(markers), "user_id": user.id},
         )
-    meta = dict(user.metadata_ or {})
-    seen = {**dict(meta.get(SEEN_METADATA_KEY) or {}), **markers}
-    meta[SEEN_METADATA_KEY] = seen
-    user.metadata_ = meta
-    return seen
+        await db.refresh(user, attribute_names=["metadata_"])
+    return markers
 
 
 def mark_seen(user: User, announcements: Iterable[Announcement]) -> dict[str, str]:

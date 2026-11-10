@@ -472,6 +472,11 @@ async def test_mark_seen_merges_idempotently_and_404s_when_invisible() -> None:
     ann = _ann(audience="everyone")
     db = _db(one=ann)
 
+    async def _refresh(user, attribute_names=None):  # the DB-side jsonb merge result
+        user.metadata_ = {**user.metadata_, "announcement_seen": {"10": (NOW - HOUR).isoformat()}}
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+
     await mark_announcement_seen(10, db, student)
     await mark_announcement_seen(10, db, student)
 
@@ -480,6 +485,8 @@ async def test_mark_seen_merges_idempotently_and_404s_when_invisible() -> None:
         "announcement_seen": {"10": (NOW - HOUR).isoformat()},
     }
     assert db.commit.await_count == 2
+    # Refreshed from the row, never assigned: no stale wholesale UPDATE on commit.
+    assert db.refresh.await_count == 2
     assert rules.has_seen(student, ann) is True
     # The write is an atomic JSONB merge, not a wholesale metadata overwrite.
     update_calls = [c for c in db.execute.call_args_list if "jsonb_build_object" in str(c.args[0])]
