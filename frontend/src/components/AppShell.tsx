@@ -297,7 +297,7 @@ export default function AppShell(props: AppShellProps) {
       canManageUsers,
       canViewPeople,
       collectionsEnabled,
-    })) {
+    }).filter((item) => !(announcementsEnabled && item.id === 'announcement'))) {
       const section = sections.get(item.section) ?? []
       section.push(makeItem(item))
       sections.set(item.section, section)
