@@ -58,3 +58,11 @@ Run the full backend suite before a PR when practical:
 ```bash
 cd backend && poetry run pytest
 ```
+
+Announcements changes (`routers/announcements.py`, `app/announcements.py`,
+schemas `Announcement*`) use `tests/test_router_announcements.py` and
+`tests/test_announcements_helpers.py`; the legacy shims keep
+`tests/test_router_announcement.py` / `tests/test_router_changelog.py`. Keep the
+audience rule a **union** (see [docs/announcements.md](../../../docs/announcements.md))
+and seen-state writes a JSONB merge via `mark_seen`; new literal sub-paths go
+before `/{announcement_id}` (route-ordering test).

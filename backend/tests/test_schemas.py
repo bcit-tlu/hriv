@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import (
-    AnnouncementUpdate,
+    LegacyAnnouncementUpdate,
     CategoryCreate,
     CategoryOut,
     CategoryUpdate,
@@ -239,13 +239,13 @@ def test_update_string_schemas_allow_none_and_trim_or_reject_blank() -> None:
     assert GroupUpdate(name=None).name is None
     assert CategoryUpdate(label=None).label is None
     assert ChangelogEntryUpdate(title=None, body=None).title is None
-    assert AnnouncementUpdate(message=None).message is None
+    assert LegacyAnnouncementUpdate(message=None).message is None
 
     assert ProgramUpdate(name="  Program  ").name == "Program"
     assert GroupUpdate(name="  Group  ").name == "Group"
     assert CategoryUpdate(label="  Category  ").label == "Category"
     assert ChangelogEntryUpdate(title="  Title  ", body="  Body  ").title == "Title"
-    assert AnnouncementUpdate(message="  Message  ").message == "Message"
+    assert LegacyAnnouncementUpdate(message="  Message  ").message == "Message"
 
     with pytest.raises(ValidationError, match="must not be blank"):
         ProgramUpdate(name="   ")
@@ -258,7 +258,7 @@ def test_update_string_schemas_allow_none_and_trim_or_reject_blank() -> None:
     with pytest.raises(ValidationError, match="must not be blank"):
         ChangelogEntryUpdate(body="   ")
     with pytest.raises(ValidationError, match="must not be blank"):
-        AnnouncementUpdate(message="   ")
+        LegacyAnnouncementUpdate(message="   ")
 
 
 # ── oidc_group normalization ─────────────────────────────

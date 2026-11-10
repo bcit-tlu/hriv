@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from app.routers.announcement import get_announcement, update_announcement
-from app.schemas import AnnouncementUpdate
+from app.schemas import LegacyAnnouncementUpdate
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -74,7 +74,7 @@ async def test_update_announcement_enables_draft() -> None:
     editor = SimpleNamespace(id=3)
 
     result = await update_announcement(
-        AnnouncementUpdate(message="New message", enabled=True), db, editor
+        LegacyAnnouncementUpdate(message="New message", enabled=True), db, editor
     )
 
     assert ann.message == "New message"
@@ -90,7 +90,7 @@ async def test_update_announcement_disabling_makes_draft() -> None:
     ann = _ann()
     db = _db(ann)
 
-    result = await update_announcement(AnnouncementUpdate(enabled=False), db, SimpleNamespace(id=3))
+    result = await update_announcement(LegacyAnnouncementUpdate(enabled=False), db, SimpleNamespace(id=3))
 
     assert ann.publish_at is None
     assert ann.notified_at is None
@@ -102,7 +102,7 @@ async def test_update_announcement_enabling_live_row_keeps_publish_at() -> None:
     ann = _ann()
     db = _db(ann)
 
-    await update_announcement(AnnouncementUpdate(enabled=True), db, SimpleNamespace(id=3))
+    await update_announcement(LegacyAnnouncementUpdate(enabled=True), db, SimpleNamespace(id=3))
 
     assert ann.publish_at == NOW
     assert ann.notified_at == NOW
@@ -120,7 +120,7 @@ async def test_update_announcement_creates_broadcast_banner_when_missing() -> No
     db.refresh = AsyncMock(side_effect=_refresh_like_db)
     editor = SimpleNamespace(id=3)
 
-    await update_announcement(AnnouncementUpdate(message="Hi", enabled=True), db, editor)
+    await update_announcement(LegacyAnnouncementUpdate(message="Hi", enabled=True), db, editor)
 
     db.add.assert_called_once()
     created = db.add.call_args.args[0]
@@ -138,7 +138,7 @@ async def test_update_announcement_partial_update() -> None:
     ann = _ann(message="Keep this")
     db = _db(ann)
 
-    await update_announcement(AnnouncementUpdate(), db, SimpleNamespace(id=3))
+    await update_announcement(LegacyAnnouncementUpdate(), db, SimpleNamespace(id=3))
 
     assert ann.message == "Keep this"
     assert ann.publish_at == NOW
