@@ -2,27 +2,27 @@
 
 ## Backend Files
 
-| Concern               | Files                                                   |
-| --------------------- | ------------------------------------------------------- |
-| Admin endpoints       | `backend/app/routers/admin.py`                          |
-| Export/import runners | `backend/app/admin_ops.py`                              |
-| Background enqueue    | `backend/app/worker.py`                                 |
-| Task model            | `backend/app/models.py` (`AdminTask`)                   |
-| Task schemas          | `backend/app/schemas.py`                                |
-| Maintenance mode      | `backend/app/maintenance.py`                            |
+| Concern               | Files                                                                          |
+| --------------------- | ------------------------------------------------------------------------------ |
+| Admin endpoints       | `backend/app/routers/admin.py`                                                 |
+| Export/import runners | `backend/app/admin_ops.py`                                                     |
+| Background enqueue    | `backend/app/worker.py`                                                        |
+| Task model            | `backend/app/models.py` (`AdminTask`)                                          |
+| Task schemas          | `backend/app/schemas.py`                                                       |
+| Maintenance mode      | `backend/app/maintenance.py`                                                   |
 | Announcements         | `backend/app/announcements.py`, `routers/announcements.py`, `routers/media.py` |
-| Issues                | `backend/app/routers/issues.py`                         |
+| Issues                | `backend/app/routers/issues.py`                                                |
 
 ## Frontend Files
 
-| Concern                               | Files                                             |
-| ------------------------------------- | ------------------------------------------------- |
-| Admin page                            | `frontend/src/components/AdminPage.tsx`           |
-| Import confirmation                   | `ConfirmImportDialog.tsx`                         |
-| Announcements and maintenance banners | `AnnouncementBanner.tsx`, `MaintenanceBanner.tsx` |
+| Concern                               | Files                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Admin page                            | `frontend/src/components/AdminPage.tsx`                                                          |
+| Import confirmation                   | `ConfirmImportDialog.tsx`                                                                        |
+| Announcements and maintenance banners | `AnnouncementBanner.tsx`, `MaintenanceBanner.tsx`                                                |
 | Announcements                         | `AnnouncementsPage.tsx`, `AnnouncementComposer.tsx`, `AnnouncementsBell.tsx`, `NoticesShelf.tsx` |
-| Issue reports                         | `ReportIssueModal.tsx`                            |
-| API wrappers                          | `frontend/src/api.ts`                             |
+| Issue reports                         | `ReportIssueModal.tsx`                                                                           |
+| API wrappers                          | `frontend/src/api.ts`                                                                            |
 
 ## Task Status Model
 
