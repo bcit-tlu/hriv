@@ -57,7 +57,11 @@ specified in detail.
 - Announcements (epic #1832) are one stream for every role: one bell with a
   peek + "See all", one page (Inbox for all, Mine for admins/instructors), one composer
   dialog. Release notes are announcements (`kind=release`, default audience
-  `staff`), not a separate changelog surface.
+  `staff`), not a separate changelog surface. The Admin page has no Changelog tab.
+- Only posts flagged `banner` take the app-bar banner slot (warnings first, then
+  pinned, then newest); closing the banner marks the post seen. The Home
+  **Notices** shelf shows at most three pinned posts; the welcome message (#1655)
+  is a seeded pinned `everyone` announcement, not bespoke UI.
 - Announcements are _seen_, never dismissed: the Inbox is the record; an edit
   only resurfaces a post when the author ticks "Notify readers again".
 - Announcement kind is a controlled icon set and the icon _is_ the kind

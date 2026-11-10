@@ -12,8 +12,8 @@ Use this skill for administrator-facing operations and long-running task flows.
 1. Read `references/admin-operations-map.md`.
 2. Read `../../../docs/admin-import-export.md` for task lifecycle, cancellation,
    import transaction boundaries, and export/import ordering.
-3. Read `../../../docs/changelog-notifications.md` when changing changelog,
-   announcements, notification UI, or release-note admin behavior.
+3. Read `../../../docs/announcements.md` when changing announcements, release
+   notes, the bell/banner/notices UI, or seen-state behavior.
 4. Use `$hriv-backend-api` for router/schema/model changes and
    `$hriv-frontend-ui` for admin UI changes.
 
@@ -69,7 +69,8 @@ Use this skill for administrator-facing operations and long-running task flows.
   junctions, deleted first and inserted after `source_images`), and
   announcements (their program/group junctions, reactions and `content_media`
   are deleted before `announcements` and inserted after it). Pre-0042 dumps
-  (`changelog_entries` + `announcement` singleton) are still importable.
+  (`changelog_entries` + `announcement` singleton) are still importable via
+  `_announcement_rows_from_dump` / `_seed_announcement_seen` in `admin_ops.py`.
 - Reset PostgreSQL sequences after import.
 - `reconcile_stale_tasks` must remain multi-replica safe by using freshness on
   `updated_at`.

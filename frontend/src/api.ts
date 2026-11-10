@@ -1471,28 +1471,6 @@ export function removeGroupInstructorsBulk(groupId: number, userIds: number[]): 
 
 // ── Announcement ────────────────────────────────────────
 
-export interface ApiLegacyAnnouncement {
-  id: number
-  message: string
-  enabled: boolean
-  created_at: string
-  updated_at: string
-}
-
-export function fetchLegacyAnnouncement(): Promise<ApiLegacyAnnouncement> {
-  return request('/announcement/')
-}
-
-export function updateLegacyAnnouncement(body: {
-  message?: string
-  enabled?: boolean
-}): Promise<ApiLegacyAnnouncement> {
-  return request('/announcement/', {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  })
-}
-
 // ── Announcements (epic #1832) ───────────────────────────
 
 export type AnnouncementKind =
@@ -1623,49 +1601,6 @@ export function uploadMedia(file: File): Promise<ApiMediaUpload> {
   const form = new FormData()
   form.append('file', file)
   return request('/media/', { method: 'POST', body: form })
-}
-
-// ── Changelog ────────────────────────────────────────────
-
-export interface ApiChangelogEntry {
-  id: number
-  title: string
-  body: string
-  published_at: string
-  created_at: string
-  updated_at: string
-}
-
-export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
-  return request('/changelog/')
-}
-
-export function createChangelogEntry(body: {
-  title: string
-  body: string
-}): Promise<ApiChangelogEntry> {
-  return request('/changelog/', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-}
-
-export function updateChangelogEntry(
-  id: number,
-  body: { title?: string; body?: string },
-): Promise<ApiChangelogEntry> {
-  return request(`/changelog/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  })
-}
-
-export function deleteChangelogEntry(id: number): Promise<void> {
-  return request(`/changelog/${id}`, { method: 'DELETE' })
-}
-
-export function markChangelogRead(): Promise<{ changelog_last_read_at: string }> {
-  return request('/changelog/mark-read', { method: 'POST' })
 }
 
 // ── Source Images ───────────────────────────────────────

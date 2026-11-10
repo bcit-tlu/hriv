@@ -11,9 +11,8 @@ surfaces land with #1837/#1838 and are documented here as they ship.
 `ANNOUNCEMENTS_ENABLED` (chart value `announcements.enabled`, default `false`;
 exposed as `announcements` by `GET /api/features`) dark-launches the whole
 `/api/announcements` surface — every route answers 404 while it is off. The
-legacy `/api/announcement/` and `/api/changelog/` shims (see
-[changelog-notifications.md](changelog-notifications.md)) are served regardless
-and are removed by #1838.
+pre-#1832 `/api/announcement/` and `/api/changelog/` endpoints were removed by
+#1838; `GET /api/announcements/broadcast` is the only unauthenticated route.
 
 ## Model
 
@@ -152,10 +151,23 @@ orphaned files are tolerated.
 ## Frontend
 
 Everything below is gated on `features.announcements` (`GET /api/features`);
-while the flag is off the pre-#1832 surfaces keep working through the shims
-described in [changelog-notifications.md](changelog-notifications.md). #1838
-(banner policy, Home notices shelf, login broadcast, legacy cleanup) removes
-those shims.
+while the flag is off no announcement UI renders (no bell, banner, shelf or
+login broadcast). #1838 removed the legacy singleton banner, the What's New
+menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
+
+### Ambient surfaces (#1838)
+
+- **Banner** (`AnnouncementBanner.tsx`, `selectBannerAnnouncements`): only live,
+  unseen Inbox posts flagged `banner` qualify; warnings first, then pinned, then
+  newest `notified_at`. One shows at a time; closing marks it seen; `+N more`
+  opens the Announcements page. Two-line clamp with More/Less, no reactions.
+- **Home Notices shelf** (`NoticesShelf.tsx`, `selectNotices`): up to three
+  pinned live posts as compact cards (icon, title, first line, reaction pills)
+  at the Browse root; renders nothing when nothing is pinned. The seeded
+  pinned `everyone` welcome post is the #1655 welcome message.
+- **Login broadcast** (`fetchAnnouncementBroadcast`): the newest live
+  `everyone` + `banner` post renders above the login form, read-only.
+- **Bell peek** shows reaction pills under each unseen post.
 
 | Surface            | File                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -180,5 +192,5 @@ Frontend: `tests/announcementKinds.test.ts`, `tests/announcementsApi.test.ts`,
 
 Backend: `backend/tests/test_router_announcements.py` (visibility matrix, authority,
 seen-state, seen counts, reactions, route ordering, flag gate),
-`test_announcements_helpers.py`, and the shim tests
-`test_router_announcement.py` / `test_router_changelog.py`.
+`test_announcements_helpers.py`. Frontend: `tests/announcementUtils.test.ts`,
+`tests/components/{AnnouncementBanner,NoticesShelf,LoginScreen,AdminPage}.test.tsx`.

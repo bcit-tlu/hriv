@@ -2,8 +2,8 @@
 
 One audience-filtered feed with ``inbox`` and ``mine`` scopes, author-scoped
 CRUD, per-user seen state, aggregate seen counts for staff roles and emoji
-reactions.  The legacy ``/api/announcement`` and ``/api/changelog`` shims stay
-registered until #1838.
+reactions.  ``GET /broadcast`` is the unauthenticated login-screen read; the
+pre-#1832 ``/api/announcement`` and ``/api/changelog`` routers were removed by #1838.
 
 Route order matters: literal sub-paths (``/broadcast``) are declared before
 ``/{announcement_id}`` so FastAPI never captures them as an id (see
@@ -254,7 +254,11 @@ def _check_authority(
 async def list_broadcast(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Live ``everyone`` banner announcements. Public – rendered on the login screen."""
+    """Live ``everyone`` banner announcements, newest first.
+
+    Public – the login screen renders ``rows[0]``.  Pinning only orders the
+    authenticated Inbox / Home shelf, so it is deliberately ignored here.
+    """
     result = await db.execute(
         select(Announcement)
         .where(
@@ -262,7 +266,7 @@ async def list_broadcast(
             Announcement.banner.is_(True),
             rules.live_clause(),
         )
-        .order_by(Announcement.pinned.desc(), Announcement.notified_at.desc(), Announcement.id.desc())
+        .order_by(Announcement.notified_at.desc(), Announcement.id.desc())
     )
     return [_broadcast_shape(a) for a in result.scalars().all()]
 

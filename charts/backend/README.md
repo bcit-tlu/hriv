@@ -244,8 +244,7 @@ curators while access is disabled. See the
 defaults to `false`. It dark-launches the announcements stream of epic #1832
 (`/api/announcements`, bell for all roles, Inbox/Mine page) so the schema and
 API PRs can ship ahead of the UI; the frontend reads it from `GET /api/features`
-(`announcements`). The legacy `/api/announcement` and `/api/changelog`
-compatibility shims are served regardless of the flag. The `latest` overlay sets
+(`announcements`). The `latest` overlay sets
 it to `true`; remove the value with the epic's closing issue (#1838).
 
 ## API configuration

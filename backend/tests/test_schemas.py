@@ -9,12 +9,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import (
-    LegacyAnnouncementUpdate,
     CategoryCreate,
     CategoryOut,
     CategoryUpdate,
-    ChangelogEntryCreate,
-    ChangelogEntryUpdate,
     CollectionCreate,
     CollectionImagesUpdate,
     CollectionOwnersUpdate,
@@ -196,9 +193,6 @@ def test_required_string_schemas_trim_and_reject_blank_values() -> None:
     assert ProgramCreate(name="  Program  ").name == "Program"
     assert GroupCreate(name="  Group  ").name == "Group"
     assert CategoryCreate(label="  Category  ").label == "Category"
-    entry = ChangelogEntryCreate(title="  Title  ", body="  Body  ")
-    assert entry.title == "Title"
-    assert entry.body == "Body"
 
     with pytest.raises(ValidationError, match="must not be blank"):
         ProgramCreate(name="   ")
@@ -206,10 +200,6 @@ def test_required_string_schemas_trim_and_reject_blank_values() -> None:
         GroupCreate(name="   ")
     with pytest.raises(ValidationError, match="must not be blank"):
         CategoryCreate(label="   ")
-    with pytest.raises(ValidationError, match="must not be blank"):
-        ChangelogEntryCreate(title="   ", body="body")
-    with pytest.raises(ValidationError, match="must not be blank"):
-        ChangelogEntryCreate(title="title", body="   ")
 
 
 def test_user_create_trims_and_rejects_blank_name_and_email() -> None:
@@ -238,14 +228,10 @@ def test_update_string_schemas_allow_none_and_trim_or_reject_blank() -> None:
     assert ProgramUpdate(name=None).name is None
     assert GroupUpdate(name=None).name is None
     assert CategoryUpdate(label=None).label is None
-    assert ChangelogEntryUpdate(title=None, body=None).title is None
-    assert LegacyAnnouncementUpdate(message=None).message is None
 
     assert ProgramUpdate(name="  Program  ").name == "Program"
     assert GroupUpdate(name="  Group  ").name == "Group"
     assert CategoryUpdate(label="  Category  ").label == "Category"
-    assert ChangelogEntryUpdate(title="  Title  ", body="  Body  ").title == "Title"
-    assert LegacyAnnouncementUpdate(message="  Message  ").message == "Message"
 
     with pytest.raises(ValidationError, match="must not be blank"):
         ProgramUpdate(name="   ")
@@ -253,12 +239,6 @@ def test_update_string_schemas_allow_none_and_trim_or_reject_blank() -> None:
         GroupUpdate(name="   ")
     with pytest.raises(ValidationError, match="must not be blank"):
         CategoryUpdate(label="   ")
-    with pytest.raises(ValidationError, match="must not be blank"):
-        ChangelogEntryUpdate(title="   ")
-    with pytest.raises(ValidationError, match="must not be blank"):
-        ChangelogEntryUpdate(body="   ")
-    with pytest.raises(ValidationError, match="must not be blank"):
-        LegacyAnnouncementUpdate(message="   ")
 
 
 # ── oidc_group normalization ─────────────────────────────

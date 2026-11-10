@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AppShell from '../../src/components/AppShell'
 import type { AppShellProps } from '../../src/components/AppShell'
@@ -25,9 +25,7 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
       program_names: [],
       group_names: [],
     },
-    announcement: '',
-    annMessage: '',
-    annEnabled: false,
+    bannerSlot: undefined,
     profileOpen: false,
     setProfileOpen: vi.fn(),
     avatarRef: createRef<HTMLButtonElement>(),
@@ -36,7 +34,6 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
     onOpenCategories: vi.fn(),
     onOpenPrograms: vi.fn(),
     onOpenGroups: vi.fn(),
-    onOpenAnnouncement: vi.fn(),
     onSearchOpen: vi.fn(),
     mode: 'light',
     frontendVersion: null,
@@ -98,48 +95,16 @@ describe('AppShell', () => {
       expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument()
     })
 
-    it('renders announcement banner when announcement is set', () => {
-      render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
-      expect(screen.getByText('Maintenance tonight')).toBeInTheDocument()
-    })
-
-    it('keeps the full announcement row on the people/admin surface background', () => {
-      render(
-        <AppShell
-          {...makeProps({
-            page: 'people',
-            announcement: 'Maintenance tonight',
-          })}
-        />,
-      )
-
+    it('renders the banner slot above the content', () => {
+      render(<AppShell {...makeProps({ bannerSlot: <div>Maintenance tonight</div> })} />)
       expect(
         screen.getByText('Maintenance tonight').closest('[data-testid="announcement-banner"]'),
-      ).toHaveStyle({
-        backgroundColor: '#DAC7B5',
-      })
+      ).not.toBeNull()
     })
 
-    it('renders dismiss link on announcement banner when callback provided', async () => {
-      const onDismiss = vi.fn()
-      render(
-        <AppShell
-          {...makeProps({
-            announcement: 'Maintenance tonight',
-            onDismissAnnouncement: onDismiss,
-          })}
-        />,
-      )
-      const link = screen.getByRole('button', { name: 'Dismiss' })
-      fireEvent.click(link)
-      await waitFor(() => {
-        expect(onDismiss).toHaveBeenCalledTimes(1)
-      })
-    })
-
-    it('does not render announcement banner when empty', () => {
-      render(<AppShell {...makeProps({ announcement: '' })} />)
-      expect(screen.queryByText('Maintenance tonight')).not.toBeInTheDocument()
+    it('does not render the banner row when the slot is empty', () => {
+      render(<AppShell {...makeProps({ bannerSlot: undefined })} />)
+      expect(screen.queryByTestId('announcement-banner')).not.toBeInTheDocument()
     })
 
     it('renders footer with Send Feedback link', () => {
@@ -367,7 +332,6 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
       expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Programs' })).toBeInTheDocument()
-      expect(screen.getByRole('menuitem', { name: 'Announcement' })).toBeInTheDocument()
     })
 
     it('hides Programs menu item for non-admin editors', () => {
@@ -382,7 +346,6 @@ describe('AppShell', () => {
       )
       fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
       expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeInTheDocument()
-      expect(screen.getByRole('menuitem', { name: 'Announcement' })).toBeInTheDocument()
       expect(screen.queryByRole('menuitem', { name: 'Programs' })).not.toBeInTheDocument()
     })
 
@@ -422,14 +385,6 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Groups' }))
       expect(props.onOpenGroups).toHaveBeenCalled()
-    })
-
-    it('calls onOpenAnnouncement when Announcement menu item is clicked', () => {
-      const props = makeProps()
-      render(<AppShell {...props} />)
-      fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Announcement' }))
-      expect(props.onOpenAnnouncement).toHaveBeenCalled()
     })
   })
 
@@ -563,64 +518,6 @@ describe('AppShell', () => {
       expect(props.setProfileOpen).toHaveBeenCalledWith(false)
       expect(props.logout).toHaveBeenCalled()
     })
-
-    it('shows View Announcement link when announcement is enabled and dismissed', () => {
-      render(
-        <AppShell
-          {...makeProps({
-            profileOpen: true,
-            annEnabled: true,
-            annMessage: 'Scheduled maintenance',
-            announcement: '',
-          })}
-        />,
-      )
-      expect(screen.getByText('View Announcement')).toBeInTheDocument()
-    })
-
-    it('hides View Announcement link when announcement banner is visible (not dismissed)', () => {
-      render(
-        <AppShell
-          {...makeProps({
-            profileOpen: true,
-            annEnabled: true,
-            annMessage: 'Scheduled maintenance',
-            announcement: 'Scheduled maintenance',
-          })}
-        />,
-      )
-      expect(screen.queryByText('View Announcement')).not.toBeInTheDocument()
-    })
-
-    it('hides View Announcement link when no announcement is enabled', () => {
-      render(
-        <AppShell
-          {...makeProps({
-            profileOpen: true,
-            annEnabled: false,
-            annMessage: '',
-            announcement: '',
-          })}
-        />,
-      )
-      expect(screen.queryByText('View Announcement')).not.toBeInTheDocument()
-    })
-
-    it('opens announcement dialog when View Announcement is clicked', () => {
-      render(
-        <AppShell
-          {...makeProps({
-            profileOpen: true,
-            annEnabled: true,
-            annMessage: 'Scheduled maintenance',
-            announcement: '',
-          })}
-        />,
-      )
-      fireEvent.click(screen.getByText('View Announcement'))
-      expect(screen.getByText('Announcement')).toBeInTheDocument()
-      expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
-    })
   })
 
   describe('compact viewport navigation', () => {
@@ -653,7 +550,6 @@ describe('AppShell', () => {
         'Categories',
         'Programs',
         'Groups',
-        'Announcement',
         'People',
         'Admin',
       ]) {

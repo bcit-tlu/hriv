@@ -168,25 +168,6 @@ class GroupMembersBulk(BaseModel):
 
 # ── Announcement ─────────────────────────────────────────
 
-class LegacyAnnouncementOut(BaseModel):
-    """Pre-#1832 banner shape served by the deprecated ``/api/announcement/``."""
-
-    id: int
-    message: str
-    enabled: bool
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class LegacyAnnouncementUpdate(BaseModel):
-    message: str | None = None
-    enabled: bool | None = None
-
-    _validate_message = field_validator("message", mode="before")(normalize_optional_nonblank_value)
-
-
 ANNOUNCEMENT_MESSAGE_MAX_CHARS = 10_000
 
 
@@ -325,39 +306,6 @@ class MediaUploadOut(BaseModel):
     content_type: str
     size_bytes: int
     original_name: str
-
-
-# ── Changelog ────────────────────────────────────────────
-
-class ChangelogEntryOut(BaseModel):
-    id: int
-    title: str
-    body: str
-    published_at: datetime
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class ChangelogEntryCreate(BaseModel):
-    title: str
-    body: str
-
-    _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
-    _validate_body = field_validator("body", mode="before")(normalize_nonblank_value)
-
-
-class ChangelogEntryUpdate(BaseModel):
-    title: str | None = None
-    body: str | None = None
-
-    _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
-    _validate_body = field_validator("body", mode="before")(normalize_optional_nonblank_value)
-
-
-class ChangelogMarkReadResponse(BaseModel):
-    changelog_last_read_at: str
 
 
 # ── Long-running Job ─────────────────────────────────────

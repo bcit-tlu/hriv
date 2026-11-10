@@ -108,26 +108,6 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 
 ---
 
-## Test Case 3a: Changelog Notifications (Admin + Instructor)
-
-**Purpose:** Verify the bell badge, What's New feed, and admin-only changelog management.
-
-1. Login as `admin@example.ca` / `password`.
-2. Open the `Admin` tab.
-3. **Assert:** The `Changelog` sub-tab is selected by default.
-4. Create a new entry with title `v2.5` and a short Markdown body.
-5. **Assert:** The new entry appears in the changelog table.
-6. **Assert:** A notification bell is visible in the AppBar with an unread dot.
-7. Open the bell menu.
-8. **Assert:** The unread dot remains until `What's New` is opened.
-9. Click `What's New`.
-10. **Assert:** The dialog lists the new entry and renders the Markdown content.
-11. Close the dialog.
-12. **Assert:** The unread dot is cleared.
-13. Logout and login as `instructor@example.ca` / `password`.
-14. **Assert:** The bell is visible and the entry is readable from `What's New`.
-15. **Assert:** The instructor still has no `Admin` tab and therefore cannot access changelog management controls.
-
 ## Test Case 3b: Announcements (all roles, `ANNOUNCEMENTS_ENABLED=true`)
 
 **Purpose:** Verify the unified announcements stream — bell for every role, Inbox / Mine page, composer rules, reactions and seen-state (epic #1832; see `docs/announcements.md`).
@@ -820,11 +800,6 @@ themes. See [password management](password-setup.md#frontend-password-management
 | POST   | /api/collections/{id}/move                                                                                | Yes           | admin / instructor (any — filing is curatorial, not ownership-bound)                                                                                                                                                                        |
 | PUT    | /api/collections/{id}/owners                                                                              | Yes           | admin / instructor (co-owner or in owning program) — replaces the user-owner set ¤                                                                                                                                                          |
 | POST   | /api/collections/{id}/transfer                                                                            | Yes           | admin / instructor (co-owner or in owning program, to own program) — program owner only ¤                                                                                                                                                   |
-| GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                                                                                                                                                                                  |
-| POST   | /api/changelog/                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
-| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                                                                                                                                                                                  |
-| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                                                                                                                                       |
-| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                                                                                                                                       |
 | GET    | /api/announcements/broadcast                                                                              | No            | — (404 while `ANNOUNCEMENTS_ENABLED` is off; live `everyone` banner posts)                                                                                                                                                                  |
 | GET    | /api/announcements/?scope=inbox                                                                           | Yes           | student (audience-filtered; 404 while the flag is off)                                                                                                                                                                                      |
 | GET    | /api/announcements/?scope=mine                                                                            | Yes           | instructor (own + co-managed-group posts; admin sees all)                                                                                                                                                                                   |

@@ -1,8 +1,8 @@
 """Shared announcement helpers (epic #1832).
 
-Kept router-agnostic so the legacy ``/api/announcement`` and ``/api/changelog``
-shims (removed by #1838) and the new ``/api/announcements`` router (#1834) use
-one definition of *live* and one way of recording seen-state.
+Kept router-agnostic so the ``/api/announcements`` router (#1834), the media
+router (#1835) and admin import (``admin_ops``) share one definition of *live*
+and one way of recording seen-state.
 """
 
 from __future__ import annotations

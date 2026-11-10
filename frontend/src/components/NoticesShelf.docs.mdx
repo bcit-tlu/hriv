@@ -1,0 +1,31 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as NoticesShelfStories from './NoticesShelf.stories'
+
+<Meta of={NoticesShelfStories} />
+
+<Title />
+
+<Subtitle>
+  Home "Notices" shelf: up to three pinned, live announcements as compact cards (kind icon, title,
+  first line, reaction pills). Renders nothing when there is nothing pinned.
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Behaviour
+
+- `selectNotices` keeps pinned + live posts from the shared feed, capped at three, in feed order.
+- Card titles call `onOpenAnnouncements(id)`; "All announcements" opens the page unfocused.
+- Reactions toggle through the same `useAnnouncements.toggleReaction` as the page and bell.
+- The #1655 welcome message is a seeded pinned `everyone` announcement — no separate component.
+
+<Stories includePrimary={false} />

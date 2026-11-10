@@ -1203,25 +1203,12 @@ Gated on `features.announcements` (epic #1832); see
   links are hidden. Groups → row menu gains **Post to group**, which opens the
   composer pre-targeted at that group.
 
-### Changelog notifications (`NotificationMenu.tsx`, `ChangelogAdmin.tsx`)
-
-- Changelog entries render in reverse chronological order (most recent first)
-  in both the app bar feed and the admin changelog table, even if the API
-  response arrives unsorted.
-- The admin changelog table's `new` chip is time-bound: it appears only for
-  entries published within the last 7 days, then disappears automatically.
-- The app bar changelog feed uses the same local version-bump pattern as other
-  refreshable surfaces. **Given** an admin creates, republishes, or deletes a
-  changelog entry in the Admin tab, **When** that mutation succeeds, **Then**
-  the app bumps a shared `changelogVersion` counter and `NotificationMenu`
-  re-fetches entries in the same session without a full page reload.
-
 ### Admin tab layout (`AdminPage.tsx`)
 
 - **Given** an admin opens the `Admin` tab, **When** the page renders,
-  **Then** the `Changelog` sub-tab is selected by default so changelog
-  management appears without scrolling.
-- **Given** the admin switches to the `Backups` sub-tab, **Then** the page
+  **Then** the `Backups` sub-tab is the only section and is selected by
+  default (release notes are authored from the Announcements page).
+- **Given** the admin is on the `Backups` sub-tab, **Then** the page
   groups backup tools in this order: a data-transfer card grid first (export
   cards, then the destructive import cards, then Rebuild Tiles), a
   `Parallel tile rebuilds` section listing durable rebuild jobs, the

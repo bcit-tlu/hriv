@@ -8,6 +8,7 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
+import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import AddReactionOutlinedIcon from '@mui/icons-material/AddReactionOutlined'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
@@ -20,7 +21,7 @@ import {
   kindMeta,
   reactionGlyph,
 } from '../announcementKinds'
-import { announcementTimeLabel, formatAbsolute } from '../announcementUtils'
+import { announcementTimeLabel, firstLine, formatAbsolute } from '../announcementUtils'
 import MarkdownContent from './MarkdownContent'
 
 export interface AnnouncementCardProps {
@@ -34,6 +35,10 @@ export interface AnnouncementCardProps {
   onEdit?: (announcement: ApiAnnouncement) => void
   onDuplicate?: (announcement: ApiAnnouncement) => void
   onDelete?: (announcement: ApiAnnouncement) => void
+  /** Home shelf: first line of the body instead of the full Markdown, no audience chips. */
+  compact?: boolean
+  /** Makes the title a button (e.g. open the post on the Announcements page). */
+  onOpen?: () => void
 }
 
 const STATUS_COLOR = {
@@ -52,12 +57,14 @@ export default function AnnouncementCard({
   onEdit,
   onDuplicate,
   onDelete,
+  compact = false,
+  onOpen,
 }: AnnouncementCardProps) {
   const meta = kindMeta(a.kind)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
   const quiet = !manage && a.seen
-  const chips = audienceChips(a)
+  const chips = compact ? [] : audienceChips(a)
   const reactionEntries = Object.entries(a.reactions).filter(([, count]) => count > 0)
   const canReact = Boolean(onToggleReaction) && a.status === 'live'
   const showSeenCount = viewerIsStaff && a.seen_count != null && a.audience_size != null
@@ -104,7 +111,20 @@ export default function AnnouncementCard({
               component="h2"
               sx={{ fontWeight: quiet ? 500 : 700, lineHeight: 1.3, flex: 1, minWidth: 160 }}
             >
-              {a.title}
+              {onOpen ? (
+                <Link
+                  component="button"
+                  type="button"
+                  onClick={onOpen}
+                  color="inherit"
+                  underline="hover"
+                  sx={{ font: 'inherit', textAlign: 'left' }}
+                >
+                  {a.title}
+                </Link>
+              ) : (
+                a.title
+              )}
             </Typography>
             {a.pinned && (
               <Tooltip title="Pinned">
@@ -194,7 +214,13 @@ export default function AnnouncementCard({
             ))}
           </Stack>
 
-          {a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
+          {compact
+            ? firstLine(a.message) && (
+                <Typography variant="body2" color="text.secondary" noWrap>
+                  {firstLine(a.message)}
+                </Typography>
+              )
+            : a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
 
           <Stack
             direction="row"

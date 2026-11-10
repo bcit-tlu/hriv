@@ -73,7 +73,7 @@ class Settings(BaseSettings):
 
     # Announcements stream (epic #1832): dark-launch flag for the new
     # /api/announcements surface and the Announcements UI. The legacy
-    # /api/announcement and /api/changelog shims ignore it. Chart default off;
+    # Chart default off;
     # the `latest` overlay turns it on; removed by the epic's closing issue (#1838).
     announcements_enabled: bool = False
 

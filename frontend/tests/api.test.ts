@@ -112,13 +112,6 @@ import {
   fetchGroupInstructors,
   addGroupInstructor,
   removeGroupInstructor,
-  fetchLegacyAnnouncement,
-  updateLegacyAnnouncement,
-  fetchChangelogEntries,
-  createChangelogEntry,
-  updateChangelogEntry,
-  deleteChangelogEntry,
-  markChangelogRead,
   fetchSourceImage,
   listSourceImages,
   fetchBulkImportJob,
@@ -149,8 +142,6 @@ import {
   attachedCategoriesFromError,
   type ApiUser,
   type ApiProgram,
-  type ApiLegacyAnnouncement,
-  type ApiChangelogEntry,
   type ApiSourceImage,
   setApiFailureObserver,
   userMessage,
@@ -252,14 +243,6 @@ const PROGRAM_FIXTURE: ApiProgram = {
   id: 1,
   name: 'Medical Lab',
   oidc_group: null,
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-}
-
-const ANNOUNCEMENT_FIXTURE: ApiLegacyAnnouncement = {
-  id: 1,
-  message: 'System update tonight',
-  enabled: true,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -1547,89 +1530,6 @@ describe('Group API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/groups/1/instructors/10')
     expect(init.method).toBe('DELETE')
-  })
-})
-
-// ── Announcement ─────────────────────────────────────────────────────────
-
-describe('Announcement API', () => {
-  beforeEach(() => {
-    mockFetch.mockReset()
-    setToken('jwt')
-  })
-  afterEach(() => setToken(null))
-
-  it('fetchLegacyAnnouncement sends GET', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse(ANNOUNCEMENT_FIXTURE))
-    const result = await fetchLegacyAnnouncement()
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/announcement/')
-    expect(result).toEqual(ANNOUNCEMENT_FIXTURE)
-  })
-
-  it('updateLegacyAnnouncement sends PUT', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse(ANNOUNCEMENT_FIXTURE))
-    await updateLegacyAnnouncement({ message: 'Updated', enabled: false })
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/announcement/')
-    expect(init.method).toBe('PUT')
-  })
-})
-
-// ── Changelog ────────────────────────────────────────────────────────────
-
-describe('Changelog API', () => {
-  const fixture: ApiChangelogEntry = {
-    id: 1,
-    title: 'v2.5',
-    body: 'Released improvements',
-    published_at: '2026-06-16T00:00:00Z',
-    created_at: '2026-06-16T00:00:00Z',
-    updated_at: '2026-06-16T00:00:00Z',
-  }
-
-  beforeEach(() => {
-    mockFetch.mockReset()
-    setToken('jwt')
-  })
-  afterEach(() => setToken(null))
-
-  it('fetchChangelogEntries sends GET', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse([fixture]))
-    const result = await fetchChangelogEntries()
-    expect(mockFetch.mock.calls[0][0]).toBe('/api/changelog/')
-    expect(result).toEqual([fixture])
-  })
-
-  it('createChangelogEntry sends POST', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse(fixture, 201))
-    await createChangelogEntry({ title: 'v2.5', body: 'Released improvements' })
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/changelog/')
-    expect(init.method).toBe('POST')
-  })
-
-  it('updateChangelogEntry sends PATCH', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse(fixture))
-    await updateChangelogEntry(1, { title: 'Updated' })
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/changelog/1')
-    expect(init.method).toBe('PATCH')
-  })
-
-  it('deleteChangelogEntry sends DELETE', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await deleteChangelogEntry(1)
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/changelog/1')
-    expect(init.method).toBe('DELETE')
-  })
-
-  it('markChangelogRead sends POST', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ changelog_last_read_at: fixture.published_at }))
-    await markChangelogRead()
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/changelog/mark-read')
-    expect(init.method).toBe('POST')
   })
 })
 

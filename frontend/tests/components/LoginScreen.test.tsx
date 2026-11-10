@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import LoginScreen from '../../src/components/LoginScreen'
+import type { ApiAnnouncementBroadcast } from '../../src/api'
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -73,11 +74,11 @@ function queryUsernameField() {
 
 /** Render with OIDC disabled */
 async function renderOidcDisabled(
-  props: { onLogin?: () => Promise<void>; announcement?: string } = {},
+  props: { onLogin?: () => Promise<void>; broadcast?: ApiAnnouncementBroadcast | null } = {},
 ) {
   const onLogin = props.onLogin ?? vi.fn()
   vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: false })
-  const result = render(<LoginScreen onLogin={onLogin} announcement={props.announcement} />)
+  const result = render(<LoginScreen onLogin={onLogin} broadcast={props.broadcast} />)
   // Wait for the useEffect that calls fetchOidcEnabled to settle
   await waitFor(() => {
     expect(fetchOidcEnabled).toHaveBeenCalled()
@@ -87,11 +88,11 @@ async function renderOidcDisabled(
 
 /** Helper: render with OIDC enabled */
 async function renderOidcEnabled(
-  props: { onLogin?: () => Promise<void>; announcement?: string } = {},
+  props: { onLogin?: () => Promise<void>; broadcast?: ApiAnnouncementBroadcast | null } = {},
 ) {
   const onLogin = props.onLogin ?? vi.fn()
   vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: true })
-  const result = render(<LoginScreen onLogin={onLogin} announcement={props.announcement} />)
+  const result = render(<LoginScreen onLogin={onLogin} broadcast={props.broadcast} />)
   await waitFor(() => {
     expect(fetchOidcEnabled).toHaveBeenCalled()
   })
@@ -266,7 +267,17 @@ describe('LoginScreen', () => {
   describe('announcement banner', () => {
     it('renders the announcement when provided', async () => {
       await renderOidcDisabled({
-        announcement: 'System maintenance tonight',
+        broadcast: {
+          id: 1,
+          title: 'Maintenance',
+          message: 'System maintenance tonight',
+          kind: 'warning',
+          icon: 'warning',
+          severity: 'warning',
+          publish_at: '2026-01-01T00:00:00+00:00',
+          expires_at: null,
+          updated_at: '2026-01-01T00:00:00+00:00',
+        },
       })
       expect(screen.getByText('System maintenance tonight')).toBeInTheDocument()
     })
