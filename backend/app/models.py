@@ -456,14 +456,86 @@ class BulkImportJob(Base):
     requester: Mapped["User | None"] = relationship("User")
 
 
+ANNOUNCEMENT_KINDS: tuple[str, ...] = (
+    "notice",
+    "event",
+    "reminder",
+    "celebration",
+    "release",
+    "warning",
+)
+ANNOUNCEMENT_AUDIENCES: tuple[str, ...] = ("everyone", "staff", "targeted")
+# ``audience='staff'`` resolves dynamically to these roles (no junction rows).
+ANNOUNCEMENT_STAFF_ROLES: tuple[str, ...] = ("admin", "instructor", "staff")
+
+announcement_programs = Table(
+    "announcement_programs",
+    Base.metadata,
+    Column(
+        "announcement_id",
+        Integer,
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
+announcement_groups = Table(
+    "announcement_groups",
+    Base.metadata,
+    Column(
+        "announcement_id",
+        Integer,
+        ForeignKey("announcements.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Announcement(Base):
+    """A message posted to an audience (notice, event, release note, …).
+
+    Replaces both the former singleton banner row and ``changelog_entries``
+    (migration ``0042_announcements``).  ``publish_at IS NULL`` means draft;
+    a row is *live* when ``publish_at <= now()`` and ``expires_at`` is NULL
+    or in the future.  ``notified_at`` is the version marker compared against
+    ``users.metadata_["announcement_seen"][str(id)]`` for unseen badges.
+    """
+
     __tablename__ = "announcements"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('notice','event','reminder','celebration','release','warning')",
+            name="ck_announcements_kind",
+        ),
+        CheckConstraint(
+            "audience IN ('everyone','staff','targeted')",
+            name="ck_announcements_audience",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=text("''")
     )
-    enabled: Mapped[bool] = mapped_column(
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="notice", server_default=text("'notice'")
+    )
+    author_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    audience: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="targeted", server_default=text("'targeted'")
+    )
+    publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    banner: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -473,21 +545,64 @@ class Announcement(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    author: Mapped["User | None"] = relationship("User", lazy="selectin")
+    programs: Mapped[list["Program"]] = relationship(
+        "Program", secondary=announcement_programs, lazy="selectin", passive_deletes=True
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group", secondary=announcement_groups, lazy="selectin", passive_deletes=True
+    )
+    reactions: Mapped[list["AnnouncementReaction"]] = relationship(
+        "AnnouncementReaction",
+        back_populates="announcement",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
-class ChangelogEntry(Base):
-    __tablename__ = "changelog_entries"
+
+class AnnouncementReaction(Base):
+    """One emoji reaction by one user on one announcement."""
+
+    __tablename__ = "announcement_reactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "announcement_id", "user_id", "emoji", name="uq_announcement_reactions_user_emoji"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    body: Mapped[str] = mapped_column(Text, nullable=False)
-    published_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    announcement_id: Mapped[int] = mapped_column(
+        ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    emoji: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+
+    announcement: Mapped["Announcement"] = relationship(
+        "Announcement", back_populates="reactions"
+    )
+
+
+class ContentMedia(Base):
+    """An uploaded image/video referenced from announcement Markdown (#1835)."""
+
+    __tablename__ = "content_media"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stored_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    uploader_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 

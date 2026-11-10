@@ -1149,17 +1149,39 @@ async def test_run_db_export_success(tmp_path) -> None:
             updated_at=now,
         ),
     ]
-    changelog_entries = [
+    announcements = [
         SimpleNamespace(
             id=1,
             title="Release 1",
-            body="Body text",
-            published_at=now,
+            message="Body text",
+            kind="release",
+            author_id=None,
+            audience="staff",
+            publish_at=now,
+            expires_at=None,
+            notified_at=now,
+            pinned=False,
+            banner=False,
+            programs=[SimpleNamespace(id=2)],
+            groups=[],
             created_at=now,
             updated_at=now,
         )
     ]
-    announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
+    announcement_reactions = [
+        SimpleNamespace(id=1, announcement_id=1, user_id=1, emoji="rocket", created_at=now)
+    ]
+    content_media = [
+        SimpleNamespace(
+            id=1,
+            stored_name="abc.png",
+            original_name="shot.png",
+            content_type="image/png",
+            size_bytes=1234,
+            uploader_id=1,
+            created_at=now,
+        )
+    ]
 
     groups = []
     collections = [
@@ -1221,13 +1243,10 @@ async def test_run_db_export_success(tmp_path) -> None:
         result = MagicMock()
         data_map = {
             1: programs, 2: groups, 3: categories, 4: images,
-            5: users, 6: source_images, 7: collections, 8: changelog_entries,
-            9: measurement_findings,
+            5: users, 6: source_images, 7: collections, 8: announcements,
+            9: measurement_findings, 10: announcement_reactions, 11: content_media,
         }
-        if call_count <= 9:
-            result.scalars.return_value.all.return_value = data_map[call_count]
-        else:
-            result.scalar_one_or_none.return_value = announcement
+        result.scalars.return_value.all.return_value = data_map[call_count]
         return result
 
     # Status/progress and table reads use separate sessions; keep them apart so
@@ -1334,16 +1353,37 @@ async def test_run_db_export_success(tmp_path) -> None:
             "updated_at": now.isoformat(),
         }
     ]
-    assert dump["changelog_entries"] == [
+    assert "changelog_entries" not in dump
+    assert "announcement" not in dump
+    assert dump["announcements"] == [
         {
             "id": 1,
             "title": "Release 1",
-            "body": "Body text",
-            "published_at": now.isoformat(),
+            "message": "Body text",
+            "kind": "release",
+            "author_id": None,
+            "audience": "staff",
+            "publish_at": now.isoformat(),
+            "expires_at": None,
+            "notified_at": now.isoformat(),
+            "pinned": False,
+            "banner": False,
+            "program_ids": [2],
+            "group_ids": [],
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
     ]
+    assert dump["announcement_reactions"] == [
+        {
+            "id": 1,
+            "announcement_id": 1,
+            "user_id": 1,
+            "emoji": "rocket",
+            "created_at": now.isoformat(),
+        }
+    ]
+    assert dump["content_media"][0]["stored_name"] == "abc.png"
 
 
 # ── run_db_import tests ────────────────────────────────────
@@ -1630,7 +1670,12 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     # Exactly one atomic data-session commit + a handful of status commits.
     assert mock_session.commit.await_count >= 2
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
-    assert any(type(obj).__name__ == "ChangelogEntry" for obj in add_calls)
+    releases = [obj for obj in add_calls if type(obj).__name__ == "Announcement"]
+    assert [(a.id, a.kind, a.audience, a.title, a.message) for a in releases] == [
+        (1, "release", "staff", "Release 1", "Body text"),
+        (2, "notice", "everyone", None, "hello"),
+    ]
+    assert releases[1].banner is True
     findings = [obj for obj in add_calls if type(obj).__name__ == "MeasurementFinding"]
     assert [(f.id, f.image_id, f.status, f.proposed_unit) for f in findings] == [
         (3, 1, "pending", "um")
@@ -1693,7 +1738,7 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
 
 
 async def test_run_db_import_without_optional_sections(tmp_path) -> None:
-    """`programs`, `source_images`, `changelog_entries`, and `announcement` are optional."""
+    """`programs`, `source_images`, `announcements` (and the legacy keys) are optional."""
     dump = {
         "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
         "categories": [{"id": 1, "label": "root", "parent_id": None}],
@@ -1716,10 +1761,9 @@ async def test_run_db_import_without_optional_sections(tmp_path) -> None:
         await run_db_import(1)
 
     assert task.status == "completed"
-    # When `announcement` is absent the importer still inserts a default
-    # empty row so the singleton exists.
+    # No announcement keys at all → nothing is inserted (no singleton anymore).
     add_calls = [c.args[0] for c in mock_session.add.call_args_list]
-    assert any(type(obj).__name__ == "Announcement" for obj in add_calls)
+    assert not any(type(obj).__name__ == "Announcement" for obj in add_calls)
 
 
 async def test_run_db_import_circular_categories(tmp_path) -> None:
@@ -3300,28 +3344,33 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         instructors=[SimpleNamespace(id=1)],
         created_at=now, updated_at=now,
     )
-    changelog_entry = SimpleNamespace(
+    release = SimpleNamespace(
         id=1,
         title="Release 1",
-        body="Body text",
-        published_at=now,
+        message="Body text",
+        kind="release",
+        author_id=None,
+        audience="staff",
+        publish_at=now,
+        expires_at=None,
+        notified_at=now,
+        pinned=False,
+        banner=False,
+        programs=[],
+        groups=[SimpleNamespace(id=1)],
         created_at=now,
         updated_at=now,
     )
-    announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
     call_count = 0
 
     async def mock_execute(stmt):
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [changelog_entry], 9: []}
-        if call_count <= 9:
-            rows = data_map[call_count]
-            result.scalars.return_value.all.return_value = rows
-            result.scalars.return_value.unique.return_value.all.return_value = rows
-        else:
-            result.scalar_one_or_none.return_value = announcement
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [release], 9: [], 10: [], 11: []}
+        rows = data_map[call_count]
+        result.scalars.return_value.all.return_value = rows
+        result.scalars.return_value.unique.return_value.all.return_value = rows
         return result
 
     mock_session = AsyncMock()
@@ -3353,7 +3402,8 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         dump = json.load(f)
     assert dump["groups"][0]["member_ids"] == [2]
     assert dump["groups"][0]["instructor_ids"] == [1]
-    assert dump["changelog_entries"][0]["title"] == "Release 1"
+    assert dump["announcements"][0]["title"] == "Release 1"
+    assert dump["announcements"][0]["group_ids"] == [1]
 
 
 # ── run_rebuild_tiles tests (issue #735) ───────────────────
@@ -3943,3 +3993,118 @@ async def test_run_with_cancel_poll_poller_error_grace_timeout() -> None:
         )
     await asyncio.wait([worker_task])
     assert worker_task.cancelled()
+
+
+# ── _announcement_rows_from_dump (#1833) ──────────────────────
+
+
+def test_announcement_rows_from_new_dump_passthrough() -> None:
+    from app.admin_ops import _announcement_rows_from_dump
+
+    rows = [{"id": 3, "kind": "event", "audience": "targeted", "program_ids": [1]}]
+    dump = {"announcements": rows, "changelog_entries": [{"id": 9}], "announcement": {"message": "x"}}
+    assert _announcement_rows_from_dump(dump) == rows
+    assert _announcement_rows_from_dump({"announcements": []}) == []
+
+
+def test_announcement_rows_from_legacy_dump_maps_changelog_and_banner() -> None:
+    from app.admin_ops import _announcement_rows_from_dump
+
+    dump = {
+        "changelog_entries": [
+            {
+                "id": 2,
+                "title": "Release 2",
+                "body": "Notes",
+                "published_at": "2025-01-02T00:00:00+00:00",
+                "created_at": None,
+                "updated_at": "2025-01-03T00:00:00+00:00",
+            }
+        ],
+        "announcement": {
+            "message": "Maintenance tonight",
+            "enabled": True,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+        },
+    }
+    rows = _announcement_rows_from_dump(dump)
+    assert rows[0] == {
+        "id": 2,
+        "title": "Release 2",
+        "message": "Notes",
+        "kind": "release",
+        "audience": "staff",
+        "author_id": None,
+        "publish_at": "2025-01-02T00:00:00+00:00",
+        "notified_at": "2025-01-02T00:00:00+00:00",
+        "created_at": "2025-01-02T00:00:00+00:00",
+        "updated_at": "2025-01-03T00:00:00+00:00",
+    }
+    banner = rows[1]
+    assert banner["id"] == 3  # next free id after the release notes
+    assert banner["kind"] == "notice"
+    assert banner["audience"] == "everyone"
+    assert banner["banner"] is True
+    assert banner["publish_at"] == "2025-01-01T00:00:00+00:00"
+
+
+def test_announcement_rows_from_legacy_dump_skips_blank_or_disabled_banner() -> None:
+    from app.admin_ops import _announcement_rows_from_dump
+
+    assert _announcement_rows_from_dump({"announcement": {"message": "  ", "enabled": True}}) == []
+    (row,) = _announcement_rows_from_dump(
+        {"announcement": {"message": "Draft", "enabled": False, "created_at": "2025-01-01T00:00:00+00:00"}}
+    )
+    assert row["id"] == 1
+    assert row["publish_at"] is None
+    assert row["notified_at"] is None
+    assert _announcement_rows_from_dump({}) == []
+
+
+def test_seed_announcement_seen_mirrors_migration_for_legacy_dumps() -> None:
+    from app.admin_ops import _seed_announcement_seen
+
+    rows = [
+        {"id": 1, "kind": "release", "notified_at": "2025-01-02T00:00:00+00:00"},
+        {"id": 2, "kind": "release", "notified_at": "2025-02-01T00:00:00+00:00"},
+        {"id": 3, "kind": "notice", "notified_at": "2025-01-01T00:00:00+00:00"},
+    ]
+    meta = {"theme": "dark", "changelog_last_read_at": "2025-01-15T00:00:00+00:00"}
+    out = _seed_announcement_seen(meta, rows)
+    assert out == {
+        "theme": "dark",
+        "changelog_last_read_at": "2025-01-15T00:00:00+00:00",
+        "announcement_seen": {"1": "2025-01-02T00:00:00+00:00"},
+    }
+    # Untouched when there is no watermark / nothing to seed.
+    assert _seed_announcement_seen({"theme": "light"}, rows) == {"theme": "light"}
+    assert _seed_announcement_seen(None, rows) is None
+    assert _seed_announcement_seen(
+        {"changelog_last_read_at": "2024-01-01T00:00:00+00:00"}, rows
+    ) == {"changelog_last_read_at": "2024-01-01T00:00:00+00:00"}
+
+
+async def test_run_db_import_legacy_dump_seeds_announcement_seen(tmp_path) -> None:
+    """Old dumps: users' ``changelog_last_read_at`` seeds ``announcement_seen``."""
+    dump = _full_dump()
+    dump["users"][0]["metadata"] = {
+        "theme": "dark",
+        "changelog_last_read_at": "2025-01-10T00:00:00+00:00",
+    }
+    input_file = tmp_path / "legacy.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    add_calls = [c.args[0] for c in mock_session.add.call_args_list]
+    user = next(
+        obj for obj in add_calls
+        if type(obj).__name__ == "User" and obj.id == dump["users"][0]["id"]
+    )
+    assert user.metadata_["theme"] == "dark"
+    assert user.metadata_["announcement_seen"] == {"1": "2025-01-02T00:00:00+00:00"}
