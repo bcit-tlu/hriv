@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import announcements as rules
+from ..announcements import announcements_feature_gate as _feature_gate
 from ..auth import get_current_user, require_role
 from ..database import get_db, settings
 from ..models import (
@@ -40,12 +41,6 @@ from ..schemas import (
     AnnouncementUpdate,
     ReactionsOut,
 )
-
-def _feature_gate() -> None:
-    """Dark-launch: every route 404s while ``ANNOUNCEMENTS_ENABLED`` is off."""
-    if not settings.announcements_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
-
 
 # The flag gate is a router-level dependency so it runs before any auth/role
 # dependency: a disabled API is uniformly 404, never 401/403.
@@ -91,8 +86,7 @@ def _serialize(
         seen=rules.has_seen(user, ann),
         reactions=rules.reaction_counts(ann),
         my_reactions=rules.my_reactions(ann, user),
-        # Scoped media tokens are minted by #1835; ids are already resolvable.
-        media_tokens={str(media_id): "" for media_id in rules.media_ids_in(ann.message)},
+        media_tokens=rules.media_tokens_for(ann.message),
         can_edit=rules.can_edit(user, ann),
         seen_count=stats.seen_count if stats else None,
         audience_size=stats.audience_size if stats else None,

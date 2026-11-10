@@ -179,7 +179,7 @@ async def test_inbox_filters_by_visibility_and_serializes(no_stats) -> None:
     assert first.icon == "Campaign" and first.severity == "info"
     assert first.can_edit is False
     assert first.seen_count is None and first.audience_size is None
-    assert out[1].media_tokens == {"3": ""}
+    assert list(out[1].media_tokens) == ["3"] and out[1].media_tokens["3"]
     assert out[1].group_names == ["G7"]
     no_stats.assert_not_awaited()  # students never trigger the count queries
     sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))

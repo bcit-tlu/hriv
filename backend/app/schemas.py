@@ -316,6 +316,17 @@ class ReactionsOut(BaseModel):
     my_reactions: list[str]
 
 
+class MediaUploadOut(BaseModel):
+    """``POST /api/media/``: ``tokenized_url`` is ready to paste into Markdown."""
+
+    id: int
+    url: str
+    tokenized_url: str
+    content_type: str
+    size_bytes: int
+    original_name: str
+
+
 # ── Changelog ────────────────────────────────────────────
 
 class ChangelogEntryOut(BaseModel):
