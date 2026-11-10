@@ -98,7 +98,7 @@ def _db(rows=None, *, one=None) -> AsyncMock:
 
 
 def _refresh_like_db(obj) -> None:
-    obj.id = getattr(obj, "id", None) or 99
+    obj.id = getattr(obj, "id") or 99
     obj.created_at = obj.created_at or NOW
     obj.updated_at = obj.updated_at or NOW
 
@@ -124,6 +124,8 @@ def test_feature_gate_404_when_disabled(monkeypatch) -> None:
     assert exc.value.status_code == 404
     monkeypatch.setattr(router_module.settings, "announcements_enabled", True)
     assert _feature_gate() is None
+    # Router-level so it runs before auth: disabled API is 404, never 401/403.
+    assert any(d.dependency is _feature_gate for d in router_module.router.dependencies)
 
 
 # ── visibility matrix (rules.can_view) ────────────────────────
@@ -164,7 +166,7 @@ async def test_inbox_filters_by_visibility_and_serializes(no_stats) -> None:
     targeted = _ann(id=12, audience="targeted", groups=[_group(7)], message="see /api/media/3 and /api/media/3")
     db = _db([visible, hidden, targeted])
 
-    out = await list_announcements(db, student, None, scope="inbox")
+    out = await list_announcements(db, student, scope="inbox")
 
     assert [a.id for a in out] == [10, 12]
     first = out[0]
@@ -190,7 +192,7 @@ async def test_inbox_site_author_and_staff_counts() -> None:
     stats = {10: rules.SeenStats(seen_count=4, audience_size=9)}
     db = _db([ann])
     with patch.object(router_module, "_load_stats", AsyncMock(return_value=stats)) as load:
-        (out,) = await list_announcements(db, instructor, None, scope="inbox")
+        (out,) = await list_announcements(db, instructor, scope="inbox")
     load.assert_awaited_once()
     assert out.author_name == "Site"
     assert out.seen_count == 4 and out.audience_size == 9
@@ -199,7 +201,7 @@ async def test_inbox_site_author_and_staff_counts() -> None:
 async def test_mine_requires_admin_or_instructor(no_stats) -> None:
     for role in ("student", "staff"):
         with pytest.raises(HTTPException) as exc:
-            await list_announcements(_db([]), _user(role), None, scope="mine")
+            await list_announcements(_db([]), _user(role), scope="mine")
         assert exc.value.status_code == 403
 
 
@@ -210,14 +212,14 @@ async def test_mine_scope_instructor_sees_own_and_co_managed_read_only(no_stats)
     other = _ann(id=3, author_id=4, audience="everyone")
     db = _db([own_draft, co_managed, other])
 
-    out = await list_announcements(db, me, None, scope="mine")
+    out = await list_announcements(db, me, scope="mine")
 
     assert [(a.id, a.can_edit, a.status) for a in out] == [(1, True, "draft"), (2, False, "live")]
 
 
 async def test_mine_scope_admin_sees_everything(no_stats) -> None:
     rows = [_ann(id=1, author_id=4), _ann(id=2, author_id=5, audience="targeted", groups=[_group(7)])]
-    out = await list_announcements(_db(rows), _user("admin", id=9), None, scope="mine")
+    out = await list_announcements(_db(rows), _user("admin", id=9), scope="mine")
     assert [(a.id, a.can_edit) for a in out] == [(1, True), (2, True)]
 
 
@@ -233,7 +235,7 @@ def test_status_derivation() -> None:
 
 async def test_broadcast_returns_minimal_shape_and_filters_in_sql() -> None:
     db = _db([_ann(id=1, kind="warning", banner=True)])
-    (out,) = await list_broadcast(db, None)
+    (out,) = await list_broadcast(db)
     assert out.model_dump().keys() == {
         "id", "title", "message", "kind", "icon", "severity", "publish_at", "expires_at", "updated_at"
     }
@@ -270,7 +272,7 @@ async def test_create_publishes_now_by_default_and_sets_notified_at(no_stats) ->
     db = _targets_db(programs=[program])
 
     out = await create_announcement(
-        AnnouncementCreate(title="Lab moved", message="Room 2", program_ids=[1]), db, me, None
+        AnnouncementCreate(title="Lab moved", message="Room 2", program_ids=[1]), db, me
     )
 
     created = db.add.call_args.args[0]
@@ -287,7 +289,7 @@ async def test_create_draft_has_no_publish_or_notified_at(no_stats) -> None:
     program = _program(1)
     me = _user("instructor", id=3, programs=[program])
     out = await create_announcement(
-        AnnouncementCreate(title="Soon", program_ids=[1], draft=True), _targets_db(programs=[program]), me, None
+        AnnouncementCreate(title="Soon", program_ids=[1], draft=True), _targets_db(programs=[program]), me
     )
     assert out.status == "draft" and out.publish_at is None and out.notified_at is None
 
@@ -299,6 +301,9 @@ async def test_create_schema_validation() -> None:
         AnnouncementCreate(title="x", audience="everyone", program_ids=[1])
     with pytest.raises(ValidationError):
         AnnouncementCreate(title="x", audience="everyone", publish_at=NOW, expires_at=NOW)
+    naive = AnnouncementCreate(title="x", audience="everyone", expires_at=datetime(2030, 1, 1))
+    assert naive.expires_at.tzinfo is not None  # naive input is taken as UTC
+    assert AnnouncementUpdate(publish_at=datetime(2030, 1, 1)).publish_at.tzinfo is not None
     with pytest.raises(ValidationError):
         AnnouncementCreate(title="x", audience="everyone", message="m" * 10_001)
     with pytest.raises(ValidationError):
@@ -321,7 +326,7 @@ async def test_instructor_cannot_use_admin_only_audience_or_kind(body_kwargs, no
     me = _user("instructor", id=3, programs=[program])
     with pytest.raises(HTTPException) as exc:
         await create_announcement(
-            AnnouncementCreate(title="x", **body_kwargs), _targets_db(programs=[program]), me, None
+            AnnouncementCreate(title="x", **body_kwargs), _targets_db(programs=[program]), me
         )
     assert exc.value.status_code == 403
 
@@ -330,7 +335,7 @@ async def test_instructor_cannot_target_foreign_program_or_group(no_stats) -> No
     me = _user("instructor", id=3, programs=[_program(1)])
     with pytest.raises(HTTPException) as exc:
         await create_announcement(
-            AnnouncementCreate(title="x", program_ids=[2]), _targets_db(programs=[_program(2)]), me, None
+            AnnouncementCreate(title="x", program_ids=[2]), _targets_db(programs=[_program(2)]), me
         )
     assert exc.value.status_code == 403 and "program" in exc.value.detail
     with pytest.raises(HTTPException) as exc:
@@ -338,7 +343,6 @@ async def test_instructor_cannot_target_foreign_program_or_group(no_stats) -> No
             AnnouncementCreate(title="x", group_ids=[7]),
             _targets_db(groups=[_group(7, instructor_ids=[4])]),
             me,
-            None,
         )
     assert exc.value.status_code == 403 and "group" in exc.value.detail
 
@@ -348,7 +352,6 @@ async def test_admin_may_broadcast_release_notes(no_stats) -> None:
         AnnouncementCreate(title="v2", audience="staff", kind="release", banner=True),
         _targets_db(),
         _user("admin", id=9),
-        None,
     )
     assert out.kind == "release" and out.icon == "RocketLaunch" and out.audience == "staff"
 
@@ -356,7 +359,7 @@ async def test_admin_may_broadcast_release_notes(no_stats) -> None:
 async def test_create_unknown_target_ids_422(no_stats) -> None:
     with pytest.raises(HTTPException) as exc:
         await create_announcement(
-            AnnouncementCreate(title="x", group_ids=[7, 8]), _targets_db(groups=[_group(7)]), _user("admin"), None
+            AnnouncementCreate(title="x", group_ids=[7, 8]), _targets_db(groups=[_group(7)]), _user("admin")
         )
     assert exc.value.status_code == 422
 
@@ -382,14 +385,14 @@ def _update_db(ann, programs=(), groups=()):
 async def test_update_message_only_keeps_notified_at(no_stats) -> None:
     ann = _ann(author_id=3)
     before = ann.notified_at
-    out = await update_announcement(10, AnnouncementUpdate(message="edited"), _update_db(ann), _user("instructor", id=3), None)
+    out = await update_announcement(10, AnnouncementUpdate(message="edited"), _update_db(ann), _user("instructor", id=3))
     assert ann.message == "edited" and ann.notified_at == before
     assert out.message == "edited"
 
 
 async def test_update_notify_again_bumps_notified_at(no_stats) -> None:
     ann = _ann(author_id=3)
-    await update_announcement(10, AnnouncementUpdate(notify_again=True), _update_db(ann), _user("instructor", id=3), None)
+    await update_announcement(10, AnnouncementUpdate(notify_again=True), _update_db(ann), _user("instructor", id=3))
     assert ann.notified_at > NOW - HOUR
     assert ann.publish_at == NOW - HOUR  # publish date untouched
 
@@ -398,18 +401,18 @@ async def test_update_publish_draft_sets_notified_at_and_unpublish_clears(no_sta
     ann = _ann(author_id=3, publish_at=None, notified_at=None)
     db = _update_db(ann)
     me = _user("instructor", id=3)
-    await update_announcement(10, AnnouncementUpdate(draft=False), db, me, None)
+    await update_announcement(10, AnnouncementUpdate(draft=False), db, me)
     assert ann.publish_at is not None and ann.notified_at == ann.publish_at
-    await update_announcement(10, AnnouncementUpdate(draft=True), db, me, None)
+    await update_announcement(10, AnnouncementUpdate(draft=True), db, me)
     assert ann.publish_at is None and ann.notified_at is None
 
 
 async def test_update_by_non_author_403_and_admin_ok(no_stats) -> None:
     ann = _ann(author_id=3)
     with pytest.raises(HTTPException) as exc:
-        await update_announcement(10, AnnouncementUpdate(title="t"), _update_db(ann), _user("instructor", id=4), None)
+        await update_announcement(10, AnnouncementUpdate(title="t"), _update_db(ann), _user("instructor", id=4))
     assert exc.value.status_code == 403
-    await update_announcement(10, AnnouncementUpdate(title="t"), _update_db(ann), _user("admin", id=9), None)
+    await update_announcement(10, AnnouncementUpdate(title="t"), _update_db(ann), _user("admin", id=9))
     assert ann.title == "t"
 
 
@@ -418,35 +421,35 @@ async def test_update_targeting_revalidates_authority_only_when_touched(no_stats
     ann = _ann(author_id=3, audience="targeted", groups=[group])
     me = _user("instructor", id=3)
     # message-only edit still works…
-    await update_announcement(10, AnnouncementUpdate(message="m"), _update_db(ann, groups=[group]), me, None)
+    await update_announcement(10, AnnouncementUpdate(message="m"), _update_db(ann, groups=[group]), me)
     # …but touching the audience re-checks group authority.
     with pytest.raises(HTTPException) as exc:
-        await update_announcement(10, AnnouncementUpdate(group_ids=[7]), _update_db(ann, groups=[group]), me, None)
+        await update_announcement(10, AnnouncementUpdate(group_ids=[7]), _update_db(ann, groups=[group]), me)
     assert exc.value.status_code == 403
     with pytest.raises(HTTPException) as exc:
-        await update_announcement(10, AnnouncementUpdate(group_ids=[]), _update_db(ann, groups=[group]), me, None)
+        await update_announcement(10, AnnouncementUpdate(group_ids=[]), _update_db(ann, groups=[group]), me)
     assert exc.value.status_code == 422  # targeted with no targets
 
 
 async def test_update_switching_to_everyone_drops_targets_for_admin(no_stats) -> None:
     ann = _ann(author_id=9, audience="targeted", groups=[_group(7)])
-    await update_announcement(10, AnnouncementUpdate(audience="everyone"), _update_db(ann), _user("admin", id=9), None)
+    await update_announcement(10, AnnouncementUpdate(audience="everyone"), _update_db(ann), _user("admin", id=9))
     assert ann.audience == "everyone" and ann.groups == [] and ann.programs == []
 
 
 async def test_update_expiry_validation_and_clear(no_stats) -> None:
     ann = _ann(author_id=9)
     with pytest.raises(HTTPException) as exc:
-        await update_announcement(10, AnnouncementUpdate(expires_at=NOW - 2 * HOUR), _update_db(ann), _user("admin", id=9), None)
+        await update_announcement(10, AnnouncementUpdate(expires_at=NOW - 2 * HOUR), _update_db(ann), _user("admin", id=9))
     assert exc.value.status_code == 422
     ann.expires_at = NOW + HOUR
-    await update_announcement(10, AnnouncementUpdate(clear_expires_at=True), _update_db(ann), _user("admin", id=9), None)
+    await update_announcement(10, AnnouncementUpdate(clear_expires_at=True), _update_db(ann), _user("admin", id=9))
     assert ann.expires_at is None
 
 
 async def test_update_404_when_missing(no_stats) -> None:
     with pytest.raises(HTTPException) as exc:
-        await update_announcement(99, AnnouncementUpdate(title="t"), _update_db(None), _user("admin"), None)
+        await update_announcement(99, AnnouncementUpdate(title="t"), _update_db(None), _user("admin"))
     assert exc.value.status_code == 404
 
 
@@ -454,9 +457,9 @@ async def test_delete_author_or_admin_only() -> None:
     ann = _ann(author_id=3)
     db = _db(one=ann)
     with pytest.raises(HTTPException) as exc:
-        await delete_announcement(10, db, _user("instructor", id=4), None)
+        await delete_announcement(10, db, _user("instructor", id=4))
     assert exc.value.status_code == 403
-    response = await delete_announcement(10, db, _user("instructor", id=3), None)
+    response = await delete_announcement(10, db, _user("instructor", id=3))
     assert response.status_code == 204
     db.delete.assert_awaited_once_with(ann)
 
@@ -469,8 +472,8 @@ async def test_mark_seen_merges_idempotently_and_404s_when_invisible() -> None:
     ann = _ann(audience="everyone")
     db = _db(one=ann)
 
-    await mark_announcement_seen(10, db, student, None)
-    await mark_announcement_seen(10, db, student, None)
+    await mark_announcement_seen(10, db, student)
+    await mark_announcement_seen(10, db, student)
 
     assert student.metadata_ == {
         "theme": "dark",
@@ -478,9 +481,12 @@ async def test_mark_seen_merges_idempotently_and_404s_when_invisible() -> None:
     }
     assert db.commit.await_count == 2
     assert rules.has_seen(student, ann) is True
+    # The write is an atomic JSONB merge, not a wholesale metadata overwrite.
+    update_calls = [c for c in db.execute.call_args_list if "jsonb_build_object" in str(c.args[0])]
+    assert len(update_calls) == 2 and update_calls[0].args[1]["user_id"] == 5
 
     with pytest.raises(HTTPException) as exc:
-        await mark_announcement_seen(10, _db(one=_ann(audience="staff")), student, None)
+        await mark_announcement_seen(10, _db(one=_ann(audience="staff")), student)
     assert exc.value.status_code == 404
 
 
@@ -537,6 +543,7 @@ async def test_load_stats_queries_counts_without_identities() -> None:
     union_sql = calls[2]
     for table in ("announcement_programs", "user_programs", "group_members", "group_instructors"):
         assert table in union_sql
+    assert "announcements.author_id" in union_sql  # the author is part of the reach
     assert "count(DISTINCT" in union_sql
     assert await _load_stats(db, []) == {}
 
@@ -549,31 +556,31 @@ async def test_reactions_add_is_idempotent_and_remove_toggles_off() -> None:
     ann = _ann(reactions=[_reaction(6, "heart")])
     db = _db(one=ann)
 
-    out = await add_reaction(10, "heart", db, me, None)
+    out = await add_reaction(10, "heart", db, me)
     assert out.reactions == {"heart": 2} and out.my_reactions == ["heart"]
     added = ann.reactions[-1]
     assert added.user_id == 5 and added.emoji == "heart"
-    out = await add_reaction(10, "heart", db, me, None)
+    out = await add_reaction(10, "heart", db, me)
     assert out.reactions == {"heart": 2}
     assert db.commit.await_count == 1  # second add was a no-op
 
-    out = await remove_reaction(10, "heart", db, me, None)
+    out = await remove_reaction(10, "heart", db, me)
     assert out.reactions == {"heart": 1} and out.my_reactions == []
     assert db.commit.await_count == 2
-    out = await remove_reaction(10, "heart", db, me, None)
+    out = await remove_reaction(10, "heart", db, me)
     assert db.commit.await_count == 2
 
 
 async def test_reaction_allowlist_and_live_only() -> None:
     me = _user("student", id=5)
     with pytest.raises(HTTPException) as exc:
-        await add_reaction(10, "poop", _db(one=_ann()), me, None)
+        await add_reaction(10, "poop", _db(one=_ann()), me)
     assert exc.value.status_code == 422
     with pytest.raises(HTTPException) as exc:
-        await add_reaction(10, "+1", _db(one=_ann(publish_at=None)), me, None)
+        await add_reaction(10, "+1", _db(one=_ann(publish_at=None)), me)
     assert exc.value.status_code == 403
     with pytest.raises(HTTPException) as exc:
-        await add_reaction(10, "+1", _db(one=_ann(audience="staff")), me, None)
+        await add_reaction(10, "+1", _db(one=_ann(audience="staff")), me)
     assert exc.value.status_code == 404
 
 
@@ -587,35 +594,29 @@ def test_reaction_payload_never_carries_identities() -> None:
 
 
 def test_literal_routes_not_shadowed_by_param_routes() -> None:
-    from fastapi import FastAPI
+    """Literal sub-paths must register before ``/{announcement_id}`` routes.
+
+    Starlette resolves the first FULL match in registration order, so iterate
+    the router's own routes the way the mounted app would.
+    """
     from starlette.routing import Match
 
-    app = FastAPI()
-    app.include_router(router_module.router, prefix="/api")
-
     def _first_match_endpoint(method: str, path: str):
-        scope = {"type": "http", "method": method, "path": path}
-        for route in app.router.routes:
-            match, _ = route.matches(scope)
-            if match != Match.FULL:
-                continue
-            if getattr(route, "endpoint", None) is not None:
+        for route in router_module.router.routes:
+            match, _ = route.matches({"type": "http", "method": method, "path": path})
+            if match == Match.FULL:
                 return route.endpoint
-            for ctx in route.effective_route_contexts():
-                if ctx.path_regex.match(path) and method in ctx.original_route.methods and ctx.endpoint is not None:
-                    return ctx.endpoint
         return None
 
     cases = [
-        ("GET", "/api/announcements/broadcast", "list_broadcast"),
-        ("GET", "/api/announcements/", "list_announcements"),
-        ("PUT", "/api/announcements/7/seen", "mark_announcement_seen"),
-        ("PUT", "/api/announcements/7/reactions/heart", "add_reaction"),
-        ("DELETE", "/api/announcements/7/reactions/heart", "remove_reaction"),
-        ("PATCH", "/api/announcements/7", "update_announcement"),
+        ("GET", "/announcements/broadcast", "list_broadcast"),
+        ("GET", "/announcements/", "list_announcements"),
+        ("PUT", "/announcements/7/seen", "mark_announcement_seen"),
+        ("PUT", "/announcements/7/reactions/heart", "add_reaction"),
+        ("DELETE", "/announcements/7/reactions/heart", "remove_reaction"),
+        ("PATCH", "/announcements/7", "update_announcement"),
     ]
     for method, path, expected in cases:
         endpoint = _first_match_endpoint(method, path)
         assert endpoint is not None, f"{method} {path} matched no route"
         assert endpoint.__name__ == expected, f"{method} {path} resolved to {endpoint.__name__}"
-

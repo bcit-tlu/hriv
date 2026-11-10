@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
 
-from sqlalchemy import ColumnElement, and_, or_
+from sqlalchemy import ColumnElement, and_, or_, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authz import can_attach_program_to_category, can_manage_group
 from .models import ANNOUNCEMENT_STAFF_ROLES, Announcement, Group, Program, User
@@ -58,6 +59,35 @@ def has_seen(user: User, ann: Announcement) -> bool:
     if marker is None or ann.notified_at is None:
         return marker is not None
     return marker >= ann.notified_at.isoformat()
+
+
+async def mark_seen_atomic(
+    db: AsyncSession, user: User, announcements: Iterable[Announcement]
+) -> dict[str, str]:
+    """Merge seen markers in SQL (``jsonb ||``) so concurrent requests for
+    different announcements cannot overwrite each other's marker, then mirror
+    the result on the in-memory user. Callers commit."""
+    import json
+
+    markers = {
+        str(ann.id): (ann.notified_at or ann.publish_at or utcnow()).isoformat()
+        for ann in announcements
+    }
+    if markers:
+        await db.execute(
+            text(
+                "UPDATE users SET metadata = COALESCE(metadata, '{}'::jsonb) "
+                "|| jsonb_build_object(:key, "
+                "   COALESCE(metadata->:key, '{}'::jsonb) || CAST(:markers AS jsonb)) "
+                "WHERE id = :user_id"
+            ),
+            {"key": SEEN_METADATA_KEY, "markers": json.dumps(markers), "user_id": user.id},
+        )
+    meta = dict(user.metadata_ or {})
+    seen = {**dict(meta.get(SEEN_METADATA_KEY) or {}), **markers}
+    meta[SEEN_METADATA_KEY] = seen
+    user.metadata_ = meta
+    return seen
 
 
 def mark_seen(user: User, announcements: Iterable[Announcement]) -> dict[str, str]:

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
@@ -190,6 +190,13 @@ class LegacyAnnouncementUpdate(BaseModel):
 ANNOUNCEMENT_MESSAGE_MAX_CHARS = 10_000
 
 
+def _assume_utc(v: datetime | None) -> datetime | None:
+    """Naive timestamps are taken as UTC so comparisons with ``now()`` never raise."""
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
+
+
 class AnnouncementCreate(BaseModel):
     """``POST /api/announcements``.
 
@@ -210,6 +217,7 @@ class AnnouncementCreate(BaseModel):
     banner: bool = False
 
     _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _utc_dates = field_validator("publish_at", "expires_at", mode="after")(_assume_utc)
 
     @model_validator(mode="after")
     def _check_targets_and_window(self) -> "AnnouncementCreate":
@@ -245,6 +253,7 @@ class AnnouncementUpdate(BaseModel):
     notify_again: bool = False
 
     _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _utc_dates = field_validator("publish_at", "expires_at", mode="after")(_assume_utc)
 
     def touches_targeting(self) -> bool:
         return (

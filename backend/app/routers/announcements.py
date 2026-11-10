@@ -15,6 +15,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import distinct, func, select, union
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import announcements as rules
@@ -40,15 +41,19 @@ from ..schemas import (
     ReactionsOut,
 )
 
-router = APIRouter(prefix="/announcements", tags=["announcements"])
-
-_poster = require_role("admin", "instructor")
-
-
 def _feature_gate() -> None:
     """Dark-launch: every route 404s while ``ANNOUNCEMENTS_ENABLED`` is off."""
     if not settings.announcements_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
+# The flag gate is a router-level dependency so it runs before any auth/role
+# dependency: a disabled API is uniformly 404, never 401/403.
+router = APIRouter(
+    prefix="/announcements", tags=["announcements"], dependencies=[Depends(_feature_gate)]
+)
+
+_poster = require_role("admin", "instructor")
 
 
 # ── serialisation ─────────────────────────────────────────────────────────
@@ -170,7 +175,11 @@ async def _load_stats(
             .join(group_instructors, group_instructors.c.group_id == announcement_groups.c.group_id)
             .where(announcement_groups.c.announcement_id.in_(targeted_ids))
         )
-        reach = union(by_program, by_member, by_instructor).subquery("reach")
+        # Authors always see their own post (can_view), so count them too.
+        by_author = select(
+            Announcement.id.label("announcement_id"), Announcement.author_id.label("user_id")
+        ).where(Announcement.id.in_(targeted_ids), Announcement.author_id.is_not(None))
+        reach = union(by_program, by_member, by_instructor, by_author).subquery("reach")
         size_result = await db.execute(
             select(reach.c.announcement_id, func.count(distinct(reach.c.user_id))).group_by(
                 reach.c.announcement_id
@@ -250,7 +259,6 @@ def _check_authority(
 @router.get("/broadcast", response_model=list[AnnouncementBroadcastOut])
 async def list_broadcast(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     """Live ``everyone`` banner announcements. Public – rendered on the login screen."""
     result = await db.execute(
@@ -269,7 +277,6 @@ async def list_broadcast(
 async def list_announcements(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    _gate: Annotated[None, Depends(_feature_gate)],
     scope: Literal["inbox", "mine"] = Query("inbox"),
 ):
     """``inbox``: live announcements the caller can see. ``mine`` (admin/instructor):
@@ -310,7 +317,6 @@ async def create_announcement(
     body: AnnouncementCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(_poster)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     programs, groups = await _load_targets(db, body.program_ids, body.group_ids)
     _check_authority(
@@ -350,7 +356,6 @@ async def update_announcement(
     body: AnnouncementUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(_poster)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     """Author or admin. Edits never resurface a post unless ``notify_again``."""
     ann = await _get_announcement(db, announcement_id)
@@ -421,7 +426,6 @@ async def delete_announcement(
     announcement_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(_poster)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     ann = await _get_announcement(db, announcement_id)
     if not rules.can_edit(current_user, ann):
@@ -438,11 +442,10 @@ async def mark_announcement_seen(
     announcement_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     """Record that the caller has seen the current version. Idempotent."""
     ann = await _visible_or_404(db, announcement_id, current_user)
-    rules.mark_seen(current_user, [ann])
+    await rules.mark_seen_atomic(db, current_user, [ann])
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -471,7 +474,6 @@ async def add_reaction(
     emoji: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     _validate_emoji(emoji)
     ann = await _reactable_or_error(db, announcement_id, current_user)
@@ -479,7 +481,11 @@ async def add_reaction(
         ann.reactions.append(
             AnnouncementReaction(announcement_id=ann.id, user_id=current_user.id, emoji=emoji)
         )
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            # A concurrent identical PUT won the unique constraint; idempotent.
+            await db.rollback()
         await db.refresh(ann)
     return ReactionsOut(
         reactions=rules.reaction_counts(ann), my_reactions=rules.my_reactions(ann, current_user)
@@ -492,7 +498,6 @@ async def remove_reaction(
     emoji: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    _gate: Annotated[None, Depends(_feature_gate)],
 ):
     _validate_emoji(emoji)
     ann = await _reactable_or_error(db, announcement_id, current_user)
