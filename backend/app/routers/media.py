@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -25,6 +26,7 @@ from ..auth import require_role
 from ..database import get_db, settings
 from ..filenames import sanitize_upload_filename
 from ..media_tokens import MediaTokenError, media_url, tokenized_media_url, validate_media_token
+from ..middleware import MEDIA_UPLOAD_MAX_BYTES
 from ..models import ContentMedia, User
 from ..schemas import MediaUploadOut
 from ..upload_staging import discard_staging, staging_path_for
@@ -41,7 +43,8 @@ IMAGE_TYPES: dict[str, str] = {
 VIDEO_TYPES: dict[str, str] = {"video/mp4": ".mp4", "video/webm": ".webm"}
 VIDEO_EXTENSIONS: dict[str, set[str]] = {"video/mp4": {".mp4", ".m4v"}, "video/webm": {".webm"}}
 IMAGE_MAX_BYTES = 10 * 1024 * 1024
-VIDEO_MAX_BYTES = 50 * 1024 * 1024
+VIDEO_MAX_BYTES = MEDIA_UPLOAD_MAX_BYTES
+ORIGINAL_NAME_MAX_CHARS = 255  # ContentMedia.original_name column width
 CHUNK_SIZE = 1024 * 1024
 MEDIA_CACHE_CONTROL = "private, max-age=3600"
 
@@ -117,6 +120,8 @@ async def upload_media(
 
     original_name = sanitize_upload_filename(file.filename)
     ext = Path(original_name).suffix.lower()
+    if len(original_name) > ORIGINAL_NAME_MAX_CHARS:
+        original_name = original_name[: ORIGINAL_NAME_MAX_CHARS - len(ext)] + ext
     if content_type in VIDEO_TYPES:
         if ext not in VIDEO_EXTENSIONS[content_type]:
             raise _unsupported("Video extension does not match its declared type")
@@ -151,7 +156,9 @@ async def upload_media(
     try:
         await db.commit()
     except BaseException:
-        discard_staging(stored_path)
+        # Keep the file: if the commit actually persisted, deleting it
+        # would leave a row that 404s forever; an orphaned file is tolerated.
+        await db.rollback()
         raise
     await db.refresh(media)
     return MediaUploadOut(
@@ -197,12 +204,25 @@ async def serve_media(
     if not candidate.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
 
-    safe_name = media.original_name.replace('"', "").replace("\r", "").replace("\n", "") or name
     return FileResponse(
         candidate,
         media_type=media.content_type,
         headers={
             "Cache-Control": MEDIA_CACHE_CONTROL,
-            "Content-Disposition": f'inline; filename="{safe_name}"',
+            "Content-Disposition": content_disposition(media.original_name, fallback=name),
         },
     )
+
+
+def content_disposition(original_name: str, *, fallback: str) -> str:
+    """``inline`` disposition that survives Starlette's Latin-1 header encoding.
+
+    ``filename=`` carries an ASCII-only fallback; non-ASCII names ride in the
+    RFC 5987 ``filename*`` parameter so Unicode uploads do not 500 on GET.
+    """
+    cleaned = original_name.replace('"', "").replace("\r", "").replace("\n", "")
+    ascii_name = cleaned.encode("ascii", "ignore").decode("ascii").strip() or fallback
+    header = f'inline; filename="{ascii_name}"'
+    if ascii_name != cleaned:
+        header += f"; filename*=UTF-8''{quote(cleaned)}"
+    return header

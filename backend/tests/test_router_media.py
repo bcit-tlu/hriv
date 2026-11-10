@@ -107,6 +107,40 @@ async def test_upload_size_limits(_media_dir) -> None:
     assert out.size_bytes == IMAGE_MAX_BYTES + 10
 
 
+async def test_upload_truncates_long_original_name(_media_dir) -> None:
+    long_name = "a" * 300 + ".png"
+    out = await upload_media(_request(), _upload(PNG, long_name, "image/png"), _db(), USER, None)
+    assert len(out.original_name) == 255 and out.original_name.endswith(".png")
+
+
+async def test_upload_commit_failure_keeps_file_and_rolls_back(_media_dir) -> None:
+    db = _db()
+    db.commit = AsyncMock(side_effect=RuntimeError("connection lost"))
+    with pytest.raises(RuntimeError):
+        await upload_media(_request(), _upload(PNG, "a.png", "image/png"), db, USER, None)
+    db.rollback.assert_awaited_once()
+    assert len(os.listdir(_media_dir)) == 1  # the row may have persisted; never orphan it
+
+
+def test_media_upload_spool_cap_registered() -> None:
+    from app.middleware import _upload_body_limits
+
+    for path in ("/api/media/", "/api/media"):
+        per_part, whole = _upload_body_limits(path)
+        assert per_part == whole > VIDEO_MAX_BYTES
+    assert _upload_body_limits("/api/media/12") is None
+
+
+def test_content_disposition_unicode_and_ascii() -> None:
+    from app.routers.media import content_disposition
+
+    assert content_disposition('sh"ot.png', fallback="x") == 'inline; filename="shot.png"'
+    header = content_disposition("切片.png", fallback="abc.png")
+    assert header.startswith('inline; filename=".png"; filename*=UTF-8\'\'')
+    header.encode("latin-1")  # must be encodable by Starlette
+    assert content_disposition("🔬", fallback="abc.png").startswith('inline; filename="abc.png"')
+
+
 async def test_upload_empty_file_400(_media_dir) -> None:
     with pytest.raises(HTTPException) as exc:
         await upload_media(_request(), _upload(b"", "a.png", "image/png"), _db(), USER, None)
