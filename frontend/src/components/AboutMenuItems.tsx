@@ -20,7 +20,7 @@ export interface AboutMenuItemsProps {
   backupVersion: string | null
   /** Shown to users who can open the Documentation page. */
   onOpenGuide?: () => void
-  /** Called before navigating/opening so the host popover can close. */
+  /** Closes the host popover: called before navigating to Documentation and after the About dialog closes. */
   onNavigate?: () => void
 }
 
@@ -33,6 +33,11 @@ export default function AboutMenuItems({
   onNavigate,
 }: AboutMenuItemsProps) {
   const [aboutOpen, setAboutOpen] = useState(false)
+  // The dialog is rendered inside the popover, so the popover must stay open until it closes.
+  const closeAbout = () => {
+    setAboutOpen(false)
+    onNavigate?.()
+  }
   return (
     <>
       {onOpenGuide && (
@@ -49,20 +54,14 @@ export default function AboutMenuItems({
           <ListItemText>Documentation</ListItemText>
         </MenuItem>
       )}
-      <MenuItem
-        sx={{ py: 1.25 }}
-        onClick={() => {
-          onNavigate?.()
-          setAboutOpen(true)
-        }}
-      >
+      <MenuItem sx={{ py: 1.25 }} onClick={() => setAboutOpen(true)}>
         <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
           <InfoOutlinedIcon fontSize="small" />
         </ListItemIcon>
         <ListItemText>About</ListItemText>
       </MenuItem>
 
-      <Dialog open={aboutOpen} onClose={() => setAboutOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={aboutOpen} onClose={closeAbout} maxWidth="xs" fullWidth>
         <DialogTitle>About HRIV</DialogTitle>
         <DialogContent>
           <Typography variant="body1" fontWeight={600} gutterBottom>
@@ -107,7 +106,7 @@ export default function AboutMenuItems({
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAboutOpen(false)}>Close</Button>
+          <Button onClick={closeAbout}>Close</Button>
         </DialogActions>
       </Dialog>
     </>
