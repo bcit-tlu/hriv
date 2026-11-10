@@ -35,6 +35,7 @@ import {
 import { kindsForRole } from '../announcementKinds'
 import {
   buildTargetOptions,
+  buildUpdatePatch,
   fromLocalInput,
   initialComposerState,
   insertSnippet,
@@ -168,11 +169,7 @@ function ComposerDialog({
       const input = buildInput(draft)
       const saved =
         isEdit && source
-          ? await updateAnnouncement(source.id, {
-              ...input,
-              clear_expires_at: Boolean(source.expires_at) && input.expires_at === null,
-              notify_again: notifyAgain || undefined,
-            })
+          ? await updateAnnouncement(source.id, buildUpdatePatch(source, input, { notifyAgain }))
           : await createAnnouncement(input)
       onSaved(saved)
       onClose()

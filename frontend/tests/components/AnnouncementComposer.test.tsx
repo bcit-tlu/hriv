@@ -4,6 +4,7 @@ import * as api from '../../src/api'
 import AnnouncementComposer from '../../src/components/AnnouncementComposer'
 import {
   buildTargetOptions,
+  buildUpdatePatch,
   fromLocalInput,
   insertSnippet,
   reconcileTargets,
@@ -261,11 +262,7 @@ describe('AnnouncementComposer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled())
     expect(mockUpdate.mock.calls[0][0]).toBe(9)
-    expect(mockUpdate.mock.calls[0][1]).toMatchObject({
-      notify_again: true,
-      clear_expires_at: true,
-      expires_at: null,
-    })
+    expect(mockUpdate.mock.calls[0][1]).toEqual({ notify_again: true, clear_expires_at: true })
     expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument()
   })
 
@@ -289,5 +286,63 @@ describe('AnnouncementComposer', () => {
     fireEvent.change(screen.getByLabelText(/Title/), { target: { value: 'X' } })
     fireEvent.click(screen.getByRole('button', { name: 'Post' }))
     await waitFor(() => expect(screen.getByText(/Instructors must target/)).toBeInTheDocument())
+  })
+})
+
+describe('buildUpdatePatch', () => {
+  const base = makeAnnouncement({ status: 'live', pinned: false, banner: false })
+  const asInput = (a: ReturnType<typeof makeAnnouncement>) => ({
+    title: a.title,
+    message: a.message,
+    kind: a.kind,
+    audience: a.audience,
+    program_ids: a.program_ids,
+    group_ids: a.group_ids,
+    publish_at: a.publish_at,
+    expires_at: a.expires_at,
+    draft: a.publish_at == null,
+    pinned: a.pinned,
+    banner: a.banner,
+  })
+
+  it('sends only the changed fields (a title fix never re-sends targets or kind)', () => {
+    expect(buildUpdatePatch(base, { ...asInput(base), title: 'Fixed' })).toEqual({ title: 'Fixed' })
+  })
+
+  it('sends audience, programs and groups together when any target changes', () => {
+    expect(buildUpdatePatch(base, { ...asInput(base), group_ids: [3, 4] })).toEqual({
+      audience: 'targeted',
+      program_ids: [],
+      group_ids: [3, 4],
+    })
+  })
+
+  it('publishes a scheduled post now when its schedule is cleared', () => {
+    const scheduled = makeAnnouncement({
+      status: 'scheduled',
+      publish_at: '2031-01-01T00:00:00+00:00',
+    })
+    const patch = buildUpdatePatch(
+      scheduled,
+      { ...asInput(scheduled), publish_at: null },
+      {
+        now: () => '2026-03-10T12:00:00.000Z',
+      },
+    )
+    expect(patch).toEqual({ publish_at: '2026-03-10T12:00:00.000Z' })
+  })
+
+  it('leaves a live post alone when the schedule field is empty and flags drafts/expiry/notify', () => {
+    expect(buildUpdatePatch(base, { ...asInput(base), publish_at: null })).toEqual({})
+    const withExpiry = makeAnnouncement({ expires_at: '2031-01-01T00:00:00+00:00' })
+    expect(buildUpdatePatch(withExpiry, { ...asInput(withExpiry), expires_at: null })).toEqual({
+      clear_expires_at: true,
+    })
+    expect(
+      buildUpdatePatch(base, { ...asInput(base), draft: true }, { notifyAgain: true }),
+    ).toEqual({
+      draft: true,
+      notify_again: true,
+    })
   })
 })

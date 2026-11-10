@@ -1,4 +1,11 @@
-import type { AnnouncementKind, ApiAnnouncement, ApiGroup, ApiProgram } from './api'
+import type {
+  AnnouncementInput,
+  AnnouncementKind,
+  AnnouncementUpdateInput,
+  ApiAnnouncement,
+  ApiGroup,
+  ApiProgram,
+} from './api'
 import type { AnnouncementKindMeta } from './announcementKinds'
 import { formatRelativeTime } from './formatUtils'
 
@@ -139,4 +146,58 @@ export function insertSnippet(
   const sep =
     before.length === 0 || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
   return `${before}${sep}${snippet}\n${after}`
+}
+
+function sameInstant(a: string | null, b: string | null): boolean {
+  if (a == null || b == null) return a === b
+  return new Date(a).getTime() === new Date(b).getTime()
+}
+
+function sameIds(a: number[], b: number[]): boolean {
+  return a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i])
+}
+
+/**
+ * Edit PATCH body: only the fields that differ from `source`, so an instructor
+ * who lost one of the post's groups can still fix a typo (the API re-checks
+ * authority only for supplied target/kind fields). Clearing the schedule of a
+ * not-yet-live post publishes it now; clearing the expiry sends `clear_expires_at`.
+ */
+export function buildUpdatePatch(
+  source: ApiAnnouncement,
+  input: AnnouncementInput,
+  opts: { notifyAgain?: boolean; now?: () => string } = {},
+): AnnouncementUpdateInput {
+  const patch: AnnouncementUpdateInput = {}
+  if (input.title !== source.title) patch.title = input.title
+  if (input.message !== source.message) patch.message = input.message
+  if (input.kind !== source.kind) patch.kind = input.kind
+  if (
+    input.audience !== source.audience ||
+    !sameIds(input.program_ids, source.program_ids) ||
+    !sameIds(input.group_ids, source.group_ids)
+  ) {
+    patch.audience = input.audience
+    patch.program_ids = input.program_ids
+    patch.group_ids = input.group_ids
+  }
+  if (input.pinned !== source.pinned) patch.pinned = input.pinned
+  if (input.banner !== source.banner) patch.banner = input.banner
+
+  const wasDraft = source.publish_at == null
+  if (input.draft !== wasDraft) patch.draft = input.draft
+  if (!input.draft) {
+    if (input.publish_at != null) {
+      if (!sameInstant(input.publish_at, source.publish_at)) patch.publish_at = input.publish_at
+    } else if (!wasDraft && source.status === 'scheduled') {
+      patch.publish_at = (opts.now ?? (() => new Date().toISOString()))()
+    }
+  }
+  if (input.expires_at != null) {
+    if (!sameInstant(input.expires_at, source.expires_at)) patch.expires_at = input.expires_at
+  } else if (source.expires_at != null) {
+    patch.clear_expires_at = true
+  }
+  if (opts.notifyAgain) patch.notify_again = true
+  return patch
 }
