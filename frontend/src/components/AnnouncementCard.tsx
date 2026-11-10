@@ -112,7 +112,14 @@ export default function AnnouncementCard({
               sx={{ fontWeight: quiet ? 500 : 700, lineHeight: 1.3, flex: 1, minWidth: 160 }}
             >
               {onOpen ? (
-                <Link component="button" type="button" onClick={onOpen} color="inherit" underline="hover" sx={{ font: 'inherit', textAlign: 'left' }}>
+                <Link
+                  component="button"
+                  type="button"
+                  onClick={onOpen}
+                  color="inherit"
+                  underline="hover"
+                  sx={{ font: 'inherit', textAlign: 'left' }}
+                >
                   {a.title}
                 </Link>
               ) : (
@@ -207,15 +214,13 @@ export default function AnnouncementCard({
             ))}
           </Stack>
 
-          {compact ? (
-            firstLine(a.message) && (
-              <Typography variant="body2" color="text.secondary" noWrap>
-                {firstLine(a.message)}
-              </Typography>
-            )
-          ) : (
-            a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />
-          )}
+          {compact
+            ? firstLine(a.message) && (
+                <Typography variant="body2" color="text.secondary" noWrap>
+                  {firstLine(a.message)}
+                </Typography>
+              )
+            : a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
 
           <Stack
             direction="row"
