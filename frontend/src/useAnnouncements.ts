@@ -63,9 +63,16 @@ export function useAnnouncements(enabled: boolean): UseAnnouncementsResult {
   }, [])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      // Logged out / flag off: never keep another account's feed in memory.
+      seenKeysRef.current.clear()
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset of externally-owned data
+      setAnnouncements([])
+      setLoaded(false)
+      setError(null)
+      return
+    }
     const ac = new AbortController()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch; state is set after the await
     void load(ac.signal)
     return () => ac.abort()
   }, [enabled, load])
@@ -96,8 +103,11 @@ export function useAnnouncements(enabled: boolean): UseAnnouncementsResult {
       prev.map((a) => (a.id === announcement.id ? { ...a, seen: true } : a)),
     )
     markAnnouncementSeen(announcement.id).catch(() => {
-      // Seen markers are best effort; allow a retry on the next render.
+      // Best effort: roll back so the badge stays honest and the next render retries.
       seenKeysRef.current.delete(key)
+      setAnnouncements((prev) =>
+        prev.map((a) => (a.id === announcement.id ? { ...a, seen: false } : a)),
+      )
     })
   }, [])
 

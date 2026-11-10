@@ -115,3 +115,37 @@ describe('useAnnouncements', () => {
     expect(result.current.announcements[0].reactions).toEqual({})
   })
 })
+
+describe('useAnnouncements account boundaries', () => {
+  beforeEach(() => {
+    mockFetch.mockReset()
+    mockSeen.mockReset()
+  })
+
+  it('drops the feed as soon as it is disabled (logout) and reloads for the next account', async () => {
+    mockFetch.mockResolvedValue([makeAnnouncement({ id: 1, title: 'Private to A' })])
+    const { result, rerender } = renderHook(({ enabled }) => useAnnouncements(enabled), {
+      initialProps: { enabled: true },
+    })
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+    rerender({ enabled: false })
+    expect(result.current.announcements).toEqual([])
+    expect(result.current.unseenCount).toBe(0)
+    mockFetch.mockResolvedValue([makeAnnouncement({ id: 2, title: 'For B' })])
+    rerender({ enabled: true })
+    await waitFor(() => expect(result.current.announcements.map((a) => a.id)).toEqual([2]))
+  })
+
+  it('rolls back the local seen state when the seen write fails', async () => {
+    const a = makeAnnouncement({ id: 7 })
+    mockFetch.mockResolvedValue([a])
+    mockSeen.mockRejectedValue(new Error('offline'))
+    const { result } = renderHook(() => useAnnouncements(true))
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+    act(() => result.current.markSeen(a))
+    await waitFor(() => expect(result.current.announcements[0].seen).toBe(false))
+    expect(result.current.unseenCount).toBe(1)
+    act(() => result.current.markSeen(a))
+    expect(mockSeen).toHaveBeenCalledTimes(2)
+  })
+})
