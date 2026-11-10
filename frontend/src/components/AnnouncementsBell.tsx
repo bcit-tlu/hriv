@@ -2,6 +2,8 @@ import { useState, type MouseEvent } from 'react'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
+import Stack from '@mui/material/Stack'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
@@ -14,7 +16,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import type { ApiAnnouncement } from '../api'
-import { kindMeta } from '../announcementKinds'
+import { ANNOUNCEMENT_REACTIONS, kindMeta } from '../announcementKinds'
 import { formatRelativeTime } from '../formatUtils'
 
 export const BELL_PEEK_LIMIT = 5
@@ -24,6 +26,8 @@ export interface AnnouncementsBellProps {
   unseenCount: number
   /** Open the Announcements page, optionally scrolled to one post. */
   onOpenAnnouncements: (announcementId?: number) => void
+  /** Reaction pills under each peeked post (omit to hide them). */
+  onToggleReaction?: (announcement: ApiAnnouncement, emoji: string) => void
 }
 
 /** Bell for every role: a peek at the newest unseen posts, "See all" → the page. */
@@ -31,6 +35,7 @@ export default function AnnouncementsBell({
   announcements,
   unseenCount,
   onOpenAnnouncements,
+  onToggleReaction,
 }: AnnouncementsBellProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const unseen = announcements
@@ -76,7 +81,11 @@ export default function AnnouncementsBell({
             {unseen.map((a) => {
               const meta = kindMeta(a.kind)
               return (
-                <ListItem key={a.id} disablePadding>
+                <ListItem
+                  key={a.id}
+                  disablePadding
+                  sx={{ flexDirection: 'column', alignItems: 'stretch' }}
+                >
                   <ListItemButton onClick={() => go(a.id)}>
                     <ListItemIcon sx={{ minWidth: 36, color: `${meta.severity}.main` }}>
                       <meta.Icon fontSize="small" />
@@ -87,6 +96,31 @@ export default function AnnouncementsBell({
                       slotProps={{ primary: { noWrap: true, fontWeight: 600 } }}
                     />
                   </ListItemButton>
+                  {onToggleReaction && (
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
+                      sx={{ px: 2, pb: 1, pl: 6.5, flexWrap: 'wrap' }}
+                    >
+                      {ANNOUNCEMENT_REACTIONS.filter(
+                        (r) => (a.reactions[r.id] ?? 0) > 0 || a.my_reactions.includes(r.id),
+                      ).map((r) => {
+                        const mine = a.my_reactions.includes(r.id)
+                        return (
+                          <Chip
+                            key={r.id}
+                            size="small"
+                            label={`${r.glyph} ${a.reactions[r.id] ?? 0}`}
+                            color={mine ? 'primary' : 'default'}
+                            variant={mine ? 'filled' : 'outlined'}
+                            aria-pressed={mine}
+                            aria-label={`${r.id} reaction, ${a.reactions[r.id] ?? 0}`}
+                            onClick={() => onToggleReaction(a, r.id)}
+                          />
+                        )
+                      })}
+                    </Stack>
+                  )}
                 </ListItem>
               )
             })}
