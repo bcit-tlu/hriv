@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import Link from '@mui/material/Link'
 
 export type MarkdownBlock =
@@ -22,6 +22,8 @@ const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/
 const MARKDOWN_IMAGE_REGEX = /^!\[([^\]]*)\]\(([^\s)]+)\)$/
 const MEDIA_PATH_REGEX = /^\/api\/media\/(\d+)(?:\?[^\s]*)?$/
 const VIDEO_URL_REGEX = /^https?:\/\/[^\s]+\.(mp4|webm|mov)(?:\?[^\s]*)?$/i
+// Inline raster/SVG data URIs are inert in an <img> context (no script execution).
+const DATA_IMAGE_REGEX = /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml)[;,]/i
 
 /**
  * Resolve a Markdown media `src` to something safe to put in `<img>`/`<video>`.
@@ -35,7 +37,37 @@ export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string 
     const token = mediaTokens?.[mediaMatch[1]]
     return token ? `/api/media/${mediaMatch[1]}?token=${encodeURIComponent(token)}` : null
   }
+  if (DATA_IMAGE_REGEX.test(src)) return src
   return isSafeHref(src) ? src : null
+}
+
+export function MediaPlaceholder({ alt, fallback }: { alt: string; fallback: string }) {
+  return (
+    <span className="md-media-missing" role="img" aria-label={alt || fallback}>
+      {alt || fallback}
+    </span>
+  )
+}
+
+/** `<img>` that swaps to the alt-text placeholder when the source fails to load. */
+export function MarkdownImage({
+  src,
+  alt,
+  caption = false,
+}: {
+  src: string
+  alt: string
+  /** Block images render the alt text as a figcaption while the image is showing. */
+  caption?: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <MediaPlaceholder alt={alt} fallback="Image unavailable" />
+  return (
+    <>
+      <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+      {caption && alt ? <figcaption>{alt}</figcaption> : null}
+    </>
+  )
 }
 
 export function isVideoSrc(src: string): boolean {
@@ -48,14 +80,8 @@ export function isMediaPath(src: string): boolean {
 
 function renderImage(alt: string, src: string, key: string, options?: InlineOptions): ReactNode {
   const resolved = resolveMediaSrc(src, options?.mediaTokens)
-  if (!resolved) {
-    return (
-      <span key={key} className="md-media-missing" role="img" aria-label={alt || 'image'}>
-        {alt || 'Image unavailable'}
-      </span>
-    )
-  }
-  return <img key={key} src={resolved} alt={alt} loading="lazy" />
+  if (!resolved) return <MediaPlaceholder key={key} alt={alt} fallback="Image unavailable" />
+  return <MarkdownImage key={key} src={resolved} alt={alt} />
 }
 
 function isSafeHref(href: string) {

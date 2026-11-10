@@ -1,7 +1,14 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { parseMarkdown, renderInline, resolveMediaSrc, type MediaTokens } from '../markdownUtils'
+import {
+  MarkdownImage,
+  MediaPlaceholder,
+  parseMarkdown,
+  renderInline,
+  resolveMediaSrc,
+  type MediaTokens,
+} from '../markdownUtils'
 
 export interface MarkdownContentProps {
   markdown: string
@@ -119,13 +126,10 @@ export default function MarkdownContent({ markdown, mediaTokens, sx }: MarkdownC
           return (
             <Box key={key} component="figure">
               {src ? (
-                <img src={src} alt={block.alt} loading="lazy" />
+                <MarkdownImage src={src} alt={block.alt} caption />
               ) : (
-                <span className="md-media-missing" role="img" aria-label={block.alt || 'image'}>
-                  {block.alt || 'Image unavailable'}
-                </span>
+                <MediaPlaceholder alt={block.alt} fallback="Image unavailable" />
               )}
-              {src && block.alt ? <figcaption>{block.alt}</figcaption> : null}
             </Box>
           )
         }

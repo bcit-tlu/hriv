@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import MarkdownContent from '../../src/components/MarkdownContent'
 import { parseMarkdown, renderInline, resolveMediaSrc } from '../../src/markdownUtils'
@@ -226,5 +226,24 @@ describe('markdown media (#1836)', () => {
     expect(screen.getByText('Missing')).toHaveClass('md-media-missing')
     expect(screen.getByText('Video unavailable')).toHaveClass('md-media-missing')
     expect(screen.getByText('Image unavailable')).toBeInTheDocument()
+  })
+})
+
+describe('markdown media fallbacks', () => {
+  it('accepts inline image data URIs but not other data URIs', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo='
+    expect(resolveMediaSrc(png)).toBe(png)
+    expect(resolveMediaSrc('data:text/html,<script>1</script>')).toBeNull()
+  })
+
+  it('swaps a failed image for its alt-text placeholder', () => {
+    const { container } = renderWithTheme(
+      <MarkdownContent markdown="![Gone](https://cdn.example/missing.png)" />,
+    )
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    fireEvent.error(img as HTMLImageElement)
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText('Gone')).toHaveClass('md-media-missing')
   })
 })
