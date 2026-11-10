@@ -162,7 +162,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 
 ### Changed announcements
 
-- backend: `poetry run pytest tests/test_router_announcement.py`
+- backend: `poetry run pytest tests/test_router_announcements.py tests/test_announcements_helpers.py`
 - frontend: `npm test -- announcement Announcement NoticesShelf LoginScreen AdminPage App`
 
 ### Changed maintenance mode / middleware / rate limiting
