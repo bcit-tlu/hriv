@@ -5,6 +5,7 @@ import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
@@ -75,16 +76,18 @@ export default function AnnouncementsBell({
             {unseen.map((a) => {
               const meta = kindMeta(a.kind)
               return (
-                <ListItemButton key={a.id} onClick={() => go(a.id)}>
-                  <ListItemIcon sx={{ minWidth: 36, color: `${meta.severity}.main` }}>
-                    <meta.Icon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={a.title}
-                    secondary={formatRelativeTime(a.notified_at ?? a.publish_at ?? a.created_at)}
-                    slotProps={{ primary: { noWrap: true, fontWeight: 600 } }}
-                  />
-                </ListItemButton>
+                <ListItem key={a.id} disablePadding>
+                  <ListItemButton onClick={() => go(a.id)}>
+                    <ListItemIcon sx={{ minWidth: 36, color: `${meta.severity}.main` }}>
+                      <meta.Icon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={a.title}
+                      secondary={formatRelativeTime(a.notified_at ?? a.publish_at ?? a.created_at)}
+                      slotProps={{ primary: { noWrap: true, fontWeight: 600 } }}
+                    />
+                  </ListItemButton>
+                </ListItem>
               )
             })}
           </List>
