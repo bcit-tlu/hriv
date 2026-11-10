@@ -144,7 +144,8 @@ async def test_update_entry_bumps_notified_at() -> None:
     assert ann.publish_at > NOW
     assert ann.notified_at == ann.publish_at
     assert ann.expires_at is None
-
+    assert result.title == "Updated"
+    db.commit.assert_awaited_once()
 
 async def test_update_entry_clears_past_expiry_on_republish() -> None:
     ann = _release(expires_at=NOW)  # expired
@@ -156,8 +157,7 @@ async def test_update_entry_clears_past_expiry_on_republish() -> None:
     await update_entry(4, ChangelogEntryUpdate(body="again"), db, None)
 
     assert ann.expires_at is None
-    assert result.title == "Updated"
-    db.commit.assert_awaited_once()
+
 
 
 async def test_update_entry_raises_404_when_missing() -> None:
