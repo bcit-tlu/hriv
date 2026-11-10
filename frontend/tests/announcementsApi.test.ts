@@ -88,6 +88,8 @@ describe('announcements API wrappers', () => {
     expect(url).toMatch(/\/media\/$/)
     expect(init.method).toBe('POST')
     expect(init.body).toBeInstanceOf(FormData)
+    // The browser must set the multipart boundary itself.
+    expect(Object.keys(init.headers as Record<string, string>)).not.toContain('Content-Type')
     expect((init.body as FormData).get('file')).toBeInstanceOf(File)
   })
 })

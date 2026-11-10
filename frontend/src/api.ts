@@ -328,7 +328,8 @@ async function requestRaw<T>(path: string, init?: RequestInit): Promise<RequestR
     res = await fetch(`${BASE}/api${path}`, {
       ...restInit,
       headers: {
-        'Content-Type': 'application/json',
+        // Multipart bodies need the browser-generated boundary, so let fetch set the type.
+        ...(restInit.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         ...authHeaders(),
         ...initHeaders,
       },
