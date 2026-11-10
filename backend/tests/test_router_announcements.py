@@ -243,6 +243,9 @@ async def test_broadcast_returns_minimal_shape_and_filters_in_sql() -> None:
     sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
     assert "announcements.audience = 'everyone'" in sql
     assert "announcements.banner IS true" in sql
+    order_by = sql.split("ORDER BY", 1)[1]
+    assert order_by.lstrip().startswith("announcements.notified_at DESC")
+    assert "pinned" not in order_by
     assert "announcements.publish_at IS NOT NULL" in sql
 
 

@@ -254,7 +254,11 @@ def _check_authority(
 async def list_broadcast(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Live ``everyone`` banner announcements. Public – rendered on the login screen."""
+    """Live ``everyone`` banner announcements, newest first.
+
+    Public – the login screen renders ``rows[0]``.  Pinning only orders the
+    authenticated Inbox / Home shelf, so it is deliberately ignored here.
+    """
     result = await db.execute(
         select(Announcement)
         .where(
@@ -262,7 +266,7 @@ async def list_broadcast(
             Announcement.banner.is_(True),
             rules.live_clause(),
         )
-        .order_by(Announcement.pinned.desc(), Announcement.notified_at.desc(), Announcement.id.desc())
+        .order_by(Announcement.notified_at.desc(), Announcement.id.desc())
     )
     return [_broadcast_shape(a) for a in result.scalars().all()]
 
