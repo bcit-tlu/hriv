@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import MarkdownContent from '../../src/components/MarkdownContent'
-import { parseMarkdown, renderInline } from '../../src/markdownUtils'
+import { parseMarkdown, renderInline, resolveMediaSrc } from '../../src/markdownUtils'
 
 function renderWithTheme(ui: ReactElement) {
   const theme = createTheme()
@@ -152,5 +152,117 @@ describe('MarkdownContent', () => {
     expect(container.firstChild).toHaveStyle({
       borderTop: '3px solid rgb(255, 0, 0)',
     })
+  })
+})
+
+describe('markdown media (#1836)', () => {
+  const tokens = { '12': 'tok.12', '13': 'tok-13' }
+
+  it('parses image-only and video-only paragraphs as blocks', () => {
+    expect(
+      parseMarkdown('![Slide](/api/media/12)\n\n/api/media/13\n\nhttps://cdn.example/clip.mp4'),
+    ).toEqual([
+      { type: 'image', alt: 'Slide', src: '/api/media/12' },
+      { type: 'video', src: '/api/media/13' },
+      { type: 'video', src: 'https://cdn.example/clip.mp4' },
+    ])
+    expect(parseMarkdown('See ![x](/api/media/12) here')).toEqual([
+      { type: 'paragraph', text: 'See ![x](/api/media/12) here' },
+    ])
+  })
+
+  it('resolves media srcs: fresh token wins, pasted token discarded, external passes', () => {
+    expect(resolveMediaSrc('/api/media/12', tokens)).toBe('/api/media/12?token=tok.12')
+    expect(resolveMediaSrc('/api/media/12?token=stale', tokens)).toBe('/api/media/12?token=tok.12')
+    expect(resolveMediaSrc('/api/media/99', tokens)).toBeNull()
+    expect(resolveMediaSrc('/api/media/12')).toBeNull()
+    expect(resolveMediaSrc('https://cdn.example/a.png', tokens)).toBe('https://cdn.example/a.png')
+    expect(resolveMediaSrc('javascript:alert(1)', tokens)).toBeNull()
+    expect(resolveMediaSrc('/etc/passwd', tokens)).toBeNull()
+  })
+
+  it('renders a tokenized block image as a figure with caption', () => {
+    renderWithTheme(<MarkdownContent markdown="![Slide](/api/media/12)" mediaTokens={tokens} />)
+    const img = screen.getByRole('img', { name: 'Slide' })
+    expect(img.tagName).toBe('IMG')
+    expect(img).toHaveAttribute('src', '/api/media/12?token=tok.12')
+    expect(img).toHaveAttribute('loading', 'lazy')
+    expect(img.closest('figure')).not.toBeNull()
+    expect(screen.getByText('Slide').tagName).toBe('FIGCAPTION')
+  })
+
+  it('renders inline images inside paragraphs', () => {
+    renderWithTheme(
+      <MarkdownContent
+        markdown="Look ![tiny](https://cdn.example/t.png) now"
+        mediaTokens={tokens}
+      />,
+    )
+    const img = screen.getByRole('img', { name: 'tiny' })
+    expect(img.tagName).toBe('IMG')
+    expect(img.closest('p')).not.toBeNull()
+  })
+
+  it('renders a video element for standalone media paths', () => {
+    const { container } = renderWithTheme(
+      <MarkdownContent markdown="/api/media/13" mediaTokens={tokens} />,
+    )
+    const video = container.querySelector('video')
+    expect(video).not.toBeNull()
+    expect(video).toHaveAttribute('src', '/api/media/13?token=tok-13')
+    expect(video).toHaveAttribute('controls')
+    expect(video).toHaveAttribute('preload', 'metadata')
+  })
+
+  it('falls back to alt text / placeholder when the token is missing or src unsafe', () => {
+    const { container } = renderWithTheme(
+      <MarkdownContent
+        markdown={'![Missing](/api/media/99)\n\n/api/media/98\n\n![](javascript:alert(1))'}
+        mediaTokens={tokens}
+      />,
+    )
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('video')).toBeNull()
+    expect(screen.getByText('Missing')).toHaveClass('md-media-missing')
+    expect(screen.getByText('Video unavailable')).toHaveClass('md-media-missing')
+    expect(screen.getByText('Image unavailable')).toBeInTheDocument()
+  })
+})
+
+describe('markdown media fallbacks', () => {
+  it('accepts inline image data URIs but not other data URIs', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo='
+    expect(resolveMediaSrc(png)).toBe(png)
+    expect(resolveMediaSrc('data:text/html,<script>1</script>')).toBeNull()
+  })
+
+  it('keeps query strings and media fragments on external URLs', () => {
+    expect(resolveMediaSrc('https://cdn.example/clip.mp4?v=2#t=10')).toBe(
+      'https://cdn.example/clip.mp4?v=2#t=10',
+    )
+    expect(resolveMediaSrc('https://user:pw@cdn.example/a.svg#view')).toBe(
+      'https://cdn.example/a.svg#view',
+    )
+  })
+
+  it('swaps a failed image for its alt-text placeholder', () => {
+    const { container } = renderWithTheme(
+      <MarkdownContent markdown="![Gone](https://cdn.example/missing.png)" />,
+    )
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    fireEvent.error(img as HTMLImageElement)
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText('Gone')).toHaveClass('md-media-missing')
+  })
+
+  it('retries when a failed image gets a new source', () => {
+    const { container, rerender } = renderWithTheme(
+      <MarkdownContent markdown="![Pic](/api/media/7)" mediaTokens={{ '7': 'old' }} />,
+    )
+    fireEvent.error(container.querySelector('img') as HTMLImageElement)
+    expect(container.querySelector('img')).toBeNull()
+    rerender(<MarkdownContent markdown="![Pic](/api/media/7)" mediaTokens={{ '7': 'fresh' }} />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/api/media/7?token=fresh')
   })
 })
