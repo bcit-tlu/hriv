@@ -6,10 +6,57 @@ export type MarkdownBlock =
   | { type: 'paragraph'; text: string }
   | { type: 'list'; items: string[] }
   | { type: 'code'; text: string }
+  | { type: 'image'; alt: string; src: string }
+  | { type: 'video'; src: string }
+
+/** `{ mediaId: token }` minted per response by the announcements API (#1835). */
+export type MediaTokens = Record<string, string>
+
+export interface InlineOptions {
+  mediaTokens?: MediaTokens
+}
 
 const INLINE_TOKEN_REGEX =
-  /(\[[^\]]+\]\((?:https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
+  /(!\[[^\]]*\]\([^\s)]+\)|\[[^\]]+\]\((?:https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
 const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/
+const MARKDOWN_IMAGE_REGEX = /^!\[([^\]]*)\]\(([^\s)]+)\)$/
+const MEDIA_PATH_REGEX = /^\/api\/media\/(\d+)(?:\?[^\s]*)?$/
+const VIDEO_URL_REGEX = /^https?:\/\/[^\s]+\.(mp4|webm|mov)(?:\?[^\s]*)?$/i
+
+/**
+ * Resolve a Markdown media `src` to something safe to put in `<img>`/`<video>`.
+ * `/api/media/{id}` paths need the per-response token; any pasted `?token=`
+ * is discarded in favour of the fresh one. External http(s) URLs pass through.
+ * Returns `null` when the src is unsafe or its token is missing.
+ */
+export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string | null {
+  const mediaMatch = src.match(MEDIA_PATH_REGEX)
+  if (mediaMatch) {
+    const token = mediaTokens?.[mediaMatch[1]]
+    return token ? `/api/media/${mediaMatch[1]}?token=${encodeURIComponent(token)}` : null
+  }
+  return isSafeHref(src) ? src : null
+}
+
+export function isVideoSrc(src: string): boolean {
+  return VIDEO_URL_REGEX.test(src)
+}
+
+export function isMediaPath(src: string): boolean {
+  return MEDIA_PATH_REGEX.test(src)
+}
+
+function renderImage(alt: string, src: string, key: string, options?: InlineOptions): ReactNode {
+  const resolved = resolveMediaSrc(src, options?.mediaTokens)
+  if (!resolved) {
+    return (
+      <span key={key} className="md-media-missing" role="img" aria-label={alt || 'image'}>
+        {alt || 'Image unavailable'}
+      </span>
+    )
+  }
+  return <img key={key} src={resolved} alt={alt} loading="lazy" />
+}
 
 function isSafeHref(href: string) {
   try {
@@ -50,10 +97,20 @@ function splitTrailingUrlPunctuation(urlText: string) {
   return { href, trailingText }
 }
 
-export function renderInline(text: string, keyPrefix: string): ReactNode[] {
+export function renderInline(
+  text: string,
+  keyPrefix: string,
+  options?: InlineOptions,
+): ReactNode[] {
   const parts = text.split(INLINE_TOKEN_REGEX)
   return parts.filter(Boolean).map((part, index) => {
     const key = `${keyPrefix}-${index}`
+    const markdownImageMatch = part.match(MARKDOWN_IMAGE_REGEX)
+    if (markdownImageMatch) {
+      const [, alt, src] = markdownImageMatch
+      return renderImage(alt, src, key, options)
+    }
+
     const markdownLinkMatch = part.match(MARKDOWN_LINK_REGEX)
 
     if (markdownLinkMatch) {
@@ -69,7 +126,7 @@ export function renderInline(text: string, keyPrefix: string): ReactNode[] {
             underline="always"
             sx={{ overflowWrap: 'anywhere' }}
           >
-            {renderInline(label, `${key}-label`)}
+            {renderInline(label, `${key}-label`, options)}
           </Link>
         )
       }
@@ -120,7 +177,14 @@ export function parseMarkdown(markdown: string): MarkdownBlock[] {
   const flushParagraph = () => {
     const text = paragraphLines.join('\n').trim()
     if (text) {
-      blocks.push({ type: 'paragraph', text })
+      const imageOnly = text.match(MARKDOWN_IMAGE_REGEX)
+      if (imageOnly) {
+        blocks.push({ type: 'image', alt: imageOnly[1], src: imageOnly[2] })
+      } else if (isMediaPath(text) || isVideoSrc(text)) {
+        blocks.push({ type: 'video', src: text })
+      } else {
+        blocks.push({ type: 'paragraph', text })
+      }
     }
     paragraphLines.length = 0
   }
