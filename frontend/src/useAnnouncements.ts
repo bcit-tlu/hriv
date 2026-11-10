@@ -47,11 +47,16 @@ export function useAnnouncements(enabled: boolean): UseAnnouncementsResult {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const seenKeysRef = useRef<Set<string>>(new Set())
+  // Bumped whenever the feed is reset (logout) so in-flight callbacks from the old account are ignored.
+  const generationRef = useRef(0)
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const rows = await fetchAnnouncements('inbox')
       if (signal?.aborted) return
+      // A fresh fetch is the retry point for seen writes that failed earlier.
+      for (const row of rows)
+        if (!row.seen) seenKeysRef.current.delete(`${row.id}:${row.notified_at ?? ''}`)
       setAnnouncements(sortAnnouncements(rows))
       setError(null)
     } catch (err) {
@@ -66,6 +71,7 @@ export function useAnnouncements(enabled: boolean): UseAnnouncementsResult {
     if (!enabled) {
       // Logged out / flag off: never keep another account's feed in memory.
       seenKeysRef.current.clear()
+      generationRef.current += 1
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reset of externally-owned data
       setAnnouncements([])
       setLoaded(false)
@@ -102,9 +108,12 @@ export function useAnnouncements(enabled: boolean): UseAnnouncementsResult {
     setAnnouncements((prev) =>
       prev.map((a) => (a.id === announcement.id ? { ...a, seen: true } : a)),
     )
+    const generation = generationRef.current
     markAnnouncementSeen(announcement.id).catch(() => {
-      // Best effort: roll back so the badge stays honest and the next render retries.
-      seenKeysRef.current.delete(key)
+      // Best effort: roll back so the badge stays honest. The key stays so the Inbox effect does
+      // not loop; the next successful fetch clears it and retries. Ignore callbacks from a feed
+      // that has since been reset for another account.
+      if (generation !== generationRef.current) return
       setAnnouncements((prev) =>
         prev.map((a) => (a.id === announcement.id ? { ...a, seen: false } : a)),
       )

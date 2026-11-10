@@ -145,7 +145,14 @@ describe('useAnnouncements account boundaries', () => {
     act(() => result.current.markSeen(a))
     await waitFor(() => expect(result.current.announcements[0].seen).toBe(false))
     expect(result.current.unseenCount).toBe(1)
+    // No tight retry loop: the Inbox effect re-marking is a no-op until the next fetch.
     act(() => result.current.markSeen(a))
+    expect(mockSeen).toHaveBeenCalledTimes(1)
+    mockSeen.mockResolvedValue(undefined)
+    await act(async () => {
+      await result.current.reload()
+    })
+    act(() => result.current.markSeen(result.current.announcements[0]))
     expect(mockSeen).toHaveBeenCalledTimes(2)
   })
 })
