@@ -81,6 +81,7 @@ export default function AnnouncementsPage({
   const [programs, setPrograms] = useState<ApiProgram[]>([])
   const [groups, setGroups] = useState<ApiGroup[]>([])
   const [targetsLoaded, setTargetsLoaded] = useState(false)
+  const [targetsError, setTargetsError] = useState<string | null>(null)
   // "Post to group" opens the composer straight from props; consuming it clears the request.
   const contextualCompose =
     composer == null && composeGroupId != null && canCompose
@@ -107,15 +108,19 @@ export default function AnnouncementsPage({
   useEffect(() => {
     if (!canCompose) return
     let cancelled = false
-    Promise.all([
-      fetchPrograms().catch(() => [] as ApiProgram[]),
-      fetchGroups().catch(() => [] as ApiGroup[]),
-    ]).then(([p, g]) => {
-      if (cancelled) return
-      setTargetsLoaded(true)
-      setPrograms(isAdmin ? p : p.filter((x) => currentUser.program_ids.includes(x.id)))
-      setGroups(isAdmin ? g : g.filter((x) => x.instructor_ids.includes(currentUser.id)))
-    })
+    Promise.all([fetchPrograms(), fetchGroups()])
+      .then(([p, g]) => {
+        if (cancelled) return
+        setTargetsError(null)
+        setPrograms(isAdmin ? p : p.filter((x) => currentUser.program_ids.includes(x.id)))
+        setGroups(isAdmin ? g : g.filter((x) => x.instructor_ids.includes(currentUser.id)))
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setTargetsError(userMessage(err, 'Could not load your programs and groups'))
+      })
+      .finally(() => {
+        if (!cancelled) setTargetsLoaded(true)
+      })
     return () => {
       cancelled = true
     }
@@ -209,6 +214,12 @@ export default function AnnouncementsPage({
           </Button>
         )}
       </Stack>
+
+      {targetsError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {targetsError} — the composer's To: list may be incomplete.
+        </Alert>
+      )}
 
       {canCompose && (
         <Tabs value={tab} onChange={(_e, v: AnnouncementsTab) => setTab(v)} sx={{ mb: 2 }}>
