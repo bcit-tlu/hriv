@@ -42,7 +42,11 @@ def _legacy_shape(ann: Announcement) -> ChangelogEntryOut:
 
 async def _get_release(db: AsyncSession, entry_id: int) -> Announcement:
     result = await db.execute(
-        select(Announcement).where(Announcement.id == entry_id, Announcement.kind == "release")
+        select(Announcement).where(
+            Announcement.id == entry_id,
+            Announcement.kind == "release",
+            Announcement.audience == "staff",
+        )
     )
     ann = result.scalar_one_or_none()
     if ann is None:
@@ -57,7 +61,11 @@ async def list_entries(
 ):
     result = await db.execute(
         select(Announcement)
-        .where(Announcement.kind == "release", Announcement.publish_at.is_not(None))
+        .where(
+            Announcement.kind == "release",
+            Announcement.audience == "staff",
+            live_clause(),
+        )
         .order_by(Announcement.publish_at.desc(), Announcement.id.desc())
     )
     return [_legacy_shape(a) for a in result.scalars().all()]
@@ -100,7 +108,9 @@ async def mark_read(
     the deployed ``NotificationMenu`` still compares against; #1838 drops it.
     """
     result = await db.execute(
-        select(Announcement).where(Announcement.kind == "release", live_clause())
+        select(Announcement).where(
+            Announcement.kind == "release", Announcement.audience == "staff", live_clause()
+        )
     )
     mark_seen(current_user, result.scalars().all())
     now = utcnow().isoformat()

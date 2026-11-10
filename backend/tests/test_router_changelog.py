@@ -70,7 +70,9 @@ async def test_list_entries_excludes_drafts_in_query() -> None:
     stmt = db.execute.call_args.args[0]
     sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "announcements.kind = 'release'" in sql
+    assert "announcements.audience = 'staff'" in sql  # targeted releases stay private
     assert "announcements.publish_at IS NOT NULL" in sql
+    assert "announcements.publish_at <=" in sql  # scheduled releases hidden until live
 
 
 def _refresh_like_db(ann) -> None:
