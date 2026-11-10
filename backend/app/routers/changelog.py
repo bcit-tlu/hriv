@@ -9,7 +9,7 @@ until the Announcements UI (#1837) replaces them.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..announcements import live_clause, mark_seen, utcnow
@@ -57,18 +57,19 @@ async def _get_release(db: AsyncSession, entry_id: int) -> Announcement:
 @router.get("/", response_model=list[ChangelogEntryOut])
 async def list_entries(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(_admin_or_instructor)],
+    current_user: Annotated[User, Depends(_admin_or_instructor)],
 ):
+    # Readers (instructors) get the live feed only; admins also see expired
+    # releases so the legacy admin table keeps its edit/delete controls.
+    if current_user.role == "admin":
+        window = and_(
+            Announcement.publish_at.is_not(None), Announcement.publish_at <= utcnow()
+        )
+    else:
+        window = live_clause()
     result = await db.execute(
         select(Announcement)
-        .where(
-            Announcement.kind == "release",
-            Announcement.audience == "staff",
-            # Published (not draft/scheduled). Expired releases stay listed so
-            # the legacy admin table keeps its edit/delete controls.
-            Announcement.publish_at.is_not(None),
-            Announcement.publish_at <= utcnow(),
-        )
+        .where(Announcement.kind == "release", Announcement.audience == "staff", window)
         .order_by(Announcement.publish_at.desc(), Announcement.id.desc())
     )
     return [_legacy_shape(a) for a in result.scalars().all()]
@@ -136,10 +137,13 @@ async def update_entry(
         ann.title = body.title
     if body.body is not None:
         ann.message = body.body
-    # Republish is never silent: bump the version marker so readers see it again.
+    # Republish is never silent: bump the version marker so readers see it
+    # again, and clear any past expiry so the republished note is live.
     now = utcnow()
     ann.publish_at = now
     ann.notified_at = now
+    if ann.expires_at is not None and ann.expires_at <= now:
+        ann.expires_at = None
     await db.commit()
     await db.refresh(ann)
     return _legacy_shape(ann)

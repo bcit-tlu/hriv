@@ -48,11 +48,15 @@ def _release(**overrides) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
+ADMIN = SimpleNamespace(id=1, role="admin")
+INSTRUCTOR = SimpleNamespace(id=2, role="instructor")
+
+
 async def test_list_entries_returns_legacy_shape() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_mock_scalars([_release(), _release(id=5, title=None)]))
 
-    result = await list_entries(db, None)
+    result = await list_entries(db, ADMIN)
 
     assert [(e.id, e.title, e.body) for e in result] == [
         (4, "Release 1", "Body text"),
@@ -65,15 +69,17 @@ async def test_list_entries_excludes_drafts_in_query() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(return_value=_mock_scalars([]))
 
-    assert await list_entries(db, None) == []
-
-    stmt = db.execute.call_args.args[0]
-    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert await list_entries(db, ADMIN) == []
+    sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
     assert "announcements.kind = 'release'" in sql
     assert "announcements.audience = 'staff'" in sql  # targeted releases stay private
     assert "announcements.publish_at IS NOT NULL" in sql
     assert "announcements.publish_at <=" in sql  # scheduled releases hidden until live
-    assert "expires_at" not in sql.split("WHERE", 1)[1]  # expired releases stay listed/editable
+    assert "expires_at" not in sql.split("WHERE", 1)[1]  # admins keep expired rows editable
+
+    assert await list_entries(db, INSTRUCTOR) == []
+    sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "announcements.expires_at IS NULL OR announcements.expires_at >" in sql  # readers: live only
 
 
 def _refresh_like_db(ann) -> None:
@@ -137,6 +143,19 @@ async def test_update_entry_bumps_notified_at() -> None:
     assert ann.message == "Body text"
     assert ann.publish_at > NOW
     assert ann.notified_at == ann.publish_at
+    assert ann.expires_at is None
+
+
+async def test_update_entry_clears_past_expiry_on_republish() -> None:
+    ann = _release(expires_at=NOW)  # expired
+    result_mock = MagicMock()
+    result_mock.scalar_one_or_none.return_value = ann
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=result_mock)
+
+    await update_entry(4, ChangelogEntryUpdate(body="again"), db, None)
+
+    assert ann.expires_at is None
     assert result.title == "Updated"
     db.commit.assert_awaited_once()
 
