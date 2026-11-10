@@ -61,13 +61,16 @@ async def test_list_entries_returns_legacy_shape() -> None:
     assert result[0].published_at == NOW
 
 
-async def test_list_entries_falls_back_to_created_at_for_drafts() -> None:
+async def test_list_entries_excludes_drafts_in_query() -> None:
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=_mock_scalars([_release(publish_at=None)]))
+    db.execute = AsyncMock(return_value=_mock_scalars([]))
 
-    (entry,) = await list_entries(db, None)
+    assert await list_entries(db, None) == []
 
-    assert entry.published_at == NOW
+    stmt = db.execute.call_args.args[0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "announcements.kind = 'release'" in sql
+    assert "announcements.publish_at IS NOT NULL" in sql
 
 
 def _refresh_like_db(ann) -> None:
@@ -113,8 +116,8 @@ async def test_mark_read_records_seen_state_and_preserves_existing_keys() -> Non
         "4": NOW.isoformat(),
         "5": NOW.isoformat(),
     }
-    assert "changelog_last_read_at" not in current_user.metadata_
-    assert result.changelog_last_read_at
+    # Legacy watermark still written for the deployed NotificationMenu (#1838 drops it).
+    assert current_user.metadata_["changelog_last_read_at"] == result.changelog_last_read_at
     db.commit.assert_awaited_once()
 
 

@@ -26,8 +26,11 @@ Data:
   ``publish_at = notified_at = published_at``, timestamps preserved,
   ``author_id NULL``).  ``users.metadata["changelog_last_read_at"]`` seeds
   ``metadata["announcement_seen"]`` for the migrated entries published on or
-  before that instant, then the legacy key is removed (JSONB merge — the rest
-  of ``metadata`` is untouched).  ``changelog_entries`` is dropped.
+  before that instant (JSONB merge — the rest of ``metadata`` is untouched).
+  The legacy key itself is kept because the deployed ``NotificationMenu``
+  still reads it through the ``/api/changelog`` shim; #1838 removes both.
+  ``changelog_entries`` is dropped.  Titles longer than the new 255-char
+  ``title`` column are truncated.
 
 Revision ID: 0042_announcements
 Revises: 0041_bulk_import_resume
@@ -227,7 +230,7 @@ def upgrade() -> None:
                 "RETURNING id"
             ),
             {
-                "title": entry.title,
+                "title": (entry.title or "")[:255],
                 "message": entry.body,
                 "published_at": entry.published_at,
                 "created_at": entry.created_at or entry.published_at,
@@ -256,10 +259,11 @@ def upgrade() -> None:
                 )
                 if published <= last_read:
                     seen[str(new_id)] = published.isoformat()
+        if not seen:
+            continue
         conn.execute(
             sa.text(
-                "UPDATE users SET metadata = "
-                "(COALESCE(metadata, '{}'::jsonb) - 'changelog_last_read_at') "
+                "UPDATE users SET metadata = COALESCE(metadata, '{}'::jsonb) "
                 "|| jsonb_build_object('announcement_seen', "
                 "   COALESCE(metadata->'announcement_seen', '{}'::jsonb) "
                 "   || CAST(:seen AS jsonb)) "
@@ -307,7 +311,8 @@ def downgrade() -> None:
             "FROM announcements WHERE kind = 'release' ORDER BY id"
         )
     )
-    # Seen-state → legacy watermark: the newest release note a user has seen.
+    # Seen-state → legacy watermark (only where the legacy key is missing):
+    # the newest release note a user has seen.
     op.execute(
         sa.text(
             "UPDATE users SET metadata = (metadata - 'announcement_seen') "
@@ -317,7 +322,8 @@ def downgrade() -> None:
             "  FROM users u, jsonb_each_text(u.metadata->'announcement_seen') v "
             "  JOIN announcements a ON a.id = v.key::int AND a.kind = 'release' "
             "  GROUP BY u.id"
-            ") m WHERE users.id = m.id"
+            ") m WHERE users.id = m.id "
+            "AND users.metadata->>'changelog_last_read_at' IS NULL"
         )
     )
     op.execute(

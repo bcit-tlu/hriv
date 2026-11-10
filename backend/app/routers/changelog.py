@@ -57,8 +57,8 @@ async def list_entries(
 ):
     result = await db.execute(
         select(Announcement)
-        .where(Announcement.kind == "release")
-        .order_by(Announcement.publish_at.desc().nulls_last(), Announcement.id.desc())
+        .where(Announcement.kind == "release", Announcement.publish_at.is_not(None))
+        .order_by(Announcement.publish_at.desc(), Announcement.id.desc())
     )
     return [_legacy_shape(a) for a in result.scalars().all()]
 
@@ -94,13 +94,21 @@ async def mark_read(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(_admin_or_instructor)],
 ):
-    """Mark every live release note as seen for the current user."""
+    """Mark every live release note as seen for the current user.
+
+    Also keeps writing the legacy ``changelog_last_read_at`` watermark, which
+    the deployed ``NotificationMenu`` still compares against; #1838 drops it.
+    """
     result = await db.execute(
         select(Announcement).where(Announcement.kind == "release", live_clause())
     )
     mark_seen(current_user, result.scalars().all())
+    now = utcnow().isoformat()
+    meta = dict(current_user.metadata_ or {})
+    meta["changelog_last_read_at"] = now
+    current_user.metadata_ = meta
     await db.commit()
-    return ChangelogMarkReadResponse(changelog_last_read_at=utcnow().isoformat())
+    return ChangelogMarkReadResponse(changelog_last_read_at=now)
 
 
 @router.patch("/{entry_id}", response_model=ChangelogEntryOut)
