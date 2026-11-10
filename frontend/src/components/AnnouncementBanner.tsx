@@ -52,7 +52,12 @@ export default function AnnouncementBanner({
       icon={false}
       action={
         onDismiss && variant === 'app' ? (
-          <IconButton aria-label="Close announcement" size="small" color="inherit" onClick={onDismiss}>
+          <IconButton
+            aria-label="Close announcement"
+            size="small"
+            color="inherit"
+            onClick={onDismiss}
+          >
             <CloseIcon fontSize="small" />
           </IconButton>
         ) : undefined

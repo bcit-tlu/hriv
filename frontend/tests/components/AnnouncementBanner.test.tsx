@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import AnnouncementBanner from '../../src/components/AnnouncementBanner'
 
@@ -54,5 +54,36 @@ describe('AnnouncementBanner', () => {
   it('renders login variant in dark mode', () => {
     renderWithTheme(<AnnouncementBanner message="Dark login" variant="login" />, 'dark')
     expect(screen.getByText('Dark login')).toBeInTheDocument()
+  })
+})
+
+describe('AnnouncementBanner (announcements epic)', () => {
+  it('shows the title, a "+N more" link and a close button in the app variant', () => {
+    const onMore = vi.fn()
+    const onDismiss = vi.fn()
+    renderWithTheme(
+      <AnnouncementBanner
+        title="Planned maintenance"
+        message="Saturday 06:00"
+        severity="warning"
+        moreCount={2}
+        onMore={onMore}
+        onDismiss={onDismiss}
+      />,
+    )
+    expect(screen.getByText('Planned maintenance')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '+2 more' }))
+    expect(onMore).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Close announcement' }))
+    expect(onDismiss).toHaveBeenCalled()
+  })
+
+  it('clamps long bodies behind a More/Less toggle', () => {
+    renderWithTheme(<AnnouncementBanner message={'line one\nline two\nline three'} />)
+    const toggle = screen.getByRole('button', { name: 'More' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Less' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   })
 })

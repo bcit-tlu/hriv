@@ -201,7 +201,6 @@ export function buildUpdatePatch(
   if (opts.notifyAgain) patch.notify_again = true
   return patch
 }
-||||||| Stash base
 
 /**
  * Banner policy (#1838): live, unseen posts flagged `banner`, warnings first,
