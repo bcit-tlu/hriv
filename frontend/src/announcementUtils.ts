@@ -201,3 +201,43 @@ export function buildUpdatePatch(
   if (opts.notifyAgain) patch.notify_again = true
   return patch
 }
+||||||| Stash base
+
+/**
+ * Banner policy (#1838): live, unseen posts flagged `banner`, warnings first,
+ * then pinned, then newest. The first is shown; the rest count towards "+N more".
+ */
+export function selectBannerAnnouncements(rows: ApiAnnouncement[]): ApiAnnouncement[] {
+  return rows
+    .filter((a) => a.banner && a.status === 'live' && !a.seen)
+    .sort((a, b) => {
+      const aw = a.kind === 'warning' ? 0 : 1
+      const bw = b.kind === 'warning' ? 0 : 1
+      if (aw !== bw) return aw - bw
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      const at = a.notified_at ?? a.publish_at ?? a.created_at
+      const bt = b.notified_at ?? b.publish_at ?? b.created_at
+      return bt.localeCompare(at)
+    })
+}
+
+/** Home notices shelf: up to `limit` pinned live posts, newest first. */
+export function selectNotices(rows: ApiAnnouncement[], limit = 3): ApiAnnouncement[] {
+  return rows.filter((a) => a.pinned && a.status === 'live').slice(0, limit)
+}
+
+/** First non-empty line of a Markdown body, with the most common inline markup stripped. */
+export function firstLine(markdown: string): string {
+  const line = markdown
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0 && !/^!\[/.test(l) && !/^\/api\/media\/\d+$/.test(l))
+  if (!line) return ''
+  return line
+    .replace(/^#+\s*/, '')
+    .replace(/^[-*]\s+/, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`]/g, '')
+    .trim()
+}

@@ -27,7 +27,7 @@ describe('AnnouncementBanner', () => {
   it('renders dismiss link when onDismiss is provided', () => {
     const onDismiss = vi.fn()
     renderWithTheme(<AnnouncementBanner message="Update tonight" onDismiss={onDismiss} />)
-    const link = screen.getByRole('button', { name: 'Dismiss' })
+    const link = screen.getByRole('button', { name: 'Close announcement' })
     expect(link).toBeInTheDocument()
     link.click()
     expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -35,7 +35,7 @@ describe('AnnouncementBanner', () => {
 
   it('does not render dismiss link when onDismiss is not provided', () => {
     renderWithTheme(<AnnouncementBanner message="No dismiss" />)
-    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close announcement' })).not.toBeInTheDocument()
   })
 
   it('does not render dismiss link for login variant', () => {
@@ -43,7 +43,7 @@ describe('AnnouncementBanner', () => {
     renderWithTheme(
       <AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />,
     )
-    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close announcement' })).not.toBeInTheDocument()
   })
 
   it('renders in dark mode without errors', () => {

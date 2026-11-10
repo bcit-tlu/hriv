@@ -2,8 +2,8 @@
 
 One audience-filtered feed with ``inbox`` and ``mine`` scopes, author-scoped
 CRUD, per-user seen state, aggregate seen counts for staff roles and emoji
-reactions.  The legacy ``/api/announcement`` and ``/api/changelog`` shims stay
-registered until #1838.
+reactions.  ``GET /broadcast`` is the unauthenticated login-screen read; the
+pre-#1832 ``/api/announcement`` and ``/api/changelog`` routers were removed by #1838.
 
 Route order matters: literal sub-paths (``/broadcast``) are declared before
 ``/{announcement_id}`` so FastAPI never captures them as an id (see
