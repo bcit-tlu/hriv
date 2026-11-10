@@ -35,11 +35,19 @@ const DATA_IMAGE_REGEX = /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml)[;,]/i
 export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string | null {
   const mediaMatch = src.match(MEDIA_PATH_REGEX)
   if (mediaMatch) {
-    const token = mediaTokens?.[mediaMatch[1]]
-    return token ? `/api/media/${mediaMatch[1]}?token=${encodeURIComponent(token)}` : null
+    const mediaId = Number(mediaMatch[1])
+    const token = mediaTokens?.[String(mediaId)]
+    return token ? `/api/media/${mediaId}?token=${encodeURIComponent(token)}` : null
   }
   if (DATA_IMAGE_REGEX.test(src)) return src
-  return isSafeHref(src) ? src : null
+  if (!isSafeHref(src)) return null
+  // Re-serialise through URL so only a normalised http(s) URL reaches the DOM.
+  try {
+    const url = new URL(src)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+  } catch {
+    return null
+  }
 }
 
 export function isVideoSrc(src: string): boolean {
