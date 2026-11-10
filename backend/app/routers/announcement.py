@@ -16,16 +16,16 @@ from ..announcements import is_live, utcnow
 from ..auth import require_role
 from ..database import get_db
 from ..models import Announcement, User
-from ..schemas import AnnouncementOut, AnnouncementUpdate
+from ..schemas import LegacyAnnouncementOut, LegacyAnnouncementUpdate
 
 router = APIRouter(prefix="/announcement", tags=["announcement"], deprecated=True)
 
 
-def _legacy_shape(ann: Announcement | None) -> AnnouncementOut:
+def _legacy_shape(ann: Announcement | None) -> LegacyAnnouncementOut:
     if ann is None:
         now = utcnow()
-        return AnnouncementOut(id=0, message="", enabled=False, created_at=now, updated_at=now)
-    return AnnouncementOut(
+        return LegacyAnnouncementOut(id=0, message="", enabled=False, created_at=now, updated_at=now)
+    return LegacyAnnouncementOut(
         id=ann.id,
         message=ann.message,
         enabled=is_live(ann),
@@ -37,22 +37,28 @@ def _legacy_shape(ann: Announcement | None) -> AnnouncementOut:
 async def _broadcast_banner(db: AsyncSession) -> Announcement | None:
     result = await db.execute(
         select(Announcement)
-        .where(Announcement.audience == "everyone", Announcement.banner.is_(True))
+        .where(
+            Announcement.audience == "everyone",
+            Announcement.banner.is_(True),
+            # The legacy banner was always a plain notice; admin-only kinds
+            # (release/warning) posted via /api/announcements stay out of reach.
+            Announcement.kind == "notice",
+        )
         .order_by(Announcement.publish_at.desc().nulls_last(), Announcement.id.desc())
         .limit(1)
     )
     return result.scalars().first()
 
 
-@router.get("/", response_model=AnnouncementOut)
+@router.get("/", response_model=LegacyAnnouncementOut)
 async def get_announcement(db: Annotated[AsyncSession, Depends(get_db)]):
     """Return the broadcast banner in the legacy shape. Public – no auth required."""
     return _legacy_shape(await _broadcast_banner(db))
 
 
-@router.put("/", response_model=AnnouncementOut)
+@router.put("/", response_model=LegacyAnnouncementOut)
 async def update_announcement(
-    body: AnnouncementUpdate,
+    body: LegacyAnnouncementUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
     editor: Annotated[User, Depends(require_role("admin", "instructor"))],
 ):

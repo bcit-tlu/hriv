@@ -55,6 +55,10 @@ API for the [password-management validation flow](docs/password-management.md).
 | View changelog notifications                           | Yes   | Yes        | No    | No      |
 | View component versions (About)                        | Yes   | Yes        | No    | No      |
 | Manage changelog entries                               | Yes   | No         | No    | No      |
+| Post announcements (targeted to own programs/groups)   | Yes   | Yes        | No    | No      |
+| Post `everyone`/`staff`/release/warning announcements  | Yes   | No         | No    | No      |
+| Read + react to announcements in their audience        | Yes   | Yes        | Yes   | Yes     |
+| See announcement seen counts                           | Yes   | Yes        | Yes   | No      |
 | Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
 | User management (add/delete)                           | Yes   | No         | No    | No      |
 | Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
@@ -181,6 +185,7 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                           | Groups model, authorization, API surface, and frontend behaviour                 |
 | [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
+| [docs/announcements.md](docs/announcements.md)                                             | Announcements model, audience union rule, kinds, seen-state, reactions, API      |
 | [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
 | [docs/user-deactivation.md](docs/user-deactivation.md)                                     | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                         | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
@@ -168,7 +168,9 @@ class GroupMembersBulk(BaseModel):
 
 # ── Announcement ─────────────────────────────────────────
 
-class AnnouncementOut(BaseModel):
+class LegacyAnnouncementOut(BaseModel):
+    """Pre-#1832 banner shape served by the deprecated ``/api/announcement/``."""
+
     id: int
     message: str
     enabled: bool
@@ -178,11 +180,140 @@ class AnnouncementOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class AnnouncementUpdate(BaseModel):
+class LegacyAnnouncementUpdate(BaseModel):
     message: str | None = None
     enabled: bool | None = None
 
     _validate_message = field_validator("message", mode="before")(normalize_optional_nonblank_value)
+
+
+ANNOUNCEMENT_MESSAGE_MAX_CHARS = 10_000
+
+
+def _assume_utc(v: datetime | None) -> datetime | None:
+    """Naive timestamps are taken as UTC so comparisons with ``now()`` never raise."""
+    if isinstance(v, datetime) and v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc)
+    return v
+
+
+class AnnouncementCreate(BaseModel):
+    """``POST /api/announcements``.
+
+    ``publish_at`` omitted → published now unless ``draft`` is true.
+    ``audience='targeted'`` needs at least one program or group id.
+    """
+
+    title: str = Field(min_length=1, max_length=255)
+    message: str = Field(default="", max_length=ANNOUNCEMENT_MESSAGE_MAX_CHARS)
+    kind: Literal["notice", "event", "reminder", "celebration", "release", "warning"] = "notice"
+    audience: Literal["everyone", "staff", "targeted"] = "targeted"
+    program_ids: list[int] = Field(default_factory=list)
+    group_ids: list[int] = Field(default_factory=list)
+    publish_at: datetime | None = None
+    expires_at: datetime | None = None
+    draft: bool = False
+    pinned: bool = False
+    banner: bool = False
+
+    _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _utc_dates = field_validator("publish_at", "expires_at", mode="after")(_assume_utc)
+
+    @model_validator(mode="after")
+    def _check_targets_and_window(self) -> "AnnouncementCreate":
+        if self.audience == "targeted" and not (self.program_ids or self.group_ids):
+            raise ValueError("A targeted announcement needs at least one program or group")
+        if self.audience != "targeted" and (self.program_ids or self.group_ids):
+            raise ValueError("program_ids/group_ids are only valid with audience='targeted'")
+        if self.publish_at and self.expires_at and self.expires_at <= self.publish_at:
+            raise ValueError("expires_at must be after publish_at")
+        return self
+
+
+class AnnouncementUpdate(BaseModel):
+    """``PATCH /api/announcements/{id}``.
+
+    Only supplied fields change. ``draft=true`` unpublishes; ``draft=false``
+    publishes now when no ``publish_at`` is given. ``notify_again`` bumps
+    ``notified_at`` so every reader sees the announcement as new again.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=ANNOUNCEMENT_MESSAGE_MAX_CHARS)
+    kind: Literal["notice", "event", "reminder", "celebration", "release", "warning"] | None = None
+    audience: Literal["everyone", "staff", "targeted"] | None = None
+    program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
+    publish_at: datetime | None = None
+    expires_at: datetime | None = None
+    clear_expires_at: bool = False
+    draft: bool | None = None
+    pinned: bool | None = None
+    banner: bool | None = None
+    notify_again: bool = False
+
+    _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _utc_dates = field_validator("publish_at", "expires_at", mode="after")(_assume_utc)
+
+    def touches_targeting(self) -> bool:
+        return (
+            self.audience is not None
+            or self.program_ids is not None
+            or self.group_ids is not None
+        )
+
+
+class AnnouncementOut(BaseModel):
+    """One card in ``inbox`` / ``mine``. ``seen_count`` / ``audience_size`` are
+    only populated for admin, instructor and staff callers."""
+
+    id: int
+    title: str
+    message: str
+    kind: str
+    icon: str
+    severity: str
+    audience: str
+    author_id: int | None
+    author_name: str
+    program_ids: list[int]
+    program_names: list[str]
+    group_ids: list[int]
+    group_names: list[str]
+    publish_at: datetime | None
+    expires_at: datetime | None
+    notified_at: datetime | None
+    pinned: bool
+    banner: bool
+    status: Literal["draft", "scheduled", "live", "expired"]
+    seen: bool
+    reactions: dict[str, int]
+    my_reactions: list[str]
+    media_tokens: dict[str, str]
+    can_edit: bool
+    seen_count: int | None = None
+    audience_size: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnnouncementBroadcastOut(BaseModel):
+    """Minimal public shape for the login screen (``GET /api/announcements/broadcast``)."""
+
+    id: int
+    title: str
+    message: str
+    kind: str
+    icon: str
+    severity: str
+    publish_at: datetime | None
+    expires_at: datetime | None
+    updated_at: datetime
+
+
+class ReactionsOut(BaseModel):
+    reactions: dict[str, int]
+    my_reactions: list[str]
 
 
 # ── Changelog ────────────────────────────────────────────
