@@ -112,8 +112,8 @@ import {
   fetchGroupInstructors,
   addGroupInstructor,
   removeGroupInstructor,
-  fetchAnnouncement,
-  updateAnnouncement,
+  fetchLegacyAnnouncement,
+  updateLegacyAnnouncement,
   fetchChangelogEntries,
   createChangelogEntry,
   updateChangelogEntry,
@@ -149,7 +149,7 @@ import {
   attachedCategoriesFromError,
   type ApiUser,
   type ApiProgram,
-  type ApiAnnouncement,
+  type ApiLegacyAnnouncement,
   type ApiChangelogEntry,
   type ApiSourceImage,
   setApiFailureObserver,
@@ -256,7 +256,7 @@ const PROGRAM_FIXTURE: ApiProgram = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
-const ANNOUNCEMENT_FIXTURE: ApiAnnouncement = {
+const ANNOUNCEMENT_FIXTURE: ApiLegacyAnnouncement = {
   id: 1,
   message: 'System update tonight',
   enabled: true,
@@ -1559,16 +1559,16 @@ describe('Announcement API', () => {
   })
   afterEach(() => setToken(null))
 
-  it('fetchAnnouncement sends GET', async () => {
+  it('fetchLegacyAnnouncement sends GET', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(ANNOUNCEMENT_FIXTURE))
-    const result = await fetchAnnouncement()
+    const result = await fetchLegacyAnnouncement()
     expect(mockFetch.mock.calls[0][0]).toBe('/api/announcement/')
     expect(result).toEqual(ANNOUNCEMENT_FIXTURE)
   })
 
-  it('updateAnnouncement sends PUT', async () => {
+  it('updateLegacyAnnouncement sends PUT', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(ANNOUNCEMENT_FIXTURE))
-    await updateAnnouncement({ message: 'Updated', enabled: false })
+    await updateLegacyAnnouncement({ message: 'Updated', enabled: false })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/announcement/')
     expect(init.method).toBe('PUT')

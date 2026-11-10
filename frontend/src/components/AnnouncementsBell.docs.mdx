@@ -1,0 +1,31 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AnnouncementsBellStories from './AnnouncementsBell.stories'
+
+<Meta of={AnnouncementsBellStories} />
+
+<Title />
+
+<Subtitle>
+  The AppBar bell every role sees: badge = unseen live posts, a peek of the newest unseen titles,
+  and "See all" to the Announcements page.
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Behaviour
+
+- `unseenCount` drives the badge (capped at 99+); `announcements` is the shared `useAnnouncements`
+  feed, filtered here to unseen live posts and capped at five (`BELL_PEEK_LIMIT`).
+- Clicking a title calls `onOpenAnnouncements(id)` (page focused on that card); "See all" calls it
+  with no id. The empty state reads "You're all caught up."
+
+<Stories includePrimary={false} />

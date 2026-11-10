@@ -61,6 +61,9 @@ import EditImageModal from './components/EditImageModal'
 import ProgramManagementModal from './components/ProgramManagementModal'
 import GroupManagementModal from './components/GroupManagementModal'
 import NotificationMenu from './components/NotificationMenu'
+import AnnouncementsBell from './components/AnnouncementsBell'
+import AnnouncementsPage from './components/AnnouncementsPage'
+import AboutMenuItems from './components/AboutMenuItems'
 import GuidePage, { type GuideDocRequest } from './components/GuidePage'
 import ReportIssueModal from './components/ReportIssueModal'
 import SearchModal from './components/SearchModal'
@@ -156,6 +159,7 @@ import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
+import { useAnnouncements } from './useAnnouncements'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -204,6 +208,17 @@ export default function App() {
   // Deployment flags (`GET /api/features`). Collections are dark-launched:
   // the tab and `?collection=` deep links only exist once the flag is on.
   const features = useFeatures()
+  const announcementsEnabled = features?.announcements === true
+  const announcementsFeed = useAnnouncements(announcementsEnabled && currentUser != null)
+  const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('page') !== 'announcements') return null
+    const id = Number(params.get('id'))
+    return Number.isInteger(id) && id > 0 ? id : null
+  })
+  const [announcementsComposeGroupId, setAnnouncementsComposeGroupId] = useState<number | null>(
+    null,
+  )
   const collectionsEnabled =
     features?.collections === true &&
     (currentUser?.role !== 'student' || features?.collectionsStudentAccess === true)
@@ -244,7 +259,8 @@ export default function App() {
       p === 'measurement' ||
       p === 'people' ||
       p === 'admin' ||
-      p === 'guide'
+      p === 'guide' ||
+      p === 'announcements'
     )
       return p
     return 'browse'
@@ -260,7 +276,9 @@ export default function App() {
         ? 'browse'
         : page === 'collections' && features != null && !collectionsEnabled
           ? 'browse'
-          : page
+          : page === 'announcements' && features != null && !announcementsEnabled
+            ? 'browse'
+            : page
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
@@ -271,6 +289,12 @@ export default function App() {
     setSelectedCollectionId(null)
     setCollectionFromBrowse(false)
   }, [features, collectionsEnabled, page])
+
+  useEffect(() => {
+    if (features == null || announcementsEnabled || page !== 'announcements') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
+    setPage('browse')
+  }, [features, announcementsEnabled, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
@@ -983,9 +1007,16 @@ export default function App() {
       const validPage = (
         popPage === LEGACY_MANAGE_COLLECTIONS_PAGE
           ? 'collections'
-          : ['browse', 'collections', 'manage', 'measurement', 'people', 'admin', 'guide'].includes(
-                popPage,
-              )
+          : [
+                'browse',
+                'collections',
+                'manage',
+                'measurement',
+                'people',
+                'admin',
+                'guide',
+                'announcements',
+              ].includes(popPage)
             ? popPage
             : 'browse'
       ) as Page
@@ -1861,6 +1892,21 @@ export default function App() {
     }
   }, [canEditContent])
 
+  const openAnnouncementsPage = useCallback(
+    (announcementId?: number, composeGroupId?: number) => {
+      setAnnouncementsFocusId(announcementId ?? null)
+      setAnnouncementsComposeGroupId(composeGroupId ?? null)
+      setPage('announcements')
+      pushNavState(
+        'announcements',
+        [],
+        null,
+        announcementId != null ? { id: String(announcementId) } : undefined,
+      )
+    },
+    [pushNavState],
+  )
+
   const handleTabChange = useCallback(
     (v: Page) => {
       runCanvasNavigation(() => {
@@ -2382,6 +2428,18 @@ export default function App() {
       announcement={announcement}
       annMessage={annMessage}
       annEnabled={annEnabled}
+      announcementsEnabled={announcementsEnabled}
+      profileMenuExtras={
+        announcementsEnabled ? (
+          <AboutMenuItems
+            frontendVersion={frontendVersion}
+            backendVersion={backendVersion}
+            backupVersion={backupVersion}
+            onOpenGuide={canEditContent ? () => handleTabChange('guide') : undefined}
+            onNavigate={() => setProfileOpen(false)}
+          />
+        ) : undefined
+      }
       onDismissAnnouncement={dismissAnnouncement}
       profileOpen={profileOpen}
       setProfileOpen={setProfileOpen}
@@ -2424,7 +2482,13 @@ export default function App() {
         ) : null
       }
       notificationSlot={
-        currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
+        announcementsEnabled ? (
+          <AnnouncementsBell
+            announcements={announcementsFeed.announcements}
+            unseenCount={announcementsFeed.unseenCount}
+            onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+          />
+        ) : currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
           <NotificationMenu
             userEmail={currentUser.email}
             serverLastReadAt={
@@ -2475,7 +2539,16 @@ export default function App() {
               : {}),
           }}
         >
-          {page === 'guide' && canEditContent ? (
+          {page === 'announcements' && announcementsEnabled ? (
+            <AnnouncementsPage
+              currentUser={currentUser}
+              feed={announcementsFeed}
+              canCompose={canEditContent}
+              focusId={announcementsFocusId}
+              composeGroupId={announcementsComposeGroupId}
+              onComposeGroupConsumed={() => setAnnouncementsComposeGroupId(null)}
+            />
+          ) : page === 'guide' && canEditContent ? (
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
             <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
@@ -3698,6 +3771,14 @@ export default function App() {
       <GroupManagementModal
         open={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
+        onPostToGroup={
+          announcementsEnabled
+            ? (groupId) => {
+                setGroupModalOpen(false)
+                openAnnouncementsPage(undefined, groupId)
+              }
+            : undefined
+        }
         groups={groups}
         onAdd={handleAddGroup}
         onEdit={handleEditGroup}

@@ -151,14 +151,34 @@ orphaned files are tolerated.
 
 ## Frontend
 
-Pending #1837 (Announcements page: Inbox / Mine, composer, bell for all roles)
-and #1838 (banner policy, Home notices shelf, login broadcast, legacy cleanup).
-Until then the pre-#1832 surfaces keep working through the shims described in
-[changelog-notifications.md](changelog-notifications.md).
+Everything below is gated on `features.announcements` (`GET /api/features`);
+while the flag is off the pre-#1832 surfaces keep working through the shims
+described in [changelog-notifications.md](changelog-notifications.md). #1838
+(banner policy, Home notices shelf, login broadcast, legacy cleanup) removes
+those shims.
+
+| Surface            | File                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bell (every role)  | `AnnouncementsBell.tsx`    | Badge = unseen live Inbox posts. Popover peeks the newest ≤5 unseen titles (kind icon + relative time); clicking one opens the page focused on it; **See all** → `?page=announcements`.                                                                                                                                                                                                                                                                                                                                                                                       |
+| Page               | `AnnouncementsPage.tsx`    | **Inbox** for all roles; **Mine** + **New announcement** for admins and instructors (`canEditContent`; staff read only). Inbox posts are marked seen once on screen, once per `(id, notified_at)`, and stay listed (quieter). Mine has Draft/Scheduled/Live/Expired filters; Edit/Duplicate/Delete only where `can_edit`; co-managed rows are read-only and show the author. Delete confirms. `?id=` deep links scroll to and highlight a card.                                                                                                                               |
+| Card               | `AnnouncementCard.tsx`     | Kind icon (severity-tinted), title, author ("Site" fallback), audience chips, relative time with absolute tooltip, Markdown body with `media_tokens`, reaction pills + picker, "Seen by N of M" (staff viewers, counts from the API only).                                                                                                                                                                                                                                                                                                                                    |
+| Composer           | `AnnouncementComposer.tsx` | Dialog. One grouped `To:` multi-select (Audience → Everyone/Staff for admins only; Programs; Groups) with sentinel/target exclusivity; instructors need ≥1 target. Kind picker hides admin-only kinds from instructors. Markdown textarea, media upload toolbar (`![name](/api/media/{id})` for images, bare `/api/media/{id}` for video, each on its own paragraph), Preview via `MarkdownContent`. "More options": publish/expiry (`datetime-local` ↔ ISO UTC), pin, banner (admin), **Notify readers again** (edit). Draft = `draft: true`. Duplicate clears the schedule. |
+| Contextual compose | `GroupManagementModal.tsx` | Row menu **Post to group** opens the page with the composer pre-targeted at that group.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Shared feed        | `useAnnouncements.ts`      | One fetch for bell + page (`scope=inbox`), background refresh at the standard cadence, optimistic seen/reactions with rollback.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Kinds              | `announcementKinds.ts`     | `ANNOUNCEMENT_KINDS` (icon, label, severity, `adminOnly`), `ANNOUNCEMENT_REACTIONS`, status labels, audience chips, sort (pinned first, newest notified).                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+Navigation changes behind the flag: Documentation and About move from the
+bell menu to the profile popover (`AboutMenuItems.tsx`); the legacy
+Manage → Announcement and profile → View Announcement links are hidden. The
+singleton banner and What's New dialog are untouched until #1838.
 
 ## Testing
 
-`backend/tests/test_router_announcements.py` (visibility matrix, authority,
+Frontend: `tests/announcementKinds.test.ts`, `tests/announcementsApi.test.ts`,
+`tests/useAnnouncements.test.tsx`, `tests/components/Announcement{Card,Composer,sBell,sPage}.test.tsx`
+(`npx vitest run --config vite.config.ts tests/components/Announcement*`).
+
+Backend: `backend/tests/test_router_announcements.py` (visibility matrix, authority,
 seen-state, seen counts, reactions, route ordering, flag gate),
 `test_announcements_helpers.py`, and the shim tests
 `test_router_announcement.py` / `test_router_changelog.py`.

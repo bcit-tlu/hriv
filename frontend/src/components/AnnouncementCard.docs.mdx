@@ -1,0 +1,35 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AnnouncementCardStories from './AnnouncementCard.stories'
+
+<Meta of={AnnouncementCardStories} />
+
+<Title />
+
+<Subtitle>
+  One post in the Announcements stream: kind icon, title, author, audience chips, Markdown body,
+  emoji reactions — and, for authors, status chips plus "Seen by N of M".
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Behaviour
+
+- The kind icon is the controlled set from `announcementKinds.ts`; its severity tints the card's
+  left border. Emoji are reactions only, never kinds.
+- The author falls back to **Site** when the account is gone (migrated release notes).
+- Seen posts stay in the Inbox but render quieter (`Seen (quiet)`); nothing is ever dismissed.
+- Reactions are optimistic; the picker offers the eight allowed ids.
+- `manage` adds Draft / Scheduled / Live / Expired chips. Edit / Duplicate / Delete appear only
+  when the API says `can_edit`; co-managed rows show the author with "(co-managed)".
+- "Seen by N of M" renders only when `viewerIsStaff` and the API supplied counts.
+
+<Stories includePrimary={false} />

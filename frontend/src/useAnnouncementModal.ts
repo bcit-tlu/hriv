@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import { fetchAnnouncement, updateAnnouncement, userMessage } from './api'
+import { fetchLegacyAnnouncement, updateLegacyAnnouncement, userMessage } from './api'
 
 const DISMISSED_PREFIX = 'dismissed_announcement'
 
@@ -17,7 +17,7 @@ export function useAnnouncementModal(userId?: number) {
 
   const loadAnnouncement = useCallback(async () => {
     try {
-      const ann = await fetchAnnouncement()
+      const ann = await fetchLegacyAnnouncement()
       annUpdatedAt.current = ann.updated_at
       const dismissed = localStorage.getItem(dismissedKey)
       const visible = ann.enabled && dismissed !== ann.updated_at
@@ -46,7 +46,7 @@ export function useAnnouncementModal(userId?: number) {
   const handleAnnSave = useCallback(async () => {
     setAnnSaving(true)
     try {
-      const updated = await updateAnnouncement({
+      const updated = await updateLegacyAnnouncement({
         message: annDraftMessage,
         enabled: annDraftEnabled,
       })

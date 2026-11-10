@@ -1,0 +1,41 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as AnnouncementComposerStories from './AnnouncementComposer.stories'
+
+<Meta of={AnnouncementComposerStories} />
+
+<Title />
+
+<Subtitle>
+  The single authoring surface for announcements and release notes: one grouped `To:` field, a
+  controlled kind picker, Markdown with media upload and preview, and schedule / expiry / pin /
+  banner behind "More options".
+</Subtitle>
+
+<Primary />
+<Controls />
+
+## Rules
+
+- `To:` groups options as Audience (admin only: **Everyone**, **Staff**), Programs, Groups.
+  Picking a sentinel audience clears targets and vice versa (`reconcileTargets`).
+- Instructors must pick at least one group or program; Post stays disabled until they do.
+  A sole managed group (and no programs) is pre-selected; "Post to group" pre-selects that group.
+- The kind picker hides the admin-only **Release** and **Warning** kinds from instructors — the
+  icon _is_ the kind, so a warning icon can never carry an "event" post.
+- Media uploads insert `![name](/api/media/{id})` for images and a bare `/api/media/{id}` line for
+  video, each on its own paragraph; Preview renders through `MarkdownContent` with the fresh
+  `mediaTokens` returned by the upload.
+- `datetime-local` values convert to ISO UTC on save (`toLocalInput` / `fromLocalInput`).
+- Edit offers **Notify readers again** (PATCH `notify_again`); clearing an expiry sends
+  `clear_expires_at`. Duplicate copies everything except the schedule and appends "(copy)".
+- The dialog remounts on every open, so fields always re-initialise from props.
+
+<Stories includePrimary={false} />
