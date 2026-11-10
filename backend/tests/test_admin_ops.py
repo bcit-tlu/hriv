@@ -4060,3 +4060,51 @@ def test_announcement_rows_from_legacy_dump_skips_blank_or_disabled_banner() -> 
     assert row["publish_at"] is None
     assert row["notified_at"] is None
     assert _announcement_rows_from_dump({}) == []
+
+
+def test_seed_announcement_seen_mirrors_migration_for_legacy_dumps() -> None:
+    from app.admin_ops import _seed_announcement_seen
+
+    rows = [
+        {"id": 1, "kind": "release", "notified_at": "2025-01-02T00:00:00+00:00"},
+        {"id": 2, "kind": "release", "notified_at": "2025-02-01T00:00:00+00:00"},
+        {"id": 3, "kind": "notice", "notified_at": "2025-01-01T00:00:00+00:00"},
+    ]
+    meta = {"theme": "dark", "changelog_last_read_at": "2025-01-15T00:00:00+00:00"}
+    out = _seed_announcement_seen(meta, rows)
+    assert out == {
+        "theme": "dark",
+        "changelog_last_read_at": "2025-01-15T00:00:00+00:00",
+        "announcement_seen": {"1": "2025-01-02T00:00:00+00:00"},
+    }
+    # Untouched when there is no watermark / nothing to seed.
+    assert _seed_announcement_seen({"theme": "light"}, rows) == {"theme": "light"}
+    assert _seed_announcement_seen(None, rows) is None
+    assert _seed_announcement_seen(
+        {"changelog_last_read_at": "2024-01-01T00:00:00+00:00"}, rows
+    ) == {"changelog_last_read_at": "2024-01-01T00:00:00+00:00"}
+
+
+async def test_run_db_import_legacy_dump_seeds_announcement_seen(tmp_path) -> None:
+    """Old dumps: users' ``changelog_last_read_at`` seeds ``announcement_seen``."""
+    dump = _full_dump()
+    dump["users"][0]["metadata"] = {
+        "theme": "dark",
+        "changelog_last_read_at": "2025-01-10T00:00:00+00:00",
+    }
+    input_file = tmp_path / "legacy.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    add_calls = [c.args[0] for c in mock_session.add.call_args_list]
+    user = next(
+        obj for obj in add_calls
+        if type(obj).__name__ == "User" and obj.id == dump["users"][0]["id"]
+    )
+    assert user.metadata_["theme"] == "dark"
+    assert user.metadata_["announcement_seen"] == {"1": "2025-01-02T00:00:00+00:00"}

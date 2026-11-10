@@ -889,6 +889,28 @@ def _announcement_rows_from_dump(dump: dict) -> list[dict]:
     return rows
 
 
+def _seed_announcement_seen(metadata: dict | None, release_rows: list[dict]) -> dict | None:
+    """Mirror migration 0042 for pre-0042 dumps: ``changelog_last_read_at`` →
+    ``announcement_seen`` markers for the release notes published on or before
+    it. Other metadata keys are preserved; the legacy key is kept too (the
+    deployed frontend still reads it until #1838)."""
+    if not metadata or not isinstance(metadata, dict):
+        return metadata
+    last_read = _parse_dt(metadata.get("changelog_last_read_at"))
+    if last_read is None:
+        return metadata
+    seen = dict(metadata.get("announcement_seen") or {})
+    for row in release_rows:
+        if row.get("kind") != "release" or row.get("id") is None:
+            continue
+        published = _parse_dt(row.get("notified_at") or row.get("publish_at"))
+        if published is not None and published <= last_read:
+            seen.setdefault(str(row["id"]), published.isoformat())
+    if not seen:
+        return metadata
+    return {**metadata, "announcement_seen": seen}
+
+
 def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -1651,7 +1673,12 @@ async def run_db_import(task_id: int) -> None:
 
                 # Import users
                 await _update_task(status_session, task, log_line="Importing users…", progress=25)
+                legacy_dump = "announcements" not in dump
+                announcement_rows = _announcement_rows_from_dump(dump)
                 for u in dump["users"]:
+                    user_metadata = u.get("metadata", {})
+                    if legacy_dump:
+                        user_metadata = _seed_announcement_seen(user_metadata, announcement_rows)
                     user = User(
                         id=u["id"],
                         name=u["name"],
@@ -1665,7 +1692,7 @@ async def run_db_import(task_id: int) -> None:
                         role=u.get("role", "student"),
                         active=u.get("active", True),
                         last_access=_parse_dt(u.get("last_access")),
-                        metadata_=u.get("metadata", {}),
+                        metadata_=user_metadata,
                         created_at=_parse_dt(u.get("created_at")),
                         updated_at=_parse_dt(u.get("updated_at")),
                     )
@@ -1930,7 +1957,6 @@ async def run_db_import(task_id: int) -> None:
                 # Import announcements (new dumps) or map the pre-0042 shape
                 # (`changelog_entries` list + `announcement` singleton object).
                 await _update_task(status_session, task, log_line="Importing announcements…", progress=70)
-                announcement_rows = _announcement_rows_from_dump(dump)
                 for row in announcement_rows:
                     data_session.add(
                         Announcement(
