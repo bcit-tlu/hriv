@@ -627,3 +627,8 @@ def test_literal_routes_not_shadowed_by_param_routes() -> None:
         endpoint = _first_match_endpoint(method, path)
         assert endpoint is not None, f"{method} {path} matched no route"
         assert endpoint.__name__ == expected, f"{method} {path} resolved to {endpoint.__name__}"
+
+
+def test_strip_media_tokens_canonicalises_pasted_urls() -> None:
+    pasted = "![a](/api/media/12?token=abc.DEF-ghi_jkl) and /api/media/13?token=x.y.z\n/api/media/14"
+    assert rules.strip_media_tokens(pasted) == "![a](/api/media/12) and /api/media/13\n/api/media/14"

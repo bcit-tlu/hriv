@@ -325,7 +325,7 @@ async def create_announcement(
         )
     ann = Announcement(
         title=body.title,
-        message=body.message,
+        message=rules.strip_media_tokens(body.message),
         kind=body.kind,
         audience=body.audience,
         author_id=current_user.id,
@@ -380,7 +380,7 @@ async def update_announcement(
     if body.title is not None:
         ann.title = body.title
     if body.message is not None:
-        ann.message = body.message
+        ann.message = rules.strip_media_tokens(body.message)
     if body.pinned is not None:
         ann.pinned = body.pinned
     if body.banner is not None:

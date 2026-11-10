@@ -217,6 +217,17 @@ def authority_error(
     return None
 
 
+_PASTED_MEDIA_TOKEN_RE = re.compile(r"(/api/media/\d+)\?token=[A-Za-z0-9._~-]+")
+
+
+def strip_media_tokens(message: str) -> str:
+    """Canonicalise pasted ``tokenized_url``s to ``/api/media/{id}``.
+
+    Stored Markdown must reference media by id only; tokens expire after an
+    hour and are re-minted per response (``media_tokens``)."""
+    return _PASTED_MEDIA_TOKEN_RE.sub(r"\1", message)
+
+
 def media_tokens_for(message: str) -> dict[str, str]:
     """``{media_id: token}`` for every ``/api/media/{id}`` reference in *message*."""
     from .media_tokens import issue_media_token
