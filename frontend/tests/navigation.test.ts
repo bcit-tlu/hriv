@@ -103,11 +103,7 @@ describe('getNavigationItems', () => {
       canViewPeople: false,
     })
     const manageItems = items.filter((i) => i.section === 'manage')
-    expect(manageItems.map((i) => i.id).sort()).toEqual([
-          'categories',
-      'groups',
-      'measurement',
-    ])
+    expect(manageItems.map((i) => i.id).sort()).toEqual(['categories', 'groups', 'measurement'])
   })
 
   it('includes account-section items only for admin or staff', () => {

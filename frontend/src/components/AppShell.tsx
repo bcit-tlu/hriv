@@ -8,18 +8,13 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
-import Collapse from '@mui/material/Collapse'
 import Container from '@mui/material/Container'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
-import Dialog from '@mui/material/Dialog'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
@@ -274,7 +269,7 @@ export default function AppShell(props: AppShellProps) {
       canManageUsers,
       canViewPeople,
       collectionsEnabled,
-    }).filter((item) => !(announcementsEnabled && item.id === 'announcement'))) {
+    })) {
       const section = sections.get(item.section) ?? []
       section.push(makeItem(item))
       sections.set(item.section, section)

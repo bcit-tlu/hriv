@@ -156,7 +156,7 @@ describe('AuthProvider', () => {
           group_ids: [],
           group_names: [],
           last_access: null,
-          metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
+          metadata_extra: { theme: 'dark' },
         }),
     })
     // The admin user triggers loadUsers
@@ -245,7 +245,7 @@ describe('AuthProvider', () => {
           group_ids: [],
           group_names: [],
           last_access: null,
-          metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
+          metadata_extra: { theme: 'dark' },
         }),
     })
     mockFetchUsers.mockResolvedValueOnce([])
@@ -262,7 +262,7 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(authCtx?.currentUser?.metadataExtra).toEqual({
-        changelog_last_read_at: '2026-06-17T12:00:00Z',
+        theme: 'dark',
       })
     })
     expect(authCtx?.currentUser?.active).toBe(false)

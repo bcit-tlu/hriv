@@ -9,7 +9,6 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Popover from '@mui/material/Popover'
@@ -18,8 +17,6 @@ import Button from '@mui/material/Button'
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Snackbar from '@mui/material/Snackbar'
-import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import AddIcon from '@mui/icons-material/Add'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
@@ -60,7 +57,8 @@ import LoginScreen from './components/LoginScreen'
 import EditImageModal from './components/EditImageModal'
 import ProgramManagementModal from './components/ProgramManagementModal'
 import GroupManagementModal from './components/GroupManagementModal'
-import NotificationMenu from './components/NotificationMenu'
+import NoticesShelf from './components/NoticesShelf'
+import AnnouncementBanner from './components/AnnouncementBanner'
 import AnnouncementsBell from './components/AnnouncementsBell'
 import AnnouncementsPage from './components/AnnouncementsPage'
 import AboutMenuItems from './components/AboutMenuItems'
@@ -120,6 +118,8 @@ import {
   bulkDeleteCollections,
   ApiError,
   userMessage,
+  fetchAnnouncementBroadcast,
+  type ApiAnnouncementBroadcast,
 } from './api'
 import type { ApiCollectionSummary, ApiImage, ApiUser } from './api'
 import { mergeRenewedImageItemUrls } from './tileTokenRenewal'
@@ -158,8 +158,9 @@ import { useCanvasAnnotations } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
-import { useAnnouncementModal } from './useAnnouncementModal'
 import { useAnnouncements } from './useAnnouncements'
+import { selectBannerAnnouncements } from './announcementUtils'
+import { kindMeta } from './announcementKinds'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -210,6 +211,23 @@ export default function App() {
   const features = useFeatures()
   const announcementsEnabled = features?.announcements === true
   const announcementsFeed = useAnnouncements(announcementsEnabled && currentUser != null)
+  const [loginBroadcast, setLoginBroadcast] = useState<ApiAnnouncementBroadcast | null>(null)
+  useEffect(() => {
+    if (!announcementsEnabled || currentUser != null) return
+    let cancelled = false
+    fetchAnnouncementBroadcast()
+      .then((rows) => {
+        if (!cancelled) setLoginBroadcast(rows[0] ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setLoginBroadcast(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [announcementsEnabled, currentUser])
+  const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
+  const bannerPost = bannerCandidates[0]
   const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('page') !== 'announcements') return null
@@ -488,7 +506,6 @@ export default function App() {
   const [backendVersion, setBackendVersion] = useState<string | null>(null)
   const [backupVersion, setBackupVersion] = useState<string | null>(null)
   const [frontendVersion, setFrontendVersion] = useState<string | null>(null)
-  const [changelogVersion, setChangelogVersion] = useState(0)
 
   // Browse data (categories, images, collections, programs, background refresh)
   const {
@@ -769,9 +786,6 @@ export default function App() {
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [ancestorGroupIds, groups, liveCategoryPath, path.length])
-  const bumpChangelogVersion = useCallback(() => {
-    setChangelogVersion((version) => version + 1)
-  }, [])
   const renderBreadcrumbChips = (
     items: Array<{ id: number; name: string; inherited: boolean }>,
     kind: 'program' | 'group',
@@ -1105,26 +1119,6 @@ export default function App() {
       ),
   )
 
-  // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
-  const {
-    announcement,
-    annMessage,
-    annEnabled,
-    dismissAnnouncement,
-    loadAnnouncement,
-    annModalOpen,
-    setAnnModalOpen,
-    annDraftMessage,
-    setAnnDraftMessage,
-    annDraftEnabled,
-    setAnnDraftEnabled,
-    annSaving,
-    annError,
-    setAnnError,
-    openAnnModal,
-    handleAnnSave,
-  } = useAnnouncementModal(currentUser?.id)
-
   // User profile popover + edit modal state — extracted to useUserProfile hook
   const {
     avatarRef,
@@ -1243,18 +1237,7 @@ export default function App() {
         loadGroups()
       }
     }
-    if (!usersLoading) {
-      loadAnnouncement()
-    }
-  }, [
-    currentUser,
-    usersLoading,
-    loadCategories,
-    loadUncategorizedImages,
-    loadPrograms,
-    loadGroups,
-    loadAnnouncement,
-  ])
+  }, [currentUser, usersLoading, loadCategories, loadUncategorizedImages, loadPrograms, loadGroups])
 
   // Load users for search when modal opens (admin/instructor only)
   useEffect(() => {
@@ -2408,7 +2391,7 @@ export default function App() {
 
   // Show login screen when no user is authenticated
   if (!currentUser) {
-    return <LoginScreen onLogin={login} announcement={announcement} />
+    return <LoginScreen onLogin={login} broadcast={loginBroadcast} />
   }
 
   const viewerReplaceUploadProgress = getReplaceUploadProgress('viewer')
@@ -2425,22 +2408,28 @@ export default function App() {
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
       currentUser={currentUser}
-      announcement={announcement}
-      annMessage={annMessage}
-      annEnabled={annEnabled}
-      announcementsEnabled={announcementsEnabled}
-      profileMenuExtras={
-        announcementsEnabled ? (
-          <AboutMenuItems
-            frontendVersion={frontendVersion}
-            backendVersion={backendVersion}
-            backupVersion={backupVersion}
-            onOpenGuide={canEditContent ? () => handleTabChange('guide') : undefined}
-            onNavigate={() => setProfileOpen(false)}
+      bannerSlot={
+        announcementsEnabled && bannerPost ? (
+          <AnnouncementBanner
+            key={bannerPost.id}
+            title={bannerPost.title}
+            message={bannerPost.message}
+            severity={kindMeta(bannerPost.kind).severity}
+            onDismiss={() => announcementsFeed.markSeen(bannerPost)}
+            moreCount={bannerCandidates.length - 1}
+            onMore={() => openAnnouncementsPage()}
           />
         ) : undefined
       }
-      onDismissAnnouncement={dismissAnnouncement}
+      profileMenuExtras={
+        <AboutMenuItems
+          frontendVersion={frontendVersion}
+          backendVersion={backendVersion}
+          backupVersion={backupVersion}
+          onOpenGuide={canEditContent ? () => handleTabChange('guide') : undefined}
+          onNavigate={() => setProfileOpen(false)}
+        />
+      }
       profileOpen={profileOpen}
       setProfileOpen={setProfileOpen}
       avatarRef={avatarRef}
@@ -2450,7 +2439,6 @@ export default function App() {
       onOpenCategories={() => setDialogOpen(true)}
       onOpenPrograms={() => setProgramModalOpen(true)}
       onOpenGroups={() => setGroupModalOpen(true)}
-      onOpenAnnouncement={openAnnModal}
       onSearchOpen={openSearch}
       mode={mode}
       frontendVersion={frontendVersion}
@@ -2487,20 +2475,7 @@ export default function App() {
             announcements={announcementsFeed.announcements}
             unseenCount={announcementsFeed.unseenCount}
             onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
-          />
-        ) : currentUser.role === 'admin' || currentUser.role === 'instructor' ? (
-          <NotificationMenu
-            userEmail={currentUser.email}
-            serverLastReadAt={
-              typeof currentUser.metadataExtra?.changelog_last_read_at === 'string'
-                ? currentUser.metadataExtra.changelog_last_read_at
-                : null
-            }
-            frontendVersion={frontendVersion}
-            backendVersion={backendVersion}
-            backupVersion={backupVersion}
-            changelogVersion={changelogVersion}
-            onOpenGuide={() => handleTabChange('guide')}
+            onToggleReaction={(a, emoji) => void announcementsFeed.toggleReaction(a, emoji)}
           />
         ) : null
       }
@@ -2551,7 +2526,7 @@ export default function App() {
           ) : page === 'guide' && canEditContent ? (
             <GuidePage docRequest={guideDocRequest} />
           ) : page === 'admin' && canManageUsers ? (
-            <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
+            <AdminPage />
           ) : page === 'measurement' && canEditContent ? (
             <MeasurementReviewPage
               onOpenImage={handleOpenGraphImage}
@@ -3078,6 +3053,13 @@ export default function App() {
           ) : (
             /* ---- Browse mode ---- */
             <>
+              {announcementsEnabled && path.length === 0 && (
+                <NoticesShelf
+                  announcements={announcementsFeed.announcements}
+                  onToggleReaction={(a, emoji) => void announcementsFeed.toggleReaction(a, emoji)}
+                  onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+                />
+              )}
               {/* Breadcrumbs + action buttons */}
               <Box
                 sx={{
@@ -3713,49 +3695,6 @@ export default function App() {
         user={currentApiUser}
         selfProfile
       />
-
-      {/* Announcement modal (from Manage menu) */}
-      <Dialog open={annModalOpen} onClose={() => setAnnModalOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Manage Announcement</DialogTitle>
-        <DialogContent>
-          <TextField
-            label="Announcement Message"
-            multiline
-            minRows={3}
-            maxRows={8}
-            fullWidth
-            value={annDraftMessage}
-            onChange={(e) => setAnnDraftMessage(e.target.value)}
-            sx={{ mt: 1 }}
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={annDraftEnabled}
-                onChange={(e) => setAnnDraftEnabled(e.target.checked)}
-              />
-            }
-            label="Enable announcement"
-            sx={{ mt: 2 }}
-          />
-          {annError && (
-            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setAnnError(null)}>
-              {annError}
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAnnModalOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleAnnSave}
-            disabled={annSaving}
-            startIcon={annSaving ? <CircularProgress size={18} color="inherit" /> : undefined}
-          >
-            {annSaving ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Program management modal (from Manage menu) */}
       <ProgramManagementModal
