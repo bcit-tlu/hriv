@@ -246,4 +246,14 @@ describe('markdown media fallbacks', () => {
     expect(container.querySelector('img')).toBeNull()
     expect(screen.getByText('Gone')).toHaveClass('md-media-missing')
   })
+
+  it('retries when a failed image gets a new source', () => {
+    const { container, rerender } = renderWithTheme(
+      <MarkdownContent markdown="![Pic](/api/media/7)" mediaTokens={{ '7': 'old' }} />,
+    )
+    fireEvent.error(container.querySelector('img') as HTMLImageElement)
+    expect(container.querySelector('img')).toBeNull()
+    rerender(<MarkdownContent markdown="![Pic](/api/media/7)" mediaTokens={{ '7': 'fresh' }} />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/api/media/7?token=fresh')
+  })
 })

@@ -60,11 +60,12 @@ export function MarkdownImage({
   /** Block images render the alt text as a figcaption while the image is showing. */
   caption?: boolean
 }) {
-  const [failed, setFailed] = useState(false)
-  if (failed) return <MediaPlaceholder alt={alt} fallback="Image unavailable" />
+  // Track which source failed so a new src (e.g. a refreshed token) retries the load.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  if (failedSrc === src) return <MediaPlaceholder alt={alt} fallback="Image unavailable" />
   return (
     <>
-      <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+      <img src={src} alt={alt} loading="lazy" onError={() => setFailedSrc(src)} />
       {caption && alt ? <figcaption>{alt}</figcaption> : null}
     </>
   )
