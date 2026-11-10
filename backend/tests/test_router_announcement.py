@@ -62,6 +62,8 @@ async def test_get_announcement_expired_is_disabled() -> None:
 async def test_get_announcement_without_banner_returns_empty_without_writing() -> None:
     db = _db(None)
     result = await get_announcement(db)
+    sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "announcements.kind = 'notice'" in sql  # admin-only kinds are not editable here
     assert result.message == ""
     assert result.enabled is False
     db.add.assert_not_called()

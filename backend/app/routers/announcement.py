@@ -37,7 +37,13 @@ def _legacy_shape(ann: Announcement | None) -> LegacyAnnouncementOut:
 async def _broadcast_banner(db: AsyncSession) -> Announcement | None:
     result = await db.execute(
         select(Announcement)
-        .where(Announcement.audience == "everyone", Announcement.banner.is_(True))
+        .where(
+            Announcement.audience == "everyone",
+            Announcement.banner.is_(True),
+            # The legacy banner was always a plain notice; admin-only kinds
+            # (release/warning) posted via /api/announcements stay out of reach.
+            Announcement.kind == "notice",
+        )
         .order_by(Announcement.publish_at.desc().nulls_last(), Announcement.id.desc())
         .limit(1)
     )
