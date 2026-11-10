@@ -266,11 +266,10 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `{announcement_id: notified_at ISO string}` — merged, never overwritten.
 - **Rollout flag:** `ANNOUNCEMENTS_ENABLED` (chart `announcements.enabled`,
   default off; `GET /api/features` → `announcements`) gates the new
-  `/api/announcements` surface and UI; the legacy shims below ignore it.
-- **Legacy endpoints (deprecated, removed by #1838):** `/api/announcement/`
-  reads/writes the newest `audience='everyone'` ∧ `banner=true` row in the old
-  `{message, enabled}` shape; `/api/changelog/` reads/writes `kind='release'`
-  rows in the old `ChangelogEntry` shape.
+  `/api/announcements` surface and UI.
+- **Legacy endpoints:** `/api/announcement/` and `/api/changelog/` were
+  removed by #1838; `GET /api/announcements/broadcast` replaces the login banner
+  read.
 
 ### AnnouncementReaction _(added in `0042_announcements`)_
 
