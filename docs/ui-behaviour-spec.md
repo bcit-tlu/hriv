@@ -56,7 +56,7 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | Manage → Groups             | —       | —     | ✓          | ✓     |
 | Manage → Announcement       | —       | —     | ✓          | ✓     |
 | Announcements bell / page¹  | ✓       | ✓     | ✓          | ✓     |
-| Announcements → Mine / New¹ | —       | ✓     | ✓          | ✓     |
+| Announcements → Mine / New¹ | —       | —     | ✓          | ✓     |
 | Manage → Measurement review | —       | —     | ✓          | ✓     |
 | People tab                  | —       | ✓     | —          | ✓     |
 | Admin tab                   | —       | —     | —          | ✓     |
@@ -1184,8 +1184,9 @@ Gated on `features.announcements` (epic #1832); see
 - **Given** the Inbox is on screen, **When** a live post is unseen, **Then** it
   is marked seen once per `(id, notified_at)` and remains listed, rendered
   quieter. Nothing is dismissed; the Inbox is the record.
-- **Given** an admin/instructor/staff user, **Then** the page shows Inbox and
-  Mine tabs plus **New announcement**. Mine filters by Draft / Scheduled /
+- **Given** an admin or instructor (`canEditContent`), **Then** the page shows
+  Inbox and Mine tabs plus **New announcement**; staff and students get the
+  Inbox only. Mine filters by Draft / Scheduled /
   Live / Expired; rows with `can_edit` get Edit / Duplicate / Delete (delete
   confirms); co-managed rows show the author with "(co-managed)" and no
   actions. "Seen by N of M" shows counts only — never names.
