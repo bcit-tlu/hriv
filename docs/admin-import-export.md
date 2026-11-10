@@ -80,7 +80,12 @@ This means a mid-import failure rolls back _all_ data changes (via
 `groups`, `categories` (with `program_ids` and `group_ids`), `images`,
 `source_images`, `users` (with program memberships), `collections`,
 `measurement_findings` ([Measurement review](measurement-review.md) findings,
-excluding rebuild-fixture images), `changelog_entries`, and the `announcement`.
+excluding rebuild-fixture images), `announcements` (with `program_ids` and
+`group_ids`), `announcement_reactions`, and `content_media`. Dumps written
+before migration `0042_announcements` carried a `changelog_entries` list and
+an `announcement` singleton object instead; the importer still accepts them
+(changelog entries become `kind='release'` / `audience='staff'` announcements,
+a non-blank singleton becomes an `audience='everyone'` banner announcement).
 
 All table reads run on a dedicated session pinned to one `REPEATABLE READ`
 transaction, so the dump is a single consistent snapshot: a write that lands
@@ -116,7 +121,8 @@ matters because of foreign keys.
   collection_owners → collections →
   source_images → measurement_findings → images → category_groups → category_programs → categories →
   group_members → group_instructors → groups → user_programs → users →
-  changelog_entries → announcements → programs
+  announcement_reactions → announcement_groups → announcement_programs →
+  content_media → announcements → programs
   ```
 
 - **Insert order** (parents before junctions; groups after users because
@@ -126,14 +132,16 @@ matters because of foreign keys.
   programs → users → groups → categories (restoring category↔program and
   category↔group links) → images → source_images → collections (with
   collection_images / collection_owners / collection_programs /
-  collection_groups) → measurement_findings → changelog_entries →
-  announcement
+  collection_groups) → measurement_findings → announcements (with
+  announcement_programs / announcement_groups) → announcement_reactions →
+  content_media
   ```
 
 - **Sequence reset.** After import, PostgreSQL sequences are reset to
   `max(id) + 1` so subsequent inserts don't collide. Sequences reset:
   `programs`, `groups`, `categories`, `images`, `users`, `announcements`,
-  `changelog_entries`, `source_images`, `collections`, `measurement_findings`.
+  `announcement_reactions`, `content_media`, `source_images`, `collections`,
+  `measurement_findings`.
 
 ## Filesystem export/import
 

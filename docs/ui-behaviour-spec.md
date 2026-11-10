@@ -55,9 +55,14 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | Manage → Programs           | —       | —     | —          | ✓     |
 | Manage → Groups             | —       | —     | ✓          | ✓     |
 | Manage → Announcement       | —       | —     | ✓          | ✓     |
+| Announcements bell / page¹  | ✓       | ✓     | ✓          | ✓     |
+| Announcements → Mine / New¹ | —       | —     | ✓          | ✓     |
 | Manage → Measurement review | —       | —     | ✓          | ✓     |
 | People tab                  | —       | ✓     | —          | ✓     |
 | Admin tab                   | —       | —     | —          | ✓     |
+
+¹ Behind `features.announcements` (epic #1832); Mine / New announcement
+follow `canEditContent`.
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
@@ -1166,25 +1171,44 @@ M images> / Empty` format used on category tiles.
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
   images appear without a manual reload.
 
-### Changelog notifications (`NotificationMenu.tsx`, `ChangelogAdmin.tsx`)
+### Announcements (`AnnouncementsBell.tsx`, `AnnouncementsPage.tsx`, `AnnouncementComposer.tsx`)
 
-- Changelog entries render in reverse chronological order (most recent first)
-  in both the app bar feed and the admin changelog table, even if the API
-  response arrives unsorted.
-- The admin changelog table's `new` chip is time-bound: it appears only for
-  entries published within the last 7 days, then disappears automatically.
-- The app bar changelog feed uses the same local version-bump pattern as other
-  refreshable surfaces. **Given** an admin creates, republishes, or deletes a
-  changelog entry in the Admin tab, **When** that mutation succeeds, **Then**
-  the app bumps a shared `changelogVersion` counter and `NotificationMenu`
-  re-fetches entries in the same session without a full page reload.
+Gated on `features.announcements` (epic #1832); see
+[announcements.md](announcements.md) for the model and API.
+
+- **Given** any signed-in role, **Then** the AppBar bell is visible; its badge
+  is the number of unseen _live_ Inbox posts. Opening it peeks the newest ≤5
+  unseen titles with kind icon and relative time; **See all** navigates to
+  `?page=announcements`; clicking a title opens the page focused on that card
+  (`?id=`).
+- **Given** the Inbox is on screen, **When** a live post is unseen, **Then** it
+  is marked seen once per `(id, notified_at)` and remains listed, rendered
+  quieter. Nothing is dismissed; the Inbox is the record.
+- **Given** an admin or instructor (`canEditContent`), **Then** the page shows
+  Inbox and Mine tabs plus **New announcement**; staff and students get the
+  Inbox only. Mine filters by Draft / Scheduled /
+  Live / Expired; rows with `can_edit` get Edit / Duplicate / Delete (delete
+  confirms); co-managed rows show the author with "(co-managed)" and no
+  actions. "Seen by N of M" shows counts only — never names.
+- **Given** the composer, **Then** `To:` is one grouped multi-select. Admins
+  also see **Everyone** and **Staff**; choosing one clears any program/group
+  targets and vice versa. Instructors must pick at least one target. The kind
+  picker is the controlled icon set; **Release** and **Warning** are hidden
+  from instructors. Emoji are reactions only, never kinds.
+- **Given** media is uploaded from the composer, **Then** an image inserts
+  `![name](/api/media/{id})` and a video a bare `/api/media/{id}` line, each
+  on its own paragraph; Preview renders with the upload's fresh token.
+- **Given** the flag is on, **Then** Documentation and About live in the
+  profile popover, and the legacy Manage → Announcement / View Announcement
+  links are hidden. Groups → row menu gains **Post to group**, which opens the
+  composer pre-targeted at that group.
 
 ### Admin tab layout (`AdminPage.tsx`)
 
 - **Given** an admin opens the `Admin` tab, **When** the page renders,
-  **Then** the `Changelog` sub-tab is selected by default so changelog
-  management appears without scrolling.
-- **Given** the admin switches to the `Backups` sub-tab, **Then** the page
+  **Then** the `Backups` sub-tab is the only section and is selected by
+  default (release notes are authored from the Announcements page).
+- **Given** the admin is on the `Backups` sub-tab, **Then** the page
   groups backup tools in this order: a data-transfer card grid first (export
   cards, then the destructive import cards, then Rebuild Tiles), a
   `Parallel tile rebuilds` section listing durable rebuild jobs, the

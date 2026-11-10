@@ -94,6 +94,7 @@ export type FrontendPage =
   | 'people'
   | 'admin'
   | 'guide'
+  | 'announcements'
   | 'other'
   | 'unknown'
 export type TelemetryNavDirection = 'down' | 'up' | 'jump'
@@ -247,7 +248,8 @@ function currentPage(): FrontendPage {
     page === 'measurement' ||
     page === 'people' ||
     page === 'admin' ||
-    page === 'guide'
+    page === 'guide' ||
+    page === 'announcements'
   ) {
     return page
   }

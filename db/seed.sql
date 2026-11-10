@@ -127,13 +127,6 @@ ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('images_id_seq', GREATEST((SELECT MAX(id) FROM images), 1));
 
--- ── Announcements ───────────────────────────────────────────
-
-INSERT INTO announcements (id, message, enabled)
-VALUES (1, '', false)
-ON CONFLICT (id) DO NOTHING;
-
-SELECT setval('announcements_id_seq', GREATEST((SELECT MAX(id) FROM announcements), 1));
 
 -- ── Users ─────────────────────────────────────────────────
 
@@ -220,3 +213,18 @@ WHERE c.name = 'Italian Cathedrals' AND c.user_id = 2
 ON CONFLICT (collection_id, image_id) DO NOTHING;
 
 SELECT setval('collections_id_seq', GREATEST((SELECT MAX(id) FROM collections), 1));
+
+-- ── Announcements ───────────────────────────────────────────
+
+-- A pinned, live broadcast notice (audience='everyone', banner=false) and a
+-- draft release note (publish_at IS NULL) so every surface has sample data.
+INSERT INTO announcements
+    (id, title, message, kind, author_id, audience, publish_at, notified_at, pinned, banner)
+VALUES
+    (1, 'Welcome to HRIV', 'Browse the image library from **Home**, or use the search bar to jump straight to a slide.',
+     'notice', 1, 'everyone', now(), now(), true, false),
+    (2, 'Announcements have arrived', 'Release notes now live in the Announcements inbox alongside notices and events.',
+     'release', 1, 'staff', NULL, NULL, false, false)
+ON CONFLICT (id) DO NOTHING;
+
+SELECT setval('announcements_id_seq', GREATEST((SELECT MAX(id) FROM announcements), 1));

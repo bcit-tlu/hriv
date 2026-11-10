@@ -299,25 +299,6 @@ const shareableImageStateMock = {
   clearPending: vi.fn(),
 }
 
-const announcementModalMock = {
-  announcement: '',
-  annMessage: '',
-  annEnabled: false,
-  dismissAnnouncement: vi.fn(),
-  loadAnnouncement: vi.fn(),
-  annModalOpen: false,
-  setAnnModalOpen: vi.fn(),
-  annDraftMessage: '',
-  setAnnDraftMessage: vi.fn(),
-  annDraftEnabled: false,
-  setAnnDraftEnabled: vi.fn(),
-  annSaving: false,
-  annError: null,
-  setAnnError: vi.fn(),
-  openAnnModal: vi.fn(),
-  handleAnnSave: vi.fn(),
-}
-
 const userProfileMock = {
   avatarRef: createRef<HTMLButtonElement>(),
   profileOpen: false,
@@ -999,10 +980,6 @@ vi.mock('../src/useShareableImageState', () => ({
     }, [setPath])
     return shareableImageStateMock
   },
-}))
-
-vi.mock('../src/useAnnouncementModal', () => ({
-  useAnnouncementModal: () => announcementModalMock,
 }))
 
 vi.mock('../src/useUserProfile', () => ({
@@ -1744,19 +1721,6 @@ describe('App breadcrumbs', () => {
         Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
       }
     }
-  })
-
-  it('does not load the announcement while auth is still loading', async () => {
-    authState = {
-      ...authState,
-      currentUser: null,
-      loading: true,
-    }
-
-    render(<App />)
-
-    await screen.findByRole('progressbar')
-    expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
   })
 
   it('fetches component versions for instructors (canEditContent)', async () => {

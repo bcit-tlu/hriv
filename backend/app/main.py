@@ -28,11 +28,11 @@ from .upload_staging import UPLOAD_SPOOL_DIR_NAME
 from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, CountingFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
-    announcement,
+    announcements,
+    media,
     auth,
     bulk_import,
     categories,
-    changelog,
     collections,
     counts,
     groups,
@@ -361,8 +361,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(oidc.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(bulk_import.router, prefix="/api")
-app.include_router(announcement.router, prefix="/api")
-app.include_router(changelog.router, prefix="/api")
+app.include_router(announcements.router, prefix="/api")
+app.include_router(media.router, prefix="/api")
 app.include_router(collections.router, prefix="/api")
 app.include_router(counts.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
@@ -412,6 +412,7 @@ async def features() -> FeaturesOut:
             settings.collections_enabled and settings.collections_home_shelf
         ),
         counting=settings.counting_enabled,
+        announcements=settings.announcements_enabled,
     )
 
 

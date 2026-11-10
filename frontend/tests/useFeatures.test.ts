@@ -21,6 +21,7 @@ describe('useFeatures', () => {
         collectionsStudentAccess: true,
         collectionsHomeShelf: true,
         counting: false,
+        announcements: false,
       }),
     )
     expect(fetchFeatures).toHaveBeenCalledTimes(1)
@@ -35,6 +36,7 @@ describe('useFeatures', () => {
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: false,
+        announcements: false,
       }),
     )
   })
@@ -48,6 +50,7 @@ describe('useFeatures', () => {
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: false,
+        announcements: false,
       }),
     )
   })
@@ -61,6 +64,7 @@ describe('useFeatures', () => {
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: true,
+        announcements: false,
       }),
     )
     fetchFeatures.mockResolvedValue({ counting: false })
@@ -71,8 +75,26 @@ describe('useFeatures', () => {
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
         counting: false,
+        announcements: false,
       }),
     )
+  })
+
+  it('exposes the announcements flag only when it is true', async () => {
+    fetchFeatures.mockResolvedValue({ announcements: true })
+    const { result } = renderHook(() => useFeatures())
+    await waitFor(() =>
+      expect(result.current).toEqual({
+        collections: false,
+        collectionsStudentAccess: true,
+        collectionsHomeShelf: false,
+        counting: false,
+        announcements: true,
+      }),
+    )
+    fetchFeatures.mockResolvedValue({ announcements: 'yes' as unknown as boolean })
+    const second = renderHook(() => useFeatures())
+    await waitFor(() => expect(second.result.current?.announcements).toBe(false))
   })
 
   it.each([true, false])('maps collections_student_access=%s', async (studentAccess) => {

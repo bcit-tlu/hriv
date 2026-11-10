@@ -328,7 +328,8 @@ async function requestRaw<T>(path: string, init?: RequestInit): Promise<RequestR
     res = await fetch(`${BASE}/api${path}`, {
       ...restInit,
       headers: {
-        'Content-Type': 'application/json',
+        // Multipart bodies need the browser-generated boundary, so let fetch set the type.
+        ...(restInit.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         ...authHeaders(),
         ...initHeaders,
       },
@@ -1470,69 +1471,136 @@ export function removeGroupInstructorsBulk(groupId: number, userIds: number[]): 
 
 // ── Announcement ────────────────────────────────────────
 
+// ── Announcements (epic #1832) ───────────────────────────
+
+export type AnnouncementKind =
+  'notice' | 'event' | 'reminder' | 'celebration' | 'release' | 'warning'
+export type AnnouncementAudience = 'everyone' | 'staff' | 'targeted'
+export type AnnouncementStatus = 'draft' | 'scheduled' | 'live' | 'expired'
+export type AnnouncementScope = 'inbox' | 'mine'
+
 export interface ApiAnnouncement {
   id: number
+  title: string
   message: string
-  enabled: boolean
+  kind: AnnouncementKind
+  icon: string
+  severity: 'info' | 'success' | 'warning' | 'error'
+  audience: AnnouncementAudience
+  author_id: number | null
+  author_name: string
+  program_ids: number[]
+  program_names: string[]
+  group_ids: number[]
+  group_names: string[]
+  publish_at: string | null
+  expires_at: string | null
+  notified_at: string | null
+  pinned: boolean
+  banner: boolean
+  status: AnnouncementStatus
+  seen: boolean
+  reactions: Record<string, number>
+  my_reactions: string[]
+  media_tokens: Record<string, string>
+  can_edit: boolean
+  /** Present only for admin/instructor/staff viewers (counts, never identities). */
+  seen_count?: number | null
+  audience_size?: number | null
   created_at: string
   updated_at: string
 }
 
-export function fetchAnnouncement(): Promise<ApiAnnouncement> {
-  return request('/announcement/')
-}
-
-export function updateAnnouncement(body: {
-  message?: string
-  enabled?: boolean
-}): Promise<ApiAnnouncement> {
-  return request('/announcement/', {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  })
-}
-
-// ── Changelog ────────────────────────────────────────────
-
-export interface ApiChangelogEntry {
+export interface ApiAnnouncementBroadcast {
   id: number
   title: string
-  body: string
-  published_at: string
-  created_at: string
+  message: string
+  kind: AnnouncementKind
+  icon: string
+  severity: string
+  publish_at: string | null
+  expires_at: string | null
   updated_at: string
 }
 
-export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
-  return request('/changelog/')
-}
-
-export function createChangelogEntry(body: {
+export interface AnnouncementInput {
   title: string
-  body: string
-}): Promise<ApiChangelogEntry> {
-  return request('/changelog/', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  message: string
+  kind: AnnouncementKind
+  audience: AnnouncementAudience
+  program_ids: number[]
+  group_ids: number[]
+  /** ISO timestamp; `null` publishes now (unless `draft`). */
+  publish_at: string | null
+  expires_at: string | null
+  draft: boolean
+  pinned: boolean
+  banner: boolean
 }
 
-export function updateChangelogEntry(
+export interface AnnouncementUpdateInput extends Partial<AnnouncementInput> {
+  clear_expires_at?: boolean
+  /** Re-surface the post to readers (resets their seen state). */
+  notify_again?: boolean
+}
+
+export interface ApiReactions {
+  reactions: Record<string, number>
+  my_reactions: string[]
+}
+
+export interface ApiMediaUpload {
+  id: number
+  url: string
+  tokenized_url: string
+  content_type: string
+  size_bytes: number
+  original_name: string
+}
+
+export function fetchAnnouncements(scope: AnnouncementScope = 'inbox'): Promise<ApiAnnouncement[]> {
+  return request(`/announcements/?scope=${scope}`)
+}
+
+/** Public (unauthenticated) banner posts for the login screen. */
+export function fetchAnnouncementBroadcast(): Promise<ApiAnnouncementBroadcast[]> {
+  return request('/announcements/broadcast')
+}
+
+export function createAnnouncement(body: AnnouncementInput): Promise<ApiAnnouncement> {
+  return request('/announcements/', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateAnnouncement(
   id: number,
-  body: { title?: string; body?: string },
-): Promise<ApiChangelogEntry> {
-  return request(`/changelog/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(body),
+  body: AnnouncementUpdateInput,
+): Promise<ApiAnnouncement> {
+  return request(`/announcements/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteAnnouncement(id: number): Promise<void> {
+  return request(`/announcements/${id}`, { method: 'DELETE' })
+}
+
+export function markAnnouncementSeen(id: number): Promise<void> {
+  return request(`/announcements/${id}/seen`, { method: 'PUT' })
+}
+
+export function addAnnouncementReaction(id: number, emoji: string): Promise<ApiReactions> {
+  return request(`/announcements/${id}/reactions/${encodeURIComponent(emoji)}`, { method: 'PUT' })
+}
+
+export function removeAnnouncementReaction(id: number, emoji: string): Promise<ApiReactions> {
+  return request(`/announcements/${id}/reactions/${encodeURIComponent(emoji)}`, {
+    method: 'DELETE',
   })
 }
 
-export function deleteChangelogEntry(id: number): Promise<void> {
-  return request(`/changelog/${id}`, { method: 'DELETE' })
-}
-
-export function markChangelogRead(): Promise<{ changelog_last_read_at: string }> {
-  return request('/changelog/mark-read', { method: 'POST' })
+/** Upload an announcement image/video; the body is multipart so no JSON content type. */
+export function uploadMedia(file: File): Promise<ApiMediaUpload> {
+  const form = new FormData()
+  form.append('file', file)
+  return request('/media/', { method: 'POST', body: form })
 }
 
 // ── Source Images ───────────────────────────────────────
@@ -2552,6 +2620,8 @@ export interface ApiFeatures {
   collections: boolean
   collections_home_shelf: boolean
   counting: boolean
+  /** Epic #1832 — announcements stream, page and bell for all roles. */
+  announcements?: boolean
 }
 
 export function fetchFeatures(): Promise<ApiFeatures> {

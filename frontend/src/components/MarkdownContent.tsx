@@ -1,15 +1,19 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { parseMarkdown, renderInline } from '../markdownUtils'
+import { MarkdownImage, MediaPlaceholder } from './MarkdownMedia'
+import { parseMarkdown, renderInline, resolveMediaSrc, type MediaTokens } from '../markdownUtils'
 
-interface MarkdownContentProps {
+export interface MarkdownContentProps {
   markdown: string
+  /** Per-response `{ mediaId: token }` for `/api/media/{id}` references (announcements). */
+  mediaTokens?: MediaTokens
   sx?: SxProps<Theme>
 }
 
-export default function MarkdownContent({ markdown, sx }: MarkdownContentProps) {
+export default function MarkdownContent({ markdown, mediaTokens, sx }: MarkdownContentProps) {
   const blocks = parseMarkdown(markdown)
+  const inline = (text: string, key: string) => renderInline(text, key, { mediaTokens })
 
   return (
     <Box
@@ -50,6 +54,40 @@ export default function MarkdownContent({ markdown, sx }: MarkdownContentProps) 
           fontFamily: 'monospace',
           fontSize: '0.85em',
         },
+        '& img': {
+          maxWidth: '100%',
+          height: 'auto',
+          verticalAlign: 'middle',
+          borderRadius: 1,
+        },
+        '& figure': {
+          m: 0,
+          mb: 1,
+          textAlign: 'center',
+        },
+        '& figcaption': {
+          mt: 0.5,
+          color: 'text.secondary',
+          fontSize: '0.85em',
+        },
+        '& video': {
+          display: 'block',
+          maxWidth: '100%',
+          width: '100%',
+          maxHeight: 480,
+          mb: 1,
+          borderRadius: 1,
+          bgcolor: 'common.black',
+        },
+        '& .md-media-missing': {
+          display: 'inline-block',
+          px: 1,
+          py: 0.5,
+          borderRadius: 1,
+          bgcolor: 'action.hover',
+          color: 'text.secondary',
+          fontStyle: 'italic',
+        },
         ...sx,
       }}
     >
@@ -64,7 +102,7 @@ export default function MarkdownContent({ markdown, sx }: MarkdownContentProps) 
               component={`h${block.level}` as 'h1' | 'h2' | 'h3'}
               variant={variant}
             >
-              {renderInline(block.text, key)}
+              {inline(block.text, key)}
             </Typography>
           )
         }
@@ -72,9 +110,31 @@ export default function MarkdownContent({ markdown, sx }: MarkdownContentProps) 
           return (
             <Box key={key} component="ul">
               {block.items.map((item, itemIndex) => (
-                <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`)}</li>
+                <li key={`${key}-${itemIndex}`}>{inline(item, `${key}-${itemIndex}`)}</li>
               ))}
             </Box>
+          )
+        }
+        if (block.type === 'image') {
+          const src = resolveMediaSrc(block.src, mediaTokens)
+          return (
+            <Box key={key} component="figure">
+              {src ? (
+                <MarkdownImage src={src} alt={block.alt} caption />
+              ) : (
+                <MediaPlaceholder alt={block.alt} fallback="Image unavailable" />
+              )}
+            </Box>
+          )
+        }
+        if (block.type === 'video') {
+          const src = resolveMediaSrc(block.src, mediaTokens)
+          return src ? (
+            <video key={key} src={src} controls preload="metadata" />
+          ) : (
+            <Typography key={key} component="p" variant="body2">
+              <span className="md-media-missing">Video unavailable</span>
+            </Typography>
           )
         }
         if (block.type === 'code') {
@@ -86,7 +146,7 @@ export default function MarkdownContent({ markdown, sx }: MarkdownContentProps) 
         }
         return (
           <Typography key={key} component="p" variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-            {renderInline(block.text, key)}
+            {inline(block.text, key)}
           </Typography>
         )
       })}

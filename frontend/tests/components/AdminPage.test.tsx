@@ -48,10 +48,6 @@ vi.mock('../../src/useAuth', () => ({
   }),
 }))
 
-vi.mock('../../src/components/ChangelogAdmin', () => ({
-  default: () => <div>Changelog admin content</div>,
-}))
-
 vi.mock('../../src/observability', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/observability')>()),
   emitEvent: vi.fn(),
@@ -269,20 +265,15 @@ describe('AdminPage', () => {
     vi.useRealTimers()
   })
 
-  it('opens on the changelog tab by default', async () => {
+  it('opens on the backups tab (the only tab) by default', async () => {
     render(<AdminPage />)
 
-    expect(screen.getByRole('tab', { name: 'Changelog' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: 'Changelog' })).toHaveAttribute(
-      'aria-controls',
-      'admin-tabpanel-changelog',
-    )
-    expect(screen.getByRole('tab', { name: 'Backups' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'Backups' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Backups' })).toHaveAttribute(
       'aria-controls',
       'admin-tabpanel-backups',
     )
-    expect(screen.getByText('Changelog admin content')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Changelog' })).not.toBeInTheDocument()
 
     await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalledTimes(1))
   })
@@ -297,7 +288,7 @@ describe('AdminPage', () => {
         event: 'navigation.page_changed',
         action: 'navigate_admin_tab',
         page: 'admin',
-        admin_tab: 'changelog',
+        admin_tab: 'backups',
       }),
     )
 

@@ -52,10 +52,15 @@ API for the [password-management validation flow](docs/password-management.md).
 | Manage groups                                          | Yes   | Yes\*      | No    | No      |
 | Restrict categories to groups                          | Yes   | Yes\*      | No    | No      |
 | Manage announcement                                    | Yes   | Yes        | No    | No      |
-| View changelog notifications                           | Yes   | Yes        | No    | No      |
+| Read announcements (bell, Inbox, reactions)            | Yes   | Yes        | Yes   | Yes     |
+| Author announcements (Mine, composer)                  | Yes   | Yes        | No    | No      |
 | View component versions (About)                        | Yes   | Yes        | No    | No      |
-| Manage changelog entries                               | Yes   | No         | No    | No      |
-| Admin tab (changelog + backups)                        | Yes   | No         | No    | No      |
+| Post release notes / warning announcements             | Yes   | No         | No    | No      |
+| Post announcements (targeted to own programs/groups)   | Yes   | Yes        | No    | No      |
+| Post `everyone`/`staff`/release/warning announcements  | Yes   | No         | No    | No      |
+| Read + react to announcements in their audience        | Yes   | Yes        | Yes   | Yes     |
+| See announcement seen counts                           | Yes   | Yes        | Yes   | No      |
+| Admin tab (backups)                                    | Yes   | No         | No    | No      |
 | User management (add/delete)                           | Yes   | No         | No    | No      |
 | Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
 | Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
@@ -123,15 +128,16 @@ A **program** is a flat, admin/OIDC-managed access-control unit that gates categ
 
 A **group** is an instructor-managed visibility dimension, independent of programs. Any admin or instructor can create a group and add student members (and instructor co-owners); a category restricted to one or more groups is visible to a student only if they belong to at least one of them. Visibility is a **dual gate**: a student sees a category only if it passes _both_ the program gate **and** the group gate. Group memberships also surface as read-only chips in the student profile menu. See [docs/groups.md](docs/groups.md) for the model, authorization rules, API, and frontend behaviour, and [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) for the combined visibility evaluation.
 
-### Changelog Notifications
+### Announcements
 
-The notification bell is a separate feature from the site-wide announcement
-banner. Admins publish Markdown changelog entries from the Admin page, and
-admins plus instructors can read them from the AppBar bell's **What's New**
-dialog. The Admin tab now opens on a dedicated **Changelog** sub-tab, while the
-backup/import tools live under **Backups**. Read state is tracked per user, and
-republishing an entry marks it unread again. See
-[docs/changelog-notifications.md](docs/changelog-notifications.md).
+Announcements are one stream for every role (epic #1832): a bell with a peek of
+the newest unseen posts, an **Announcements** page (Inbox for everyone, Mine for
+admins and instructors), a composer dialog with Markdown, media and emoji
+reactions, a banner slot for posts flagged `banner`, a Home **Notices** shelf of
+pinned posts and a login-screen broadcast. Release notes are announcements of
+`kind='release'` (default audience admins + instructors + staff) — there is no
+separate changelog. The feature is gated by `ANNOUNCEMENTS_ENABLED`. See
+[docs/announcements.md](docs/announcements.md).
 
 ### CLI Access via curl
 
@@ -175,9 +181,9 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                           | Groups model, authorization, API surface, and frontend behaviour                 |
 | [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
+| [docs/announcements.md](docs/announcements.md)                                             | Announcements model, audience union rule, kinds, seen-state, reactions, API      |
 | [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
 | [docs/user-deactivation.md](docs/user-deactivation.md)                                     | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
-| [docs/changelog-notifications.md](docs/changelog-notifications.md)                         | Notification bell, What's New feed, changelog CRUD, and unread-state rules       |
 | [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                                   | In-app feedback routing, provider contract, and environment policy               |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md)       | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |
 | [docs/domain-model.md](docs/domain-model.md)                                               | Data model reference (entities, junctions, conventions)                          |

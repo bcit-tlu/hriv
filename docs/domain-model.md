@@ -244,21 +244,54 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   lease recovery clears it for the next attempt. PostgreSQL
   `retry_not_before` controls when a queued retry is claimable.
 
-### Announcement
+### Announcement _(reworked in `0042_announcements`, epic #1832)_
 
-- **Purpose:** system-wide banner message.
-- **Key fields:** `message` (text); `enabled` (boolean).
-- **Note:** singleton — only `id=1` is used in practice.
+- **Purpose:** a message posted to an audience — notices, events, reminders,
+  celebrations, release notes and warnings. Replaces both the former singleton
+  banner row and `changelog_entries`.
+- **Key fields:** `title`; `message` (Markdown); `kind` (`notice` | `event` |
+  `reminder` | `celebration` | `release` | `warning` — the author picks an icon,
+  the icon _is_ the kind, and the kind fixes the severity); `author_id` (FK →
+  `users`, `ON DELETE SET NULL`); `audience` (`everyone` | `staff` | `targeted`
+  — `staff` resolves dynamically to the `admin`, `instructor` and `staff`
+  roles, `targeted` uses the junction tables); `publish_at` (`NULL` = draft),
+  `expires_at`, `notified_at` (version marker — bumping it makes the row unseen
+  again); `pinned`; `banner`.
+- **Live window:** `publish_at <= now()` and (`expires_at IS NULL` or in the
+  future). See `app/announcements.py` for the shared helpers.
+- **Relationships:** `programs` (via `announcement_programs`) and `groups`
+  (via `announcement_groups`), both `CASCADE`; `reactions`
+  (`AnnouncementReaction`, `CASCADE`); `author`.
+- **Seen-state:** per-user, in `users.metadata["announcement_seen"]` as
+  `{announcement_id: notified_at ISO string}` — merged, never overwritten.
+- **Rollout flag:** `ANNOUNCEMENTS_ENABLED` (chart `announcements.enabled`,
+  default off; `GET /api/features` → `announcements`) gates the new
+  `/api/announcements` surface and UI.
+- **Legacy endpoints:** `/api/announcement/` and `/api/changelog/` were
+  removed by #1838; `GET /api/announcements/broadcast` replaces the login banner
+  read.
 
-### ChangelogEntry _(added in `0012_add_changelog_entries`)_
+### AnnouncementReaction _(added in `0042_announcements`)_
 
-- **Purpose:** admin-authored in-app release notes shown in the **What's New**
-  feed for admin and instructor users.
-- **Key fields:** `title`; `body` (Markdown text rendered by the frontend);
-  `published_at` (defaults to creation time and is bumped on edit/republish).
-- **Relationships:** none — this is a standalone content table.
-- **Deletion:** no cascade targets; deleting an entry only removes that
-  changelog item.
+- **Purpose:** one emoji reaction by one user on one announcement.
+- **Key fields:** `announcement_id` (FK, `CASCADE`); `user_id` (FK, `CASCADE`);
+  `emoji` (reaction key, e.g. `rocket`); unique on
+  `(announcement_id, user_id, emoji)`.
+
+### ContentMedia _(added in `0042_announcements`)_
+
+- **Purpose:** an uploaded image/video referenced from announcement Markdown
+  (served by #1835).
+- **Key fields:** `stored_name` (unique on-disk name); `original_name`;
+  `content_type`; `size_bytes`; `uploader_id` (FK → `users`, `SET NULL`).
+
+### ChangelogEntry _(removed in `0042_announcements`)_
+
+- Former admin-authored release notes (`0012_add_changelog_entries`). Each row
+  became an `Announcement` with `kind='release'`, `audience='staff'`,
+  `message = body`, `publish_at = notified_at = published_at`; each user's
+  `changelog_last_read_at` seeded `announcement_seen` for the migrated rows
+  published on or before it.
 
 ### AdminTask
 

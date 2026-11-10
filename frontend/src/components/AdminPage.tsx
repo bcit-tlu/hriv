@@ -77,7 +77,6 @@ import type {
 import { useAuth } from '../useAuth'
 import { emitEvent } from '../observability'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
-import ChangelogAdmin from './ChangelogAdmin'
 import RebuildJobsPanel from './RebuildJobsPanel'
 
 const POLL_INTERVAL = 2000 // ms
@@ -162,11 +161,7 @@ interface TaskNotification {
   task: AdminTask
 }
 
-interface AdminPageProps {
-  onChangelogEntriesChanged?: () => void
-}
-
-type AdminTabValue = 'changelog' | 'backups'
+type AdminTabValue = 'backups'
 
 interface AdminTabPanelProps {
   children: ReactNode
@@ -189,7 +184,7 @@ function AdminTabPanel({ children, value, currentValue }: AdminTabPanelProps) {
   )
 }
 
-export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps) {
+export default function AdminPage() {
   const { logout } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
@@ -213,7 +208,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [notifications, setNotifications] = useState<TaskNotification[]>([])
   // Log viewer modal
   const [logTask, setLogTask] = useState<AdminTask | null>(null)
-  const [activeTab, setActiveTab] = useState<AdminTabValue>('changelog')
+  const [activeTab, setActiveTab] = useState<AdminTabValue>('backups')
 
   // One page-hit event per shown tab so dashboards can break admin traffic
   // down by section, matching the per-doc hits on the guide page. Deduped per
@@ -711,13 +706,16 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
   }
 
+  // Backups is the only (and default) section since the changelog moved into announcements (#1838).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loaders reset their panels before fetching
+    void loadRestoreSnapshots()
+    void loadFilesImportArchives()
+    void loadExportArchives()
+  }, [loadRestoreSnapshots, loadFilesImportArchives, loadExportArchives])
+
   const handleBackupsTabChange = (_event: React.SyntheticEvent, value: AdminTabValue) => {
     setActiveTab(value)
-    if (value === 'backups') {
-      void loadRestoreSnapshots()
-      void loadFilesImportArchives()
-      void loadExportArchives()
-    }
   }
 
   const handleRestoreSnapshotSelect = (snapshotName: string) => {
@@ -1054,22 +1052,12 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
       <Tabs value={activeTab} onChange={handleBackupsTabChange} aria-label="Admin sections">
         <Tab
-          label="Changelog"
-          value="changelog"
-          id="admin-tab-changelog"
-          aria-controls="admin-tabpanel-changelog"
-        />
-        <Tab
           label="Backups"
           value="backups"
           id="admin-tab-backups"
           aria-controls="admin-tabpanel-backups"
         />
       </Tabs>
-
-      <AdminTabPanel value="changelog" currentValue={activeTab}>
-        <ChangelogAdmin onEntriesChanged={onChangelogEntriesChanged} />
-      </AdminTabPanel>
 
       <AdminTabPanel value="backups" currentValue={activeTab}>
         <Stack spacing={3}>

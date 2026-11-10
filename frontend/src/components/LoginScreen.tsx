@@ -15,6 +15,8 @@ import Typography from '@mui/material/Typography'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import AnnouncementBanner from './AnnouncementBanner'
+import { kindMeta } from '../announcementKinds'
+import type { ApiAnnouncementBroadcast } from '../api'
 import ColorModeToggle from './ColorModeToggle'
 import { ApiError, fetchOidcEnabled, getOidcLoginUrl } from '../api'
 import { useAuth } from '../useAuth'
@@ -23,7 +25,8 @@ import LoginSplashImage from './LoginSplashImage'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
-  announcement?: string
+  /** Newest live banner post for everyone (`GET /api/announcements/broadcast`). */
+  broadcast?: ApiAnnouncementBroadcast | null
 }
 
 // Map short, stable error codes returned by the backend OIDC callback
@@ -46,7 +49,7 @@ const OIDC_ERROR_MESSAGES: Record<string, string> = {
     'Account has been disabled. Please contact the TLU Learning Tech Lab via Teams to activate your account.',
 }
 
-export default function LoginScreen({ onLogin, announcement }: LoginScreenProps) {
+export default function LoginScreen({ onLogin, broadcast }: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -101,7 +104,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   const showOidcDefault = oidcEnabled && !showLocalForm
 
   return (
-    <LoginLayout title="High Resolution Image Viewer (HRIV) Login" announcement={announcement}>
+    <LoginLayout title="High Resolution Image Viewer (HRIV) Login" broadcast={broadcast}>
       {oidcErrorMessage && (
         <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>
           {oidcErrorMessage}
@@ -263,11 +266,12 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
 
 export function LoginLayout({
   title,
-  announcement,
+  broadcast,
   children,
 }: {
   title: string
-  announcement?: string
+  /** Newest live banner post for everyone (`GET /api/announcements/broadcast`). */
+  broadcast?: ApiAnnouncementBroadcast | null
   children: ReactNode
 }) {
   return (
@@ -294,7 +298,14 @@ export function LoginLayout({
           }}
         >
           <Box sx={{ width: '100%', maxWidth: 400 }}>
-            {announcement && <AnnouncementBanner message={announcement} variant="login" />}
+            {broadcast && (
+              <AnnouncementBanner
+                title={broadcast.title}
+                message={broadcast.message}
+                severity={kindMeta(broadcast.kind).severity}
+                variant="login"
+              />
+            )}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
               <Box component="img" src="/bcit-logo.svg" alt="BCIT" sx={{ height: 48 }} />
               <Typography component="h1" variant="h5" sx={{ fontWeight: 400 }}>

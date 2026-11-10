@@ -1,0 +1,50 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as MarkdownContentStories from './MarkdownContent.stories'
+
+<Meta of={MarkdownContentStories} />
+
+<Title />
+
+<Subtitle>
+  The shared renderer for HRIV's Markdown subset — used by announcement cards, release notes and
+  guide text.
+</Subtitle>
+
+## Supported syntax
+
+- `#`, `##`, `###` headings; `- item` / `* item` lists; fenced ``` code blocks.
+- `**bold**`, `*italic*`, `` `code` ``, `[label](https://…)` and bare `https://` links (http/https only).
+- Images: `![alt](src)` — inline inside a paragraph, or on its own line as a centred figure with
+  the alt text as caption.
+- Video: a paragraph that is only `/api/media/{id}` or an `https://…mp4|webm|mov` URL renders a
+  `<video controls preload="metadata">`.
+
+## Media tokens
+
+`/api/media/{id}` references are served by the backend only with a short-lived signed token, so
+callers pass the per-response `mediaTokens` map (`{ id: token }`) alongside the Markdown. The
+renderer appends `?token=` at render time (replacing any stale token pasted into the Markdown) and
+never emits a broken-image icon: a missing token or unsafe `src` falls back to the alt text /
+"Video unavailable" placeholder.
+
+<Primary />
+
+<Controls of={MarkdownContentStories.Basic} />
+
+## Examples
+
+<Canvas of={MarkdownContentStories.WithImage} />
+
+<Canvas of={MarkdownContentStories.InlineImage} />
+
+<Canvas of={MarkdownContentStories.MissingToken} />
+
+<Stories includePrimary={false} />

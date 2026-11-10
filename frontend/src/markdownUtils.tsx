@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { MarkdownImage, MediaPlaceholder } from './components/MarkdownMedia'
 import Link from '@mui/material/Link'
 
 export type MarkdownBlock =
@@ -6,10 +7,76 @@ export type MarkdownBlock =
   | { type: 'paragraph'; text: string }
   | { type: 'list'; items: string[] }
   | { type: 'code'; text: string }
+  | { type: 'image'; alt: string; src: string }
+  | { type: 'video'; src: string }
+
+/** `{ mediaId: token }` minted per response by the announcements API (#1835). */
+export type MediaTokens = Record<string, string>
+
+export interface InlineOptions {
+  mediaTokens?: MediaTokens
+}
 
 const INLINE_TOKEN_REGEX =
-  /(\[[^\]]+\]\((?:https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
+  /(!\[[^\]]*\]\([^\s)]+\)|\[[^\]]+\]\((?:https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
 const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/
+const MARKDOWN_IMAGE_REGEX = /^!\[([^\]]*)\]\(([^\s)]+)\)$/
+const MEDIA_PATH_REGEX = /^\/api\/media\/(\d+)(?:\?[^\s]*)?$/
+const VIDEO_URL_REGEX = /^https?:\/\/[^\s]+\.(mp4|webm|mov)(?:\?[^\s]*)?$/i
+// Inline raster/SVG data URIs are inert in an <img> context (no script execution).
+const DATA_IMAGE_REGEX = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,([A-Za-z0-9+/=]+)$/i
+const DATA_IMAGE_TYPES: Record<string, string> = {
+  png: 'png',
+  jpg: 'jpeg',
+  jpeg: 'jpeg',
+  gif: 'gif',
+  webp: 'webp',
+  'svg+xml': 'svg+xml',
+}
+
+/**
+ * Resolve a Markdown media `src` to something safe to put in `<img>`/`<video>`.
+ * `/api/media/{id}` paths need the per-response token; any pasted `?token=`
+ * is discarded in favour of the fresh one. External http(s) URLs pass through.
+ * Returns `null` when the src is unsafe or its token is missing.
+ */
+export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string | null {
+  const mediaMatch = src.match(MEDIA_PATH_REGEX)
+  if (mediaMatch) {
+    const mediaId = Number(mediaMatch[1])
+    const token = mediaTokens?.[String(mediaId)]
+    return token ? `/api/media/${mediaId}?token=${encodeURIComponent(token)}` : null
+  }
+  const dataMatch = src.match(DATA_IMAGE_REGEX)
+  if (dataMatch) {
+    const type = DATA_IMAGE_TYPES[dataMatch[1].toLowerCase()]
+    return type ? `data:image/${type};base64,${dataMatch[2]}` : null
+  }
+  if (!isSafeHref(src)) return null
+  // Rebuild the URL from its parts so only a normalised http(s) URL reaches the DOM.
+  try {
+    const url = new URL(src)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    const scheme = url.protocol === 'https:' ? 'https://' : 'http://'
+    return scheme + url.host + url.pathname + url.search + url.hash
+  } catch {
+    return null
+  }
+}
+
+export function isVideoSrc(src: string): boolean {
+  return VIDEO_URL_REGEX.test(src)
+}
+
+export function isMediaPath(src: string): boolean {
+  return MEDIA_PATH_REGEX.test(src)
+}
+
+function renderImage(alt: string, src: string, key: string, options?: InlineOptions): ReactNode {
+  const resolved = resolveMediaSrc(src, options?.mediaTokens)
+  if (!resolved) return <MediaPlaceholder key={key} alt={alt} fallback="Image unavailable" />
+  return <MarkdownImage key={key} src={resolved} alt={alt} />
+}
 
 function isSafeHref(href: string) {
   try {
@@ -50,10 +117,20 @@ function splitTrailingUrlPunctuation(urlText: string) {
   return { href, trailingText }
 }
 
-export function renderInline(text: string, keyPrefix: string): ReactNode[] {
+export function renderInline(
+  text: string,
+  keyPrefix: string,
+  options?: InlineOptions,
+): ReactNode[] {
   const parts = text.split(INLINE_TOKEN_REGEX)
   return parts.filter(Boolean).map((part, index) => {
     const key = `${keyPrefix}-${index}`
+    const markdownImageMatch = part.match(MARKDOWN_IMAGE_REGEX)
+    if (markdownImageMatch) {
+      const [, alt, src] = markdownImageMatch
+      return renderImage(alt, src, key, options)
+    }
+
     const markdownLinkMatch = part.match(MARKDOWN_LINK_REGEX)
 
     if (markdownLinkMatch) {
@@ -69,7 +146,7 @@ export function renderInline(text: string, keyPrefix: string): ReactNode[] {
             underline="always"
             sx={{ overflowWrap: 'anywhere' }}
           >
-            {renderInline(label, `${key}-label`)}
+            {renderInline(label, `${key}-label`, options)}
           </Link>
         )
       }
@@ -120,7 +197,14 @@ export function parseMarkdown(markdown: string): MarkdownBlock[] {
   const flushParagraph = () => {
     const text = paragraphLines.join('\n').trim()
     if (text) {
-      blocks.push({ type: 'paragraph', text })
+      const imageOnly = text.match(MARKDOWN_IMAGE_REGEX)
+      if (imageOnly) {
+        blocks.push({ type: 'image', alt: imageOnly[1], src: imageOnly[2] })
+      } else if (isMediaPath(text) || isVideoSrc(text)) {
+        blocks.push({ type: 'video', src: text })
+      } else {
+        blocks.push({ type: 'paragraph', text })
+      }
     }
     paragraphLines.length = 0
   }

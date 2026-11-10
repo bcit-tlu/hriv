@@ -108,25 +108,20 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 
 ---
 
-## Test Case 3a: Changelog Notifications (Admin + Instructor)
+## Test Case 3b: Announcements (all roles, `ANNOUNCEMENTS_ENABLED=true`)
 
-**Purpose:** Verify the bell badge, What's New feed, and admin-only changelog management.
+**Purpose:** Verify the unified announcements stream — bell for every role, Inbox / Mine page, composer rules, reactions and seen-state (epic #1832; see `docs/announcements.md`).
 
-1. Login as `admin@example.ca` / `password`.
-2. Open the `Admin` tab.
-3. **Assert:** The `Changelog` sub-tab is selected by default.
-4. Create a new entry with title `v2.5` and a short Markdown body.
-5. **Assert:** The new entry appears in the changelog table.
-6. **Assert:** A notification bell is visible in the AppBar with an unread dot.
-7. Open the bell menu.
-8. **Assert:** The unread dot remains until `What's New` is opened.
-9. Click `What's New`.
-10. **Assert:** The dialog lists the new entry and renders the Markdown content.
-11. Close the dialog.
-12. **Assert:** The unread dot is cleared.
-13. Logout and login as `instructor@example.ca` / `password`.
-14. **Assert:** The bell is visible and the entry is readable from `What's New`.
-15. **Assert:** The instructor still has no `Admin` tab and therefore cannot access changelog management controls.
+1. Start the stack with `ANNOUNCEMENTS_ENABLED=true` and login as `instructor@example.ca` / `password`.
+2. Open the bell → **See all**. **Assert:** `?page=announcements` shows Inbox and Mine tabs and a `New announcement` button.
+3. Click `New announcement`. **Assert:** `To:` lists only the instructor's programs and managed groups (no `Everyone` / `Staff`); the kind picker has no `Release` / `Warning`; `Post` is disabled until a target is picked.
+4. Pick a group, choose `Reminder`, enter a title and a Markdown body, upload a PNG from the toolbar. **Assert:** `![name](/api/media/{id})` is inserted; `Preview` renders the image.
+5. Click `Post`. **Assert:** The post appears under Mine with a `Live` chip and in the Inbox.
+6. Open `Manage → Groups`, use a group's row menu → `Post to group`. **Assert:** The composer opens with that group pre-selected.
+7. Logout, login as a student in that group. **Assert:** The bell shows a badge; the peek lists the post; clicking it opens the page focused on the card; the badge clears but the card stays listed (quieter). Add a 👍 reaction. **Assert:** the pill count increments.
+8. Login as `admin@example.ca`. **Assert:** The composer offers `Everyone` / `Staff` (picking one clears targets), all six kinds, and `Show as banner`. Edit the instructor's post → `Notify readers again` → `Save`. **Assert:** The student sees it unseen again.
+9. **Assert:** Mine shows `Seen by N of M` on the post; Duplicate prefills with "(copy)" and no schedule; Delete asks for confirmation.
+10. **Assert:** Documentation and About are in the profile popover; the bell menu has no `What's New`.
 
 ---
 
@@ -805,11 +800,17 @@ themes. See [password management](password-setup.md#frontend-password-management
 | POST   | /api/collections/{id}/move                                                                                | Yes           | admin / instructor (any — filing is curatorial, not ownership-bound)                                                                                                                                                                        |
 | PUT    | /api/collections/{id}/owners                                                                              | Yes           | admin / instructor (co-owner or in owning program) — replaces the user-owner set ¤                                                                                                                                                          |
 | POST   | /api/collections/{id}/transfer                                                                            | Yes           | admin / instructor (co-owner or in owning program, to own program) — program owner only ¤                                                                                                                                                   |
-| GET    | /api/changelog/                                                                                           | Yes           | instructor                                                                                                                                                                                                                                  |
-| POST   | /api/changelog/                                                                                           | Yes           | admin                                                                                                                                                                                                                                       |
-| POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor                                                                                                                                                                                                                                  |
-| PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                                                                                                                                       |
-| DELETE | /api/changelog/{id}                                                                                       | Yes           | admin                                                                                                                                                                                                                                       |
+| GET    | /api/announcements/broadcast                                                                              | No            | — (404 while `ANNOUNCEMENTS_ENABLED` is off; live `everyone` banner posts)                                                                                                                                                                  |
+| GET    | /api/announcements/?scope=inbox                                                                           | Yes           | student (audience-filtered; 404 while the flag is off)                                                                                                                                                                                      |
+| GET    | /api/announcements/?scope=mine                                                                            | Yes           | instructor (own + co-managed-group posts; admin sees all)                                                                                                                                                                                   |
+| POST   | /api/announcements/                                                                                       | Yes           | instructor (targeted to own programs/managed groups; `everyone`/`staff`/`release`/`warning` admin only)                                                                                                                                     |
+| PATCH  | /api/announcements/{id}                                                                                   | Yes           | instructor (author or admin)                                                                                                                                                                                                                |
+| DELETE | /api/announcements/{id}                                                                                   | Yes           | instructor (author or admin)                                                                                                                                                                                                                |
+| PUT    | /api/announcements/{id}/seen                                                                              | Yes           | student (404 if not visible)                                                                                                                                                                                                                |
+| PUT    | /api/announcements/{id}/reactions/{emoji}                                                                 | Yes           | student (live + visible posts; allowlisted emoji else 422)                                                                                                                                                                                  |
+| DELETE | /api/announcements/{id}/reactions/{emoji}                                                                 | Yes           | student (live + visible posts)                                                                                                                                                                                                              |
+| POST   | /api/media/                                                                                               | Yes           | instructor (images ≤10 MB jpeg/png/webp/gif, video ≤50 MB mp4/webm; 415/413 otherwise; 404 while the flag is off)                                                                                                                           |
+| GET    | /api/media/{id}                                                                                           | Token         | — (signed media token in `?token=`; 401 missing/invalid, 403 wrong id, 404 unknown/traversal)                                                                                                                                               |
 | GET    | /api/admin/version                                                                                        | Yes           | instructor                                                                                                                                                                                                                                  |
 | GET    | /api/admin/export                                                                                         | Yes           | admin                                                                                                                                                                                                                                       |
 | POST   | /api/admin/import                                                                                         | Yes           | admin                                                                                                                                                                                                                                       |
