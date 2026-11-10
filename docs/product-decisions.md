@@ -54,6 +54,15 @@ specified in detail.
   label.
 - Chromatic: frontend PRs include stories; baselines are accepted by the
   product owner; no white icon backgrounds.
+- Announcements (epic #1832) are one stream for every role: one bell with a
+  peek + "See all", one page (Inbox for all, Mine for staff), one composer
+  dialog. Release notes are announcements (`kind=release`, default audience
+  `staff`), not a separate changelog surface.
+- Announcements are _seen_, never dismissed: the Inbox is the record; an edit
+  only resurfaces a post when the author ticks "Notify readers again".
+- Announcement kind is a controlled icon set and the icon _is_ the kind
+  (Release and Warning are admin-only); emoji are reactions only. "Seen by N
+  of M" shows counts to admin/instructor/staff only, never names.
 
 ## Telemetry
 

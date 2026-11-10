@@ -63,6 +63,8 @@ interface GroupManagementModalProps {
   onEdit: (id: number, name: string, description: string | null) => void | Promise<void>
   onDelete: (id: number) => void | Promise<void>
   onCategoryNavigate?: (categoryId: number) => void
+  /** Announcements epic: contextual compose for one group. */
+  onPostToGroup?: (groupId: number) => void
   /** Propagates membership updates back to the parent app state. */
   onGroupUpdated?: (group: Group) => void
   /**
@@ -88,6 +90,7 @@ export default function GroupManagementModal({
   onEdit,
   onDelete,
   onCategoryNavigate,
+  onPostToGroup,
   canManage,
   onGroupUpdated,
 }: GroupManagementModalProps) {
@@ -929,6 +932,17 @@ export default function GroupManagementModal({
 
       <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={closeGroupMenu}>
         <MenuItem onClick={startRename}>Rename</MenuItem>
+        {onPostToGroup && (
+          <MenuItem
+            onClick={() => {
+              const groupId = menuGroupId
+              closeGroupMenu()
+              if (groupId != null) onPostToGroup(groupId)
+            }}
+          >
+            Post to group
+          </MenuItem>
+        )}
         <MenuItem onClick={startDelete} sx={{ color: 'error.main' }}>
           Delete
         </MenuItem>

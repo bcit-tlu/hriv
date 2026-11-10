@@ -7,15 +7,17 @@ vi.mock('../src/api', async () => {
   const actual = await vi.importActual<typeof api>('../src/api')
   return {
     ...actual,
-    fetchAnnouncement: vi.fn(),
-    updateAnnouncement: vi.fn(),
+    fetchLegacyAnnouncement: vi.fn(),
+    updateLegacyAnnouncement: vi.fn(),
   }
 })
 
-const mockFetchAnnouncement = vi.mocked(api.fetchAnnouncement)
-const mockUpdateAnnouncement = vi.mocked(api.updateAnnouncement)
+const mockFetchAnnouncement = vi.mocked(api.fetchLegacyAnnouncement)
+const mockUpdateAnnouncement = vi.mocked(api.updateLegacyAnnouncement)
 
-function makeAnnouncement(overrides: Partial<api.ApiAnnouncement> = {}): api.ApiAnnouncement {
+function makeAnnouncement(
+  overrides: Partial<api.ApiLegacyAnnouncement> = {},
+): api.ApiLegacyAnnouncement {
   return {
     id: 1,
     message: '',

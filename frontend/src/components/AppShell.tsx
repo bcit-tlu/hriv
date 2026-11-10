@@ -71,7 +71,14 @@ import {
 } from '../theme'
 
 export type Page =
-  'browse' | 'collections' | 'manage' | 'measurement' | 'people' | 'admin' | 'guide'
+  | 'browse'
+  | 'collections'
+  | 'manage'
+  | 'measurement'
+  | 'people'
+  | 'admin'
+  | 'guide'
+  | 'announcements'
 
 export interface AppShellProps {
   page: Page
@@ -125,6 +132,10 @@ export interface AppShellProps {
    *  (the My collections sheet). */
   footerDockSlot?: ReactNode
   notificationSlot?: ReactNode
+  /** Announcements epic: hides the legacy singleton-announcement links. */
+  announcementsEnabled?: boolean
+  /** Extra items rendered in the profile popover before Logout. */
+  profileMenuExtras?: ReactNode
   // Children (main content)
   children: ReactNode
 }
@@ -163,6 +174,8 @@ export default function AppShell(props: AppShellProps) {
     fillViewport = false,
     footerDockSlot,
     notificationSlot,
+    announcementsEnabled = false,
+    profileMenuExtras,
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
@@ -207,7 +220,7 @@ export default function AppShell(props: AppShellProps) {
     setPrevAnnouncement(announcement)
     if (announcement) setAnnCollapsed(false)
   }
-  const showViewAnnLink = annEnabled && !announcement
+  const showViewAnnLink = annEnabled && !announcement && !announcementsEnabled
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
@@ -457,7 +470,7 @@ export default function AppShell(props: AppShellProps) {
                   Groups
                 </MenuItem>
               )}
-              {canEditContent && (
+              {canEditContent && !announcementsEnabled && (
                 <MenuItem
                   onClick={() => {
                     setManageMenuAnchor(null)
@@ -665,6 +678,7 @@ export default function AppShell(props: AppShellProps) {
                         <ListItemText>View Announcement</ListItemText>
                       </MenuItem>
                     )}
+                    {profileMenuExtras}
                     <MenuItem
                       sx={{ py: 1.25, color: 'primary.main' }}
                       onClick={() => {

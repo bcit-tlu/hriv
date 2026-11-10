@@ -55,9 +55,14 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | Manage → Programs           | —       | —     | —          | ✓     |
 | Manage → Groups             | —       | —     | ✓          | ✓     |
 | Manage → Announcement       | —       | —     | ✓          | ✓     |
+| Announcements bell / page¹  | ✓       | ✓     | ✓          | ✓     |
+| Announcements → Mine / New¹ | —       | ✓     | ✓          | ✓     |
 | Manage → Measurement review | —       | —     | ✓          | ✓     |
 | People tab                  | —       | ✓     | —          | ✓     |
 | Admin tab                   | —       | —     | —          | ✓     |
+
+¹ Behind `features.announcements` (epic #1832); Mine / New announcement
+follow `canEditContent`.
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
@@ -1165,6 +1170,37 @@ M images> / Empty` format used on category tiles.
   `imagesVersion` prop changes. **Given** a bulk import job completes, **When**
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
   images appear without a manual reload.
+
+### Announcements (`AnnouncementsBell.tsx`, `AnnouncementsPage.tsx`, `AnnouncementComposer.tsx`)
+
+Gated on `features.announcements` (epic #1832); see
+[announcements.md](announcements.md) for the model and API.
+
+- **Given** any signed-in role, **Then** the AppBar bell is visible; its badge
+  is the number of unseen _live_ Inbox posts. Opening it peeks the newest ≤5
+  unseen titles with kind icon and relative time; **See all** navigates to
+  `?page=announcements`; clicking a title opens the page focused on that card
+  (`?id=`).
+- **Given** the Inbox is on screen, **When** a live post is unseen, **Then** it
+  is marked seen once per `(id, notified_at)` and remains listed, rendered
+  quieter. Nothing is dismissed; the Inbox is the record.
+- **Given** an admin/instructor/staff user, **Then** the page shows Inbox and
+  Mine tabs plus **New announcement**. Mine filters by Draft / Scheduled /
+  Live / Expired; rows with `can_edit` get Edit / Duplicate / Delete (delete
+  confirms); co-managed rows show the author with "(co-managed)" and no
+  actions. "Seen by N of M" shows counts only — never names.
+- **Given** the composer, **Then** `To:` is one grouped multi-select. Admins
+  also see **Everyone** and **Staff**; choosing one clears any program/group
+  targets and vice versa. Instructors must pick at least one target. The kind
+  picker is the controlled icon set; **Release** and **Warning** are hidden
+  from instructors. Emoji are reactions only, never kinds.
+- **Given** media is uploaded from the composer, **Then** an image inserts
+  `![name](/api/media/{id})` and a video a bare `/api/media/{id}` line, each
+  on its own paragraph; Preview renders with the upload's fresh token.
+- **Given** the flag is on, **Then** Documentation and About live in the
+  profile popover, and the legacy Manage → Announcement / View Announcement
+  links are hidden. Groups → row menu gains **Post to group**, which opens the
+  composer pre-targeted at that group.
 
 ### Changelog notifications (`NotificationMenu.tsx`, `ChangelogAdmin.tsx`)
 
