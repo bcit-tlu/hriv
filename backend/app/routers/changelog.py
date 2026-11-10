@@ -64,7 +64,10 @@ async def list_entries(
         .where(
             Announcement.kind == "release",
             Announcement.audience == "staff",
-            live_clause(),
+            # Published (not draft/scheduled). Expired releases stay listed so
+            # the legacy admin table keeps its edit/delete controls.
+            Announcement.publish_at.is_not(None),
+            Announcement.publish_at <= utcnow(),
         )
         .order_by(Announcement.publish_at.desc(), Announcement.id.desc())
     )

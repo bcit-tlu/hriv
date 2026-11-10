@@ -73,6 +73,7 @@ async def test_list_entries_excludes_drafts_in_query() -> None:
     assert "announcements.audience = 'staff'" in sql  # targeted releases stay private
     assert "announcements.publish_at IS NOT NULL" in sql
     assert "announcements.publish_at <=" in sql  # scheduled releases hidden until live
+    assert "expires_at" not in sql  # expired releases stay editable in the legacy table
 
 
 def _refresh_like_db(ann) -> None:
