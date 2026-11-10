@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # My collections Browse shelf (#1583), gated by collections_enabled.
     collections_home_shelf: bool = False
 
+    # Announcements stream (epic #1832): dark-launch flag for the new
+    # /api/announcements surface and the Announcements UI. The legacy
+    # /api/announcement and /api/changelog shims ignore it. Chart default off;
+    # the `latest` overlay turns it on; removed by the epic's closing issue (#1838).
+    announcements_enabled: bool = False
+
     # Object counting (epic #1661): dark-launch flag, dedicated arq
     # queue/worker, pre-flight pixel budget, per-user job cap and ephemeral
     # Redis result policy. Job state never touches Postgres. The budget,
