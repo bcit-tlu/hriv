@@ -202,6 +202,31 @@ function ComposerDialog({
         <Stack spacing={2}>
           {error && <Alert severity="error">{error}</Alert>}
 
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              Kind
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={kind}
+              onChange={(_e, next: AnnouncementKind | null) => next && setKind(next)}
+              aria-label="Announcement kind"
+            >
+              {kinds.map((k) => (
+                <ToggleButton
+                  key={k.kind}
+                  value={k.kind}
+                  aria-label={k.label}
+                  sx={{ gap: 0.75, px: 1.5 }}
+                >
+                  <k.Icon fontSize="small" color={k.severity === 'info' ? 'inherit' : k.severity} />
+                  {k.label}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
+
           <Autocomplete
             multiple
             options={options}
@@ -239,31 +264,6 @@ function ComposerDialog({
               />
             )}
           />
-
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-              Kind
-            </Typography>
-            <ToggleButtonGroup
-              exclusive
-              size="small"
-              value={kind}
-              onChange={(_e, next: AnnouncementKind | null) => next && setKind(next)}
-              aria-label="Announcement kind"
-            >
-              {kinds.map((k) => (
-                <ToggleButton
-                  key={k.kind}
-                  value={k.kind}
-                  aria-label={k.label}
-                  sx={{ gap: 0.75, px: 1.5 }}
-                >
-                  <k.Icon fontSize="small" color={k.severity === 'info' ? 'inherit' : k.severity} />
-                  {k.label}
-                </ToggleButton>
-              ))}
-            </ToggleButtonGroup>
-          </Box>
 
           <TextField
             label="Title"

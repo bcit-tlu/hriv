@@ -39,7 +39,7 @@ export const ANNOUNCEMENT_KINDS: readonly AnnouncementKindMeta[] = [
   { kind: 'release', label: 'Release', Icon: RocketLaunchIcon, severity: 'info', adminOnly: true },
   {
     kind: 'warning',
-    label: 'Warning',
+    label: 'Important',
     Icon: WarningAmberIcon,
     severity: 'warning',
     adminOnly: true,
