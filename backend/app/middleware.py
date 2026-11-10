@@ -617,6 +617,11 @@ def _upload_body_limit_detail(path: str, per_part: bool) -> str:
             "Bulk import request exceeds the size limit of "
             f"{BULK_IMPORT_MAX_REQUEST_BYTES / (1024 ** 3):g} GiB"
         )
+    if path in ("/api/media", "/api/media/"):
+        return (
+            "Media file exceeds the size limit of "
+            f"{MEDIA_UPLOAD_MAX_BYTES // (1024 ** 2)} MB"
+        )
     return (
         "File exceeds the per-upload size limit of "
         f"{UPLOAD_MAX_BYTES / (1024 ** 3):g} GiB"

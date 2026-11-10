@@ -131,6 +131,13 @@ def test_media_upload_spool_cap_registered() -> None:
     assert _upload_body_limits("/api/media/12") is None
 
 
+def test_media_upload_spool_cap_detail_cites_media_limit() -> None:
+    from app.middleware import _upload_body_limit_detail
+
+    assert _upload_body_limit_detail("/api/media/", per_part=True) == "Media file exceeds the size limit of 50 MB"
+    assert "GiB" not in _upload_body_limit_detail("/api/media/", per_part=False)
+
+
 def test_content_disposition_unicode_and_ascii() -> None:
     from app.routers.media import content_disposition
 
