@@ -64,6 +64,9 @@ _TILE_IMAGE_FILE_ROUTE = re.compile(
     r"/api/tiles/[0-9]+/image_files/[0-9]+/[0-9]+_[0-9]+\.[A-Za-z0-9]+"
 )
 _IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
+# Announcement media (#1835): the per-file video cap doubles as the spool
+# bound so an oversized upload is refused before FastAPI buffers it.
+MEDIA_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 _ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
 _CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
 _TILE_METRIC_ROUTES = frozenset({
@@ -577,6 +580,9 @@ def _upload_body_limits(path: str) -> tuple[int, int] | None:
     ):
         limit = UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
         return limit, limit
+    if path in ("/api/media", "/api/media/"):
+        limit = MEDIA_UPLOAD_MAX_BYTES + _MULTIPART_OVERHEAD_BYTES
+        return limit, limit
     if path.startswith("/api/admin/bulk-import"):
         return (
             BULK_IMPORT_MAX_UPLOAD_BYTES + _MULTIPART_OVERHEAD_BYTES,
@@ -610,6 +616,11 @@ def _upload_body_limit_detail(path: str, per_part: bool) -> str:
         return (
             "Bulk import request exceeds the size limit of "
             f"{BULK_IMPORT_MAX_REQUEST_BYTES / (1024 ** 3):g} GiB"
+        )
+    if path in ("/api/media", "/api/media/"):
+        return (
+            "Media file exceeds the size limit of "
+            f"{MEDIA_UPLOAD_MAX_BYTES // (1024 ** 2)} MB"
         )
     return (
         "File exceeds the per-upload size limit of "

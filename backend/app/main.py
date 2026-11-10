@@ -30,6 +30,7 @@ from .routers import (
     admin,
     announcement,
     announcements,
+    media,
     auth,
     bulk_import,
     categories,
@@ -364,6 +365,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcement.router, prefix="/api")
 app.include_router(announcements.router, prefix="/api")
+app.include_router(media.router, prefix="/api")
 app.include_router(changelog.router, prefix="/api")
 app.include_router(collections.router, prefix="/api")
 app.include_router(counts.router, prefix="/api")

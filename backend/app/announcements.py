@@ -12,13 +12,21 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
 
+from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authz import can_attach_program_to_category, can_manage_group
+from .database import settings
 from .models import ANNOUNCEMENT_STAFF_ROLES, Announcement, Group, Program, User
 
 SEEN_METADATA_KEY = "announcement_seen"
+
+
+def announcements_feature_gate() -> None:
+    """FastAPI dependency: 404 every epic-#1832 route while ``ANNOUNCEMENTS_ENABLED`` is off."""
+    if not settings.announcements_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
 def utcnow() -> datetime:
@@ -207,6 +215,24 @@ def authority_error(
         if not can_manage_group(user, (i.id for i in group.instructors)):
             return f"You do not manage group '{group.name}'"
     return None
+
+
+_PASTED_MEDIA_TOKEN_RE = re.compile(r"(/api/media/\d+)\?token=[A-Za-z0-9._~-]+")
+
+
+def strip_media_tokens(message: str) -> str:
+    """Canonicalise pasted ``tokenized_url``s to ``/api/media/{id}``.
+
+    Stored Markdown must reference media by id only; tokens expire after an
+    hour and are re-minted per response (``media_tokens``)."""
+    return _PASTED_MEDIA_TOKEN_RE.sub(r"\1", message)
+
+
+def media_tokens_for(message: str) -> dict[str, str]:
+    """``{media_id: token}`` for every ``/api/media/{id}`` reference in *message*."""
+    from .media_tokens import issue_media_token
+
+    return {str(media_id): issue_media_token(media_id) for media_id in media_ids_in(message)}
 
 
 def media_ids_in(message: str) -> list[int]:

@@ -125,6 +125,30 @@ pinned, banner, status (draft|scheduled|live|expired), seen, reactions
 minted by #1835), can_edit, seen_count?, audience_size?, created_at,
 updated_at`.
 
+## Media (images and video)
+
+Authors upload through `POST /api/media/` (admin, instructor; multipart `file`).
+Accepted: images `image/jpeg|png|webp|gif` ≤ 10 MB (magic bytes must match the
+declared type), video `video/mp4|webm` ≤ 50 MB (declared type + extension).
+Files are streamed to `<data_dir>/media/<uuid><ext>` via a staging name and a
+`content_media` row keeps `original_name`, `content_type`, `size_bytes` and
+`uploader_id`. The response's `tokenized_url` is ready to paste into Markdown:
+
+```markdown
+![caption](/api/media/12) ← image
+/api/media/13 ← standalone line = video
+```
+
+`GET /api/media/{id}?token=…` serves the file with its stored content type,
+`Content-Disposition: inline`, `Cache-Control: private, max-age=3600` and the
+same realpath containment guard as tiles (404 on any rejection). The token is a
+signed, 60-minute, media-id-bound HMAC (`app/media_tokens.py`, mirrors
+`tile_tokens.py`); announcement responses mint fresh tokens for every
+`/api/media/{id}` reference in `message` (`media_tokens: {id: token}`), so
+`<img>`/`<video>` tags never carry a bearer JWT. The nginx front door whitelists
+`/api/media` in its unlimited-body upload location. No listing or delete in v1;
+orphaned files are tolerated.
+
 ## Frontend
 
 Pending #1837 (Announcements page: Inbox / Mine, composer, bell for all roles)

@@ -179,7 +179,7 @@ async def test_inbox_filters_by_visibility_and_serializes(no_stats) -> None:
     assert first.icon == "Campaign" and first.severity == "info"
     assert first.can_edit is False
     assert first.seen_count is None and first.audience_size is None
-    assert out[1].media_tokens == {"3": ""}
+    assert list(out[1].media_tokens) == ["3"] and out[1].media_tokens["3"]
     assert out[1].group_names == ["G7"]
     no_stats.assert_not_awaited()  # students never trigger the count queries
     sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
@@ -627,3 +627,8 @@ def test_literal_routes_not_shadowed_by_param_routes() -> None:
         endpoint = _first_match_endpoint(method, path)
         assert endpoint is not None, f"{method} {path} matched no route"
         assert endpoint.__name__ == expected, f"{method} {path} resolved to {endpoint.__name__}"
+
+
+def test_strip_media_tokens_canonicalises_pasted_urls() -> None:
+    pasted = "![a](/api/media/12?token=abc.DEF-ghi_jkl) and /api/media/13?token=x.y.z\n/api/media/14"
+    assert rules.strip_media_tokens(pasted) == "![a](/api/media/12) and /api/media/13\n/api/media/14"
