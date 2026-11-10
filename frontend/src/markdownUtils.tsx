@@ -24,7 +24,15 @@ const MARKDOWN_IMAGE_REGEX = /^!\[([^\]]*)\]\(([^\s)]+)\)$/
 const MEDIA_PATH_REGEX = /^\/api\/media\/(\d+)(?:\?[^\s]*)?$/
 const VIDEO_URL_REGEX = /^https?:\/\/[^\s]+\.(mp4|webm|mov)(?:\?[^\s]*)?$/i
 // Inline raster/SVG data URIs are inert in an <img> context (no script execution).
-const DATA_IMAGE_REGEX = /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml)[;,]/i
+const DATA_IMAGE_REGEX = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,([A-Za-z0-9+/=]+)$/i
+const DATA_IMAGE_TYPES: Record<string, string> = {
+  png: 'png',
+  jpg: 'jpeg',
+  jpeg: 'jpeg',
+  gif: 'gif',
+  webp: 'webp',
+  'svg+xml': 'svg+xml',
+}
 
 /**
  * Resolve a Markdown media `src` to something safe to put in `<img>`/`<video>`.
@@ -39,12 +47,18 @@ export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string 
     const token = mediaTokens?.[String(mediaId)]
     return token ? `/api/media/${mediaId}?token=${encodeURIComponent(token)}` : null
   }
-  if (DATA_IMAGE_REGEX.test(src)) return src
+  const dataMatch = src.match(DATA_IMAGE_REGEX)
+  if (dataMatch) {
+    const type = DATA_IMAGE_TYPES[dataMatch[1].toLowerCase()]
+    return type ? `data:image/${type};base64,${dataMatch[2]}` : null
+  }
   if (!isSafeHref(src)) return null
-  // Re-serialise through URL so only a normalised http(s) URL reaches the DOM.
+  // Rebuild the URL from its parts so only a normalised http(s) URL reaches the DOM.
   try {
     const url = new URL(src)
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    const scheme = url.protocol === 'https:' ? 'https://' : 'http://'
+    return scheme + url.host + url.pathname + url.search
   } catch {
     return null
   }

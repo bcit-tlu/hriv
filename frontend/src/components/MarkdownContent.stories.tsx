@@ -2,12 +2,10 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import Paper from '@mui/material/Paper'
 import MarkdownContent from './MarkdownContent'
 
-// Deterministic inline SVG so Chromatic never fetches a network image.
+// Deterministic inline SVG (base64, the only data: form the renderer accepts) so
+// Chromatic never fetches a network image.
 const slide =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="200"><rect width="480" height="200" fill="%23b39ddb"/><text x="240" y="110" font-size="28" text-anchor="middle" fill="%23311b92">H&amp;E slide</text></svg>',
-  )
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIj48cmVjdCB3aWR0aD0iNDgwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2IzOWRkYiIvPjx0ZXh0IHg9IjI0MCIgeT0iMTEwIiBmb250LXNpemU9IjI4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMzExYjkyIj5IJmFtcDtFIHNsaWRlPC90ZXh0Pjwvc3ZnPg=='
 
 const meta = {
   title: 'Components/MarkdownContent',
