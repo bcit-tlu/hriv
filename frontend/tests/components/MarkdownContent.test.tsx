@@ -236,6 +236,15 @@ describe('markdown media fallbacks', () => {
     expect(resolveMediaSrc('data:text/html,<script>1</script>')).toBeNull()
   })
 
+  it('keeps query strings and media fragments on external URLs', () => {
+    expect(resolveMediaSrc('https://cdn.example/clip.mp4?v=2#t=10')).toBe(
+      'https://cdn.example/clip.mp4?v=2#t=10',
+    )
+    expect(resolveMediaSrc('https://user:pw@cdn.example/a.svg#view')).toBe(
+      'https://cdn.example/a.svg#view',
+    )
+  })
+
   it('swaps a failed image for its alt-text placeholder', () => {
     const { container } = renderWithTheme(
       <MarkdownContent markdown="![Gone](https://cdn.example/missing.png)" />,

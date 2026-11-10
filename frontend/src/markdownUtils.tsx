@@ -58,7 +58,7 @@ export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string 
     const url = new URL(src)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
     const scheme = url.protocol === 'https:' ? 'https://' : 'http://'
-    return scheme + url.host + url.pathname + url.search
+    return scheme + url.host + url.pathname + url.search + url.hash
   } catch {
     return null
   }
