@@ -1,14 +1,8 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import type { SxProps, Theme } from '@mui/material/styles'
-import {
-  MarkdownImage,
-  MediaPlaceholder,
-  parseMarkdown,
-  renderInline,
-  resolveMediaSrc,
-  type MediaTokens,
-} from '../markdownUtils'
+import { MarkdownImage, MediaPlaceholder } from './MarkdownMedia'
+import { parseMarkdown, renderInline, resolveMediaSrc, type MediaTokens } from '../markdownUtils'
 
 export interface MarkdownContentProps {
   markdown: string
