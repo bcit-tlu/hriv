@@ -706,13 +706,16 @@ export default function AdminPage() {
     }
   }
 
+  // Backups is the only (and default) section since the changelog moved into announcements (#1838).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loaders reset their panels before fetching
+    void loadRestoreSnapshots()
+    void loadFilesImportArchives()
+    void loadExportArchives()
+  }, [loadRestoreSnapshots, loadFilesImportArchives, loadExportArchives])
+
   const handleBackupsTabChange = (_event: React.SyntheticEvent, value: AdminTabValue) => {
     setActiveTab(value)
-    if (value === 'backups') {
-      void loadRestoreSnapshots()
-      void loadFilesImportArchives()
-      void loadExportArchives()
-    }
   }
 
   const handleRestoreSnapshotSelect = (snapshotName: string) => {
