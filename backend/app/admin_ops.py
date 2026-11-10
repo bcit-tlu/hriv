@@ -43,9 +43,10 @@ from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
     Announcement,
+    AnnouncementReaction,
     Category,
-    ChangelogEntry,
     Collection,
+    ContentMedia,
     CollectionImage,
     Group,
     Image,
@@ -53,6 +54,8 @@ from .models import (
     Program,
     SourceImage,
     User,
+    announcement_groups,
+    announcement_programs,
 )
 from .rebuild_fixture import (
     FIXTURE_ARCHIVE_LOCK_FILENAME as REBUILD_FIXTURE_ARCHIVE_LOCK_FILENAME,
@@ -835,6 +838,57 @@ async def _run_with_task_heartbeat(
         )
 
 
+def _announcement_rows_from_dump(dump: dict) -> list[dict]:
+    """Return announcement rows from a dump, mapping the pre-0042 shape.
+
+    New dumps carry an ``"announcements"`` list.  Older dumps carry a
+    ``"changelog_entries"`` list (→ ``kind='release'`` / ``audience='staff'``
+    announcements, ids preserved) plus an ``"announcement"`` singleton object
+    (→ one ``audience='everyone'`` banner announcement when its message is not
+    blank; ``enabled`` maps to the publish window).
+    """
+    rows = list(dump.get("announcements") or [])
+    if "announcements" in dump:
+        return rows
+    for entry in dump.get("changelog_entries", []) or []:
+        rows.append(
+            {
+                "id": entry.get("id"),
+                "title": entry.get("title"),
+                "message": entry.get("body", ""),
+                "kind": "release",
+                "audience": "staff",
+                "author_id": None,
+                "publish_at": entry.get("published_at"),
+                "notified_at": entry.get("published_at"),
+                "created_at": entry.get("created_at") or entry.get("published_at"),
+                "updated_at": entry.get("updated_at") or entry.get("published_at"),
+            }
+        )
+    ann_data = dump.get("announcement") or {}
+    message = (ann_data.get("message") or "").strip()
+    if message:
+        used_ids = {r["id"] for r in rows if r.get("id") is not None}
+        next_id = max(used_ids, default=0) + 1
+        published = ann_data.get("created_at") if ann_data.get("enabled") else None
+        rows.append(
+            {
+                "id": next_id,
+                "title": None,
+                "message": ann_data.get("message", ""),
+                "kind": "notice",
+                "audience": "everyone",
+                "author_id": None,
+                "publish_at": published,
+                "notified_at": published,
+                "banner": True,
+                "created_at": ann_data.get("created_at"),
+                "updated_at": ann_data.get("updated_at"),
+            }
+        )
+    return rows
+
+
 def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -1173,10 +1227,10 @@ async def run_db_export(task_id: int) -> None:
             collections = result.scalars().all()
             exported_image_ids = {image.id for image in images}
 
-            # Changelog entries
-            await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
-            result = await snapshot.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
-            changelog_entries = result.scalars().all()
+            # Announcements (incl. release notes, formerly changelog_entries)
+            await _update_task(session, task, log_line="Exporting announcements…", progress=70, check_cancelled=True)
+            result = await snapshot.execute(select(Announcement).order_by(Announcement.id))
+            announcements = result.scalars().all()
 
             # Measurement findings (reviews of rebuild-fixture images are dropped)
             await _update_task(session, task, log_line="Exporting measurement findings…", progress=72, check_cancelled=True)
@@ -1189,12 +1243,14 @@ async def run_db_export(task_id: int) -> None:
                 if f.image_id in exported_image_ids
             ]
 
-            # Announcement
-            await _update_task(session, task, log_line="Exporting announcement…", progress=75, check_cancelled=True)
+            # Announcement reactions and uploaded media
+            await _update_task(session, task, log_line="Exporting announcement reactions…", progress=75, check_cancelled=True)
             result = await snapshot.execute(
-                select(Announcement).where(Announcement.id == 1)
+                select(AnnouncementReaction).order_by(AnnouncementReaction.id)
             )
-            ann = result.scalar_one_or_none()
+            announcement_reactions = result.scalars().all()
+            result = await snapshot.execute(select(ContentMedia).order_by(ContentMedia.id))
+            content_media = result.scalars().all()
 
             def dt(v: datetime | None) -> str | None:
                 return v.isoformat() if v else None
@@ -1340,16 +1396,47 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for c in collections
                 ],
-                "changelog_entries": [
+                "announcements": [
                     {
-                        "id": entry.id,
-                        "title": entry.title,
-                        "body": entry.body,
-                        "published_at": dt(entry.published_at),
-                        "created_at": dt(entry.created_at),
-                        "updated_at": dt(entry.updated_at),
+                        "id": a.id,
+                        "title": a.title,
+                        "message": a.message,
+                        "kind": a.kind,
+                        "author_id": a.author_id,
+                        "audience": a.audience,
+                        "publish_at": dt(a.publish_at),
+                        "expires_at": dt(a.expires_at),
+                        "notified_at": dt(a.notified_at),
+                        "pinned": a.pinned,
+                        "banner": a.banner,
+                        "program_ids": sorted(p.id for p in a.programs),
+                        "group_ids": sorted(g.id for g in a.groups),
+                        "created_at": dt(a.created_at),
+                        "updated_at": dt(a.updated_at),
                     }
-                    for entry in changelog_entries
+                    for a in announcements
+                ],
+                "announcement_reactions": [
+                    {
+                        "id": r.id,
+                        "announcement_id": r.announcement_id,
+                        "user_id": r.user_id,
+                        "emoji": r.emoji,
+                        "created_at": dt(r.created_at),
+                    }
+                    for r in announcement_reactions
+                ],
+                "content_media": [
+                    {
+                        "id": m.id,
+                        "stored_name": m.stored_name,
+                        "original_name": m.original_name,
+                        "content_type": m.content_type,
+                        "size_bytes": m.size_bytes,
+                        "uploader_id": m.uploader_id,
+                        "created_at": dt(m.created_at),
+                    }
+                    for m in content_media
                 ],
                 "measurement_findings": [
                     {
@@ -1373,12 +1460,6 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for f in measurement_findings
                 ],
-                "announcement": {
-                    "message": ann.message if ann else "",
-                    "enabled": ann.enabled if ann else False,
-                    "created_at": dt(ann.created_at) if ann else None,
-                    "updated_at": dt(ann.updated_at) if ann else None,
-                },
             }
 
             # Write JSON to file
@@ -1398,7 +1479,7 @@ async def run_db_export(task_id: int) -> None:
                 f"{len(dump['users'])} users, "
                 f"{len(dump['source_images'])} source images, "
                 f"{len(dump['collections'])} collections, "
-                f"{len(dump['changelog_entries'])} changelog entries."
+                f"{len(dump['announcements'])} announcements."
             )
             await _update_task(
                 session, task,
@@ -1538,7 +1619,10 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM groups"))
                 await data_session.execute(text("DELETE FROM user_programs"))
                 await data_session.execute(text("DELETE FROM users"))
-                await data_session.execute(text("DELETE FROM changelog_entries"))
+                await data_session.execute(text("DELETE FROM announcement_reactions"))
+                await data_session.execute(text("DELETE FROM announcement_groups"))
+                await data_session.execute(text("DELETE FROM announcement_programs"))
+                await data_session.execute(text("DELETE FROM content_media"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
                 # The restore rewrites category/image sort_order wholesale, so
@@ -1843,39 +1927,74 @@ async def run_db_import(task_id: int) -> None:
                     )
                 await data_session.flush()
 
-                # Import changelog entries
-                await _update_task(status_session, task, log_line="Importing changelog entries…", progress=70)
-                for entry in dump.get("changelog_entries", []):
-                    changelog_entry = ChangelogEntry(
-                        id=entry["id"],
-                        title=entry["title"],
-                        body=entry["body"],
-                        published_at=_parse_dt(entry.get("published_at")),
-                        created_at=_parse_dt(entry.get("created_at")),
-                        updated_at=_parse_dt(entry.get("updated_at")),
+                # Import announcements (new dumps) or map the pre-0042 shape
+                # (`changelog_entries` list + `announcement` singleton object).
+                await _update_task(status_session, task, log_line="Importing announcements…", progress=70)
+                announcement_rows = _announcement_rows_from_dump(dump)
+                for row in announcement_rows:
+                    data_session.add(
+                        Announcement(
+                            id=row.get("id"),
+                            title=row.get("title"),
+                            message=row.get("message", ""),
+                            kind=row.get("kind", "notice"),
+                            author_id=row.get("author_id"),
+                            audience=row.get("audience", "targeted"),
+                            publish_at=_parse_dt(row.get("publish_at")),
+                            expires_at=_parse_dt(row.get("expires_at")),
+                            notified_at=_parse_dt(row.get("notified_at")),
+                            pinned=bool(row.get("pinned", False)),
+                            banner=bool(row.get("banner", False)),
+                            created_at=_parse_dt(row.get("created_at")),
+                            updated_at=_parse_dt(row.get("updated_at")),
+                        )
                     )
-                    data_session.add(changelog_entry)
                 await data_session.flush()
+                program_links = [
+                    {"announcement_id": row["id"], "program_id": pid}
+                    for row in announcement_rows
+                    if row.get("id") is not None
+                    for pid in row.get("program_ids", [])
+                ]
+                if program_links:
+                    await data_session.execute(insert(announcement_programs).values(program_links))
+                group_links = [
+                    {"announcement_id": row["id"], "group_id": gid}
+                    for row in announcement_rows
+                    if row.get("id") is not None
+                    for gid in row.get("group_ids", [])
+                ]
+                if group_links:
+                    await data_session.execute(insert(announcement_groups).values(group_links))
 
-                # Import announcement
-                await _update_task(status_session, task, log_line="Importing announcement…", progress=75, check_cancelled=True)
-                ann_data = dump.get("announcement")
-                if ann_data:
-                    ann = Announcement(
-                        id=1,
-                        message=ann_data.get("message", ""),
-                        enabled=ann_data.get("enabled", False),
-                        created_at=_parse_dt(ann_data.get("created_at")),
-                        updated_at=_parse_dt(ann_data.get("updated_at")),
+                await _update_task(status_session, task, log_line="Importing announcement reactions…", progress=75, check_cancelled=True)
+                for r in dump.get("announcement_reactions", []):
+                    data_session.add(
+                        AnnouncementReaction(
+                            id=r.get("id"),
+                            announcement_id=r["announcement_id"],
+                            user_id=r["user_id"],
+                            emoji=r["emoji"],
+                            created_at=_parse_dt(r.get("created_at")),
+                        )
                     )
-                    data_session.add(ann)
-                else:
-                    data_session.add(Announcement(id=1, message="", enabled=False))
+                for m in dump.get("content_media", []):
+                    data_session.add(
+                        ContentMedia(
+                            id=m.get("id"),
+                            stored_name=m["stored_name"],
+                            original_name=m.get("original_name", m["stored_name"]),
+                            content_type=m.get("content_type", "application/octet-stream"),
+                            size_bytes=int(m.get("size_bytes", 0)),
+                            uploader_id=m.get("uploader_id"),
+                            created_at=_parse_dt(m.get("created_at")),
+                        )
+                    )
                 await data_session.flush()
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images", "collections", "measurement_findings"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "announcement_reactions", "content_media", "source_images", "collections", "measurement_findings"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -1899,7 +2018,7 @@ async def run_db_import(task_id: int) -> None:
                     f"{len(dump['users'])} users, "
                     f"{len(dump.get('source_images', []))} source images, "
                     f"{len(dump.get('collections', []))} collections, "
-                    f"{len(dump.get('changelog_entries', []))} changelog entries."
+                    f"{len(announcement_rows)} announcements."
                 )
                 # Do NOT check_cancelled here — data_session.commit() already
                 # succeeded so the import data is permanently persisted.

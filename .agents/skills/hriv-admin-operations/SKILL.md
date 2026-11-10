@@ -66,8 +66,10 @@ Use this skill for administrator-facing operations and long-running task flows.
   while destructive data import remains atomic.
 - Keep DB import delete/insert ordering aligned with foreign keys, groups,
   categories, images, source images, collections (and their image/program/group
-  junctions, deleted first and inserted after `source_images`), changelog
-  entries, and announcements.
+  junctions, deleted first and inserted after `source_images`), and
+  announcements (their program/group junctions, reactions and `content_media`
+  are deleted before `announcements` and inserted after it). Pre-0042 dumps
+  (`changelog_entries` + `announcement` singleton) are still importable.
 - Reset PostgreSQL sequences after import.
 - `reconcile_stale_tasks` must remain multi-replica safe by using freshness on
   `updated_at`.

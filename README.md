@@ -133,6 +133,12 @@ backup/import tools live under **Backups**. Read state is tracked per user, and
 republishing an entry marks it unread again. See
 [docs/changelog-notifications.md](docs/changelog-notifications.md).
 
+> Epic #1832 is folding this into one **Announcements** stream: since migration
+> `0042_announcements` release notes are stored as `kind='release'`
+> announcements and the changelog endpoints are a compatibility shim (see
+> [docs/domain-model.md](docs/domain-model.md#announcement)); the bell, Inbox
+> and composer UI land in later issues of the epic.
+
 ### CLI Access via curl
 
 ```bash
@@ -188,7 +194,7 @@ reconciliation model for both environments.
 | [docs/TESTING.md](docs/TESTING.md)                                                         | Test plan, API endpoint → minimum-role table                                     |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                                   | OIDC / auth configuration                                                        |
 | [docs/password-setup.md](docs/password-setup.md)                                           | Admin-issued, single-use local password setup links                              |
-| [docs/password-management.md](docs/password-management.md)                               | Credential states, administrator password runbook, and stable rollout            |
+| [docs/password-management.md](docs/password-management.md)                                 | Credential states, administrator password runbook, and stable rollout            |
 | [docs/tile-delivery-boundary.md](docs/tile-delivery-boundary.md)                           | ADR: authorized tile delivery via HMAC tile tokens + nginx auth_request          |
 | [docs/unauthenticated-routes.md](docs/unauthenticated-routes.md)                           | Standing rule and audit for unauthenticated routes and enforcement layers        |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md)                                             | Tile drag-and-drop move-vs-reorder contract                                      |

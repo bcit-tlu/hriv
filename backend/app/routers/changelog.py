@@ -1,15 +1,21 @@
-"""In-app changelog notifications for admin and instructor users."""
+"""Legacy changelog endpoints (deprecated – removed by #1838).
 
-from datetime import datetime, timezone
+Release notes are ``kind='release'`` announcements since
+``0042_announcements``.  This shim keeps the pre-#1832 ``ChangelogEntry``
+contract working for the current Admin → Changelog tab and What's New dialog
+until the Announcements UI (#1837) replaces them.
+"""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..announcements import live_clause, mark_seen, utcnow
 from ..auth import require_role
 from ..database import get_db
-from ..models import ChangelogEntry, User
+from ..models import Announcement, User
 from ..schemas import (
     ChangelogEntryCreate,
     ChangelogEntryOut,
@@ -17,10 +23,31 @@ from ..schemas import (
     ChangelogMarkReadResponse,
 )
 
-router = APIRouter(prefix="/changelog", tags=["changelog"])
+router = APIRouter(prefix="/changelog", tags=["changelog"], deprecated=True)
 
 _admin_or_instructor = require_role("admin", "instructor")
 _admin = require_role("admin")
+
+
+def _legacy_shape(ann: Announcement) -> ChangelogEntryOut:
+    return ChangelogEntryOut(
+        id=ann.id,
+        title=ann.title or "",
+        body=ann.message,
+        published_at=ann.publish_at or ann.created_at,
+        created_at=ann.created_at,
+        updated_at=ann.updated_at,
+    )
+
+
+async def _get_release(db: AsyncSession, entry_id: int) -> Announcement:
+    result = await db.execute(
+        select(Announcement).where(Announcement.id == entry_id, Announcement.kind == "release")
+    )
+    ann = result.scalar_one_or_none()
+    if ann is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Changelog entry not found")
+    return ann
 
 
 @router.get("/", response_model=list[ChangelogEntryOut])
@@ -29,9 +56,11 @@ async def list_entries(
     _user: Annotated[User, Depends(_admin_or_instructor)],
 ):
     result = await db.execute(
-        select(ChangelogEntry).order_by(ChangelogEntry.published_at.desc())
+        select(Announcement)
+        .where(Announcement.kind == "release")
+        .order_by(Announcement.publish_at.desc().nulls_last(), Announcement.id.desc())
     )
-    return list(result.scalars().all())
+    return [_legacy_shape(a) for a in result.scalars().all()]
 
 
 @router.post(
@@ -42,13 +71,22 @@ async def list_entries(
 async def create_entry(
     body: ChangelogEntryCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(_admin)],
+    current_user: Annotated[User, Depends(_admin)],
 ):
-    entry = ChangelogEntry(title=body.title, body=body.body)
-    db.add(entry)
+    now = utcnow()
+    ann = Announcement(
+        title=body.title,
+        message=body.body,
+        kind="release",
+        audience="staff",
+        author_id=current_user.id,
+        publish_at=now,
+        notified_at=now,
+    )
+    db.add(ann)
     await db.commit()
-    await db.refresh(entry)
-    return entry
+    await db.refresh(ann)
+    return _legacy_shape(ann)
 
 
 @router.post("/mark-read", response_model=ChangelogMarkReadResponse)
@@ -56,12 +94,13 @@ async def mark_read(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(_admin_or_instructor)],
 ):
-    now = datetime.now(timezone.utc).isoformat()
-    meta = dict(current_user.metadata_ or {})
-    meta["changelog_last_read_at"] = now
-    current_user.metadata_ = meta
+    """Mark every live release note as seen for the current user."""
+    result = await db.execute(
+        select(Announcement).where(Announcement.kind == "release", live_clause())
+    )
+    mark_seen(current_user, result.scalars().all())
     await db.commit()
-    return ChangelogMarkReadResponse(changelog_last_read_at=now)
+    return ChangelogMarkReadResponse(changelog_last_read_at=utcnow().isoformat())
 
 
 @router.patch("/{entry_id}", response_model=ChangelogEntryOut)
@@ -71,19 +110,18 @@ async def update_entry(
     db: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(_admin)],
 ):
-    entry = await db.get(ChangelogEntry, entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Changelog entry not found")
-
+    ann = await _get_release(db, entry_id)
     if body.title is not None:
-        entry.title = body.title
+        ann.title = body.title
     if body.body is not None:
-        entry.body = body.body
-    entry.published_at = datetime.now(timezone.utc)
-
+        ann.message = body.body
+    # Republish is never silent: bump the version marker so readers see it again.
+    now = utcnow()
+    ann.publish_at = now
+    ann.notified_at = now
     await db.commit()
-    await db.refresh(entry)
-    return entry
+    await db.refresh(ann)
+    return _legacy_shape(ann)
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -92,10 +130,7 @@ async def delete_entry(
     db: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(_admin)],
 ):
-    entry = await db.get(ChangelogEntry, entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="Changelog entry not found")
-
-    await db.delete(entry)
+    ann = await _get_release(db, entry_id)
+    await db.delete(ann)
     await db.commit()
-
+    return None

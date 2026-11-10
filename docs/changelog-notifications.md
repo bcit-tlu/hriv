@@ -1,5 +1,15 @@
 # Changelog Notifications
 
+> **Deprecated (epic #1832).** Since migration `0042_announcements` (#1833)
+> release notes are `Announcement` rows with `kind='release'` and
+> `audience='staff'`; the `changelog_entries` table no longer exists and the
+> `/api/changelog/` endpoints below are a compatibility shim over those rows
+> (read-state is written to `users.metadata["announcement_seen"]`, not
+> `changelog_last_read_at`). The shim, the Admin **Changelog** tab and the
+> **What's New** dialog are removed by #1838; the replacement is documented in
+> `docs/announcements.md` (#1834). The rest of this page describes the
+> pre-#1832 behaviour the shim preserves.
+
 Admins can publish in-app changelog entries that appear separately from the
 existing site-wide announcement banner.
 
@@ -66,8 +76,9 @@ path.
 
 ## Invariants
 
-- This feature is **parallel to** the existing announcement feature; do not
-  merge their state, UI, or backend routes.
+- ~~This feature is **parallel to** the existing announcement feature; do not
+  merge their state, UI, or backend routes.~~ Superseded by epic #1832: the
+  two are now one `announcements` table (see the deprecation note above).
 - The `mark-read` route must stay ahead of `/{entry_id}` routes in
   `backend/app/routers/changelog.py`.
 - A republish is never silent: updating an entry always bumps
