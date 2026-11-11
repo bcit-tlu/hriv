@@ -614,6 +614,22 @@ class TaskCancelled(Exception):
     """Raised when an admin task detects a cancellation request."""
 
 
+
+def one_reaction_per_reader(rows: list[dict]) -> list[dict]:
+    """Keep each reader's newest reaction per announcement (highest ``id``).
+
+    Dumps taken before ``0044_one_reaction_per_user`` may hold several emojis
+    per reader; the live schema allows one, so mirror the migration's choice.
+    """
+    newest: dict[tuple[int, int], dict] = {}
+    for row in rows:
+        key = (row["announcement_id"], row["user_id"])
+        current = newest.get(key)
+        if current is None or (row.get("id") or 0) > (current.get("id") or 0):
+            newest[key] = row
+    return sorted(newest.values(), key=lambda r: r.get("id") or 0)
+
+
 async def reconcile_stale_tasks(
     session: AsyncSession,
     stale_after_seconds: int = _STALE_TASK_THRESHOLD_SECONDS,
@@ -1994,7 +2010,7 @@ async def run_db_import(task_id: int) -> None:
                     await data_session.execute(insert(announcement_groups).values(group_links))
 
                 await _update_task(status_session, task, log_line="Importing announcement reactions…", progress=75, check_cancelled=True)
-                for r in dump.get("announcement_reactions", []):
+                for r in one_reaction_per_reader(dump.get("announcement_reactions", [])):
                     data_session.add(
                         AnnouncementReaction(
                             id=r.get("id"),

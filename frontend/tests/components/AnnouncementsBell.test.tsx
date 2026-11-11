@@ -4,8 +4,9 @@ import AnnouncementsBell from '../../src/components/AnnouncementsBell'
 import { makeAnnouncement } from '../announcementFixtures'
 
 describe('AnnouncementsBell', () => {
-  it('shows the unseen count on the badge and the newest unseen titles in the peek', () => {
+  it('shows a dot badge while unseen posts exist and the newest unseen titles in the peek', () => {
     const onOpen = vi.fn()
+    const onMarkSeen = vi.fn()
     render(
       <AnnouncementsBell
         announcements={[
@@ -15,16 +16,25 @@ describe('AnnouncementsBell', () => {
         ]}
         unseenCount={2}
         onOpenAnnouncements={onOpen}
+        onMarkSeen={onMarkSeen}
       />,
     )
     const bell = screen.getByLabelText('Announcements, 2 unseen')
-    expect(bell).toHaveTextContent('2')
+    expect(bell.querySelector('.MuiBadge-dot')).not.toBeNull()
+    expect(bell).not.toHaveTextContent('2') // no number: the dot is enough
     fireEvent.click(bell)
     expect(screen.getByText('Unseen one')).toBeInTheDocument()
     expect(screen.getByText('Unseen two')).toBeInTheDocument()
     expect(screen.queryByText('Already seen')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Unseen two'))
     expect(onOpen).toHaveBeenCalledWith(3)
+    expect(onMarkSeen).toHaveBeenCalledWith(expect.objectContaining({ id: 3 }))
+  })
+
+  it('hides the dot when nothing is unseen', () => {
+    render(<AnnouncementsBell announcements={[]} unseenCount={0} onOpenAnnouncements={() => {}} />)
+    const badge = screen.getByLabelText('Announcements').querySelector('.MuiBadge-dot')
+    expect(badge).toHaveClass('MuiBadge-invisible')
   })
 
   it('"See all" opens the page without a focused post and the empty state reads caught up', () => {

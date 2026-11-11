@@ -86,4 +86,15 @@ describe('AnnouncementBanner (announcements epic)', () => {
     expect(screen.getByRole('button', { name: 'Less' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   })
+
+  it('shows the kind icon when a kind is given', () => {
+    renderWithTheme(<AnnouncementBanner title="Party" message="Cake at 3" kind="celebration" />)
+    expect(screen.getByRole('img', { name: 'Celebration' })).toBeInTheDocument()
+  })
+
+  it('never shows reactions (they live on the Announcements page only)', () => {
+    renderWithTheme(<AnnouncementBanner message="Welcome" kind="notice" variant="login" />)
+    expect(screen.getByRole('img', { name: 'Notice' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add reaction' })).toBeNull()
+  })
 })

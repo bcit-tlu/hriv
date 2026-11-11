@@ -63,7 +63,10 @@ specified in detail.
   **Notices** shelf shows at most three pinned posts; the welcome message (#1655)
   is a seeded pinned `everyone` announcement, not bespoke UI.
 - Announcements are _seen_, never dismissed: the Inbox is the record; an edit
-  only resurfaces a post when the author ticks "Notify readers again".
+  only resurfaces a post when the author ticks "Notify readers again" (a full
+  reset: unseen for everyone, back in every bell and banner slot). The
+  Announcements page never auto-marks the viewer's _own_ posts seen, so authors
+  see their banner and bell entry exactly as readers do until they dismiss them.
 - Announcement kind is a controlled icon set and the icon _is_ the kind
   (Release and Warning are admin-only); emoji are reactions only. "Seen by N
   of M" shows counts to admin/instructor/staff only, never names.

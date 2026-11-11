@@ -12,7 +12,7 @@ describe('AnnouncementCard', () => {
         announcement={makeAnnouncement({ kind: 'event', program_names: ['Histotech'] })}
       />,
     )
-    expect(screen.getByLabelText('Event')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Event' })).toBeInTheDocument()
     expect(screen.getByText('Lab 3 moved to Thursday')).toBeInTheDocument()
     expect(screen.getByText('Dr. Ada Lovelace')).toBeInTheDocument()
     expect(screen.getByText('Histotech')).toBeInTheDocument()
@@ -42,10 +42,9 @@ describe('AnnouncementCard', () => {
 
   it('renders reaction pills and lets the viewer toggle them', () => {
     const onToggle = vi.fn()
-    const a = makeAnnouncement({ reactions: { heart: 2 }, my_reactions: ['heart'] })
+    const a = makeAnnouncement({ reactions: { heart: 2 }, my_reactions: [] })
     render(<AnnouncementCard announcement={a} onToggleReaction={onToggle} />)
-    fireEvent.click(screen.getByLabelText('heart reaction, 2'))
-    expect(onToggle).toHaveBeenCalledWith(a, 'heart')
+    expect(screen.getByLabelText('heart reaction, 2')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Add reaction'))
     fireEvent.click(screen.getByLabelText(ANNOUNCEMENT_REACTIONS[5].label))
     expect(onToggle).toHaveBeenLastCalledWith(a, 'rocket')
@@ -108,5 +107,14 @@ describe('AnnouncementCard', () => {
     expect(
       announcementTimeLabel(makeAnnouncement({ status: 'draft', publish_at: null }), now),
     ).toBe('Draft')
+  })
+
+  it('flags unseen live posts with a New chip and drops it once seen', () => {
+    const { rerender } = render(
+      <AnnouncementCard announcement={makeAnnouncement({ seen: false, status: 'live' })} />,
+    )
+    expect(screen.getByText('New')).toBeInTheDocument()
+    rerender(<AnnouncementCard announcement={makeAnnouncement({ seen: true, status: 'live' })} />)
+    expect(screen.queryByText('New')).toBeNull()
   })
 })

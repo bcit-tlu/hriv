@@ -18,8 +18,9 @@ export interface InlineOptions {
 }
 
 const INLINE_TOKEN_REGEX =
-  /(!\[[^\]]*\]\([^\s)]+\)|\[[^\]]+\]\((?:https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
-const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/
+  /(!\[[^\]]*\]\([^\s)]+\)|\[[^\]]+\]\((?:https?:\/\/|[/?#])[^\s)]*\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g
+// Absolute http(s) URLs, or in-app links (`/path`, `?page=guide`, `#anchor`) which open in this tab.
+const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\(((?:https?:\/\/|[/?#])[^\s)]*)\)$/
 const MARKDOWN_IMAGE_REGEX = /^!\[([^\]]*)\]\(([^\s)]+)\)$/
 const MEDIA_PATH_REGEX = /^\/api\/media\/(\d+)(?:\?[^\s]*)?$/
 const VIDEO_URL_REGEX = /^https?:\/\/[^\s]+\.(mp4|webm|mov)(?:\?[^\s]*)?$/i
@@ -52,7 +53,7 @@ export function resolveMediaSrc(src: string, mediaTokens?: MediaTokens): string 
     const type = DATA_IMAGE_TYPES[dataMatch[1].toLowerCase()]
     return type ? `data:image/${type};base64,${dataMatch[2]}` : null
   }
-  if (!isSafeHref(src)) return null
+  if (isLocalHref(src) || !isSafeHref(src)) return null
   // Rebuild the URL from its parts so only a normalised http(s) URL reaches the DOM.
   try {
     const url = new URL(src)
@@ -78,7 +79,13 @@ function renderImage(alt: string, src: string, key: string, options?: InlineOpti
   return <MarkdownImage key={key} src={resolved} alt={alt} />
 }
 
+/** Same-origin relative link (`/…`, `?…`, `#…`) — never protocol-relative `//host`. */
+export function isLocalHref(href: string): boolean {
+  return /^(?:\/(?!\/)|[?#])/.test(href)
+}
+
 function isSafeHref(href: string) {
+  if (isLocalHref(href)) return true
   try {
     const url = new URL(href)
     return url.protocol === 'http:' || url.protocol === 'https:'
@@ -136,12 +143,13 @@ export function renderInline(
     if (markdownLinkMatch) {
       const [, label, href] = markdownLinkMatch
       if (isSafeHref(href)) {
+        const local = isLocalHref(href)
         return (
           <Link
             key={key}
             href={href}
-            target="_blank"
-            rel="noopener noreferrer"
+            target={local ? undefined : '_blank'}
+            rel={local ? undefined : 'noopener noreferrer'}
             color="inherit"
             underline="always"
             sx={{ overflowWrap: 'anywhere' }}

@@ -566,9 +566,9 @@ class AnnouncementReaction(Base):
 
     __tablename__ = "announcement_reactions"
     __table_args__ = (
-        UniqueConstraint(
-            "announcement_id", "user_id", "emoji", name="uq_announcement_reactions_user_emoji"
-        ),
+        # One reaction per reader per post (product decision, round 3 of #1832); the
+        # database enforces it so concurrent PUTs cannot leave two.
+        UniqueConstraint("announcement_id", "user_id", name="uq_announcement_reactions_user"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

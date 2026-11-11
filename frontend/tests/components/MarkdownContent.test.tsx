@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import MarkdownContent from '../../src/components/MarkdownContent'
-import { parseMarkdown, renderInline, resolveMediaSrc } from '../../src/markdownUtils'
+import { isLocalHref, parseMarkdown, renderInline, resolveMediaSrc } from '../../src/markdownUtils'
 
 function renderWithTheme(ui: ReactElement) {
   const theme = createTheme()
@@ -264,5 +264,29 @@ describe('markdown media fallbacks', () => {
     expect(container.querySelector('img')).toBeNull()
     rerender(<MarkdownContent markdown="![Pic](/api/media/7)" mediaTokens={{ '7': 'fresh' }} />)
     expect(container.querySelector('img')?.getAttribute('src')).toBe('/api/media/7?token=fresh')
+  })
+})
+
+describe('local (in-app) Markdown links', () => {
+  it('renders /path, ?page and #anchor links in the same tab, external ones in a new tab', () => {
+    renderWithTheme(
+      <MarkdownContent
+        markdown={'[Guide](?page=guide) and [Docs](/docs/intro#top) and [Ext](https://example.org)'}
+      />,
+    )
+    const guide = screen.getByRole('link', { name: 'Guide' })
+    expect(guide).toHaveAttribute('href', '?page=guide')
+    expect(guide).not.toHaveAttribute('target')
+    expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('href', '/docs/intro#top')
+    expect(screen.getByRole('link', { name: 'Ext' })).toHaveAttribute('target', '_blank')
+  })
+
+  it('never treats protocol-relative or scheme URLs as local', () => {
+    expect(isLocalHref('/docs')).toBe(true)
+    expect(isLocalHref('#top')).toBe(true)
+    expect(isLocalHref('//evil.example/x')).toBe(false)
+    expect(isLocalHref('javascript:alert(1)')).toBe(false)
+    renderWithTheme(<MarkdownContent markdown="[x](//evil.example/x) [y](javascript:alert(1))" />)
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })
