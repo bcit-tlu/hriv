@@ -23,7 +23,6 @@ export function useFeatures(): Features | null {
             collectionsStudentAccess: data.collections_student_access ?? true,
             collectionsHomeShelf: data.collections === true && data.collections_home_shelf === true,
             counting: data.counting === true,
-            announcements: data.announcements === true,
           })
       })
       .catch(() => {

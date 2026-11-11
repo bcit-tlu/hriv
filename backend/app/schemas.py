@@ -1377,7 +1377,9 @@ class FeaturesOut(BaseModel):
     collections_student_access: bool
     collections_home_shelf: bool
     counting: bool
-    announcements: bool
+    # Always true; kept for one release so SPAs built before the gate's removal
+    # (which hide the announcement UI unless this is true) keep rendering it.
+    announcements: bool = True
 
 
 # Rebuild forward refs for nested models (``CategoryTree`` embeds

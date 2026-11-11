@@ -113,6 +113,26 @@ describe('AnnouncementsPage', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
+  it("never auto-marks the viewer's own posts seen (their banner / bell entry stays until dismissed)", () => {
+    const markSeen = vi.fn()
+    const rows = [
+      makeAnnouncement({ id: 1, author_id: 9, title: 'Mine', seen: false }),
+      makeAnnouncement({ id: 2, author_id: 3, title: 'Theirs', seen: false }),
+    ]
+    render(
+      <AnnouncementsPage
+        currentUser={{ ...instructor, id: 9, role: 'admin' }}
+        feed={makeFeed({ announcements: rows, markSeen })}
+        canCompose
+      />,
+    )
+    act(() => {
+      vi.runAllTimers()
+    })
+    expect(markSeen).toHaveBeenCalledTimes(1)
+    expect(markSeen).toHaveBeenCalledWith(rows[1])
+  })
+
   it('authors get one stream: inbox plus own drafts, filtered by status or My announcements', async () => {
     mockFetch.mockResolvedValue([
       makeAnnouncement({ id: 1, title: 'Live one', status: 'live', can_edit: true }),
