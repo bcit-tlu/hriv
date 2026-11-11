@@ -621,6 +621,19 @@ async def test_add_reaction_replaces_the_callers_previous_emoji() -> None:
     assert db.commit.await_count == 1
 
 
+async def test_add_reaction_collapses_legacy_multi_reactions_keeping_requested_row() -> None:
+    """Pre-0044 rows: a reader with two emojis who re-picks one keeps that row (no re-insert)."""
+    me = _user("student", id=5)
+    heart, hooray = _reaction(5, "heart"), _reaction(5, "hooray")
+    ann = _ann(reactions=[heart, hooray])
+    db = _db(one=ann)
+
+    out = await add_reaction(10, "heart", db, me)
+
+    assert ann.reactions == [heart] and out.my_reactions == ["heart"]
+    assert db.commit.await_count == 1
+
+
 async def test_reaction_allowlist_and_live_only() -> None:
     me = _user("student", id=5)
     with pytest.raises(HTTPException) as exc:

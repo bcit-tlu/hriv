@@ -482,16 +482,28 @@ async def add_reaction(
     _validate_emoji(emoji)
     ann = await _reactable_or_error(db, announcement_id, current_user)
     mine = [r for r in ann.reactions if r.user_id == current_user.id]
-    if not (len(mine) == 1 and mine[0].emoji == emoji):
-        for reaction in mine:
+    # Re-point the reader's existing row instead of delete + insert: the unit of work flushes
+    # inserts before deletes, so a fresh row would collide with uq_announcement_reactions_user.
+    keep = next((r for r in mine if r.emoji == emoji), None) or (mine[0] if mine else None)
+    changed = False
+    for reaction in mine:  # legacy pre-0044 extras
+        if reaction is not keep:
             ann.reactions.remove(reaction)
+            changed = True
+    if keep is None:
         ann.reactions.append(
             AnnouncementReaction(announcement_id=ann.id, user_id=current_user.id, emoji=emoji)
         )
+        changed = True
+    elif keep.emoji != emoji:
+        keep.emoji = emoji
+        changed = True
+    if changed:
         try:
             await db.commit()
         except IntegrityError:
-            # A concurrent identical PUT won the unique constraint; idempotent.
+            # A concurrent PUT by the same reader won uq_announcement_reactions_user; the
+            # refreshed state below reports whichever emoji landed.
             await db.rollback()
         await db.refresh(ann)
     return ReactionsOut(
