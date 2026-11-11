@@ -21,7 +21,6 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..announcements import announcements_feature_gate
 from ..auth import require_role
 from ..database import get_db, settings
 from ..filenames import sanitize_upload_filename
@@ -105,7 +104,6 @@ async def upload_media(
     file: Annotated[UploadFile, File()],
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(require_role("admin", "instructor"))],
-    _gate: Annotated[None, Depends(announcements_feature_gate)],
 ):
     """Store an image (≤10 MB: jpeg/png/webp/gif) or video (≤50 MB: mp4/webm)."""
     content_type = (file.content_type or "").split(";")[0].strip().lower()

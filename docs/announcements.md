@@ -6,11 +6,12 @@ release notes are just announcements with `kind='release'`. This page covers
 the data model and the `/api/announcements` API (#1833, #1834); the frontend
 surfaces land with #1837/#1838 and are documented here as they ship.
 
-## Rollout flag
+## Rollout
 
-`ANNOUNCEMENTS_ENABLED` (chart value `announcements.enabled`, default `false`;
-exposed as `announcements` by `GET /api/features`) dark-launches the whole
-`/api/announcements` surface — every route answers 404 while it is off. The
+The stream shipped trunk-based behind `ANNOUNCEMENTS_ENABLED` (chart value
+`announcements.enabled`, `GET /api/features` → `announcements`); the gate was
+removed once production had it on, so the surface is always available and the
+overlay value is a no-op. The
 pre-#1832 `/api/announcement/` and `/api/changelog/` endpoints were removed by
 #1838; `GET /api/announcements/broadcast` is the only unauthenticated route.
 

@@ -136,7 +136,7 @@ admins and instructors), a composer dialog with Markdown, media and emoji
 reactions, a banner slot for posts flagged `banner`, a Home **Notices** shelf of
 pinned posts and a login-screen broadcast. Release notes are announcements of
 `kind='release'` (default audience admins + instructors + staff) — there is no
-separate changelog. The feature is gated by `ANNOUNCEMENTS_ENABLED`. See
+separate changelog. See
 [docs/announcements.md](docs/announcements.md).
 
 ### CLI Access via curl

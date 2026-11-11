@@ -26,7 +26,6 @@ JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
 @pytest.fixture(autouse=True)
 def _media_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(media_router.settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(media_router.settings, "announcements_enabled", True)
     return tmp_path / "media"
 
 

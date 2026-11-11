@@ -108,11 +108,11 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 
 ---
 
-## Test Case 3b: Announcements (all roles, `ANNOUNCEMENTS_ENABLED=true`)
+## Test Case 3b: Announcements (all roles)
 
 **Purpose:** Verify the unified announcements stream — bell for every role, single-stream page with filters, composer rules, reactions and seen-state (epic #1832; see `docs/announcements.md`).
 
-1. Start the stack with `ANNOUNCEMENTS_ENABLED=true` and login as `instructor@example.ca` / `password`.
+1. Start the stack and login as `instructor@example.ca` / `password`.
 2. Open the bell → **See all**. **Assert:** `?page=announcements` shows one list with filter chips (All · My announcements · Draft · Scheduled · Live · Expired) and a `New announcement` button.
 3. Click `New announcement`. **Assert:** `To:` lists only the instructor's programs and managed groups (no Audience group); the kind picker (first field) has no `Release` / `Important`; `Post` is disabled until a target is picked.
 4. Pick a group, choose `Reminder`, enter a title and a Markdown body, upload a PNG from the toolbar. **Assert:** `![name](/api/media/{id})` is inserted; `Preview` renders the image.

@@ -266,9 +266,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   (`AnnouncementReaction`, `CASCADE`); `author`.
 - **Seen-state:** per-user, in `users.metadata["announcement_seen"]` as
   `{announcement_id: notified_at ISO string}` — merged, never overwritten.
-- **Rollout flag:** `ANNOUNCEMENTS_ENABLED` (chart `announcements.enabled`,
-  default off; `GET /api/features` → `announcements`) gates the new
-  `/api/announcements` surface and UI.
+- **Rollout flag:** `ANNOUNCEMENTS_ENABLED` gated the surface during the
+  trunk-based rollout and was removed after the production flip; the stream is
+  always on.
 - **Legacy endpoints:** `/api/announcement/` and `/api/changelog/` were
   removed by #1838; `GET /api/announcements/broadcast` replaces the login banner
   read.

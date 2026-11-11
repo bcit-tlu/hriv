@@ -1377,7 +1377,6 @@ class FeaturesOut(BaseModel):
     collections_student_access: bool
     collections_home_shelf: bool
     counting: bool
-    announcements: bool
 
 
 # Rebuild forward refs for nested models (``CategoryTree`` embeds

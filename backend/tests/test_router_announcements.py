@@ -13,7 +13,6 @@ from app import announcements as rules
 from app.models import Announcement, Group, Program, User
 from app.routers import announcements as router_module
 from app.routers.announcements import (
-    _feature_gate,
     _load_stats,
     add_reaction,
     create_announcement,
@@ -103,29 +102,10 @@ def _refresh_like_db(obj) -> None:
     obj.updated_at = obj.updated_at or NOW
 
 
-@pytest.fixture(autouse=True)
-def _enable_flag(monkeypatch):
-    monkeypatch.setattr(router_module.settings, "announcements_enabled", True)
-
-
 @pytest.fixture
 def no_stats():
     with patch.object(router_module, "_load_stats", AsyncMock(return_value={})) as mocked:
         yield mocked
-
-
-# ── feature gate ──────────────────────────────────────────────
-
-
-def test_feature_gate_404_when_disabled(monkeypatch) -> None:
-    monkeypatch.setattr(router_module.settings, "announcements_enabled", False)
-    with pytest.raises(HTTPException) as exc:
-        _feature_gate()
-    assert exc.value.status_code == 404
-    monkeypatch.setattr(router_module.settings, "announcements_enabled", True)
-    assert _feature_gate() is None
-    # Router-level so it runs before auth: disabled API is 404, never 401/403.
-    assert any(d.dependency is _feature_gate for d in router_module.router.dependencies)
 
 
 # ── visibility matrix (rules.can_view) ────────────────────────
