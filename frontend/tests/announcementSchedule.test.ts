@@ -100,4 +100,14 @@ describe('rangeShortcuts', () => {
       expiresAt: '2026-12-31T23:59',
     })
   })
+
+  it('never produces an expiry at or before the publish time (23:59 edge)', () => {
+    const lastMinute = dayjs('2026-11-15T23:59') // Sunday, last minute of day and week
+    for (const r of rangeShortcuts(lastMinute)) {
+      expect(dayjs(r.expiresAt).isAfter(dayjs(r.publishAt)), r.label).toBe(true)
+    }
+    const byLabel = Object.fromEntries(rangeShortcuts(lastMinute).map((r) => [r.label, r]))
+    expect(byLabel['Today'].expiresAt).toBe('2026-11-16T23:59')
+    expect(byLabel['This week'].expiresAt).toBe('2026-11-16T23:59')
+  })
 })

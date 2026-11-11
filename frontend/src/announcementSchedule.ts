@@ -73,10 +73,12 @@ function endOfWeek(day: Dayjs): Dayjs {
  * publish now; future spans publish at 9:00 on their first day. Each ends at 23:59.
  */
 export function rangeShortcuts(now: Dayjs = dayjs()): RangeShortcut[] {
+  // In the last minute of a span (23:59) its end equals `now`; the API rejects expiry ≤ publish,
+  // so roll such spans forward by a day.
   const range = (label: string, start: Dayjs, end: Dayjs): RangeShortcut => ({
     label,
     publishAt: toPickerValue(start),
-    expiresAt: toPickerValue(end),
+    expiresAt: toPickerValue(end.isAfter(start) ? end : end.add(1, 'day')),
   })
   const monday = nextMonday(now)
   const firstOfNextMonth = atNine(now.add(1, 'month').startOf('month'))
