@@ -208,11 +208,10 @@ export default function App() {
   // Deployment flags (`GET /api/features`). Collections are dark-launched:
   // the tab and `?collection=` deep links only exist once the flag is on.
   const features = useFeatures()
-  const announcementsEnabled = features?.announcements === true
-  const announcementsFeed = useAnnouncements(announcementsEnabled && currentUser != null)
+  const announcementsFeed = useAnnouncements(currentUser != null)
   const [loginBroadcast, setLoginBroadcast] = useState<ApiAnnouncementBroadcast | null>(null)
   useEffect(() => {
-    if (!announcementsEnabled || currentUser != null) return
+    if (currentUser != null) return
     let cancelled = false
     fetchAnnouncementBroadcast()
       .then((rows) => {
@@ -224,7 +223,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [announcementsEnabled, currentUser])
+  }, [currentUser])
   const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
   const bannerPost = bannerCandidates[0]
   const [announcementsFocusId, setAnnouncementsFocusId] = useState<number | null>(() => {
@@ -293,9 +292,7 @@ export default function App() {
         ? 'browse'
         : page === 'collections' && features != null && !collectionsEnabled
           ? 'browse'
-          : page === 'announcements' && features != null && !announcementsEnabled
-            ? 'browse'
-            : page
+          : page
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
@@ -306,12 +303,6 @@ export default function App() {
     setSelectedCollectionId(null)
     setCollectionFromBrowse(false)
   }, [features, collectionsEnabled, page])
-
-  useEffect(() => {
-    if (features == null || announcementsEnabled || page !== 'announcements') return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL state can only be corrected once the flags arrive
-    setPage('browse')
-  }, [features, announcementsEnabled, page])
 
   const lastEmittedPageRef = useRef<FrontendPage | null>(null)
   useEffect(() => {
@@ -2408,7 +2399,7 @@ export default function App() {
       collectionsEnabled={collectionsEnabled}
       currentUser={currentUser}
       bannerSlot={
-        announcementsEnabled && bannerPost ? (
+        bannerPost ? (
           <AnnouncementBanner
             key={bannerPost.id}
             title={bannerPost.title}
@@ -2469,14 +2460,12 @@ export default function App() {
         ) : null
       }
       notificationSlot={
-        announcementsEnabled ? (
-          <AnnouncementsBell
-            announcements={announcementsFeed.announcements}
-            unseenCount={announcementsFeed.unseenCount}
-            onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
-            onMarkSeen={announcementsFeed.markSeen}
-          />
-        ) : null
+        <AnnouncementsBell
+          announcements={announcementsFeed.announcements}
+          unseenCount={announcementsFeed.unseenCount}
+          onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
+          onMarkSeen={announcementsFeed.markSeen}
+        />
       }
     >
       {/* Main content */}
@@ -2513,7 +2502,7 @@ export default function App() {
               : {}),
           }}
         >
-          {page === 'announcements' && announcementsEnabled ? (
+          {page === 'announcements' ? (
             <AnnouncementsPage
               currentUser={currentUser}
               feed={announcementsFeed}
@@ -3052,7 +3041,7 @@ export default function App() {
           ) : (
             /* ---- Browse mode ---- */
             <>
-              {announcementsEnabled && path.length === 0 && (
+              {path.length === 0 && (
                 <NoticesShelf
                   announcements={announcementsFeed.announcements}
                   onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
@@ -3708,14 +3697,10 @@ export default function App() {
       <GroupManagementModal
         open={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
-        onPostToGroup={
-          announcementsEnabled
-            ? (groupId) => {
-                setGroupModalOpen(false)
-                openAnnouncementsPage(undefined, groupId)
-              }
-            : undefined
-        }
+        onPostToGroup={(groupId) => {
+          setGroupModalOpen(false)
+          openAnnouncementsPage(undefined, groupId)
+        }}
         groups={groups}
         onAdd={handleAddGroup}
         onEdit={handleEditGroup}

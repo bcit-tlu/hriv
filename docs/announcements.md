@@ -6,11 +6,12 @@ release notes are just announcements with `kind='release'`. This page covers
 the data model and the `/api/announcements` API (#1833, #1834); the frontend
 surfaces land with #1837/#1838 and are documented here as they ship.
 
-## Rollout flag
+## Rollout
 
-`ANNOUNCEMENTS_ENABLED` (chart value `announcements.enabled`, default `false`;
-exposed as `announcements` by `GET /api/features`) dark-launches the whole
-`/api/announcements` surface — every route answers 404 while it is off. The
+The stream shipped trunk-based behind `ANNOUNCEMENTS_ENABLED` (chart value
+`announcements.enabled`, `GET /api/features` → `announcements`); the gate was
+removed once production had it on, so the surface is always available and the
+overlay value is a no-op. The
 pre-#1832 `/api/announcement/` and `/api/changelog/` endpoints were removed by
 #1838; `GET /api/announcements/broadcast` is the only unauthenticated route.
 
@@ -69,7 +70,7 @@ the audience get **404**, not 403.
 
 ## API
 
-All routes are gated by the rollout flag. Minimum roles:
+Minimum roles:
 
 | Method   | Path                                        | Role               | Notes                                                                                            |
 | -------- | ------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
@@ -151,9 +152,8 @@ orphaned files are tolerated.
 
 ## Frontend
 
-Everything below is gated on `features.announcements` (`GET /api/features`);
-while the flag is off no announcement UI renders (no bell, banner, shelf or
-login broadcast). #1838 removed the legacy singleton banner, the What's New
+The announcement UI is always on (the `features.announcements` gate was
+removed after the production rollout). #1838 removed the legacy singleton banner, the What's New
 menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
 
 ### Ambient surfaces (#1838)

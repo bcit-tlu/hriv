@@ -19,9 +19,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import announcements as rules
-from ..announcements import announcements_feature_gate as _feature_gate
 from ..auth import get_current_user, require_role
-from ..database import get_db, settings
+from ..database import get_db
 from ..models import (
     Announcement,
     AnnouncementReaction,
@@ -45,7 +44,7 @@ from ..schemas import (
 # The flag gate is a router-level dependency so it runs before any auth/role
 # dependency: a disabled API is uniformly 404, never 401/403.
 router = APIRouter(
-    prefix="/announcements", tags=["announcements"], dependencies=[Depends(_feature_gate)]
+    prefix="/announcements", tags=["announcements"]
 )
 
 _poster = require_role("admin", "instructor")

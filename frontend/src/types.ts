@@ -99,8 +99,6 @@ export interface Features {
   collectionsHomeShelf: boolean
   /** Object counting in the viewer (epic #1661). */
   counting: boolean
-  /** Announcements page, bell for all roles and composer (epic #1832). */
-  announcements: boolean
 }
 
 export const DEFAULT_FEATURES: Features = {
@@ -108,7 +106,6 @@ export const DEFAULT_FEATURES: Features = {
   collectionsStudentAccess: true,
   collectionsHomeShelf: false,
   counting: false,
-  announcements: false,
 }
 
 // ── Collections (docs/collections.md) ─────────────────────

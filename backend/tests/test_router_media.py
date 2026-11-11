@@ -26,7 +26,6 @@ JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
 @pytest.fixture(autouse=True)
 def _media_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(media_router.settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(media_router.settings, "announcements_enabled", True)
     return tmp_path / "media"
 
 
@@ -57,7 +56,7 @@ USER = SimpleNamespace(id=3, role="instructor")
 
 async def test_upload_png_stores_file_and_row(_media_dir) -> None:
     db = _db()
-    out = await upload_media(_request(len(PNG)), _upload(PNG, "../evil/shot.png", "image/png"), db, USER, None)
+    out = await upload_media(_request(len(PNG)), _upload(PNG, "../evil/shot.png", "image/png"), db, USER)
 
     media = db.add.call_args.args[0]
     assert media.content_type == "image/png"
@@ -73,19 +72,19 @@ async def test_upload_png_stores_file_and_row(_media_dir) -> None:
 
 
 async def test_upload_video_by_declared_type_and_extension(_media_dir) -> None:
-    out = await upload_media(_request(), _upload(b"\x00" * 100, "clip.mp4", "video/mp4"), _db(), USER, None)
+    out = await upload_media(_request(), _upload(b"\x00" * 100, "clip.mp4", "video/mp4"), _db(), USER)
     assert out.content_type == "video/mp4"
     with pytest.raises(HTTPException) as exc:
-        await upload_media(_request(), _upload(b"\x00" * 100, "clip.mov", "video/mp4"), _db(), USER, None)
+        await upload_media(_request(), _upload(b"\x00" * 100, "clip.mov", "video/mp4"), _db(), USER)
     assert exc.value.status_code == 415
 
 
 async def test_upload_rejects_unsupported_type_and_mismatched_magic(_media_dir) -> None:
     with pytest.raises(HTTPException) as exc:
-        await upload_media(_request(), _upload(b"%PDF-1.4", "doc.pdf", "application/pdf"), _db(), USER, None)
+        await upload_media(_request(), _upload(b"%PDF-1.4", "doc.pdf", "application/pdf"), _db(), USER)
     assert exc.value.status_code == 415
     with pytest.raises(HTTPException) as exc:
-        await upload_media(_request(), _upload(JPEG, "fake.png", "image/png"), _db(), USER, None)
+        await upload_media(_request(), _upload(JPEG, "fake.png", "image/png"), _db(), USER)
     assert exc.value.status_code == 415
     assert not os.path.exists(_media_dir) or not os.listdir(_media_dir)  # staging discarded
 
@@ -93,23 +92,23 @@ async def test_upload_rejects_unsupported_type_and_mismatched_magic(_media_dir) 
 async def test_upload_size_limits(_media_dir) -> None:
     # Early rejection on Content-Length.
     with pytest.raises(HTTPException) as exc:
-        await upload_media(_request(IMAGE_MAX_BYTES + 10_000), _upload(PNG, "a.png", "image/png"), _db(), USER, None)
+        await upload_media(_request(IMAGE_MAX_BYTES + 10_000), _upload(PNG, "a.png", "image/png"), _db(), USER)
     assert exc.value.status_code == 413
     # Streaming enforcement when the header is absent.
     big = PNG + b"\x00" * IMAGE_MAX_BYTES
     with pytest.raises(HTTPException) as exc:
-        await upload_media(_request(), _upload(big, "a.png", "image/png"), _db(), USER, None)
+        await upload_media(_request(), _upload(big, "a.png", "image/png"), _db(), USER)
     assert exc.value.status_code == 413
     assert not os.listdir(_media_dir)
     # Video gets the larger budget.
     assert VIDEO_MAX_BYTES > IMAGE_MAX_BYTES
-    out = await upload_media(_request(), _upload(b"\x00" * (IMAGE_MAX_BYTES + 10), "c.webm", "video/webm"), _db(), USER, None)
+    out = await upload_media(_request(), _upload(b"\x00" * (IMAGE_MAX_BYTES + 10), "c.webm", "video/webm"), _db(), USER)
     assert out.size_bytes == IMAGE_MAX_BYTES + 10
 
 
 async def test_upload_truncates_long_original_name(_media_dir) -> None:
     long_name = "a" * 300 + ".png"
-    out = await upload_media(_request(), _upload(PNG, long_name, "image/png"), _db(), USER, None)
+    out = await upload_media(_request(), _upload(PNG, long_name, "image/png"), _db(), USER)
     assert len(out.original_name) == 255 and out.original_name.endswith(".png")
 
 
@@ -117,7 +116,7 @@ async def test_upload_commit_failure_keeps_file_and_rolls_back(_media_dir) -> No
     db = _db()
     db.commit = AsyncMock(side_effect=RuntimeError("connection lost"))
     with pytest.raises(RuntimeError):
-        await upload_media(_request(), _upload(PNG, "a.png", "image/png"), db, USER, None)
+        await upload_media(_request(), _upload(PNG, "a.png", "image/png"), db, USER)
     db.rollback.assert_awaited_once()
     assert len(os.listdir(_media_dir)) == 1  # the row may have persisted; never orphan it
 
@@ -150,7 +149,7 @@ def test_content_disposition_unicode_and_ascii() -> None:
 
 async def test_upload_empty_file_400(_media_dir) -> None:
     with pytest.raises(HTTPException) as exc:
-        await upload_media(_request(), _upload(b"", "a.png", "image/png"), _db(), USER, None)
+        await upload_media(_request(), _upload(b"", "a.png", "image/png"), _db(), USER)
     assert exc.value.status_code == 400
 
 

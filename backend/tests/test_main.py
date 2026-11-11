@@ -635,14 +635,10 @@ async def test_features_endpoint_reports_effective_collection_flags(monkeypatch)
         assert result.collections_home_shelf is expected_shelf
 
 
-async def test_features_reports_announcements_flag(monkeypatch) -> None:
-    from app.database import Settings, settings
+async def test_features_reports_announcements_always_on() -> None:
     from app.main import features
 
-    assert Settings().announcements_enabled is False
-    for enabled in (False, True):
-        monkeypatch.setattr(settings, "announcements_enabled", enabled)
-        assert (await features()).announcements is enabled
+    assert (await features()).announcements is True
 
 
 async def test_features_reports_student_access_per_request(monkeypatch):
