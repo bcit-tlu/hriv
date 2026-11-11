@@ -31,6 +31,13 @@ describe('applyReactionToggle', () => {
     expect(added.my_reactions).toEqual(['rocket'])
   })
 
+  it("replaces the viewer's existing reaction when they pick another emoji", () => {
+    const a = makeAnnouncement({ reactions: { heart: 2, eyes: 1 }, my_reactions: ['heart'] })
+    const swapped = applyReactionToggle(a, 'eyes')
+    expect(swapped.reactions).toEqual({ heart: 1, eyes: 2 })
+    expect(swapped.my_reactions).toEqual(['eyes'])
+  })
+
   it('drops the key when the last reaction is removed', () => {
     const a = makeAnnouncement({ reactions: { eyes: 1 }, my_reactions: ['eyes'] })
     expect(applyReactionToggle(a, 'eyes').reactions).toEqual({})

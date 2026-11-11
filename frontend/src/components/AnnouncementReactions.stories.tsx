@@ -22,6 +22,21 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Basic: Story = {
+  name: 'Basic (not yet reacted)',
+  args: {
+    announcement: storyAnnouncement({ reactions: { hooray: 3, heart: 1 }, my_reactions: [] }),
+  },
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Add reaction' }))
+    // The picker is a portal, so look it up on the document body.
+    const body = within(canvasElement.ownerDocument.body)
+    await expect(await body.findByRole('menuitem', { name: 'Rocket' })).toBeInTheDocument()
+  },
+}
+
+export const Reacted: Story = {
+  name: 'Reacted (own pill, picker hidden)',
   args: {
     announcement: storyAnnouncement({
       reactions: { hooray: 3, heart: 1 },
@@ -30,14 +45,11 @@ export const Basic: Story = {
   },
   play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
     const canvas = within(canvasElement)
-    await expect(canvas.getByRole('button', { name: 'hooray reaction, 3' })).toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: /hooray reaction, 3, yours/ })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    await userEvent.click(canvas.getByRole('button', { name: 'Add reaction' }))
-    // The picker is a portal, so look it up on the document body.
-    const body = within(canvasElement.ownerDocument.body)
-    await expect(await body.findByRole('menuitem', { name: 'Rocket' })).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Add reaction' })).toBeNull()
   },
 }
 

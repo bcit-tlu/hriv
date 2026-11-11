@@ -4108,3 +4108,17 @@ async def test_run_db_import_legacy_dump_seeds_announcement_seen(tmp_path) -> No
     )
     assert user.metadata_["theme"] == "dark"
     assert user.metadata_["announcement_seen"] == {"1": "2025-01-02T00:00:00+00:00"}
+
+
+def test_one_reaction_per_reader_keeps_newest_row_per_reader() -> None:
+    from app.admin_ops import one_reaction_per_reader
+
+    rows = [
+        {"id": 1, "announcement_id": 10, "user_id": 5, "emoji": "heart"},
+        {"id": 3, "announcement_id": 10, "user_id": 5, "emoji": "hooray"},
+        {"id": 2, "announcement_id": 10, "user_id": 6, "emoji": "heart"},
+        {"id": 4, "announcement_id": 11, "user_id": 5, "emoji": "eyes"},
+    ]
+    kept = one_reaction_per_reader(rows)
+    assert [(r["id"], r["emoji"]) for r in kept] == [(2, "heart"), (3, "hooray"), (4, "eyes")]
+

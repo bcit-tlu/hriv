@@ -8,17 +8,12 @@ import AnnouncementCard from './AnnouncementCard'
 
 export interface NoticesShelfProps {
   announcements: ApiAnnouncement[]
-  onToggleReaction?: (announcement: ApiAnnouncement, emoji: string) => void
   /** Opens the Announcements page, optionally focused on one post. */
   onOpenAnnouncements?: (announcementId?: number) => void
 }
 
 /** Home shelf of up to three pinned, live announcements; renders nothing when there are none. */
-export default function NoticesShelf({
-  announcements,
-  onToggleReaction,
-  onOpenAnnouncements,
-}: NoticesShelfProps) {
+export default function NoticesShelf({ announcements, onOpenAnnouncements }: NoticesShelfProps) {
   const notices = selectNotices(announcements)
   if (notices.length === 0) return null
   return (
@@ -43,7 +38,6 @@ export default function NoticesShelf({
             key={a.id}
             announcement={a}
             compact
-            onToggleReaction={onToggleReaction}
             onOpen={onOpenAnnouncements ? () => onOpenAnnouncements(a.id) : undefined}
           />
         ))}

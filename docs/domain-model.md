@@ -278,7 +278,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Purpose:** one emoji reaction by one user on one announcement.
 - **Key fields:** `announcement_id` (FK, `CASCADE`); `user_id` (FK, `CASCADE`);
   `emoji` (reaction key, e.g. `rocket`); unique on
-  `(announcement_id, user_id, emoji)`.
+  `(announcement_id, user_id)` since `0044_one_reaction_per_user` — one
+  reaction per reader per post (was `(announcement_id, user_id, emoji)`;
+  the migration keeps each reader's newest row).
 
 ### ContentMedia _(added in `0042_announcements`)_
 

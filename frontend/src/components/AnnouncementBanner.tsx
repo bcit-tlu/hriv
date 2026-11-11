@@ -8,18 +8,13 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
-import type { ApiAnnouncement } from '../api'
 import { kindAlertSx, kindMeta, type AnnouncementKindMeta } from '../announcementKinds'
-import AnnouncementReactions from './AnnouncementReactions'
 
 export interface AnnouncementBannerProps {
   message: string
   title?: string
   /** Announcement kind: supplies the icon and accent colour (same as the card). */
   kind?: string
-  /** When set, reaction pills + picker render right-aligned on the More/Less row. */
-  announcement?: ApiAnnouncement
-  onToggleReaction?: (announcement: ApiAnnouncement, emoji: string) => void
   /** `login`: compact card above the login form. `app`: full-width strip under the AppBar. */
   variant?: 'login' | 'app'
   alertVariant?: AlertProps['variant']
@@ -50,8 +45,6 @@ export default function AnnouncementBanner({
   message,
   title,
   kind,
-  announcement,
-  onToggleReaction,
   variant = 'app',
   alertVariant = 'outlined',
   color,
@@ -66,7 +59,6 @@ export default function AnnouncementBanner({
   const clamped = clamp && !expanded
   const longBody = message.length > 160 || message.includes('\n')
   const meta = kind ? kindMeta(kind) : null
-  const showReactions = announcement != null
 
   const alert = (
     <Alert
@@ -112,7 +104,7 @@ export default function AnnouncementBanner({
       >
         {message}
       </Typography>
-      {(longBody && clamp) || moreCount > 0 || showReactions ? (
+      {(longBody && clamp) || moreCount > 0 ? (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap' }}>
           {longBody && clamp && (
             <Button
@@ -129,14 +121,6 @@ export default function AnnouncementBanner({
             <Button size="small" color="inherit" onClick={onMore} sx={{ px: 0.5, minWidth: 0 }}>
               +{moreCount} more
             </Button>
-          )}
-          {showReactions && (
-            <Box sx={{ ml: 'auto !important' }}>
-              <AnnouncementReactions
-                announcement={announcement}
-                onToggleReaction={onToggleReaction}
-              />
-            </Box>
           )}
         </Stack>
       ) : null}
