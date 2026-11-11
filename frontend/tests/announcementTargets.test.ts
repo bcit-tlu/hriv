@@ -16,9 +16,6 @@ describe('buildTargetOptions', () => {
     expect(labels).toContain('Histotech')
     expect(labels).not.toContain('Administration')
     expect(labels).not.toContain('Synthetic Monitoring')
-    // The admin team's program is offered under the Audience group, pluralised.
-    const admins = buildTargetOptions(programs, [], true).find((o) => o.label === 'Admins')
-    expect(admins).toMatchObject({ kind: 'program', id: 1, group: 'Audience' })
   })
 
   it('offers every role audience to admins only, in picker order', () => {
@@ -26,7 +23,7 @@ describe('buildTargetOptions', () => {
       buildTargetOptions(programs, groups, true)
         .filter((o) => o.kind === 'audience')
         .map((o) => o.id),
-    ).toEqual(['everyone', 'staff', 'instructors', 'staff_only'])
+    ).toEqual(['everyone', 'staff', 'admins', 'instructors', 'staff_only'])
     expect(buildTargetOptions(programs, groups, false).some((o) => o.kind === 'audience')).toBe(
       false,
     )

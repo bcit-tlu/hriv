@@ -7,13 +7,7 @@ import type {
   ApiProgram,
 } from './api'
 import type { AnnouncementAudience } from './api'
-import {
-  ADMIN_PROGRAM_LABEL,
-  ADMIN_PROGRAM_NAMES,
-  AUDIENCE_LABELS,
-  sortAnnouncements,
-  type AnnouncementKindMeta,
-} from './announcementKinds'
+import { AUDIENCE_LABELS, sortAnnouncements, type AnnouncementKindMeta } from './announcementKinds'
 import { formatRelativeTime } from './formatUtils'
 
 export function formatAbsolute(iso: string | null | undefined): string {
@@ -37,17 +31,14 @@ export type RoleAudience = Exclude<AnnouncementAudience, 'targeted'>
 
 export type TargetOption =
   | { kind: 'audience'; id: RoleAudience; label: string; group: 'Audience' }
-  | { kind: 'program'; id: number; label: string; group: 'Programs' | 'Audience' }
+  | { kind: 'program'; id: number; label: string; group: 'Programs' }
   | { kind: 'group'; id: number; label: string; group: 'Groups' }
 
-/**
- * Order of the Audience group in the To: picker. The admin-role audience (`admins`) is not
- * offered: on the live site "Admins" means members of the reserved **Admin** program, which the
- * picker lists in this group under that pluralised label (see `buildTargetOptions`).
- */
+/** Order of the Audience group in the To: picker. */
 export const ROLE_AUDIENCES: readonly RoleAudience[] = [
   'everyone',
   'staff',
+  'admins',
   'instructors',
   'staff_only',
 ]
@@ -94,11 +85,6 @@ export function buildTargetOptions(
         label: AUDIENCE_LABELS[audience] ?? audience,
         group: 'Audience',
       })
-    }
-  }
-  for (const p of programs) {
-    if (ADMIN_PROGRAM_NAMES.has(p.name)) {
-      options.push({ kind: 'program', id: p.id, label: ADMIN_PROGRAM_LABEL, group: 'Audience' })
     }
   }
   for (const p of programs) {

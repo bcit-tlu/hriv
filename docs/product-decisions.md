@@ -67,9 +67,6 @@ specified in detail.
   reset: unseen for everyone, back in every bell and banner slot). The
   Announcements page never auto-marks the viewer's _own_ posts seen, so authors
   see their banner and bell entry exactly as readers do until they dismiss them.
-- "Admins" in the composer's To: list is the live site's reserved **Admin**
-  program (pluralised label, a program target), not the admin role; the
-  `admins` audience value stays valid for existing rows but is not offered.
 - Announcement kind is a controlled icon set and the icon _is_ the kind
   (Release and Warning are admin-only); emoji are reactions only. "Seen by N
   of M" shows counts to admin/instructor/staff only, never names.
