@@ -85,12 +85,15 @@ jobs:
           REPO: ${{ env.REGISTRY }}/${{ github.repository }}
         run: |
           set -euo pipefail
-          case "${COMPONENT}" in
-            # The counting worker shares the backend release tag (ci.yaml
-            # tag_prefix backend-v) but is a separate image.
-            backend) IMAGES="hriv-backend hriv-counting-worker" ;;
-            *)       IMAGES="hriv-${COMPONENT}" ;;
-          esac
+          IMAGES="hriv-${COMPONENT}"
+          # The counting worker shares the backend release tag (ci.yaml
+          # tag_prefix backend-v) but is a separate image — and releases cut
+          # before it existed never built one (release-retag.yaml skips it
+          # the same way), so republishing those must not wait for it.
+          if [[ "${COMPONENT}" == "backend" ]] \
+            && grep -q 'AS counting-worker' backend/Dockerfile; then
+            IMAGES="${IMAGES} hriv-counting-worker"
+          fi
           # Same backoff as release-retag.yaml's "Wait for source image".
           DEADLINE=$(( $(date +%s) + 1800 ))
           for NAME in ${IMAGES}; do
