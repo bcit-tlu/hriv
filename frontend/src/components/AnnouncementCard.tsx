@@ -115,7 +115,7 @@ export default function AnnouncementCard({
             <PushPinIcon fontSize="small" color="action" aria-label="Pinned" />
           </Tooltip>
         )}
-        {manage && (
+        {manage && a.status !== 'live' && (
           <Chip
             size="small"
             label={ANNOUNCEMENT_STATUS_LABELS[a.status]}
