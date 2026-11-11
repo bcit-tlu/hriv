@@ -12,6 +12,9 @@ const groups = [] as ApiGroup[]
 describe('buildTargetOptions', () => {
   it('hides reserved programs from the To: picker', () => {
     expect([...RESERVED_PROGRAM_NAMES]).toContain('Synthetic Monitoring')
+    expect([...RESERVED_PROGRAM_NAMES]).toEqual(
+      expect.arrayContaining(['Admin', 'Admins', 'Administration']),
+    )
     const labels = buildTargetOptions(programs, groups, true).map((o) => o.label)
     expect(labels).toContain('Histotech')
     expect(labels).not.toContain('Administration')

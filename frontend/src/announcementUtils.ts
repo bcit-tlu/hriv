@@ -49,6 +49,7 @@ export const ROLE_AUDIENCES: readonly RoleAudience[] = [
  */
 export const RESERVED_PROGRAM_NAMES: ReadonlySet<string> = new Set([
   'Admin',
+  'Admins',
   'Administration',
   'Synthetic Monitoring',
 ])
