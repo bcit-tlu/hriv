@@ -377,17 +377,6 @@ redis:
 # Renders as COUNTING_* env on the API Deployment and is shared with the
 # optional counting-worker Deployment below.  The API pre-flights
 # selections against these budgets; jobs and results live ephemerally in
-# ── Announcements feature flag (epic #1832) ──────────────────
-# Rendered as ANNOUNCEMENTS_ENABLED on the API pod. The new announcements
-# stream (/api/announcements, bell for all roles, Inbox/Mine page) is
-# dark-launched so the schema/API PRs can ship ahead of the UI: while false
-# the frontend (GET /api/features) keeps the legacy banner + changelog
-# surfaces, which the backend serves through compatibility shims regardless
-# of the flag. Chart default stays false (stable inherits it); the `latest`
-# overlay sets true. Remove with the epic's closing issue (#1838).
-announcements:
-  enabled: false
-
 # Redis on the dedicated arq:counting queue.
 counting:
   enabled: false # COUNTING_ENABLED — dark-launch flag for the whole surface

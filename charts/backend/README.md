@@ -238,15 +238,6 @@ and the shelf. Students may still be pre-staged as co-owners by authorized
 curators while access is disabled. See the
 [student-access contract](../../docs/collections.md#student-access-collections_student_access-1748).
 
-## Announcements feature flag (`announcements.enabled`)
-
-`announcements.enabled` renders `ANNOUNCEMENTS_ENABLED` on the API pod and
-defaults to `false`. It dark-launches the announcements stream of epic #1832
-(`/api/announcements`, bell for all roles, Inbox/Mine page) so the schema and
-API PRs can ship ahead of the UI; the frontend reads it from `GET /api/features`
-(`announcements`). The `latest` overlay sets
-it to `true`; remove the value with the epic's closing issue (#1838).
-
 ## API configuration
 
 The API (backend) Deployment carries its own component profile via the
