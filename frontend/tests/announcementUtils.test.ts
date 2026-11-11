@@ -79,5 +79,6 @@ describe('mergeStreams', () => {
     expect(merged?.seen).toBe(true)
     expect(merged?.reactions).toEqual({ '👍': 2 })
     expect(merged?.my_reactions).toEqual(['👍'])
+    expect(merged).toBe(inbox[0]) // same object: unchanged rows keep identity across polls
   })
 })

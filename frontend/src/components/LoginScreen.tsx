@@ -15,7 +15,6 @@ import Typography from '@mui/material/Typography'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import AnnouncementBanner from './AnnouncementBanner'
-import { kindMeta } from '../announcementKinds'
 import type { ApiAnnouncementBroadcast } from '../api'
 import ColorModeToggle from './ColorModeToggle'
 import { ApiError, fetchOidcEnabled, getOidcLoginUrl } from '../api'
@@ -302,7 +301,7 @@ export function LoginLayout({
               <AnnouncementBanner
                 title={broadcast.title}
                 message={broadcast.message}
-                severity={kindMeta(broadcast.kind).severity}
+                kind={broadcast.kind}
                 variant="login"
               />
             )}

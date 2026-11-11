@@ -160,7 +160,6 @@ import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncements } from './useAnnouncements'
 import { selectBannerAnnouncements } from './announcementUtils'
-import { kindMeta } from './announcementKinds'
 import { useUserProfile } from './useUserProfile'
 import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 import { tileOrderingCoordinator } from './tileOrdering'
@@ -2414,7 +2413,9 @@ export default function App() {
             key={bannerPost.id}
             title={bannerPost.title}
             message={bannerPost.message}
-            severity={kindMeta(bannerPost.kind).severity}
+            kind={bannerPost.kind}
+            announcement={bannerPost}
+            onToggleReaction={(ann, emoji) => void announcementsFeed.toggleReaction(ann, emoji)}
             onDismiss={() => announcementsFeed.markSeen(bannerPost)}
             moreCount={bannerCandidates.length - 1}
             onMore={() => openAnnouncementsPage()}
