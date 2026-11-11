@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.3...backup-v0.17.4) (2026-11-11)
+
+
+### Documentation
+
+* fix README table padding so prettier check passes ([#1839](https://github.com/bcit-tlu/hriv/issues/1839)) ([409c234](https://github.com/bcit-tlu/hriv/commit/409c234b4eb3c4449fa4d2c51360428c0fb750a9))
+
 ## [0.17.3](https://github.com/bcit-tlu/hriv/compare/backup-v0.17.2...backup-v0.17.3) (2026-11-09)
 
 
