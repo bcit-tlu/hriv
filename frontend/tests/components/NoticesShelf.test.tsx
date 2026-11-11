@@ -14,9 +14,8 @@ describe('NoticesShelf', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows up to three pinned posts as compact cards with reactions and open links', () => {
+  it('shows up to three pinned posts as compact cards (no reactions) with open links', () => {
     const onOpen = vi.fn()
-    const onToggle = vi.fn()
     const rows = [1, 2, 3, 4].map((id) =>
       makeAnnouncement({
         id,
@@ -27,21 +26,14 @@ describe('NoticesShelf', () => {
         my_reactions: [],
       }),
     )
-    render(
-      <NoticesShelf
-        announcements={rows}
-        onToggleReaction={onToggle}
-        onOpenAnnouncements={onOpen}
-      />,
-    )
+    render(<NoticesShelf announcements={rows} onOpenAnnouncements={onOpen} />)
     expect(screen.getByRole('heading', { name: 'Notices' })).toBeInTheDocument()
     expect(screen.getAllByTestId('announcement-card')).toHaveLength(3)
     expect(screen.getByText('Line 1')).toBeInTheDocument()
     expect(screen.queryByText('more body')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Pinned 2' }))
     expect(onOpen).toHaveBeenCalledWith(2)
-    fireEvent.click(screen.getByLabelText('heart reaction, 3'))
-    expect(onToggle).toHaveBeenCalledWith(rows[2], 'heart')
+    expect(screen.queryByLabelText('heart reaction, 3')).toBeNull()
     fireEvent.click(screen.getByText('All announcements'))
     expect(onOpen).toHaveBeenLastCalledWith()
   })

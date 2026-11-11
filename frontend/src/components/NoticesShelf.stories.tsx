@@ -5,7 +5,7 @@ import { storyAnnouncement, storyInbox } from './announcementStoryFixtures'
 const meta = {
   title: 'Components/NoticesShelf',
   component: NoticesShelf,
-  args: { onToggleReaction: () => {}, onOpenAnnouncements: () => {} },
+  args: { onOpenAnnouncements: () => {} },
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof NoticesShelf>
 

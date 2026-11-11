@@ -55,7 +55,14 @@ export default function AnnouncementsBell({
           aria-label={unseenCount > 0 ? `Announcements, ${unseenCount} unseen` : 'Announcements'}
           onClick={(event: MouseEvent<HTMLElement>) => setAnchor(event.currentTarget)}
         >
-          <Badge variant="dot" color="error" invisible={unseenCount === 0} overlap="circular">
+          <Badge
+            variant="dot"
+            color="warning"
+            invisible={unseenCount === 0}
+            overlap="circular"
+            // A small amber dot (no number) with a ring in the bar colour so it reads on the red AppBar.
+            sx={{ '& .MuiBadge-dot': { boxShadow: (t) => `0 0 0 2px ${t.palette.primary.main}` } }}
+          >
             <NotificationsIcon />
           </Badge>
         </IconButton>

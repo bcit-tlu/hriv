@@ -3055,7 +3055,6 @@ export default function App() {
               {announcementsEnabled && path.length === 0 && (
                 <NoticesShelf
                   announcements={announcementsFeed.announcements}
-                  onToggleReaction={(a, emoji) => void announcementsFeed.toggleReaction(a, emoji)}
                   onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
                 />
               )}

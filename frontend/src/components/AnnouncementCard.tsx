@@ -202,16 +202,19 @@ export default function AnnouncementCard({
           )
         : a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
 
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', mt: 1 }}>
-        {showSeenCount && (
-          <Typography variant="caption" color="text.secondary">
-            Seen by {a.seen_count} of {a.audience_size}
-          </Typography>
-        )}
-        <Box sx={{ ml: 'auto !important' }}>
-          <AnnouncementReactions announcement={a} onToggleReaction={onToggleReaction} />
-        </Box>
-      </Stack>
+      {/* Reactions live on the Announcements page only — not on the Home shelf, bell or banner. */}
+      {!compact && (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', mt: 1 }}>
+          {showSeenCount && (
+            <Typography variant="caption" color="text.secondary">
+              Seen by {a.seen_count} of {a.audience_size}
+            </Typography>
+          )}
+          <Box sx={{ ml: 'auto !important' }}>
+            <AnnouncementReactions announcement={a} onToggleReaction={onToggleReaction} />
+          </Box>
+        </Stack>
+      )}
     </Alert>
   )
 }
