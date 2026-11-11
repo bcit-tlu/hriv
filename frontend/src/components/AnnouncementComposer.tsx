@@ -10,7 +10,6 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
@@ -52,6 +51,7 @@ import {
   PICKER_FORMAT,
   expiryShortcuts,
   publishShortcuts,
+  rangeShortcuts,
   toPickerValue,
 } from '../announcementSchedule'
 
@@ -70,27 +70,24 @@ interface OptionCheckboxProps {
 
 function OptionCheckbox({ id, checked, onChange, label, hint }: OptionCheckboxProps) {
   const hintId = `${id}-hint`
+  // Checkbox icon (24px + 9px padding) lines up with the first text line; hint sits under the label.
   return (
-    <Box sx={{ minWidth: 0 }}>
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={checked}
-            onChange={(e) => onChange(e.target.checked)}
-            slotProps={{ input: { 'aria-describedby': hintId } }}
-          />
-        }
-        label={label}
-        sx={{ mr: 0 }}
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', flex: 1, minWidth: 220 }}>
+      <Checkbox
+        id={id}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        slotProps={{ input: { 'aria-describedby': hintId } }}
+        sx={{ mt: -1.125, ml: -1.125 }}
       />
-      <Typography
-        id={hintId}
-        variant="caption"
-        color="text.secondary"
-        sx={{ display: 'block', ml: 4, mt: -0.75 }}
-      >
-        {hint}
-      </Typography>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography component="label" htmlFor={id} sx={{ display: 'block', cursor: 'pointer' }}>
+          {label}
+        </Typography>
+        <Typography id={hintId} variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+          {hint}
+        </Typography>
+      </Box>
     </Box>
   )
 }
@@ -382,6 +379,25 @@ function ComposerDialog({
           </Button>
           <Collapse in={moreOpen} unmountOnExit>
             <Stack spacing={2}>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                {rangeShortcuts().map((r) => {
+                  const active = publishAt === r.publishAt && expiresAt === r.expiresAt
+                  return (
+                    <Chip
+                      key={r.label}
+                      size="small"
+                      label={r.label}
+                      variant={active ? 'filled' : 'outlined'}
+                      color={active ? 'primary' : 'default'}
+                      aria-pressed={active}
+                      onClick={() => {
+                        setPublishAt(r.publishAt)
+                        setExpiresAt(r.expiresAt)
+                      }}
+                    />
+                  )
+                })}
+              </Stack>
               <LocalizationProvider dateAdapter={AdapterDayjs}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                   <DateTimePicker
@@ -418,7 +434,12 @@ function ComposerDialog({
                   />
                 </Stack>
               </LocalizationProvider>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={2}
+                useFlexGap
+                sx={{ flexWrap: 'wrap', alignItems: 'flex-start' }}
+              >
                 <OptionCheckbox
                   id="announcement-pinned"
                   checked={pinned}
@@ -436,14 +457,12 @@ function ComposerDialog({
                   />
                 )}
                 {isEdit && (
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={notifyAgain}
-                        onChange={(e) => setNotifyAgain(e.target.checked)}
-                      />
-                    }
+                  <OptionCheckbox
+                    id="announcement-notify-again"
+                    checked={notifyAgain}
+                    onChange={setNotifyAgain}
                     label="Notify readers again"
+                    hint="Marks the post unseen for everyone so it shows as new and in the bell again"
                   />
                 )}
               </Stack>

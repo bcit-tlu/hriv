@@ -4,6 +4,7 @@ import {
   LOCAL_INPUT_FORMAT,
   expiryShortcuts,
   publishShortcuts,
+  rangeShortcuts,
   toPickerValue,
 } from '../src/announcementSchedule'
 
@@ -68,5 +69,35 @@ describe('expiryShortcuts', () => {
     expect(pick(expiryShortcuts('garbage', now), '1 day')?.format(LOCAL_INPUT_FORMAT)).toBe(
       '2026-11-12T15:42',
     )
+  })
+})
+
+describe('rangeShortcuts', () => {
+  it('spans publish → expiry: today/this week start now, future spans start at 9:00, all end 23:59', () => {
+    const now = dayjs('2026-11-11T14:30') // a Wednesday
+    const byLabel = Object.fromEntries(rangeShortcuts(now).map((r) => [r.label, r]))
+    expect(Object.keys(byLabel)).toEqual([
+      'Today',
+      'This week',
+      'Next week',
+      'Next 2 weeks',
+      'End of month',
+      'Next month',
+    ])
+    expect(byLabel['Today']).toMatchObject({
+      publishAt: '2026-11-11T14:30',
+      expiresAt: '2026-11-11T23:59',
+    })
+    expect(byLabel['This week'].expiresAt).toBe('2026-11-15T23:59')
+    expect(byLabel['Next week']).toMatchObject({
+      publishAt: '2026-11-16T09:00',
+      expiresAt: '2026-11-22T23:59',
+    })
+    expect(byLabel['Next 2 weeks'].expiresAt).toBe('2026-11-24T23:59')
+    expect(byLabel['End of month'].expiresAt).toBe('2026-11-30T23:59')
+    expect(byLabel['Next month']).toMatchObject({
+      publishAt: '2026-12-01T09:00',
+      expiresAt: '2026-12-31T23:59',
+    })
   })
 })

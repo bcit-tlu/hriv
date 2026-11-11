@@ -1,5 +1,6 @@
 import { useState, type MouseEvent } from 'react'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
@@ -8,18 +9,17 @@ import Stack from '@mui/material/Stack'
 import Tooltip from '@mui/material/Tooltip'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
-import AddReactionOutlinedIcon from '@mui/icons-material/AddReactionOutlined'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import PushPinIcon from '@mui/icons-material/PushPin'
 import type { ApiAnnouncement } from '../api'
 import {
-  ANNOUNCEMENT_REACTIONS,
   ANNOUNCEMENT_STATUS_LABELS,
   audienceChips,
+  kindAlertSx,
   kindMeta,
-  reactionGlyph,
 } from '../announcementKinds'
 import { announcementTimeLabel, firstLine, formatAbsolute } from '../announcementUtils'
+import AnnouncementReactions from './AnnouncementReactions'
 import MarkdownContent from './MarkdownContent'
 
 export interface AnnouncementCardProps {
@@ -59,30 +59,22 @@ export default function AnnouncementCard({
   onOpen,
 }: AnnouncementCardProps) {
   const meta = kindMeta(a.kind)
-  const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
   const quiet = a.seen
   const chips = compact ? [] : audienceChips(a)
-  const reactionEntries = Object.entries(a.reactions).filter(([, count]) => count > 0)
-  const canReact = Boolean(onToggleReaction) && a.status === 'live'
   const showSeenCount = viewerIsStaff && a.seen_count != null && a.audience_size != null
-
-  const closePicker = () => setPickerAnchor(null)
-  const pick = (emoji: string) => {
-    closePicker()
-    onToggleReaction?.(a, emoji)
-  }
 
   return (
     <Alert
       id={`announcement-${a.id}`}
       severity={meta.severity}
-      // Same visual language as the banner: tinted while unseen, outlined once seen.
-      variant={quiet ? 'outlined' : 'standard'}
-      icon={<meta.Icon fontSize="inherit" role="img" aria-label={meta.label} />}
+      // Same visual language as the banner: white fill, border and icon in the kind's accent.
+      variant="outlined"
+      icon={<meta.Icon fontSize="inherit" titleAccess={meta.label} />}
       data-testid="announcement-card"
       data-seen={a.seen ? 'true' : 'false'}
       sx={{
+        ...kindAlertSx(meta),
         alignItems: 'flex-start',
         '& .MuiAlert-message': { flex: 1, minWidth: 0, py: 0.5 },
         boxShadow: highlighted ? (theme) => `0 0 0 2px ${theme.palette.primary.main}` : undefined,
@@ -110,6 +102,9 @@ export default function AnnouncementCard({
             a.title
           )}
         </Typography>
+        {!quiet && a.status === 'live' && (
+          <Chip size="small" label="New" color="primary" sx={{ height: 20 }} />
+        )}
         {a.pinned && (
           <Tooltip title="Pinned">
             <PushPinIcon fontSize="small" color="action" aria-label="Pinned" />
@@ -204,61 +199,15 @@ export default function AnnouncementCard({
           )
         : a.message && <MarkdownContent markdown={a.message} mediaTokens={a.media_tokens} />}
 
-      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap', mt: 1 }}>
-        {reactionEntries.map(([emoji, count]) => {
-          const mine = a.my_reactions.includes(emoji)
-          return (
-            <Chip
-              key={emoji}
-              size="small"
-              label={`${reactionGlyph(emoji)} ${count}`}
-              color={mine ? 'primary' : 'default'}
-              variant={mine ? 'filled' : 'outlined'}
-              aria-pressed={canReact ? mine : undefined}
-              aria-label={`${emoji} reaction, ${count}`}
-              onClick={canReact ? () => onToggleReaction?.(a, emoji) : undefined}
-              clickable={canReact}
-            />
-          )
-        })}
-        {canReact && (
-          <>
-            <Tooltip title="Add reaction">
-              <IconButton
-                size="small"
-                aria-label="Add reaction"
-                onClick={(event: MouseEvent<HTMLElement>) => setPickerAnchor(event.currentTarget)}
-              >
-                <AddReactionOutlinedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Menu
-              anchorEl={pickerAnchor}
-              open={Boolean(pickerAnchor)}
-              onClose={closePicker}
-              slotProps={{
-                list: { sx: { display: 'flex', flexWrap: 'wrap', maxWidth: 200, p: 0.5 } },
-              }}
-            >
-              {ANNOUNCEMENT_REACTIONS.map((reaction) => (
-                <MenuItem
-                  key={reaction.id}
-                  aria-label={reaction.label}
-                  selected={a.my_reactions.includes(reaction.id)}
-                  onClick={() => pick(reaction.id)}
-                  sx={{ px: 1, fontSize: '1.2rem', borderRadius: 1 }}
-                >
-                  {reaction.glyph}
-                </MenuItem>
-              ))}
-            </Menu>
-          </>
-        )}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', mt: 1 }}>
         {showSeenCount && (
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto !important' }}>
+          <Typography variant="caption" color="text.secondary">
             Seen by {a.seen_count} of {a.audience_size}
           </Typography>
         )}
+        <Box sx={{ ml: 'auto !important' }}>
+          <AnnouncementReactions announcement={a} onToggleReaction={onToggleReaction} />
+        </Box>
       </Stack>
     </Alert>
   )

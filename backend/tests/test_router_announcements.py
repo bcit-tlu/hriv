@@ -662,3 +662,11 @@ def test_literal_routes_not_shadowed_by_param_routes() -> None:
 def test_strip_media_tokens_canonicalises_pasted_urls() -> None:
     pasted = "![a](/api/media/12?token=abc.DEF-ghi_jkl) and /api/media/13?token=x.y.z\n/api/media/14"
     assert rules.strip_media_tokens(pasted) == "![a](/api/media/12) and /api/media/13\n/api/media/14"
+
+
+async def test_update_kind_on_migrated_release_note(no_stats) -> None:
+    """A changelog entry folded in by 0042 (Site author, ``staff``) can be re-kinded by an admin."""
+    ann = _ann(id=10, author_id=None, author=None, audience="staff", kind="release")
+    out = await update_announcement(10, AnnouncementUpdate(kind="celebration"), _update_db(ann), _user("admin", id=9))
+    assert ann.kind == "celebration" and ann.audience == "staff"
+    assert out.kind == "celebration" and out.severity == "success"

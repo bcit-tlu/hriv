@@ -8,10 +8,18 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
+import type { ApiAnnouncement } from '../api'
+import { kindAlertSx, kindMeta } from '../announcementKinds'
+import AnnouncementReactions from './AnnouncementReactions'
 
 export interface AnnouncementBannerProps {
   message: string
   title?: string
+  /** Announcement kind: supplies the icon and accent colour (same as the card). */
+  kind?: string
+  /** When set, reaction pills + picker render right-aligned on the More/Less row. */
+  announcement?: ApiAnnouncement
+  onToggleReaction?: (announcement: ApiAnnouncement, emoji: string) => void
   /** `login`: compact card above the login form. `app`: full-width strip under the AppBar. */
   variant?: 'login' | 'app'
   alertVariant?: AlertProps['variant']
@@ -29,10 +37,13 @@ export interface AnnouncementBannerProps {
 export default function AnnouncementBanner({
   message,
   title,
+  kind,
+  announcement,
+  onToggleReaction,
   variant = 'app',
-  alertVariant = 'standard',
+  alertVariant = 'outlined',
   color,
-  severity = 'info',
+  severity,
   onDismiss,
   moreCount = 0,
   onMore,
@@ -42,14 +53,16 @@ export default function AnnouncementBanner({
   if (!message && !title) return null
   const clamped = clamp && !expanded
   const longBody = message.length > 160 || message.includes('\n')
+  const meta = kind ? kindMeta(kind) : null
+  const showReactions = announcement != null
 
   const alert = (
     <Alert
       role="status"
-      severity={severity}
+      severity={severity ?? meta?.severity ?? 'info'}
       color={color}
       variant={alertVariant}
-      icon={false}
+      icon={meta ? <meta.Icon fontSize="inherit" titleAccess={meta.label} /> : false}
       action={
         onDismiss && variant === 'app' ? (
           <IconButton
@@ -63,6 +76,7 @@ export default function AnnouncementBanner({
         ) : undefined
       }
       sx={{
+        ...(meta ? kindAlertSx(meta) : {}),
         alignItems: 'flex-start',
         '& .MuiAlert-message': { flex: 1, minWidth: 0, py: 0.5 },
         '& .MuiAlert-action': { mr: 0, pt: 0 },
@@ -86,8 +100,8 @@ export default function AnnouncementBanner({
       >
         {message}
       </Typography>
-      {(longBody && clamp) || moreCount > 0 ? (
-        <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+      {(longBody && clamp) || moreCount > 0 || showReactions ? (
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap' }}>
           {longBody && clamp && (
             <Button
               size="small"
@@ -103,6 +117,14 @@ export default function AnnouncementBanner({
             <Button size="small" color="inherit" onClick={onMore} sx={{ px: 0.5, minWidth: 0 }}>
               +{moreCount} more
             </Button>
+          )}
+          {showReactions && (
+            <Box sx={{ ml: 'auto !important' }}>
+              <AnnouncementReactions
+                announcement={announcement}
+                onToggleReaction={onToggleReaction}
+              />
+            </Box>
           )}
         </Stack>
       ) : null}

@@ -6,6 +6,7 @@ import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import AnnouncementBanner from './AnnouncementBanner'
+import { storyAnnouncement } from './announcementStoryFixtures'
 
 const defaultMessage =
   'Welcome. A more robust announcement feature would surface the communication history.'
@@ -214,5 +215,33 @@ export const LongBodyClamped: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'More' }))
     await expect(canvas.getByRole('button', { name: 'Less' })).toBeVisible()
+  },
+}
+
+export const KindWithReactions: Story = {
+  name: 'Kind Icon With Reactions',
+  args: {
+    title: 'Open house this Friday',
+    message: 'Drop by the lab between 13:00 and 15:00 — bring your questions and a friend.',
+    kind: 'celebration',
+    announcement: storyAnnouncement({
+      kind: 'celebration',
+      title: 'Open house this Friday',
+      reactions: { hooray: 3, heart: 1 },
+      my_reactions: ['hooray'],
+    }),
+    onToggleReaction: () => {},
+    variant: 'app',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('img', { name: 'Celebration' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Add reaction' })).toBeVisible()
   },
 }
