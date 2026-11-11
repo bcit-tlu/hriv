@@ -56,6 +56,11 @@ describe('expiryShortcuts', () => {
     expect(pick(items, 'End of month')?.format(LOCAL_INPUT_FORMAT)).toBe('2030-05-31T23:59')
   })
 
+  it('End of month rolls over when the publish time is already past 23:59 on the last day', () => {
+    const items = expiryShortcuts('2030-05-31T23:59', now)
+    expect(pick(items, 'End of month')?.format(LOCAL_INPUT_FORMAT)).toBe('2030-06-30T23:59')
+  })
+
   it('falls back to now when the publish time is empty or invalid', () => {
     expect(pick(expiryShortcuts('', now), '1 week')?.format(LOCAL_INPUT_FORMAT)).toBe(
       '2026-11-18T15:42',

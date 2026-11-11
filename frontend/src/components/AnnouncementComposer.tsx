@@ -387,7 +387,9 @@ function ComposerDialog({
                   <DateTimePicker
                     label="Publish at"
                     value={publishAt ? dayjs(publishAt) : null}
-                    onChange={(next) => setPublishAt(toPickerValue(next))}
+                    onChange={(next) => {
+                      if (next === null || next.isValid()) setPublishAt(toPickerValue(next))
+                    }}
                     format={PICKER_FORMAT}
                     ampm={false}
                     slotProps={{
@@ -402,7 +404,9 @@ function ComposerDialog({
                   <DateTimePicker
                     label="Expires at"
                     value={expiresAt ? dayjs(expiresAt) : null}
-                    onChange={(next) => setExpiresAt(toPickerValue(next))}
+                    onChange={(next) => {
+                      if (next === null || next.isValid()) setExpiresAt(toPickerValue(next))
+                    }}
                     minDateTime={publishAt ? dayjs(publishAt) : undefined}
                     format={PICKER_FORMAT}
                     ampm={false}

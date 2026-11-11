@@ -32,6 +32,12 @@ export function publishShortcuts(now: Dayjs = dayjs()): PickersShortcutsItem<Day
  * Quick picks for "Expires at", relative to the publish time when one is set
  * (so "1 week" means a one-week run), otherwise relative to now.
  */
+/** 23:59 on the last day of `start`'s month, or of the next month when that is not after `start`. */
+function endOfMonthAfter(start: Dayjs): Dayjs {
+  const eom = start.endOf('month').second(0).millisecond(0)
+  return eom.isAfter(start) ? eom : start.add(1, 'month').endOf('month').second(0).millisecond(0)
+}
+
 export function expiryShortcuts(
   publishAt: string,
   now: Dayjs = dayjs(),
@@ -42,6 +48,6 @@ export function expiryShortcuts(
     { label: '1 week', getValue: () => start.add(1, 'week') },
     { label: '2 weeks', getValue: () => start.add(2, 'week') },
     { label: '1 month', getValue: () => start.add(1, 'month') },
-    { label: 'End of month', getValue: () => start.endOf('month').second(0).millisecond(0) },
+    { label: 'End of month', getValue: () => endOfMonthAfter(start) },
   ]
 }
