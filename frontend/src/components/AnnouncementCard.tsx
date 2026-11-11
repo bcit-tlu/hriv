@@ -19,6 +19,7 @@ import {
   kindMeta,
 } from '../announcementKinds'
 import { announcementTimeLabel, firstLine, formatAbsolute } from '../announcementUtils'
+import { KindIcon } from './AnnouncementBanner'
 import AnnouncementReactions from './AnnouncementReactions'
 import MarkdownContent from './MarkdownContent'
 
@@ -70,7 +71,7 @@ export default function AnnouncementCard({
       severity={meta.severity}
       // Same visual language as the banner: white fill, border and icon in the kind's accent.
       variant="outlined"
-      icon={<meta.Icon fontSize="inherit" titleAccess={meta.label} />}
+      icon={<KindIcon meta={meta} />}
       data-testid="announcement-card"
       data-seen={a.seen ? 'true' : 'false'}
       sx={{

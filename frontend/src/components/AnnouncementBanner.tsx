@@ -9,7 +9,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
 import type { ApiAnnouncement } from '../api'
-import { kindAlertSx, kindMeta } from '../announcementKinds'
+import { kindAlertSx, kindMeta, type AnnouncementKindMeta } from '../announcementKinds'
 import AnnouncementReactions from './AnnouncementReactions'
 
 export interface AnnouncementBannerProps {
@@ -32,6 +32,18 @@ export interface AnnouncementBannerProps {
   onMore?: () => void
   /** Clamp the body to two lines with a more/less toggle (default on). */
   clamp?: boolean
+}
+
+/**
+ * Kind icon for cards and banners. Informational-icon convention: a non-interactive
+ * `role="img"` span carries the label — not `titleAccess` on the bare SVG (#1567).
+ */
+export function KindIcon({ meta }: { meta: AnnouncementKindMeta }) {
+  return (
+    <Box component="span" role="img" aria-label={meta.label} sx={{ display: 'inline-flex' }}>
+      <meta.Icon fontSize="inherit" />
+    </Box>
+  )
 }
 
 export default function AnnouncementBanner({
@@ -62,7 +74,7 @@ export default function AnnouncementBanner({
       severity={severity ?? meta?.severity ?? 'info'}
       color={color}
       variant={alertVariant}
-      icon={meta ? <meta.Icon fontSize="inherit" titleAccess={meta.label} /> : false}
+      icon={meta ? <KindIcon meta={meta} /> : false}
       action={
         onDismiss && variant === 'app' ? (
           <IconButton
