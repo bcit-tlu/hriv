@@ -59,7 +59,11 @@ describe('announcementKinds', () => {
 
   it('builds audience chips from the audience and target names', () => {
     expect(audienceChips(makeAnnouncement({ audience: 'everyone' }))).toEqual(['Everyone'])
-    expect(audienceChips(makeAnnouncement({ audience: 'staff' }))).toEqual(['Staff'])
+    expect(audienceChips(makeAnnouncement({ audience: 'staff' }))).toEqual([
+      'Admins, Instructors, and Staff',
+    ])
+    expect(audienceChips(makeAnnouncement({ audience: 'admins' }))).toEqual(['Admins'])
+    expect(audienceChips(makeAnnouncement({ audience: 'staff_only' }))).toEqual(['Staff'])
     expect(
       audienceChips(makeAnnouncement({ program_names: ['Histotech'], group_names: ['Cohort A'] })),
     ).toEqual(['Histotech', 'Cohort A'])

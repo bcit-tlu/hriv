@@ -74,6 +74,9 @@ describe('composer helpers', () => {
     ])
     expect(buildTargetOptions(programs, groups, true).map((o) => o.label)).toEqual([
       'Everyone',
+      'Admins, Instructors, and Staff',
+      'Admins',
+      'Instructors',
       'Staff',
       'Histotech',
       'Histology 2026',
@@ -90,7 +93,10 @@ describe('composer helpers', () => {
   })
 
   it('keeps sentinel audiences exclusive of targets', () => {
-    const [everyone, staff, program, group] = buildTargetOptions(programs, groups, true)
+    const opts = buildTargetOptions(programs, groups, true)
+    const [everyone, staff] = opts
+    const program = opts.find((o) => o.kind === 'program')!
+    const group = opts.find((o) => o.kind === 'group')!
     expect(reconcileTargets([program], [program, everyone])).toEqual([everyone])
     expect(reconcileTargets([everyone], [everyone, group])).toEqual([group])
     expect(reconcileTargets([staff], [staff, program])).toEqual([program])
@@ -125,7 +131,8 @@ describe('AnnouncementComposer', () => {
     expect(screen.getByLabelText('Release')).toBeInTheDocument()
     const listbox = openTo()
     expect(within(listbox).getByText('Everyone')).toBeInTheDocument()
-    expect(within(listbox).getByText('Staff')).toBeInTheDocument()
+    expect(within(listbox).getByText('Admins, Instructors, and Staff')).toBeInTheDocument()
+    expect(within(listbox).getByText('Instructors')).toBeInTheDocument()
     fireEvent.click(screen.getByText('More options'))
     expect(screen.getByLabelText('Show as banner')).toBeInTheDocument()
   })

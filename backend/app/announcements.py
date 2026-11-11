@@ -127,7 +127,15 @@ KIND_META: dict[str, tuple[str, str]] = {
     "warning": ("WarningAmber", "warning"),
 }
 ADMIN_ONLY_KINDS: frozenset[str] = frozenset({"release", "warning"})
-ADMIN_ONLY_AUDIENCES: frozenset[str] = frozenset({"everyone", "staff"})
+#: Role-resolved audiences (no junction rows). ``staff`` is the historical
+#: "all staff roles" audience; the three singular ones address one role each.
+ROLE_AUDIENCES: dict[str, frozenset[str]] = {
+    "staff": frozenset(ANNOUNCEMENT_STAFF_ROLES),
+    "admins": frozenset({"admin"}),
+    "instructors": frozenset({"instructor"}),
+    "staff_only": frozenset({"staff"}),
+}
+ADMIN_ONLY_AUDIENCES: frozenset[str] = frozenset({"everyone", *ROLE_AUDIENCES})
 REACTION_EMOJI: tuple[str, ...] = (
     "+1", "heart", "laugh", "confused", "hooray", "rocket", "eyes", "clap",
 )
@@ -169,8 +177,9 @@ def can_view(user: User, ann: Announcement) -> bool:
         return True
     if ann.audience == "everyone":
         return True
-    if ann.audience == "staff":
-        return is_staff_role(user.role)
+    roles = ROLE_AUDIENCES.get(ann.audience)
+    if roles is not None:
+        return user.role in roles
     program_ids = {p.id for p in user.programs}
     if any(p.id in program_ids for p in ann.programs):
         return True

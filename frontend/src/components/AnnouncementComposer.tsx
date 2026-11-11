@@ -153,10 +153,8 @@ function ComposerDialog({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const sentinel = targets.find((o) => o.kind === 'everyone' || o.kind === 'staff')
-  const audience: AnnouncementAudience = sentinel
-    ? (sentinel.kind as 'everyone' | 'staff')
-    : 'targeted'
+  const sentinel = targets.find((o) => o.kind === 'audience')
+  const audience: AnnouncementAudience = sentinel?.kind === 'audience' ? sentinel.id : 'targeted'
   const programIds = targets.filter((o) => o.kind === 'program').map((o) => o.id as number)
   const groupIds = targets.filter((o) => o.kind === 'group').map((o) => o.id as number)
   const titleTrimmed = title.trim()
@@ -288,7 +286,7 @@ function ComposerDialog({
                   key={`${o.kind}-${o.id}`}
                   size="small"
                   label={o.label}
-                  color={o.kind === 'everyone' || o.kind === 'staff' ? 'primary' : 'default'}
+                  color={o.kind === 'audience' ? 'primary' : 'default'}
                 />
               ))
             }
@@ -301,11 +299,11 @@ function ComposerDialog({
                 helperText={
                   !targetsValid
                     ? 'Choose at least one group or program'
-                    : audience === 'staff'
-                      ? 'Admins, instructors and staff'
-                      : audience === 'everyone'
-                        ? 'All signed-in users'
-                        : ' '
+                    : audience === 'everyone'
+                      ? 'All signed-in users'
+                      : audience === 'targeted'
+                        ? ' '
+                        : 'Resolved by role — no need to pick programs or groups'
                 }
               />
             )}

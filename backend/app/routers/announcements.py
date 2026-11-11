@@ -116,7 +116,7 @@ async def _load_stats(
     """Aggregate seen counts and audience sizes for staff callers.
 
     Two or three queries for the whole page: every user's seen map, the
-    staff head-count (if any ``staff`` announcement is present) and one
+    active head-count per role (if any role audience is present) and one
     ``UNION`` over the program/group junctions for the targeted ones.
     Identities never leave this function — only counts.
     """
@@ -129,15 +129,19 @@ async def _load_stats(
     )
     seen_rows = [(row[0], row[1]) for row in seen_result.all()]
 
-    staff_size: int | None = None
-    if any(a.audience == "staff" for a in announcements):
-        staff_size = (
-            await db.execute(
-                select(func.count(User.id)).where(
-                    User.role.in_(rules.ANNOUNCEMENT_STAFF_ROLES), User.active.is_(True)
-                )
-            )
-        ).scalar_one()
+    role_sizes: dict[str, int] = {}
+    role_audiences = {a.audience for a in announcements if a.audience in rules.ROLE_AUDIENCES}
+    if role_audiences:
+        count_result = await db.execute(
+            select(User.role, func.count(User.id))
+            .where(User.active.is_(True))
+            .group_by(User.role)
+        )
+        per_role = {row[0]: row[1] for row in count_result.all()}
+        role_sizes = {
+            audience: sum(per_role.get(role, 0) for role in rules.ROLE_AUDIENCES[audience])
+            for audience in role_audiences
+        }
 
     targeted_sizes: dict[int, int] = {}
     targeted_ids = [a.id for a in announcements if a.audience == "targeted"]
@@ -185,8 +189,8 @@ async def _load_stats(
     for ann in announcements:
         if ann.audience == "everyone":
             size: int | None = None
-        elif ann.audience == "staff":
-            size = staff_size
+        elif ann.audience in rules.ROLE_AUDIENCES:
+            size = role_sizes.get(ann.audience, 0)
         else:
             size = targeted_sizes.get(ann.id, 0)
         stats[ann.id] = rules.SeenStats(

@@ -6,7 +6,8 @@ import type {
   ApiGroup,
   ApiProgram,
 } from './api'
-import type { AnnouncementKindMeta } from './announcementKinds'
+import type { AnnouncementAudience } from './api'
+import { AUDIENCE_LABELS, type AnnouncementKindMeta } from './announcementKinds'
 import { formatRelativeTime } from './formatUtils'
 
 export function formatAbsolute(iso: string | null | undefined): string {
@@ -25,11 +26,32 @@ export function announcementTimeLabel(a: ApiAnnouncement, now = new Date()): str
   return formatRelativeTime(when, now)
 }
 
+/** Audiences resolved by role rather than by program/group membership. */
+export type RoleAudience = Exclude<AnnouncementAudience, 'targeted'>
+
 export type TargetOption =
-  | { kind: 'everyone'; id: 'everyone'; label: 'Everyone'; group: 'Audience' }
-  | { kind: 'staff'; id: 'staff'; label: 'Staff'; group: 'Audience' }
+  | { kind: 'audience'; id: RoleAudience; label: string; group: 'Audience' }
   | { kind: 'program'; id: number; label: string; group: 'Programs' }
   | { kind: 'group'; id: number; label: string; group: 'Groups' }
+
+/** Order of the Audience group in the To: picker. */
+export const ROLE_AUDIENCES: readonly RoleAudience[] = [
+  'everyone',
+  'staff',
+  'admins',
+  'instructors',
+  'staff_only',
+]
+
+/**
+ * Programs that exist for operations rather than teaching; they are kept out of
+ * the To: picker (same spirit as the Groups dialog not listing them).
+ */
+export const RESERVED_PROGRAM_NAMES: ReadonlySet<string> = new Set([
+  'Admin',
+  'Administration',
+  'Synthetic Monitoring',
+])
 
 export type ComposerMode = 'create' | 'edit' | 'duplicate'
 
@@ -56,11 +78,19 @@ export function buildTargetOptions(
 ): TargetOption[] {
   const options: TargetOption[] = []
   if (isAdmin) {
-    options.push({ kind: 'everyone', id: 'everyone', label: 'Everyone', group: 'Audience' })
-    options.push({ kind: 'staff', id: 'staff', label: 'Staff', group: 'Audience' })
+    for (const audience of ROLE_AUDIENCES) {
+      options.push({
+        kind: 'audience',
+        id: audience,
+        label: AUDIENCE_LABELS[audience] ?? audience,
+        group: 'Audience',
+      })
+    }
   }
-  for (const p of programs)
+  for (const p of programs) {
+    if (RESERVED_PROGRAM_NAMES.has(p.name)) continue
     options.push({ kind: 'program', id: p.id, label: p.name, group: 'Programs' })
+  }
   for (const g of groups) options.push({ kind: 'group', id: g.id, label: g.name, group: 'Groups' })
   return options
 }
@@ -69,8 +99,8 @@ export function buildTargetOptions(
 export function reconcileTargets(previous: TargetOption[], next: TargetOption[]): TargetOption[] {
   const added = next.find((o) => !previous.includes(o))
   if (!added) return next
-  if (added.kind === 'everyone' || added.kind === 'staff') return [added]
-  return next.filter((o) => o.kind !== 'everyone' && o.kind !== 'staff')
+  if (added.kind === 'audience') return [added]
+  return next.filter((o) => o.kind !== 'audience')
 }
 
 export interface ComposerInitialState {
@@ -103,8 +133,7 @@ export function initialComposerState(args: {
       message: source.message,
       kind: kinds.some((k) => k.kind === source.kind) ? source.kind : 'notice',
       targets: options.filter((o) => {
-        if (o.kind === 'everyone') return source.audience === 'everyone'
-        if (o.kind === 'staff') return source.audience === 'staff'
+        if (o.kind === 'audience') return source.audience === o.id
         if (o.kind === 'program') return source.program_ids.includes(o.id)
         return source.group_ids.includes(o.id)
       }),
