@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.69.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.68.0...backend-v0.69.0) (2026-11-11)
+
+
+### Features
+
+* announcement banner policy, Home notices shelf, login broadcast and legacy changelog cleanup ([#1846](https://github.com/bcit-tlu/hriv/issues/1846)) ([5bc78c6](https://github.com/bcit-tlu/hriv/commit/5bc78c66e02a565eb8d1d96401b34b6b45a74176))
+* announcements composer and stream follow-ups (kind first, role audiences, MUI X pickers, one list) ([#1849](https://github.com/bcit-tlu/hriv/issues/1849)) ([2b86492](https://github.com/bcit-tlu/hriv/commit/2b86492c203e4c0636a79088014e5c4ae5d0b004))
+* **backend:** add /api/announcements router with inbox/mine, seen-state and reactions ([#1842](https://github.com/bcit-tlu/hriv/issues/1842)) ([cbb9950](https://github.com/bcit-tlu/hriv/commit/cbb9950587b20919c7b24d64ffa2433cf633eb57))
+* **backend:** announcement media upload and token-scoped serving ([#1843](https://github.com/bcit-tlu/hriv/issues/1843)) ([2f24f47](https://github.com/bcit-tlu/hriv/commit/2f24f47a1e123422da8c0e4556670b16efa1ce23))
+* **backend:** rework announcements schema and fold changelog into it ([#1840](https://github.com/bcit-tlu/hriv/issues/1840)) ([077b9bb](https://github.com/bcit-tlu/hriv/commit/077b9bb86c43e2d9e1e589fd5ad022138f9a694c))
+
+
+### Bug Fixes
+
+* **announcements:** poll-driven reflow, kind accents, bordered cards/banner with reactions, range chips, local links ([#1850](https://github.com/bcit-tlu/hriv/issues/1850)) ([e47ed19](https://github.com/bcit-tlu/hriv/commit/e47ed19d89c080747c25e33934e83b257abaa6d9))
+* **announcements:** seen-state 500, one reaction per reader, dot bell badge, page-only reactions, draft wash ([#1851](https://github.com/bcit-tlu/hriv/issues/1851)) ([5af1166](https://github.com/bcit-tlu/hriv/commit/5af116622950484771e08d61b567a6cff895f586))
+* **tiles:** reject dot-segment tile paths so the validated path is the served path ([#1828](https://github.com/bcit-tlu/hriv/issues/1828)) ([81aeeb6](https://github.com/bcit-tlu/hriv/commit/81aeeb6761fe5cb039389e834066d4863cb9e0d8))
+
+
+### Documentation
+
+* fix README table padding so prettier check passes ([#1839](https://github.com/bcit-tlu/hriv/issues/1839)) ([409c234](https://github.com/bcit-tlu/hriv/commit/409c234b4eb3c4449fa4d2c51360428c0fb750a9))
+
 ## [0.68.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.67.0...backend-v0.68.0) (2026-11-09)
 
 
