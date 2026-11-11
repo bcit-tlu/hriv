@@ -2,7 +2,9 @@
 
 ``audience='staff'`` keeps meaning admins + instructors + staff; ``admins``,
 ``instructors`` and ``staff_only`` address exactly one role each (resolved at
-read time like ``staff`` — no junction rows).
+read time like ``staff`` — no junction rows). Downgrade narrows single-role
+posts to ``targeted`` with no recipients (author-only) rather than widening
+them to all staff roles.
 
 Revision ID: 0043_role_audiences
 Revises: 0042_announcements
