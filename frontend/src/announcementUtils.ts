@@ -133,11 +133,24 @@ export function initialComposerState(args: {
       title: duplicate ? `${source.title} (copy)` : source.title,
       message: source.message,
       kind: kinds.some((k) => k.kind === source.kind) ? source.kind : 'notice',
-      targets: options.filter((o) => {
-        if (o.kind === 'audience') return source.audience === o.id
-        if (o.kind === 'program') return source.program_ids.includes(o.id)
-        return source.group_ids.includes(o.id)
-      }),
+      targets: options
+        .filter((o) => {
+          if (o.kind === 'audience') return source.audience === o.id
+          if (o.kind === 'program') return source.program_ids.includes(o.id)
+          return source.group_ids.includes(o.id)
+        })
+        // A targeted program the picker does not list (reserved, or one the editor is not in)
+        // stays selected so saving never silently drops those readers.
+        .concat(
+          source.program_ids
+            .filter((id) => !options.some((o) => o.kind === 'program' && o.id === id))
+            .map((id) => ({
+              kind: 'program' as const,
+              id,
+              label: source.program_names[source.program_ids.indexOf(id)] ?? `Program ${id}`,
+              group: 'Programs' as const,
+            })),
+        ),
       publishAt: duplicate ? '' : toLocalInput(source.publish_at),
       expiresAt: duplicate ? '' : toLocalInput(source.expires_at),
       pinned: source.pinned,
