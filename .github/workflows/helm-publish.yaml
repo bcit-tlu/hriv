@@ -63,6 +63,55 @@ jobs:
             -u "${ACTOR}" \
             --password-stdin
 
+      - uses: docker/login-action@v4
+        if: steps.parse.outputs.publish == 'true'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Flux upgrades the HelmRelease as soon as the chart lands, with the
+      # chart's appVersion as the image tag. release-retag.yaml aliases that
+      # tag a few minutes later, so publishing first leaves the new pods in
+      # ImagePullBackOff until the Helm timeout fires and Flux rolls back —
+      # which the backend cannot survive (forward-only migrations). Wait for
+      # every image this chart pulls before pushing it.
+      - name: Wait for release images
+        if: steps.parse.outputs.publish == 'true'
+        shell: bash
+        env:
+          COMPONENT: ${{ matrix.component }}
+          VERSION: ${{ steps.parse.outputs.version }}
+          REPO: ${{ env.REGISTRY }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          IMAGES="hriv-${COMPONENT}"
+          # The counting worker shares the backend release tag (ci.yaml
+          # tag_prefix backend-v) but is a separate image — and releases cut
+          # before it existed never built one (release-retag.yaml skips it
+          # the same way), so republishing those must not wait for it.
+          if [[ "${COMPONENT}" == "backend" ]] \
+            && grep -q 'AS counting-worker' backend/Dockerfile; then
+            IMAGES="${IMAGES} hriv-counting-worker"
+          fi
+          # Same backoff as release-retag.yaml's "Wait for source image".
+          DEADLINE=$(( $(date +%s) + 1800 ))
+          for NAME in ${IMAGES}; do
+            REF="${REPO}/${NAME}:${VERSION}"
+            DELAY=10
+            while ! docker buildx imagetools inspect "${REF}" >/dev/null 2>&1; do
+              if [[ $(date +%s) -ge $DEADLINE ]]; then
+                echo "::error::Timed out after 30m waiting for ${REF}" \
+                  "(release-retag.yaml did not alias it); chart not published."
+                exit 1
+              fi
+              echo "${REF} not yet available; retrying in ${DELAY}s..."
+              sleep "$DELAY"
+              DELAY=$(( DELAY * 2 )); (( DELAY > 60 )) && DELAY=60
+            done
+            echo "${REF} is available."
+          done
+
       - name: Helm login (OCI)
         if: steps.parse.outputs.publish == 'true'
         shell: bash
