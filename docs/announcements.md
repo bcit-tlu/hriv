@@ -70,7 +70,7 @@ the audience get **404**, not 403.
 
 ## API
 
-All routes are gated by the rollout flag. Minimum roles:
+Minimum roles:
 
 | Method   | Path                                        | Role               | Notes                                                                                            |
 | -------- | ------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
@@ -152,9 +152,8 @@ orphaned files are tolerated.
 
 ## Frontend
 
-Everything below is gated on `features.announcements` (`GET /api/features`);
-while the flag is off no announcement UI renders (no bell, banner, shelf or
-login broadcast). #1838 removed the legacy singleton banner, the What's New
+The announcement UI is always on (the `features.announcements` gate was
+removed after the production rollout). #1838 removed the legacy singleton banner, the What's New
 menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
 
 ### Ambient surfaces (#1838)

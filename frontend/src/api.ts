@@ -2622,7 +2622,6 @@ export interface ApiFeatures {
   collections_home_shelf: boolean
   counting: boolean
   /** Epic #1832 — announcements stream, page and bell for all roles. */
-  announcements?: boolean
 }
 
 export function fetchFeatures(): Promise<ApiFeatures> {

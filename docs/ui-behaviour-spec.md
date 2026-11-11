@@ -61,8 +61,7 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 | People tab                     | —       | ✓     | —          | ✓     |
 | Admin tab                      | —       | —     | —          | ✓     |
 
-¹ Behind `features.announcements` (epic #1832); the filter chips / New
-announcement follow `canEditContent`.
+¹ Epic #1832; the filter chips / New announcement follow `canEditContent`.
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
@@ -1173,8 +1172,8 @@ M images> / Empty` format used on category tiles.
 
 ### Announcements (`AnnouncementsBell.tsx`, `AnnouncementsPage.tsx`, `AnnouncementComposer.tsx`)
 
-Gated on `features.announcements` (epic #1832); see
-[announcements.md](announcements.md) for the model and API.
+Epic #1832, always on; see [announcements.md](announcements.md) for the model
+and API.
 
 - **Given** any signed-in role, **Then** the AppBar bell is visible; its badge
   is the number of unseen _live_ Inbox posts. Opening it peeks the newest ≤5

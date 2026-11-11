@@ -635,6 +635,12 @@ async def test_features_endpoint_reports_effective_collection_flags(monkeypatch)
         assert result.collections_home_shelf is expected_shelf
 
 
+async def test_features_reports_announcements_always_on() -> None:
+    from app.main import features
+
+    assert (await features()).announcements is True
+
+
 async def test_features_reports_student_access_per_request(monkeypatch):
     from app.database import Settings, settings
     from app.main import features

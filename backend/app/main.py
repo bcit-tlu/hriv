@@ -412,6 +412,7 @@ async def features() -> FeaturesOut:
             settings.collections_enabled and settings.collections_home_shelf
         ),
         counting=settings.counting_enabled,
+        announcements=True,
     )
 
 
