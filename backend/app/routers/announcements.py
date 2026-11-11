@@ -477,9 +477,14 @@ async def add_reaction(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
+    """Set the caller's single reaction: one emoji per user per post (product
+    decision); choosing another emoji replaces the previous one. Idempotent."""
     _validate_emoji(emoji)
     ann = await _reactable_or_error(db, announcement_id, current_user)
-    if not any(r.user_id == current_user.id and r.emoji == emoji for r in ann.reactions):
+    mine = [r for r in ann.reactions if r.user_id == current_user.id]
+    if not (len(mine) == 1 and mine[0].emoji == emoji):
+        for reaction in mine:
+            ann.reactions.remove(reaction)
         ann.reactions.append(
             AnnouncementReaction(announcement_id=ann.id, user_id=current_user.id, emoji=emoji)
         )

@@ -608,6 +608,19 @@ async def test_reactions_add_is_idempotent_and_remove_toggles_off() -> None:
     assert db.commit.await_count == 2
 
 
+async def test_add_reaction_replaces_the_callers_previous_emoji() -> None:
+    """One reaction per user: picking another emoji swaps it, other users' stay."""
+    me = _user("student", id=5)
+    ann = _ann(reactions=[_reaction(6, "heart"), _reaction(5, "heart")])
+    db = _db(one=ann)
+
+    out = await add_reaction(10, "hooray", db, me)
+
+    assert out.reactions == {"heart": 1, "hooray": 1} and out.my_reactions == ["hooray"]
+    assert [(r.user_id, r.emoji) for r in ann.reactions] == [(6, "heart"), (5, "hooray")]
+    assert db.commit.await_count == 1
+
+
 async def test_reaction_allowlist_and_live_only() -> None:
     me = _user("student", id=5)
     with pytest.raises(HTTPException) as exc:
