@@ -270,10 +270,13 @@ export function firstLine(markdown: string): string {
     .trim()
 }
 
-/** One stream: the reader's Inbox plus (for authors) their own drafts, scheduled and expired posts. */
+/**
+ * One stream: the reader's Inbox plus (for authors) their own drafts, scheduled and expired posts.
+ * The Inbox copy wins for posts in both: it is the one `markSeen` / `toggleReaction` keep current.
+ */
 export function mergeStreams(inbox: ApiAnnouncement[], mine: ApiAnnouncement[]): ApiAnnouncement[] {
   const byId = new Map<number, ApiAnnouncement>()
-  for (const a of inbox) byId.set(a.id, a)
-  for (const a of mine) byId.set(a.id, { ...byId.get(a.id), ...a })
+  for (const a of mine) byId.set(a.id, a)
+  for (const a of inbox) byId.set(a.id, { ...byId.get(a.id), ...a })
   return sortAnnouncements([...byId.values()])
 }

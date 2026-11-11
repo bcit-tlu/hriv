@@ -152,6 +152,8 @@ describe('AnnouncementsPage', () => {
     expect(screen.getByText('Peer post')).toBeInTheDocument()
     expect(screen.queryByText(/Grace (co-managed)/)).not.toBeInTheDocument()
     expect(screen.getAllByLabelText(/Actions for/)).toHaveLength(2)
+    // Reactions only on posts the viewer actually receives (Inbox), not on author-scope-only rows.
+    expect(screen.getAllByLabelText('Add reaction')).toHaveLength(1)
     expect(screen.getAllByTestId('announcement-card')).toHaveLength(4)
     // Only the filter chips say Live; cards carry a status chip for non-live posts only.
     expect(screen.getAllByText('Live', { selector: '.MuiChip-label' })).toHaveLength(1)

@@ -120,7 +120,7 @@ export default function AnnouncementCard({
             size="small"
             label={ANNOUNCEMENT_STATUS_LABELS[a.status]}
             color={STATUS_COLOR[a.status]}
-            variant={a.status === 'live' ? 'filled' : 'outlined'}
+            variant="outlined"
           />
         )}
         {manage && a.can_edit && (onEdit || onDuplicate || onDelete) && (

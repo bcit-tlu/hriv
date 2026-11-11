@@ -141,6 +141,8 @@ export default function AnnouncementsPage({
   }, [feed])
 
   const rows = useMemo(() => mergeStreams(feed.announcements, mine), [feed.announcements, mine])
+  // Reactions are a reader feature: only posts the viewer receives (Inbox) accept them.
+  const inboxIds = useMemo(() => new Set(feed.announcements.map((a) => a.id)), [feed.announcements])
 
   useEffect(() => {
     if (focusId == null) return
@@ -251,7 +253,11 @@ export default function AnnouncementsPage({
               viewerIsStaff={canCompose}
               manage={canCompose}
               highlighted={focusId === a.id}
-              onToggleReaction={(ann, emoji) => void feed.toggleReaction(ann, emoji)}
+              onToggleReaction={
+                inboxIds.has(a.id)
+                  ? (ann, emoji) => void feed.toggleReaction(ann, emoji)
+                  : undefined
+              }
               onEdit={canCompose ? (ann) => setComposer({ mode: 'edit', source: ann }) : undefined}
               onDuplicate={
                 canCompose ? (ann) => setComposer({ mode: 'duplicate', source: ann }) : undefined

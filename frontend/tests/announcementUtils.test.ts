@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { firstLine, selectBannerAnnouncements, selectNotices } from '../src/announcementUtils'
+import {
+  firstLine,
+  mergeStreams,
+  selectBannerAnnouncements,
+  selectNotices,
+} from '../src/announcementUtils'
 import { makeAnnouncement } from './announcementFixtures'
 
 describe('selectBannerAnnouncements', () => {
@@ -55,5 +60,24 @@ describe('firstLine', () => {
     )
     expect(firstLine('![slide](/api/media/1)\n/api/media/2\nActual text')).toBe('Actual text')
     expect(firstLine('')).toBe('')
+  })
+})
+
+describe('mergeStreams', () => {
+  it('dedupes by id, lets the Inbox copy win and keeps Mine-only rows', () => {
+    const inbox = [
+      makeAnnouncement({ id: 1, seen: true, reactions: { '👍': 2 }, my_reactions: ['👍'] }),
+      makeAnnouncement({ id: 2, title: 'Inbox only' }),
+    ]
+    const mine = [
+      makeAnnouncement({ id: 1, seen: false, reactions: {}, my_reactions: [] }),
+      makeAnnouncement({ id: 3, title: 'Draft', status: 'draft', publish_at: null }),
+    ]
+    const rows = mergeStreams(inbox, mine)
+    expect(rows.map((a) => a.id).sort()).toEqual([1, 2, 3])
+    const merged = rows.find((a) => a.id === 1)
+    expect(merged?.seen).toBe(true)
+    expect(merged?.reactions).toEqual({ '👍': 2 })
+    expect(merged?.my_reactions).toEqual(['👍'])
   })
 })
