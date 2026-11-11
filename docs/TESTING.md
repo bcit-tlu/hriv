@@ -110,17 +110,17 @@ regardless of source address (see `docs/deployment-proxy-chain.md`).
 
 ## Test Case 3b: Announcements (all roles, `ANNOUNCEMENTS_ENABLED=true`)
 
-**Purpose:** Verify the unified announcements stream — bell for every role, Inbox / Mine page, composer rules, reactions and seen-state (epic #1832; see `docs/announcements.md`).
+**Purpose:** Verify the unified announcements stream — bell for every role, single-stream page with filters, composer rules, reactions and seen-state (epic #1832; see `docs/announcements.md`).
 
 1. Start the stack with `ANNOUNCEMENTS_ENABLED=true` and login as `instructor@example.ca` / `password`.
-2. Open the bell → **See all**. **Assert:** `?page=announcements` shows Inbox and Mine tabs and a `New announcement` button.
-3. Click `New announcement`. **Assert:** `To:` lists only the instructor's programs and managed groups (no `Everyone` / `Staff`); the kind picker has no `Release` / `Warning`; `Post` is disabled until a target is picked.
+2. Open the bell → **See all**. **Assert:** `?page=announcements` shows one list with filter chips (All · My announcements · Draft · Scheduled · Live · Expired) and a `New announcement` button.
+3. Click `New announcement`. **Assert:** `To:` lists only the instructor's programs and managed groups (no Audience group); the kind picker (first field) has no `Release` / `Important`; `Post` is disabled until a target is picked.
 4. Pick a group, choose `Reminder`, enter a title and a Markdown body, upload a PNG from the toolbar. **Assert:** `![name](/api/media/{id})` is inserted; `Preview` renders the image.
-5. Click `Post`. **Assert:** The post appears under Mine with a `Live` chip and in the Inbox.
+5. Click `Post`. **Assert:** The post appears in the stream with the Actions menu (no status chip — only drafts/scheduled/expired get one); `My announcements` narrows the list to it.
 6. Open `Manage → Groups`, use a group's row menu → `Post to group`. **Assert:** The composer opens with that group pre-selected.
 7. Logout, login as a student in that group. **Assert:** The bell shows a badge; the peek lists the post; clicking it opens the page focused on the card; the badge clears but the card stays listed (quieter). Add a 👍 reaction. **Assert:** the pill count increments.
-8. Login as `admin@example.ca`. **Assert:** The composer offers `Everyone` / `Staff` (picking one clears targets), all six kinds, and `Show as banner`. Edit the instructor's post → `Notify readers again` → `Save`. **Assert:** The student sees it unseen again.
-9. **Assert:** Mine shows `Seen by N of M` on the post; Duplicate prefills with "(copy)" and no schedule; Delete asks for confirmation.
+8. Login as `admin@example.ca`. **Assert:** The composer offers `Everyone` / `Admins, Instructors, and Staff` / `Admins` / `Instructors` / `Staff` (picking one clears targets), hides the reserved `Administration` / `Synthetic Monitoring` programs, offers all six kinds, and `Show as banner` / `Pin to top` carry a hint line. Edit the instructor's post straight from the stream (admins can edit any post) → `Notify readers again` → `Save`. **Assert:** The student sees it unseen again.
+9. **Assert:** The post shows `Seen by N of M`; Duplicate prefills with "(copy)" and no schedule; Delete asks for confirmation.
 10. **Assert:** Documentation and About are in the profile popover; the bell menu has no `What's New`.
 
 ---

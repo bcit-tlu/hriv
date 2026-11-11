@@ -45,24 +45,24 @@ Three capability flags in `AuthContext.tsx` drive all gating:
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface                     | Student | Staff | Instructor | Admin |
-| --------------------------- | ------- | ----- | ---------- | ----- |
-| Home                        | ✓       | ✓     | ✓          | ✓     |
-| Collections tab             | ✓       | ✓     | ✓          | ✓     |
-| Images tab                  | —       | —     | ✓          | ✓     |
-| Manage dropdown             | —       | —     | ✓          | ✓     |
-| Manage → Categories         | —       | —     | ✓          | ✓     |
-| Manage → Programs           | —       | —     | —          | ✓     |
-| Manage → Groups             | —       | —     | ✓          | ✓     |
-| Manage → Announcement       | —       | —     | ✓          | ✓     |
-| Announcements bell / page¹  | ✓       | ✓     | ✓          | ✓     |
-| Announcements → Mine / New¹ | —       | —     | ✓          | ✓     |
-| Manage → Measurement review | —       | —     | ✓          | ✓     |
-| People tab                  | —       | ✓     | —          | ✓     |
-| Admin tab                   | —       | —     | —          | ✓     |
+| Surface                        | Student | Staff | Instructor | Admin |
+| ------------------------------ | ------- | ----- | ---------- | ----- |
+| Home                           | ✓       | ✓     | ✓          | ✓     |
+| Collections tab                | ✓       | ✓     | ✓          | ✓     |
+| Images tab                     | —       | —     | ✓          | ✓     |
+| Manage dropdown                | —       | —     | ✓          | ✓     |
+| Manage → Categories            | —       | —     | ✓          | ✓     |
+| Manage → Programs              | —       | —     | —          | ✓     |
+| Manage → Groups                | —       | —     | ✓          | ✓     |
+| Manage → Announcement          | —       | —     | ✓          | ✓     |
+| Announcements bell / page¹     | ✓       | ✓     | ✓          | ✓     |
+| Announcements → filters / New¹ | —       | —     | ✓          | ✓     |
+| Manage → Measurement review    | —       | —     | ✓          | ✓     |
+| People tab                     | —       | ✓     | —          | ✓     |
+| Admin tab                      | —       | —     | —          | ✓     |
 
-¹ Behind `features.announcements` (epic #1832); Mine / New announcement
-follow `canEditContent`.
+¹ Behind `features.announcements` (epic #1832); the filter chips / New
+announcement follow `canEditContent`.
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home and **Collections** are shown (no Images, Manage, People, or Admin).
@@ -1185,13 +1185,16 @@ Gated on `features.announcements` (epic #1832); see
   is marked seen once per `(id, notified_at)` and remains listed, rendered
   quieter. Nothing is dismissed; the Inbox is the record.
 - **Given** an admin or instructor (`canEditContent`), **Then** the page shows
-  Inbox and Mine tabs plus **New announcement**; staff and students get the
-  Inbox only. Mine filters by Draft / Scheduled /
-  Live / Expired; rows with `can_edit` get Edit / Duplicate / Delete (delete
-  confirms); co-managed rows show the author with "(co-managed)" and no
+  one stream (Inbox merged with their own drafts/scheduled/expired posts),
+  filter chips All / My announcements / Draft / Scheduled / Live / Expired and
+  **New announcement**; staff and students get the stream only. Rows with
+  `can_edit` (admins: every post; instructors: their own) get Edit / Duplicate /
+  Delete (delete confirms); other rows show the author and no
   actions. "Seen by N of M" shows counts only — never names.
 - **Given** the composer, **Then** `To:` is one grouped multi-select. Admins
-  also see **Everyone** and **Staff**; choosing one clears any program/group
+  also see an Audience group — **Everyone**, **Admins, Instructors, and Staff**,
+  **Admins**, **Instructors**, **Staff** — and reserved programs (Administration,
+  Synthetic Monitoring) are not listed; choosing an audience clears any program/group
   targets and vice versa. Instructors must pick at least one target. The kind
   picker is the controlled icon set; **Release** and **Warning** are hidden
   from instructors. Emoji are reactions only, never kinds.

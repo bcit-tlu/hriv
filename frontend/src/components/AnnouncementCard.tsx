@@ -26,7 +26,7 @@ export interface AnnouncementCardProps {
   announcement: ApiAnnouncement
   /** Admin/instructor/staff viewers see "Seen by N of M" when the API supplies counts. */
   viewerIsStaff?: boolean
-  /** Mine tab: show the status chip and author actions instead of the reader treatment. */
+  /** Authors' view: non-live status chip plus Edit/Duplicate/Delete where `can_edit`. */
   manage?: boolean
   highlighted?: boolean
   onToggleReaction?: (announcement: ApiAnnouncement, emoji: string) => void
@@ -61,7 +61,7 @@ export default function AnnouncementCard({
   const meta = kindMeta(a.kind)
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
-  const quiet = !manage && a.seen
+  const quiet = a.seen
   const chips = compact ? [] : audienceChips(a)
   const reactionEntries = Object.entries(a.reactions).filter(([, count]) => count > 0)
   const canReact = Boolean(onToggleReaction) && a.status === 'live'
