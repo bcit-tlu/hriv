@@ -1,0 +1,31 @@
+import { describe, expect, it } from 'vitest'
+import type { ApiGroup, ApiProgram } from '../src/api'
+import { RESERVED_PROGRAM_NAMES, buildTargetOptions } from '../src/announcementUtils'
+
+const programs = [
+  { id: 1, name: 'Administration' },
+  { id: 2, name: 'Synthetic Monitoring' },
+  { id: 3, name: 'Histotech' },
+] as ApiProgram[]
+const groups = [] as ApiGroup[]
+
+describe('buildTargetOptions', () => {
+  it('hides reserved programs from the To: picker', () => {
+    expect([...RESERVED_PROGRAM_NAMES]).toContain('Synthetic Monitoring')
+    const labels = buildTargetOptions(programs, groups, true).map((o) => o.label)
+    expect(labels).toContain('Histotech')
+    expect(labels).not.toContain('Administration')
+    expect(labels).not.toContain('Synthetic Monitoring')
+  })
+
+  it('offers every role audience to admins only, in picker order', () => {
+    expect(
+      buildTargetOptions(programs, groups, true)
+        .filter((o) => o.kind === 'audience')
+        .map((o) => o.id),
+    ).toEqual(['everyone', 'staff', 'admins', 'instructors', 'staff_only'])
+    expect(buildTargetOptions(programs, groups, false).some((o) => o.kind === 'audience')).toBe(
+      false,
+    )
+  })
+})

@@ -55,7 +55,7 @@ specified in detail.
 - Chromatic: frontend PRs include stories; baselines are accepted by the
   product owner; no white icon backgrounds.
 - Announcements (epic #1832) are one stream for every role: one bell with a
-  peek + "See all", one page (Inbox for all, Mine for admins/instructors), one composer
+  peek + "See all", one page (one stream for all; admins/instructors add filter chips incl. "My announcements"), one composer
   dialog. Release notes are announcements (`kind=release`, default audience
   `staff`), not a separate changelog surface. The Admin page has no Changelog tab.
 - Only posts flagged `banner` take the app-bar banner slot (warnings first, then

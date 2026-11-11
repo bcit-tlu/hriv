@@ -1475,7 +1475,8 @@ export function removeGroupInstructorsBulk(groupId: number, userIds: number[]): 
 
 export type AnnouncementKind =
   'notice' | 'event' | 'reminder' | 'celebration' | 'release' | 'warning'
-export type AnnouncementAudience = 'everyone' | 'staff' | 'targeted'
+export type AnnouncementAudience =
+  'everyone' | 'staff' | 'admins' | 'instructors' | 'staff_only' | 'targeted'
 export type AnnouncementStatus = 'draft' | 'scheduled' | 'live' | 'expired'
 export type AnnouncementScope = 'inbox' | 'mine'
 

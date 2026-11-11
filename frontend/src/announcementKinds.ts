@@ -5,7 +5,12 @@ import EventIcon from '@mui/icons-material/Event'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
-import type { AnnouncementKind, AnnouncementStatus, ApiAnnouncement } from './api'
+import type {
+  AnnouncementAudience,
+  AnnouncementKind,
+  AnnouncementStatus,
+  ApiAnnouncement,
+} from './api'
 
 export type AnnouncementSeverity = 'info' | 'success' | 'warning' | 'error'
 
@@ -39,7 +44,7 @@ export const ANNOUNCEMENT_KINDS: readonly AnnouncementKindMeta[] = [
   { kind: 'release', label: 'Release', Icon: RocketLaunchIcon, severity: 'info', adminOnly: true },
   {
     kind: 'warning',
-    label: 'Warning',
+    label: 'Important',
     Icon: WarningAmberIcon,
     severity: 'warning',
     adminOnly: true,
@@ -78,11 +83,20 @@ export const ANNOUNCEMENT_STATUS_LABELS: Record<AnnouncementStatus, string> = {
 }
 
 /** Chips describing who a post reaches, in display order. */
+/** Reader-facing names of the role-resolved audiences (programs/groups use their own names). */
+export const AUDIENCE_LABELS: Partial<Record<AnnouncementAudience, string>> = {
+  everyone: 'Everyone',
+  staff: 'Admins, Instructors, and Staff',
+  admins: 'Admins',
+  instructors: 'Instructors',
+  staff_only: 'Staff',
+}
+
 export function audienceChips(
   a: Pick<ApiAnnouncement, 'audience' | 'program_names' | 'group_names'>,
 ) {
-  if (a.audience === 'everyone') return ['Everyone']
-  if (a.audience === 'staff') return ['Staff']
+  const label = AUDIENCE_LABELS[a.audience]
+  if (label) return [label]
   return [...a.program_names, ...a.group_names]
 }
 

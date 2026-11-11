@@ -510,7 +510,7 @@ class Announcement(Base):
             name="ck_announcements_kind",
         ),
         CheckConstraint(
-            "audience IN ('everyone','staff','targeted')",
+            "audience IN ('everyone','staff','admins','instructors','staff_only','targeted')",
             name="ck_announcements_audience",
         ),
     )

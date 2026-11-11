@@ -178,6 +178,11 @@ def _assume_utc(v: datetime | None) -> datetime | None:
     return v
 
 
+AnnouncementAudience = Literal[
+    "everyone", "staff", "admins", "instructors", "staff_only", "targeted"
+]
+
+
 class AnnouncementCreate(BaseModel):
     """``POST /api/announcements``.
 
@@ -188,7 +193,7 @@ class AnnouncementCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     message: str = Field(default="", max_length=ANNOUNCEMENT_MESSAGE_MAX_CHARS)
     kind: Literal["notice", "event", "reminder", "celebration", "release", "warning"] = "notice"
-    audience: Literal["everyone", "staff", "targeted"] = "targeted"
+    audience: AnnouncementAudience = "targeted"
     program_ids: list[int] = Field(default_factory=list)
     group_ids: list[int] = Field(default_factory=list)
     publish_at: datetime | None = None
@@ -222,7 +227,7 @@ class AnnouncementUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     message: str | None = Field(default=None, max_length=ANNOUNCEMENT_MESSAGE_MAX_CHARS)
     kind: Literal["notice", "event", "reminder", "celebration", "release", "warning"] | None = None
-    audience: Literal["everyone", "staff", "targeted"] | None = None
+    audience: AnnouncementAudience | None = None
     program_ids: list[int] | None = None
     group_ids: list[int] | None = None
     publish_at: datetime | None = None

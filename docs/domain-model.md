@@ -252,9 +252,11 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Key fields:** `title`; `message` (Markdown); `kind` (`notice` | `event` |
   `reminder` | `celebration` | `release` | `warning` — the author picks an icon,
   the icon _is_ the kind, and the kind fixes the severity); `author_id` (FK →
-  `users`, `ON DELETE SET NULL`); `audience` (`everyone` | `staff` | `targeted`
-  — `staff` resolves dynamically to the `admin`, `instructor` and `staff`
-  roles, `targeted` uses the junction tables); `publish_at` (`NULL` = draft),
+  `users`, `ON DELETE SET NULL`); `audience` (`everyone` | `staff` | `admins` |
+  `instructors` | `staff_only` | `targeted` — the role audiences resolve
+  dynamically at read time: `staff` to the `admin`, `instructor` and `staff`
+  roles together, the other three to exactly one role each; `targeted` uses the
+  junction tables); `publish_at` (`NULL` = draft),
   `expires_at`, `notified_at` (version marker — bumping it makes the row unseen
   again); `pinned`; `banner`.
 - **Live window:** `publish_at <= now()` and (`expires_at IS NULL` or in the

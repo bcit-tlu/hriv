@@ -139,6 +139,28 @@ def test_staff_audience_by_role(role: str, expected: bool) -> None:
     assert rules.can_view(_user(role, id=5), _ann(audience="staff")) is expected
 
 
+@pytest.mark.parametrize(
+    ("audience", "role", "expected"),
+    [
+        ("admins", "admin", True),
+        ("admins", "instructor", False),
+        ("admins", "staff", False),
+        ("instructors", "instructor", True),
+        ("instructors", "admin", False),
+        ("staff_only", "staff", True),
+        ("staff_only", "admin", False),
+        ("staff_only", "student", False),
+    ],
+)
+def test_single_role_audiences(audience: str, role: str, expected: bool) -> None:
+    assert rules.can_view(_user(role, id=5), _ann(audience=audience)) is expected
+
+
+def test_role_audiences_are_admin_only() -> None:
+    assert set(rules.ROLE_AUDIENCES) <= rules.ADMIN_ONLY_AUDIENCES
+    assert rules.ROLE_AUDIENCES["staff"] == frozenset(rules.ANNOUNCEMENT_STAFF_ROLES)
+
+
 def test_everyone_and_author_always_visible() -> None:
     assert rules.can_view(_user("student", id=5), _ann(audience="everyone")) is True
     draft_targeted = _ann(audience="targeted", author_id=5, groups=[_group(1)])
@@ -320,6 +342,9 @@ async def test_create_schema_validation() -> None:
     [
         dict(audience="everyone"),
         dict(audience="staff"),
+        dict(audience="admins"),
+        dict(audience="instructors"),
+        dict(audience="staff_only"),
         dict(audience="targeted", program_ids=[1], kind="release"),
         dict(audience="targeted", program_ids=[1], kind="warning"),
     ],
@@ -526,6 +551,7 @@ async def test_load_stats_queries_counts_without_identities() -> None:
     everyone = _ann(id=1, audience="everyone", notified_at=NOW)
     staff = _ann(id=2, audience="staff", notified_at=NOW)
     targeted = _ann(id=3, audience="targeted", notified_at=NOW)
+    admins = _ann(id=4, audience="admins", notified_at=NOW)
     seen_rows = [(1, {"1": NOW.isoformat(), "3": NOW.isoformat()}), (2, {"2": NOW.isoformat()})]
     calls = []
 
@@ -535,8 +561,8 @@ async def test_load_stats_queries_counts_without_identities() -> None:
         result = MagicMock()
         if "announcement_seen" in sql:
             result.all.return_value = seen_rows
-        elif "users.role IN" in sql:
-            result.scalar_one.return_value = 12
+        elif "GROUP BY users.role" in sql:
+            result.all.return_value = [("admin", 2), ("instructor", 4), ("staff", 6), ("student", 90)]
         else:
             result.all.return_value = [(3, 5)]
         return result
@@ -544,12 +570,13 @@ async def test_load_stats_queries_counts_without_identities() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=_exec)
 
-    stats = await _load_stats(db, [everyone, staff, targeted])
+    stats = await _load_stats(db, [everyone, staff, targeted, admins])
 
     assert stats[1] == rules.SeenStats(seen_count=1, audience_size=None)
     assert stats[2] == rules.SeenStats(seen_count=1, audience_size=12)
     assert stats[3] == rules.SeenStats(seen_count=1, audience_size=5)
-    assert len(calls) == 3
+    assert stats[4] == rules.SeenStats(seen_count=0, audience_size=2)
+    assert len(calls) == 3  # one head-count query serves every role audience
     union_sql = calls[2]
     for table in ("announcement_programs", "user_programs", "group_members", "group_instructors"):
         assert table in union_sql

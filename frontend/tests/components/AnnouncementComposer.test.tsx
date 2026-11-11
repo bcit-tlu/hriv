@@ -1,3 +1,4 @@
+import dayjs from 'dayjs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import * as api from '../../src/api'
@@ -73,6 +74,9 @@ describe('composer helpers', () => {
     ])
     expect(buildTargetOptions(programs, groups, true).map((o) => o.label)).toEqual([
       'Everyone',
+      'Admins, Instructors, and Staff',
+      'Admins',
+      'Instructors',
       'Staff',
       'Histotech',
       'Histology 2026',
@@ -89,7 +93,10 @@ describe('composer helpers', () => {
   })
 
   it('keeps sentinel audiences exclusive of targets', () => {
-    const [everyone, staff, program, group] = buildTargetOptions(programs, groups, true)
+    const opts = buildTargetOptions(programs, groups, true)
+    const [everyone, staff] = opts
+    const program = opts.find((o) => o.kind === 'program')!
+    const group = opts.find((o) => o.kind === 'group')!
     expect(reconcileTargets([program], [program, everyone])).toEqual([everyone])
     expect(reconcileTargets([everyone], [everyone, group])).toEqual([group])
     expect(reconcileTargets([staff], [staff, program])).toEqual([program])
@@ -110,7 +117,7 @@ describe('AnnouncementComposer', () => {
   it('hides admin-only kinds and sentinel audiences from instructors', () => {
     renderComposer()
     expect(screen.getByLabelText('Notice')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Warning')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Important')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Release')).not.toBeInTheDocument()
     const listbox = openTo()
     expect(within(listbox).queryByText('Everyone')).not.toBeInTheDocument()
@@ -120,11 +127,12 @@ describe('AnnouncementComposer', () => {
 
   it('shows all kinds, Everyone/Staff and the banner toggle to admins', () => {
     renderComposer({ isAdmin: true })
-    expect(screen.getByLabelText('Warning')).toBeInTheDocument()
+    expect(screen.getByLabelText('Important')).toBeInTheDocument()
     expect(screen.getByLabelText('Release')).toBeInTheDocument()
     const listbox = openTo()
     expect(within(listbox).getByText('Everyone')).toBeInTheDocument()
-    expect(within(listbox).getByText('Staff')).toBeInTheDocument()
+    expect(within(listbox).getByText('Admins, Instructors, and Staff')).toBeInTheDocument()
+    expect(within(listbox).getByText('Instructors')).toBeInTheDocument()
     fireEvent.click(screen.getByText('More options'))
     expect(screen.getByLabelText('Show as banner')).toBeInTheDocument()
   })
@@ -181,14 +189,18 @@ describe('AnnouncementComposer', () => {
     expect(screen.getByText('Histology 2026', { selector: '.MuiChip-label' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/Title/), { target: { value: 'Field trip' } })
     fireEvent.click(screen.getByText('More options'))
-    fireEvent.change(screen.getByLabelText('Publish at'), { target: { value: '2030-05-01T09:00' } })
-    fireEvent.change(screen.getByLabelText('Expires at'), { target: { value: '2030-05-02T09:00' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
+    fireEvent.click(screen.getAllByRole('button', { name: /Choose date/, hidden: true })[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Tomorrow 9:00' }))
+    const publish = dayjs().add(1, 'day').hour(9).minute(0).second(0).millisecond(0)
+    const choosers = screen.getAllByRole('button', { name: /Choose date/, hidden: true })
+    fireEvent.click(choosers[choosers.length - 1])
+    fireEvent.click(await screen.findByRole('button', { name: '1 week' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Schedule', hidden: true }))
     await waitFor(() => expect(mockCreate).toHaveBeenCalled())
     expect(mockCreate.mock.calls[0][0]).toMatchObject({
       group_ids: [3],
-      publish_at: new Date('2030-05-01T09:00').toISOString(),
-      expires_at: new Date('2030-05-02T09:00').toISOString(),
+      publish_at: publish.toDate().toISOString(),
+      expires_at: publish.add(1, 'week').toDate().toISOString(),
     })
   })
 
@@ -258,7 +270,8 @@ describe('AnnouncementComposer', () => {
     expect(screen.getByLabelText(/Title/)).toHaveValue('Lab 3 moved to Thursday')
     expect(screen.getByText('Histology 2026', { selector: '.MuiChip-label' })).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Notify readers again'))
-    fireEvent.change(screen.getByLabelText('Expires at'), { target: { value: '' } })
+    const clears = screen.getAllByRole('button', { name: 'Clear' })
+    fireEvent.click(clears[clears.length - 1])
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled())
     expect(mockUpdate.mock.calls[0][0]).toBe(9)

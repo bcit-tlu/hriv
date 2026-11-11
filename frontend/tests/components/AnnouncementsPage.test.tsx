@@ -92,7 +92,7 @@ describe('AnnouncementsPage', () => {
     expect(screen.getByText('No announcements yet.')).toBeInTheDocument()
   })
 
-  it('students get the Inbox only, with no tabs or compose button, and posts are marked seen once', () => {
+  it('students get the stream only, with no filters or compose button, and posts are marked seen once', () => {
     const markSeen = vi.fn()
     const rows = [makeAnnouncement({ id: 1 }), makeAnnouncement({ id: 2, seen: true })]
     render(
@@ -102,7 +102,7 @@ describe('AnnouncementsPage', () => {
         canCompose={false}
       />,
     )
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filter announcements' })).not.toBeInTheDocument()
     expect(screen.queryByText('New announcement')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('announcement-card')).toHaveLength(2)
     act(() => {
@@ -113,7 +113,7 @@ describe('AnnouncementsPage', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('Mine loads the author scope, filters by status and shows co-managed rows read-only', async () => {
+  it('authors get one stream: inbox plus own drafts, filtered by status or My announcements', async () => {
     mockFetch.mockResolvedValue([
       makeAnnouncement({ id: 1, title: 'Live one', status: 'live', can_edit: true }),
       makeAnnouncement({
@@ -128,29 +128,69 @@ describe('AnnouncementsPage', () => {
         title: 'Peer post',
         status: 'live',
         can_edit: false,
+        author_id: 99,
         author_name: 'Grace',
       }),
     ])
-    render(<AnnouncementsPage currentUser={instructor} feed={makeFeed()} canCompose />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Mine' }))
+    const inboxOnly = makeAnnouncement({
+      id: 4,
+      title: 'From admin',
+      author_id: 1,
+      can_edit: false,
+    })
+    render(
+      <AnnouncementsPage
+        currentUser={instructor}
+        feed={makeFeed({ announcements: [inboxOnly] })}
+        canCompose
+      />,
+    )
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     await waitFor(() => expect(mockFetch).toHaveBeenCalledWith('mine'))
     await screen.findByText('Live one')
+    expect(screen.getByText('From admin')).toBeInTheDocument()
     expect(screen.getByText('Peer post')).toBeInTheDocument()
-    expect(screen.getByText(/Grace \(co-managed\)/)).toBeInTheDocument()
+    expect(screen.queryByText(/Grace (co-managed)/)).not.toBeInTheDocument()
     expect(screen.getAllByLabelText(/Actions for/)).toHaveLength(2)
+    // Reactions only on posts the viewer actually receives (Inbox), not on author-scope-only rows.
+    expect(screen.getAllByLabelText('Add reaction')).toHaveLength(1)
+    expect(screen.getAllByTestId('announcement-card')).toHaveLength(4)
+    // Only the filter chips say Live; cards carry a status chip for non-live posts only.
+    expect(screen.getAllByText('Live', { selector: '.MuiChip-label' })).toHaveLength(1)
+    expect(screen.getAllByText('Draft', { selector: '.MuiChip-label' })).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('button', { name: 'Draft' }))
     expect(screen.getByText('Draft one')).toBeInTheDocument()
     expect(screen.queryByText('Live one')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'My announcements' }))
+    expect(screen.getByText('Live one')).toBeInTheDocument()
+    expect(screen.getByText('Draft one')).toBeInTheDocument()
+    expect(screen.queryByText('Peer post')).not.toBeInTheDocument()
+    expect(screen.queryByText('From admin')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Expired' }))
     expect(screen.getByText('No expired announcements.')).toBeInTheDocument()
   })
 
-  it('delete asks for confirmation, then removes the row from Mine and the feed', async () => {
+  it('admins can edit any post straight from the stream (no author scope needed)', async () => {
+    mockFetch.mockResolvedValue([])
+    const admin: User = { ...instructor, id: 1, role: 'admin' }
+    const foreign = makeAnnouncement({ id: 8, title: 'By Grace', author_id: 99, can_edit: true })
+    render(
+      <AnnouncementsPage
+        currentUser={admin}
+        feed={makeFeed({ announcements: [foreign] })}
+        canCompose
+      />,
+    )
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith('mine'))
+    fireEvent.click(await screen.findByLabelText('Actions for By Grace'))
+    expect(screen.getByText('Edit')).toBeInTheDocument()
+  })
+
+  it('delete asks for confirmation, then removes the row from the stream and the feed', async () => {
     const remove = vi.fn()
     mockFetch.mockResolvedValue([makeAnnouncement({ id: 9, title: 'Doomed', can_edit: true })])
     render(<AnnouncementsPage currentUser={instructor} feed={makeFeed({ remove })} canCompose />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Mine' }))
     await screen.findByText('Doomed')
     fireEvent.click(screen.getByLabelText('Actions for Doomed'))
     fireEvent.click(screen.getByText('Delete'))
@@ -166,7 +206,6 @@ describe('AnnouncementsPage', () => {
   it('duplicate opens the composer prefilled with "(copy)" and only the groups the instructor manages', async () => {
     mockFetch.mockResolvedValue([makeAnnouncement({ id: 2, title: 'Original', can_edit: true })])
     render(<AnnouncementsPage currentUser={instructor} feed={makeFeed()} canCompose />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Mine' }))
     await screen.findByText('Original')
     await waitFor(() => expect(mockGroups).toHaveBeenCalled())
     fireEvent.click(screen.getByLabelText('Actions for Original'))
@@ -179,7 +218,7 @@ describe('AnnouncementsPage', () => {
     expect(within(listbox).queryByText('Everyone')).not.toBeInTheDocument()
   })
 
-  it('"Post to group" opens the composer with the group pre-selected and saves into Mine + reloads the feed', async () => {
+  it('"Post to group" opens the composer with the group pre-selected and saves into the stream + reloads the feed', async () => {
     const saved = makeAnnouncement({ id: 50, title: 'Hello cohort', can_edit: true })
     mockCreate.mockResolvedValue(saved)
     const reload = vi.fn(async () => {})
