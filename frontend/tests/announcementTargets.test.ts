@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiGroup, ApiProgram } from '../src/api'
-import { RESERVED_PROGRAM_NAMES, buildTargetOptions } from '../src/announcementUtils'
+import {
+  RESERVED_PROGRAM_NAMES,
+  buildTargetOptions,
+  initialComposerState,
+} from '../src/announcementUtils'
+import { makeAnnouncement } from './announcementFixtures'
 
 const programs = [
   { id: 1, name: 'Administration' },
@@ -30,5 +35,14 @@ describe('buildTargetOptions', () => {
     expect(buildTargetOptions(programs, groups, false).some((o) => o.kind === 'audience')).toBe(
       false,
     )
+  })
+
+  it('keeps a stored admin-role audience selected when editing even though the picker no longer offers it', () => {
+    const options = buildTargetOptions(programs, [], true)
+    const source = makeAnnouncement({ audience: 'admins', program_ids: [], group_ids: [] })
+    const state = initialComposerState({ source, mode: 'edit', options, kinds: [], isAdmin: true })
+    expect(state.targets).toEqual([
+      { kind: 'audience', id: 'admins', label: 'Admins (role)', group: 'Audience' },
+    ])
   })
 })

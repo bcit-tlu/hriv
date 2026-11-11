@@ -109,6 +109,24 @@ export function buildTargetOptions(
   return options
 }
 
+/**
+ * A stored role audience the picker no longer offers (e.g. `admins`) still has to show as the
+ * post's current To: value, or editing would force a change of recipients to save.
+ */
+function legacyAudienceOption(source: ApiAnnouncement, options: TargetOption[]): TargetOption[] {
+  const audience = source.audience
+  if (audience === 'targeted' || options.some((o) => o.kind === 'audience' && o.id === audience))
+    return []
+  return [
+    {
+      kind: 'audience',
+      id: audience,
+      label: `${AUDIENCE_LABELS[audience] ?? audience} (role)`,
+      group: 'Audience',
+    },
+  ]
+}
+
 /** Sentinel audiences are exclusive: picking one clears everything else and vice versa. */
 export function reconcileTargets(previous: TargetOption[], next: TargetOption[]): TargetOption[] {
   const added = next.find((o) => !previous.includes(o))
@@ -146,11 +164,13 @@ export function initialComposerState(args: {
       title: duplicate ? `${source.title} (copy)` : source.title,
       message: source.message,
       kind: kinds.some((k) => k.kind === source.kind) ? source.kind : 'notice',
-      targets: options.filter((o) => {
-        if (o.kind === 'audience') return source.audience === o.id
-        if (o.kind === 'program') return source.program_ids.includes(o.id)
-        return source.group_ids.includes(o.id)
-      }),
+      targets: legacyAudienceOption(source, options).concat(
+        options.filter((o) => {
+          if (o.kind === 'audience') return source.audience === o.id
+          if (o.kind === 'program') return source.program_ids.includes(o.id)
+          return source.group_ids.includes(o.id)
+        }),
+      ),
       publishAt: duplicate ? '' : toLocalInput(source.publish_at),
       expiresAt: duplicate ? '' : toLocalInput(source.expires_at),
       pinned: source.pinned,
