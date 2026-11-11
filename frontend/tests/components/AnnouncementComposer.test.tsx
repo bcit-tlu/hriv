@@ -75,7 +75,6 @@ describe('composer helpers', () => {
     expect(buildTargetOptions(programs, groups, true).map((o) => o.label)).toEqual([
       'Everyone',
       'Admins, Instructors, and Staff',
-      'Admins',
       'Instructors',
       'Staff',
       'Histotech',

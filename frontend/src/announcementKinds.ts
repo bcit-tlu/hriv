@@ -127,12 +127,19 @@ export const AUDIENCE_LABELS: Partial<Record<AnnouncementAudience, string>> = {
   staff_only: 'Staff',
 }
 
+/** Program names that stand for the admin team; shown pluralised as "Admins". */
+export const ADMIN_PROGRAM_NAMES: ReadonlySet<string> = new Set(['Admin', 'Administration'])
+export const ADMIN_PROGRAM_LABEL = 'Admins'
+
 export function audienceChips(
   a: Pick<ApiAnnouncement, 'audience' | 'program_names' | 'group_names'>,
 ) {
   const label = AUDIENCE_LABELS[a.audience]
   if (label) return [label]
-  return [...a.program_names, ...a.group_names]
+  const programs = a.program_names.map((n) =>
+    ADMIN_PROGRAM_NAMES.has(n) ? ADMIN_PROGRAM_LABEL : n,
+  )
+  return [...programs, ...a.group_names]
 }
 
 /** Sort key for feeds: pinned first, then newest publish/notify time. */
