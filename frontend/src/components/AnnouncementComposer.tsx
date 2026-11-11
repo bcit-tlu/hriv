@@ -44,9 +44,55 @@ import {
   type TargetOption,
 } from '../announcementUtils'
 import MarkdownContent from './MarkdownContent'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
+import dayjs from 'dayjs'
+import {
+  PICKER_FORMAT,
+  expiryShortcuts,
+  publishShortcuts,
+  toPickerValue,
+} from '../announcementSchedule'
 
 function isVideo(contentType: string): boolean {
   return contentType.startsWith('video/')
+}
+
+interface OptionCheckboxProps {
+  id: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  label: string
+  /** Terse explanation of what the option does for readers. */
+  hint: string
+}
+
+function OptionCheckbox({ id, checked, onChange, label, hint }: OptionCheckboxProps) {
+  const hintId = `${id}-hint`
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={checked}
+            onChange={(e) => onChange(e.target.checked)}
+            slotProps={{ input: { 'aria-describedby': hintId } }}
+          />
+        }
+        label={label}
+        sx={{ mr: 0 }}
+      />
+      <Typography
+        id={hintId}
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: 'block', ml: 4, mt: -0.75 }}
+      >
+        {hint}
+      </Typography>
+    </Box>
+  )
 }
 
 export interface AnnouncementComposerProps {
@@ -338,39 +384,53 @@ function ComposerDialog({
           </Button>
           <Collapse in={moreOpen} unmountOnExit>
             <Stack spacing={2}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  label="Publish at"
-                  type="datetime-local"
-                  value={publishAt}
-                  onChange={(e) => setPublishAt(e.target.value)}
-                  helperText="Leave empty to post immediately"
-                  slotProps={{ inputLabel: { shrink: true } }}
-                  fullWidth
-                />
-                <TextField
-                  label="Expires at"
-                  type="datetime-local"
-                  value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
-                  helperText="Optional"
-                  slotProps={{ inputLabel: { shrink: true } }}
-                  fullWidth
-                />
-              </Stack>
-              <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap' }}>
-                <FormControlLabel
-                  control={
-                    <Checkbox checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
-                  }
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                  <DateTimePicker
+                    label="Publish at"
+                    value={publishAt ? dayjs(publishAt) : null}
+                    onChange={(next) => setPublishAt(toPickerValue(next))}
+                    format={PICKER_FORMAT}
+                    ampm={false}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        helperText: 'Leave empty to post immediately',
+                      },
+                      field: { clearable: true },
+                      shortcuts: { items: publishShortcuts() },
+                    }}
+                  />
+                  <DateTimePicker
+                    label="Expires at"
+                    value={expiresAt ? dayjs(expiresAt) : null}
+                    onChange={(next) => setExpiresAt(toPickerValue(next))}
+                    minDateTime={publishAt ? dayjs(publishAt) : undefined}
+                    format={PICKER_FORMAT}
+                    ampm={false}
+                    slotProps={{
+                      textField: { fullWidth: true, helperText: 'Optional' },
+                      field: { clearable: true },
+                      shortcuts: { items: expiryShortcuts(publishAt) },
+                    }}
+                  />
+                </Stack>
+              </LocalizationProvider>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
+                <OptionCheckbox
+                  id="announcement-pinned"
+                  checked={pinned}
+                  onChange={setPinned}
                   label="Pin to top"
+                  hint="Stays above newer posts and appears in the Home notices shelf while live"
                 />
                 {isAdmin && (
-                  <FormControlLabel
-                    control={
-                      <Checkbox checked={banner} onChange={(e) => setBanner(e.target.checked)} />
-                    }
+                  <OptionCheckbox
+                    id="announcement-banner"
+                    checked={banner}
+                    onChange={setBanner}
                     label="Show as banner"
+                    hint="Also shown in a bar at the top of every page until each reader closes it"
                   />
                 )}
                 {isEdit && (
