@@ -15,7 +15,12 @@ export interface AnnouncementReactionsProps {
   onToggleReaction?: (announcement: ApiAnnouncement, emoji: string) => void
 }
 
-/** Reaction pills plus the emoji picker; shared by the card and the banner (#1832). */
+/**
+ * Reaction pills plus the emoji picker (Announcements page only, #1832).
+ * One reaction per reader: the picker shows until they pick one; their own pill is outlined in the
+ * brand colour and pressing it withdraws the reaction (the picker returns). Other readers' pills
+ * are counts only.
+ */
 export default function AnnouncementReactions({
   announcement: a,
   onToggleReaction,
@@ -23,7 +28,9 @@ export default function AnnouncementReactions({
   const [pickerAnchor, setPickerAnchor] = useState<HTMLElement | null>(null)
   const entries = Object.entries(a.reactions).filter(([, count]) => count > 0)
   const canReact = Boolean(onToggleReaction) && a.status === 'live'
-  if (entries.length === 0 && !canReact) return null
+  const myEmoji = a.my_reactions[0]
+  const showPicker = canReact && myEmoji == null
+  if (entries.length === 0 && !showPicker) return null
 
   const closePicker = () => setPickerAnchor(null)
   const pick = (emoji: string) => {
@@ -34,22 +41,28 @@ export default function AnnouncementReactions({
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexWrap: 'wrap' }}>
       {entries.map(([emoji, count]) => {
-        const mine = a.my_reactions.includes(emoji)
+        const mine = emoji === myEmoji
+        const clickable = canReact && mine
         return (
           <Chip
             key={emoji}
             size="small"
-            label={`${reactionGlyph(emoji)} ${count}`}
+            variant="outlined"
             color={mine ? 'primary' : 'default'}
-            variant={mine ? 'filled' : 'outlined'}
-            aria-pressed={canReact ? mine : undefined}
-            aria-label={`${emoji} reaction, ${count}`}
-            onClick={canReact ? () => onToggleReaction?.(a, emoji) : undefined}
-            clickable={canReact}
+            label={`${reactionGlyph(emoji)} ${count}`}
+            aria-pressed={clickable ? true : undefined}
+            aria-label={
+              mine
+                ? `${emoji} reaction, ${count}, yours — press to withdraw`
+                : `${emoji} reaction, ${count}`
+            }
+            onClick={clickable ? () => onToggleReaction?.(a, emoji) : undefined}
+            clickable={clickable}
+            sx={mine ? { fontWeight: 600 } : undefined}
           />
         )
       })}
-      {canReact && (
+      {showPicker && (
         <>
           <Tooltip title="Add reaction">
             <IconButton
@@ -72,7 +85,6 @@ export default function AnnouncementReactions({
               <MenuItem
                 key={reaction.id}
                 aria-label={reaction.label}
-                selected={a.my_reactions.includes(reaction.id)}
                 onClick={() => pick(reaction.id)}
                 sx={{ px: 1, fontSize: '1.2rem', borderRadius: 1 }}
               >

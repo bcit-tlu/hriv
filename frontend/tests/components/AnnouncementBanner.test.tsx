@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import AnnouncementBanner from '../../src/components/AnnouncementBanner'
-import { makeAnnouncement } from '../announcementFixtures'
 
 function renderWithTheme(ui: React.ReactElement, mode: 'light' | 'dark' = 'light') {
   const theme = createTheme({ palette: { mode } })
@@ -88,26 +87,12 @@ describe('AnnouncementBanner (announcements epic)', () => {
     expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   })
 
-  it('shows the kind icon and right-aligned reaction pills + picker for a live post', () => {
-    const post = makeAnnouncement({ id: 7, kind: 'celebration', reactions: { hooray: 2 } })
-    const onToggleReaction = vi.fn()
-    renderWithTheme(
-      <AnnouncementBanner
-        title={post.title}
-        message={post.message}
-        kind={post.kind}
-        announcement={post}
-        onToggleReaction={onToggleReaction}
-        onDismiss={() => {}}
-      />,
-    )
+  it('shows the kind icon when a kind is given', () => {
+    renderWithTheme(<AnnouncementBanner title="Party" message="Cake at 3" kind="celebration" />)
     expect(screen.getByRole('img', { name: 'Celebration' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'hooray reaction, 2' }))
-    expect(onToggleReaction).toHaveBeenCalledWith(post, 'hooray')
-    expect(screen.getByRole('button', { name: 'Add reaction' })).toBeInTheDocument()
   })
 
-  it('hides the reaction picker when the banner has no announcement (login broadcast)', () => {
+  it('never shows reactions (they live on the Announcements page only)', () => {
     renderWithTheme(<AnnouncementBanner message="Welcome" kind="notice" variant="login" />)
     expect(screen.getByRole('img', { name: 'Notice' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add reaction' })).toBeNull()

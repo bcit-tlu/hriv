@@ -41,7 +41,7 @@ export interface AnnouncementCardProps {
 }
 
 const STATUS_COLOR = {
-  draft: 'default',
+  draft: 'warning',
   scheduled: 'default',
   live: 'success',
   expired: 'default',
@@ -76,6 +76,8 @@ export default function AnnouncementCard({
       data-seen={a.seen ? 'true' : 'false'}
       sx={{
         ...kindAlertSx(meta),
+        // Drafts sit on a grey wash so they read as "not published" at a glance.
+        ...(a.status === 'draft' ? { bgcolor: 'action.hover' } : {}),
         alignItems: 'flex-start',
         '& .MuiAlert-message': { flex: 1, minWidth: 0, py: 0.5 },
         boxShadow: highlighted ? (theme) => `0 0 0 2px ${theme.palette.primary.main}` : undefined,
@@ -116,7 +118,7 @@ export default function AnnouncementCard({
             size="small"
             label={ANNOUNCEMENT_STATUS_LABELS[a.status]}
             color={STATUS_COLOR[a.status]}
-            variant="outlined"
+            variant={a.status === 'draft' ? 'filled' : 'outlined'}
           />
         )}
         {manage && a.can_edit && (onEdit || onDuplicate || onDelete) && (

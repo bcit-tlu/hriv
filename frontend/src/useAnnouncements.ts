@@ -57,16 +57,17 @@ export function reuseUnchanged(
 const tokenAgesRef = new Map<number, number>()
 
 export function applyReactionToggle(a: ApiAnnouncement, emoji: string): ApiAnnouncement {
+  // One reaction per user: pressing own emoji removes it, any other emoji replaces it.
   const has = a.my_reactions.includes(emoji)
-  const count = (a.reactions[emoji] ?? 0) + (has ? -1 : 1)
   const reactions = { ...a.reactions }
-  if (count > 0) reactions[emoji] = count
-  else delete reactions[emoji]
-  return {
-    ...a,
-    reactions,
-    my_reactions: has ? a.my_reactions.filter((r) => r !== emoji) : [...a.my_reactions, emoji],
+  const bump = (key: string, delta: number) => {
+    const count = (reactions[key] ?? 0) + delta
+    if (count > 0) reactions[key] = count
+    else delete reactions[key]
   }
+  for (const mine of a.my_reactions) bump(mine, -1)
+  if (!has) bump(emoji, 1)
+  return { ...a, reactions, my_reactions: has ? [] : [emoji] }
 }
 
 /**

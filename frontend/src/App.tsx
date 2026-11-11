@@ -2414,8 +2414,6 @@ export default function App() {
             title={bannerPost.title}
             message={bannerPost.message}
             kind={bannerPost.kind}
-            announcement={bannerPost}
-            onToggleReaction={(ann, emoji) => void announcementsFeed.toggleReaction(ann, emoji)}
             onDismiss={() => announcementsFeed.markSeen(bannerPost)}
             moreCount={bannerCandidates.length - 1}
             onMore={() => openAnnouncementsPage()}
@@ -2476,7 +2474,7 @@ export default function App() {
             announcements={announcementsFeed.announcements}
             unseenCount={announcementsFeed.unseenCount}
             onOpenAnnouncements={(id) => openAnnouncementsPage(id)}
-            onToggleReaction={(a, emoji) => void announcementsFeed.toggleReaction(a, emoji)}
+            onMarkSeen={announcementsFeed.markSeen}
           />
         ) : null
       }
