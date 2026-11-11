@@ -277,6 +277,7 @@ export function firstLine(markdown: string): string {
 export function mergeStreams(inbox: ApiAnnouncement[], mine: ApiAnnouncement[]): ApiAnnouncement[] {
   const byId = new Map<number, ApiAnnouncement>()
   for (const a of mine) byId.set(a.id, a)
-  for (const a of inbox) byId.set(a.id, { ...byId.get(a.id), ...a })
+  // Keep the Inbox object itself (no clone) so unchanged rows keep their identity across polls.
+  for (const a of inbox) byId.set(a.id, a)
   return sortAnnouncements([...byId.values()])
 }
