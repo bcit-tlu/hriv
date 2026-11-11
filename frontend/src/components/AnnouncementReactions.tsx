@@ -48,7 +48,7 @@ export default function AnnouncementReactions({
             key={emoji}
             size="small"
             variant="outlined"
-            color={mine ? 'primary' : 'default'}
+            color="default"
             label={`${reactionGlyph(emoji)} ${count}`}
             aria-pressed={clickable ? true : undefined}
             aria-label={
@@ -58,7 +58,8 @@ export default function AnnouncementReactions({
             }
             onClick={clickable ? () => onToggleReaction?.(a, emoji) : undefined}
             clickable={clickable}
-            sx={mine ? { fontWeight: 600 } : undefined}
+            // Own pill: same soft grey as the picker, just bolder — no brand-colour outline.
+            sx={mine ? { fontWeight: 600, borderColor: 'text.disabled' } : undefined}
           />
         )
       })}
@@ -68,6 +69,7 @@ export default function AnnouncementReactions({
             <IconButton
               size="small"
               aria-label="Add reaction"
+              sx={{ color: 'text.disabled' }}
               onClick={(event: MouseEvent<HTMLElement>) => setPickerAnchor(event.currentTarget)}
             >
               <AddReactionOutlinedIcon fontSize="small" />
