@@ -131,14 +131,17 @@ export default function AnnouncementsPage({
     }
   }, [canCompose, isAdmin, currentUser.id, currentUser.program_ids])
 
-  // Mark live inbox posts seen once they are on screen (once per id/notified_at).
+  // Mark live inbox posts seen once they are on screen (once per id/notified_at). The viewer's
+  // own posts are left alone so authors see what readers see: their banner stays up until they
+  // close it and the post sits in their bell until they open it.
   useEffect(() => {
     // Deferred so the seen-state write never runs inside the render commit.
     const timer = window.setTimeout(() => {
-      for (const a of feed.announcements) if (!a.seen && a.status === 'live') feed.markSeen(a)
+      for (const a of feed.announcements)
+        if (!a.seen && a.status === 'live' && a.author_id !== currentUser.id) feed.markSeen(a)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [feed])
+  }, [feed, currentUser.id])
 
   const rows = useMemo(() => mergeStreams(feed.announcements, mine), [feed.announcements, mine])
   // Reactions are a reader feature: only posts the viewer receives (Inbox) accept them.
