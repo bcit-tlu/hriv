@@ -25,17 +25,49 @@ export interface UseAnnouncementsResult {
   toggleReaction: (announcement: ApiAnnouncement, emoji: string) => Promise<void>
 }
 
+/** Media tokens are re-minted on every response; refresh the ones we keep this often. */
+const TOKEN_REUSE_MS = 30 * 60_000
+
+function sameExceptTokens(a: ApiAnnouncement, b: ApiAnnouncement): boolean {
+  const strip = (row: ApiAnnouncement) => JSON.stringify({ ...row, media_tokens: null })
+  return strip(a) === strip(b)
+}
+
+/**
+ * Keep the previous row object (and its media tokens) for posts a poll did not change, so the
+ * cards do not re-render and `<img src>` does not flip to a new token every 30 s — that reload
+ * was visible as a periodic reflow. Tokens are still swapped every `TOKEN_REUSE_MS`.
+ */
+export function reuseUnchanged(
+  prev: ApiAnnouncement[],
+  next: ApiAnnouncement[],
+  tokenAges: Map<number, number> = tokenAgesRef,
+  now: number = Date.now(),
+): ApiAnnouncement[] {
+  const byId = new Map(prev.map((a) => [a.id, a]))
+  return next.map((row) => {
+    const old = byId.get(row.id)
+    const minted = tokenAges.get(row.id)
+    if (old && minted != null && now - minted < TOKEN_REUSE_MS && sameExceptTokens(old, row))
+      return old
+    tokenAges.set(row.id, now)
+    return row
+  })
+}
+const tokenAgesRef = new Map<number, number>()
+
 export function applyReactionToggle(a: ApiAnnouncement, emoji: string): ApiAnnouncement {
+  // One reaction per user: pressing own emoji removes it, any other emoji replaces it.
   const has = a.my_reactions.includes(emoji)
-  const count = (a.reactions[emoji] ?? 0) + (has ? -1 : 1)
   const reactions = { ...a.reactions }
-  if (count > 0) reactions[emoji] = count
-  else delete reactions[emoji]
-  return {
-    ...a,
-    reactions,
-    my_reactions: has ? a.my_reactions.filter((r) => r !== emoji) : [...a.my_reactions, emoji],
+  const bump = (key: string, delta: number) => {
+    const count = (reactions[key] ?? 0) + delta
+    if (count > 0) reactions[key] = count
+    else delete reactions[key]
   }
+  for (const mine of a.my_reactions) bump(mine, -1)
+  if (!has) bump(emoji, 1)
+  return { ...a, reactions, my_reactions: has ? [] : [emoji] }
 }
 
 /**
@@ -57,7 +89,7 @@ export function useAnnouncements(enabled: boolean): UseAnnouncementsResult {
       // A fresh fetch is the retry point for seen writes that failed earlier.
       for (const row of rows)
         if (!row.seen) seenKeysRef.current.delete(`${row.id}:${row.notified_at ?? ''}`)
-      setAnnouncements(sortAnnouncements(rows))
+      setAnnouncements((prev) => sortAnnouncements(reuseUnchanged(prev, rows)))
       setError(null)
     } catch (err) {
       if (signal?.aborted) return

@@ -19,19 +19,36 @@ export interface AnnouncementKindMeta {
   label: string
   Icon: SvgIconComponent
   severity: AnnouncementSeverity
+  /** Border/icon colour on cards and banners; one per kind so a re-kinded post visibly changes. */
+  accent: string
   /** Only admins may post this kind (product decision: the icon *is* the kind). */
   adminOnly: boolean
 }
 
 /** The controlled icon set — picking an icon picks the kind and its severity. */
 export const ANNOUNCEMENT_KINDS: readonly AnnouncementKindMeta[] = [
-  { kind: 'notice', label: 'Notice', Icon: CampaignIcon, severity: 'info', adminOnly: false },
-  { kind: 'event', label: 'Event', Icon: EventIcon, severity: 'info', adminOnly: false },
+  {
+    kind: 'notice',
+    label: 'Notice',
+    Icon: CampaignIcon,
+    severity: 'info',
+    accent: '#0288D1',
+    adminOnly: false,
+  },
+  {
+    kind: 'event',
+    label: 'Event',
+    Icon: EventIcon,
+    severity: 'info',
+    accent: '#7B1FA2',
+    adminOnly: false,
+  },
   {
     kind: 'reminder',
     label: 'Reminder',
     Icon: NotificationsActiveIcon,
     severity: 'info',
+    accent: '#00897B',
     adminOnly: false,
   },
   {
@@ -39,20 +56,38 @@ export const ANNOUNCEMENT_KINDS: readonly AnnouncementKindMeta[] = [
     label: 'Celebration',
     Icon: CelebrationIcon,
     severity: 'success',
+    accent: '#2E7D32',
     adminOnly: false,
   },
-  { kind: 'release', label: 'Release', Icon: RocketLaunchIcon, severity: 'info', adminOnly: true },
+  {
+    kind: 'release',
+    label: 'Release',
+    Icon: RocketLaunchIcon,
+    severity: 'info',
+    accent: '#3949AB',
+    adminOnly: true,
+  },
   {
     kind: 'warning',
     label: 'Important',
     Icon: WarningAmberIcon,
     severity: 'warning',
+    accent: '#ED6C02',
     adminOnly: true,
   },
 ]
 
 export function kindMeta(kind: string): AnnouncementKindMeta {
   return ANNOUNCEMENT_KINDS.find((k) => k.kind === kind) ?? ANNOUNCEMENT_KINDS[0]
+}
+
+/** Shared `sx` for the outlined, white-filled card/banner Alert with the kind's accent. */
+export function kindAlertSx(meta: AnnouncementKindMeta) {
+  return {
+    bgcolor: 'background.paper',
+    borderColor: meta.accent,
+    '& .MuiAlert-icon': { color: meta.accent },
+  }
 }
 
 export function kindsForRole(isAdmin: boolean): AnnouncementKindMeta[] {

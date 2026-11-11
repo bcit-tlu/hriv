@@ -13,7 +13,6 @@ from app import announcements as rules
 from app.models import Announcement, Group, Program, User
 from app.routers import announcements as router_module
 from app.routers.announcements import (
-    _feature_gate,
     _load_stats,
     add_reaction,
     create_announcement,
@@ -103,29 +102,10 @@ def _refresh_like_db(obj) -> None:
     obj.updated_at = obj.updated_at or NOW
 
 
-@pytest.fixture(autouse=True)
-def _enable_flag(monkeypatch):
-    monkeypatch.setattr(router_module.settings, "announcements_enabled", True)
-
-
 @pytest.fixture
 def no_stats():
     with patch.object(router_module, "_load_stats", AsyncMock(return_value={})) as mocked:
         yield mocked
-
-
-# ── feature gate ──────────────────────────────────────────────
-
-
-def test_feature_gate_404_when_disabled(monkeypatch) -> None:
-    monkeypatch.setattr(router_module.settings, "announcements_enabled", False)
-    with pytest.raises(HTTPException) as exc:
-        _feature_gate()
-    assert exc.value.status_code == 404
-    monkeypatch.setattr(router_module.settings, "announcements_enabled", True)
-    assert _feature_gate() is None
-    # Router-level so it runs before auth: disabled API is 404, never 401/403.
-    assert any(d.dependency is _feature_gate for d in router_module.router.dependencies)
 
 
 # ── visibility matrix (rules.can_view) ────────────────────────
@@ -608,6 +588,32 @@ async def test_reactions_add_is_idempotent_and_remove_toggles_off() -> None:
     assert db.commit.await_count == 2
 
 
+async def test_add_reaction_replaces_the_callers_previous_emoji() -> None:
+    """One reaction per user: picking another emoji swaps it, other users' stay."""
+    me = _user("student", id=5)
+    ann = _ann(reactions=[_reaction(6, "heart"), _reaction(5, "heart")])
+    db = _db(one=ann)
+
+    out = await add_reaction(10, "hooray", db, me)
+
+    assert out.reactions == {"heart": 1, "hooray": 1} and out.my_reactions == ["hooray"]
+    assert [(r.user_id, r.emoji) for r in ann.reactions] == [(6, "heart"), (5, "hooray")]
+    assert db.commit.await_count == 1
+
+
+async def test_add_reaction_collapses_legacy_multi_reactions_keeping_requested_row() -> None:
+    """Pre-0044 rows: a reader with two emojis who re-picks one keeps that row (no re-insert)."""
+    me = _user("student", id=5)
+    heart, hooray = _reaction(5, "heart"), _reaction(5, "hooray")
+    ann = _ann(reactions=[heart, hooray])
+    db = _db(one=ann)
+
+    out = await add_reaction(10, "heart", db, me)
+
+    assert ann.reactions == [heart] and out.my_reactions == ["heart"]
+    assert db.commit.await_count == 1
+
+
 async def test_reaction_allowlist_and_live_only() -> None:
     me = _user("student", id=5)
     with pytest.raises(HTTPException) as exc:
@@ -662,3 +668,11 @@ def test_literal_routes_not_shadowed_by_param_routes() -> None:
 def test_strip_media_tokens_canonicalises_pasted_urls() -> None:
     pasted = "![a](/api/media/12?token=abc.DEF-ghi_jkl) and /api/media/13?token=x.y.z\n/api/media/14"
     assert rules.strip_media_tokens(pasted) == "![a](/api/media/12) and /api/media/13\n/api/media/14"
+
+
+async def test_update_kind_on_migrated_release_note(no_stats) -> None:
+    """A changelog entry folded in by 0042 (Site author, ``staff``) can be re-kinded by an admin."""
+    ann = _ann(id=10, author_id=None, author=None, audience="staff", kind="release")
+    out = await update_announcement(10, AnnouncementUpdate(kind="celebration"), _update_db(ann), _user("admin", id=9))
+    assert ann.kind == "celebration" and ann.audience == "staff"
+    assert out.kind == "celebration" and out.severity == "success"

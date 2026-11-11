@@ -19,9 +19,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import announcements as rules
-from ..announcements import announcements_feature_gate as _feature_gate
 from ..auth import get_current_user, require_role
-from ..database import get_db, settings
+from ..database import get_db
 from ..models import (
     Announcement,
     AnnouncementReaction,
@@ -45,7 +44,7 @@ from ..schemas import (
 # The flag gate is a router-level dependency so it runs before any auth/role
 # dependency: a disabled API is uniformly 404, never 401/403.
 router = APIRouter(
-    prefix="/announcements", tags=["announcements"], dependencies=[Depends(_feature_gate)]
+    prefix="/announcements", tags=["announcements"]
 )
 
 _poster = require_role("admin", "instructor")
@@ -477,16 +476,33 @@ async def add_reaction(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ):
+    """Set the caller's single reaction: one emoji per user per post (product
+    decision); choosing another emoji replaces the previous one. Idempotent."""
     _validate_emoji(emoji)
     ann = await _reactable_or_error(db, announcement_id, current_user)
-    if not any(r.user_id == current_user.id and r.emoji == emoji for r in ann.reactions):
+    mine = [r for r in ann.reactions if r.user_id == current_user.id]
+    # Re-point the reader's existing row instead of delete + insert: the unit of work flushes
+    # inserts before deletes, so a fresh row would collide with uq_announcement_reactions_user.
+    keep = next((r for r in mine if r.emoji == emoji), None) or (mine[0] if mine else None)
+    changed = False
+    for reaction in mine:  # legacy pre-0044 extras
+        if reaction is not keep:
+            ann.reactions.remove(reaction)
+            changed = True
+    if keep is None:
         ann.reactions.append(
             AnnouncementReaction(announcement_id=ann.id, user_id=current_user.id, emoji=emoji)
         )
+        changed = True
+    elif keep.emoji != emoji:
+        keep.emoji = emoji
+        changed = True
+    if changed:
         try:
             await db.commit()
         except IntegrityError:
-            # A concurrent identical PUT won the unique constraint; idempotent.
+            # A concurrent PUT by the same reader won uq_announcement_reactions_user; the
+            # refreshed state below reports whichever emoji landed.
             await db.rollback()
         await db.refresh(ann)
     return ReactionsOut(

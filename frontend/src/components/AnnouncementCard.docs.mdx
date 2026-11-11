@@ -23,10 +23,12 @@ import * as AnnouncementCardStories from './AnnouncementCard.stories'
 
 ## Behaviour
 
-- The kind icon is the controlled set from `announcementKinds.ts`; its severity tints the card's
-  left border. Emoji are reactions only, never kinds.
+- The kind icon is the controlled set from `announcementKinds.ts`; each kind's accent colours the
+  card's border and icon on a plain paper background (the banner uses the same `kindAlertSx`).
+  Emoji are reactions only, never kinds.
+- Unseen live posts carry a **New** chip; seen posts render identically otherwise (`Seen (quiet)`).
 - The author falls back to **Site** when the account is gone (migrated release notes).
-- Seen posts stay in the Inbox but render quieter (`Seen (quiet)`); nothing is ever dismissed.
+- Seen posts stay in the Inbox; nothing is ever dismissed.
 - Reactions are optimistic; the picker offers the eight allowed ids.
 - `manage` adds Draft / Scheduled / Live / Expired chips. Edit / Duplicate / Delete appear only
   when the API says `can_edit`; co-managed rows show the author with "(co-managed)".

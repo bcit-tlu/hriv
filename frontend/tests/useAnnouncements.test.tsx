@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import * as api from '../src/api'
-import { applyReactionToggle, useAnnouncements } from '../src/useAnnouncements'
+import { applyReactionToggle, reuseUnchanged, useAnnouncements } from '../src/useAnnouncements'
 import { makeAnnouncement } from './announcementFixtures'
 
 vi.mock('../src/api', async () => {
@@ -31,9 +31,38 @@ describe('applyReactionToggle', () => {
     expect(added.my_reactions).toEqual(['rocket'])
   })
 
+  it("replaces the viewer's existing reaction when they pick another emoji", () => {
+    const a = makeAnnouncement({ reactions: { heart: 2, eyes: 1 }, my_reactions: ['heart'] })
+    const swapped = applyReactionToggle(a, 'eyes')
+    expect(swapped.reactions).toEqual({ heart: 1, eyes: 2 })
+    expect(swapped.my_reactions).toEqual(['eyes'])
+  })
+
   it('drops the key when the last reaction is removed', () => {
     const a = makeAnnouncement({ reactions: { eyes: 1 }, my_reactions: ['eyes'] })
     expect(applyReactionToggle(a, 'eyes').reactions).toEqual({})
+  })
+})
+
+describe('reuseUnchanged', () => {
+  it('keeps the previous row (and its media tokens) when only the tokens changed', () => {
+    const ages = new Map<number, number>()
+    const first = makeAnnouncement({ id: 1, media_tokens: { 5: 'tok-a' } })
+    const [kept] = reuseUnchanged([], [first], ages, 1_000)
+    expect(kept).toBe(first)
+    const polled = makeAnnouncement({ id: 1, media_tokens: { 5: 'tok-b' } })
+    const [again] = reuseUnchanged([first], [polled], ages, 2_000)
+    expect(again).toBe(first) // no <img src> flip → no reflow blip
+  })
+
+  it('takes the new row when anything else changed or the kept tokens are stale', () => {
+    const ages = new Map<number, number>()
+    const first = makeAnnouncement({ id: 1, media_tokens: { 5: 'tok-a' } })
+    reuseUnchanged([], [first], ages, 1_000)
+    const edited = makeAnnouncement({ id: 1, title: 'Edited', media_tokens: { 5: 'tok-b' } })
+    expect(reuseUnchanged([first], [edited], ages, 2_000)[0]).toBe(edited)
+    const stale = makeAnnouncement({ id: 1, media_tokens: { 5: 'tok-c' } })
+    expect(reuseUnchanged([first], [stale], ages, 2_000 + 31 * 60_000)[0]).toBe(stale)
   })
 })
 

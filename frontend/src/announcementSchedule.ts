@@ -51,3 +51,43 @@ export function expiryShortcuts(
     { label: 'End of month', getValue: () => endOfMonthAfter(start) },
   ]
 }
+
+export interface RangeShortcut {
+  label: string
+  publishAt: string
+  expiresAt: string
+}
+
+function endOfDay(day: Dayjs): Dayjs {
+  return day.endOf('day').second(0).millisecond(0)
+}
+
+/** 23:59 on the Sunday that ends `day`'s week (Monday-first). */
+function endOfWeek(day: Dayjs): Dayjs {
+  const daysAhead = (7 - day.day()) % 7
+  return endOfDay(day.add(daysAhead, 'day'))
+}
+
+/**
+ * Whole publish→expiry spans, shown as chips above both pickers. Spans that start today
+ * publish now; future spans publish at 9:00 on their first day. Each ends at 23:59.
+ */
+export function rangeShortcuts(now: Dayjs = dayjs()): RangeShortcut[] {
+  // In the last minute of a span (23:59) its end equals `now`; the API rejects expiry ≤ publish,
+  // so roll such spans forward by a day.
+  const range = (label: string, start: Dayjs, end: Dayjs): RangeShortcut => ({
+    label,
+    publishAt: toPickerValue(start),
+    expiresAt: toPickerValue(end.isAfter(start) ? end : end.add(1, 'day')),
+  })
+  const monday = nextMonday(now)
+  const firstOfNextMonth = atNine(now.add(1, 'month').startOf('month'))
+  return [
+    range('Today', now, endOfDay(now)),
+    range('This week', now, endOfWeek(now)),
+    range('Next week', monday, endOfWeek(monday)),
+    range('Next 2 weeks', now, endOfDay(now.add(13, 'day'))),
+    range('End of month', now, endOfMonthAfter(now)),
+    range('Next month', firstOfNextMonth, endOfDay(firstOfNextMonth.endOf('month'))),
+  ]
+}

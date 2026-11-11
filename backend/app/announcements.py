@@ -12,21 +12,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
 
-from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .authz import can_attach_program_to_category, can_manage_group
-from .database import settings
 from .models import ANNOUNCEMENT_STAFF_ROLES, Announcement, Group, Program, User
 
 SEEN_METADATA_KEY = "announcement_seen"
-
-
-def announcements_feature_gate() -> None:
-    """FastAPI dependency: 404 every epic-#1832 route while ``ANNOUNCEMENTS_ENABLED`` is off."""
-    if not settings.announcements_enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
 def utcnow() -> datetime:
@@ -86,11 +78,14 @@ async def mark_seen_atomic(
     }
     if markers:
         await db.execute(
+            # Explicit casts: asyncpg cannot infer the type of a bind used only as a
+            # jsonb key/operand ("could not determine data type of parameter $1").
             text(
                 "UPDATE users SET metadata = COALESCE(metadata, '{}'::jsonb) "
-                "|| jsonb_build_object(:key, "
-                "   COALESCE(metadata->:key, '{}'::jsonb) || CAST(:markers AS jsonb)) "
-                "WHERE id = :user_id"
+                "|| jsonb_build_object(CAST(:key AS text), "
+                "   COALESCE(metadata->CAST(:key AS text), '{}'::jsonb) "
+                "   || CAST(:markers AS jsonb)) "
+                "WHERE id = CAST(:user_id AS integer)"
             ),
             {"key": SEEN_METADATA_KEY, "markers": json.dumps(markers), "user_id": user.id},
         )

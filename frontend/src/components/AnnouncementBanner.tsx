@@ -8,10 +8,13 @@ import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
+import { kindAlertSx, kindMeta, type AnnouncementKindMeta } from '../announcementKinds'
 
 export interface AnnouncementBannerProps {
   message: string
   title?: string
+  /** Announcement kind: supplies the icon and accent colour (same as the card). */
+  kind?: string
   /** `login`: compact card above the login form. `app`: full-width strip under the AppBar. */
   variant?: 'login' | 'app'
   alertVariant?: AlertProps['variant']
@@ -26,13 +29,26 @@ export interface AnnouncementBannerProps {
   clamp?: boolean
 }
 
+/**
+ * Kind icon for cards and banners. Informational-icon convention: a non-interactive
+ * `role="img"` span carries the label — not `titleAccess` on the bare SVG (#1567).
+ */
+export function KindIcon({ meta }: { meta: AnnouncementKindMeta }) {
+  return (
+    <Box component="span" role="img" aria-label={meta.label} sx={{ display: 'inline-flex' }}>
+      <meta.Icon fontSize="inherit" />
+    </Box>
+  )
+}
+
 export default function AnnouncementBanner({
   message,
   title,
+  kind,
   variant = 'app',
-  alertVariant = 'standard',
+  alertVariant = 'outlined',
   color,
-  severity = 'info',
+  severity,
   onDismiss,
   moreCount = 0,
   onMore,
@@ -42,14 +58,15 @@ export default function AnnouncementBanner({
   if (!message && !title) return null
   const clamped = clamp && !expanded
   const longBody = message.length > 160 || message.includes('\n')
+  const meta = kind ? kindMeta(kind) : null
 
   const alert = (
     <Alert
       role="status"
-      severity={severity}
+      severity={severity ?? meta?.severity ?? 'info'}
       color={color}
       variant={alertVariant}
-      icon={false}
+      icon={meta ? <KindIcon meta={meta} /> : false}
       action={
         onDismiss && variant === 'app' ? (
           <IconButton
@@ -63,6 +80,7 @@ export default function AnnouncementBanner({
         ) : undefined
       }
       sx={{
+        ...(meta ? kindAlertSx(meta) : {}),
         alignItems: 'flex-start',
         '& .MuiAlert-message': { flex: 1, minWidth: 0, py: 0.5 },
         '& .MuiAlert-action': { mr: 0, pt: 0 },
@@ -87,7 +105,7 @@ export default function AnnouncementBanner({
         {message}
       </Typography>
       {(longBody && clamp) || moreCount > 0 ? (
-        <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap' }}>
           {longBody && clamp && (
             <Button
               size="small"

@@ -216,3 +216,23 @@ export const LongBodyClamped: Story = {
     await expect(canvas.getByRole('button', { name: 'Less' })).toBeVisible()
   },
 }
+
+export const KindIcon: Story = {
+  name: 'Kind Icon',
+  args: {
+    title: 'Open house this Friday',
+    message: 'Drop by the lab between 13:00 and 15:00 — bring your questions and a friend.',
+    kind: 'celebration',
+    variant: 'app',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole('img', { name: 'Celebration' })).toBeVisible()
+  },
+}
