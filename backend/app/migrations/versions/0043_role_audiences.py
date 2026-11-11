@@ -27,8 +27,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Single-role posts fold back into the widest role audience the old
     # schema can express rather than being dropped.
+    # Narrow, never widen: a single-role post becomes author-only (``targeted``
+    # with no program/group rows) rather than reaching all three staff roles.
     op.execute(
-        "UPDATE announcements SET audience = 'staff' "
+        "UPDATE announcements SET audience = 'targeted' "
         "WHERE audience IN ('admins','instructors','staff_only')"
     )
     op.drop_constraint("ck_announcements_audience", "announcements", type_="check")
