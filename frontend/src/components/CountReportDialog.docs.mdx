@@ -19,7 +19,12 @@ never named cell types, because the tool is a counter, not a classifier.
 
 The caption links to the in-app help dialog; results are ephemeral and are
 destroyed when the selection is cleared or the page unloads. There is no
-export, no editing and no per-group toggles.
+export and no per-group toggles. With the adjust callbacks wired (#1746)
+the report opens in **adjust** mode: the user can remove outlines (click
+again to undo), click a missed object to drop a median-sized outline, or
+drag to draw one — **Done** leaves a view-only report and **Adjust count**
+re-enters. Counts and the legend update live, and the adjustments stay
+client-side until the result expires.
 
 <Primary />
 

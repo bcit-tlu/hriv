@@ -37,6 +37,15 @@ Outlines are cut off exactly at the box edge. Objects you can partially see
 in the margin but that are centred outside the box are not counted — the
 same rule a person would use.
 
+## Fixing a count
+
+The report opens ready to adjust. **Click an outline** to remove it — it
+stays visible, dashed and dimmed, and a second click brings it back.
+**Click a missed object** to drop an outline on it, or **drag** around it
+to draw one; new outlines join the closest-sized group. **Reset** restores
+the original result, and **Done** locks the outlines for view-only
+inspection. Adjustments are never saved — recounting starts fresh.
+
 ## Results are temporary
 
 Counts are **not saved**. They disappear when you clear the selection
@@ -55,5 +64,5 @@ against the specimen. Expect weaker results for:
 - selections that are too large (the count may be refused — draw a smaller
   box or zoom in).
 
-If a count looks wrong, cancel it or clear the rectangle and try a tighter
-selection.
+If a count looks wrong, remove the outlines that shouldn't count or add
+the ones it missed — or cancel and try a tighter selection.

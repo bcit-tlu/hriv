@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, cancelCount, getCount, startCount } from './api'
 import type { ApiCountJob, ApiCountObject, ApiCountSelection, CountMode } from './api'
+import type { CountObject } from './countAdjust'
 
 export type CountPhase = 'starting' | 'queued' | 'running' | 'done' | 'failed'
 
@@ -43,6 +44,15 @@ export interface SelectionCountEntry {
   jobId: string | null
   result?: CountResult
   error?: CountErrorCode
+  /**
+   * Manual adjustment (#1746): combined indices the user marked removed.
+   * An index counts into ``result.objects`` first, then ``added`` —
+   * index ``objects.length + j`` refers to ``added[j]``. Client-side only;
+   * adjustments die with the ephemeral result.
+   */
+  removed?: number[]
+  /** Manual adjustment (#1746): outlines the user drew on the report. */
+  added?: CountObject[]
 }
 
 const POLL_BACKOFF_MS = [1000, 1500, 2000, 3000]
@@ -143,6 +153,39 @@ export function useSelectionCounts(imageId: number) {
     },
     [bumpGen, clearTimer],
   )
+
+  // --- Manual adjustment (#1746) -----------------------------------------
+  // Toggle-remove restores on a second click; added outlines behave the
+  // same — a soft-removed addition just stops counting until re-clicked.
+
+  const toggleObject = useCallback((key: string, index: number) => {
+    setEntries((prev) =>
+      prev.map((e) => {
+        if (e.key !== key) return e
+        const removed = e.removed ?? []
+        return {
+          ...e,
+          removed: removed.includes(index)
+            ? removed.filter((i) => i !== index)
+            : [...removed, index],
+        }
+      }),
+    )
+  }, [])
+
+  const addObject = useCallback((key: string, obj: CountObject) => {
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.key === key ? { ...e, added: [...(e.added ?? []), { ...obj, manual: true }] } : e,
+      ),
+    )
+  }, [])
+
+  const resetAdjustments = useCallback((key: string) => {
+    setEntries((prev) =>
+      prev.map((e) => (e.key === key ? { ...e, removed: undefined, added: undefined } : e)),
+    )
+  }, [])
 
   const applyJob = useCallback(
     (key: string, job: ApiCountJob) => {
@@ -267,5 +310,5 @@ export function useSelectionCounts(imageId: number) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageId])
 
-  return { entries, start, cancel, cancelAll }
+  return { entries, start, cancel, cancelAll, toggleObject, addObject, resetAdjustments }
 }
