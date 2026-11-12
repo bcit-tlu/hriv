@@ -18,9 +18,10 @@ implemented.
 
 ## User flow
 
-1. In the image viewer, the existing OSD **selection** toolbar button draws
-   a rectangle; a **Count objects** button appears above its top-right
-   corner and opens a small menu: **Cells** · **Nuclei**
+1. In the image viewer — or any collection-detail viewer pane while
+   counting is enabled (#1855) — the existing OSD **selection** toolbar
+   button draws a rectangle; a **Count objects** button appears above its
+   top-right corner and opens a small menu: **Cells** · **Nuclei**
    (`components/CountObjectsButton.tsx`).
 2. The frontend `POST`s `{mode, selection}` (level-0 image pixels) and polls
    with backoff (`useSelectionCounts.ts`), showing a progress snackbar with
