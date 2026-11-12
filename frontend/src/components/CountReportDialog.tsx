@@ -20,7 +20,7 @@
  * it stays visible in full-page mode.
  */
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import CloseIcon from '@mui/icons-material/Close'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
@@ -39,7 +39,7 @@ import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { alpha } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 
 import type { ApiCountObject, ApiCountSelection } from '../api'
 import {
@@ -53,11 +53,18 @@ import {
 import { countGroupColor, countGroupLabel } from '../countPalette'
 import { modeLabel } from '../countingUi'
 
-/** Delete affordance for adjust mode: a dark X with a white halo so it
- * reads on light previews and dark fills alike. */
-const REMOVE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/><path d="M7 7l10 10M17 7L7 17" stroke="#1f1f1f" stroke-width="2.5" stroke-linecap="round"/></svg>',
-)}") 12 12, pointer`
+/** Delete affordance for adjust mode: an X with a contrasting halo built
+ * from theme palette tokens, so it follows light/dark mode (#1746). */
+function useRemoveCursor(): string {
+  const theme = useTheme()
+  return useMemo(
+    () =>
+      `url("data:image/svg+xml,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke="${theme.palette.background.paper}" stroke-width="5" stroke-linecap="round"/><path d="M7 7l10 10M17 7L7 17" stroke="${theme.palette.text.primary}" stroke-width="2.5" stroke-linecap="round"/></svg>`,
+      )}") 12 12, pointer`,
+    [theme],
+  )
+}
 
 export interface CountReportDialogProps {
   open: boolean
@@ -99,6 +106,7 @@ function OutlineGroup({
   interactive: boolean
   onToggle: (index: number) => void
 }) {
+  const removeCursor = useRemoveCursor()
   const pts = obj.polygon.map(([x, y]) => `${x},${y}`).join(' ')
   const groupName = countGroupLabel(obj.group)
   const label = isRemoved
@@ -112,7 +120,7 @@ function OutlineGroup({
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? label : undefined}
       opacity={isRemoved ? 0.3 : 1}
-      style={{ cursor: interactive ? (isRemoved ? 'pointer' : REMOVE_CURSOR) : undefined }}
+      style={{ cursor: interactive ? (isRemoved ? 'pointer' : removeCursor) : undefined }}
       onClick={
         interactive
           ? (e) => {
