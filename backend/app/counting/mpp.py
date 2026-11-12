@@ -44,14 +44,36 @@ def mpp_from_metadata(metadata: dict | None) -> float | None:
     metadata = metadata or {}
     mpp = _positive_number(metadata.get("mpp_x"))
     if mpp is not None:
+        # Embedded calibration passes through unbounded — it predates the
+        # derived path and EM sources legitimately sit below _MIN_MPP.
         return mpp
     scale = _positive_number(metadata.get("measurement_scale"))
     if scale is None:
         return None
     # An absent unit means "um" — the metadata contract writes it
     # alongside the scale, but a missing key defaults sanely anyway.
-    um_per_unit = _UNIT_TO_UM.get(metadata.get("measurement_unit") or "um")
+    # Metadata is free-form: a non-string unit is unusable, not an error.
+    unit = metadata.get("measurement_unit") or "um"
+    um_per_unit = _UNIT_TO_UM.get(unit) if isinstance(unit, str) else None
     if um_per_unit is None:
         return None
     derived = um_per_unit / scale
     return derived if _MIN_MPP <= derived <= _MAX_MPP else None
+
+
+def nuclei_downsample(mpp: float | None, max_downsample: int) -> int:
+    """The fixed nuclei level rule, shared by API pre-flight and the worker.
+
+    With a known mpp, the coarsest ``d`` still inside the ~0.5 µm/px model
+    sweet spot (``mpp * d <= 0.5``); with none, level 0 — the
+    hematoxylin-mask diameter estimate merges dense tissue, so coarse
+    levels are unsafe. The worker applies this unconditionally in
+    ``pipeline._choose_downsample``; the router must plan the same level
+    so an over-budget selection is a 422, not a doomed queued job.
+    """
+    if mpp and mpp > 0:
+        d = max_downsample
+        while d > 1 and mpp * d > 0.5:
+            d //= 2
+        return d
+    return 1

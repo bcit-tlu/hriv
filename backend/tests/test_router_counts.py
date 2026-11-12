@@ -234,11 +234,11 @@ async def test_create_count_no_scale_metadata_mpp_none(
     record = await jobs.get_record(pool, out.job_id)
     assert record["mpp"] is None
 
-async def test_create_count_nuclei_derived_mpp_skips_level0_forcing(
+async def test_create_count_nuclei_derived_mpp_preflights_worker_level(
     monkeypatch, counting_tiles, pool
 ) -> None:
-    """Nuclei pre-flight forces ``downsample=1`` only when no pixel size
-    is known — an approved scale removes the forcing (#1868)."""
+    """Nuclei pre-flight plans the worker's fixed mpp level: at 0.25
+    µm/px (scale=4 px/µm) the shared rule picks d=2, not d=1 (#1868)."""
     _enable(monkeypatch, counting_tiles)
     _mock_pool(monkeypatch, pool)
     await _live_worker(pool)
@@ -251,7 +251,33 @@ async def test_create_count_nuclei_derived_mpp_skips_level0_forcing(
         IMAGE_ID, _body(mode="nuclei"), _user(), False, _db(img)
     )
     assert out.status == "queued"
-    assert plan_spy.call_args.kwargs["downsample"] is None
+    assert plan_spy.call_args.kwargs["downsample"] == 2
+
+async def test_create_count_nuclei_derived_mpp_too_large_422(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """#1868 review: a derived scale no longer admits selections the
+    worker cannot run. At mpp=0.25 the worker's rule fixes d=2; an
+    800×800 box is 160k px there — over budget — so the API must 422
+    rather than queue a job that would fail ``too_large``."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    monkeypatch.setattr(settings, "counting_nuclei_outliner", "instanseg")
+    monkeypatch.setattr(settings, "counting_max_pixels", 65_536)
+    monkeypatch.setattr(settings, "counting_classical_max_pixels", 2_000_000)
+    monkeypatch.setattr(settings, "counting_max_downsample", 8)
+    img = _image(
+        metadata_={"measurement_scale": 4.0, "measurement_unit": "um"}
+    )
+    body = CountCreate(
+        mode="nuclei",
+        selection=CountSelection(x=0, y=0, width=800, height=800),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_count(IMAGE_ID, body, _user(), False, _db(img))
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "selection_too_large"
 
 async def test_create_count_nuclei_no_mpp_forces_level0(
     monkeypatch, counting_tiles, pool

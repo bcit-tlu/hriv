@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user
 from ..auth_events import actor_log_fields
 from ..counting import jobs
-from ..counting.mpp import mpp_from_metadata
+from ..counting.mpp import mpp_from_metadata, nuclei_downsample
 from ..counting.stitch import (
     InvalidSelection,
     MissingTiles,
@@ -150,17 +150,19 @@ async def create_count(
                         classical_max_pixels=settings.counting_classical_max_pixels,
                     ),
                     max_downsample=settings.counting_max_downsample,
-                    # Nuclei without mpp always run at level 0 (the
-                    # hematoxylin estimate merges dense tissue); forcing
-                    # the same d=1 here surfaces selection_too_large at
-                    # enqueue instead of after a wasted queue slot.
+                    # Nuclei run at the worker's fixed level rule — level
+                    # 0 with no pixel size (the hematoxylin estimate merges
+                    # dense tissue), the mpp-derived level otherwise.
+                    # Planning the same d here surfaces selection_too_large
+                    # at enqueue instead of after a wasted queue slot.
                     downsample=(
-                        1
+                        nuclei_downsample(
+                            mpp, settings.counting_max_downsample
+                        )
                         if (
                             body.mode == "nuclei"
                             and settings.counting_nuclei_outliner
                             not in CHEAP_OUTLINERS
-                            and mpp is None
                         )
                         else None
                     ),

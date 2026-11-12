@@ -1,8 +1,8 @@
-"""Unit tests for ``counting.mpp.mpp_from_metadata`` (#1868)."""
+"""Unit tests for ``counting.mpp`` (#1868)."""
 
 import pytest
 
-from app.counting.mpp import mpp_from_metadata
+from app.counting.mpp import mpp_from_metadata, nuclei_downsample
 
 
 @pytest.mark.parametrize(
@@ -38,6 +38,10 @@ from app.counting.mpp import mpp_from_metadata
         ({"measurement_scale": 4.0, "measurement_unit": None}, 0.25),
         # Unknown unit or unusable scale -> absent.
         ({"measurement_scale": 4.0, "measurement_unit": "px"}, None),
+        # Free-form metadata: non-string units are unusable, not errors.
+        ({"measurement_scale": 4.0, "measurement_unit": ["um"]}, None),
+        ({"measurement_scale": 4.0, "measurement_unit": {"u": "um"}}, None),
+        ({"measurement_scale": 4.0, "measurement_unit": 5}, None),
         ({"measurement_scale": 0}, None),
         ({"measurement_scale": -3}, None),
         ({"measurement_scale": "4"}, None),
@@ -54,3 +58,25 @@ from app.counting.mpp import mpp_from_metadata
 )
 def test_mpp_from_metadata(metadata, expected) -> None:
     assert mpp_from_metadata(metadata) == expected
+
+
+@pytest.mark.parametrize(
+    "mpp,max_d,expected",
+    [
+        # No pixel size -> level 0 regardless of budget headroom.
+        (None, 8, 1),
+        (0, 8, 1),
+        (-1.0, 8, 1),
+        # Coarsest d inside the ~0.5 µm/px sweet spot.
+        (0.5, 8, 1),    # 0.5*2 > 0.5
+        (0.3, 8, 1),    # 0.3*2 > 0.5
+        (0.25, 8, 2),   # 0.25*2 = 0.5
+        (0.1, 8, 4),    # 0.1*4 = 0.4
+        (0.01, 8, 8),   # capped by max_downsample
+        (0.25, 1, 1),   # max_downsample itself bounds d
+        (0.25, 2, 2),
+    ],
+)
+def test_nuclei_downsample(mpp, max_d, expected) -> None:
+    """Must match ``pipeline._choose_downsample``'s nuclei branch."""
+    assert nuclei_downsample(mpp, max_d) == expected
