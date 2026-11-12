@@ -223,8 +223,6 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 ### Changed object counting (epic #1661 — stitch, count-job API, counting worker)
 
 - backend: `poetry run pytest tests/test_counting_stitch.py tests/test_router_counts.py tests/test_counting_worker.py tests/test_main.py tests/test_middleware.py`
-- Feature flag (`COUNTING_ENABLED`, `GET /api/features`, `CountingFeatureMiddleware`): also
-  `tests/test_database.py tests/test_schemas.py`.
 - pipeline/outliners/grouping/level rule (#1665):
   `poetry run pytest tests/test_counting_pipeline.py tests/test_counting_stitch.py`
 - frontend: `npm test -- useSelectionCounts countPalette CountObjectsButton

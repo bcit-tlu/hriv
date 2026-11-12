@@ -25,7 +25,7 @@ from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .upload_staging import UPLOAD_SPOOL_DIR_NAME
-from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, CountingFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
     announcements,
@@ -338,9 +338,6 @@ app.add_middleware(UploadBodyLimitMiddleware)
 # Registered inside MaintenanceMiddleware (Starlette runs the last-added
 # middleware first) so maintenance 503s win over the collections 404.
 app.add_middleware(CollectionsFeatureMiddleware)
-# Same inside-Maintenance layer as collections: maintenance 503s still win
-# over the counting 404.
-app.add_middleware(CountingFeatureMiddleware)
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
 
@@ -411,7 +408,6 @@ async def features() -> FeaturesOut:
         collections_home_shelf=(
             settings.collections_enabled and settings.collections_home_shelf
         ),
-        counting=settings.counting_enabled,
         announcements=True,
     )
 

@@ -1376,7 +1376,10 @@ class FeaturesOut(BaseModel):
     collections: bool
     collections_student_access: bool
     collections_home_shelf: bool
-    counting: bool
+    # Always true; kept for one release so SPAs built before the gate's
+    # removal (which hide the counting UI unless this is true) keep rendering
+    # it. Object counting is now always on (#1859).
+    counting: bool = True
     # Always true; kept for one release so SPAs built before the gate's removal
     # (which hide the announcement UI unless this is true) keep rendering it.
     announcements: bool = True

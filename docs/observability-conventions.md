@@ -1153,7 +1153,11 @@ Object count and processed stitched-pixel count per done job.
 
 ### `/api/metrics` counting gauges
 
-Rendered only when `counting_enabled`; absent otherwise so no false alerts:
+Rendered lazily on first scrape. `hriv_count_worker_up` is `0` when the
+state read succeeds but no worker heartbeat exists (no worker deployed or
+worker down — the `HRIVCountingWorkerDown` alert relies on exactly this),
+and `NaN` when the read itself fails (Redis unreachable, timeout, or a
+command error):
 
 - `hriv_count_queue_depth` — queued + executing arq count jobs (the
   arq sorted set holds executing jobs too, exactly as for the task queue)

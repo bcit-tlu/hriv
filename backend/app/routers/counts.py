@@ -5,11 +5,6 @@ can view — the same gate as ``GET /api/images/{id}`` (404, never 403).
 Jobs are Redis-only (no DB tables): a JSON record plus result with a short
 TTL. The API only validates and enqueues; counting runs on the dedicated
 counting worker, never in-process in the API pod.
-
-The whole surface is dark-launched: ``CountingFeatureMiddleware`` answers
-404 for ``/api/counts*`` and ``/api/images/{id}/counts`` while
-``COUNTING_ENABLED`` is off, and ``require_counting_enabled`` keeps the
-same 404 as a router-level second layer.
 """
 
 import contextlib
@@ -56,17 +51,6 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
-def require_counting_enabled() -> None:
-    """Router-wide gate for the ``COUNTING_ENABLED`` dark-launch flag.
-
-    Same 404 as an unknown route while the feature is off, mirroring
-    ``require_collections_enabled``. Evaluated per request so tests and
-    operators can flip it without rebuilding the app.
-    """
-    if not settings.counting_enabled:
-        raise HTTPException(status_code=404, detail="Not Found")
-
-
 # A cached pool can outlive Redis; connection/timeout failures on counting
 # operations surface as the stable 503 rather than a 500.
 _REDIS_ERRORS = (RedisError, OSError)
@@ -76,10 +60,7 @@ def _unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="counting_unavailable")
 
 
-router = APIRouter(
-    tags=["counts"],
-    dependencies=[Depends(require_counting_enabled)],
-)
+router = APIRouter(tags=["counts"])
 
 
 def _counting_health_key() -> str:

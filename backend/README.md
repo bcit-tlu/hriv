@@ -211,8 +211,7 @@ it with the API pod's more constrained resource envelope in mind.
 
 ## Object counting (epic #1661)
 
-The count-job API is dark-launched behind `COUNTING_ENABLED` (default
-`false`) and runs on a dedicated arq queue + worker
+The count-job API runs on a dedicated arq queue + worker
 (`COUNTING_QUEUE_NAME`, default `arq:counting`; start with
 `arq app.counting.worker.CountingWorkerSettings`). Budget, cap and TTL
 knobs: `COUNTING_MAX_PIXELS`, `COUNTING_MAX_DOWNSAMPLE`,

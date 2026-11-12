@@ -74,12 +74,11 @@ class Settings(BaseSettings):
     # Announcements stream (epic #1832): dark-launch flag for the new
     # /api/announcements surface and the Announcements UI. The legacy
 
-    # Object counting (epic #1661): dark-launch flag, dedicated arq
-    # queue/worker, pre-flight pixel budget, per-user job cap and ephemeral
-    # Redis result policy. Job state never touches Postgres. The budget,
-    # downsample and margin defaults are placeholders until the outliner
-    # spike (#1662) produces measured numbers — see docs/object-counting.md.
-    counting_enabled: bool = False
+    # Object counting (epic #1661): dedicated arq queue/worker, pre-flight
+    # pixel budget, per-user job cap and ephemeral Redis result policy.
+    # Job state never touches Postgres. The budget, downsample and margin
+    # defaults are placeholders until the outliner spike (#1662) produces
+    # measured numbers — see docs/object-counting.md.
     counting_queue_name: str = "arq:counting"
     counting_max_pixels: int = Field(default=750_000, ge=65_536)
     # Classical (scikit-image watershed) outliners are ~20x faster per MP

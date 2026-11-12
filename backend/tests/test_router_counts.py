@@ -27,7 +27,6 @@ from app.routers.counts import (
     create_count,
     delete_count,
     get_count,
-    require_counting_enabled,
 )
 from app.schemas import CountCreate, CountSelection
 
@@ -36,9 +35,7 @@ IMAGE_ID = 11
 TILE_SIZE = 254
 TILE_OVERLAP = 1
 
-
 # ── fixtures & helpers ────────────────────────────────────
-
 
 @pytest.fixture(scope="module")
 def counting_tiles(tmp_path_factory) -> Path:
@@ -55,13 +52,11 @@ def counting_tiles(tmp_path_factory) -> Path:
     )
     return base
 
-
 @pytest.fixture
 async def pool():
     pool = fake_aioredis.FakeRedis(decode_responses=True)
     yield pool
     await pool.aclose()
-
 
 def _user(role: str = "admin", id: int = 1) -> SimpleNamespace:
     return SimpleNamespace(
@@ -74,7 +69,6 @@ def _user(role: str = "admin", id: int = 1) -> SimpleNamespace:
         groups=[SimpleNamespace(id=2)],
         metadata_=None,
     )
-
 
 def _image(
     *,
@@ -89,24 +83,19 @@ def _image(
         category_id=3,
     )
 
-
 def _db(img: SimpleNamespace | None) -> AsyncMock:
     db = AsyncMock()
     db.get.return_value = img
     return db
-
 
 def _body(width: int = 200, height: int = 200, mode: str = "cells") -> CountCreate:
     return CountCreate(
         mode=mode, selection=CountSelection(x=10, y=10, width=width, height=height)
     )
 
-
 def _enable(monkeypatch: pytest.MonkeyPatch, tiles_dir: Path) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
     monkeypatch.setattr(settings, "tiles_dir", str(tiles_dir))
     monkeypatch.setattr(settings, "counting_queue_name", "arq:counting")
-
 
 def _mock_pool(monkeypatch: pytest.MonkeyPatch, pool) -> None:
     monkeypatch.setattr(
@@ -115,13 +104,10 @@ def _mock_pool(monkeypatch: pytest.MonkeyPatch, pool) -> None:
     if not hasattr(pool, "enqueue_job"):
         pool.enqueue_job = AsyncMock(return_value=SimpleNamespace())
 
-
 async def _live_worker(pool) -> None:
     await pool.set("arq:counting" + health_check_key_suffix, "alive")
 
-
 # ── feature flag / schema surface ─────────────────────────
-
 
 @pytest.mark.parametrize("reason,outcome", [
     ("selection_too_large", "rejected_too_large"),
@@ -138,33 +124,18 @@ def test_rejection_outcome_increments_counter(monkeypatch, reason, outcome) -> N
         1, {"mode": "nuclei", "outcome": outcome, "reason": reason}
     )
 
-
-def test_require_counting_enabled_404_when_off(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", False)
-    with pytest.raises(HTTPException) as exc:
-        require_counting_enabled()
-    assert exc.value.status_code == 404
-    assert exc.value.detail == "Not Found"
-
-
-def test_require_counting_enabled_passes_when_on(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
-    assert require_counting_enabled() is None
-
-
-def test_router_gated_by_counting_enabled_dependency() -> None:
-    gates = [dep.dependency for dep in counts_router.router.dependencies]
-    assert require_counting_enabled in gates
-
-
-async def test_features_reports_counting_flag(monkeypatch) -> None:
+async def test_features_reports_counting(monkeypatch, tmp_path) -> None:
+    """Counting is always on; /api/features keeps reporting true for SPAs
+    built before the gate's removal (#1859)."""
+    # app.main mkdirs the data dirs at import — point them at tmp first,
+    # mirroring test_main._fake_data_dir.
+    (tmp_path / "tiles").mkdir()
+    (tmp_path / "source_images").mkdir()
+    monkeypatch.setattr(settings, "tiles_dir", str(tmp_path / "tiles"))
+    monkeypatch.setattr(settings, "source_images_dir", str(tmp_path / "source_images"))
     from app.main import features
 
-    monkeypatch.setattr(settings, "counting_enabled", False)
-    assert (await features()).counting is False
-    monkeypatch.setattr(settings, "counting_enabled", True)
     assert (await features()).counting is True
-
 
 def test_count_selection_requires_positive_size() -> None:
     with pytest.raises(ValidationError):
@@ -172,9 +143,7 @@ def test_count_selection_requires_positive_size() -> None:
     with pytest.raises(ValidationError):
         CountSelection(x=0, y=0, width=10, height=-1)
 
-
 # ── POST /images/{id}/counts ──────────────────────────────
-
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
 async def test_create_count_202_for_every_role(
@@ -213,7 +182,6 @@ async def test_create_count_202_for_every_role(
     # The record exists before the enqueue and carries the owner set entry.
     assert await pool.sismember("count:user:5", out.job_id)
 
-
 async def test_create_count_student_hidden_image_404(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -230,7 +198,6 @@ async def test_create_count_student_hidden_image_404(
         )
     assert exc.value.status_code == 404
 
-
 async def test_create_count_student_inactive_image_404(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -243,7 +210,6 @@ async def test_create_count_student_inactive_image_404(
         )
     assert exc.value.status_code == 404
 
-
 async def test_create_count_missing_image_404(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -252,7 +218,6 @@ async def test_create_count_missing_image_404(
     with pytest.raises(HTTPException) as exc:
         await create_count(IMAGE_ID, _body(), _user(), False, _db(None))
     assert exc.value.status_code == 404
-
 
 async def test_create_count_external_dzi_409(
     monkeypatch, counting_tiles, pool
@@ -266,7 +231,6 @@ async def test_create_count_external_dzi_409(
     assert exc.value.status_code == 409
     assert exc.value.detail == "tiles_not_ready"
 
-
 async def test_create_count_missing_tiles_409(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -278,7 +242,6 @@ async def test_create_count_missing_tiles_409(
         await create_count(IMAGE_ID, _body(), _user(), False, _db(img))
     assert exc.value.status_code == 409
     assert exc.value.detail == "tiles_not_ready"
-
 
 async def test_create_count_invalid_selection_422(
     monkeypatch, counting_tiles, pool
@@ -295,7 +258,6 @@ async def test_create_count_invalid_selection_422(
         await create_count(IMAGE_ID, body, _user(), False, _db(_image()))
     assert exc.value.status_code == 422
     assert exc.value.detail == "invalid_selection"
-
 
 async def test_create_count_selection_too_large_422(
     monkeypatch, counting_tiles, pool
@@ -316,7 +278,6 @@ async def test_create_count_selection_too_large_422(
     assert exc.value.status_code == 422
     assert exc.value.detail == "selection_too_large"
 
-
 async def test_create_count_pool_unavailable_503(
     monkeypatch, counting_tiles
 ) -> None:
@@ -326,7 +287,6 @@ async def test_create_count_pool_unavailable_503(
         await create_count(IMAGE_ID, _body(), _user(), False, _db(_image()))
     assert exc.value.status_code == 503
     assert exc.value.detail == "counting_unavailable"
-
 
 async def test_create_count_no_live_worker_503(
     monkeypatch, counting_tiles, pool
@@ -339,7 +299,6 @@ async def test_create_count_no_live_worker_503(
     assert exc.value.status_code == 503
     assert exc.value.detail == "counting_unavailable"
 
-
 class _BrokenRedis:
     """A cached pool whose Redis connection has gone away."""
 
@@ -348,7 +307,6 @@ class _BrokenRedis:
             raise RedisConnectionError("Connection refused")
 
         return _fail
-
 
 async def test_create_count_redis_down_after_pool_cached_503(
     monkeypatch, counting_tiles
@@ -362,7 +320,6 @@ async def test_create_count_redis_down_after_pool_cached_503(
         await create_count(IMAGE_ID, _body(), _user(), False, _db(_image()))
     assert exc.value.status_code == 503
     assert exc.value.detail == "counting_unavailable"
-
 
 async def test_create_count_redis_drops_before_record_503(
     monkeypatch, counting_tiles, pool
@@ -379,9 +336,8 @@ async def test_create_count_redis_drops_before_record_503(
         await create_count(IMAGE_ID, _body(), _user(), False, _db(_image()))
     assert exc.value.status_code == 503
 
-
 async def test_get_and_delete_count_redis_down_503(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     monkeypatch.setattr(
         counts_router, "get_pool", AsyncMock(return_value=_BrokenRedis())
     )
@@ -393,7 +349,6 @@ async def test_get_and_delete_count_redis_down_503(monkeypatch) -> None:
             await make_call()
         assert exc.value.status_code == 503
         assert exc.value.detail == "counting_unavailable"
-
 
 async def test_write_result_inherits_record_ttl(pool) -> None:
     """Results expire with their record, not a fresh TTL (review finding)."""
@@ -408,7 +363,6 @@ async def test_write_result_inherits_record_ttl(pool) -> None:
     # No record to inherit from -> the configured TTL is the fallback.
     await jobs.write_result(pool, "orphan", {"total": 0}, 600)
     assert 120 < await pool.ttl("count:result:orphan") <= 600
-
 
 async def test_create_count_enqueue_failure_503_and_cleanup(
     monkeypatch, counting_tiles, pool
@@ -425,7 +379,6 @@ async def test_create_count_enqueue_failure_503_and_cleanup(
     assert await pool.smembers("count:user:1") == set()
     keys = await pool.keys("count:job:*")
     assert keys == []
-
 
 async def test_create_count_per_user_cap_429(
     monkeypatch, counting_tiles, pool
@@ -451,7 +404,6 @@ async def test_create_count_per_user_cap_429(
     # The failed reservation was rolled back.
     assert await pool.scard("count:user:1") == 3
 
-
 async def test_create_count_prunes_dead_reservations(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -476,14 +428,12 @@ async def test_create_count_prunes_dead_reservations(
     # Dead members were pruned; only the new job remains.
     assert await pool.smembers("count:user:1") == {out.job_id}
 
-
 # ── GET /counts/{job_id} ──────────────────────────────────
-
 
 async def test_get_count_queued_shows_position(
     monkeypatch, pool
 ) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     await jobs.create_record(
         pool, job_id="j1", user_id=1, image_id=IMAGE_ID,
@@ -501,9 +451,8 @@ async def test_get_count_queued_shows_position(
     assert out.total is None
     assert out.preview is None
 
-
 async def test_get_count_done_returns_result(monkeypatch, pool) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     await jobs.create_record(
         pool, job_id="j2", user_id=1, image_id=IMAGE_ID,
@@ -534,9 +483,8 @@ async def test_get_count_done_returns_result(monkeypatch, pool) -> None:
     assert out.preview == "data:image/jpeg;base64,AAAA"
     assert out.error is None
 
-
 async def test_get_count_failed_shows_error(monkeypatch, pool) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     await jobs.create_record(
         pool, job_id="j3", user_id=1, image_id=IMAGE_ID,
@@ -549,9 +497,8 @@ async def test_get_count_failed_shows_error(monkeypatch, pool) -> None:
     assert out.status == "failed"
     assert out.error == "no_tiles"
 
-
 async def test_get_count_other_user_404(monkeypatch, pool) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     await jobs.create_record(
         pool, job_id="j4", user_id=1, image_id=IMAGE_ID,
@@ -563,30 +510,26 @@ async def test_get_count_other_user_404(monkeypatch, pool) -> None:
         await get_count("j4", _user(id=99))
     assert exc.value.status_code == 404
 
-
 async def test_get_count_missing_404(monkeypatch, pool) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     with pytest.raises(HTTPException) as exc:
         await get_count("nope", _user())
     assert exc.value.status_code == 404
 
-
 async def test_get_count_pool_unavailable_503(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     monkeypatch.setattr(counts_router, "get_pool", AsyncMock(return_value=None))
     with pytest.raises(HTTPException) as exc:
         await get_count("j", _user())
     assert exc.value.status_code == 503
 
-
 # ── DELETE /counts/{job_id} ───────────────────────────────
-
 
 async def test_delete_count_cancels_and_removes_keys(
     monkeypatch, pool
 ) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     await jobs.create_record(
         pool, job_id="j5", user_id=1, image_id=IMAGE_ID,
@@ -608,13 +551,12 @@ async def test_delete_count_cancels_and_removes_keys(
 
     assert await pool.zrank(abort_jobs_ss, "j5") is not None
 
-
 @pytest.mark.parametrize("status_key", ["queued", "running"])
 async def test_delete_count_active_records_cancelled(
     monkeypatch, pool, status_key, caplog
 ) -> None:
     """DELETE of a queued/running job counts one `cancelled` outcome."""
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     counter = Mock()
     monkeypatch.setattr(jobs, "_count_jobs_counter", counter)
@@ -635,13 +577,12 @@ async def test_delete_count_active_records_cancelled(
     event = next(r for r in caplog.records if getattr(r, "event", None) == "count.cancelled")
     assert event.duration_ms >= 0
 
-
 @pytest.mark.parametrize("status_key", ["done", "failed"])
 async def test_delete_count_finished_records_no_metric(
     monkeypatch, pool, status_key
 ) -> None:
     """Clearing a done/failed job removes keys without a `cancelled` outcome."""
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     calls = []
     monkeypatch.setattr(
@@ -664,13 +605,12 @@ async def test_delete_count_finished_records_no_metric(
     assert await jobs.get_record(pool, "jf") is None
     assert await jobs.get_result(pool, "jf") is None
 
-
 async def test_delete_count_racing_worker_done_not_cancelled(
     monkeypatch, pool
 ) -> None:
     """Worker finishing mid-delete wins: `done` is not double-counted as
     `cancelled` — the status comes from the atomic delete_job."""
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     calls = []
     monkeypatch.setattr(
@@ -696,7 +636,6 @@ async def test_delete_count_racing_worker_done_not_cancelled(
     assert await jobs.get_record(pool, "jr") is None
     assert await jobs.get_result(pool, "jr") is None
 
-
 async def test_delete_job_returns_record_then_none(pool) -> None:
     await jobs.create_record(
         pool, job_id="jd", user_id=1, image_id=IMAGE_ID,
@@ -709,18 +648,16 @@ async def test_delete_job_returns_record_then_none(pool) -> None:
     assert deleted["status"] == jobs.STATUS_QUEUED
     assert await jobs.delete_job(pool, job_id="jd", user_id=1) is None
 
-
 async def test_delete_count_missing_is_idempotent_204(
     monkeypatch, pool
 ) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     resp = await delete_count("ghost", _user(), False)
     assert resp.status_code == 204
 
-
 async def test_delete_count_other_user_404(monkeypatch, pool) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
+
     _mock_pool(monkeypatch, pool)
     await jobs.create_record(
         pool, job_id="j6", user_id=1, image_id=IMAGE_ID,
@@ -734,72 +671,7 @@ async def test_delete_count_other_user_404(monkeypatch, pool) -> None:
     # The victim's keys survive someone else's cancel attempt.
     assert await jobs.get_record(pool, "j6") is not None
 
-
-# ── middleware 404 (flag off) ─────────────────────────────
-
-
-async def _invoke_mw(path: str, method: str = "POST") -> int:
-    from app.middleware import CountingFeatureMiddleware
-
-    messages: list[dict] = []
-
-    async def inner(scope, receive, send):
-        messages.append({"type": "http.response.start", "status": 200})
-        return None
-
-    async def receive():
-        return {"type": "http.request", "body": b"not-json"}
-
-    async def send(message):
-        messages.append(message)
-
-    mw = CountingFeatureMiddleware(app=inner)
-    scope = {"type": "http", "method": method, "path": path, "headers": []}
-    await mw(scope, receive, send)
-    starts = [m for m in messages if m["type"] == "http.response.start"]
-    return starts[-1]["status"]
-
-
-async def test_middleware_404s_counting_paths_when_off(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", False)
-    for path in (
-        "/api/counts",
-        "/api/counts/",
-        "/api/counts/abc123",
-        "/api/images/7/counts",
-        "/api/images/-1/counts",
-    ):
-        assert await _invoke_mw(path) == 404, path
-
-
-async def test_middleware_404s_malformed_post_before_parsing(
-    monkeypatch,
-) -> None:
-    """A malformed body still answers 404 — never a 422 — while off."""
-    monkeypatch.setattr(settings, "counting_enabled", False)
-    assert await _invoke_mw("/api/images/7/counts") == 404
-
-
-async def test_middleware_ignores_unrelated_paths(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", False)
-    for path in (
-        "/api/countsx",
-        "/api/images/7",
-        "/api/images/counts",
-        "/api/images/7/countsx",
-        "/api/features",
-    ):
-        assert await _invoke_mw(path) == 200, path
-
-
-async def test_middleware_passes_through_when_on(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "counting_enabled", True)
-    assert await _invoke_mw("/api/counts/abc") == 200
-    assert await _invoke_mw("/api/images/7/counts") == 200
-
-
 # ── plan_region reuse sanity (API pre-flight params) ──────
-
 
 def test_plan_region_rejects_what_router_rejects(counting_tiles) -> None:
     """The 422 paths above exercise these through the router directly."""
@@ -814,7 +686,6 @@ def test_plan_region_rejects_what_router_rejects(counting_tiles) -> None:
             dzi, Rect(0, 0, 800, 800),
             margin_px=32, max_pixels=65_536, max_downsample=1,
         )
-
 
 async def test_create_count_preflight_classical_budget_202(
     monkeypatch, counting_tiles, pool
@@ -837,7 +708,6 @@ async def test_create_count_preflight_classical_budget_202(
     )
     assert result.status == "queued"
 
-
 async def test_create_count_preflight_instanseg_budget_422(
     monkeypatch, counting_tiles, pool
 ) -> None:
@@ -857,7 +727,6 @@ async def test_create_count_preflight_instanseg_budget_422(
         await create_count(IMAGE_ID, body, _user(), False, _db(_image()))
     assert exc.value.status_code == 422
     assert exc.value.detail == "selection_too_large"
-
 
 async def test_create_count_nuclei_no_mpp_too_large_422(
     monkeypatch, counting_tiles, pool
@@ -883,7 +752,6 @@ async def test_create_count_nuclei_no_mpp_too_large_422(
         await create_count(IMAGE_ID, body, _user(), False, _db(img))
     assert exc.value.status_code == 422
     assert exc.value.detail == "selection_too_large"
-
 
 async def test_create_count_nuclei_malformed_mpp_treated_as_absent(
     monkeypatch, counting_tiles, pool

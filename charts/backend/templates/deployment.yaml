@@ -287,8 +287,6 @@ spec:
             # concurrency used by local-mode bulk imports.
             - name: WORKER_MAX_JOBS
               value: {{ .Values.redis.worker.maxJobs | quote }}
-            - name: COUNTING_ENABLED
-              value: {{ .Values.counting.enabled | quote }}
             - name: COUNTING_QUEUE_NAME
               value: {{ .Values.counting.queueName | quote }}
             - name: COUNTING_MAX_PIXELS

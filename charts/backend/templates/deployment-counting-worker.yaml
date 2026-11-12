@@ -51,8 +51,6 @@ spec:
             capabilities:
               drop: [ALL]
           env:
-            - name: COUNTING_ENABLED
-              value: {{ .Values.counting.enabled | quote }}
             - name: COUNTING_QUEUE_NAME
               value: {{ .Values.counting.queueName | quote }}
             - name: COUNTING_MAX_PIXELS

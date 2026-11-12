@@ -28,6 +28,7 @@ export interface GuidePageDef {
 export const GUIDE_PAGES: GuidePageDef[] = [
   { slug: 'index', title: 'Welcome' },
   { slug: 'browsing', title: 'Browsing & Viewing' },
+  { slug: 'object-counting', title: 'Object Counting' },
   { slug: 'categories', title: 'Managing Categories' },
   { slug: 'images', title: 'Managing Images' },
   { slug: 'groups', title: 'Managing Groups' },

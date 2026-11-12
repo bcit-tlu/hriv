@@ -2620,7 +2620,6 @@ export interface ApiFeatures {
   collections_student_access?: boolean
   collections: boolean
   collections_home_shelf: boolean
-  counting: boolean
   /** Epic #1832 — announcements stream, page and bell for all roles. */
 }
 

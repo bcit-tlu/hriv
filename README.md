@@ -31,42 +31,42 @@ API for the [password-management validation flow](docs/password-management.md).
 
 ### Role Capabilities
 
-| Capability                                             | Admin | Instructor | Staff | Student |
-| ------------------------------------------------------ | ----- | ---------- | ----- | ------- |
-| Browse categories & view images                        | Yes   | Yes        | Yes   | Yes†    |
-| Count objects in a selection (when `COUNTING_ENABLED`) | Yes   | Yes        | Yes   | Yes†    |
-| View image uploader name                               | Yes   | Yes        | No    | No      |
-| View collections (API; student deployment gate¶)       | Yes   | Yes        | Yes   | Yes¶    |
-| Create collections‖                                    | Yes   | Yes        | Yes   | Yes     |
-| Edit co-owned collections‖                             | Yes   | Yes        | Yes   | Yes     |
-| Delete own collections‖                                | Yes   | Yes        | Yes\* | Yes\*   |
-| Restrict collections to programs/groups‖               | Yes   | Yes\*      | No    | No      |
-| Manage collection owners‖                              | Yes   | Yes\*      | No    | No      |
-| Hide/show collections‖                                 | Yes   | Yes        | No    | No      |
-| Manage any collection (incl. orphaned)‖                | Yes   | No         | No    | No      |
-| Create/update categories                               | Yes   | Yes        | No    | No      |
-| Delete categories                                      | Yes   | Yes        | No    | No      |
-| Manage page (image table)                              | Yes   | Yes        | No    | No      |
-| Bulk import images                                     | Yes   | Yes        | No    | No      |
-| Manage programs                                        | Yes   | No         | No    | No      |
-| Manage groups                                          | Yes   | Yes\*      | No    | No      |
-| Restrict categories to groups                          | Yes   | Yes\*      | No    | No      |
-| Manage announcement                                    | Yes   | Yes        | No    | No      |
-| Read announcements (bell, Inbox, reactions)            | Yes   | Yes        | Yes   | Yes     |
-| Author announcements (Mine, composer)                  | Yes   | Yes        | No    | No      |
-| View component versions (About)                        | Yes   | Yes        | No    | No      |
-| Post release notes / warning announcements             | Yes   | No         | No    | No      |
-| Post announcements (targeted to own programs/groups)   | Yes   | Yes        | No    | No      |
-| Post `everyone`/`staff`/release/warning announcements  | Yes   | No         | No    | No      |
-| Read + react to announcements in their audience        | Yes   | Yes        | Yes   | Yes     |
-| See announcement seen counts                           | Yes   | Yes        | Yes   | No      |
-| Admin tab (backups)                                    | Yes   | No         | No    | No      |
-| User management (add/delete)                           | Yes   | No         | No    | No      |
-| Mint local password-setup links (People and API)       | Yes   | No         | No    | No      |
-| Change own password (local accounts)                   | Yes   | Yes        | Yes   | Yes     |
-| Set/regenerate/force another local password (People)   | Yes   | No         | No    | No      |
-| People tab (view users)                                | Yes   | No         | Yes‡  | No      |
-| List users (API)                                       | Yes   | Yes§       | Yes‡  | No      |
+| Capability                                            | Admin | Instructor | Staff | Student |
+| ----------------------------------------------------- | ----- | ---------- | ----- | ------- |
+| Browse categories & view images                       | Yes   | Yes        | Yes   | Yes†    |
+| Count objects in a selection                          | Yes   | Yes        | Yes   | Yes†    |
+| View image uploader name                              | Yes   | Yes        | No    | No      |
+| View collections (API; student deployment gate¶)      | Yes   | Yes        | Yes   | Yes¶    |
+| Create collections‖                                   | Yes   | Yes        | Yes   | Yes     |
+| Edit co-owned collections‖                            | Yes   | Yes        | Yes   | Yes     |
+| Delete own collections‖                               | Yes   | Yes        | Yes\* | Yes\*   |
+| Restrict collections to programs/groups‖              | Yes   | Yes\*      | No    | No      |
+| Manage collection owners‖                             | Yes   | Yes\*      | No    | No      |
+| Hide/show collections‖                                | Yes   | Yes        | No    | No      |
+| Manage any collection (incl. orphaned)‖               | Yes   | No         | No    | No      |
+| Create/update categories                              | Yes   | Yes        | No    | No      |
+| Delete categories                                     | Yes   | Yes        | No    | No      |
+| Manage page (image table)                             | Yes   | Yes        | No    | No      |
+| Bulk import images                                    | Yes   | Yes        | No    | No      |
+| Manage programs                                       | Yes   | No         | No    | No      |
+| Manage groups                                         | Yes   | Yes\*      | No    | No      |
+| Restrict categories to groups                         | Yes   | Yes\*      | No    | No      |
+| Manage announcement                                   | Yes   | Yes        | No    | No      |
+| Read announcements (bell, Inbox, reactions)           | Yes   | Yes        | Yes   | Yes     |
+| Author announcements (Mine, composer)                 | Yes   | Yes        | No    | No      |
+| View component versions (About)                       | Yes   | Yes        | No    | No      |
+| Post release notes / warning announcements            | Yes   | No         | No    | No      |
+| Post announcements (targeted to own programs/groups)  | Yes   | Yes        | No    | No      |
+| Post `everyone`/`staff`/release/warning announcements | Yes   | No         | No    | No      |
+| Read + react to announcements in their audience       | Yes   | Yes        | Yes   | Yes     |
+| See announcement seen counts                          | Yes   | Yes        | Yes   | No      |
+| Admin tab (backups)                                   | Yes   | No         | No    | No      |
+| User management (add/delete)                          | Yes   | No         | No    | No      |
+| Mint local password-setup links (People and API)      | Yes   | No         | No    | No      |
+| Change own password (local accounts)                  | Yes   | Yes        | Yes   | Yes     |
+| Set/regenerate/force another local password (People)  | Yes   | No         | No    | No      |
+| People tab (view users)                               | Yes   | No         | Yes‡  | No      |
+| List users (API)                                      | Yes   | Yes§       | Yes‡  | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
 they manage; admins manage and attach any group. Inherited program and group

@@ -379,7 +379,6 @@ redis:
 # selections against these budgets; jobs and results live ephemerally in
 # Redis on the dedicated arq:counting queue.
 counting:
-  enabled: false # COUNTING_ENABLED — dark-launch flag for the whole surface
   queueName: arq:counting
   maxPixels: 750000 # stitched level pixels per job (pre-flight cap, ML outliners)
   classicalMaxPixels: 2000000 # larger budget for the ~20x-faster classical outliners (#1719)
