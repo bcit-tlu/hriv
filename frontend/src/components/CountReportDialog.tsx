@@ -187,6 +187,12 @@ function SelectionOutlines({
       viewBox={vb}
       preserveAspectRatio="none"
       aria-hidden={!adjusting}
+      role={adjusting ? 'region' : undefined}
+      aria-label={
+        adjusting
+          ? 'Count preview: click an outline to remove it, click or drag to add one'
+          : undefined
+      }
       data-count-outlines
       sx={{
         position: 'absolute',
@@ -326,14 +332,17 @@ export default function CountReportDialog({
     const pt = toLevel0(e)
     if (!pt) return
     const r = Math.hypot(pt[0] - d.startX, pt[1] - d.startY)
-    if (!d.moved) {
-      // A click drops a median-sized outline centred on the pointer —
-      // "click the missed object" (#1746).
+    if (r < minDrag()) {
+      // A press that never became a drag is a click: drop a median-sized
+      // outline centred on the pointer — "click the missed object" (#1746).
+      // A drag that returned to its start adds nothing.
+      if (d.moved) return
       const fallback = Math.min(selection.width, selection.height) * 0.015
       const radius = medianRadius(visibleObjects(objects, addedList, removedSet), fallback)
       addOutline(circlePolygon(pt[0], pt[1], radius))
       return
     }
+    // A drag — including one that only crossed the threshold at release.
     addOutline(circlePolygon(d.startX, d.startY, r))
   }
 

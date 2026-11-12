@@ -3,19 +3,26 @@
  * auto-open once per job, Learn more -> help.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
-// jsdom has no Path2D — the canvas outline draw is a no-op here.
-vi.stubGlobal(
-  'Path2D',
-  class {
-    moveTo = vi.fn()
-    lineTo = vi.fn()
-    closePath = vi.fn()
-    addPath = vi.fn()
-  },
-)
+// jsdom has no Path2D — the canvas outline draw is a no-op here. Stubbed
+// per-test and restored after each so no canvas global leaks across tests.
+beforeEach(() => {
+  vi.stubGlobal(
+    'Path2D',
+    class {
+      moveTo = vi.fn()
+      lineTo = vi.fn()
+      closePath = vi.fn()
+      addPath = vi.fn()
+    },
+  )
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 const mocks = vi.hoisted(() => ({
   startCount: vi.fn(),
