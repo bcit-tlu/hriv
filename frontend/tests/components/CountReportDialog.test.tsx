@@ -182,8 +182,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     expect(props.onToggleObject).toHaveBeenCalledWith(0)
   })
 
-  it('removed outlines render dimmed with a restore label', async () => {
-    const user = userEvent.setup()
+  it('removed outlines render dimmed with a restore label', () => {
     renderDialog(adjustProps({ removed: [1] }))
     const removedG = document.querySelector('g[data-count-object="1"]')
     expect(removedG).toHaveAttribute('data-removed')
@@ -193,8 +192,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     ).toBeInTheDocument()
   })
 
-  it('a click on empty space adds a median-sized outline there', async () => {
-    const user = userEvent.setup()
+  it('a click on empty space adds a median-sized outline there', () => {
     const props = renderDialog(adjustProps())
     const svg = stubSvgRect()
     // Client (150,80) maps to level-0 (150 + 100, 80 + 50) = (250, 130) —
@@ -216,8 +214,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     expect(obj.centroid[1]).toBeCloseTo(130, 0)
   })
 
-  it('a drag adds an outline of the drawn radius', async () => {
-    const user = userEvent.setup()
+  it('a drag adds an outline of the drawn radius', () => {
     const props = renderDialog(adjustProps())
     const svg = stubSvgRect()
     fireEvent.pointerDown(svg, { button: 0, clientX: 100, clientY: 60 })
@@ -232,8 +229,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     }
   })
 
-  it('pressing an outline starts no draw — toggle only', async () => {
-    const user = userEvent.setup()
+  it('pressing an outline starts no draw — toggle only', () => {
     const props = renderDialog(adjustProps())
     stubSvgRect()
     const g = document.querySelector('g[data-count-object="0"]')!
@@ -242,8 +238,7 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     expect(props.onAddObject).not.toHaveBeenCalled()
   })
 
-  it('Reset is disabled until an adjustment exists', async () => {
-    const user = userEvent.setup()
+  it('Reset is disabled until an adjustment exists', () => {
     renderDialog(adjustProps())
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
   })
