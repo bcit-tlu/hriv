@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 
+import { countGroups, visibleObjects } from '../countAdjust'
 import { selectionToLevel0, type CountSelectionRect } from '../countingUi'
 import { useSelectionCounts } from '../useSelectionCounts'
 import CountObjectsButton from './CountObjectsButton'
@@ -40,7 +41,8 @@ export default function SelectionCountLayer({
   /** Hide the per-selection buttons (canvas edit mode / mid-drag). */
   hidden?: boolean
 }) {
-  const { entries, start, cancel, cancelAll } = useSelectionCounts(imageId)
+  const { entries, start, cancel, cancelAll, toggleObject, addObject, resetAdjustments } =
+    useSelectionCounts(imageId)
   const anchorsRef = useRef<Map<number, HTMLDivElement>>(new Map())
   const [reportKey, setReportKey] = useState<string | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -132,10 +134,11 @@ export default function SelectionCountLayer({
   const reportEntry = reportKey ? entries.find((e) => e.key === reportKey) : undefined
 
   // Polling updates `entries` every tick; only rebuild the canvas items
-  // when the SET of finished jobs changes, not per tick.
+  // when the SET of finished jobs or their adjustments change, not per
+  // tick. The canvas shows only objects still counted (#1746).
   const doneSignature = entries
     .filter((e) => e.phase === 'done' && e.result)
-    .map((e) => e.jobId ?? e.key)
+    .map((e) => `${e.jobId ?? e.key}:${e.removed?.length ?? 0}:${e.added?.length ?? 0}`)
     .join('|')
   const outlineItems = useMemo(
     () =>
@@ -143,7 +146,7 @@ export default function SelectionCountLayer({
         .filter((e) => e.phase === 'done' && e.result)
         .map((e) => ({
           selection: e.selection,
-          objects: e.result!.objects,
+          objects: visibleObjects(e.result!.objects, e.added ?? [], e.removed ?? []),
         })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [doneSignature],
@@ -199,21 +202,41 @@ export default function SelectionCountLayer({
         onDismissError={(key) => cancel(key)}
         onRetry={(e) => void start(e.key, e.label, e.selection, e.mode)}
       />
-      {reportEntry?.result ? (
-        <CountReportDialog
-          open
-          onClose={() => setReportKey(null)}
-          label={reportEntry.label}
-          mode={reportEntry.mode}
-          selection={reportEntry.selection}
-          total={reportEntry.result.total}
-          groups={reportEntry.result.groups}
-          objects={reportEntry.result.objects}
-          preview={reportEntry.result.preview}
-          onLearnMore={() => setHelpOpen(true)}
-          container={uiHost ?? viewer.container}
-        />
-      ) : null}
+      {reportEntry?.result
+        ? (() => {
+            const adjusted =
+              (reportEntry.removed?.length ?? 0) + (reportEntry.added?.length ?? 0) > 0
+            // Unadjusted reports show the API totals verbatim; adjusted
+            // ones derive from the objects still counted (#1746).
+            const visible = adjusted
+              ? visibleObjects(
+                  reportEntry.result.objects,
+                  reportEntry.added ?? [],
+                  reportEntry.removed ?? [],
+                )
+              : null
+            return (
+              <CountReportDialog
+                open
+                onClose={() => setReportKey(null)}
+                label={reportEntry.label}
+                mode={reportEntry.mode}
+                selection={reportEntry.selection}
+                total={visible ? visible.length : reportEntry.result.total}
+                groups={visible ? countGroups(visible) : reportEntry.result.groups}
+                objects={reportEntry.result.objects}
+                preview={reportEntry.result.preview}
+                onLearnMore={() => setHelpOpen(true)}
+                container={uiHost ?? viewer.container}
+                removed={reportEntry.removed}
+                added={reportEntry.added}
+                onToggleObject={(i) => toggleObject(reportEntry.key, i)}
+                onAddObject={(obj) => addObject(reportEntry.key, obj)}
+                onResetAdjustments={() => resetAdjustments(reportEntry.key)}
+              />
+            )
+          })()
+        : null}
       <CountHelpDialog
         open={helpOpen}
         onClose={() => setHelpOpen(false)}

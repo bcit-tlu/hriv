@@ -34,6 +34,25 @@ CountReportDialog.tsx`): the stitched preview with outlines clipped to
 Every selection is its own job — overlapping selections each get discrete
 outlines and a discrete legend; jobs never share or merge results.
 
+### Manual adjustment (#1746)
+
+The report's **Adjust count** mode lets the user correct an imperfect
+result client-side:
+
+- **Click an outline** to remove it — it stays visible dashed and dimmed,
+  and a second click restores it. Removing the last object of a group
+  drops its legend row.
+- **Click a missed object** to drop an outline there (sized to the median
+  of the current objects), or **drag** to draw a circle of any size.
+- Added outlines join the **nearest-size group** (closest mean polygon
+  area), since groups are unnamed appearance clusters. **Reset** restores
+  the original result.
+
+The chip, legend and the outlines on the viewer update live. Adjustments
+are React state only — nothing is written back to Redis or the database,
+and they die with the ephemeral result (`countAdjust.ts` holds the pure
+helpers; `useSelectionCounts` tracks `removed`/`added` per entry).
+
 ## How it works
 
 ### Server-side stitching (#1663)
@@ -258,6 +277,12 @@ This fixture exercises the workflow, not blood-smear counting accuracy.
   counting gauges, Grafana "Object counting" panels, flux-fleet alerts.
 - **#1670** — lab-burst load test (done — see Capacity); **#1671** —
   docs/user validation.
+- **#1746** — manual report adjustment (landed): click-to-remove/restore
+  outlines, click/drag to add, nearest-area group assignment,
+  `countAdjust.ts` + `removed`/`added` entry state.
+- **#1855** — counting in collection detail viewers (landed):
+  `countingEnabled` forwarded page → sequence/synchronized viewers →
+  `ImageViewer`.
 
 ## Models and pipeline (#1665)
 

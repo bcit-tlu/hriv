@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 
 import CountReportDialog from './CountReportDialog'
 import type { ApiCountObject } from '../api'
+import { circlePolygon } from '../countAdjust'
 
 function roundPolygon(cx: number, cy: number, r: number): [number, number][] {
   return Array.from({ length: 14 }, (_, i) => {
@@ -91,5 +93,38 @@ export const NoObjects: Story = {
     total: 0,
     groups: [],
     objects: [],
+  },
+}
+
+// #1746: adjust mode — two outlines marked removed (dashed/dimmed), one
+// user-drawn circle appended; the legend and chip show the adjusted counts.
+export const AdjustMode: Story = {
+  args: {
+    total: 44,
+    groups: [
+      { group: 0, count: 29 },
+      { group: 1, count: 13 },
+      { group: 2, count: 2 },
+    ],
+    objects: OBJECTS,
+    removed: [3, 17],
+    added: [
+      {
+        group: 1,
+        centroid: [520, 250],
+        polygon: circlePolygon(520, 250, 15),
+        manual: true,
+      },
+    ],
+    onToggleObject: () => {},
+    onAddObject: () => {},
+    onResetAdjustments: () => {},
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body)
+    await userEvent.click(canvas.getByRole('button', { name: 'Adjust count' }))
+    await expect(
+      canvas.getByText(/Click an outline to remove it — click again to undo/),
+    ).toBeVisible()
   },
 }

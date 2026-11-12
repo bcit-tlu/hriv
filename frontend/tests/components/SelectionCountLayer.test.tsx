@@ -6,6 +6,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 
+// jsdom has no Path2D — the canvas outline draw is a no-op here.
+vi.stubGlobal(
+  'Path2D',
+  class {
+    moveTo = vi.fn()
+    lineTo = vi.fn()
+    closePath = vi.fn()
+    addPath = vi.fn()
+  },
+)
+
 const mocks = vi.hoisted(() => ({
   startCount: vi.fn(),
   getCount: vi.fn(),
@@ -254,6 +265,85 @@ describe('SelectionCountLayer', () => {
         fireEvent.click(screen.getByRole('button', { name: 'View results (2)' }))
       })
       expect(screen.getByText('Object count report')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('adjust mode: removing an outline decrements the total and group rows (#1746)', async () => {
+    const objects = [
+      {
+        group: 0,
+        centroid: [5, 5] as [number, number],
+        polygon: [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ] as [number, number][],
+      },
+      {
+        group: 0,
+        centroid: [25, 5] as [number, number],
+        polygon: [
+          [20, 0],
+          [30, 0],
+          [30, 10],
+          [20, 10],
+        ] as [number, number][],
+      },
+      {
+        group: 1,
+        centroid: [45, 5] as [number, number],
+        polygon: [
+          [40, 0],
+          [50, 0],
+          [50, 10],
+          [40, 10],
+        ] as [number, number][],
+      },
+    ]
+    mocks.startCount.mockResolvedValue({ job_id: 'j1', status: 'queued', queue_position: 0 })
+    mocks.getCount.mockResolvedValue(
+      job({
+        status: 'done',
+        total: 3,
+        groups: [
+          { group: 0, count: 2 },
+          { group: 1, count: 1 },
+        ],
+        objects,
+        preview: 'data:image/jpeg;base64,x',
+      }),
+    )
+    vi.useFakeTimers()
+    try {
+      renderLayer({ selections: [SELECTIONS[0]] })
+      fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(screen.getByText('3 objects found')).toBeInTheDocument()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Adjust count' }))
+      })
+      await act(async () => {
+        fireEvent.click(screen.getAllByRole('button', { name: /outline — activate to remove/ })[0])
+      })
+      expect(screen.getByText('2 objects found')).toBeInTheDocument()
+      // Group 1 drops to 1, Group 2 keeps 1, total row follows.
+      expect(screen.getAllByText('1', { selector: 'p' }).length).toBeGreaterThanOrEqual(2)
+      // Re-click restores the outline and the count.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: /outline — removed; activate to restore/ }),
+        )
+      })
+      expect(screen.getByText('3 objects found')).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }
