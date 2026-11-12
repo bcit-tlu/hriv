@@ -63,9 +63,9 @@ _execution_mode = Gauge(
 )
 
 # Counting-queue gauges (#1661/#1669). Created lazily on first render.
-# hriv_count_worker_up is 0 when Redis is reachable but the worker
+# hriv_count_worker_up is 0 when the state read succeeds but the worker
 # heartbeat key is absent — truthfully signalling "no worker" — and NaN
-# only when Redis itself is unreachable.
+# when the read itself fails (Redis unreachable, timeout, command error).
 _count_gauges: dict[str, Gauge] = {}
 
 
