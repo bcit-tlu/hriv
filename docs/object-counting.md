@@ -310,6 +310,11 @@ data) — the `Outliner` protocol remains the plugin point.
   field collapsed into blobs, so d stays 1 — and a large box over such a
   field can be rejected `too_large` rather than silently counting nothing.
   Never upscale; over budget at that `d` → `too_large`.
+- **Pixel size (mpp)** comes from image metadata at enqueue
+  (`app/counting/mpp.py`): `mpp_x` (pyramidal/TIFF calibration) wins;
+  otherwise `unit / measurement_scale` from an approved measurement
+  finding (#1868) — so measurement review calibrates counting too.
+  Without either, nuclei assumes InstanSeg's native 0.5 µm/px.
 - **Stain filter** (nuclei only): objects with mean CIELAB `b* > -5` are
   dropped after the centroid edge rule.
 - **Grouping**: GaussianMixture+BIC in `[log(area)/ln(2.5), a*/10, b*/10]`,
