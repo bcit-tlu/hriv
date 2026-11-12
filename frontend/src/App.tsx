@@ -2526,6 +2526,7 @@ export default function App() {
               currentUser={currentUser}
               programs={programs}
               groups={groups}
+              countingEnabled={features?.counting === true}
               collections={collectionsData.collections}
               loading={collectionsData.loading}
               error={collectionsData.error}

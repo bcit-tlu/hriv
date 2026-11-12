@@ -1370,6 +1370,16 @@ describe('CollectionsPage', () => {
       expect(onViewerError).toHaveBeenCalledWith('boom')
     })
 
+    it('forwards countingEnabled to the detail viewers (#1855)', () => {
+      const detail = makeCollection({ id: 9, type: 'sequence' })
+      renderPage({ selectedCollectionId: 9, detail, countingEnabled: true })
+      expect(sequenceViewerProps.current?.countingEnabled).toBe(true)
+
+      const sync = makeCollection({ id: 9, type: 'synchronized' })
+      renderPage({ selectedCollectionId: 9, detail: sync, countingEnabled: true })
+      expect(synchronizedViewerProps.current?.countingEnabled).toBe(true)
+    })
+
     it('still mounts the viewer when a synchronized collection has no images', () => {
       renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, images: [] }) })
       // The empty-state fallback itself is covered by the viewer's own tests.

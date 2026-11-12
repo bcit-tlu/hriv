@@ -1400,6 +1400,14 @@ render read-only via `canvasAnnotationsFromMetadata` /
 (`components/imageViewerUtils.ts`). **Open image** navigates to the normal
 `?image={id}` view where annotations can be edited.
 
+**Object counting (#1855).** While the deployment's `counting` flag is on,
+the viewer's selection-rectangle → **Count objects** flow works on the
+current member exactly as in the image viewer
+([object-counting.md](object-counting.md)). Jobs stay ephemeral per
+selection and are cancelled when an item change remounts the viewer.
+Member visibility already matches the count endpoint's gate, so no extra
+authorization is needed.
+
 **Caption.** A caption row under the viewport — the same `ImageCaptionRow`
 the synchronized panes and the image-view info bar use — holds the member
 name as an `h2` (left), then, when the image has a note, a visible
@@ -1537,6 +1545,12 @@ three/four-pane grid has a 200px minimum and the grid rows honor that floor;
 the grid pane area's minimum follows its rows' intrinsic content, so the
 page grows and scrolls when they cannot fit. The two-pane row layout is
 unchanged; its pane-area minimum dropped from 320px to 260px (#1683).
+
+**Object counting (#1855).** While the deployment's `counting` flag is on,
+each pane's selection-rectangle → **Count objects** flow works
+independently — jobs, outlines and the report belong to that pane's image
+and do not sync to the other panes
+([object-counting.md](object-counting.md)).
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw
