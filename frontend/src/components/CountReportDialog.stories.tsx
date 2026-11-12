@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, within } from 'storybook/test'
 
 import CountReportDialog from './CountReportDialog'
 import type { ApiCountObject } from '../api'
@@ -96,8 +96,9 @@ export const NoObjects: Story = {
   },
 }
 
-// #1746: adjust mode — two outlines marked removed (dashed/dimmed), one
-// user-drawn circle appended; the legend and chip show the adjusted counts.
+// #1746: adjust mode — the report opens in it. Two outlines marked
+// removed (dashed/dimmed), one user-drawn circle appended; the legend and
+// chip show the adjusted counts.
 export const AdjustMode: Story = {
   args: {
     total: 44,
@@ -122,7 +123,6 @@ export const AdjustMode: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    await userEvent.click(canvas.getByRole('button', { name: 'Adjust count' }))
     await expect(
       canvas.getByText(/Click an outline to remove it — click again to undo/),
     ).toBeVisible()

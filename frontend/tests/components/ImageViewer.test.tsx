@@ -1667,9 +1667,9 @@ describe('ImageViewer object counting (#1667)', () => {
     )
     // Menus portal into viewer.container (visible in OSD full-page mode).
     await waitFor(() =>
-      expect(within(viewer().container).getByRole('menuitem', { name: /Cells/ })).toBeTruthy(),
+      expect(within(viewer().container).getByRole('menuitem', { name: /Objects/ })).toBeTruthy(),
     )
-    fireEvent.click(within(viewer().container).getByRole('menuitem', { name: /Cells/ }))
+    fireEvent.click(within(viewer().container).getByRole('menuitem', { name: /Objects/ }))
     await waitFor(() =>
       expect(apiMocks.startCount).toHaveBeenCalledWith(7, 'cells', {
         x: 100,
@@ -1688,7 +1688,7 @@ describe('ImageViewer object counting (#1667)', () => {
         name: 'Count objects in selection 1',
       }),
     )
-    fireEvent.click(await within(viewer().container).findByRole('menuitem', { name: /Cells/ }))
+    fireEvent.click(await within(viewer().container).findByRole('menuitem', { name: /Objects/ }))
     await waitFor(() => expect(apiMocks.startCount).toHaveBeenCalled())
     await waitFor(() =>
       expect(within(viewer().container).getByText(/Counting…|Queued/)).toBeTruthy(),

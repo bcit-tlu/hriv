@@ -116,12 +116,15 @@ UI steps (frontend landed with #1667/#1668):
    seeded image with local tiles).
 2. Toolbar **selection** button → drag a rectangle. A **Count objects**
    button appears above its top-right corner.
-3. Choose **Cells** or **Nuclei**. A progress snackbar shows the queue
+3. Choose **Objects** or **Nuclei**. A progress snackbar shows the queue
    position; the report dialog opens on completion with outlines, an
    unnamed **Group n** legend and a total.
-4. Close the report — outlines stay on the viewer. Reopen with **View
-   results (N)** on the rectangle's button; **Cancel count** lives in its
-   dropdown. Clear-all removes selections, outlines and results.
+4. The report opens in adjust mode (#1746): click an outline to remove it
+   (click again to restore), click a missed object or drag to add an
+   outline, **Reset** restores, **Done** leaves view-only. Close the
+   report — outlines stay on the viewer. Reopen with **View results (N)**
+   on the rectangle's button; **Cancel count** lives in its dropdown.
+   Clear-all removes selections, outlines and results.
 
 ## Devin Secrets Needed
 

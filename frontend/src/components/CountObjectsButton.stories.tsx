@@ -46,7 +46,7 @@ export const Basic: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Count objects in selection 2' }))
     const menu = await within(canvasElement.ownerDocument.body).findByRole('menuitem', {
-      name: /Cells/,
+      name: /Objects/,
     })
     await expect(menu).toBeInTheDocument()
   },

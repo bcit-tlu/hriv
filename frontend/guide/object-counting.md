@@ -8,7 +8,7 @@ appearance (size, colour, texture) into unnamed groups (Group 1, Group 2, …).
 ## How to use it
 
 1. Click the **selection** button in the viewer toolbar and drag a rectangle.
-2. Click **Count objects** above the rectangle and choose **Cells** or
+2. Click **Count objects** above the rectangle and choose **Objects** or
    **Nuclei**.
 3. The report opens when counting finishes: outlines clipped to the
    selection, a group legend with counts, and a total. Reopen it any time
@@ -17,14 +17,15 @@ appearance (size, colour, texture) into unnamed groups (Group 1, Group 2, …).
 Every selection rectangle is its own count — overlapping selections each get
 their own outlines and legend.
 
-## Cells or Nuclei?
+## Objects or Nuclei?
 
-- **Cells** outlines whole cells by their stained shape — best for blood
-  smears and other preparations where cells sit apart from each other.
-- **Nuclei** outlines cell nuclei with a model trained on brightfield
-  tissue and cytology images. Only blue/purple (hematoxylin-stained)
-  objects are kept, so pink or red objects such as red blood cells are
-  ignored in this mode.
+- **Objects** outlines discrete objects by their stained shape — a
+  general-purpose outliner for preparations where objects sit apart from
+  each other (blood smears, particles, droplets).
+- **Nuclei** outlines nuclei with a model trained on brightfield tissue
+  and cytology images. Only blue/purple (hematoxylin-stained) objects are
+  kept, so pink or red objects such as red blood cells are ignored in this
+  mode.
 
 The counter picks the viewing resolution itself from the size of the
 objects in your box, so it does not matter how far you are zoomed in when
@@ -37,6 +38,15 @@ Outlines are cut off exactly at the box edge. Objects you can partially see
 in the margin but that are centred outside the box are not counted — the
 same rule a person would use.
 
+## Fixing a count
+
+The report opens ready to adjust. **Click an outline** to remove it — it
+stays visible, dashed and dimmed, and a second click brings it back.
+**Click a missed object** to drop an outline on it, or **drag** around it
+to draw one; new outlines join the closest-sized group. **Reset** restores
+the original result, and **Done** locks the outlines for view-only
+inspection. Adjustments are never saved — recounting starts fresh.
+
 ## Results are temporary
 
 Counts are **not saved**. They disappear when you clear the selection
@@ -48,12 +58,12 @@ count again if you need the result back.
 Automatic counting can be wrong — always double-check the outlines visually
 against the specimen. Expect weaker results for:
 
-- overlapping or clumped cells,
+- overlapping or clumped objects,
 - thick smear areas and tissue folds,
 - debris and stain artefacts,
 - very faint or very dense regions,
 - selections that are too large (the count may be refused — draw a smaller
   box or zoom in).
 
-If a count looks wrong, cancel it or clear the rectangle and try a tighter
-selection.
+If a count looks wrong, remove the outlines that shouldn't count or add
+the ones it missed — or cancel and try a tighter selection.

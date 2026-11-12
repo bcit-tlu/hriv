@@ -20,7 +20,7 @@ export function countGroupColor(group: number): string {
   return COUNT_GROUP_PALETTE[((group % n) + n) % n]
 }
 
-/** Groups are unnamed (appearance clusters, not cell types): "Group 1"… */
+/** Groups are unnamed (appearance clusters, not object types): "Group 1"… */
 export function countGroupLabel(group: number): string {
   return `Group ${group + 1}`
 }

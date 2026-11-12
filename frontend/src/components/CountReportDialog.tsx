@@ -4,15 +4,17 @@
  * Figma-style modal: preview image with the group-coloured outlines drawn
  * over it (white halo + colour stroke, clipped to the selection), a "Group
  * n" legend, and a total row. Groups are appearance clusters, never named
- * cell types. No export, no show/hide toggles.
+ * object types. No export, no show/hide toggles.
  *
  * Manual adjustment (#1746): when the caller passes the adjust callbacks,
- * an "Adjust count" mode turns the outlines interactive — click an
- * outline to remove it (dashed/dimmed, click again to undo), click empty
- * space to drop a median-sized outline on a missed object, or drag to
- * draw a circle of any size. Counts and the legend update live; Reset
- * restores the original result. Adjustments are client-side only and die
- * with the ephemeral result — nothing is sent back to the server.
+ * the report opens in "Adjust count" mode — the outlines are interactive
+ * from the start: click an outline to remove it (dashed/dimmed, click
+ * again to undo), click empty space to drop a median-sized outline on a
+ * missed object, or drag to draw a circle of any size. Counts and the
+ * legend update live; Reset restores the original result and Done leaves
+ * a view-only report (Adjust count re-enters). Adjustments are
+ * client-side only and die with the ephemeral result — nothing is sent
+ * back to the server.
  *
  * ``container`` lets the caller mount the dialog inside the OSD viewer so
  * it stays visible in full-page mode.
@@ -50,6 +52,12 @@ import {
 } from '../countAdjust'
 import { countGroupColor, countGroupLabel } from '../countPalette'
 import { modeLabel } from '../countingUi'
+
+/** Delete affordance for adjust mode: a dark X with a white halo so it
+ * reads on light previews and dark fills alike. */
+const REMOVE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/><path d="M7 7l10 10M17 7L7 17" stroke="#1f1f1f" stroke-width="2.5" stroke-linecap="round"/></svg>',
+)}") 12 12, pointer`
 
 export interface CountReportDialogProps {
   open: boolean
@@ -104,7 +112,7 @@ function OutlineGroup({
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? label : undefined}
       opacity={isRemoved ? 0.3 : 1}
-      style={{ cursor: interactive ? 'pointer' : undefined }}
+      style={{ cursor: interactive ? (isRemoved ? 'pointer' : REMOVE_CURSOR) : undefined }}
       onClick={
         interactive
           ? (e) => {
@@ -272,7 +280,9 @@ export default function CountReportDialog({
   onResetAdjustments,
 }: CountReportDialogProps) {
   const adjustable = onToggleObject != null && onAddObject != null
-  const [adjusting, setAdjusting] = useState(false)
+  // Reports open in adjust mode so counts can be corrected immediately;
+  // Done leaves a view-only report and Adjust count re-enters (#1746).
+  const [adjusting, setAdjusting] = useState(adjustable)
   const [draft, setDraft] = useState<{ cx: number; cy: number; r: number } | null>(null)
   const draftRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null)
   /** A press counts as a drag once the radius exceeds ~4 CSS px. */
@@ -499,8 +509,8 @@ export default function CountReportDialog({
           </Paper>
         )}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Groups are based on appearance only, not cell type. Counts are computer-generated and may
-          need review.{' '}
+          Groups are based on appearance only — the counter does not identify what the objects are.
+          Counts are computer-generated and may need review.{' '}
           <Link component="button" onClick={onLearnMore} underline="hover">
             Learn more about object counting
           </Link>

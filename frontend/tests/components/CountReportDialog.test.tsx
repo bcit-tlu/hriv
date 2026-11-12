@@ -65,7 +65,7 @@ describe('CountReportDialog', () => {
   it('renders title, subtitle, chip and the group legend with the total', () => {
     renderDialog()
     expect(screen.getByText('Object count report')).toBeInTheDocument()
-    expect(screen.getByText('Selection 2 · Cells')).toBeInTheDocument()
+    expect(screen.getByText('Selection 2 · Objects')).toBeInTheDocument()
     expect(screen.getByText('77 objects found')).toBeInTheDocument()
     expect(screen.getByText('Objects identified')).toBeInTheDocument()
     expect(screen.getByText('Group 1')).toBeInTheDocument()
@@ -153,22 +153,22 @@ describe('CountReportDialog adjust mode (#1746)', () => {
     expect(screen.queryByRole('button', { name: 'Adjust count' })).not.toBeInTheDocument()
   })
 
-  it('Adjust count turns outlines into buttons; Done restores them', async () => {
+  it('opens in adjust mode; Done leaves view-only and Adjust count re-enters', async () => {
     const user = userEvent.setup()
     renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     expect(
       screen.getByText(/Click an outline to remove it — click again to undo/),
     ).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(5)
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.queryAllByRole('button', { name: /outline — activate/ })).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
+    expect(screen.getAllByRole('button', { name: /outline — activate to remove/ })).toHaveLength(5)
   })
 
   it('clicking an outline toggles its removed state by combined index', async () => {
     const user = userEvent.setup()
     const props = renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     await user.click(screen.getAllByRole('button', { name: /outline — activate to remove/ })[1])
     expect(props.onToggleObject).toHaveBeenCalledWith(1)
   })
@@ -176,7 +176,6 @@ describe('CountReportDialog adjust mode (#1746)', () => {
   it('Enter toggles an outline from the keyboard', async () => {
     const user = userEvent.setup()
     const props = renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     const outline = screen.getAllByRole('button', { name: /outline — activate to remove/ })[0]
     outline.focus()
     await user.keyboard('{Enter}')
@@ -186,7 +185,6 @@ describe('CountReportDialog adjust mode (#1746)', () => {
   it('removed outlines render dimmed with a restore label', async () => {
     const user = userEvent.setup()
     renderDialog(adjustProps({ removed: [1] }))
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     const removedG = document.querySelector('g[data-count-object="1"]')
     expect(removedG).toHaveAttribute('data-removed')
     expect(removedG).toHaveAttribute('opacity', '0.3')
@@ -198,7 +196,6 @@ describe('CountReportDialog adjust mode (#1746)', () => {
   it('a click on empty space adds a median-sized outline there', async () => {
     const user = userEvent.setup()
     const props = renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     const svg = stubSvgRect()
     // Client (150,80) maps to level-0 (150 + 100, 80 + 50) = (250, 130) —
     // the viewBox origin is the selection's (x, y).
@@ -222,7 +219,6 @@ describe('CountReportDialog adjust mode (#1746)', () => {
   it('a drag adds an outline of the drawn radius', async () => {
     const user = userEvent.setup()
     const props = renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     const svg = stubSvgRect()
     fireEvent.pointerDown(svg, { button: 0, clientX: 100, clientY: 60 })
     fireEvent.pointerMove(svg, { clientX: 115, clientY: 60 })
@@ -239,7 +235,6 @@ describe('CountReportDialog adjust mode (#1746)', () => {
   it('pressing an outline starts no draw — toggle only', async () => {
     const user = userEvent.setup()
     const props = renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     stubSvgRect()
     const g = document.querySelector('g[data-count-object="0"]')!
     fireEvent.pointerDown(g, { button: 0, clientX: 120, clientY: 60 })
@@ -250,14 +245,12 @@ describe('CountReportDialog adjust mode (#1746)', () => {
   it('Reset is disabled until an adjustment exists', async () => {
     const user = userEvent.setup()
     renderDialog(adjustProps())
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
   })
 
   it('Reset restores the original result', async () => {
     const user = userEvent.setup()
     const props = renderDialog(adjustProps({ removed: [0] }))
-    await user.click(screen.getByRole('button', { name: 'Adjust count' }))
     await user.click(screen.getByRole('button', { name: 'Reset' }))
     expect(props.onResetAdjustments).toHaveBeenCalled()
   })

@@ -1293,7 +1293,7 @@ selection MouseTracker ignores their presses.
 
 - Draw a selection → a "Count objects" button is anchored above the
   rectangle's top-right corner (repositions imperatively on every viewport
-  event; it never re-renders per frame). Clicking opens a Cells/Nuclei
+  event; it never re-renders per frame). Clicking opens an Objects/Nuclei
   menu — the tool is a **counter, not a classifier**.
 - Each rectangle owns one job; overlapping selections each get their own
   outlines and legend. Re-running cancels that selection's previous job.

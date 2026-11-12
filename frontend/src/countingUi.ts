@@ -17,7 +17,7 @@ export interface CountSelectionRect {
   rect: { x: number; y: number; width: number; height: number }
 }
 
-const MODE_LABEL: Record<string, string> = { cells: 'Cells', nuclei: 'Nuclei' }
+const MODE_LABEL: Record<string, string> = { cells: 'Objects', nuclei: 'Nuclei' }
 
 export function modeLabel(mode: string): string {
   return MODE_LABEL[mode] ?? mode

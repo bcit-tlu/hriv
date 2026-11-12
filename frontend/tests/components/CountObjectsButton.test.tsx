@@ -38,7 +38,7 @@ function renderButton(overrides: Partial<Parameters<typeof CountObjectsButton>[0
 }
 
 describe('CountObjectsButton', () => {
-  it('idle: opens the Cells/Nuclei menu and calls onCount', async () => {
+  it('idle: opens the Objects/Nuclei menu and calls onCount', async () => {
     const user = userEvent.setup()
     const props = renderButton()
     const button = screen.getByRole('button', {
@@ -48,9 +48,9 @@ describe('CountObjectsButton', () => {
     expect(button).toHaveAttribute('aria-expanded', 'false')
     await user.click(button)
     expect(button).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('Whole cells, e.g. blood cells')).toBeInTheDocument()
-    expect(screen.getByText('Cell nuclei, e.g. tissue sections')).toBeInTheDocument()
-    await user.click(screen.getByRole('menuitem', { name: /Cells/ }))
+    expect(screen.getByText('General objects, e.g. cells or particles')).toBeInTheDocument()
+    expect(screen.getByText('Nuclei, e.g. in tissue sections')).toBeInTheDocument()
+    await user.click(screen.getByRole('menuitem', { name: /Objects/ }))
     expect(props.onCount).toHaveBeenCalledWith('cells')
     await user.click(button)
     await user.click(screen.getByRole('menuitem', { name: /Nuclei/ }))
@@ -62,7 +62,7 @@ describe('CountObjectsButton', () => {
     const props = renderButton()
     await user.click(screen.getByRole('button', { name: 'Count objects in selection 2' }))
     await user.keyboard('{Escape}')
-    expect(screen.queryByText('Whole cells, e.g. blood cells')).not.toBeInTheDocument()
+    expect(screen.queryByText('General objects, e.g. cells or particles')).not.toBeInTheDocument()
     expect(props.onCount).not.toHaveBeenCalled()
   })
 
@@ -116,7 +116,7 @@ describe('CountObjectsButton', () => {
     renderButton({ entry: entry({ phase: 'failed', error: 'internal' }) })
     expect(screen.getByRole('button', { name: 'Count objects in selection 2' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Count objects in selection 2' }))
-    expect(screen.getByText('Cells')).toBeInTheDocument()
+    expect(screen.getByText('Objects')).toBeInTheDocument()
   })
 
   it('renders the menu inside menuContainer when provided', async () => {
@@ -136,6 +136,6 @@ describe('CountObjectsButton', () => {
     await user.click(screen.getByRole('button', { name: 'Count objects in selection 2' }))
     // Menu items appear inside the container, not document.body.
     expect(container.querySelector('[role="menuitem"]')).not.toBeNull()
-    expect(within(container).getByRole('menuitem', { name: /Cells/ })).toBeInTheDocument()
+    expect(within(container).getByRole('menuitem', { name: /Objects/ })).toBeInTheDocument()
   })
 })
