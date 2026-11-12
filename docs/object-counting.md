@@ -330,7 +330,7 @@ data) — the `Outliner` protocol remains the plugin point.
   NetworkPolicy (`countingWorker.networkPolicy`, egress to Redis + DNS +
   the OTel collector only).
 - **Capacity**: see [Capacity (#1670)](#capacity-1670).
-- **flux-fleet overlay** (`latest` first): `counting.enabled: true`,
+- **flux-fleet overlay** (`latest` first):
   `countingWorker.enabled: true`, plus `countingWorker.networkPolicy`
   peers pointed at the in-cluster Redis, kube-dns and the OTel collector.
 

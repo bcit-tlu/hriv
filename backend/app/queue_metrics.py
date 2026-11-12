@@ -62,9 +62,10 @@ _execution_mode = Gauge(
     registry=_registry,
 )
 
-# Counting-queue gauges (#1661/#1669). Created lazily on first render so a
-# deployment with no counting worker starts with no series rather than a
-# stale 0.0 that would look like a live, empty queue.
+# Counting-queue gauges (#1661/#1669). Created lazily on first render.
+# hriv_count_worker_up is 0 when Redis is reachable but the worker
+# heartbeat key is absent — truthfully signalling "no worker" — and NaN
+# only when Redis itself is unreachable.
 _count_gauges: dict[str, Gauge] = {}
 
 
