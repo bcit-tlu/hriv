@@ -18,6 +18,7 @@ Nothing is written to image metadata until a finding is approved.
 | `objective`                       | Objective class picked from the camera profile (`10`, `40`, `100`), or `NULL`                                              |
 | `confidence`                      | 0–1; the review list sorts on it                                                                                           |
 | `evidence`                        | JSONB: measured RBC diameter, cell counts, peak share, class distances, or a `reason`                                      |
+| `params`                          | JSONB, nullable: instructor-tuned detection values (`DetectionTuning`); `NULL` means the shipped defaults apply            |
 | `detector_version`                | Bumped whenever the detector or calibration constants change                                                               |
 | `approved_scale`, `approved_unit` | Value actually promoted (may differ from the proposal when the reviewer corrected it)                                      |
 | `approved_objective`              | Objective the approval wrote to `objective_power` (migration `0039_finding_approved_objective`); `NULL` when it wrote none |
@@ -32,6 +33,15 @@ At most one `pending` finding exists per image (partial unique index
 fills their central pallor, and takes each component's inscribed radius. The
 area-weighted mode of those radii is the dominant RBC diameter, which is
 robust to clumps and rouleaux.
+
+The detector's constants live on `DetectorParams` (threshold vs. the median
+background saturation, the purple-nuclei hue/saturation window, the minimum
+component radius, and the mode window). `DetectorParams()` reproduces the
+shipped behaviour bit-for-bit, so parametrising did not bump
+`DETECTOR_VERSION`. Callers tune through `DetectionTuning` (schemas.py) — a
+small semantic set (`sensitivity`, `min_cell_size`, `exclude_nuclei`, plus an
+`advanced` raw-override dict for API use) that `to_detector_params()`
+translates; raw constants never cross the API.
 
 `app/measurement/calibration.py` turns that diameter into a scale:
 

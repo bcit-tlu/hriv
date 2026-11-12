@@ -2775,6 +2775,18 @@ export type MeasurementFindingSortKey =
 export type MeasurementFindingSort =
   `${MeasurementFindingSortKey}_${'asc' | 'desc'}` | 'created_desc'
 
+/** Instructor-facing detection tuning (epic #1865); mirrors DetectionTuning. */
+export interface DetectionTuning {
+  /** 0 → strict (only obvious cells), 1 → permissive (fainter cells). */
+  sensitivity: number
+  /** Smallest component radius (work-image px) that counts as a cell. */
+  min_cell_size: number
+  /** Exclude dark purple-stained objects (leukocyte nuclei). */
+  exclude_nuclei: boolean
+  /** Optional raw detector field overrides, not surfaced in the UI. */
+  advanced: Record<string, number> | null
+}
+
 export interface MeasurementFindingCategory {
   id: number
   /** Full path from the root, e.g. "Hematology › Blood films". */
@@ -2807,6 +2819,8 @@ export interface ApiMeasurementFinding {
   approved_objective: string | null
   /** Calibrated px/µm per objective for this camera; null for unknown cameras. */
   objective_scales: Record<string, number> | null
+  /** Instructor-tuned detection values saved on the finding; null = defaults. */
+  params: DetectionTuning | null
   reviewed_by: number | null
   reviewed_at: string | null
   created_at: string

@@ -32,6 +32,36 @@ _SQUARE5 = [[255] * 5 for _ in range(5)]
 
 
 @dataclass(frozen=True)
+class DetectorParams:
+    """Tunable knobs for the RBC detector (epic #1865, #1866).
+
+    Defaults are exactly the shipped constants — ``DetectorParams()``
+    reproduces the previous detection bit-for-bit, so existing findings
+    stay valid and ``detector_version`` does not need a bump.
+    """
+
+    sat_above_background: int = _SAT_ABOVE_BACKGROUND
+    purple_hue_min: int = _PURPLE_HUE_MIN
+    purple_hue_max: int = _PURPLE_HUE_MAX
+    purple_sat_min: int = _PURPLE_SAT_MIN
+    min_radius_px: float = _MIN_RADIUS_PX
+    mode_window_lo: float = _MODE_WINDOW[0]
+    mode_window_hi: float = _MODE_WINDOW[1]
+
+    def __post_init__(self) -> None:
+        if not 0 < self.sat_above_background <= 255:
+            raise ValueError("sat_above_background out of range")
+        if not 0 <= self.purple_hue_min < self.purple_hue_max <= 255:
+            raise ValueError("purple hue window out of range")
+        if not 0 <= self.purple_sat_min <= 255:
+            raise ValueError("purple_sat_min out of range")
+        if not 0 < self.min_radius_px <= 100:
+            raise ValueError("min_radius_px out of range")
+        if not 0 < self.mode_window_lo < self.mode_window_hi:
+            raise ValueError("mode window out of range")
+
+
+@dataclass(frozen=True)
 class RbcMeasurement:
     diameter_px: float  # in full-resolution source pixels
     component_count: int
@@ -65,14 +95,14 @@ def _fill_holes(mask: pyvips.Image) -> pyvips.Image:
     return filled.crop(1, 1, mask.width, mask.height)
 
 
-def _component_radii(mask: pyvips.Image) -> list[float]:
+def _component_radii(mask: pyvips.Image, min_radius_px: float) -> list[float]:
     seeds = (mask == 0).ifthenelse(255, 0).cast("uchar")
     _, opts = seeds.fill_nearest(distance=True)
     dist = opts["distance"]
     labels = mask.labelregions()
     per_label = dist.hist_find_indexed(labels, combine="max")
     row = per_label.tolist()[0]
-    return [float(r) for r in row if r >= _MIN_RADIUS_PX]
+    return [float(r) for r in row if r >= min_radius_px]
 
 
 def _weighted_log_mode(radii: list[float]) -> float:
@@ -93,24 +123,33 @@ def _weighted_log_mode(radii: list[float]) -> float:
     return math.exp(lo + (best + 0.5) * width)
 
 
-def measure_rbc_diameter(work: pyvips.Image, full_width: int) -> RbcMeasurement | None:
+def measure_rbc_diameter(
+    work: pyvips.Image,
+    full_width: int,
+    params: DetectorParams | None = None,
+) -> RbcMeasurement | None:
     """Measure the dominant RBC diameter; ``None`` when no RBC population is found."""
+    p = params or DetectorParams()
     scale = work.width / full_width if full_width else 1.0
     hsv = work.colourspace("hsv")
     hue, sat = hsv[0], hsv[1]
     background = sat.percent(50)
-    foreground = sat > background + _SAT_ABOVE_BACKGROUND
-    purple = (hue > _PURPLE_HUE_MIN) & (hue < _PURPLE_HUE_MAX) & (sat > _PURPLE_SAT_MIN)
+    foreground = sat > background + p.sat_above_background
+    purple = (
+        (hue > p.purple_hue_min)
+        & (hue < p.purple_hue_max)
+        & (sat > p.purple_sat_min)
+    )
     purple = purple.morph(_SQUARE5, "dilate")
     pink = purple.ifthenelse(0, foreground).cast("uchar")
     pink = pink.morph(_SQUARE3, "erode").morph(_SQUARE3, "dilate")
     pink = _fill_holes(pink)
 
-    radii = _component_radii(pink)
+    radii = _component_radii(pink, p.min_radius_px)
     if len(radii) < _MIN_COMPONENTS:
         return None
     mode = _weighted_log_mode(radii)
-    lo, hi = mode * _MODE_WINDOW[0], mode * _MODE_WINDOW[1]
+    lo, hi = mode * p.mode_window_lo, mode * p.mode_window_hi
     selected = sorted(r for r in radii if lo < r < hi)
     # A dominant blob or two (e.g. a landscape photo) is not an RBC population.
     if len(selected) < _MIN_COMPONENTS:
