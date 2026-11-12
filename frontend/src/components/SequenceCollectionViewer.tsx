@@ -39,6 +39,8 @@ export interface SequenceCollectionViewerProps {
    * The viewport imagery keeps its color, like the hidden image view.
    */
   hidden?: boolean
+  /** Show "Count objects" affordances on selection rectangles (#1855). */
+  countingEnabled?: boolean
 }
 
 // How long edge nav stays after the last pointer event — mirrors OSD's
@@ -96,6 +98,7 @@ export default function SequenceCollectionViewer({
   onImageRenewed,
   onError,
   hidden = false,
+  countingEnabled = false,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
   // Images whose tiles failed mid-session (deleted / access lost / expired
@@ -391,6 +394,7 @@ export default function SequenceCollectionViewer({
           canvasAnnotations={canvasAnnotations}
           canEditContent={false}
           measurement={measurement}
+          countingEnabled={countingEnabled}
           onTileSourceRenewed={onImageRenewed}
           onError={handleViewerError}
           viewportOverlay={

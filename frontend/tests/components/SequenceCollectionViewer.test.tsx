@@ -402,6 +402,11 @@ describe('SequenceCollectionViewer', () => {
     expect(lastViewerProps!.onSaveCanvasAnnotations).toBeUndefined()
   })
 
+  it('forwards countingEnabled to the viewer (#1855)', () => {
+    renderViewer({ countingEnabled: true })
+    expect(lastViewerProps!.countingEnabled).toBe(true)
+  })
+
   it('forwards tile-source renewals to onImageRenewed', () => {
     const { props } = renderViewer()
     const fresh = { id: 100 } as never
