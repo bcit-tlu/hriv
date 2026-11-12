@@ -53,16 +53,17 @@ import {
 import { countGroupColor, countGroupLabel } from '../countPalette'
 import { modeLabel } from '../countingUi'
 
-/** Delete affordance for adjust mode: an X with a contrasting halo built
- * from theme palette tokens, so it follows light/dark mode (#1746). */
-function useRemoveCursor(): string {
+/** Adjust-mode cursors: a 24×24 SVG glyph (X for remove, + for add) drawn
+ * in the primary brand colour with a contrasting paper halo, built from
+ * theme palette tokens so it follows light/dark mode (#1746). */
+function useSvgCursor(d: string, fallback: string): string {
   const theme = useTheme()
   return useMemo(
     () =>
       `url("data:image/svg+xml,${encodeURIComponent(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" stroke="${theme.palette.background.paper}" stroke-width="5" stroke-linecap="round"/><path d="M7 7l10 10M17 7L7 17" stroke="${theme.palette.text.primary}" stroke-width="2.5" stroke-linecap="round"/></svg>`,
-      )}") 12 12, pointer`,
-    [theme],
+        `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="${d}" stroke="${theme.palette.background.paper}" stroke-width="5" stroke-linecap="round"/><path d="${d}" stroke="${theme.palette.primary.main}" stroke-width="2.5" stroke-linecap="round"/></svg>`,
+      )}") 12 12, ${fallback}`,
+    [theme, d, fallback],
   )
 }
 
@@ -106,7 +107,7 @@ function OutlineGroup({
   interactive: boolean
   onToggle: (index: number) => void
 }) {
-  const removeCursor = useRemoveCursor()
+  const removeCursor = useSvgCursor('M7 7l10 10M17 7L7 17', 'pointer')
   const pts = obj.polygon.map(([x, y]) => `${x},${y}`).join(' ')
   const groupName = countGroupLabel(obj.group)
   const label = isRemoved
@@ -195,6 +196,7 @@ function SelectionOutlines({
   onPointerUp?: (e: ReactPointerEvent) => void
   svgRef: RefObject<SVGSVGElement | null>
 }) {
+  const addCursor = useSvgCursor('M12 7v10M7 12h10', 'crosshair')
   const vb = `${selection.x} ${selection.y} ${selection.width} ${selection.height}`
   return (
     <Box
@@ -217,7 +219,7 @@ function SelectionOutlines({
         height: '100%',
         display: 'block',
         touchAction: adjusting ? 'none' : undefined,
-        cursor: adjusting ? 'crosshair' : undefined,
+        cursor: adjusting ? addCursor : undefined,
         userSelect: 'none',
       }}
       onPointerDown={onPointerDown}
