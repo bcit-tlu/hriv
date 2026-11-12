@@ -1616,9 +1616,10 @@ def _full_dump() -> dict:
                 "created_at": "2025-01-02T00:00:00+00:00",
             },
             # Pre-0045 dump shape: no params key → imports as NULL.
+            # (Different image: pending findings are unique per image.)
             {
                 "id": 4,
-                "image_id": 1,
+                "image_id": 2,
                 "status": "pending",
                 "source": "rbc",
                 "proposed_scale": 4.0,
@@ -1698,7 +1699,7 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
         for f in findings
     ] == [
         (3, 1, "pending", "um", {"sensitivity": 0.9}),
-        (4, 1, "pending", "um", None),
+        (4, 2, "pending", "um", None),
     ]
     imported_users = [obj for obj in add_calls if type(obj).__name__ == "User"]
     assert len(imported_users) == 2
