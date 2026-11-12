@@ -1,7 +1,7 @@
 # Object counting
 
 Object counting lets any authenticated user draw a selection rectangle on an
-image, pick **Count → Objects** or **Count → Nuclei**, and get back, for that
+image, pick **Count → Cells** or **Count → Nuclei**, and get back, for that
 selection only, colour-coded outlines around every detected object plus a
 legend of unnamed appearance groups (Group 1, 2, 3 …) and a total.
 
@@ -21,7 +21,7 @@ implemented.
 1. In the image viewer — or any collection-detail viewer pane while
    counting is enabled (#1855) — the existing OSD **selection** toolbar
    button draws a rectangle; a **Count objects** button appears above its
-   top-right corner and opens a small menu: **Objects** · **Nuclei**
+   top-right corner and opens a small menu: **Cells** · **Nuclei**
    (`components/CountObjectsButton.tsx`).
 2. The frontend `POST`s `{mode, selection}` (level-0 image pixels) and polls
    with backoff (`useSelectionCounts.ts`), showing a progress snackbar with
@@ -452,7 +452,7 @@ validation; this text does not announce that stable is already enabled:
 > **Count objects in an image selection**
 >
 > Use the selection tool in the image viewer, draw a box, and choose
-> **Count → Objects** or **Count → Nuclei**. Coloured outlines and an unnamed
+> **Count → Cells** or **Count → Nuclei**. Coloured outlines and an unnamed
 > group legend help you compare object counts at a glance. Counting is
 > available to every role on images they can view. It is a counter, not a
 > classifier: always double-check the outlines visually. Results are

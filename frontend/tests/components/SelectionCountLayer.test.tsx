@@ -128,7 +128,7 @@ describe('SelectionCountLayer', () => {
     )
     fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
     })
     await act(async () => {
       rerender(
@@ -154,7 +154,7 @@ describe('SelectionCountLayer', () => {
       renderLayer({ selections: [SELECTIONS[0]] })
       fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
       await act(async () => {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
       })
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
@@ -183,7 +183,7 @@ describe('SelectionCountLayer', () => {
       )
       fireEvent.click(screen.getByLabelText('Count objects in selection 1 — more actions'))
       await act(async () => {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Count objects again/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Count cells again/ }))
       })
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
@@ -211,7 +211,7 @@ describe('SelectionCountLayer', () => {
       renderLayer({ selections: [SELECTIONS[0]] })
       fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
       await act(async () => {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
       })
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
@@ -247,7 +247,7 @@ describe('SelectionCountLayer', () => {
       // Job 1 -> done on sel-1.
       fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
       await act(async () => {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
       })
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
@@ -257,7 +257,7 @@ describe('SelectionCountLayer', () => {
       // Job 2 -> running on sel-2.
       fireEvent.click(screen.getByLabelText('Count objects in selection 2'))
       await act(async () => {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
       })
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
@@ -328,7 +328,7 @@ describe('SelectionCountLayer', () => {
       renderLayer({ selections: [SELECTIONS[0]] })
       fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
       await act(async () => {
-        fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
       })
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
@@ -371,7 +371,7 @@ describe('dialog close buttons (regression: clicks must not be swallowed)', () =
     render(<SelectionCountLayer viewer={v} imageId={5} selections={SELECTIONS} clearedToken={0} />)
     fireEvent.click(screen.getByLabelText('Count objects in selection 1'))
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Objects/ }))
+      fireEvent.click(screen.getByRole('menuitem', { name: /Cells/ }))
     })
     await act(async () => {
       vi.advanceTimersByTime(5000)

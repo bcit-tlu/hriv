@@ -44,7 +44,7 @@ describe('CountProgressSnackbar', () => {
     renderBar({ activeEntries: [entry({})] })
     expect(screen.getByText('Counting objects')).toBeInTheDocument()
     expect(
-      screen.getByText('Selection 2 · Objects — finding and outlining objects…'),
+      screen.getByText('Selection 2 · Cells — finding and outlining objects…'),
     ).toBeInTheDocument()
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
@@ -53,9 +53,7 @@ describe('CountProgressSnackbar', () => {
     renderBar({
       activeEntries: [entry({ phase: 'queued', queuePosition: 3 })],
     })
-    expect(
-      screen.getByText('Selection 2 · Objects — waiting in queue (3 ahead)'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Selection 2 · Cells — waiting in queue (3 ahead)')).toBeInTheDocument()
   })
 
   it('collapses multiple active jobs into one caption', () => {

@@ -3,7 +3,7 @@
  *
  * Anchored above a selection rectangle's top-right corner by the parent
  * layer. States:
- *  - idle    — "Count objects" opens an Objects/Nuclei menu
+ *  - idle    — "Count objects" opens a Cells/Nuclei menu
  *  - active  — split button: "Counting…" / "Queued · n ahead" + Cancel
  *  - done    — split button: "View results (N)" + count-again actions
  *  - failed  — back to idle (the error surfaces in the snackbar)
@@ -36,11 +36,11 @@ export interface CountObjectsButtonProps {
 }
 
 const MODE_ITEMS: { mode: CountMode; primary: string; secondary: string }[] = [
-  { mode: 'cells', primary: 'Objects', secondary: 'General objects, e.g. cells or particles' },
+  { mode: 'cells', primary: 'Cells', secondary: 'Whole cells, e.g. blood cells' },
   {
     mode: 'nuclei',
     primary: 'Nuclei',
-    secondary: 'Nuclei, e.g. in tissue sections',
+    secondary: 'Cell nuclei, e.g. tissue sections',
   },
 ]
 

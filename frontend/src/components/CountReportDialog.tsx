@@ -4,7 +4,7 @@
  * Figma-style modal: preview image with the group-coloured outlines drawn
  * over it (white halo + colour stroke, clipped to the selection), a "Group
  * n" legend, and a total row. Groups are appearance clusters, never named
- * object types. No export, no show/hide toggles.
+ * cell types. No export, no show/hide toggles.
  *
  * Manual adjustment (#1746): when the caller passes the adjust callbacks,
  * the report opens in "Adjust count" mode — the outlines are interactive
@@ -517,8 +517,8 @@ export default function CountReportDialog({
           </Paper>
         )}
         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Groups are based on appearance only — the counter does not identify what the objects are.
-          Counts are computer-generated and may need review.{' '}
+          Groups are based on appearance only, not cell type. Counts are computer-generated and may
+          need review.{' '}
           <Link component="button" onClick={onLearnMore} underline="hover">
             Learn more about object counting
           </Link>

@@ -116,7 +116,7 @@ UI steps (frontend landed with #1667/#1668):
    seeded image with local tiles).
 2. Toolbar **selection** button → drag a rectangle. A **Count objects**
    button appears above its top-right corner.
-3. Choose **Objects** or **Nuclei**. A progress snackbar shows the queue
+3. Choose **Cells** or **Nuclei**. A progress snackbar shows the queue
    position; the report dialog opens on completion with outlines, an
    unnamed **Group n** legend and a total.
 4. The report opens in adjust mode (#1746): click an outline to remove it

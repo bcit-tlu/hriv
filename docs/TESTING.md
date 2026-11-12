@@ -997,7 +997,7 @@ and collection-page dialog (#1628). Requires `COLLECTIONS_ENABLED=true`.
 
 ## Test Case 15: Object Counting — Results and Selection Lifecycle (UI)
 
-**Purpose:** Verify Objects/Nuclei results and independent ephemeral selections.
+**Purpose:** Verify Cells/Nuclei results and independent ephemeral selections.
 Start with `COUNTING_ENABLED=true docker compose --profile counting up -d --build`;
 wait for `seed-media` to finish and the counting-worker heartbeat to appear.
 Use **Synthetic Monitoring Image** (ID 5 on a fresh seed) for workflow checks,
@@ -1006,14 +1006,14 @@ The synthetic fixture is not expected to produce the epic's ~72 / 4 / 1 counts.
 
 1. Log in as `admin@example.ca`, open the local-tiled image, choose the
    **selection** toolbar tool and draw a small rectangle. Choose
-   **Count objects → Objects**. **Assert:** progress/queue feedback appears,
+   **Count objects → Cells**. **Assert:** progress/queue feedback appears,
    then the report opens with a preview, clipped coloured outlines, unnamed
    **Group n** legend and total. Total equals the sum of group counts;
    zero detections are a valid empty result, not a failed job.
 2. Close the report. **Assert:** viewer outlines remain clipped to the box;
    **View results (N)** reopens that selection's report. Draw another box
    and choose **Nuclei**. **Assert:** the same lifecycle works; groups are
-   appearance clusters, not named object classifications. On real lab images,
+   appearance clusters, not named cell classifications. On real lab images,
    visually inspect the centroid edge rule and colour legibility and record
    accuracy/latency feedback rather than assuming a ground-truth count.
 3. Draw two partially overlapping selections and count each. **Assert:**

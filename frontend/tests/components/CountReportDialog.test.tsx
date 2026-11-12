@@ -65,7 +65,7 @@ describe('CountReportDialog', () => {
   it('renders title, subtitle, chip and the group legend with the total', () => {
     renderDialog()
     expect(screen.getByText('Object count report')).toBeInTheDocument()
-    expect(screen.getByText('Selection 2 · Objects')).toBeInTheDocument()
+    expect(screen.getByText('Selection 2 · Cells')).toBeInTheDocument()
     expect(screen.getByText('77 objects found')).toBeInTheDocument()
     expect(screen.getByText('Objects identified')).toBeInTheDocument()
     expect(screen.getByText('Group 1')).toBeInTheDocument()
