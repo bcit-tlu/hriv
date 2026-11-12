@@ -83,10 +83,10 @@ docker compose up -d --build frontend   # or backend, worker, etc.
 
 Backend API, counting worker (#1665: classical cells + InstanSeg nuclei, built from the `counting-worker` Docker target) and the viewer UI
 (Count objects pop-up, progress snackbar, report modal) are all available.
-Enable the flag and the dedicated worker via the `counting` compose profile:
+Start the dedicated worker via the `counting` compose profile:
 
 ```bash
-COUNTING_ENABLED=true docker compose --profile counting up -d --build
+docker compose --profile counting up -d --build
 ```
 
 Then exercise the API with the synthetic student (whose Administration

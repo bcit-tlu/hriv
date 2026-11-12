@@ -108,9 +108,9 @@ services:
       - SECURE_COOKIES=false
       - COLLECTIONS_ENABLED=${COLLECTIONS_ENABLED:-true}
       - COLLECTIONS_HOME_SHELF=${COLLECTIONS_HOME_SHELF:-true}
-      # Dark-launched by default: enable locally with
-      #   COUNTING_ENABLED=true docker compose --profile counting up
-      - COUNTING_ENABLED=${COUNTING_ENABLED:-false}
+      # Object counting is always on; the dedicated worker stays profiled
+      # off (heavy CPU-torch image) — jobs 503 without it:
+      #   docker compose --profile counting up
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
     depends_on:
@@ -204,7 +204,7 @@ services:
   counting-worker:
     # Dedicated arq worker for the object-counting queue (epic #1661);
     # profiled off so it only runs when explicitly requested:
-    #   COUNTING_ENABLED=true docker compose --profile counting up
+    #   docker compose --profile counting up
     build:
       context: ./backend
       target: counting-worker
@@ -220,7 +220,6 @@ services:
       - REDIS_URL=redis://redis:6379
       - SOURCE_IMAGES_DIR=/data/source_images
       - TILES_DIR=/data/tiles
-      - COUNTING_ENABLED=${COUNTING_ENABLED:-false}
     depends_on:
       db:
         condition: service_healthy

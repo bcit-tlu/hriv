@@ -1298,10 +1298,8 @@ fi
 backend_counting_default_manifest="$(helm template test charts/backend)"
 assert_not_contains "$backend_counting_default_manifest" "counting-worker" \
   "counting worker must render nothing when countingWorker.enabled is false"
-assert_contains "$backend_counting_default_manifest" "name: COUNTING_ENABLED" \
-  "API deployment must always render COUNTING_ENABLED"
-assert_contains "$backend_counting_default_manifest" 'value: "false"' \
-  "COUNTING_ENABLED must default to false (dark launch)"
+assert_not_contains "$backend_counting_default_manifest" "name: COUNTING_ENABLED" \
+  "COUNTING_ENABLED is retired — nothing renders the flag (#1859)"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_MAX_PIXELS" \
   "API deployment must render the counting budget env vars"
 assert_contains "$backend_counting_default_manifest" "name: COUNTING_CLASSICAL_MAX_PIXELS" \
@@ -1319,7 +1317,6 @@ backend_counting_manifest="$(helm template test charts/backend \
   --set redis.enabled=true \
   --set persistence.enabled=true \
   --set persistence.tiles.accessModes[0]=ReadWriteMany \
-  --set counting.enabled=true \
   --set countingWorker.enabled=true)"
 backend_counting_deployment="$(extract_yaml_doc "$backend_counting_manifest" "Deployment" "test-hriv-backend-counting-worker")"
 assert_contains "$backend_counting_deployment" "ghcr.io/bcit-tlu/hriv/hriv-counting-worker:" \

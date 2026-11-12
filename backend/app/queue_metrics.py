@@ -62,10 +62,9 @@ _execution_mode = Gauge(
     registry=_registry,
 )
 
-# Counting-queue gauges (#1661/#1669). Created lazily on first render when
-# ``settings.counting_enabled`` — a counting-disabled deployment never
-# registers them, so they can't emit 0.0 or a stale value and produce false
-# worker-down or queue-depth alerts.
+# Counting-queue gauges (#1661/#1669). Created lazily on first render so a
+# deployment with no counting worker starts with no series rather than a
+# stale 0.0 that would look like a live, empty queue.
 _count_gauges: dict[str, Gauge] = {}
 
 
@@ -268,41 +267,33 @@ async def render_queue_metrics() -> tuple[bytes, str]:
         )
         _execution_mode.clear()
         _execution_mode.labels(mode=settings.task_execution_mode).set(1)
-        if settings.counting_enabled:
-            # Never import app.counting.worker here: it pulls numpy and the
-            # ML outliners, which the API image does not install. The worker
-            # uses the same HEALTH_CHECK_INTERVAL_SECONDS constant.
-            count_state = await collect_queue_state(
-                queue_name=settings.counting_queue_name,
-                health_check_key=settings.counting_queue_name + health_check_key_suffix,
-                health_check_interval_seconds=int(HEALTH_CHECK_INTERVAL_SECONDS),
-            )
-            gauges = _counting_gauges()
-            gauges["depth"].set(
-                float("nan") if count_state["depth"] is None else count_state["depth"]
-            )
-            gauges["oldest_pending_age"].set(
-                float("nan")
-                if count_state["oldest_pending_age_seconds"] is None
-                else count_state["oldest_pending_age_seconds"]
-            )
-            gauges["worker_up"].set(
-                float("nan")
-                if count_state["worker_up"] is None
-                else 1 if count_state["worker_up"] else 0
-            )
-            gauges["heartbeat_age"].set(
-                float("nan")
-                if count_state["worker_heartbeat_age_seconds"] is None
-                else count_state["worker_heartbeat_age_seconds"]
-            )
-        elif _count_gauges:
-            # Counting was disabled (or a test flips the flag): remove the
-            # gauges so they stop emitting — a stale set value would
-            # otherwise keep rendering after disable.
-            for g in _count_gauges.values():
-                _registry.unregister(g)
-            _count_gauges.clear()
+        # Never import app.counting.worker here: it pulls numpy and the
+        # ML outliners, which the API image does not install. The worker
+        # uses the same HEALTH_CHECK_INTERVAL_SECONDS constant.
+        count_state = await collect_queue_state(
+            queue_name=settings.counting_queue_name,
+            health_check_key=settings.counting_queue_name + health_check_key_suffix,
+            health_check_interval_seconds=int(HEALTH_CHECK_INTERVAL_SECONDS),
+        )
+        gauges = _counting_gauges()
+        gauges["depth"].set(
+            float("nan") if count_state["depth"] is None else count_state["depth"]
+        )
+        gauges["oldest_pending_age"].set(
+            float("nan")
+            if count_state["oldest_pending_age_seconds"] is None
+            else count_state["oldest_pending_age_seconds"]
+        )
+        gauges["worker_up"].set(
+            float("nan")
+            if count_state["worker_up"] is None
+            else 1 if count_state["worker_up"] else 0
+        )
+        gauges["heartbeat_age"].set(
+            float("nan")
+            if count_state["worker_heartbeat_age_seconds"] is None
+            else count_state["worker_heartbeat_age_seconds"]
+        )
         return generate_latest(_registry), CONTENT_TYPE_LATEST
 
 

@@ -34,7 +34,7 @@ API for the [password-management validation flow](docs/password-management.md).
 | Capability                                             | Admin | Instructor | Staff | Student |
 | ------------------------------------------------------ | ----- | ---------- | ----- | ------- |
 | Browse categories & view images                        | Yes   | Yes        | Yes   | Yes†    |
-| Count objects in a selection (when `COUNTING_ENABLED`) | Yes   | Yes        | Yes   | Yes†    |
+| Count objects in a selection                          | Yes   | Yes        | Yes   | Yes†    |
 | View image uploader name                               | Yes   | Yes        | No    | No      |
 | View collections (API; student deployment gate¶)       | Yes   | Yes        | Yes   | Yes¶    |
 | Create collections‖                                    | Yes   | Yes        | Yes   | Yes     |

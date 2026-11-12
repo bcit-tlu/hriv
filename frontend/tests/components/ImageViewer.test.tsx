@@ -1631,20 +1631,13 @@ describe('ImageViewer object counting (#1667)', () => {
     apiMocks.cancelCount.mockResolvedValue(undefined)
   })
 
-  it('shows no count button when countingEnabled is off, even with a selection', () => {
+  it('shows no count button until a selection is drawn', () => {
     render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
-    drawRect()
-    expect(viewer().container.querySelector('[data-hriv-canvas-ui]')).toBeNull()
-    expect(viewer().container.querySelector('[aria-label^="Count objects"]')).toBeNull()
-  })
-
-  it('shows no count button with countingEnabled but no selection', () => {
-    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
     expect(viewer().container.querySelector('[aria-label^="Count objects"]')).toBeNull()
   })
 
   it('shows a data-hriv-canvas-ui count button on a drawn selection', () => {
-    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
     drawRect()
     const button = viewer().container.querySelector('[aria-label="Count objects in selection 1"]')
     expect(button?.closest('[data-hriv-canvas-ui]')).not.toBeNull()
@@ -1656,7 +1649,7 @@ describe('ImageViewer object counting (#1667)', () => {
   })
 
   it('POSTs the level-0 rect converted from the drawn viewport rect', async () => {
-    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
     // press (10,10)px -> (0.1,0.1)vp; drag (30,20)px -> (0.3,0.2)vp
     // => rect (0.1,0.1,0.2,0.1) => image px (100,80,200,80)
     drawRect()
@@ -1681,7 +1674,7 @@ describe('ImageViewer object counting (#1667)', () => {
   })
 
   it('clear-all cancels the selection job', async () => {
-    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} countingEnabled />)
+    render(<ImageViewer tileSources="/tiles.dzi" imageId={7} />)
     drawRect()
     fireEvent.click(
       within(viewer().container).getByRole('button', {

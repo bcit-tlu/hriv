@@ -252,9 +252,8 @@ async def _count_pool() -> AsyncMock:
     return pool
 
 
-async def test_render_counting_gauges_when_enabled(monkeypatch) -> None:
+async def test_render_counting_gauges(monkeypatch) -> None:
     pool = await _count_pool()
-    monkeypatch.setattr(settings, "counting_enabled", True)
     monkeypatch.setattr(settings, "counting_queue_name", "arq:counting")
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         payload, _ = await render_queue_metrics()
@@ -269,16 +268,6 @@ async def test_render_counting_gauges_when_enabled(monkeypatch) -> None:
     # The counting read used the counting queue + health key.
     assert pool.zcard.await_args_list[-1].args[0] == "arq:counting"
     assert pool.ttl.await_args_list[-1].args[0] == "arq:counting:health-check"
-
-
-async def test_no_counting_gauges_when_disabled(monkeypatch) -> None:
-    pool = await _count_pool()
-    monkeypatch.setattr(settings, "counting_enabled", False)
-    with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
-        payload, _ = await render_queue_metrics()
-    text = payload.decode()
-    assert "hriv_count_" not in text
-    assert "hriv_task_queue_depth" in text
 
 
 async def test_collect_queue_state_counting_queue_params() -> None:
@@ -298,7 +287,6 @@ async def test_collect_queue_state_counting_queue_params() -> None:
 async def test_render_counting_worker_up_nan_on_redis_error(monkeypatch) -> None:
     pool = AsyncMock()
     pool.zcard.side_effect = ConnectionError("redis down")
-    monkeypatch.setattr(settings, "counting_enabled", True)
     monkeypatch.setattr(settings, "counting_queue_name", "arq:counting")
     with patch("app.worker.get_pool", new_callable=AsyncMock, return_value=pool):
         payload, _ = await render_queue_metrics()
@@ -310,7 +298,6 @@ async def test_render_queue_metrics_never_imports_counting_worker(monkeypatch):
     not import app.counting.worker (review finding on #1724)."""
     import sys
 
-    monkeypatch.setattr(settings, "counting_enabled", True)
     monkeypatch.setitem(sys.modules, "app.counting.worker", None)  # import -> ImportError
     with patch(
         "app.queue_metrics.collect_queue_state",

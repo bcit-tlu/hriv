@@ -20,7 +20,6 @@ describe('useFeatures', () => {
         collections: true,
         collectionsStudentAccess: true,
         collectionsHomeShelf: true,
-        counting: false,
       }),
     )
     expect(fetchFeatures).toHaveBeenCalledTimes(1)
@@ -34,7 +33,6 @@ describe('useFeatures', () => {
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
-        counting: false,
       }),
     )
   })
@@ -47,30 +45,6 @@ describe('useFeatures', () => {
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
-        counting: false,
-      }),
-    )
-  })
-
-  it('exposes the counting flag only when it is true', async () => {
-    fetchFeatures.mockResolvedValue({ counting: true })
-    const { result } = renderHook(() => useFeatures())
-    await waitFor(() =>
-      expect(result.current).toEqual({
-        collections: false,
-        collectionsStudentAccess: true,
-        collectionsHomeShelf: false,
-        counting: true,
-      }),
-    )
-    fetchFeatures.mockResolvedValue({ counting: false })
-    const second = renderHook(() => useFeatures())
-    await waitFor(() =>
-      expect(second.result.current).toEqual({
-        collections: false,
-        collectionsStudentAccess: true,
-        collectionsHomeShelf: false,
-        counting: false,
       }),
     )
   })

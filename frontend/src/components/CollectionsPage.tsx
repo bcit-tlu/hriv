@@ -243,8 +243,6 @@ export interface CollectionsPageProps {
   onBulkDelete?: (ids: number[]) => Promise<void>
   /** View to open on mount instead of Cards (old `?page=manage-collections` links). */
   initialView?: CollectionsView
-  /** Show "Count objects" affordances on member-image selections (#1855). */
-  countingEnabled?: boolean
 }
 
 // Icon + text label per view button (sentence case, like other buttons).
@@ -688,7 +686,6 @@ export default function CollectionsPage({
   onBulkUpdate,
   onBulkDelete,
   initialView,
-  countingEnabled = false,
 }: CollectionsPageProps) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Collection | null>(null)
@@ -1189,7 +1186,6 @@ export default function CollectionsPage({
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             hidden={detail.hidden || detailCategoryHidden}
-            countingEnabled={countingEnabled}
           />
         </Box>
       )
@@ -1221,7 +1217,6 @@ export default function CollectionsPage({
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
             actionsContainer={syncActionsEl}
-            countingEnabled={countingEnabled}
           />
         </Box>
       )

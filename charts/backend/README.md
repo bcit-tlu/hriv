@@ -422,7 +422,6 @@ outliner selection also feeds the API so it uses the correct mode's budget.
 
 | Values key                                                                      | Default                                                           | Purpose                                                                            |
 | ------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `counting.enabled`                                                              | `false`                                                           | API feature flag (`COUNTING_ENABLED`).                                             |
 | `counting.queueName`                                                            | `arq:counting`                                                    | Dedicated queue.                                                                   |
 | `counting.maxPixels` / `classicalMaxPixels`                                     | `750000` / `2000000`                                              | ML / classical stitched-pixel budgets.                                             |
 | `counting.maxDownsample` / `marginPx`                                           | `8` / `32`                                                        | Maximum power-of-two downsample / processing-level margin.                         |

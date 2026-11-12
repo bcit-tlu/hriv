@@ -133,11 +133,8 @@ the extension point for a future opt-in plugin, not a shipped cyto3 option.
 
 ## API
 
-All endpoints require a valid JWT (any role) and are gated by
-`COUNTING_ENABLED` — while off, the middleware answers the same
-`404 {"detail": "Not Found"}` as an unknown route before the body is even
-parsed, and `require_counting_enabled` is a router-level second layer.
-Image access uses the standard visibility gate
+All endpoints require a valid JWT (any role). Image access uses the
+standard visibility gate
 (`routers/images.py::_get_visible_image`), so an image a student cannot
 view is indistinguishable from a missing one.
 
@@ -204,15 +201,14 @@ best-effort), then deletes record + result keys and the owner-set entry.
 Missing records also answer `204` (idempotent); another user's job answers 404. The frontend calls this with a keepalive `fetch` (auth header)
 instead of `sendBeacon` when a selection is destroyed.
 
-## Feature flag and settings
+## Settings
 
-`GET /api/features` returns `{"counting": <bool>}`; the frontend hides the
-Count affordance while off. Flags are UX hints only — the backend enforces
-independently.
+Counting is always on (#1859 removed the `COUNTING_ENABLED` dark-launch
+flag). `GET /api/features` still reports `{"counting": true}` for one
+release so SPAs built before the gate's removal keep rendering it.
 
 | Setting                         | Default            | Purpose                                                              |
 | ------------------------------- | ------------------ | -------------------------------------------------------------------- |
-| `COUNTING_ENABLED`              | `false`            | Dark-launch flag: 404s the whole surface when off.                   |
 | `COUNTING_QUEUE_NAME`           | `arq:counting`     | Dedicated arq queue (distinct from the tile worker's `arq:queue`).   |
 | `COUNTING_MAX_PIXELS`           | `750_000`          | Pre-flight budget: stitched level pixels per job. ≥ 65 536.          |
 | `COUNTING_CLASSICAL_MAX_PIXELS` | `2_000_000`        | Larger stitched-pixel budget for classical/stub outliners; ≥ 65 536. |
@@ -238,7 +234,7 @@ result TTL; worker status writes use `SET … XX KEEPTTL`.
 ## Local development
 
 ```bash
-COUNTING_ENABLED=true docker compose --profile counting up --build
+docker compose --profile counting up --build
 ```
 
 The `counting-worker` compose service (profile `counting`) runs
@@ -282,9 +278,13 @@ This fixture exercises the workflow, not blood-smear counting accuracy.
 - **#1746** — manual report adjustment (landed): click-to-remove/restore
   outlines, click/drag to add, nearest-area group assignment,
   `countAdjust.ts` + `removed`/`added` entry state.
-- **#1855** — counting in collection detail viewers (landed):
-  `countingEnabled` forwarded page → sequence/synchronized viewers →
-  `ImageViewer`.
+- **#1855** — counting in collection detail viewers (landed): the shared
+  `ImageViewer` mounts `SelectionCountLayer`, so sequence and synchronized
+  collection panes count the same way.
+- **#1859** — `COUNTING_ENABLED` dark-launch gate retired (landed): the
+  setting, `CountingFeatureMiddleware`, router dependency and the
+  `countingEnabled` prop chain removed; `/api/features` keeps reporting
+  `counting: true` for one release for older SPAs.
 
 ## Models and pipeline (#1665)
 
@@ -366,21 +366,21 @@ selections and returned wrong counts.
   (≈ 180 s of work) — needs 3–4 replicas to keep p95 ≤ 60 s.
 - **Recommendations**: `latest` — 1 replica (staging). `stable` (4
   worker nodes, ~35 CPU unrequested; namespace quota `limits.memory`
-  52 Gi with ~11.5 Gi used) — `countingWorker.replicaCount: 2` when
-  counting is enabled there (halves burst wait and keeps counting
+  52 Gi with ~11.5 Gi used) — `countingWorker.replicaCount: 2`
+  (halves burst wait and keeps counting
   available while one pod restarts); raise to 4 for labs where everyone counts Nuclei at full
   selection size. Each replica costs 2 CPU / 1.5 Gi request / 3 Gi
   limit. Keep `torchThreads: 2`, one job per process, and the 750 k (ML)
   / 2 M (classical) pixel budgets. CPU HPA is not useful for
   minute-long bursts and flux-fleet has no KEDA, so size replicas up
-  front; enabling `stable` waits on the #1671 instructor feel-test.
+  front.
 
 ## Observability (#1669)
 
 - **OTel** (`app/counting/metrics.py`): `hriv.count_jobs{mode,outcome[,reason]}`,
   `hriv.count.wait`, `hriv.count.run{mode,step}`, `hriv.count.objects`,
   `hriv.count.pixels`.
-- **`/api/metrics`** (only when `counting_enabled`):
+- **`/api/metrics`**:
   `hriv_count_queue_depth`, `hriv_count_queue_oldest_pending_age_seconds`,
   `hriv_count_worker_up`, `hriv_count_worker_heartbeat_age_seconds`.
 - **Tracing**: `count.<step>` child spans under `count_objects_task` with
@@ -408,8 +408,9 @@ selections and returned wrong counts.
 
 | Symptom                                                  | Check / action                                                                                                                                                                                                                                                                                                            |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Count button hidden; count endpoints return 404          | Check `GET /api/features` for `counting: true`. Enable `COUNTING_ENABLED` on the API (Helm `counting.enabled`) and reload the viewer. Disabled routes deliberately return 404 even before authentication/body validation. A 404 while enabled can also mean an invisible image, another user's job, or an expired result. |
-| POST returns 503 `counting_unavailable`                  | Start the dedicated counting worker, not just the tile worker: `COUNTING_ENABLED=true docker compose --profile counting up -d --build`. Check Redis connectivity and worker startup/model-loading logs. The metric outcome is `queue_unavailable`; the HTTP detail is `counting_unavailable`.                             |
+| Count button hidden                                      | Hard-reload the viewer (stale SPA). The count button mounts on every selection once a viewer is open; it hides only while a rectangle is being drawn or the canvas is in edit mode.                                                                                                                                            |
+| POST/GET/DELETE return 404                                | An invisible image (same gate as `GET /api/images/{id}`), another user's job, or an expired result.                                                                                                                                                                                                                          |
+| POST returns 503 `counting_unavailable`                  | Start the dedicated counting worker, not just the tile worker: `docker compose --profile counting up -d --build`. Check Redis connectivity and worker startup/model-loading logs. The metric outcome is `queue_unavailable`; the HTTP detail is `counting_unavailable`.                             |
 | Job stays queued                                         | Check the queue and heartbeat below. A worker can disappear after enqueue. Confirm the API and worker use the same Redis and `COUNTING_QUEUE_NAME`, and that the worker can read the tiles volume. Scale replicas before a lab burst; do not raise per-process concurrency.                                               |
 | `selection_too_large` (422), or worker error `too_large` | Draw a smaller box. The API uses the configured outliner's pixel budget; the worker's size-driven level choice may still reject it to preserve object detail. Do not increase budgets without checking latency/memory and the hard stitching guard.                                                                       |
 | 429 `too_many_active_counts`                             | This user already has `COUNTING_MAX_ACTIVE_PER_USER` queued/running jobs (default 3). Cancel or wait for a job to finish, then retry; API responses include `Retry-After: 10`. Clearing finished results is not an active-job cancellation.                                                                               |

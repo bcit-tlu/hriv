@@ -1153,7 +1153,8 @@ Object count and processed stitched-pixel count per done job.
 
 ### `/api/metrics` counting gauges
 
-Rendered only when `counting_enabled`; absent otherwise so no false alerts:
+Rendered lazily on first scrape (a deployment with no counting worker reports
+NaN/absent series rather than a misleading 0):
 
 - `hriv_count_queue_depth` — queued + executing arq count jobs (the
   arq sorted set holds executing jobs too, exactly as for the task queue)

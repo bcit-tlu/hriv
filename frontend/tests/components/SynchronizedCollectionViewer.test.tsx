@@ -262,12 +262,6 @@ describe('SynchronizedCollectionViewer', () => {
     expect(propsA.onLockOverlays).toBeUndefined()
   })
 
-  it('forwards countingEnabled to every pane (#1855)', () => {
-    renderViewer({ countingEnabled: true })
-    expect(mockState.lastProps.get(100)!.countingEnabled).toBe(true)
-    expect(mockState.lastProps.get(101)!.countingEnabled).toBe(true)
-  })
-
   it('mirrors pan/zoom/rotation from viewer A to B without write-back', () => {
     openPair()
     renderViewer()

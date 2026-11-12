@@ -102,8 +102,6 @@ interface ImageViewerProps {
    * raw `viewport-change` handlers and drive the viewport imperatively.
    */
   onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
-  /** Show "Count objects" affordances on selection rectangles (epic #1661). */
-  countingEnabled?: boolean
   /** Extra UI portaled into the OSD container (`viewer.container`) so it stays visible in OSD full-page mode. */
   viewportOverlay?: ReactNode
   /**
@@ -144,7 +142,6 @@ export default function ImageViewer({
   onTileSourceRenewed,
   onError,
   onViewerReady,
-  countingEnabled = false,
   viewportOverlay,
   viewportControl,
 }: ImageViewerProps) {
@@ -1339,7 +1336,7 @@ export default function ImageViewer({
           canvas edit mode and while a rectangle is being drawn — mounting
           it unconditionally would cancel in-flight jobs via the hook's
           unmount cleanup. */}
-      {viewerInstance && countingEnabled && imageId != null
+      {viewerInstance && imageId != null
         ? createPortal(
             <SelectionCountLayer
               viewer={viewerInstance}

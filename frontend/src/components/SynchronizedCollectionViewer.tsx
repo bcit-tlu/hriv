@@ -54,8 +54,6 @@ export interface SynchronizedCollectionViewerProps {
    * commit away, render nothing until it arrives.
    */
   actionsContainer?: HTMLElement | null
-  /** Show "Count objects" affordances on selection rectangles (#1855). */
-  countingEnabled?: boolean
 }
 
 /**
@@ -115,7 +113,6 @@ export default function SynchronizedCollectionViewer({
   onImageRenewed,
   onError,
   actionsContainer,
-  countingEnabled = false,
 }: SynchronizedCollectionViewerProps) {
   const images = collection.images
   const canEdit = collection.permissions.canEdit
@@ -641,7 +638,6 @@ export default function SynchronizedCollectionViewer({
                     canvasAnnotations={pane.canvasAnnotations}
                     canEditContent={false}
                     measurement={pane.measurement}
-                    countingEnabled={countingEnabled}
                     onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
                     onTileSourceRenewed={onImageRenewed}
                     onError={(message) => handleViewerError(image, message)}
