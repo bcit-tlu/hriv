@@ -87,6 +87,8 @@ All endpoints require **admin or instructor** (`require_role("admin",
 | POST   | `/api/measurement-findings/{id}/approve`   | Optional `{scale, unit, objective}` correction (`unit`: `um`, `nm`, `mm`, `cm`; `objective`: `4`, `10`, `20`, `40`, `50`, `60`, `100` or `null` for none — omitted keeps the detected objective). Promotes into metadata. 409 if not pending or the image already has a scale (the finding is then superseded), 422 if no scale.                                                                   |
 | POST   | `/api/measurement-findings/{id}/reject`    | Marks rejected; metadata untouched. The image is not proposed again (a rescan overrides).                                                                                                                                                                                                                                                                                                          |
 | POST   | `/api/measurement-findings/{id}/reset`     | Returns an approved or rejected finding to `pending` and clears `reviewed_by`/`reviewed_at`. Reverting an approval whose stored scale is still the promoted value also removes the four measurement keys from `Image.metadata_` and bumps `Image.version`; a scale changed since is left alone. 409 if not reviewed or another pending finding already exists for the image.                       |
+| POST   | `/api/measurement-findings/{id}/preview`   | Re-runs detection + calibration under candidate `tuning` (a `DetectionTuning`) and returns the detector metrics plus the proposed scale/objective/confidence — read-only, nothing is written. Works on any non-superseded finding (409) whose image still exists (404). Powers the tuning dialog's live feedback.                                                                                  |
+| PATCH  | `/api/measurement-findings/{id}`           | Persists `{params}` (a `DetectionTuning`, or `null` to clear) on a pending finding; approval later promotes them to `metadata.detection_params`. 409 on reviewed findings, 404 if the image is gone.                                                                                                                                                                                               |
 | POST   | `/api/measurement-findings/{id}/rescan`    | Queues a re-detection of the finding's image; the scan supersedes all its live findings. 202.                                                                                                                                                                                                                                                                                                      |
 | GET    | `/api/measurement-findings/scan-progress`  | `image_ids` (repeated, 1–200) from a scan response; returns `{total, done}` where done = images with a live finding, or deleted. `min_finding_id` counts only newer findings, so a rescan can be tracked past the row it supersedes.                                                                                                                                                               |
 | GET    | `/api/measurement-findings/scan-remaining` | `rescan`, `category_id`; returns `{remaining}`, the count of scan candidates still unprocessed — progress for whole-library scans.                                                                                                                                                                                                                                                                 |
@@ -111,6 +113,7 @@ and every other key are preserved:
 | `measurement_unit`         | `um` unless the reviewer picked `nm`, `mm` or `cm`                              |
 | `measurement_scale_source` | Finding `source` (e.g. `rbc`), or `manual` when the scale or unit was corrected |
 | `measurement_finding_id`   | The approved finding                                                            |
+| `detection_params`         | The finding's tuned `params` (DetectionTuning), when set (#1869)                |
 
 When the image has no `objective_power` yet, approval also writes the
 finding's objective (or the reviewer's corrected one) as a float, e.g. `40.0`,
@@ -140,6 +143,9 @@ scale is still exactly the value the finding approved (`measurement_scale`,
 are removed and `version` incremented again. A scale changed since — by Edit
 image, a newer finding, or tooling — is authoritative and kept; the finding
 still returns to pending but stays hidden there while a scale exists.
+Promoted `detection_params` are removed under the same ownership rule —
+while the stored value still equals the finding's `params` — and a
+re-tuned-since value is kept.
 
 Replacing an image's source supersedes all its findings, so the replacement
 becomes eligible for a fresh scan.

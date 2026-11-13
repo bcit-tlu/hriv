@@ -25,6 +25,7 @@ from ..measurement.service import (
     approve_finding,
     has_scale,
     has_scale_sql,
+    preview_detection,
     reject_finding,
     rescan_candidates_stmt,
     reset_finding,
@@ -33,12 +34,15 @@ from ..measurement.service import (
 )
 from ..models import Category, Image, MeasurementFinding, User
 from ..schemas import (
+    DetectionPreviewOut,
     MeasurementFindingCategoryOut,
     MeasurementApprove,
     MeasurementBulkApprove,
     MeasurementBulkApproveOut,
     MeasurementFindingOut,
     MeasurementFindingsPageOut,
+    MeasurementFindingUpdate,
+    MeasurementPreviewRequest,
     MeasurementScanOut,
     MeasurementScanProgressOut,
     MeasurementScanRemainingOut,
@@ -554,3 +558,73 @@ async def rescan(
     return await _enqueue_scan(
         [finding.image_id], background_tasks, user, rescan=True
     )
+
+
+@router.post("/{finding_id}/preview", response_model=DetectionPreviewOut)
+async def preview(
+    finding_id: int,
+    user: _Reviewer,
+    body: MeasurementPreviewRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> DetectionPreviewOut:
+    """Re-run RBC detection under candidate tuning — read-only (#1867).
+
+    Powers the tuning dialog's live feedback; works on any non-superseded
+    finding whose image still exists. Nothing is written — saving the
+    tuning is PATCH's job.
+    """
+    finding = await db.get(MeasurementFinding, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    if finding.status == "superseded":
+        raise HTTPException(status_code=409, detail="Finding is superseded")
+    image = await db.get(Image, finding.image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    body = body or MeasurementPreviewRequest()
+    measurement, estimate, reason = await preview_detection(
+        db, image, body.tuning.to_detector_params()
+    )
+    return DetectionPreviewOut(
+        diameter_px=measurement.diameter_px if measurement else None,
+        component_count=measurement.component_count if measurement else None,
+        selected_count=measurement.selected_count if measurement else None,
+        peak_fraction=measurement.peak_fraction if measurement else None,
+        proposed_scale=estimate.scale if estimate else None,
+        proposed_unit="um",
+        objective=estimate.objective if estimate else None,
+        confidence=estimate.confidence if estimate else 0.0,
+        reason=reason,
+    )
+
+
+@router.patch("/{finding_id}", response_model=MeasurementFindingOut)
+async def update_finding(
+    finding_id: int,
+    body: MeasurementFindingUpdate,
+    user: _Reviewer,
+    db: AsyncSession = Depends(get_db),
+) -> MeasurementFindingOut:
+    """Persist tuned detection params on a pending finding (#1867).
+
+    Reviewed findings are immutable — retuning history means nothing, so
+    approved/rejected/superseded rows 409. Approval later promotes the
+    params into ``Image.metadata_.detection_params`` (#1869).
+    """
+    finding, image = await _pending_with_image(db, finding_id)
+    finding.params = (
+        body.params.model_dump() if body.params is not None else None
+    )
+    await db.commit()
+    await db.refresh(finding)
+    logger.info(
+        "Measurement finding params updated",
+        extra={
+            "event": "measurement.params_update",
+            "finding_id": finding.id,
+            "image_id": image.id,
+            "has_params": finding.params is not None,
+            **actor_log_fields(user),
+        },
+    )
+    return _out(finding, image, await _category_path(db, image))

@@ -43,6 +43,10 @@ specified in detail.
   `params`; raw `DetectorParams` constants never cross the API. The semantic
   defaults map exactly onto the shipped constants, so tuning is opt-in and
   `detector_version` stays put.
+- Approval promotes `params` to `metadata.detection_params` even when the
+  reviewer corrected scale or objective — tuning describes detection, not
+  the promoted value, so a correction never holds it back. Reset removes it
+  only while the stored value still equals the finding's `params` (#1869).
 
 ## UI conventions
 

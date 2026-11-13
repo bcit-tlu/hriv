@@ -11,6 +11,7 @@ import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
 
+import * as api from '../../src/api'
 import type { Collection, ImageItem } from '../../src/types'
 import { makeCollection, makeCollectionSummary, makeImage } from '../helpers/fixtures'
 import MyCollectionsDrawer from '../../src/components/MyCollectionsDrawer'
@@ -25,11 +26,19 @@ vi.mock('../../src/components/ImageViewer', () => ({
     lastViewerProps = props
     return (
       <div data-testid="image-viewer" data-image-id={String(props.imageId)}>
+        {props.viewportControl as ReactNode}
         {props.viewportOverlay as ReactNode}
       </div>
     )
   },
 }))
+
+// Source info is lazy-fetched when the details drawer opens (#1862).
+vi.mock('../../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api')>()
+  return { ...actual, fetchImageSourceInfo: vi.fn() }
+})
+const fetchImageSourceInfoMock = vi.mocked(api.fetchImageSourceInfo)
 
 function images(count: number): ImageItem[] {
   return Array.from({ length: count }, (_, i) =>
@@ -60,6 +69,7 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
 
 beforeEach(() => {
   lastViewerProps = null
+  fetchImageSourceInfoMock.mockReset()
 })
 
 describe('SequenceCollectionViewer', () => {
@@ -567,5 +577,110 @@ describe('caption note', () => {
     expect(within(dialog).getByText(/Fracture line/).textContent).toContain(
       'Fracture line visible.\nCallus forming medially.',
     )
+  })
+})
+
+describe('image details drawer (#1862)', () => {
+  const detailed = () =>
+    seqCollection({
+      images: [
+        makeImage({
+          id: 100,
+          name: 'Slice 1',
+          copyright: 'CC-BY-4.0',
+          width: 2048,
+          height: 1536,
+          fileSize: 42_000_000,
+        }),
+        makeImage({ id: 101, name: 'Slice 2' }),
+      ],
+    })
+
+  it('mounts the Image details trigger via viewportControl', () => {
+    renderViewer({ collection: detailed() })
+    const viewer = screen.getByTestId('image-viewer')
+    expect(within(viewer).getByRole('button', { name: 'Image details' })).toBeInTheDocument()
+  })
+
+  it('opens the drawer with member metadata and lazy-fetches source info', async () => {
+    fetchImageSourceInfoMock.mockResolvedValue({
+      originalFilename: 'slice-1.svs',
+      fileType: 'SVS',
+      uploadedByName: 'Dr. Who',
+    })
+    renderViewer({ collection: detailed() })
+    expect(fetchImageSourceInfoMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    const viewer = screen.getByTestId('image-viewer')
+    // Drawer rows render `<strong>label</strong> value` — assert on the row.
+    const row = (label: string) => within(viewer).getByText(label).parentElement!
+    await within(viewer).findByText('Copyright:')
+    expect(row('Copyright:')).toHaveTextContent('Copyright: CC-BY-4.0')
+    expect(row('Dimensions:')).toHaveTextContent('Dimensions: 2048 × 1536')
+    expect(fetchImageSourceInfoMock).toHaveBeenCalledWith(100)
+    await within(viewer).findByText('Original file:')
+    expect(row('Original file:')).toHaveTextContent('Original file: slice-1.svs')
+    expect(row('Uploaded by:')).toHaveTextContent('Uploaded by: Dr. Who')
+  })
+
+  it('shows resolved program and group names from memberInfoNames', async () => {
+    fetchImageSourceInfoMock.mockResolvedValue({
+      originalFilename: null,
+      fileType: null,
+      uploadedByName: null,
+    })
+    renderViewer({
+      collection: detailed(),
+      memberInfoNames: new Map([[100, { programNames: ['Histology'], groupNames: ['Block A'] }]]),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    const viewer = screen.getByTestId('image-viewer')
+    const row = (label: string) => within(viewer).getByText(label).parentElement!
+    await within(viewer).findByText('Program:')
+    expect(row('Program:')).toHaveTextContent('Program: Histology')
+    expect(row('Group:')).toHaveTextContent('Group: Block A')
+  })
+
+  it('omits program/group rows when the member has no names entry', async () => {
+    fetchImageSourceInfoMock.mockResolvedValue({
+      originalFilename: null,
+      fileType: null,
+      uploadedByName: null,
+    })
+    renderViewer({ collection: detailed(), memberInfoNames: new Map() })
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    const viewer = screen.getByTestId('image-viewer')
+    await within(viewer).findByText(/Copyright:/)
+    expect(within(viewer).queryByText(/Programs?:/)).not.toBeInTheDocument()
+    expect(within(viewer).queryByText(/Groups?:/)).not.toBeInTheDocument()
+  })
+
+  it('closes the drawer when the member changes', async () => {
+    fetchImageSourceInfoMock.mockResolvedValue({
+      originalFilename: null,
+      fileType: null,
+      uploadedByName: null,
+    })
+    const props: SequenceCollectionViewerProps = {
+      collection: detailed(),
+      itemId: 100,
+      onSelectItem: vi.fn(),
+      onOpenImage: vi.fn(),
+      onImageRenewed: vi.fn(),
+      onError: vi.fn(),
+    }
+    const { rerender } = render(<SequenceCollectionViewer {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Image details' }))
+    const viewer = screen.getByTestId('image-viewer')
+    await within(viewer).findByText(/Copyright:/)
+
+    // The parent swapping ?item= remounts the keyed provider — the drawer
+    // reverts to closed (same contract as the note dialog).
+    rerender(<SequenceCollectionViewer {...props} itemId={101} />)
+    const nextViewer = screen.getByTestId('image-viewer')
+    const trigger = within(nextViewer).getByRole('button', { name: 'Image details' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(within(nextViewer).queryByText(/Copyright:/)).not.toBeInTheDocument()
   })
 })
