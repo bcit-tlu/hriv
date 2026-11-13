@@ -64,6 +64,16 @@ is fetched by
 `frontend/src/useImageSourceInfo.ts` from `/api/images/{id}/source-info`, with
 the backend query and role gate in `backend/app/image_source_info.py`.
 
+Sequence-viewer annotation/overlay editing (#1863) reuses
+`useCanvasAnnotations` / `useOverlayPersistence` — both generalized to a
+single `onImageSaved(image)` host callback (App reloads its lists; the
+viewer swaps the member via `renewCollectionImage`). `CollectionsPage`
+forwards the auth `canEditContent` gate (admin/instructor; unrelated to
+`collection.permissions.canEdit`) plus App's `canvasDraftRef`, a shared
+`CanvasDraftHandle` the viewer keeps dirty/saving/discard on so the
+existing `runCanvasNavigation` / popstate / `beforeunload` guards cover
+item switches and collection close.
+
 ## Notes
 
 - **Programs are admin-managed only** (since cohorts were removed in

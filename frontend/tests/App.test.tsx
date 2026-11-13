@@ -522,22 +522,29 @@ vi.mock('../src/components/SortableTileGrid', () => ({
   ),
 }))
 
+const imageViewerProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
+}))
 vi.mock('../src/components/ImageViewer', () => ({
-  default: function MockImageViewer({
-    imageId,
-    onCanvasEditModeChange,
-    onCanvasAnnotationsChange,
-    onSaveCanvasAnnotations,
-    viewportOverlay,
-    viewportControl,
-  }: {
-    imageId?: number
-    onCanvasEditModeChange?: (active: boolean) => void
-    onCanvasAnnotationsChange?: (annotations: unknown[]) => void
-    onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
-    viewportOverlay?: ReactNode
-    viewportControl?: ReactNode
-  }) {
+  default: function MockImageViewer(
+    props: {
+      imageId?: number
+      onCanvasEditModeChange?: (active: boolean) => void
+      onCanvasAnnotationsChange?: (annotations: unknown[]) => void
+      onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+      viewportOverlay?: ReactNode
+      viewportControl?: ReactNode
+    } & Record<string, unknown>,
+  ) {
+    imageViewerProps.current = props
+    const {
+      imageId,
+      onCanvasEditModeChange,
+      onCanvasAnnotationsChange,
+      onSaveCanvasAnnotations,
+      viewportOverlay,
+      viewportControl,
+    } = props
     const [internalEditMode, setInternalEditMode] = useState(false)
     return (
       <div>
@@ -651,6 +658,7 @@ const collectionsDataMocks = vi.hoisted(() => ({
   move: vi.fn(),
   saveOwners: vi.fn(),
   setHidden: vi.fn(),
+  renewCollectionImage: vi.fn(),
   filters: {
     type: 'all' as string,
     mine: false,
@@ -714,7 +722,7 @@ vi.mock('../src/useCollectionsData', async () => {
             ? addToCollectionMocks.addImagesToCollection(id, imageIds)
             : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
         removeImages: vi.fn(),
-        renewCollectionImage: vi.fn(),
+        renewCollectionImage: collectionsDataMocks.renewCollectionImage,
       }
     },
   }
@@ -1030,6 +1038,135 @@ describe('App breadcrumbs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
     expect(canvasAnnotationsMock.discardCanvasAnnotations).toHaveBeenCalledOnce()
     expect(authState.logout).toHaveBeenCalledOnce()
+  })
+
+  // #1863 — the sequence viewer registers its edit draft on the shared
+  // `canvasDraftRef` handle; the same dialog/guards then cover collection
+  // item switches and collection close.
+  async function openCollectionsPage() {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Shell tab collections' }))
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument()
+  }
+  function registerCollectionDraft(draft: { dirty: boolean; saving?: boolean }) {
+    const ref = collectionsPageProps.current?.canvasDraftRef as
+      { current: { dirty: boolean; saving: boolean; discard: () => void } | null } | undefined
+    expect(ref, 'canvasDraftRef prop').toBeTruthy()
+    ref!.current = { dirty: draft.dirty, saving: draft.saving ?? false, discard: vi.fn() }
+    return ref!.current!
+  }
+
+  it('passes the annotation gate and shared draft handle to the collections page', async () => {
+    await openCollectionsPage()
+    // The App-level user is an instructor → canEditContent.
+    expect(collectionsPageProps.current!.canAnnotateImages).toBe(true)
+    expect(collectionsPageProps.current!.canvasDraftRef).toBeTruthy()
+  })
+
+  it('confirms before switching collection items with a dirty collection draft', async () => {
+    await openCollectionsPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    const handle = registerCollectionDraft({ dirty: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard annotation changes?' })
+    expect(dialog).toHaveAccessibleDescription('Your unsaved annotation changes will be lost.')
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    // Keep Editing cancels the switch and stays on the current member.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Editing' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    // Retry → Discard Changes runs the registered discard and switches.
+    fireEvent.click(await screen.findByRole('button', { name: 'Select item 99' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(handle.discard).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('confirms before closing the collection with a dirty draft', async () => {
+    await openCollectionsPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    registerCollectionDraft({ dirty: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByRole('dialog', { name: 'Discard annotation changes?' })).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('renews the browse caches when a collection member is saved', async () => {
+    await openCollectionsPage()
+    const onCollectionImageRenewed = collectionsPageProps.current?.onCollectionImageRenewed as (
+      collectionId: number,
+      image: ApiImage,
+    ) => void
+    expect(onCollectionImageRenewed).toBeTypeOf('function')
+
+    // Open the same image in the regular viewer first — the popstate/browse
+    // caches hold its pre-edit record.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    expect(imageViewerProps.current?.imageId).toBe(101)
+    expect(imageViewerProps.current?.tileSources).toBe('/tiles.dzi')
+
+    const renewed = {
+      id: 101,
+      name: 'Specimen Image',
+      thumb: '/thumb.jpg',
+      tile_sources: '/renewed-tiles.dzi',
+      category_id: 1,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      version: 2,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+      metadata_extra: { canvas_annotations: [{ id: 'a1', type: 'rect', x: 0, y: 0, w: 1, h: 1 }] },
+      width: 100,
+      height: 100,
+      file_size: 10,
+    } as ApiImage
+
+    act(() => onCollectionImageRenewed(5, renewed))
+
+    // The collection detail swap still happens…
+    expect(collectionsDataMocks.renewCollectionImage).toHaveBeenCalledWith(5, renewed)
+    // …and the saved record is swapped into the browse caches + selected
+    // image wholesale, so the open regular viewer (and a later browser back
+    // into it) sees the saved metadata instead of the stale pre-edit record.
+    // (useCanvasAnnotations is mocked here, so tileSources is the observable
+    // proof the selectedImage object was replaced.)
+    expect(imageViewerProps.current?.tileSources).toBe('/renewed-tiles.dzi')
+  })
+
+  it('blocks navigation while a collection draft save is pending', async () => {
+    await openCollectionsPage()
+    registerCollectionDraft({ dirty: false, saving: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+
+    expect(screen.queryByText('Discard annotation changes?')).not.toBeInTheDocument()
+    expect(screen.getByText('Please wait for the annotation save to finish.')).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+
+  it('blocks beforeunload while a collection draft is dirty or saving', async () => {
+    await openCollectionsPage()
+    const handle = registerCollectionDraft({ dirty: true })
+
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+
+    handle.dirty = false
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
   })
 
   it('blocks navigation while an explicit canvas save is pending', async () => {

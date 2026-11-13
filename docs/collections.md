@@ -1393,17 +1393,42 @@ and pass it down, so the position is shareable and participates in history.
 The member's metadata drawer is `components/CollectionImageDetails.tsx`
 (#1862) around `components/ImageDetailsDrawer.tsx`.
 
-**Read-only surface.** One `ImageViewer` at a time, `key={image.id}` so
+**Viewer surface.** One `ImageViewer` at a time, `key={image.id}` so
 switching items remounts it and no viewport state bleeds between images.
-`canEditContent={false}` and no annotation mutation callbacks — canvas
-annotations, locked overlays and measurement metadata from `metadataExtra`
-render read-only via `canvasAnnotationsFromMetadata` /
+Canvas annotations, locked overlays and measurement metadata from
+`metadataExtra` render via `canvasAnnotationsFromMetadata` /
 `lockedOverlaysFromMetadata` / `measurementFromMetadata`
-(`components/imageViewerUtils.ts`). **Open image** navigates to the normal
-`?image={id}` view where annotations can be edited.
+(`components/imageViewerUtils.ts`). For students the surface stays
+read-only — `canEditContent={false}` and no mutation callbacks — while
+admins/instructors get the full editing prop set (below). **Open image**
+navigates to the normal `?image={id}` view of the same image.
 
-**Object counting (#1855).** While the deployment's `counting` flag is on,
-the viewer's selection-rectangle → **Count objects** flow works on the
+**Annotation and overlay editing (#1863).** `CollectionsPage` forwards
+App's auth-resolved `canEditContent` (admin/instructor only — collection
+`permissions.canEdit` is curation authority and does **not** gate this).
+The viewer runs the same `useCanvasAnnotations` / `useOverlayPersistence`
+hooks the image viewer uses, sharing their `latestVersionRef` /
+`latestMetadataRef` so lock → annotate → clear sequences keep
+optimistic-concurrency versions straight. Both hooks were generalized to a
+single `onImageSaved(image)` callback: App still reloads
+categories/uncategorized, while the viewer's `onImageRenewed` →
+`renewCollectionImage` swaps the saved `ApiImage` into `detail.images` —
+annotations live on the image record, so edits appear everywhere the image
+shows up (this collection, other collections, the image view). Entering
+canvas edit mode disables the details trigger and closes the drawer and
+note dialog; an overlay lock auto-engages when the member stores
+`locked_overlays` and disengages when the saved member no longer does.
+Unsaved edits are guarded like the image viewer's: the viewer registers a
+`CanvasDraftHandle` (`{dirty, saving, discard}`) on App's shared
+`canvasDraftRef`, so `runCanvasNavigation`/`handlePopState`/`beforeunload`
+intercept member switches, collection close and tab close with the same
+"Please wait…" snack and "Discard annotation changes?" dialog — **Discard
+Changes** runs the handle's `discard()` before the pending navigation, and
+**Keep Editing** cancels it. Editing inside the synchronized viewer's
+independent panes is a separate product question (#1864).
+
+**Object counting (#1855).** The viewer's selection-rectangle →
+**Count objects** flow works on the
 current member exactly as in the image viewer
 ([object-counting.md](object-counting.md)). Jobs stay ephemeral per
 selection and are cancelled when an item change remounts the viewer.

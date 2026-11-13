@@ -1442,6 +1442,23 @@ describe('CollectionsPage', () => {
       expect(names.get(22)).toEqual({ programNames: ['Radiography'], groupNames: [] })
     })
 
+    it('forwards the annotation gate and shared draft handle to the sequence viewer (#1863)', () => {
+      const draftRef = { current: null }
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, type: 'sequence' }),
+        canAnnotateImages: true,
+        canvasDraftRef: draftRef,
+      })
+      expect(sequenceViewerProps.current!.canEditContent).toBe(true)
+      expect(sequenceViewerProps.current!.canvasDraftRef).toBe(draftRef)
+    })
+
+    it('defaults the sequence viewer to read-only without the annotation gate (#1863)', () => {
+      renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, type: 'sequence' }) })
+      expect(sequenceViewerProps.current!.canEditContent).toBe(false)
+    })
+
     it('still mounts the viewer when a synchronized collection has no images', () => {
       renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, images: [] }) })
       // The empty-state fallback itself is covered by the viewer's own tests.

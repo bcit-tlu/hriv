@@ -120,6 +120,7 @@ interface StoryArgs {
   onOpenImage: (image: ImageItem) => void
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  canEditContent?: boolean
 }
 
 function SequenceViewerExample(args: StoryArgs) {
@@ -137,6 +138,7 @@ function SequenceViewerExample(args: StoryArgs) {
         onOpenImage={args.onOpenImage}
         onImageRenewed={args.onImageRenewed}
         onError={args.onError}
+        canEditContent={args.canEditContent}
       />
     </AuthContext.Provider>
   )
@@ -153,7 +155,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Read-only one-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image button, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566).',
+          'One-image-at-a-time viewer for sequence collections: a filmstrip above the image, lightbox-style Previous/Next edge buttons that appear on pointer activity, a caption row with the member name, position readout and Open image button, and autofocused arrow-key support. Member management (reorder/add/remove) lives in the Manage dialog on the collection page (#1566). With canEditContent (admin/instructor) the viewer also offers canvas annotation editing and overlay locking on the active member (#1863).',
       },
     },
   },
@@ -201,6 +203,17 @@ export const ReadOnlyMember: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 2')
+  },
+}
+
+// #1863 — admins/instructors annotate the active member and lock overlays
+// in place; the toolbar gains the canvas-edit affordance versus `Basic`.
+export const Annotatable: Story = {
+  name: 'Annotatable (admin/instructor)',
+  args: { collection: MANY_IMAGES, canEditContent: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('1 of 6')
   },
 }
 

@@ -12,6 +12,9 @@ import ImageIcon from '@mui/icons-material/Image'
 
 import { type ApiImage } from '../api'
 import type { Collection, ImageItem } from '../types'
+import { useCanvasAnnotations } from '../useCanvasAnnotations'
+import type { CanvasDraftHandle } from '../useCanvasAnnotations'
+import { useOverlayPersistence } from '../useOverlayPersistence'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
@@ -51,6 +54,20 @@ export interface SequenceCollectionViewerProps {
    * The viewport imagery keeps its color, like the hidden image view.
    */
   hidden?: boolean
+  /**
+   * Admin/instructor gate resolved by the parent from `canEditContent`
+   * (#1863) — unlocks annotation editing and overlay lock/clear on the
+   * active member. Annotations live on the image, so edits here are
+   * visible everywhere the image appears. Orthogonal to
+   * `collection.permissions.canEdit` (curation).
+   */
+  canEditContent?: boolean
+  /**
+   * Shared draft handle (#1863): the viewer registers dirty/saving state +
+   * discard so the App-level navigation guards (discard dialog, popstate,
+   * beforeunload) cover item switches and collection close.
+   */
+  canvasDraftRef?: React.MutableRefObject<CanvasDraftHandle | null>
 }
 
 // How long edge nav stays after the last pointer event — mirrors OSD's
@@ -109,6 +126,8 @@ export default function SequenceCollectionViewer({
   onError,
   memberInfoNames,
   hidden = false,
+  canEditContent = false,
+  canvasDraftRef,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
   // Images whose tiles failed mid-session (deleted / access lost / expired
@@ -214,6 +233,18 @@ export default function SequenceCollectionViewer({
     JSON.stringify(currentMetadata?.locked_overlays ?? null),
     () => lockedOverlaysFromMetadata(currentMetadata),
   )
+  // `initialOverlays` is an ImageViewer mount dependency — keep it stable
+  // for the member's whole lifetime (id-keyed, like useShareableImageState
+  // does for the regular viewer). A content-keyed value would change on
+  // every lock/clear save and the mount effect would destroy the OSD
+  // viewer, resetting zoom/pan mid-edit. Live overlay changes arrive
+  // through the lock callbacks, not this prop; `lockedOverlays` above
+  // still seeds the auto-engaged lock.
+  const initialLockedOverlays = useMemo(
+    () => lockedOverlaysFromMetadata(currentMetadata),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on the member id only
+    [currentImageId],
+  )
   const canvasAnnotations = useStableJson(
     JSON.stringify(currentMetadata?.canvas_annotations ?? null),
     () => canvasAnnotationsFromMetadata(currentMetadata),
@@ -222,6 +253,115 @@ export default function SequenceCollectionViewer({
     JSON.stringify([currentMetadata?.measurement_scale, currentMetadata?.measurement_unit]),
     () => measurementFromMetadata(currentMetadata),
   )
+
+  // --- Canvas annotation + overlay editing (#1863) -------------------------
+  // The same hooks the image viewer uses; `onImageSaved` swaps the saved
+  // image into the collection's member list (renewCollectionImage) so the
+  // version/metadata stay current for optimistic-concurrency saves.
+  const setEditError = useCallback<React.Dispatch<React.SetStateAction<string | null>>>(
+    (value) => {
+      const message = typeof value === 'function' ? value(null) : value
+      if (message) onError(message)
+    },
+    [onError],
+  )
+  const {
+    localCanvasAnnotations,
+    handleCanvasAnnotationsChange,
+    saveCanvasAnnotations,
+    discardCanvasAnnotations,
+    canvasDraftDirty,
+    canvasSaving,
+    latestVersionRef,
+    latestMetadataRef,
+  } = useCanvasAnnotations({
+    selectedImage: current,
+    onImageSaved: onImageRenewed,
+    setErrorSnack: setEditError,
+  })
+  const [lockEngaged, setLockEngaged] = useState(false)
+  const { handleLockOverlays, handleUnlockOverlays, handleClearOverlays } = useOverlayPersistence({
+    selectedImage: current,
+    latestVersionRef,
+    latestMetadataRef,
+    onImageSaved: onImageRenewed,
+    setLockEngaged,
+    setErrorSnack: setEditError,
+  })
+
+  // Auto-engage the overlay lock when the active member has stored
+  // `locked_overlays` (the image viewer's behavior); resets per member.
+  const hasLockedOverlays = lockedOverlays != null && lockedOverlays.length > 0
+  const [prevLockSeed, setPrevLockSeed] = useState<{
+    id: number | null
+    has: boolean
+  } | null>(null)
+  if (
+    prevLockSeed == null ||
+    prevLockSeed.id !== currentImageId ||
+    prevLockSeed.has !== hasLockedOverlays
+  ) {
+    setPrevLockSeed({ id: currentImageId, has: hasLockedOverlays })
+    setLockEngaged(hasLockedOverlays)
+  }
+
+  // Canvas edit mode: disables the details trigger/drawer and closes the
+  // note dialog on entry; switching members always ends the session.
+  const [canvasEditActive, setCanvasEditActive] = useState(false)
+  const [prevEditMemberId, setPrevEditMemberId] = useState(currentImageId)
+  if (prevEditMemberId !== currentImageId) {
+    setPrevEditMemberId(currentImageId)
+    setCanvasEditActive(false)
+  }
+
+  // Refs mirror App's synchronous draft flags so the navigation guards see
+  // a dirty/saving transition in the same event that caused it.
+  const draftDirtyRef = useRef(false)
+  const draftSavingRef = useRef(false)
+  useEffect(() => {
+    draftDirtyRef.current = canvasDraftDirty
+  }, [canvasDraftDirty])
+  useEffect(() => {
+    draftSavingRef.current = canvasSaving
+  }, [canvasSaving])
+  const handleAnnotationsChange = useCallback(
+    (annotations: Parameters<typeof handleCanvasAnnotationsChange>[0]) => {
+      draftDirtyRef.current = handleCanvasAnnotationsChange(annotations)
+    },
+    [handleCanvasAnnotationsChange],
+  )
+  const handleSaveAnnotations = useCallback(
+    async (annotations: Parameters<typeof saveCanvasAnnotations>[0]) => {
+      draftSavingRef.current = true
+      try {
+        return await saveCanvasAnnotations(annotations)
+      } finally {
+        draftSavingRef.current = false
+      }
+    },
+    [saveCanvasAnnotations],
+  )
+
+  // Register the draft handle for App's guards; the getters read the live
+  // refs so a synchronous change/save is guarded before effects flush.
+  useEffect(() => {
+    if (!canvasDraftRef) return
+    canvasDraftRef.current = {
+      get dirty() {
+        return draftDirtyRef.current
+      },
+      get saving() {
+        return draftSavingRef.current
+      },
+      discard: () => {
+        draftDirtyRef.current = false
+        discardCanvasAnnotations()
+      },
+    }
+    return () => {
+      canvasDraftRef.current = null
+    }
+  }, [canvasDraftRef, discardCanvasAnnotations])
 
   const goTo = useCallback(
     (index: number) => {
@@ -400,6 +540,7 @@ export default function SequenceCollectionViewer({
           programNames={memberInfoNames?.get(current.id)?.programNames ?? []}
           groupNames={memberInfoNames?.get(current.id)?.groupNames ?? []}
           measurement={measurement}
+          disabled={canvasEditActive}
         >
           <ImageViewer
             key={current.id}
@@ -408,10 +549,24 @@ export default function SequenceCollectionViewer({
             imageId={current.id}
             categoryId={current.categoryId ?? undefined}
             height={{ xs: '60vh', md: '100%' }}
-            initialOverlays={lockedOverlays}
-            overlaysLocked={lockedOverlays != null}
-            canvasAnnotations={canvasAnnotations}
-            canEditContent={false}
+            initialOverlays={initialLockedOverlays}
+            overlaysLocked={lockEngaged}
+            onLockOverlays={canEditContent ? handleLockOverlays : undefined}
+            onUnlockOverlays={canEditContent ? handleUnlockOverlays : undefined}
+            onClearOverlays={canEditContent ? handleClearOverlays : undefined}
+            canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
+            canEditContent={canEditContent}
+            onCanvasAnnotationsChange={canEditContent ? handleAnnotationsChange : undefined}
+            onSaveCanvasAnnotations={canEditContent ? handleSaveAnnotations : undefined}
+            canvasDraftDirty={canvasDraftDirty}
+            onCanvasEditModeChange={
+              canEditContent
+                ? (active) => {
+                    setCanvasEditActive(active)
+                    if (active) setNoteDialogOpen(false)
+                  }
+                : undefined
+            }
             measurement={measurement}
             onTileSourceRenewed={onImageRenewed}
             onError={handleViewerError}
