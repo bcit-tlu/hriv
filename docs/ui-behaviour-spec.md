@@ -1195,8 +1195,11 @@ committed on Save) in the edit modals.
 - A pending row's thumbnail opens `DetectionReviewDialog` — a bare
   OpenSeadragon view (no navigation or toolbars) plus the three tuning
   controls; debounced `POST …/preview` gives live feedback and **Apply**
-  PATCHes `params`, updating the row in place. Reviewed rows keep the old
-  thumbnail → viewer navigation.
+  PATCHes `params`, updating the row in place. The preview's outline mask
+  paints detected components over the image (green = counted toward the
+  estimate, vermillion = counted but rejected) and a live **N cells** chip
+  sits at the image's top-right, matching the object-count report. Reviewed
+  rows keep the old thumbnail → viewer navigation.
 - The `Collections` column is available in the column chooser but is off by
   default (and only offered while `COLLECTIONS_ENABLED` is on); it lists the
   caller-visible collections each image belongs to as clickable chips —

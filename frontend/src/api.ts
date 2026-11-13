@@ -2951,15 +2951,20 @@ export interface DetectionPreviewOut {
   confidence: number
   /** source_missing | slide_too_large_for_rbc | detect_failed | no_rbc_population; null on success. */
   reason: string | null
+  /** work-image px per source px — divide mask coords by it for level-0. */
+  work_scale: number | null
+  /** Base64 PNG (include=outline only): 0 none, 1 rejected fill, 2 selected fill. */
+  outline: string | null
 }
 
 export function previewMeasurementFinding(
   id: number,
   tuning: DetectionTuning,
+  include?: 'outline'[],
 ): Promise<DetectionPreviewOut> {
   return request(`/measurement-findings/${id}/preview`, {
     method: 'POST',
-    body: JSON.stringify({ tuning }),
+    body: JSON.stringify({ tuning, include: include ?? null }),
   })
 }
 

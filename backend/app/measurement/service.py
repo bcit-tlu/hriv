@@ -113,23 +113,30 @@ def _detect_measurement(
     width: int | None,
     height: int | None,
     params: DetectorParams | None = None,
+    with_outline: bool = False,
 ) -> tuple[RbcMeasurement | None, ScaleEstimate | None]:
     """Run detector + calibration; the preview endpoint needs both halves."""
     work = load_work_image(path)
-    measurement = measure_rbc_diameter(work, width or work.width, params)
+    measurement = measure_rbc_diameter(
+        work, width or work.width, params, with_outline=with_outline
+    )
     if measurement is None:
         return None, None
     return measurement, estimate_scale(measurement, width, height)
 
 
 async def preview_detection(
-    db: AsyncSession, image: Image, params: DetectorParams | None
+    db: AsyncSession,
+    image: Image,
+    params: DetectorParams | None,
+    with_outline: bool = False,
 ) -> tuple[RbcMeasurement | None, ScaleEstimate | None, str | None]:
     """Re-run RBC detection under candidate tuning — read-only (#1867).
 
     Mirrors ``scan_image``'s guard rails but writes nothing; returns the
     detector measurement, the calibrated estimate, and a ``reason`` when
-    detection could not run or found no population.
+    detection could not run or found no population. ``with_outline`` also
+    rasterizes component outlines for the tuning dialog's overlay (#1872).
     """
     path = await _latest_source_path(db, image.id)
     if not path or not await asyncio.to_thread(os.path.isfile, path):
@@ -138,7 +145,12 @@ async def preview_detection(
         return None, None, "slide_too_large_for_rbc"
     try:
         measurement, estimate = await asyncio.to_thread(
-            _detect_measurement, path, image.width, image.height, params
+            _detect_measurement,
+            path,
+            image.width,
+            image.height,
+            params,
+            with_outline,
         )
     except Exception:
         logger.warning(

@@ -24,7 +24,9 @@ minimum cell size, exclude purple-stained nuclei). Control changes debounce a
 read-only `POST /measurement-findings/{id}/preview` and the readout shows the
 proposed scale, objective, confidence and RBC evidence; **Apply** persists
 the tuning via `PATCH` so a later approval promotes it into image metadata.
-See `docs/measurement-review.md`.
+The preview's outline mask also paints detected components over the image
+(green = counted, vermillion = rejected) and a live **N cells** chip sits at
+the image's top-right. See `docs/measurement-review.md`.
 
 ## Interactive example
 

@@ -1,0 +1,37 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as DetectionOutlinesLayerStories from './DetectionOutlinesLayer.stories'
+
+<Meta of={DetectionOutlinesLayerStories} />
+
+<Title />
+
+<Subtitle>Preview outline overlay for the measurement tuning dialog (#1872).</Subtitle>
+
+## When to use
+
+Rendered by `DetectionReviewDialog` over its bare OpenSeadragon viewer. The
+preview endpoint's `include=outline` response is a labelled PNG in
+work-image space (1 = counted but outside the dominant size window,
+2 = selected); `detectionOutlines.ts` tints it — green for counted,
+vermillion for rejected — and this layer blits it into `viewer.canvas`,
+tracking zoom/pan like `CountOutlinesLayer`. The overlay is ephemeral
+review UI: it is never persisted as annotations or metadata. Stories use a
+deterministic fake viewer surface rather than a real tile source.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={DetectionOutlinesLayerStories.Basic} />
+
+## All variations
+
+<Stories />

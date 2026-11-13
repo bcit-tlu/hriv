@@ -91,6 +91,8 @@ const PREVIEW = {
   objective: '40',
   confidence: 0.85,
   reason: null,
+  work_scale: null,
+  outline: null,
 }
 
 function makeApi(items: ApiMeasurementFinding[]): MeasurementReviewApi {

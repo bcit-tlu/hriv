@@ -6,6 +6,7 @@ reject them. Only approval writes ``measurement_scale``/``measurement_unit``
 into ``Image.metadata_``, using merge semantics so annotations survive.
 """
 
+import base64
 import logging
 from typing import Annotated, Literal
 
@@ -582,8 +583,9 @@ async def preview(
     if image is None:
         raise HTTPException(status_code=404, detail="Image not found")
     body = body or MeasurementPreviewRequest()
+    want_outline = body.include is not None and "outline" in body.include
     measurement, estimate, reason = await preview_detection(
-        db, image, body.tuning.to_detector_params()
+        db, image, body.tuning.to_detector_params(), with_outline=want_outline
     )
     return DetectionPreviewOut(
         diameter_px=measurement.diameter_px if measurement else None,
@@ -595,6 +597,12 @@ async def preview(
         objective=estimate.objective if estimate else None,
         confidence=estimate.confidence if estimate else 0.0,
         reason=reason,
+        work_scale=measurement.work_scale if measurement else None,
+        outline=(
+            base64.b64encode(measurement.outline_png).decode("ascii")
+            if measurement and measurement.outline_png
+            else None
+        ),
     )
 
 

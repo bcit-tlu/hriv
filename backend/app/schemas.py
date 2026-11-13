@@ -1450,6 +1450,8 @@ class MeasurementBulkApprove(BaseModel):
 class MeasurementPreviewRequest(BaseModel):
     # Candidate tuning to preview; the default maps to shipped constants.
     tuning: DetectionTuning = DetectionTuning()
+    # Extra payload opt-ins; "outline" adds the component-outline raster.
+    include: list[Literal["outline"]] | None = None
 
 
 class DetectionPreviewOut(BaseModel):
@@ -1466,6 +1468,10 @@ class DetectionPreviewOut(BaseModel):
     # Why no proposal was produced: source_missing, slide_too_large_for_rbc,
     # detect_failed or no_rbc_population; None on success.
     reason: str | None
+    # work-image px per source px — divide mask coords by it for level-0.
+    work_scale: float | None = None
+    # Base64 PNG (include=outline only): 0 none, 1 rejected fill, 2 selected fill.
+    outline: str | None = None
 
 
 class MeasurementFindingUpdate(BaseModel):

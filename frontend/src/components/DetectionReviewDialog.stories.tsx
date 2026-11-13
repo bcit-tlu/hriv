@@ -1,7 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import type { ApiImage, ApiMeasurementFinding } from '../api'
-import DetectionReviewDialog, { type DetectionReviewApi } from './DetectionReviewDialog'
+import DetectionReviewDialog, {
+  type DetectionReviewApi,
+  type DetectionReviewDialogProps,
+  type DetectionViewer,
+} from './DetectionReviewDialog'
 
 const FIXED_NOW = '2026-11-02T12:00:00Z'
 
@@ -61,7 +65,14 @@ const PREVIEW = {
   objective: '40',
   confidence: 0.85,
   reason: null,
+  work_scale: null,
+  outline: null,
 }
+
+// 64×46 category PNG (0 none / 1 rejected / 2 selected) drawn with pyvips —
+// stands in for the detector's outline mask at story size.
+const OUTLINE_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAuCAAAAAC9/EAoAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAj0lEQVRIie2USQ6AMAwD2/z/0agXhJqldi2BVOErnskhJa2dHhsRcVzhqmaMwXfNGEPQpQRB2YwxqIKofICA2oIsiMsEn0zD+XQaipPTKsU+/lr6iIjvK/ozKl8Y0m1ggvw99Dk17w2QoPgDHR8aVEF4F84RQFuQBfUhBXhdUF9igF/dxiV+K9KvS/zPB7kAXUAFPOBNOAUAAAAASUVORK5CYII='
 
 function makeApi(overrides: Partial<DetectionReviewApi> = {}): DetectionReviewApi {
   return {
@@ -74,7 +85,31 @@ function makeApi(overrides: Partial<DetectionReviewApi> = {}): DetectionReviewAp
 
 // A fake tile URL cannot mount real OpenSeadragon — swap in an inert viewer
 // so the stories stay deterministic under Chromatic.
-const viewerFactory = () => ({ destroy: () => {} })
+const viewerFactory: DetectionReviewDialogProps['viewerFactory'] = () => ({
+  destroy: () => {},
+})
+
+// An outline-capable fake: `canvas` + `imageToViewerElementCoordinates`
+// let DetectionOutlinesLayer paint the tinted mask over a stand-in slide.
+const outlinedViewerFactory = (element: HTMLElement): DetectionViewer => {
+  element.style.background = 'linear-gradient(135deg, #efe6e2 0%, #dcc9c4 55%, #cbb3ae 100%)'
+  return {
+    destroy: () => {},
+    canvas: element,
+    addHandler: () => {},
+    removeHandler: () => {},
+    viewport: {
+      getZoom: () => 1,
+      getCenter: () => ({ x: 0.5, y: 0.5 }),
+      zoomTo: () => {},
+      panTo: () => {},
+      imageToViewerElementCoordinates: (p) => ({
+        x: (p.x / 2880) * element.clientWidth,
+        y: (p.y / 2048) * element.clientHeight,
+      }),
+    },
+  }
+}
 
 const meta = {
   title: 'Components/DetectionReviewDialog',
@@ -108,6 +143,23 @@ export const Dirty: Story = {
     await userEvent.keyboard('{ArrowRight}')
     await expect(await canvas.findByText('Unsaved')).toBeInTheDocument()
     await expect(await canvas.findByText(/7\.40 px\/µm/)).toBeInTheDocument()
+  },
+}
+
+export const WithOutlines: Story = {
+  args: {
+    viewerFactory: outlinedViewerFactory,
+    api: makeApi({
+      preview: fn(async () => ({
+        ...PREVIEW,
+        work_scale: 64 / 2880,
+        outline: OUTLINE_PNG,
+      })),
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText('140 cells')).toBeInTheDocument()
   },
 }
 

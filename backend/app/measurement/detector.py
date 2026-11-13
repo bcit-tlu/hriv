@@ -68,6 +68,11 @@ class RbcMeasurement:
     selected_count: int
     peak_fraction: float  # share of area-weighted mass inside the mode window
     work_scale: float
+    # Category raster in work-image pixels, only when requested: 0 = not a
+    # component, 1 = counted but outside the dominant size window, 2 =
+    # selected (inside it). Filled components; the client renders tint +
+    # edge. PNG-encoded.
+    outline_png: bytes | None = None
 
 
 def load_work_image(path: str) -> pyvips.Image:
@@ -95,14 +100,47 @@ def _fill_holes(mask: pyvips.Image) -> pyvips.Image:
     return filled.crop(1, 1, mask.width, mask.height)
 
 
-def _component_radii(mask: pyvips.Image, min_radius_px: float) -> list[float]:
+def _label_components(mask: pyvips.Image) -> tuple[pyvips.Image, list[float]]:
+    """Label regions and return ``(labels, radius per label)``.
+
+    ``radii[i]`` is the inscribed radius of the component labelled ``i``.
+    ``labelregions`` labels the background too — every background region's
+    radius is 0 (all its pixels sit at distance 0 from the background
+    itself), so ``min_radius_px`` filters it without an area lookup that
+    could mistake a large foreground clump for background.
+    """
     seeds = (mask == 0).ifthenelse(255, 0).cast("uchar")
     _, opts = seeds.fill_nearest(distance=True)
     dist = opts["distance"]
     labels = mask.labelregions()
     per_label = dist.hist_find_indexed(labels, combine="max")
-    row = per_label.tolist()[0]
-    return [float(r) for r in row if r >= min_radius_px]
+    return labels, [float(r) for r in per_label.tolist()[0]]
+
+
+def _outline_png(
+    labels: pyvips.Image,
+    radii: list[float],
+    min_radius_px: float,
+    lo: float,
+    hi: float,
+) -> bytes:
+    """Rasterize the detected components as a labelled mask image (#1872).
+
+    Returns a single-channel uchar PNG: 0 where no counted component lies,
+    1 on a counted-but-rejected component (outside the dominant size
+    window) and 2 on a selected one. The background and components below
+    ``min_radius_px`` (noise) are invisible — background regions always
+    have radius 0 — matching ``component_count`` semantics. Fills — not
+    rings — so the mask stays meaningful when the client renders it
+    downscaled to a thumbnail.
+    """
+    categories = [
+        0 if r < min_radius_px else (2 if lo < r < hi else 1)
+        for r in radii
+    ]
+    lut = pyvips.Image.new_from_list([categories]).cast("uchar")
+    classified = labels.maplut(lut)
+    return classified.write_to_buffer(".png", strip=True)
 
 
 def _weighted_log_mode(radii: list[float]) -> float:
@@ -127,6 +165,7 @@ def measure_rbc_diameter(
     work: pyvips.Image,
     full_width: int,
     params: DetectorParams | None = None,
+    with_outline: bool = False,
 ) -> RbcMeasurement | None:
     """Measure the dominant RBC diameter; ``None`` when no RBC population is found."""
     p = params or DetectorParams()
@@ -145,7 +184,8 @@ def measure_rbc_diameter(
     pink = pink.morph(_SQUARE3, "erode").morph(_SQUARE3, "dilate")
     pink = _fill_holes(pink)
 
-    radii = _component_radii(pink, p.min_radius_px)
+    labels, per_label = _label_components(pink)
+    radii = [r for r in per_label if r >= p.min_radius_px]
     if len(radii) < _MIN_COMPONENTS:
         return None
     mode = _weighted_log_mode(radii)
@@ -163,4 +203,9 @@ def measure_rbc_diameter(
         selected_count=len(selected),
         peak_fraction=peak_mass / total_mass if total_mass else 0.0,
         work_scale=scale,
+        outline_png=(
+            _outline_png(labels, per_label, p.min_radius_px, lo, hi)
+            if with_outline
+            else None
+        ),
     )

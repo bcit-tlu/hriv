@@ -24,6 +24,8 @@ import {
   userMessage,
 } from '../api'
 import type { ApiMeasurementFinding, DetectionPreviewOut, DetectionTuning } from '../api'
+import { decodeDetectionOutline, type DetectionOverlay } from '../detectionOutlines'
+import DetectionOutlinesLayer, { type OutlineViewer } from './DetectionOutlinesLayer'
 import { measurementUnitLabel, objectiveLabel } from '../measurementUnits'
 
 /** The tuning values the API defaults to — an untouched dialog is no tuning. */
@@ -71,12 +73,29 @@ export interface DetectionViewer {
   destroy(): void
   open?(tileSources: OpenSeadragon.TileSourceSpecifier): void
   addHandler?(eventName: string, handler: () => void): void
+  removeHandler?(eventName: string, handler: () => void): void
+  canvas?: {
+    clientWidth: number
+    clientHeight: number
+    appendChild(el: HTMLElement): void
+  }
   viewport?: {
     getZoom(): number
     getCenter(): { x: number; y: number }
     zoomTo(zoom: number, refPoint?: unknown, immediately?: boolean): void
     panTo(center: { x: number; y: number }, immediately?: boolean): void
+    imageToViewerElementCoordinates?(p: { x: number; y: number }): { x: number; y: number }
   }
+}
+
+/** Real OSD viewers satisfy the overlay surface; minimal fakes don't. */
+function supportsOutlines(viewer: DetectionViewer): viewer is DetectionViewer & OutlineViewer {
+  return (
+    viewer.canvas != null &&
+    typeof viewer.addHandler === 'function' &&
+    typeof viewer.removeHandler === 'function' &&
+    typeof viewer.viewport?.imageToViewerElementCoordinates === 'function'
+  )
 }
 
 function tuningPayload(saved: DetectionTuning | null, tuning: DetectionTuning): DetectionTuning {
@@ -169,6 +188,8 @@ function DialogBody({
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [viewer, setViewer] = useState<DetectionViewer | null>(null)
+  const [overlay, setOverlay] = useState<DetectionOverlay | null>(null)
 
   const saved = finding.params
   const dirty = useMemo(() => !tuningEqual(tuning, saved ?? DEFAULT_TUNING), [tuning, saved])
@@ -211,6 +232,7 @@ function DialogBody({
           gestureSettingsMouse: { scrollToZoom: true, clickToZoom: false },
         }))
     const viewer = factory(osdRef.current, tileSources)
+    setViewer(viewer)
     let renewed = false
     let renewalTimer: ReturnType<typeof setTimeout> | undefined
     const renew = () => {
@@ -242,25 +264,39 @@ function DialogBody({
     viewer.addHandler?.('open-failed', renew)
     return () => {
       clearTimeout(renewalTimer)
+      setViewer(null)
       viewer.destroy()
     }
   }, [api, finding.image_id, tileSources, viewerFactory])
 
-  // Debounced read-only preview under the candidate tuning.
+  // Debounced read-only preview under the candidate tuning. The outline
+  // mask is decoded in the same flight — a stale preview never repaints.
   useEffect(() => {
     const seq = ++previewSeq.current
     const timer = setTimeout(() => {
       setPreviewing(true)
       api
-        .preview(finding.id, tuningPayload(finding.params, tuning))
+        .preview(finding.id, tuningPayload(finding.params, tuning), ['outline'])
         .then((result) => {
           if (previewSeq.current !== seq) return
           setPreview(result)
           setPreviewError(null)
+          if (result.outline != null && result.work_scale != null) {
+            decodeDetectionOutline(result.outline, result.work_scale)
+              .then((decoded) => {
+                if (previewSeq.current === seq) setOverlay(decoded)
+              })
+              .catch(() => {
+                if (previewSeq.current === seq) setOverlay(null)
+              })
+          } else {
+            setOverlay(null)
+          }
         })
         .catch((err: unknown) => {
           if (previewSeq.current !== seq) return
           setPreviewError(userMessage(err, 'Could not preview detection.'))
+          setOverlay(null)
         })
         .finally(() => {
           if (previewSeq.current === seq) setPreviewing(false)
@@ -322,6 +358,32 @@ function DialogBody({
             ) : null}
             {/* The ref'd div hosts OSD; it must exist before tileSources resolves. */}
             <Box ref={osdRef} data-testid="detection-osd" sx={{ position: 'absolute', inset: 0 }} />
+            {viewer && supportsOutlines(viewer) && (
+              <DetectionOutlinesLayer viewer={viewer} overlay={overlay} />
+            )}
+            {/* Live detected-cell count — same chip spot as the count report. */}
+            {preview?.selected_count != null && (
+              <Chip
+                size="small"
+                data-testid="detection-count-chip"
+                label={preview.selected_count === 1 ? '1 cell' : `${preview.selected_count} cells`}
+                sx={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  zIndex: 20,
+                  // Theme-aware chip surface (CountReportDialog precedent):
+                  // `common.white` + `text.primary` is white-on-white in dark mode.
+                  bgcolor: 'background.paper',
+                  color: 'text.primary',
+                  fontWeight: 600,
+                  boxShadow: 3,
+                  pointerEvents: 'none',
+                  opacity: previewing ? 0.55 : 1,
+                  transition: 'opacity 120ms',
+                }}
+              />
+            )}
           </Box>
 
           <Stack spacing={2} sx={{ width: { xs: '100%', md: 320 }, flexShrink: 0 }}>

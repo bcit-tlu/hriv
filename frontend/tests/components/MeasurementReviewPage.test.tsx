@@ -87,6 +87,8 @@ function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementR
       objective: '40',
       confidence: 0.85,
       reason: null,
+      work_scale: null,
+      outline: null,
     })),
     updateParams: vi.fn(async (id: number) =>
       makeFinding({
@@ -614,6 +616,7 @@ describe('inspect-and-tune dialog', () => {
       expect(api.preview).toHaveBeenCalledWith(
         1,
         expect.objectContaining({ sensitivity: 0.65, advanced: null }),
+        ['outline'],
       ),
     )
     expect(await screen.findByText(/7.40 px\/µm/)).toBeInTheDocument()
@@ -670,6 +673,7 @@ describe('inspect-and-tune dialog', () => {
       expect(api.preview).toHaveBeenLastCalledWith(
         1,
         expect.objectContaining({ sensitivity: 0.6, min_cell_size: 3, exclude_nuclei: true }),
+        ['outline'],
       ),
     )
   })
