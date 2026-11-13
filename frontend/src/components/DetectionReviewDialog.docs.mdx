@@ -1,0 +1,37 @@
+import {
+  Canvas,
+  Controls,
+  Meta,
+  Primary,
+  Stories,
+  Subtitle,
+  Title,
+} from '@storybook/addon-docs/blocks'
+import * as DetectionReviewDialogStories from './DetectionReviewDialog.stories'
+
+<Meta of={DetectionReviewDialogStories} />
+
+<Title />
+
+<Subtitle>Inspect-and-tune dialog for a pending measurement finding (#1871).</Subtitle>
+
+## When to use
+
+Clicking a pending row's thumbnail on `MeasurementReviewPage` opens this
+dialog: a bare OpenSeadragon view of the image — no annotations, counts or
+toolbars — beside three instructor-facing controls (detection sensitivity,
+minimum cell size, exclude purple-stained nuclei). Control changes debounce a
+read-only `POST /measurement-findings/{id}/preview` and the readout shows the
+proposed scale, objective, confidence and RBC evidence; **Apply** persists
+the tuning via `PATCH` so a later approval promotes it into image metadata.
+See `docs/measurement-review.md`.
+
+## Interactive example
+
+<Primary />
+
+<Controls of={DetectionReviewDialogStories.Basic} />
+
+## All variations
+
+<Stories />

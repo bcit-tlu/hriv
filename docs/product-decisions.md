@@ -50,6 +50,12 @@ specified in detail.
   `params`; raw `DetectorParams` constants never cross the API. The semantic
   defaults map exactly onto the shipped constants, so tuning is opt-in and
   `detector_version` stays put.
+- The instructor surface is exactly those three controls
+  (`DetectionReviewDialog`, opened from a pending row's thumbnail) — a bare
+  OSD view, debounced read-only preview, Apply → PATCH, "Open in viewer" for
+  full inspection. `advanced` overrides stay API-only; Apply preserves a
+  saved `advanced` rather than wiping it. Reviewed rows keep thumbnail →
+  viewer navigation because reviewed params are immutable.
 - Approval promotes `params` to `metadata.detection_params` even when the
   reviewer corrected scale or objective — tuning describes detection, not
   the promoted value, so a correction never holds it back. Reset removes it
