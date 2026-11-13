@@ -47,6 +47,13 @@ specified in detail.
   reviewer corrected scale or objective — tuning describes detection, not
   the promoted value, so a correction never holds it back. Reset removes it
   only while the stored value still equals the finding's `params` (#1869).
+- Counting preprocessing (#1870) ships as a subtractive flat-field behind
+  one ops-level boolean `counting_preprocess` — deliberately the only
+  knob; per-image tuning arrives only via `metadata.detection_params`.
+  Division flat-field and percentile stretch were evaluated and rejected
+  (noise amplification; Otsu-invariance). `scripts/counting_regress.py`
+  diffs masks/counts across variants on a small corpus — the safety net
+  for any future preprocessing change.
 
 ## UI conventions
 

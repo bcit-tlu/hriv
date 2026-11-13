@@ -77,3 +77,38 @@ def nuclei_downsample(mpp: float | None, max_downsample: int) -> int:
             d //= 2
         return d
     return 1
+
+
+def _num(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def detection_params_from_metadata(metadata: dict | None) -> dict | None:
+    """Sanitized `DetectionTuning` dict from `metadata.detection_params` (#1870).
+
+    Dependency-free (no pydantic/detector import): keeps only the semantic
+    fields counting understands, field-wise — a malformed field is dropped
+    rather than failing the whole tuning, and `advanced` raw overrides are
+    detector-internal so they never reach the counting path. Returns None
+    when nothing usable remains.
+    """
+    raw = (metadata or {}).get("detection_params")
+    if not isinstance(raw, dict):
+        return None
+    out: dict = {}
+    # Only non-default fields survive: an approval that stored untouched
+    # `DetectionTuning` defaults must behave identically to no tuning at
+    # all — a deliberately-set default is indistinguishable from an
+    # untouched one, so defaults always count as untuned (#1870 review).
+    if (s := _num(raw.get("sensitivity"))) is not None and 0.0 <= s <= 1.0 and s != 0.6:
+        out["sensitivity"] = s
+    if (m := _num(raw.get("min_cell_size"))) is not None and 0.0 < m <= 100.0 and m != 3.0:
+        out["min_cell_size"] = m
+    # `exclude_nuclei=True` is the DetectionTuning default — only the
+    # explicit non-default (False) carries intent; counting ignores it
+    # either way (it never excluded purple objects).
+    if raw.get("exclude_nuclei") is False:
+        out["exclude_nuclei"] = False
+    return out or None

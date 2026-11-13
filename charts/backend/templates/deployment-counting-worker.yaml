@@ -69,6 +69,8 @@ spec:
               value: {{ .Values.counting.jobTimeoutSeconds | quote }}
             - name: COUNTING_MAX_OBJECTS
               value: {{ .Values.counting.maxObjects | quote }}
+            - name: COUNTING_PREPROCESS
+              value: {{ .Values.counting.preprocess | quote }}
             - name: COUNTING_TORCH_THREADS
               value: {{ .Values.countingWorker.torchThreads | quote }}
             - name: COUNTING_CELLS_OUTLINER
