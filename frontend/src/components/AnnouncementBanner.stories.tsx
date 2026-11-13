@@ -217,6 +217,23 @@ export const LongBodyClamped: Story = {
   },
 }
 
+export const MarkdownBody: Story = {
+  name: 'Markdown Body',
+  args: {
+    title: 'Laser pointer in full-screen view',
+    message:
+      'Switch into **full-screen mode** and your cursor becomes a laser pointer — [read the guide](?page=guide) for the rest of the pointer tools.',
+    kind: 'release',
+    variant: 'app',
+    onDismiss: () => {},
+  },
+  render: (args) => (
+    <StoryFrame width={520}>
+      <AnnouncementBanner {...args} />
+    </StoryFrame>
+  ),
+}
+
 export const KindIcon: Story = {
   name: 'Kind Icon',
   args: {

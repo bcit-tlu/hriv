@@ -1525,6 +1525,8 @@ export interface ApiAnnouncementBroadcast {
   publish_at: string | null
   expires_at: string | null
   updated_at: string
+  /** Stateless `/api/media/{id}` tokens so the login banner can render media. */
+  media_tokens: Record<string, string>
 }
 
 export interface AnnouncementInput {

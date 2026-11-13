@@ -239,7 +239,8 @@ async def test_broadcast_returns_minimal_shape_and_filters_in_sql() -> None:
     db = _db([_ann(id=1, kind="warning", banner=True)])
     (out,) = await list_broadcast(db)
     assert out.model_dump().keys() == {
-        "id", "title", "message", "kind", "icon", "severity", "publish_at", "expires_at", "updated_at"
+        "id", "title", "message", "kind", "icon", "severity", "publish_at", "expires_at",
+        "updated_at", "media_tokens",
     }
     assert out.severity == "warning"
     sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
@@ -249,6 +250,19 @@ async def test_broadcast_returns_minimal_shape_and_filters_in_sql() -> None:
     assert order_by.lstrip().startswith("announcements.notified_at DESC")
     assert "pinned" not in order_by
     assert "announcements.publish_at IS NOT NULL" in sql
+
+
+async def test_broadcast_mints_tokens_only_for_embedded_media() -> None:
+    """A public post must not leak tokens for plain-text/code media mentions."""
+    message = (
+        "See ![shot](/api/media/4) inline and the video below.\n\n"
+        "/api/media/9\n\n"
+        "The URL `/api/media/11` is retired; `![x](/api/media/5)` shows code.\n\n"
+        "```\n/api/media/13\n```"
+    )
+    db = _db([_ann(id=1, kind="notice", banner=True, message=message)])
+    (out,) = await list_broadcast(db)
+    assert set(out.media_tokens) == {"4", "9"}
 
 
 # ── create ────────────────────────────────────────────────────

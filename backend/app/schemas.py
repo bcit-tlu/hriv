@@ -300,6 +300,7 @@ class AnnouncementBroadcastOut(BaseModel):
     publish_at: datetime | None
     expires_at: datetime | None
     updated_at: datetime
+    media_tokens: dict[str, str]
 
 
 class ReactionsOut(BaseModel):

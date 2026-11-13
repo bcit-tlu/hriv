@@ -214,15 +214,22 @@ export default function App() {
   useEffect(() => {
     if (currentUser != null) return
     let cancelled = false
-    fetchAnnouncementBroadcast()
-      .then((rows) => {
-        if (!cancelled) setLoginBroadcast(rows[0] ?? null)
-      })
-      .catch(() => {
-        if (!cancelled) setLoginBroadcast(null)
-      })
+    const refresh = () => {
+      fetchAnnouncementBroadcast()
+        .then((rows) => {
+          if (!cancelled) setLoginBroadcast(rows[0] ?? null)
+        })
+        .catch(() => {
+          if (!cancelled) setLoginBroadcast(null)
+        })
+    }
+    refresh()
+    // Broadcast media tokens expire after ~60 min — refresh well before
+    // that so embedded media still resolves on a long-open login screen.
+    const timer = setInterval(refresh, 30 * 60 * 1000)
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
   }, [currentUser])
   const bannerCandidates = selectBannerAnnouncements(announcementsFeed.announcements)
@@ -2446,6 +2453,7 @@ export default function App() {
             key={bannerPost.id}
             title={bannerPost.title}
             message={bannerPost.message}
+            mediaTokens={bannerPost.media_tokens}
             kind={bannerPost.kind}
             onDismiss={() => announcementsFeed.markSeen(bannerPost)}
             moreCount={bannerCandidates.length - 1}

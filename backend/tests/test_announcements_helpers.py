@@ -5,10 +5,13 @@ from types import SimpleNamespace
 
 from app.announcements import (
     SEEN_METADATA_KEY,
+    embedded_media_ids,
+    embedded_media_tokens_for,
     has_seen,
     is_live,
     live_clause,
     mark_seen,
+    media_ids_in,
     seen_map,
 )
 
@@ -68,3 +71,41 @@ def test_mark_seen_handles_empty_metadata() -> None:
     user = SimpleNamespace(metadata_=None)
     mark_seen(user, [_ann(id=3)])
     assert user.metadata_ == {SEEN_METADATA_KEY: {"3": (NOW - HOUR).isoformat()}}
+
+
+def test_media_ids_in_catches_every_reference() -> None:
+    message = "![a](/api/media/1) prose /api/media/2\n\n/api/media/3"
+    assert media_ids_in(message) == [1, 2, 3]
+
+
+def test_embedded_media_ids_limits_to_embed_position() -> None:
+    message = (
+        "See ![shot](/api/media/4) inline and the video below.\n\n"
+        "/api/media/9\n\n"
+        "The URL `/api/media/11` is retired and /api/media/7 in prose is too.\n\n"
+        "Inline code with image syntax `![x](/api/media/5)` embeds nothing.\n\n"
+        "```\n/api/media/13\n```"
+    )
+    assert embedded_media_ids(message) == [4, 9]
+
+
+def test_embedded_media_ids_accepts_crlf_and_video_query() -> None:
+    message = "Intro\r\n/api/media/9?dl=1\r\n/api/media/10\r\n"
+    assert embedded_media_ids(message) == [9, 10]
+
+
+def test_embedded_media_ids_keeps_media_between_backtick_only_lines() -> None:
+    # `` alone on a line is not a fence — the frontend renders the image.
+    message = "``\n![shot](/api/media/4)\n``"
+    assert embedded_media_ids(message) == [4]
+
+
+def test_embedded_media_ids_dedupes_in_order() -> None:
+    message = "![a](/api/media/2)\n\n/api/media/1\n\n![b](/api/media/2)"
+    assert embedded_media_ids(message) == [2, 1]
+
+
+def test_embedded_media_tokens_for_returns_id_keyed_tokens() -> None:
+    tokens = embedded_media_tokens_for("![a](/api/media/4)\n\n/api/media/9")
+    assert set(tokens) == {"4", "9"}
+    assert all(isinstance(t, str) and t for t in tokens.values())

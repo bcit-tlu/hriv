@@ -74,7 +74,7 @@ Minimum roles:
 
 | Method   | Path                                        | Role               | Notes                                                                                            |
 | -------- | ------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
-| `GET`    | `/api/announcements/broadcast`              | — (public)         | Live `everyone` ∧ `banner` posts, minimal shape for the login screen                             |
+| `GET`    | `/api/announcements/broadcast`              | — (public)         | Live `everyone` ∧ `banner` posts, minimal shape + `media_tokens` for the login screen            |
 | `GET`    | `/api/announcements/?scope=inbox`           | any authenticated  | Live posts visible to the caller, `pinned DESC, notified_at DESC`                                |
 | `GET`    | `/api/announcements/?scope=mine`            | admin, instructor  | Instructor: own posts (all states) + posts targeted at co-managed groups (read-only); admin: all |
 | `POST`   | `/api/announcements/`                       | admin, instructor  | 201; see authority rules                                                                         |
@@ -162,13 +162,19 @@ menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
   unseen Inbox posts flagged `banner` qualify; warnings first, then pinned, then
   newest `notified_at`. One shows at a time; closing marks it seen; `+N more`
   opens the Announcements page. Two-line clamp with More/Less; the kind icon
-  matches the card. No reactions here or in the bell — only on the page.
+  matches the card. The body renders the same `MarkdownContent` as the card
+  (links, lists, images/video via `media_tokens`). No reactions here or in the
+  bell — only on the page.
 - **Home Notices shelf** (`NoticesShelf.tsx`, `selectNotices`): up to three
   pinned live posts as compact cards (icon, title, first line; no reactions)
   at the Browse root; renders nothing when nothing is pinned. The seeded
   pinned `everyone` welcome post is the #1655 welcome message.
 - **Login broadcast** (`fetchAnnouncementBroadcast`): the newest live
-  `everyone` + `banner` post renders above the login form, read-only.
+  `everyone` + `banner` post renders above the login form, read-only — the
+  response mints `media_tokens` too (stateless HMAC, no session needed) so
+  embedded media resolves pre-auth. Broadcast tokens cover _embed-position_
+  refs only — `![..](..)` images and bare-line video — so a plain-text or
+  code mention in a public post can't mint a usable token.
 - **Bell peek** lists titles only; reactions live on the Announcements page.
 
 | Surface            | File                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

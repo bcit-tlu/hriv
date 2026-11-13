@@ -301,6 +301,7 @@ export function LoginLayout({
               <AnnouncementBanner
                 title={broadcast.title}
                 message={broadcast.message}
+                mediaTokens={broadcast.media_tokens}
                 kind={broadcast.kind}
                 variant="login"
               />
