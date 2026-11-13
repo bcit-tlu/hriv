@@ -17,6 +17,12 @@ import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
 import {
+  CollectionImageDetails,
+  CollectionImageDetailsDrawer,
+  CollectionImageDetailsTrigger,
+  type MemberInfoNames,
+} from './CollectionImageDetails'
+import {
   canvasAnnotationsFromMetadata,
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
@@ -33,6 +39,12 @@ export interface SequenceCollectionViewerProps {
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  /**
+   * Program/group display names per member image id for the details drawer
+   * (#1862), resolved by the parent from the category tree. Members with no
+   * entry (unfiled, or a category the user cannot see) omit those rows.
+   */
+  memberInfoNames?: ReadonlyMap<number, MemberInfoNames>
   /**
    * Hidden collections desaturate the filmstrip (#1566) — the thumbnails are
    * the collection's "tiles", matching how hidden categories grey theirs.
@@ -95,6 +107,7 @@ export default function SequenceCollectionViewer({
   onOpenImage,
   onImageRenewed,
   onError,
+  memberInfoNames,
   hidden = false,
 }: SequenceCollectionViewerProps) {
   const images = collection.images
@@ -379,38 +392,52 @@ export default function SequenceCollectionViewer({
         onPointerDown={showNav}
         onPointerLeave={hideNav}
       >
-        <ImageViewer
+        {/* Details provider keyed like the viewer — a new member resets the
+            drawer closed (the note dialog resets the same way above). */}
+        <CollectionImageDetails
           key={current.id}
-          fullScreenHandoffKey={`sequence:${collectionId}`}
-          tileSources={current.tileSources}
-          imageId={current.id}
-          categoryId={current.categoryId ?? undefined}
-          height={{ xs: '60vh', md: '100%' }}
-          initialOverlays={lockedOverlays}
-          overlaysLocked={lockedOverlays != null}
-          canvasAnnotations={canvasAnnotations}
-          canEditContent={false}
+          image={current}
+          programNames={memberInfoNames?.get(current.id)?.programNames ?? []}
+          groupNames={memberInfoNames?.get(current.id)?.groupNames ?? []}
           measurement={measurement}
-          onTileSourceRenewed={onImageRenewed}
-          onError={handleViewerError}
-          viewportOverlay={
-            <ViewportDialog
-              open={noteDialogOpen}
-              title="Notes"
-              onClose={() => setNoteDialogOpen(false)}
-            >
-              <Box
-                sx={{
-                  typography: 'body2',
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {current.note}
-              </Box>
-            </ViewportDialog>
-          }
-        />
+        >
+          <ImageViewer
+            key={current.id}
+            fullScreenHandoffKey={`sequence:${collectionId}`}
+            tileSources={current.tileSources}
+            imageId={current.id}
+            categoryId={current.categoryId ?? undefined}
+            height={{ xs: '60vh', md: '100%' }}
+            initialOverlays={lockedOverlays}
+            overlaysLocked={lockedOverlays != null}
+            canvasAnnotations={canvasAnnotations}
+            canEditContent={false}
+            measurement={measurement}
+            onTileSourceRenewed={onImageRenewed}
+            onError={handleViewerError}
+            viewportControl={<CollectionImageDetailsTrigger />}
+            viewportOverlay={
+              <>
+                <CollectionImageDetailsDrawer />
+                <ViewportDialog
+                  open={noteDialogOpen}
+                  title="Notes"
+                  onClose={() => setNoteDialogOpen(false)}
+                >
+                  <Box
+                    sx={{
+                      typography: 'body2',
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {current.note}
+                  </Box>
+                </ViewportDialog>
+              </>
+            }
+          />
+        </CollectionImageDetails>
         <Box
           data-testid="sequence-nav-overlay"
           style={{ opacity: navVisible ? 1 : 0 }}

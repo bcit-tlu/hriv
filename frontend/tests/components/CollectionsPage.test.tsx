@@ -1370,6 +1370,78 @@ describe('CollectionsPage', () => {
       expect(onViewerError).toHaveBeenCalledWith('boom')
     })
 
+    it("resolves memberInfoNames from each member's filed-category path (#1862)", () => {
+      // Parent restricts programs {2,3}; the filed child narrows to {3} and
+      // adds group {6} — the drawer names must follow the same intersection
+      // semantics as the browse breadcrumb.
+      const group = {
+        id: 6,
+        name: 'Cohort B',
+        description: null,
+        createdByUserId: null,
+        memberIds: [],
+        instructorIds: [],
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      }
+      const categories = [
+        makeCategory({
+          id: 4,
+          label: 'Program-restricted parent',
+          programIds: [2, 3],
+          children: [
+            makeCategory({
+              id: 5,
+              label: 'Filed leaf',
+              parentId: 4,
+              programIds: [3],
+              groupIds: [6],
+            }),
+          ],
+        }),
+      ]
+      const images = [
+        makeImage({ id: 21, name: 'Filed member', categoryId: 5 }),
+        makeImage({ id: 22, name: 'Unfiled member', categoryId: null }),
+        // Filed into a category absent from the caller's tree → no names.
+        makeImage({ id: 23, name: 'Hidden member', categoryId: 77 }),
+      ]
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, type: 'sequence', images }),
+        categories,
+        programs: [
+          { id: 2, name: 'Dental' },
+          { id: 3, name: 'Radiography' },
+        ],
+        groups: [group],
+      })
+
+      const names = sequenceViewerProps.current!.memberInfoNames as Map<
+        number,
+        { programNames: string[]; groupNames: string[] }
+      >
+      expect(names.get(21)).toEqual({ programNames: ['Radiography'], groupNames: ['Cohort B'] })
+      expect(names.get(22)).toEqual({ programNames: [], groupNames: [] })
+      expect(names.get(23)).toEqual({ programNames: [], groupNames: [] })
+    })
+
+    it('passes memberInfoNames to the synchronized viewer too (#1862)', () => {
+      const images = [makeImage({ id: 21, categoryId: 5 }), makeImage({ id: 22, categoryId: 5 })]
+      renderPage({
+        selectedCollectionId: 9,
+        detail: makeCollection({ id: 9, type: 'synchronized', images }),
+        categories: [makeCategory({ id: 5, label: 'Filed', programIds: [3] })],
+        programs: [{ id: 3, name: 'Radiography' }],
+      })
+      const names = synchronizedViewerProps.current!.memberInfoNames as Map<
+        number,
+        { programNames: string[]; groupNames: string[] }
+      >
+      expect(names.get(21)).toEqual({ programNames: ['Radiography'], groupNames: [] })
+      expect(names.get(22)).toEqual({ programNames: ['Radiography'], groupNames: [] })
+    })
+
     it('still mounts the viewer when a synchronized collection has no images', () => {
       renderPage({ selectedCollectionId: 9, detail: makeCollection({ id: 9, images: [] }) })
       // The empty-state fallback itself is covered by the viewer's own tests.
