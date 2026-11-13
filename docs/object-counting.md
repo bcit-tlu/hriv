@@ -317,6 +317,27 @@ data) — the `Outliner` protocol remains the plugin point.
   the counter trusts the metadata either way, so measurement review and
   hand-entered scales both calibrate counting. Without either, nuclei
   assumes InstanSeg's native 0.5 µm/px.
+- **Detection params** come from `metadata.detection_params` (#1869,
+  sanitized by `detection_params_from_metadata` — malformed fields are
+  dropped field-wise, `advanced` never crosses, and **fields still at
+  their DetectionTuning default are dropped too** so an approval of
+  untouched values behaves identically to no tuning). They ride the job
+  record into the worker and map onto the classical mask: `sensitivity`
+  applies an additive offset to the Otsu threshold scaled by the
+  signal's own p99–median spread (0 → stricter, default 0.6 → ±0, 1 →
+  permissive; additive because a multiplier inverts ordering when the
+  threshold goes negative on dense fields), and `min_cell_size` scales
+  the `remove_small_objects` floor quadratically (radius 3.0 ↔ shipped
+  30-px area). `exclude_nuclei` has no counting-side effect — counting
+  never excluded purple objects. They apply to the probe that picks the
+  level too — the level rule sees the same signal as the segmenter.
+- **Preprocessing**: `_mask_and_signal` applies a subtractive flat-field
+  (`signal − gaussian(signal, σ=25)`) before Otsu, removing low-frequency
+  staining/illumination drift that buries faint cells (#1870). A division
+  flat-field was evaluated and rejected — it amplifies background noise
+  into speckle — and a percentile stretch is Otsu-invariant, so neither
+  ships. `counting_preprocess` (default on) is the single ops-level
+  kill-switch; there are deliberately no per-parameter env knobs.
 - **Stain filter** (nuclei only): objects with mean CIELAB `b* > -5` are
   dropped after the centroid edge rule.
 - **Grouping**: GaussianMixture+BIC in `[log(area)/ln(2.5), a*/10, b*/10]`,

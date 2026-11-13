@@ -388,6 +388,10 @@ counting:
   resultTtlSeconds: 600
   jobTimeoutSeconds: 60
   maxObjects: 3000
+  # Ops-level kill-switch for the classical-mask flat-field (#1870).
+  # The only preprocessing knob — per-image tuning arrives via
+  # metadata.detection_params, never through env.
+  preprocess: true
 
 # Dedicated arq worker for the counting queue.  Counting jobs run ML
 # inference (InstanSeg / classical scikit-image) so they get their own
