@@ -4,7 +4,6 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -80,7 +79,7 @@ const SIZE_BUDGETS = [
 for (const file of stagedFiles) {
   const budget = SIZE_BUDGETS.find((b) => b.match.test(file))
   if (!budget) continue
-  const sizeKb = statSync(join(repoRoot, file)).size / 1024
+  const sizeKb = Number(git(['cat-file', '-s', `:${file}`])) / 1024
   const budgetKb = budget.maxBytes / 1024
   if (sizeKb > budgetKb) {
     console.warn(
