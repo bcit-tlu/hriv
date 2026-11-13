@@ -20,6 +20,12 @@ export interface ImageDetailsTriggerProps {
   disabled?: boolean
   /** Shared with the panel so it can restore focus on close. */
   triggerRef: RefObject<HTMLButtonElement | null>
+  /**
+   * `id` of the drawer it controls — defaults to the canonical
+   * `image-details-drawer`; collections panes pass a unique one (#1862) so
+   * two open drawers never share an id.
+   */
+  drawerId?: string
 }
 
 /**
@@ -33,6 +39,7 @@ export function ImageDetailsTrigger({
   onOpenChange,
   disabled = false,
   triggerRef,
+  drawerId = 'image-details-drawer',
 }: ImageDetailsTriggerProps) {
   return (
     <Box
@@ -43,7 +50,7 @@ export function ImageDetailsTrigger({
       title="Image details"
       aria-label="Image details"
       aria-expanded={open}
-      aria-controls="image-details-drawer"
+      aria-controls={drawerId}
       disabled={disabled}
       onClick={() => onOpenChange(!open)}
       sx={{
@@ -92,6 +99,19 @@ export interface ImageDetailsDrawerProps {
   onOpenChange: (open: boolean) => void
   /** Shared with `ImageDetailsTrigger` so the panel can restore focus on close. */
   triggerRef: RefObject<HTMLButtonElement | null>
+  /**
+   * `id` for the panel — defaults to `image-details-drawer`; collections
+   * panes pass a unique one (#1862) so two open drawers never share an id.
+   * The title and viewer-controls ids derive from it.
+   */
+  drawerId?: string
+  /**
+   * Member context label (e.g. the image name) qualifying the landmark
+   * names — collection panes pass it (#1862) so two open drawers are
+   * distinguishable to assistive tech (`landmark-unique`). Unset, the
+   * landmarks keep their plain `aria-labelledby` names.
+   */
+  drawerLabel?: string
 }
 
 function DetailField({
@@ -150,8 +170,14 @@ export default function ImageDetailsDrawer({
   open,
   onOpenChange,
   triggerRef,
+  drawerId = 'image-details-drawer',
+  drawerLabel,
 }: ImageDetailsDrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
+  const titleId = `${drawerId}-title`
+  const controlsId = `${drawerId}-viewer-controls`
+  const asideLabel = drawerLabel ? `Image details — ${drawerLabel}` : undefined
+  const controlsLabel = drawerLabel ? `Viewer controls — ${drawerLabel}` : undefined
 
   const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
   if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
@@ -221,8 +247,9 @@ export default function ImageDetailsDrawer({
     >
       <Paper
         component="aside"
-        id="image-details-drawer"
-        aria-labelledby="image-details-drawer-title"
+        id={drawerId}
+        aria-label={asideLabel}
+        aria-labelledby={asideLabel ? undefined : titleId}
         elevation={8}
         square
         data-hriv-canvas-ui
@@ -257,7 +284,7 @@ export default function ImageDetailsDrawer({
             borderColor: 'divider',
           }}
         >
-          <Typography variant="subtitle1" component="h2" id="image-details-drawer-title">
+          <Typography variant="subtitle1" component="h2" id={titleId}>
             Image details
           </Typography>
           <IconButton ref={closeRef} aria-label="Close image details" size="small" onClick={close}>
@@ -288,7 +315,8 @@ export default function ImageDetailsDrawer({
               text out of the drawer's max-content width calculation. */}
         <Box
           role="region"
-          aria-labelledby="image-details-viewer-controls"
+          aria-label={controlsLabel}
+          aria-labelledby={controlsLabel ? undefined : controlsId}
           tabIndex={0}
           sx={{
             flexShrink: 0,
@@ -301,12 +329,7 @@ export default function ImageDetailsDrawer({
             contain: 'inline-size',
           }}
         >
-          <Typography
-            variant="subtitle2"
-            component="h3"
-            id="image-details-viewer-controls"
-            sx={{ mb: 0.5 }}
-          >
+          <Typography variant="subtitle2" component="h3" id={controlsId} sx={{ mb: 0.5 }}>
             Viewer controls
           </Typography>
           <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
