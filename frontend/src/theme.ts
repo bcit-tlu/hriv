@@ -45,11 +45,13 @@ const lightPalette = {
    */
   visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
   /**
-   * Presentation pointer tools (epic #1876). A saturated red laser dot and
-   * bright cyan ink — both must read against stained-tissue imagery and a
-   * projection screen, so the values are identical across modes.
+   * Presentation pointer tools (epic #1876). A laser-green dot and bright
+   * cyan ink — both must read against stained-tissue imagery and a
+   * projection screen, so the values are identical across modes. The laser
+   * is green, not the classic red, because H&E slides are overwhelmingly
+   * red/pink and a red dot disappears into the tissue.
    */
-  presentation: { laser: '#FF2D2D', ink: '#00E5FF' },
+  presentation: { laser: '#00CC00', ink: '#00E5FF' },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -95,7 +97,7 @@ const darkPalette = {
     inactiveChipBg: '#6B6966',
   },
   /** Presentation pointer tools — same values as light mode (see comment there). */
-  presentation: { laser: '#FF2D2D', ink: '#00E5FF' },
+  presentation: { laser: '#00CC00', ink: '#00E5FF' },
 }
 
 // ---------------------------------------------------------------------------

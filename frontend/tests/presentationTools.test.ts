@@ -18,7 +18,7 @@ import {
 } from '../src/components/presentationTools'
 
 // The real values come from the theme palette; fixtures mirror them.
-const COLORS: PresentationColors = { laser: '#FF2D2D', ink: '#00E5FF' }
+const COLORS: PresentationColors = { laser: '#00CC00', ink: '#00E5FF' }
 
 describe('inkStrokeAlpha', () => {
   it('is fully opaque until the fade window starts', () => {
