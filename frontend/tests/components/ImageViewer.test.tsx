@@ -236,7 +236,8 @@ vi.mock('openseadragon', () => {
         zoomTo: vi.fn(),
         panTo: vi.fn(),
         fitBounds: vi.fn(),
-        goHome: vi.fn(),
+        // Real OSD: goHome raises 'home' on the viewer before fitting.
+        goHome: vi.fn(() => viewer.fire('home', { immediately: false })),
         pixelFromPoint: vi.fn((p: { x: number; y: number }) => ({ x: p.x * 100, y: p.y * 100 })),
         pointFromPixel: vi.fn((p: { x: number; y: number }) => ({ x: p.x / 100, y: p.y / 100 })),
         viewportToImageZoom: vi.fn((zoom: number) => zoom * 0.001),
@@ -1846,8 +1847,13 @@ describe('ImageViewer presentation tools (#1876)', () => {
     }
 
     // Home + selection work in normal view; laser/ink only in full-page.
+    // H runs the same 'home' handler as the OSD button: rotation resets.
     press('h')
     expect(viewer().viewport.goHome).toHaveBeenCalled()
+    expect(viewer().viewport.setRotation).toHaveBeenCalledWith(0)
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'home' }),
+    )
     press('g')
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
     press('g')
@@ -1885,6 +1891,23 @@ describe('ImageViewer presentation tools (#1876)', () => {
     expect(viewer().canvas.style.cursor).toBe('none') // auto-armed on entry
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }))
     expect(viewer().canvas.style.cursor).toBe('none') // still laser, no ink
+  })
+
+  it('routes toolbar keys to the focused viewer, not a hovered one', () => {
+    render(<ImageViewer key="a" tileSources="/a.dzi" />)
+    const first = viewer()
+    render(<ImageViewer key="b" tileSources="/b.dzi" />)
+    const second = viewer()
+    document.body.appendChild(first.element)
+    document.body.appendChild(second.element)
+    // Pointer hovers pane B while the key event belongs to pane A.
+    vi.spyOn(second.container, 'matches').mockImplementation((sel) => sel === ':hover')
+
+    act(() => {
+      first.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }))
+    })
+    expect(first.setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+    expect(second.setMouseNavEnabled).not.toHaveBeenCalledWith(false)
   })
 
   it('shows pointer buttons and auto-arms the laser only in full-page mode', () => {

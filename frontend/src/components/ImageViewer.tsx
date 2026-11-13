@@ -45,6 +45,10 @@ import {
 
 let pendingFullScreenHandoff: string | number | null = null
 
+// Every mounted viewer's root element — the toolbar keyboard shortcuts use
+// it to decide which of several viewers (e.g. collection panes) owns a key.
+const mountedViewerElements = new Set<HTMLElement>()
+
 // OSD starts asynchronous tile-source work during construction but does not
 // cancel every continuation when it is destroyed. React Strict Mode's
 // development-only effect replay can therefore let a discarded viewer create a
@@ -989,12 +993,14 @@ export default function ImageViewer({
       ) {
         return
       }
-      if (
-        target instanceof Node &&
-        !viewer.element.contains(target) &&
-        !viewer.container.matches(':hover')
-      ) {
-        return
+      if (target instanceof Node && !viewer.element.contains(target)) {
+        // Focus inside a different mounted viewer (e.g. a collection pane)
+        // wins over merely hovering this one; a keypress outside every
+        // viewer goes to whichever viewer is hovered.
+        const insideOtherViewer = Array.from(mountedViewerElements).some(
+          (el) => el !== viewer.element && el.contains(target),
+        )
+        if (insideOtherViewer || !viewer.container.matches(':hover')) return
       }
       switch (event.key.toLowerCase()) {
         case 'h':
@@ -1012,6 +1018,7 @@ export default function ImageViewer({
       }
     }
     document.addEventListener('keydown', handleToolbarKey)
+    mountedViewerElements.add(viewer.element)
 
     // Full-page entry arms the laser; exit disarms and clears all ink.
     // Auto-arming is skipped while canvas edit mode is active — annotation
@@ -1632,6 +1639,7 @@ export default function ImageViewer({
       }
       selectionTracker.destroy()
       document.removeEventListener('keydown', handleToolbarKey)
+      mountedViewerElements.delete(viewer.element)
       topRightControl.removeEventListener('focusin', keepControlsEnabled)
       topRightControl.removeEventListener('focusout', releaseControls)
       const registeredControl = viewer.controls?.find((c) => c.element === topRightControl)
