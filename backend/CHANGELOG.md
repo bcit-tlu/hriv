@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.70.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.69.0...backend-v0.70.0) (2026-11-13)
+
+
+### Features
+
+* **counting:** derive mpp from approved measurement scale ([#1868](https://github.com/bcit-tlu/hriv/issues/1868)) ([#1873](https://github.com/bcit-tlu/hriv/issues/1873)) ([ea421f6](https://github.com/bcit-tlu/hriv/commit/ea421f6701be81745d524a6f5ad2cb5d1e0eebc0))
+* **counting:** preprocessing + per-image detection_params ([#1888](https://github.com/bcit-tlu/hriv/issues/1888)) ([d3ed433](https://github.com/bcit-tlu/hriv/commit/d3ed4337e6ae7c9a601c0c1a1e19d9d308abb7a1))
+* **measurement:** detection preview endpoint + finding params PATCH ([#1884](https://github.com/bcit-tlu/hriv/issues/1884)) ([4b100d4](https://github.com/bcit-tlu/hriv/commit/4b100d46f509681821ce6a42cad4e17f1351421b))
+* **measurement:** inspect-and-tune OSD dialog on the review page ([#1890](https://github.com/bcit-tlu/hriv/issues/1890)) ([42b6d2a](https://github.com/bcit-tlu/hriv/commit/42b6d2ac53bd4203ab286a962a74019360928c44))
+* **measurement:** live outline overlay + count chip in tune dialog ([#1872](https://github.com/bcit-tlu/hriv/issues/1872)) ([#1895](https://github.com/bcit-tlu/hriv/issues/1895)) ([8125841](https://github.com/bcit-tlu/hriv/commit/8125841b92e40f5f9e26656a79a47180e03f5299))
+* **measurement:** parametrize RBC detector + finding params ([#1866](https://github.com/bcit-tlu/hriv/issues/1866)) ([#1874](https://github.com/bcit-tlu/hriv/issues/1874)) ([2760e02](https://github.com/bcit-tlu/hriv/commit/2760e0201fb9778765a0d074effc842604200e7e))
+* **measurement:** promote detection_params to image metadata ([#1883](https://github.com/bcit-tlu/hriv/issues/1883)) ([08ce91a](https://github.com/bcit-tlu/hriv/commit/08ce91aa00ec12322cb8f16d7faf15db9f2d9109))
+
 ## [0.69.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.68.0...backend-v0.69.0) (2026-11-11)
 
 
