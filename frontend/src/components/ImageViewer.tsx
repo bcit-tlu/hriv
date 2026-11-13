@@ -1298,7 +1298,18 @@ export default function ImageViewer({
     })
     updateClearButtonState()
 
+    // Presentation tools dock after the selection-adjacent controls (lock,
+    // clear) so those sit directly next to the selection button; laser/ink
+    // are hidden outside full-page anyway.
+    viewer.addControl(laserWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+    viewer.addControl(inkWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
     // --- Canvas edit mode toolbar button (visible to admin/instructor) ---
+    // Docked last so the pencil is always the final icon in the toolbar.
     if (canEditContentRef.current) {
       const canvasEditButton = new OpenSeadragon.Button({
         tooltip: 'Canvas annotations (add shapes, text, links)',
@@ -1332,16 +1343,6 @@ export default function ImageViewer({
         setButtonIcons(canvasEditButton, active ? 'canvas_edit_active' : 'canvas_edit')
       }
     }
-
-    // Presentation tools dock last so the selection-adjacent controls (lock,
-    // clear) sit directly next to the selection button; laser/ink are hidden
-    // outside full-page anyway.
-    viewer.addControl(laserWrapper, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
-    viewer.addControl(inkWrapper, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
 
     // Keep the bottom-left toolbar above the canvas edit overlay (zIndex 15/20)
     // so its buttons stay visible and clickable while in canvas edit mode.

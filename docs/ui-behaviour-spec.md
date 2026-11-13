@@ -265,7 +265,9 @@ images> / Empty` format used on category tiles.
 - The OSD bottom-left control strip and the bottom-right minimap sit flush
   with the bottom edge of the frame: `ImageViewer` applies
   `vertical-align: bottom` to bottom-dock descendants to counter the
-  inline-block baseline strut that otherwise lifts them a few px.
+  inline-block baseline strut that otherwise lifts them a few px. The
+  strip's button order is select, lock, clear, laser, ink, then the canvas
+  pencil-edit toggle last (admin/instructor only).
 - Active and pressed toolbar buttons show a solid `primary.main` red icon
   instead of a pressed tint or outline: every `*_pressed` background is solid
   `primary.main` (#A74A4A), and the selection and canvas-edit toggles swap to

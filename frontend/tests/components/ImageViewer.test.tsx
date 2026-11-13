@@ -1817,7 +1817,7 @@ describe('ImageViewer presentation tools (#1876)', () => {
     for (const el of navButtons) expect(el.style.display).toBe('inline-block')
   })
 
-  it('docks lock/clear next to the selection button, ahead of laser/ink', () => {
+  it('docks lock/clear next to the selection button, pencil-edit last', () => {
     render(<ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={vi.fn()} />)
     const docked = viewer().addControl.mock.calls.map((call) => call[0] as HTMLElement)
     const dockIndex = (tooltip: string) => {
@@ -1833,8 +1833,10 @@ describe('ImageViewer presentation tools (#1876)', () => {
     expect(selection).toBeGreaterThanOrEqual(0)
     expect(lock).toBeGreaterThan(selection)
     expect(clear).toBeGreaterThan(lock)
-    expect(laser).toBeGreaterThan(canvasEdit)
+    expect(laser).toBeGreaterThan(clear)
     expect(ink).toBeGreaterThan(laser)
+    // The pencil is always the final icon in the toolbar.
+    expect(canvasEdit).toBeGreaterThan(ink)
   })
 
   it('binds H/B/L/I keys to the toolbar, gating laser/ink on full-page', () => {
