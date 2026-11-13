@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.70.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.70.0...backend-v0.70.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **announcements:** render banner bodies as markdown like the cards ([#1898](https://github.com/bcit-tlu/hriv/issues/1898)) ([687b337](https://github.com/bcit-tlu/hriv/commit/687b33784dee9aec9df9b6b2581f35068930767b))
+
 ## [0.70.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.69.0...backend-v0.70.0) (2026-11-13)
 
 
