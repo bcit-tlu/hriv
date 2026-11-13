@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.0...frontend-v0.69.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **viewer:** hide the canvas-edit pencil in full-page mode ([#1896](https://github.com/bcit-tlu/hriv/issues/1896)) ([82836d3](https://github.com/bcit-tlu/hriv/commit/82836d36360697844ecabd0d354a100e136ca1d5))
+
 ## [0.69.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.68.0...frontend-v0.69.0) (2026-11-13)
 
 
