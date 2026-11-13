@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     counting_result_ttl_seconds: int = Field(default=600, ge=60)
     counting_job_timeout_seconds: int = Field(default=60, ge=5)
     counting_max_objects: int = Field(default=3000, ge=1)
+    # Ops-level kill-switch for the flat-field + stretch preprocessing in
+    # the classical mask path (#1870). Deliberately the only knob —
+    # per-image tuning arrives via metadata.detection_params instead.
+    counting_preprocess: bool = True
 
     # Audit middleware: comma-separated list of URL paths whose request logs are
     # emitted at DEBUG instead of INFO. Entries without a trailing slash match

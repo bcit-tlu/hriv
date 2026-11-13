@@ -95,6 +95,7 @@ async def create_record(
     mode: str,
     selection: dict[str, int],
     mpp: float | None = None,
+    params: dict | None = None,
     ttl_seconds: int,
 ) -> dict[str, Any]:
     """Persist a fresh queued record (before enqueue) and return it."""
@@ -106,6 +107,8 @@ async def create_record(
         "mode": mode,
         "selection": selection,
         "mpp": mpp,
+        # DetectionTuning dict promoted from measurement review (#1870).
+        "params": params,
         "status": STATUS_QUEUED,
         "created_at": _now(),
         # Epoch seconds: the worker derives hriv.count.wait from this —

@@ -218,7 +218,7 @@ class TestChooseDownsample:
         """Probe at d>=2: probe-level diameter must scale by probe d."""
         monkeypatch.setattr(
             count_pipeline, "probe_object_stats",
-            lambda _rgb, _mode: (20.0, 12),  # probe-level px, enough components
+            lambda _rgb, _mode, **_k: (20.0, 12),  # probe-level px, enough components
         )
         monkeypatch.setattr(
             count_pipeline, "stitch_region",
@@ -236,7 +236,7 @@ class TestChooseDownsample:
     def test_probe_falls_back_to_real_budget(self, monkeypatch):
         monkeypatch.setattr(
             count_pipeline, "probe_object_stats",
-            lambda _rgb, _mode: (40.0, 12),
+            lambda _rgb, _mode, **_k: (40.0, 12),
         )
         monkeypatch.setattr(
             count_pipeline, "stitch_region",
@@ -367,7 +367,7 @@ class TestRunCountNuclei:
 
         class FakeNucleiOutliner:
             name = "fake"
-            def segment(self, _rgb, *, plan, mpp):
+            def segment(self, _rgb, *, plan, mpp, params=None, preprocess=True):
                 seen["mpp"] = mpp
                 return labels
 
@@ -464,7 +464,7 @@ class TestPerOutlinerBudget:
         name = "zero"
         max_pixels = 0
 
-        def segment(self, rgb, *, plan, mpp):
+        def segment(self, rgb, *, plan, mpp, params=None, preprocess=True):
             return np.zeros(rgb.shape[:2], np.int32)
 
     def test_classical_budget_accepts_over_750k(self, monkeypatch):

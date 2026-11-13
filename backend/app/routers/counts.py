@@ -24,7 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user
 from ..auth_events import actor_log_fields
 from ..counting import jobs
-from ..counting.mpp import mpp_from_metadata, nuclei_downsample
+from ..counting.mpp import (
+    detection_params_from_metadata,
+    mpp_from_metadata,
+    nuclei_downsample,
+)
 from ..counting.stitch import (
     InvalidSelection,
     MissingTiles,
@@ -124,6 +128,12 @@ async def create_count(
             # resolved mpp rides the job record to the worker, so this one
             # derivation feeds pre-flight, the level rule and the outliner.
             mpp = mpp_from_metadata(getattr(img, "metadata_", None))
+            # Instructor-tuned detection values promoted at measurement
+            # approval (#1869); malformed payloads are ignored rather than
+            # breaking enqueue (#1870).
+            params = detection_params_from_metadata(
+                getattr(img, "metadata_", None)
+            )
             try:
                 tile_root = resolve_tile_root(
                     settings.tiles_dir, source_image_id
@@ -210,6 +220,7 @@ async def create_count(
                     mode=body.mode,
                     selection=body.selection.model_dump(),
                     mpp=mpp,
+                    params=params,
                     ttl_seconds=settings.counting_result_ttl_seconds,
                 )
                 reserved = await jobs.reserve_active_slot(
