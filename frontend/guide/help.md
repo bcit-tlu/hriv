@@ -14,12 +14,13 @@ next to the version numbers.
 
 ## Other spots to check
 
-- The **bell icon** (top right) → **What's New** lists recent changes to
-  the app.
-- **About** in the same menu shows the running version — handy to mention
-  when reporting a problem.
+- The **bell icon** (top right) opens your announcements — release notes
+  land there too.
+- Your **avatar menu** (top right) holds **Documentation** (this guide)
+  and **About** — the About dialog shows the running version, handy to
+  mention when reporting a problem.
 - Need to reach a person? Contact the BCIT Teaching and Learning Unit.
 - The footer also links to the **HRIV project on GitHub** for the
   technically curious.
 
-![The notifications menu](images/notifications.png)
+![The avatar menu](images/profile-menu.png)

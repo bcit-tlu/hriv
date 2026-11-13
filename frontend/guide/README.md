@@ -1,7 +1,7 @@
 # HRIV user guide (source)
 
-This folder holds the user-facing guide shown in the app via the bell menu
-(**Documentation**, `?page=guide`). It is plain Markdown rendered by the
+This folder holds the user-facing guide shown in the app via the avatar
+menu (**Documentation**, `?page=guide`). It is plain Markdown rendered by the
 frontend — there is no separate docs site or build step.
 
 ## Editing
@@ -34,5 +34,5 @@ of Markdown — keep pages inside it:
 ## Previewing
 
 Run the app (`npm run dev` or `docker compose up`), sign in as an instructor
-or admin, and open **Documentation** from the bell menu — or go straight to
-`/?page=guide&doc=your-page`.
+or admin, and open **Documentation** from your avatar menu — or go straight
+to `/?page=guide&doc=your-page`.
