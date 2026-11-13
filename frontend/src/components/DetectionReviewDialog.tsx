@@ -199,7 +199,7 @@ function DialogBody({
       ((element: HTMLElement, src: string) =>
         OpenSeadragon({
           element,
-          tileSources: src as unknown as OpenSeadragon.TileSourceSpecifier,
+          tileSources: src,
           showNavigationControl: false,
           showNavigator: false,
           showSequenceControl: false,
@@ -231,7 +231,9 @@ function DialogBody({
               vp.zoomTo(zoom, undefined, true)
               vp.panTo(center, true)
             })
-            viewer.open(fresh.tile_sources as unknown as OpenSeadragon.TileSourceSpecifier)
+            // TileSourceSpecifier is `{tileSource: string|object}` — a
+            // plain object satisfies it without a cast.
+            viewer.open({ tileSource: fresh.tile_sources })
           })
           .catch(() => undefined) // keep the degraded viewer
       }, 300)

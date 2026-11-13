@@ -1870,6 +1870,20 @@ async def test_update_finding_reproposes_under_saved_tuning(monkeypatch) -> None
     assert out.confidence == 0.85
 
 
+async def test_update_finding_marks_current_detector_version(monkeypatch) -> None:
+    """A retuned finding's proposal comes from the current detector — keep
+    the version in step or Re-scan outdated would supersede it (#1890)."""
+    finding, image = _finding(detector_version="rbc-0"), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(_MEAS, _EST, None))
+    )
+    await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert finding.detector_version == DETECTOR_VERSION
+
+
 async def test_update_finding_reproposes_reason(monkeypatch) -> None:
     finding, image = _finding(proposed_scale=7.3), _image()
     db = _db_with(finding, image)

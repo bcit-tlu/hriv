@@ -211,7 +211,9 @@ describe('DetectionReviewDialog', () => {
     await waitFor(() => expect(handlers['tile-load-failed']).toBeTypeOf('function'))
     handlers['tile-load-failed']()
     handlers['tile-load-failed']() // bursts must not renew twice
-    await waitFor(() => expect(viewer.open).toHaveBeenCalledWith('/api/tiles/11/renewed.dzi'))
+    await waitFor(() =>
+      expect(viewer.open).toHaveBeenCalledWith({ tileSource: '/api/tiles/11/renewed.dzi' }),
+    )
     expect(api.fetchImage).toHaveBeenCalledTimes(2)
     expect(viewer.viewport?.zoomTo).toHaveBeenCalledWith(3, undefined, true)
     expect(viewer.viewport?.panTo).toHaveBeenCalledWith({ x: 0.4, y: 0.6 }, true)

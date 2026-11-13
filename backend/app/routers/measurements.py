@@ -20,7 +20,7 @@ from ..auth_events import actor_log_fields
 from ..browse_state import bump_browse_revision
 from ..collection_views import image_ids_in_collections
 from ..database import async_session, get_db
-from ..measurement.calibration import CAMERA_PROFILES
+from ..measurement.calibration import CAMERA_PROFILES, DETECTOR_VERSION
 from ..measurement.service import (
     approve_finding,
     has_scale,
@@ -631,6 +631,9 @@ async def update_finding(
     finding.objective = estimate.objective if estimate else None
     finding.confidence = estimate.confidence if estimate else 0.0
     finding.evidence = (estimate.evidence if estimate else {}) | evidence
+    # The proposal now comes from the current detector — keeping the old
+    # version would let "Re-scan outdated" supersede it and lose the tuning.
+    finding.detector_version = DETECTOR_VERSION
     await db.commit()
     await db.refresh(finding)
     logger.info(
