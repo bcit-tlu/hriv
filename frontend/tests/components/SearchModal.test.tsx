@@ -777,7 +777,7 @@ describe('SearchModal', () => {
       .getAllByText('Guide')
       .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(guideBadge.length).toBeGreaterThan(0)
-    expect(screen.getByText(/Announcements/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Announcements/).length).toBeGreaterThan(0)
   })
 
   it('calls onSelectGuide with slug and anchor when a guide result is clicked', async () => {

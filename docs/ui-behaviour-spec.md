@@ -304,7 +304,7 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
   zoom +/- and rotate-left/right buttons hide (they stay in normal view).
   Exiting full-page disarms the active tool, clears all ink, and restores
   the hidden buttons.
-- The laser is a glowing red dot (~20–24px halo) with a short fading trail
+- The laser is a glowing green dot (`#00CC00`, ~20–24px halo; green because red vanishes into H&E tissue) with a short fading trail
   (~450ms); the native cursor hides (`cursor: none`) while armed, and the
   dot stays hidden until the first pointer move and again on pointer-leave.
   Mouse navigation stays enabled so the presenter can pan/zoom while
@@ -1235,7 +1235,7 @@ Epic #1832, always on; see [announcements.md](announcements.md) for the model
 and API.
 
 - **Given** any signed-in role, **Then** the AppBar bell is visible; its badge
-  is the number of unseen _live_ Inbox posts. Opening it peeks the newest ≤5
+  is an amber dot while unseen _live_ Inbox posts exist. Opening it peeks the newest ≤5
   unseen titles with kind icon and relative time; **See all** navigates to
   `?page=announcements`; clicking a title opens the page focused on that card
   (`?id=`).

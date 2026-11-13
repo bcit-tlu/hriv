@@ -95,7 +95,7 @@ describe('getGroupChipColors', () => {
 describe('getPresentationColors', () => {
   it('returns light-mode laser and ink colours', () => {
     const c = getPresentationColors('light')
-    expect(c.laser).toBe('#FF2D2D')
+    expect(c.laser).toBe('#00CC00')
     expect(c.ink).toBe('#00E5FF')
   })
 
@@ -103,7 +103,7 @@ describe('getPresentationColors', () => {
     // Both modes share the values deliberately — they must read against
     // imagery and projector screens, not UI surfaces.
     const c = getPresentationColors('dark')
-    expect(c.laser).toBe('#FF2D2D')
+    expect(c.laser).toBe('#00CC00')
     expect(c.ink).toBe('#00E5FF')
   })
 })

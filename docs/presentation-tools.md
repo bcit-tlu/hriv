@@ -39,7 +39,7 @@ cursor was too small for participants in the back to follow.
 
 ## Laser pointer
 
-- A saturated-red dot (4.5px core + 14px glow halo, ~28px total) that follows
+- A laser-green (`#00CC00`) dot (4.5px core + 14px glow halo, ~28px total) — green, not the classic red, because H&E slides are overwhelmingly red/pink and a red dot disappears into the tissue — that follows
   the pointer, with a 450ms fading trail of pooled circles.
 - The native cursor is hidden while armed (`cursor: none` on
   `viewer.canvas`), but mouse navigation stays enabled — presenters keep
