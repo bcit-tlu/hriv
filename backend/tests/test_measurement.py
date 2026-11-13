@@ -1707,3 +1707,18 @@ def test_parameterized_routes_never_shadow_literals() -> None:
                 seen_param = True
             elif seen_param:
                 pytest.fail(f"{method} literal {route.path} declared after /{{id}}")
+
+
+def test_detection_tuning_rejects_untranslatable_advanced() -> None:
+    """`advanced` values failing DetectorParams' range checks must fail
+    request validation (422), not blow up inside preview/PATCH (#1867
+    review)."""
+    for bad in (
+        {"min_radius_px": 0.0},
+        {"sat_above_background": 0.0},
+        {"purple_hue_min": 200.0, "purple_hue_max": 100.0},
+    ):
+        with pytest.raises(ValidationError):
+            MeasurementPreviewRequest(tuning=DetectionTuning(advanced=dict(bad)))
+        with pytest.raises(ValidationError):
+            MeasurementFindingUpdate(params=DetectionTuning(advanced=dict(bad)))
