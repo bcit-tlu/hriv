@@ -224,8 +224,22 @@ lists findings from `GET /api/measurement-findings`:
   meanwhile. A progress error ends tracking and is shown as an error. After 10 minutes
   with no progress (a busy queue or stopped worker) tracking stops with a
   notice to use **Refresh**; the scan itself may still finish.
-- Each row's thumbnail opens the image in the viewer and its name opens the
-  Edit image dialog (where manual scale values live).
+- A **pending** row's thumbnail opens the inspect-and-tune dialog
+  (`DetectionReviewDialog`) — a bare OpenSeadragon view of the image (no
+  annotations, counts or toolbars) beside three controls: **Detection
+  sensitivity** (0 → only obvious cells, 1 → fainter cells too), **Minimum
+  cell size** (px radius), and **Exclude purple-stained nuclei**. Control
+  changes debounce (~250 ms) `POST …/{id}/preview` and the readout shows
+  the proposed scale, objective, confidence, RBC diameter and selected-cell
+  count — or the detector's reason when nothing can be proposed.
+  **Apply** PATCHes `params` onto the finding and the row updates in place;
+  Cancel discards. A dirty state shows an "Unsaved" chip; **Reset to
+  defaults** restores the semantic defaults (which count as no tuning).
+  "Open in viewer" links to the full viewer for closer inspection.
+  Approved/rejected rows keep the old behaviour — the thumbnail navigates
+  straight to the viewer, since reviewed params are immutable.
+- A row's name opens the Edit image dialog (where manual scale values
+  live).
 - Each pending row shows the thumbnail, name and size, the **detected
   objective** (the ×10/×40/×100 objective lens matched for the known camera;
   a tooltip explains it), the read-only **proposed** scale in px/µm, an

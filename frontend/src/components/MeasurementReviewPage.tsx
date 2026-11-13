@@ -32,13 +32,16 @@ import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import {
   approveMeasurementFinding,
   bulkApproveMeasurementFindings,
+  fetchImage,
   fetchMeasurementFindingCategories,
   fetchMeasurementFindings,
   fetchMeasurementScanProgress,
   fetchMeasurementScanRemaining,
+  previewMeasurementFinding,
   rejectMeasurementFinding,
   resetMeasurementFinding,
   scanMeasurements,
+  updateMeasurementFindingParams,
   userMessage,
 } from '../api'
 import type {
@@ -50,6 +53,7 @@ import type {
 } from '../api'
 import { evidenceSummary } from '../measurementEvidence'
 import { measurementUnitLabel } from '../measurementUnits'
+import DetectionReviewDialog from './DetectionReviewDialog'
 import MeasurementScaleFields from './MeasurementScaleFields'
 import MeasurementObjectiveSelect from './MeasurementObjectiveSelect'
 import { objectiveLabel } from '../measurementUnits'
@@ -64,6 +68,7 @@ const ROWS_PER_PAGE_OPTIONS = [25, 50, 100]
 export interface MeasurementReviewApi {
   fetchFindings: typeof fetchMeasurementFindings
   fetchCategories: typeof fetchMeasurementFindingCategories
+  fetchImage: typeof fetchImage
   scan: typeof scanMeasurements
   scanProgress: typeof fetchMeasurementScanProgress
   scanRemaining: typeof fetchMeasurementScanRemaining
@@ -71,11 +76,14 @@ export interface MeasurementReviewApi {
   reject: typeof rejectMeasurementFinding
   reset: typeof resetMeasurementFinding
   bulkApprove: typeof bulkApproveMeasurementFindings
+  preview: typeof previewMeasurementFinding
+  updateParams: typeof updateMeasurementFindingParams
 }
 
 const defaultApi: MeasurementReviewApi = {
   fetchFindings: fetchMeasurementFindings,
   fetchCategories: fetchMeasurementFindingCategories,
+  fetchImage,
   scan: scanMeasurements,
   scanProgress: fetchMeasurementScanProgress,
   scanRemaining: fetchMeasurementScanRemaining,
@@ -83,6 +91,8 @@ const defaultApi: MeasurementReviewApi = {
   reject: rejectMeasurementFinding,
   reset: resetMeasurementFinding,
   bulkApprove: bulkApproveMeasurementFindings,
+  preview: previewMeasurementFinding,
+  updateParams: updateMeasurementFindingParams,
 }
 
 export interface MeasurementReviewPageProps {
@@ -158,6 +168,7 @@ export default function MeasurementReviewPage({
   const [reloadToken, setReloadToken] = useState(0)
   const [scan, setScan] = useState<ScanState | null>(null)
   const [learnMoreOpen, setLearnMoreOpen] = useState(false)
+  const [tuningFinding, setTuningFinding] = useState<ApiMeasurementFinding | null>(null)
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), [])
 
@@ -712,11 +723,15 @@ export default function MeasurementReviewPage({
                   )}
                   <TableCell>
                     <Stack direction="row" spacing={1.5} alignItems="center">
-                      {onOpenImage ? (
+                      {pending || onOpenImage ? (
                         <Link
                           component="button"
-                          onClick={() => onOpenImage(f.image_id)}
-                          aria-label={`Open ${f.image_name}`}
+                          onClick={() =>
+                            pending ? setTuningFinding(f) : onOpenImage?.(f.image_id)
+                          }
+                          aria-label={
+                            pending ? `Inspect and tune ${f.image_name}` : `Open ${f.image_name}`
+                          }
                           sx={{ display: 'block', lineHeight: 0 }}
                         >
                           <RenewingThumbnail
@@ -858,6 +873,20 @@ export default function MeasurementReviewPage({
         onRowsPerPageChange={(e) => {
           setRowsPerPage(Number(e.target.value))
           setPage(0)
+        }}
+      />
+      <DetectionReviewDialog
+        open={tuningFinding != null}
+        finding={tuningFinding}
+        onClose={() => setTuningFinding(null)}
+        onOpenImage={onOpenImage}
+        api={{
+          fetchImage: api.fetchImage,
+          preview: api.preview,
+          updateParams: api.updateParams,
+        }}
+        onApplied={(updated) => {
+          setFindings((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
         }}
       />
     </Box>

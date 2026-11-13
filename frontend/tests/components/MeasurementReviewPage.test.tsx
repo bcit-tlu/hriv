@@ -1,11 +1,15 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import MeasurementReviewPage, {
   type MeasurementReviewApi,
 } from '../../src/components/MeasurementReviewPage'
 import { evidenceSummary } from '../../src/measurementEvidence'
-import type { ApiMeasurementFinding } from '../../src/api'
+import type { ApiImage, ApiMeasurementFinding } from '../../src/api'
+
+vi.mock('openseadragon', () => ({
+  default: vi.fn(() => ({ destroy: vi.fn() })),
+}))
 
 function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasurementFinding {
   return {
@@ -37,12 +41,35 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
   }
 }
 
+function makeImage(overrides: Partial<ApiImage> = {}): ApiImage {
+  return {
+    id: 11,
+    name: 'Blood film 40x',
+    thumb: '/api/tiles/11/thumb.jpg',
+    tile_sources: '/api/tiles/11/image.dzi',
+    category_id: 3,
+    copyright: null,
+    note: null,
+    active: true,
+    sort_order: 0,
+    metadata_extra: null,
+    version: 1,
+    width: 2880,
+    height: 2048,
+    file_size: 12345,
+    created_at: '2026-11-01T12:00:00Z',
+    updated_at: '2026-11-02T12:00:00Z',
+    ...overrides,
+  }
+}
+
 function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementReviewApi {
   return {
     fetchFindings: vi.fn(async () => ({ items, total: items.length })),
     fetchCategories: vi.fn(async () => [
       { id: 3, path: 'Hematology › Blood films', count: items.length },
     ]),
+    fetchImage: vi.fn(async (id: number) => makeImage({ id })),
     scan: vi.fn(async () => ({ image_ids: [11, 12], mode: 'queued' as const })),
     scanProgress: vi.fn(async () => ({ total: 2, done: 2 })),
     scanRemaining: vi.fn(async () => ({ remaining: 0 })),
@@ -50,6 +77,25 @@ function makeApi(items: ApiMeasurementFinding[] = [makeFinding()]): MeasurementR
     reject: vi.fn(async (id: number) => makeFinding({ id, status: 'rejected' })),
     reset: vi.fn(async (id: number) => makeFinding({ id, status: 'pending' })),
     bulkApprove: vi.fn(async (ids: number[]) => ({ approved: ids, skipped: [] })),
+    preview: vi.fn(async () => ({
+      diameter_px: 54.8,
+      component_count: 150,
+      selected_count: 140,
+      peak_fraction: 0.8,
+      proposed_scale: 7.4,
+      proposed_unit: 'um',
+      objective: '40',
+      confidence: 0.85,
+      reason: null,
+    })),
+    updateParams: vi.fn(async (id: number) =>
+      makeFinding({
+        id,
+        proposed_scale: 7.4,
+        confidence: 0.85,
+        params: { sensitivity: 0.65, min_cell_size: 3, exclude_nuclei: true, advanced: null },
+      }),
+    ),
   }
 }
 
@@ -424,12 +470,15 @@ describe('MeasurementReviewPage', () => {
   })
 
   it('links the thumbnail to the viewer and the name to the edit dialog', async () => {
-    const api = makeApi()
+    // Reviewed rows still navigate — only pending thumbnails open the
+    // inspect-and-tune dialog (#1871).
+    const api = makeApi([makeFinding({ status: 'approved', approved_scale: 7.3 })])
     const onOpenImage = vi.fn()
     const onEditImage = vi.fn()
     render(<MeasurementReviewPage api={api} onOpenImage={onOpenImage} onEditImage={onEditImage} />)
     await screen.findByText('Blood film 40x')
-    await userEvent.click(screen.getByRole('button', { name: 'Open Blood film 40x' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Blood film 40x' }))
     expect(onOpenImage).toHaveBeenCalledWith(11)
     await userEvent.click(screen.getByRole('button', { name: 'Blood film 40x' }))
     expect(onEditImage).toHaveBeenCalledWith(11)
@@ -535,6 +584,105 @@ describe('MeasurementReviewPage', () => {
     vi.mocked(api.fetchFindings).mockRejectedValueOnce(new Error('boom'))
     render(<MeasurementReviewPage api={api} />)
     expect(await screen.findByRole('alert')).toBeInTheDocument()
+  })
+})
+
+describe('inspect-and-tune dialog', () => {
+  async function openDialog(api = makeApi()) {
+    const onOpenImage = vi.fn()
+    render(<MeasurementReviewPage api={api} onOpenImage={onOpenImage} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Inspect and tune Blood film 40x' }))
+    return { api, onOpenImage }
+  }
+
+  it('opens the dialog from a pending thumbnail without navigating', async () => {
+    const { api, onOpenImage } = await openDialog()
+    expect(
+      await screen.findByRole('dialog', { name: /Inspect and tune — Blood film 40x/ }),
+    ).toBeInTheDocument()
+    expect(onOpenImage).not.toHaveBeenCalled()
+    expect(api.fetchImage).toHaveBeenCalledWith(11)
+  })
+
+  it('previews detection when a control changes', async () => {
+    const { api } = await openDialog()
+    await screen.findByRole('dialog')
+    const slider = screen.getByRole('slider', { name: 'Detection sensitivity' })
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(api.preview).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ sensitivity: 0.65, advanced: null }),
+      ),
+    )
+    expect(await screen.findByText(/7.40 px\/µm/)).toBeInTheDocument()
+    expect(screen.getByText(/Confidence: 85%/)).toBeInTheDocument()
+  })
+
+  it('Apply persists the tuning and updates the row in place', async () => {
+    const { api } = await openDialog()
+    const slider = screen.getByRole('slider', { name: 'Detection sensitivity' })
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    await waitFor(() => expect(api.preview).toHaveBeenCalled())
+    await userEvent.click(screen.getByRole('button', { name: 'Apply tuning' }))
+    await waitFor(() =>
+      expect(api.updateParams).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ sensitivity: 0.65 }),
+      ),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // The row swaps to the PATCH'd values (7.4 proposed, 85% confidence).
+    const table = screen.getByRole('table', { name: 'Measurement findings' })
+    expect(within(table).getByText('7.40 px/µm')).toBeInTheDocument()
+    expect(within(table).getByText('85%')).toBeInTheDocument()
+  })
+
+  it('Cancel discards changes without persisting', async () => {
+    const { api } = await openDialog()
+    const slider = screen.getByRole('slider', { name: 'Detection sensitivity' })
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(api.updateParams).not.toHaveBeenCalled()
+  })
+
+  it('seeds saved params and Reset restores defaults', async () => {
+    const api = makeApi([
+      makeFinding({
+        params: {
+          sensitivity: 0.9,
+          min_cell_size: 6,
+          exclude_nuclei: false,
+          advanced: null,
+        },
+      }),
+    ])
+    render(<MeasurementReviewPage api={api} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Inspect and tune Blood film 40x' }))
+    const slider = await screen.findByRole('slider', { name: 'Detection sensitivity' })
+    expect(slider).toHaveAttribute('aria-valuenow', '0.9')
+    await userEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }))
+    expect(slider).toHaveAttribute('aria-valuenow', '0.6')
+    await waitFor(() =>
+      expect(api.preview).toHaveBeenLastCalledWith(
+        1,
+        expect.objectContaining({ sensitivity: 0.6, min_cell_size: 3, exclude_nuclei: true }),
+      ),
+    )
+  })
+
+  it('keeps reviewed thumbnails navigating to the viewer', async () => {
+    const api = makeApi([makeFinding({ status: 'approved', approved_scale: 7.3 })])
+    const onOpenImage = vi.fn()
+    render(<MeasurementReviewPage api={api} onOpenImage={onOpenImage} />)
+    await screen.findByText('Blood film 40x')
+    await userEvent.click(screen.getByRole('button', { name: 'Approved' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Open Blood film 40x' }))
+    expect(onOpenImage).toHaveBeenCalledWith(11)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
 
