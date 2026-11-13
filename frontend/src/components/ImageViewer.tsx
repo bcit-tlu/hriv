@@ -1005,7 +1005,11 @@ export default function ImageViewer({
     // presenting declutters the dock. They stay in normal view (#1877).
     const setZoomControlsHidden = (hidden: boolean) => {
       for (const button of [viewer.zoomInButton, viewer.zoomOutButton]) {
-        if (button?.element) button.element.style.display = hidden ? 'none' : ''
+        // Restore 'inline-block' — ControlDock.addControl sets it inline; a
+        // blank string would collapse the buttons to display:block stacking.
+        if (button?.element) {
+          button.element.style.display = hidden ? 'none' : 'inline-block'
+        }
       }
     }
 
@@ -1022,11 +1026,18 @@ export default function ImageViewer({
       // breaks the toolbar's arrow-key nudge. preventGesture skips both.
       preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
         const target = event.originalEvent?.target
-        // Presses outside viewer.canvas (OSD control dock, navigator) or on
-        // tagged canvas UI must not start a selection rect or ink stroke.
+        if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
+          event.preventGesture = true
+          return
+        }
+        // A press on the OSD control dock or navigator must not start a rect
+        // or ink stroke — but check only gesture START: once OSD captures the
+        // pointer, every move/up retargets to viewer.element (outside
+        // viewer.canvas), and blocking those would cancel the drag (#1881).
         if (
+          event.eventType === 'pointerdown' &&
           target instanceof Element &&
-          (target.closest('[data-hriv-canvas-ui]') || !viewer.canvas.contains(target))
+          !viewer.canvas.contains(target)
         ) {
           event.preventGesture = true
         }

@@ -72,8 +72,14 @@ cursor was too small for participants in the back to follow.
   full-page during an edit queues the laser the same way, since annotation
   editing works in full-page too.
 - The shared `MouseTracker`'s `preProcessEventHandler` skips gestures whose
-  target is tagged `data-hriv-canvas-ui` **or outside `viewer.canvas`**, so
-  presses on the OSD control dock/navigator can't start a rect or stroke.
+  target is tagged `data-hriv-canvas-ui`, and rejects **pointerdown**
+  targets outside `viewer.canvas` so presses on the OSD control
+  dock/navigator can't start a rect or stroke. The outside-canvas rule must
+  stay pointerdown-only: once OSD calls `setPointerCapture` on
+  `viewer.element`, every move/up in the gesture retargets there (outside
+  `viewer.canvas`), and blocking those would cancel in-flight drags —
+  collapsing selection rects to 1×1 "dots" and ink strokes to invisible
+  specks.
 - Everything is ephemeral: ink is never persisted to metadata, share links
   or exports, and is cleared on full-page exit and unmount.
 - Telemetry rides `ui.toolbar_action`: `laser_pointer_on|off`,

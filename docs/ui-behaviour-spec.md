@@ -318,9 +318,12 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
   draft's discard flow and arms when edit mode exits (a "Keep editing"
   answer leaves everything as it was); entering full-page while editing
   queues the laser the same way rather than arming over the Fabric canvas.
-- Tracker gestures only start inside `viewer.canvas`: presses on the OSD
-  control dock or navigator (and any `data-hriv-canvas-ui` element) are
-  preprocessed away so a toolbar press can't drop a stray ink dot.
+- Tracker gestures only start inside `viewer.canvas`: **pointerdown** on the
+  OSD control dock or navigator (and any `data-hriv-canvas-ui` element) is
+  preprocessed away so a toolbar press can't drop a stray ink dot. The check
+  is pointerdown-only on purpose — after pointer capture, move/up events
+  retarget to `viewer.element` outside the canvas and must flow through or
+  in-flight drags cancel.
 - Laser and ink colours are theme tokens (`getPresentationColors`), not
   hard-coded hex; the overlay re-themes on palette switches.
 - Mouse click-to-zoom is disabled everywhere

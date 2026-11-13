@@ -1361,15 +1361,33 @@ describe('ImageViewer selection rectangles', () => {
     // navigator — is not, so a dock press can't start a rect or ink stroke.
     const canvasTarget = document.createElement('div')
     viewer().canvas.appendChild(canvasTarget)
-    const viewerEvent = { originalEvent: { target: canvasTarget }, preventGesture: false }
+    const viewerEvent = {
+      eventType: 'pointerdown',
+      originalEvent: { target: canvasTarget },
+      preventGesture: false,
+    }
     preProcess!(viewerEvent)
     expect(viewerEvent.preventGesture).toBe(false)
 
     const dockTarget = document.createElement('div')
     viewer().container.appendChild(dockTarget)
-    const dockEvent = { originalEvent: { target: dockTarget }, preventGesture: false }
+    const dockEvent = {
+      eventType: 'pointerdown',
+      originalEvent: { target: dockTarget },
+      preventGesture: false,
+    }
     preProcess!(dockEvent)
     expect(dockEvent.preventGesture).toBe(true)
+
+    // Once a gesture is captured, move/up events retarget to viewer.element
+    // (outside viewer.canvas); blocking them would cancel in-flight drags.
+    const capturedMove = {
+      eventType: 'pointermove',
+      originalEvent: { target: viewer().element },
+      preventGesture: false,
+    }
+    preProcess!(capturedMove)
+    expect(capturedMove.preventGesture).toBe(false)
 
     const noTarget = { originalEvent: {}, preventGesture: false }
     preProcess!(noTarget)
@@ -1766,16 +1784,18 @@ describe('ImageViewer presentation tools (#1876)', () => {
     const zoomIn = viewer().zoomInButton.element
     const zoomOut = viewer().zoomOutButton.element
 
-    expect(zoomIn.style.display).toBe('')
-    expect(zoomOut.style.display).toBe('')
+    expect(zoomIn.style.display).toBe('inline-block')
+    expect(zoomOut.style.display).toBe('inline-block')
 
     enterFullPage()
     expect(zoomIn.style.display).toBe('none')
     expect(zoomOut.style.display).toBe('none')
 
+    // Restore the inline-block that ControlDock.addControl sets — a blank
+    // display would collapse the buttons into block-level stacking (#1881).
     exitFullPage()
-    expect(zoomIn.style.display).toBe('')
-    expect(zoomOut.style.display).toBe('')
+    expect(zoomIn.style.display).toBe('inline-block')
+    expect(zoomOut.style.display).toBe('inline-block')
   })
 
   it('shows pointer buttons and auto-arms the laser only in full-page mode', () => {
