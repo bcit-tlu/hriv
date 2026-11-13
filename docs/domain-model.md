@@ -158,7 +158,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   admin/instructor review ([measurement-review](measurement-review.md)).
 - **Key fields:** `image_id` (FK, `CASCADE`); `status`
   (`pending`/`approved`/`rejected`/`superseded`); `source`; `proposed_scale`;
-  `objective`; `confidence`; `evidence` (JSONB); `detector_version`;
+  `objective`; `confidence`; `evidence` (JSONB); `params` (JSONB, nullable —
+  `DetectionTuning`, NULL = shipped defaults); `detector_version`;
   `approved_scale`; `reviewed_by` (FK users, `SET NULL`).
 - **Common mistakes:**
   - Findings never change image metadata until approved; approval merges only

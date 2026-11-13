@@ -144,6 +144,7 @@ def _out(
         approved_unit=finding.approved_unit,
         approved_objective=finding.approved_objective,
         objective_scales=CAMERA_PROFILES.get((image.width or 0, image.height or 0)),
+        params=finding.params,
         reviewed_by=finding.reviewed_by,
         reviewed_at=finding.reviewed_at,
         created_at=finding.created_at,

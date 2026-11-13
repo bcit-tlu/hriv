@@ -38,6 +38,11 @@ specified in detail.
 - Objective ↔ scale auto-coordination exists only in Measurement review; Edit
   image keeps the two fields independent. Review and Edit image share one
   scale + unit component. See [`measurement-review.md`](measurement-review.md).
+- Detection tuning is a small **semantic** set (`DetectionTuning`:
+  sensitivity, min cell size, exclude nuclei) persisted on the finding's
+  `params`; raw `DetectorParams` constants never cross the API. The semantic
+  defaults map exactly onto the shipped constants, so tuning is opt-in and
+  `detector_version` stays put.
 
 ## UI conventions
 
@@ -70,6 +75,14 @@ specified in detail.
 - Announcement kind is a controlled icon set and the icon _is_ the kind
   (Release and Warning are admin-only); emoji are reactions only. "Seen by N
   of M" shows counts to admin/instructor/staff only, never names.
+- Mouse click-to-zoom is disabled in the image viewer — user testing found it
+  useless, and it would fire on every laser-pointer/ink click. Scroll, pinch
+  and touch double-tap zoom remain. The zoom +/- toolbar buttons stay in
+  normal view but hide in full-page mode (#1877).
+- Presentation pointer tools (laser pointer, freehand ink) exist only in OSD
+  full-page mode, are available to every role, and are strictly ephemeral:
+  ink fades ~10s after each stroke and is never persisted to image metadata,
+  share links, or exports (#1876).
 
 ## Telemetry
 

@@ -32,6 +32,7 @@ function makeFinding(overrides: Partial<ApiMeasurementFinding> = {}): ApiMeasure
     approved_unit: null,
     approved_objective: null,
     objective_scales: { '10': 2, '40': 7.3, '100': 18.7 },
+    params: null,
     reviewed_by: null,
     reviewed_at: null,
     created_at: FIXED_NOW,

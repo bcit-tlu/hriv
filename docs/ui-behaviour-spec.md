@@ -265,7 +265,9 @@ images> / Empty` format used on category tiles.
 - The OSD bottom-left control strip and the bottom-right minimap sit flush
   with the bottom edge of the frame: `ImageViewer` applies
   `vertical-align: bottom` to bottom-dock descendants to counter the
-  inline-block baseline strut that otherwise lifts them a few px.
+  inline-block baseline strut that otherwise lifts them a few px. The
+  strip's button order is select, lock, clear, laser, ink, then the canvas
+  pencil-edit toggle last (admin/instructor only).
 - Active and pressed toolbar buttons show a solid `primary.main` red icon
   instead of a pressed tint or outline: every `*_pressed` background is solid
   `primary.main` (#A74A4A), and the selection and canvas-edit toggles swap to
@@ -289,6 +291,63 @@ images> / Empty` format used on category tiles.
   rotation is suppressed. A gap greater than `PINCH_GESTURE_GAP_MS` resets
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
+
+### Viewer: presentation pointer tools (`ImageViewer.test.tsx`, `presentationTools.test.ts`)
+
+Epic #1876 (user-testing feedback): tools for presenting an image to a room,
+armed only while the viewer is in OSD full-page mode. Everything here is
+ephemeral — nothing is persisted to metadata, share links, or exports.
+
+- **Given** full-page mode is entered (OSD button or the browser-fullscreen
+  handoff), **Then** the laser pointer auto-arms and two buttons — **Laser
+  pointer** and **Freehand ink** — appear in the bottom-left dock, and the
+  zoom +/- and rotate-left/right buttons hide (they stay in normal view).
+  Exiting full-page disarms the active tool, clears all ink, and restores
+  the hidden buttons.
+- The laser is a glowing red dot (~20–24px halo) with a short fading trail
+  (~450ms); the native cursor hides (`cursor: none`) while armed, and the
+  dot stays hidden until the first pointer move and again on pointer-leave.
+  Mouse navigation stays enabled so the presenter can pan/zoom while
+  pointing.
+- The ink tool draws solid cyan (`#00E5FF`) ~4.6px round-capped strokes while
+  armed (`crosshair` cursor, mouse nav disabled like selection mode).
+  Strokes are stored in viewport coordinates and reprojected every frame, so
+  they track structures across pan/zoom. Each stroke holds full opacity for
+  ~8s, fades linearly to gone at ~10s, and at most ~100 strokes are kept
+  (oldest dropped). A press with no drag renders a round-capped dot.
+- Laser / ink / selection / canvas-edit are mutually exclusive; a single
+  `setMouseNavEnabled` arbiter computes navigation from the active modes. A
+  pointer tool never arms over an active canvas edit — it queues behind the
+  draft's discard flow and arms when edit mode exits (a "Keep editing"
+  answer leaves everything as it was); entering full-page while editing
+  queues the laser the same way rather than arming over the Fabric canvas.
+- Tracker gestures only start inside `viewer.canvas`: **pointerdown** on the
+  OSD control dock or navigator (and any `data-hriv-canvas-ui` element) is
+  preprocessed away so a toolbar press can't drop a stray ink dot. The check
+  is pointerdown-only on purpose — after pointer capture, move/up events
+  retarget to `viewer.element` outside the canvas and must flow through or
+  in-flight drags cancel.
+- Laser and ink colours are theme tokens (`getPresentationColors`), not
+  hard-coded hex; the overlay re-themes on palette switches.
+- Mouse click-to-zoom is disabled everywhere
+  (`gestureSettingsMouse.clickToZoom: false`); scroll, pinch and touch
+  double-tap zoom are unchanged (#1877).
+- Both tools are available to every role — presenting is a student activity
+  too. Toggle telemetry rides `ui.toolbar_action`
+  (`laser_pointer_on|off`, `ink_on|off`).
+- Keyboard shortcuts mirror the toolbar: **H** = home, **B** = selection
+  box, **L** = laser, **I** = ink — chosen to dodge OSD's own bindings
+  (WASD/arrows pan, F flips, R rotates, 0 homes, J/K page). Laser/ink keys
+  only respond in full-page (like their buttons); all keys are ignored
+  while typing in a field, inside a dialog, or when focus/hover belongs to
+  a different viewer on the page.
+- The layer is a single `<svg>` appended to `viewer.canvas` at `z-index: 11`
+  (above the measurement-label container, `pointer-events: none`), holding
+  the ink paths, a pooled set of trail circles, and the laser dot; a
+  `requestAnimationFrame` loop runs only while trail points or actively
+  fading strokes remain, and opaque strokes wake it with a one-shot
+  `setTimeout` at their fade start. Full detail:
+  [docs/presentation-tools.md](presentation-tools.md).
 
 ### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `CollectionsTable.test.tsx`, `App.test.tsx`)
 

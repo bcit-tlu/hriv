@@ -1223,6 +1223,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             objective="40",
             confidence=0.8,
             evidence={"rbc_diameter_px": 54.8},
+            params={"sensitivity": 0.9, "min_cell_size": 5.0,
+                    "exclude_nuclei": True, "advanced": None},
             detector_version="rbc-1",
             approved_scale=7.3,
             approved_unit="um",
@@ -1343,6 +1345,8 @@ async def test_run_db_export_success(tmp_path) -> None:
             "objective": "40",
             "confidence": 0.8,
             "evidence": {"rbc_diameter_px": 54.8},
+            "params": {"sensitivity": 0.9, "min_cell_size": 5.0,
+                       "exclude_nuclei": True, "advanced": None},
             "detector_version": "rbc-1",
             "approved_scale": 7.3,
             "approved_unit": "um",
@@ -1607,9 +1611,22 @@ def _full_dump() -> dict:
                 "source": "rbc",
                 "proposed_scale": 7.3,
                 "confidence": 0.8,
+                "params": {"sensitivity": 0.9},
                 "detector_version": "rbc-1",
                 "created_at": "2025-01-02T00:00:00+00:00",
-            }
+            },
+            # Pre-0045 dump shape: no params key → imports as NULL.
+            # (Different image: pending findings are unique per image.)
+            {
+                "id": 4,
+                "image_id": 2,
+                "status": "pending",
+                "source": "rbc",
+                "proposed_scale": 4.0,
+                "confidence": 0.5,
+                "detector_version": "rbc-1",
+                "created_at": "2025-01-02T00:00:00+00:00",
+            },
         ],
         "changelog_entries": [
             {
@@ -1677,8 +1694,12 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     ]
     assert releases[1].banner is True
     findings = [obj for obj in add_calls if type(obj).__name__ == "MeasurementFinding"]
-    assert [(f.id, f.image_id, f.status, f.proposed_unit) for f in findings] == [
-        (3, 1, "pending", "um")
+    assert [
+        (f.id, f.image_id, f.status, f.proposed_unit, f.params)
+        for f in findings
+    ] == [
+        (3, 1, "pending", "um", {"sensitivity": 0.9}),
+        (4, 2, "pending", "um", None),
     ]
     imported_users = [obj for obj in add_calls if type(obj).__name__ == "User"]
     assert len(imported_users) == 2
