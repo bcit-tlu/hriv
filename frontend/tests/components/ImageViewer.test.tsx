@@ -43,6 +43,7 @@ interface MockTrackerOptions {
   moveHandler?: (event: { position?: { x: number; y: number } }) => void
   leaveHandler?: () => void
   preProcessEventHandler?: (event: {
+    eventType?: string
     originalEvent?: { target?: EventTarget | null }
     preventGesture: boolean
   }) => void
@@ -80,6 +81,7 @@ interface MockViewer {
     zoomTo: ReturnType<typeof vi.fn>
     panTo: ReturnType<typeof vi.fn>
     fitBounds: ReturnType<typeof vi.fn>
+    goHome: ReturnType<typeof vi.fn>
     pixelFromPoint: ReturnType<typeof vi.fn>
     pointFromPixel: ReturnType<typeof vi.fn>
     viewportToImageZoom: ReturnType<typeof vi.fn>
@@ -100,6 +102,8 @@ interface MockViewer {
   fullPageButton: MockButton
   zoomInButton: MockButton
   zoomOutButton: MockButton
+  rotateLeftButton: MockButton
+  rotateRightButton: MockButton
   setFullPage: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
@@ -232,6 +236,7 @@ vi.mock('openseadragon', () => {
         zoomTo: vi.fn(),
         panTo: vi.fn(),
         fitBounds: vi.fn(),
+        goHome: vi.fn(),
         pixelFromPoint: vi.fn((p: { x: number; y: number }) => ({ x: p.x * 100, y: p.y * 100 })),
         pointFromPixel: vi.fn((p: { x: number; y: number }) => ({ x: p.x / 100, y: p.y / 100 })),
         viewportToImageZoom: vi.fn((zoom: number) => zoom * 0.001),
@@ -284,6 +289,14 @@ vi.mock('openseadragon', () => {
         tooltip: 'Zoom out',
         onClick: () => {},
       }),
+      rotateLeftButton: new OSDButton({
+        tooltip: 'Rotate left',
+        onClick: () => {},
+      }),
+      rotateRightButton: new OSDButton({
+        tooltip: 'Rotate right',
+        onClick: () => {},
+      }),
       setFullPage: vi.fn((value: boolean) => {
         fullPageState = value
       }),
@@ -301,6 +314,10 @@ vi.mock('openseadragon', () => {
         for (const handler of once) handler(payload)
       },
     }
+    // Mirror real OSD nesting: element > container > canvas, so DOM checks
+    // like viewer.element.contains(target) behave the same as in the app.
+    viewer.element.appendChild(container)
+    container.appendChild(viewer.canvas)
     return viewer
   }
 
@@ -1779,23 +1796,95 @@ describe('ImageViewer presentation tools (#1876)', () => {
     })
   })
 
-  it('hides the zoom +/- buttons only while in full-page mode (#1877)', () => {
+  it('hides the zoom/rotation buttons only while in full-page mode (#1877)', () => {
     render(<ImageViewer tileSources="/tiles.dzi" />)
-    const zoomIn = viewer().zoomInButton.element
-    const zoomOut = viewer().zoomOutButton.element
+    const navButtons = [
+      viewer().zoomInButton.element,
+      viewer().zoomOutButton.element,
+      viewer().rotateLeftButton.element,
+      viewer().rotateRightButton.element,
+    ]
 
-    expect(zoomIn.style.display).toBe('inline-block')
-    expect(zoomOut.style.display).toBe('inline-block')
+    for (const el of navButtons) expect(el.style.display).toBe('inline-block')
 
     enterFullPage()
-    expect(zoomIn.style.display).toBe('none')
-    expect(zoomOut.style.display).toBe('none')
+    for (const el of navButtons) expect(el.style.display).toBe('none')
 
     // Restore the inline-block that ControlDock.addControl sets — a blank
     // display would collapse the buttons into block-level stacking (#1881).
     exitFullPage()
-    expect(zoomIn.style.display).toBe('inline-block')
-    expect(zoomOut.style.display).toBe('inline-block')
+    for (const el of navButtons) expect(el.style.display).toBe('inline-block')
+  })
+
+  it('docks lock/clear next to the selection button, ahead of laser/ink', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={vi.fn()} />)
+    const docked = viewer().addControl.mock.calls.map((call) => call[0] as HTMLElement)
+    const dockIndex = (tooltip: string) => {
+      const el = buttonByTooltip(tooltip).element
+      return docked.findIndex((d) => d === el || d.contains(el))
+    }
+    const selection = dockIndex('Draw selection rectangle')
+    const lock = dockIndex('Lock selection rectangles')
+    const clear = dockIndex('Clear all selection rectangles')
+    const canvasEdit = dockIndex('Canvas annotations (add shapes, text, links)')
+    const laser = dockIndex('Laser pointer')
+    const ink = dockIndex('Freehand ink')
+    expect(selection).toBeGreaterThanOrEqual(0)
+    expect(lock).toBeGreaterThan(selection)
+    expect(clear).toBeGreaterThan(lock)
+    expect(laser).toBeGreaterThan(canvasEdit)
+    expect(ink).toBeGreaterThan(laser)
+  })
+
+  it('binds H/G/F/D keys to the toolbar, gating laser/ink on full-page', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    document.body.appendChild(viewer().element)
+    const press = (key: string, target: EventTarget = viewer().canvas) => {
+      act(() => {
+        target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      })
+    }
+
+    // Home + selection work in normal view; laser/ink only in full-page.
+    press('h')
+    expect(viewer().viewport.goHome).toHaveBeenCalled()
+    press('g')
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+    press('g')
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+
+    press('f')
+    press('d')
+    expect(viewer().canvas.style.cursor).toBe('')
+
+    enterFullPage()
+    press('d')
+    expect(viewer().canvas.style.cursor).toBe('crosshair')
+    press('f')
+    expect(viewer().canvas.style.cursor).toBe('none')
+    press('f')
+    expect(viewer().canvas.style.cursor).toBe('')
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ink_on' }),
+    )
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'laser_pointer_on' }),
+    )
+  })
+
+  it('ignores toolbar keys while typing or over another element', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    document.body.appendChild(viewer().element)
+    enterFullPage()
+    const input = document.createElement('input')
+    viewer().container.appendChild(input)
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }))
+    })
+    // No laser arm: target is an input field.
+    expect(viewer().canvas.style.cursor).toBe('none') // auto-armed on entry
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }))
+    expect(viewer().canvas.style.cursor).toBe('none') // still laser, no ink
   })
 
   it('shows pointer buttons and auto-arms the laser only in full-page mode', () => {

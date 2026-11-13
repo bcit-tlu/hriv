@@ -20,7 +20,7 @@ export const LASER_TRAIL_POINTS = 10
 export const LASER_CORE_RADIUS = 4.5
 export const LASER_GLOW_RADIUS = 14
 
-export const INK_STROKE_WIDTH = 4
+export const INK_STROKE_WIDTH = 4.6
 export const INK_FADE_START_MS = 8_000
 export const INK_LIFETIME_MS = 10_000
 export const MAX_INK_STROKES = 100

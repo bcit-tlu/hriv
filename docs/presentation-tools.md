@@ -26,10 +26,15 @@ cursor was too small for participants in the back to follow.
   the bottom-left control dock while `viewer.isFullPage()`; they hide again
   on exit. Entering full-page auto-arms the laser; exiting disarms the tool
   and clears all ink.
-- While in full-page the zoom +/- buttons are hidden (user testing found
-  them useless in that context); they return in normal view. Mouse
-  click-to-zoom is disabled everywhere — scroll, pinch and touch double-tap
-  zoom are unchanged (#1877).
+- While in full-page the zoom +/- and rotate-left/right buttons are hidden
+  (user testing found them useless in that context); they return in normal
+  view. Mouse click-to-zoom is disabled everywhere — scroll, pinch and touch
+  double-tap zoom are unchanged (#1877).
+- Keyboard shortcuts mirror the toolbar: **H** = home, **G** = selection
+  box, **F** = laser, **D** = ink. The laser/ink keys only respond in
+  full-page (like their buttons), and all keys are ignored while typing in
+  an input, inside a dialog, or when focus/hover belongs to a different
+  viewer on the page.
 
 ## Laser pointer
 
@@ -44,7 +49,7 @@ cursor was too small for participants in the back to follow.
 
 ## Freehand ink
 
-- Bright-cyan (`#00E5FF`) strokes, ~4px screen-width, round caps/joins,
+- Bright-cyan (`#00E5FF`) strokes, ~4.6px screen-width, round caps/joins,
   `crosshair` cursor while armed. Mouse navigation is disabled so drags
   draw instead of panning.
 - Strokes are stored in **viewport coordinates** and reprojected to pixels

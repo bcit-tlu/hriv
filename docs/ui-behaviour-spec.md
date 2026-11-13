@@ -299,14 +299,15 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
 - **Given** full-page mode is entered (OSD button or the browser-fullscreen
   handoff), **Then** the laser pointer auto-arms and two buttons — **Laser
   pointer** and **Freehand ink** — appear in the bottom-left dock, and the
-  zoom +/- buttons hide (they stay in normal view). Exiting full-page
-  disarms the active tool, clears all ink, and restores the zoom buttons.
+  zoom +/- and rotate-left/right buttons hide (they stay in normal view).
+  Exiting full-page disarms the active tool, clears all ink, and restores
+  the hidden buttons.
 - The laser is a glowing red dot (~20–24px halo) with a short fading trail
   (~450ms); the native cursor hides (`cursor: none`) while armed, and the
   dot stays hidden until the first pointer move and again on pointer-leave.
   Mouse navigation stays enabled so the presenter can pan/zoom while
   pointing.
-- The ink tool draws solid cyan (`#00E5FF`) ~4px round-capped strokes while
+- The ink tool draws solid cyan (`#00E5FF`) ~4.6px round-capped strokes while
   armed (`crosshair` cursor, mouse nav disabled like selection mode).
   Strokes are stored in viewport coordinates and reprojected every frame, so
   they track structures across pan/zoom. Each stroke holds full opacity for
@@ -332,6 +333,10 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
 - Both tools are available to every role — presenting is a student activity
   too. Toggle telemetry rides `ui.toolbar_action`
   (`laser_pointer_on|off`, `ink_on|off`).
+- Keyboard shortcuts mirror the toolbar: **H** = home, **G** = selection
+  box, **F** = laser, **D** = ink. Laser/ink keys only respond in full-page
+  (like their buttons); all keys are ignored while typing in a field, inside
+  a dialog, or when focus/hover belongs to a different viewer on the page.
 - The layer is a single `<svg>` appended to `viewer.canvas` at `z-index: 11`
   (above the measurement-label container, `pointer-events: none`), holding
   the ink paths, a pooled set of trail circles, and the laser dot; a

@@ -25,6 +25,9 @@ declare module 'openseadragon' {
     /** Toolbar zoom-in/out Buttons created by showZoomControl. */
     zoomInButton?: Button
     zoomOutButton?: Button
+    /** Toolbar rotate-left/right Buttons created by showRotationControl. */
+    rotateLeftButton?: Button
+    rotateRightButton?: Button
   }
 
   /**

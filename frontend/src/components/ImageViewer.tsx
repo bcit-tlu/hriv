@@ -741,13 +741,7 @@ export default function ImageViewer({
       srcGroup: prefix + 'selection_grouphover.svg',
       srcHover: prefix + 'selection_hover.svg',
       srcDown: prefix + 'selection_pressed.svg',
-      onClick: () => {
-        selectionModeRef.current = !selectionModeRef.current
-        emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
-        if (selectionModeRef.current) setPresentationTool(null)
-        syncMouseNav()
-        setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
-      },
+      onClick: () => toggleSelectionMode(),
     })
     selectionButton.element.style.lineHeight = '0'
     viewer.addControl(selectionButton.element, {
@@ -942,21 +936,28 @@ export default function ImageViewer({
       setButtonIcons(inkButton, tool === 'ink' ? 'ink_active' : 'ink')
     }
 
+    const toggleSelectionMode = () => {
+      selectionModeRef.current = !selectionModeRef.current
+      emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
+      if (selectionModeRef.current) setPresentationTool(null)
+      syncMouseNav()
+      setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
+    }
+    const toggleLaser = () => setPresentationTool(presentationTool === 'laser' ? null : 'laser')
+    const toggleInk = () => setPresentationTool(presentationTool === 'ink' ? null : 'ink')
+
     const laserButton = new OpenSeadragon.Button({
       tooltip: 'Laser pointer',
       srcRest: prefix + 'laser_pointer_rest.svg',
       srcGroup: prefix + 'laser_pointer_grouphover.svg',
       srcHover: prefix + 'laser_pointer_hover.svg',
       srcDown: prefix + 'laser_pointer_pressed.svg',
-      onClick: () => setPresentationTool(presentationTool === 'laser' ? null : 'laser'),
+      onClick: () => toggleLaser(),
     })
     laserButton.element.style.lineHeight = '0'
     const laserWrapper = document.createElement('div')
     laserWrapper.style.display = 'none'
     laserWrapper.appendChild(laserButton.element)
-    viewer.addControl(laserWrapper, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
 
     const inkButton = new OpenSeadragon.Button({
       tooltip: 'Freehand ink',
@@ -964,15 +965,53 @@ export default function ImageViewer({
       srcGroup: prefix + 'ink_grouphover.svg',
       srcHover: prefix + 'ink_hover.svg',
       srcDown: prefix + 'ink_pressed.svg',
-      onClick: () => setPresentationTool(presentationTool === 'ink' ? null : 'ink'),
+      onClick: () => toggleInk(),
     })
     inkButton.element.style.lineHeight = '0'
     const inkWrapper = document.createElement('div')
     inkWrapper.style.display = 'none'
     inkWrapper.appendChild(inkButton.element)
-    viewer.addControl(inkWrapper, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
+
+    // Toolbar keyboard shortcuts — H: home, G: selection box, F: laser,
+    // D: ink. Laser/ink mirror their buttons and only respond in full-page.
+    // Ignored while typing, inside dialogs, or when the pointer/focus
+    // belongs to a different viewer on the page.
+    const handleToolbarKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          target.closest('[role="dialog"]') != null)
+      ) {
+        return
+      }
+      if (
+        target instanceof Node &&
+        !viewer.element.contains(target) &&
+        !viewer.container.matches(':hover')
+      ) {
+        return
+      }
+      switch (event.key.toLowerCase()) {
+        case 'h':
+          viewer.viewport.goHome()
+          break
+        case 'g':
+          toggleSelectionMode()
+          break
+        case 'f':
+          if (viewer.isFullPage()) toggleLaser()
+          break
+        case 'd':
+          if (viewer.isFullPage()) toggleInk()
+          break
+      }
+    }
+    document.addEventListener('keydown', handleToolbarKey)
 
     // Full-page entry arms the laser; exit disarms and clears all ink.
     // Auto-arming is skipped while canvas edit mode is active — annotation
@@ -1001,10 +1040,16 @@ export default function ImageViewer({
       if (pending != null && viewer.isFullPage()) setPresentationTool(pending)
     }
 
-    // User testing found the +/- buttons useless; hide them in full-screen so
-    // presenting declutters the dock. They stay in normal view (#1877).
-    const setZoomControlsHidden = (hidden: boolean) => {
-      for (const button of [viewer.zoomInButton, viewer.zoomOutButton]) {
+    // User testing found the +/- and rotation buttons useless while
+    // presenting; hide them in full-screen so the dock stays decluttered.
+    // They stay in normal view (#1877).
+    const setNavControlsHidden = (hidden: boolean) => {
+      for (const button of [
+        viewer.zoomInButton,
+        viewer.zoomOutButton,
+        viewer.rotateLeftButton,
+        viewer.rotateRightButton,
+      ]) {
         // Restore 'inline-block' — ControlDock.addControl sets it inline; a
         // blank string would collapse the buttons to display:block stacking.
         if (button?.element) {
@@ -1277,6 +1322,16 @@ export default function ImageViewer({
       }
     }
 
+    // Presentation tools dock last so the selection-adjacent controls (lock,
+    // clear) sit directly next to the selection button; laser/ink are hidden
+    // outside full-page anyway.
+    viewer.addControl(laserWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+    viewer.addControl(inkWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
     // Keep the bottom-left toolbar above the canvas edit overlay (zIndex 15/20)
     // so its buttons stay visible and clickable while in canvas edit mode.
     let toolbarAnchor: HTMLElement | null = selectionButton.element
@@ -1480,13 +1535,13 @@ export default function ImageViewer({
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
       syncFullPageIcon()
-      setZoomControlsHidden(event.fullPage)
+      setNavControlsHidden(event.fullPage)
       applyFullPagePresentation(event.fullPage)
     })
     // Run once now: a setFullPage(true) from the fullscreen handoff path can
     // fire 'full-page' before this handler is registered.
     syncFullPageIcon()
-    setZoomControlsHidden(viewer.isFullPage())
+    setNavControlsHidden(viewer.isFullPage())
     applyFullPagePresentation(viewer.isFullPage())
     viewer.addHandler('resize', () => {
       pendingHomeResize = homeViewportAtLastSettledStateRef.current
@@ -1576,6 +1631,7 @@ export default function ImageViewer({
         renewalTimerRef.current = null
       }
       selectionTracker.destroy()
+      document.removeEventListener('keydown', handleToolbarKey)
       topRightControl.removeEventListener('focusin', keepControlsEnabled)
       topRightControl.removeEventListener('focusout', releaseControls)
       const registeredControl = viewer.controls?.find((c) => c.element === topRightControl)
