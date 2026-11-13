@@ -131,7 +131,9 @@ export function useVisibleCollections(enabled: boolean, filters?: CollectionFilt
     setLoading(true)
     setError(null)
     try {
-      const rows = (await fetchCollections(filtersRef.current)).map(apiCollectionSummaryToSummary)
+      const rows = ((await fetchCollections(filtersRef.current)) ?? []).map(
+        apiCollectionSummaryToSummary,
+      )
       if (seq !== loadSeq.current) return
       setCollections(rows)
     } catch (err) {

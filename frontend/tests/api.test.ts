@@ -983,6 +983,16 @@ describe('Collections API', () => {
     expect(result).toHaveLength(1)
   })
 
+  it('fetchCollections bypasses the HTTP cache so callers never see a 304 (#1892)', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([makeApiCollectionSummary()]))
+    await fetchCollections({ mine: true, limit: 8 })
+    const [, init] = mockFetch.mock.calls[0]
+    // Without no-store the browser revalidates the endpoint's ETag +
+    // `private, no-cache` and returns a bare 304 — resolved as `undefined`
+    // and crashed every caller's `.map` (hid the My collections trigger).
+    expect(init.cache).toBe('no-store')
+  })
+
   it('fetchCollections keeps the unfiled-queue filter as a query param', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse([]))
     await fetchCollections({

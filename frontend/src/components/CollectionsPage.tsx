@@ -1017,7 +1017,9 @@ export default function CollectionsPage({
     void fetchCollections({ mine: true })
       .then((rows) => {
         if (!cancelled) {
-          setTypesAtLimit(studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser))
+          setTypesAtLimit(
+            studentTypesAtCap((rows ?? []).map(apiCollectionSummaryToSummary), currentUser),
+          )
         }
       })
       .catch(() => {
