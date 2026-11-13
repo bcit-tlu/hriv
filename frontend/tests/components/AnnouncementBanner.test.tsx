@@ -87,6 +87,26 @@ describe('AnnouncementBanner (announcements epic)', () => {
     expect(screen.queryByRole('button', { name: /more/ })).not.toBeInTheDocument()
   })
 
+  it('renders the body as markdown, resolving media via the supplied tokens', () => {
+    renderWithTheme(
+      <AnnouncementBanner
+        message={'**Bold** intro\n\n![diagram](/api/media/4)'}
+        mediaTokens={{ '4': 'tok123' }}
+      />,
+    )
+    expect(screen.getByText('Bold')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'diagram' })).toHaveAttribute(
+      'src',
+      expect.stringContaining('/api/media/4?token=tok123'),
+    )
+  })
+
+  it('shows a media placeholder when no token is supplied', () => {
+    const { container } = renderWithTheme(<AnnouncementBanner message="![diagram](/api/media/4)" />)
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByRole('img', { name: 'diagram' })).toHaveClass('md-media-missing')
+  })
+
   it('shows the kind icon when a kind is given', () => {
     renderWithTheme(<AnnouncementBanner title="Party" message="Cake at 3" kind="celebration" />)
     expect(screen.getByRole('img', { name: 'Celebration' })).toBeInTheDocument()

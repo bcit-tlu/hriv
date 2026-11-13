@@ -106,6 +106,8 @@ def _broadcast_shape(ann: Announcement) -> AnnouncementBroadcastOut:
         publish_at=ann.publish_at,
         expires_at=ann.expires_at,
         updated_at=ann.updated_at,
+        # Stateless tokens — the login banner must resolve media pre-auth.
+        media_tokens=rules.media_tokens_for(ann.message),
     )
 
 

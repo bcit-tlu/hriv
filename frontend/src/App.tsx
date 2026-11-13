@@ -2446,6 +2446,7 @@ export default function App() {
             key={bannerPost.id}
             title={bannerPost.title}
             message={bannerPost.message}
+            mediaTokens={bannerPost.media_tokens}
             kind={bannerPost.kind}
             onDismiss={() => announcementsFeed.markSeen(bannerPost)}
             moreCount={bannerCandidates.length - 1}

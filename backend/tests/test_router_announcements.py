@@ -239,7 +239,8 @@ async def test_broadcast_returns_minimal_shape_and_filters_in_sql() -> None:
     db = _db([_ann(id=1, kind="warning", banner=True)])
     (out,) = await list_broadcast(db)
     assert out.model_dump().keys() == {
-        "id", "title", "message", "kind", "icon", "severity", "publish_at", "expires_at", "updated_at"
+        "id", "title", "message", "kind", "icon", "severity", "publish_at", "expires_at",
+        "updated_at", "media_tokens",
     }
     assert out.severity == "warning"
     sql = str(db.execute.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))

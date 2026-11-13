@@ -6,12 +6,15 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Stack from '@mui/material/Stack'
-import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
 import { kindAlertSx, kindMeta, type AnnouncementKindMeta } from '../announcementKinds'
+import type { MediaTokens } from '../markdownUtils'
+import MarkdownContent from './MarkdownContent'
 
 export interface AnnouncementBannerProps {
   message: string
+  /** Per-response `{ mediaId: token }` so `/api/media/{id}` images/video resolve. */
+  mediaTokens?: MediaTokens
   title?: string
   /** Announcement kind: supplies the icon and accent colour (same as the card). */
   kind?: string
@@ -43,6 +46,7 @@ export function KindIcon({ meta }: { meta: AnnouncementKindMeta }) {
 
 export default function AnnouncementBanner({
   message,
+  mediaTokens,
   title,
   kind,
   variant = 'app',
@@ -87,23 +91,23 @@ export default function AnnouncementBanner({
       }}
     >
       {title && <AlertTitle sx={{ mb: 0.25, fontWeight: 600 }}>{title}</AlertTitle>}
-      <Typography
-        variant="body2"
-        component="p"
-        sx={
-          clamped
-            ? {
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                whiteSpace: 'pre-line',
-              }
-            : { whiteSpace: 'pre-line' }
-        }
-      >
-        {message}
-      </Typography>
+      {message && (
+        <MarkdownContent
+          markdown={message}
+          mediaTokens={mediaTokens}
+          sx={
+            clamped
+              ? {
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  '& p:last-child': { mb: 0 },
+                }
+              : { '& p:last-child': { mb: 0 } }
+          }
+        />
+      )}
       {(longBody && clamp) || moreCount > 0 ? (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap' }}>
           {longBody && clamp && (
