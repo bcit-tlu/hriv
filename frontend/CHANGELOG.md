@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.69.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.68.0...frontend-v0.69.0) (2026-11-13)
+
+
+### Features
+
+* **collections:** annotation and overlay editing in the sequence viewer ([#1863](https://github.com/bcit-tlu/hriv/issues/1863)) ([#1889](https://github.com/bcit-tlu/hriv/issues/1889)) ([c968eaf](https://github.com/bcit-tlu/hriv/commit/c968eafbf8be117480b1115b032877f2513e7b32))
+* **collections:** enable object counting in collection detail viewers ([#1856](https://github.com/bcit-tlu/hriv/issues/1856)) ([797218b](https://github.com/bcit-tlu/hriv/commit/797218b5b7fd644f1039e92a5397a91d4c174e51))
+* **collections:** image details drawer in collection viewers ([#1862](https://github.com/bcit-tlu/hriv/issues/1862)) ([#1882](https://github.com/bcit-tlu/hriv/issues/1882)) ([bf372ba](https://github.com/bcit-tlu/hriv/commit/bf372ba1de69a40679456bfdce7494b95ca1add4))
+* **counting:** manual report adjustment — remove and add outlines ([#1857](https://github.com/bcit-tlu/hriv/issues/1857)) ([f322e80](https://github.com/bcit-tlu/hriv/commit/f322e804e710832770b6139fe89beaad2e92334a))
+* **counting:** preprocessing + per-image detection_params ([#1888](https://github.com/bcit-tlu/hriv/issues/1888)) ([d3ed433](https://github.com/bcit-tlu/hriv/commit/d3ed4337e6ae7c9a601c0c1a1e19d9d308abb7a1))
+* **measurement:** inspect-and-tune OSD dialog on the review page ([#1890](https://github.com/bcit-tlu/hriv/issues/1890)) ([42b6d2a](https://github.com/bcit-tlu/hriv/commit/42b6d2ac53bd4203ab286a962a74019360928c44))
+* **measurement:** live outline overlay + count chip in tune dialog ([#1872](https://github.com/bcit-tlu/hriv/issues/1872)) ([#1895](https://github.com/bcit-tlu/hriv/issues/1895)) ([8125841](https://github.com/bcit-tlu/hriv/commit/8125841b92e40f5f9e26656a79a47180e03f5299))
+* **measurement:** parametrize RBC detector + finding params ([#1866](https://github.com/bcit-tlu/hriv/issues/1866)) ([#1874](https://github.com/bcit-tlu/hriv/issues/1874)) ([2760e02](https://github.com/bcit-tlu/hriv/commit/2760e0201fb9778765a0d074effc842604200e7e))
+* **viewer:** full-screen presentation pointer tools — laser and ephemeral ink ([#1876](https://github.com/bcit-tlu/hriv/issues/1876)) ([#1881](https://github.com/bcit-tlu/hriv/issues/1881)) ([183dfae](https://github.com/bcit-tlu/hriv/commit/183dfae3243947b51164bdca9d59a506676cec5b))
+
+
+### Bug Fixes
+
+* **collections:** keep the My collections trigger visible through revalidated 304s ([#1892](https://github.com/bcit-tlu/hriv/issues/1892)) ([#1893](https://github.com/bcit-tlu/hriv/issues/1893)) ([ce2940d](https://github.com/bcit-tlu/hriv/commit/ce2940d95532c80627754a013ac5a75a0835ad7a))
+* **frontend:** format-staged large-binary crash, image budgets, leaner login splash ([#1887](https://github.com/bcit-tlu/hriv/issues/1887)) ([e15c23b](https://github.com/bcit-tlu/hriv/commit/e15c23b0e55c9886b975ff22c7a4c683a72da025))
+* **viewer:** green laser dot — red vanished into H&E tissue ([#1891](https://github.com/bcit-tlu/hriv/issues/1891)) ([525ecf9](https://github.com/bcit-tlu/hriv/commit/525ecf965974a696cd823c4381cbdf2edf80c7b0))
+
 ## [0.68.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.67.0...frontend-v0.68.0) (2026-11-11)
 
 
