@@ -1838,9 +1838,11 @@ async def test_preview_detection_threads_params(monkeypatch) -> None:
     assert detect.call_args.args[3] is params
 
 
-async def test_update_finding_persists_params() -> None:
+async def test_update_finding_persists_params(monkeypatch) -> None:
     finding, image = _finding(), _image()
     db = _db_with(finding, image)
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
     tuning = DetectionTuning(sensitivity=0.9, min_cell_size=5.0)
     out = await router.update_finding(
         5, MeasurementFindingUpdate(params=tuning), _user(), db
@@ -1850,13 +1852,64 @@ async def test_update_finding_persists_params() -> None:
     db.commit.assert_awaited_once()
 
 
-async def test_update_finding_null_clears_params() -> None:
+async def test_update_finding_reproposes_under_saved_tuning(monkeypatch) -> None:
+    """The stored proposal must reflect the saved params — otherwise
+    approval would promote a scale the reviewer never previewed (#1871)."""
+    finding, image = _finding(proposed_scale=7.3, confidence=0.4), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(_MEAS, _EST, None))
+    )
+    out = await router.update_finding(
+        5,
+        MeasurementFindingUpdate(params=DetectionTuning(sensitivity=0.9)),
+        _user(),
+        db,
+    )
+    assert out.proposed_scale == 1.67 and out.objective == "20"
+    assert out.confidence == 0.85
+
+
+async def test_update_finding_marks_current_detector_version(monkeypatch) -> None:
+    """A retuned finding's proposal comes from the current detector — keep
+    the version in step or Re-scan outdated would supersede it (#1890)."""
+    finding, image = _finding(detector_version="rbc-0"), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(_MEAS, _EST, None))
+    )
+    await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert finding.detector_version == DETECTOR_VERSION
+
+
+async def test_update_finding_reproposes_reason(monkeypatch) -> None:
+    finding, image = _finding(proposed_scale=7.3), _image()
+    db = _db_with(finding, image)
+    monkeypatch.setattr(
+        router,
+        "preview_detection",
+        AsyncMock(return_value=(None, None, "no_rbc_population")),
+    )
+    out = await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert out.proposed_scale is None and out.confidence == 0.0
+    assert out.evidence == {"reason": "no_rbc_population"}
+
+
+async def test_update_finding_null_clears_params(monkeypatch) -> None:
     finding = _finding(params={"sensitivity": 0.9})
     db = _db_with(finding, _image())
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
     out = await router.update_finding(
         5, MeasurementFindingUpdate(params=None), _user(), db
     )
     assert finding.params is None and out.params is None
+    # Cleared tuning re-detects with shipped defaults.
+    assert preview.await_args.args[2] is None
 
 
 @pytest.mark.parametrize("status", ["approved", "rejected", "superseded"])

@@ -2935,3 +2935,38 @@ export function bulkApproveMeasurementFindings(
     body: JSON.stringify({ ids }),
   })
 }
+
+/** Read-only detection + calibration preview under candidate tuning (#1867). */
+export interface DetectionPreviewOut {
+  diameter_px: number | null
+  component_count: number | null
+  selected_count: number | null
+  peak_fraction: number | null
+  proposed_scale: number | null
+  proposed_unit: string
+  objective: string | null
+  confidence: number
+  /** source_missing | slide_too_large_for_rbc | detect_failed | no_rbc_population; null on success. */
+  reason: string | null
+}
+
+export function previewMeasurementFinding(
+  id: number,
+  tuning: DetectionTuning,
+): Promise<DetectionPreviewOut> {
+  return request(`/measurement-findings/${id}/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ tuning }),
+  })
+}
+
+/** Persist tuned params on a pending finding; `null` clears. */
+export function updateMeasurementFindingParams(
+  id: number,
+  params: DetectionTuning | null,
+): Promise<ApiMeasurementFinding> {
+  return request(`/measurement-findings/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ params }),
+  })
+}
