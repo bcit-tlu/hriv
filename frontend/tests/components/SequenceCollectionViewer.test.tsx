@@ -9,7 +9,7 @@
 
 import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { act, render, screen, fireEvent, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 import * as api from '../../src/api'
 import type { Collection, ImageItem } from '../../src/types'
@@ -18,6 +18,7 @@ import MyCollectionsDrawer from '../../src/components/MyCollectionsDrawer'
 import SequenceCollectionViewer, {
   type SequenceCollectionViewerProps,
 } from '../../src/components/SequenceCollectionViewer'
+import type { CanvasDraftHandle } from '../../src/useCanvasAnnotations'
 
 // ── ImageViewer mock — records the latest props ─────────────────────────
 let lastViewerProps: Record<string, unknown> | null = null
@@ -33,12 +34,14 @@ vi.mock('../../src/components/ImageViewer', () => ({
   },
 }))
 
-// Source info is lazy-fetched when the details drawer opens (#1862).
+// Source info is lazy-fetched when the details drawer opens (#1862);
+// updateImage is the annotation/overlay write path (#1863).
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
-  return { ...actual, fetchImageSourceInfo: vi.fn() }
+  return { ...actual, fetchImageSourceInfo: vi.fn(), updateImage: vi.fn() }
 })
 const fetchImageSourceInfoMock = vi.mocked(api.fetchImageSourceInfo)
+const updateImageMock = vi.mocked(api.updateImage)
 
 function images(count: number): ImageItem[] {
   return Array.from({ length: count }, (_, i) =>
@@ -70,6 +73,7 @@ function renderViewer(overrides: Partial<SequenceCollectionViewerProps> = {}) {
 beforeEach(() => {
   lastViewerProps = null
   fetchImageSourceInfoMock.mockReset()
+  updateImageMock.mockReset()
 })
 
 describe('SequenceCollectionViewer', () => {
@@ -682,5 +686,347 @@ describe('image details drawer (#1862)', () => {
     const trigger = within(nextViewer).getByRole('button', { name: 'Image details' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(within(nextViewer).queryByText(/Copyright:/)).not.toBeInTheDocument()
+  })
+})
+
+// #1863 — admins/instructors annotate and lock overlays on the active
+// member; the App passes the resolved `canEditContent` gate, the hooks
+// write through `PATCH /api/images/{id}`, and the saved member swaps back
+// in via `onImageRenewed` → `renewCollectionImage`.
+describe('annotation and overlay editing (#1863)', () => {
+  const entryAnnotations = [{ type: 'rect', id: 'a1', color: '#00ff00' }]
+  const draftAnnotations = [{ type: 'text', id: 'd1', color: '#ff0000', text: 'Draft' }]
+  const overlayRect = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }
+
+  function apiImageResponse(overrides: Partial<api.ApiImage> = {}): api.ApiImage {
+    return {
+      id: 100,
+      name: 'Slice 1',
+      thumb: '/t',
+      tile_sources: '/s',
+      category_id: null,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      version: 2,
+      metadata_extra: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+      width: null,
+      height: null,
+      file_size: null,
+      ...overrides,
+    }
+  }
+
+  const editable = () =>
+    seqCollection({
+      images: [
+        makeImage({
+          id: 100,
+          name: 'Slice 1',
+          metadataExtra: { canvas_annotations: entryAnnotations },
+        }),
+        makeImage({ id: 101, name: 'Slice 2' }),
+      ],
+    })
+
+  const makeDraftRef = () => ({ current: null as CanvasDraftHandle | null })
+
+  const viewerProp = <T,>(name: string) => lastViewerProps![name] as T
+
+  it('wires the full editing prop set when canEditContent resolves true', () => {
+    renderViewer({ collection: editable(), canEditContent: true })
+    expect(lastViewerProps!.canEditContent).toBe(true)
+    for (const prop of [
+      'onCanvasAnnotationsChange',
+      'onSaveCanvasAnnotations',
+      'onCanvasEditModeChange',
+      'onLockOverlays',
+      'onUnlockOverlays',
+      'onClearOverlays',
+    ]) {
+      expect(lastViewerProps![prop], prop).toBeTypeOf('function')
+    }
+    expect(lastViewerProps!.canvasAnnotations).toEqual(entryAnnotations)
+    expect(lastViewerProps!.overlaysLocked).toBe(false)
+  })
+
+  it('marks the shared draft handle dirty on a local annotation change', () => {
+    const draftRef = makeDraftRef()
+    renderViewer({ collection: editable(), canEditContent: true, canvasDraftRef: draftRef })
+    expect(draftRef.current?.dirty).toBe(false)
+
+    act(() => viewerProp<(a: unknown) => void>('onCanvasAnnotationsChange')(draftAnnotations))
+
+    expect(draftRef.current?.dirty).toBe(true)
+    expect(lastViewerProps!.canvasDraftDirty).toBe(true)
+    // The draft overlays the entry annotations until saved or discarded.
+    expect(lastViewerProps!.canvasAnnotations).toEqual(draftAnnotations)
+  })
+
+  it('saves through updateImage and swaps the member via onImageRenewed', async () => {
+    const draftRef = makeDraftRef()
+    const { props } = renderViewer({
+      collection: editable(),
+      canEditContent: true,
+      canvasDraftRef: draftRef,
+    })
+    const updated = apiImageResponse({
+      version: 2,
+      metadata_extra: { canvas_annotations: draftAnnotations },
+    })
+    updateImageMock.mockResolvedValue(updated)
+
+    act(() => viewerProp<(a: unknown) => void>('onCanvasAnnotationsChange')(draftAnnotations))
+    await act(async () => {
+      await viewerProp<(a: unknown) => Promise<boolean>>('onSaveCanvasAnnotations')(
+        draftAnnotations,
+      )
+    })
+
+    expect(updateImageMock).toHaveBeenCalledWith(100, {
+      metadata_extra_merge: { canvas_annotations: draftAnnotations },
+    })
+    expect(props.onImageRenewed).toHaveBeenCalledWith(updated)
+    expect(draftRef.current?.dirty).toBe(false)
+    expect(draftRef.current?.saving).toBe(false)
+  })
+
+  it('reports saving on the handle while the PATCH is in flight', async () => {
+    const draftRef = makeDraftRef()
+    renderViewer({ collection: editable(), canEditContent: true, canvasDraftRef: draftRef })
+    let resolvePatch: (image: api.ApiImage) => void = () => {}
+    updateImageMock.mockReturnValue(
+      new Promise<api.ApiImage>((resolve) => {
+        resolvePatch = resolve
+      }),
+    )
+    act(() => viewerProp<(a: unknown) => void>('onCanvasAnnotationsChange')(draftAnnotations))
+
+    let save: Promise<boolean> | undefined
+    act(() => {
+      save =
+        viewerProp<(a: unknown) => Promise<boolean>>('onSaveCanvasAnnotations')(draftAnnotations)
+    })
+    expect(draftRef.current?.saving).toBe(true)
+
+    await act(async () => resolvePatch(apiImageResponse()))
+    await act(async () => {
+      await save
+    })
+    expect(draftRef.current?.saving).toBe(false)
+  })
+
+  it('restores the entry annotations when the handle discards the draft', () => {
+    const draftRef = makeDraftRef()
+    renderViewer({ collection: editable(), canEditContent: true, canvasDraftRef: draftRef })
+    act(() => viewerProp<(a: unknown) => void>('onCanvasAnnotationsChange')(draftAnnotations))
+    expect(draftRef.current?.dirty).toBe(true)
+
+    act(() => draftRef.current?.discard())
+
+    expect(draftRef.current?.dirty).toBe(false)
+    expect(lastViewerProps!.canvasDraftDirty).toBe(false)
+    expect(lastViewerProps!.canvasAnnotations).toEqual(entryAnnotations)
+  })
+
+  it('ends the edit session and draft on a member switch', () => {
+    const draftRef = makeDraftRef()
+    const { props, rerender } = renderViewer({
+      collection: editable(),
+      itemId: 100,
+      canEditContent: true,
+      canvasDraftRef: draftRef,
+    })
+    act(() => viewerProp<(a: unknown) => void>('onCanvasAnnotationsChange')(draftAnnotations))
+    act(() => viewerProp<(active: boolean) => void>('onCanvasEditModeChange')(true))
+    const viewer = screen.getByTestId('image-viewer')
+    expect(within(viewer).getByRole('button', { name: 'Image details' })).toBeDisabled()
+
+    rerender(<SequenceCollectionViewer {...props} itemId={101} />)
+
+    const nextViewer = screen.getByTestId('image-viewer')
+    expect(within(nextViewer).getByRole('button', { name: 'Image details' })).toBeEnabled()
+    expect(lastViewerProps!.canvasDraftDirty).toBe(false)
+    expect(lastViewerProps!.canvasAnnotations).toEqual([])
+    expect(draftRef.current?.dirty).toBe(false)
+  })
+
+  it('locks and clears overlays through updateImage', async () => {
+    const { props, rerender } = renderViewer({ collection: editable(), canEditContent: true })
+    updateImageMock.mockResolvedValue(
+      apiImageResponse({ version: 2, metadata_extra: { locked_overlays: [overlayRect] } }),
+    )
+
+    await act(async () => {
+      await viewerProp<(rects: unknown) => Promise<void>>('onLockOverlays')([overlayRect])
+    })
+    expect(updateImageMock).toHaveBeenCalledWith(
+      100,
+      { metadata_extra_merge: { locked_overlays: [overlayRect] } },
+      1,
+    )
+    expect(lastViewerProps!.overlaysLocked).toBe(true)
+
+    // The parent swaps the saved member in via renewCollectionImage — the
+    // member now carries the stored locked_overlays.
+    const withLocked = seqCollection({
+      images: [
+        makeImage({
+          id: 100,
+          name: 'Slice 1',
+          version: 2,
+          metadataExtra: {
+            canvas_annotations: entryAnnotations,
+            locked_overlays: [overlayRect],
+          },
+        }),
+        makeImage({ id: 101, name: 'Slice 2' }),
+      ],
+    })
+    rerender(<SequenceCollectionViewer {...props} collection={withLocked} />)
+    expect(lastViewerProps!.overlaysLocked).toBe(true)
+
+    updateImageMock.mockResolvedValue(apiImageResponse({ version: 3, metadata_extra: {} }))
+    await act(async () => {
+      await viewerProp<() => Promise<void>>('onClearOverlays')()
+    })
+    // The clear uses the version returned by the lock write (optimistic
+    // concurrency via the shared latestVersionRef).
+    expect(updateImageMock).toHaveBeenLastCalledWith(
+      100,
+      { metadata_extra_merge: { locked_overlays: null } },
+      2,
+    )
+    expect(props.onImageRenewed).toHaveBeenCalledTimes(2)
+
+    // …and after the clear, the swapped-in member no longer carries locked
+    // overlays, so the lock disengages.
+    const cleared = seqCollection({
+      images: [
+        makeImage({
+          id: 100,
+          name: 'Slice 1',
+          version: 3,
+          metadataExtra: { canvas_annotations: entryAnnotations },
+        }),
+        makeImage({ id: 101, name: 'Slice 2' }),
+      ],
+    })
+    rerender(<SequenceCollectionViewer {...props} collection={cleared} />)
+    expect(lastViewerProps!.overlaysLocked).toBe(false)
+  })
+
+  it('keeps initialOverlays stable across member metadata swaps for one image', () => {
+    // `initialOverlays` feeds ImageViewer's mount effect — a new reference
+    // after a lock/clear save would destroy the OSD viewer and reset zoom.
+    const { props, rerender } = renderViewer({
+      collection: seqCollection({
+        images: [
+          makeImage({
+            id: 100,
+            name: 'Slice 1',
+            metadataExtra: { locked_overlays: [overlayRect] },
+          }),
+          makeImage({ id: 101, name: 'Slice 2' }),
+        ],
+      }),
+      canEditContent: true,
+    })
+    const stableRef = lastViewerProps!.initialOverlays
+    expect(stableRef).toEqual([overlayRect])
+
+    // The parent swaps the member after the clear write — same id, metadata
+    // changed. The mount prop must keep the entry reference; the live lock
+    // state (`overlaysLocked`) still follows the fresh metadata.
+    rerender(
+      <SequenceCollectionViewer
+        {...props}
+        collection={seqCollection({
+          images: [
+            makeImage({ id: 100, name: 'Slice 1', metadataExtra: {} }),
+            makeImage({ id: 101, name: 'Slice 2' }),
+          ],
+        })}
+      />,
+    )
+    expect(lastViewerProps!.initialOverlays).toBe(stableRef)
+    expect(lastViewerProps!.overlaysLocked).toBe(false)
+  })
+
+  it('recomputes initialOverlays when the member changes', () => {
+    const { props, rerender } = renderViewer({
+      itemId: 100,
+      collection: seqCollection({
+        images: [
+          makeImage({ id: 100, name: 'Slice 1' }),
+          makeImage({
+            id: 101,
+            name: 'Slice 2',
+            metadataExtra: { locked_overlays: [overlayRect] },
+          }),
+        ],
+      }),
+      canEditContent: true,
+    })
+    expect(lastViewerProps!.initialOverlays).toBeUndefined()
+
+    rerender(<SequenceCollectionViewer {...props} itemId={101} />)
+    expect(lastViewerProps!.initialOverlays).toEqual([overlayRect])
+  })
+
+  it('auto-engages the overlay lock when the member has stored locked overlays', () => {
+    renderViewer({
+      collection: seqCollection({
+        images: [makeImage({ id: 100, metadataExtra: { locked_overlays: [overlayRect] } })],
+      }),
+      canEditContent: true,
+    })
+    expect(lastViewerProps!.overlaysLocked).toBe(true)
+    expect(lastViewerProps!.initialOverlays).toEqual([overlayRect])
+  })
+
+  it('disables the details trigger and closes the note dialog on edit-mode entry', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get: () => 500,
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 100,
+    })
+    try {
+      renderViewer({
+        collection: seqCollection({
+          images: [makeImage({ id: 100, name: 'Slice 1', note: 'Long note\nwith lines' })],
+        }),
+        canEditContent: true,
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Show full note' }))
+      const viewer = screen.getByTestId('image-viewer')
+      expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBeInTheDocument()
+
+      act(() => viewerProp<(active: boolean) => void>('onCanvasEditModeChange')(true))
+
+      await waitFor(() =>
+        expect(within(viewer).queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument(),
+      )
+      expect(within(viewer).getByRole('button', { name: 'Image details' })).toBeDisabled()
+
+      act(() => viewerProp<(active: boolean) => void>('onCanvasEditModeChange')(false))
+      expect(within(viewer).getByRole('button', { name: 'Image details' })).toBeEnabled()
+    } finally {
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth
+    }
+  })
+
+  it('registers no handle when canvasDraftRef is not provided', () => {
+    renderViewer({ collection: editable(), canEditContent: true })
+    // Rendering + editing without a ref must not throw.
+    act(() => viewerProp<(a: unknown) => void>('onCanvasAnnotationsChange')(draftAnnotations))
+    expect(lastViewerProps!.canvasDraftDirty).toBe(true)
   })
 })

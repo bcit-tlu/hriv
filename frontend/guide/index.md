@@ -13,9 +13,10 @@ publish — you decide what they see and how it's organized.
 - **Home** – browse the image library
 - **Collections** – named sets of images (everyone can create their own)
 - **Images** – a table of every image, with filters and bulk actions
-- **Manage** – categories, groups, and the site-wide announcement
-- **Bell icon** – notifications, "What's New", this guide, and app info
-- **Your avatar** – account details and sign out
+- **Manage** – categories, programs, and groups
+- **Bell icon** – your announcements stream
+- **Your avatar** – account details, Documentation (this guide), app info,
+  and sign out
 
 ## What's in this guide
 
@@ -24,7 +25,7 @@ publish — you decide what they see and how it's organized.
 - [Managing Images](images) — details, annotations, moving, deleting
 - [Managing Groups](groups) — control which students see which categories
 - [Collections](collections) — gather images into synchronized or sequence sets
-- [Announcements](announcements) — post a message everyone sees
+- [Announcements](announcements) — notices, events, and release notes in one stream
 - [Getting Help](help) — questions and feedback
 
 ::: tip Students?
