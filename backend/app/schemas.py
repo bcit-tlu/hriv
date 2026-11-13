@@ -1433,6 +1433,32 @@ class MeasurementBulkApprove(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=200)
 
 
+class MeasurementPreviewRequest(BaseModel):
+    # Candidate tuning to preview; the default maps to shipped constants.
+    tuning: DetectionTuning = DetectionTuning()
+
+
+class DetectionPreviewOut(BaseModel):
+    """Read-only detection + calibration preview under candidate tuning."""
+
+    diameter_px: float | None
+    component_count: int | None
+    selected_count: int | None
+    peak_fraction: float | None
+    proposed_scale: float | None
+    proposed_unit: str
+    objective: str | None
+    confidence: float
+    # Why no proposal was produced: source_missing, slide_too_large_for_rbc,
+    # detect_failed or no_rbc_population; None on success.
+    reason: str | None
+
+
+class MeasurementFindingUpdate(BaseModel):
+    # Tuned detection values persisted on a pending finding; null clears.
+    params: DetectionTuning | None
+
+
 class MeasurementBulkApproveOut(BaseModel):
     approved: list[int]
     skipped: list[int]
