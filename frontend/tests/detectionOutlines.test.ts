@@ -3,7 +3,7 @@
  * the mask's level-0 -> element-rect blit.
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   decodeDetectionOutline,
   drawDetectionOutline,
@@ -54,6 +54,13 @@ function rgbaAt(out: Uint8ClampedArray, w: number, x: number, y: number) {
   return [out[o], out[o + 1], out[o + 2], out[o + 3]]
 }
 
+const originalGetContext = HTMLCanvasElement.prototype.getContext
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  HTMLCanvasElement.prototype.getContext = originalGetContext
+})
+
 describe('tintOutlineMask', () => {
   it('tints selected components green, rejected vermillion, none transparent', () => {
     const data = rgbaFromCategories([
@@ -92,10 +99,9 @@ describe('tintOutlineMask', () => {
 describe('drawDetectionOutline', () => {
   const overlay = {
     // 8×5 mask at work_scale 0.1 -> spans level-0 (0,0)-(80,50).
-    canvas: { width: 8, height: 5 },
+    canvas: Object.assign(document.createElement('canvas'), { width: 8, height: 5 }),
     workScale: 0.1,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any
+  }
 
   it('blits the mask into the transformed image rect', () => {
     const ctx = fakeCtx()

@@ -82,10 +82,9 @@ function Surface({ overlay }: { overlay: DetectionOverlay | null }) {
     setViewer({
       canvas: host,
       viewport: {
-        imageToViewerElementCoordinates: (p) => ({
-          x: p.x * SCALE,
-          y: p.y * SCALE,
-        }),
+        // 1 element px = 1 level-0 px: the mask's / workScale extent
+        // (400×300) already matches the slide, no extra scaling here.
+        imageToViewerElementCoordinates: (p) => p,
       },
       addHandler: () => {},
       removeHandler: () => {},
@@ -113,7 +112,7 @@ type Story = StoryObj<typeof Surface>
 
 const OVERLAY = buildOverlay()
 
-export const WithMask: Story = { args: { overlay: OVERLAY } }
+export const Basic: Story = { args: { overlay: OVERLAY } }
 
 /** Nothing to paint until the first preview response lands. */
 export const NoMask: Story = { args: { overlay: null } }

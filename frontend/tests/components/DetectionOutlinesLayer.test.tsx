@@ -4,7 +4,7 @@
  * overlay changes, removal + listener/rAF cleanup on unmount.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 
 import DetectionOutlinesLayer from '../../src/components/DetectionOutlinesLayer'
@@ -48,8 +48,7 @@ function viewer() {
 }
 
 const OVERLAY: DetectionOverlay = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  canvas: { width: 8, height: 5 } as any,
+  canvas: Object.assign(document.createElement('canvas'), { width: 8, height: 5 }),
   workScale: 0.1,
 }
 
@@ -82,6 +81,12 @@ describe('DetectionOutlinesLayer', () => {
   })
 
   const draws = () => ctxs.reduce((n, c) => n + c.drawImage.mock.calls.length, 0)
+
+  const originalGetContext = HTMLCanvasElement.prototype.getContext
+
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext
+  })
 
   it('mounts a pointer-events-none, aria-hidden canvas into viewer.canvas', async () => {
     const v = viewer()
