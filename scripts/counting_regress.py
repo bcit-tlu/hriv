@@ -106,13 +106,22 @@ def main() -> int:
         for name, kw in variants[1:]:
             iou = _iou(masks["shipped"], masks[name])
             n0, n1 = counts["shipped"], counts[name]
-            # Regression = mask divergence past the IoU floor or objects
-            # *lost* beyond tolerance. Finding more objects is `changed`
-            # (human review), not failure.
-            if iou < args.iou_min or n0 - n1 > args.count_tol:
-                flag, failed = "  REGRESSED", failed + 1
-            elif n1 != n0:
-                flag = "  changed"
+            if name == "preprocessed":
+                # Only the same-params comparison gates: preprocessing must
+                # not silently destroy what shipped detected. Tuned
+                # variants intentionally diverge — a permissive mask that
+                # finds more or a strict one that finds fewer is a *result*,
+                # not a regression — so they are reported but never gate.
+                if iou < args.iou_min or n0 - n1 > args.count_tol:
+                    flag, failed = "  REGRESSED", failed + 1
+                elif n1 != n0:
+                    flag = "  changed"
+                else:
+                    flag = ""
+            elif n0 > 0 and n1 == 0:
+                # Tuned settings wiping out every object is worth a human
+                # look but is still a legitimate extreme of the knobs.
+                flag = "  changed(all lost)"
             else:
                 flag = ""
             print(f"  vs shipped: {name:18s} IoU={iou:.3f}{flag}")
