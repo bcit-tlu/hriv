@@ -13,7 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Image, MeasurementFinding, SourceImage
 from .calibration import DETECTOR_VERSION, ScaleEstimate, estimate_scale
-from .detector import load_work_image, measure_rbc_diameter
+from .detector import (
+    DetectorParams,
+    RbcMeasurement,
+    load_work_image,
+    measure_rbc_diameter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +99,55 @@ def rescan_candidates_stmt(limit: int | None, category_id: int | None = None):
     return stmt
 
 
-def _detect(path: str, width: int | None, height: int | None) -> ScaleEstimate | None:
+def _detect(
+    path: str,
+    width: int | None,
+    height: int | None,
+    params: DetectorParams | None = None,
+) -> ScaleEstimate | None:
+    return _detect_measurement(path, width, height, params)[1]
+
+
+def _detect_measurement(
+    path: str,
+    width: int | None,
+    height: int | None,
+    params: DetectorParams | None = None,
+) -> tuple[RbcMeasurement | None, ScaleEstimate | None]:
+    """Run detector + calibration; the preview endpoint needs both halves."""
     work = load_work_image(path)
-    measurement = measure_rbc_diameter(work, width or work.width)
+    measurement = measure_rbc_diameter(work, width or work.width, params)
     if measurement is None:
-        return None
-    return estimate_scale(measurement, width, height)
+        return None, None
+    return measurement, estimate_scale(measurement, width, height)
+
+
+async def preview_detection(
+    db: AsyncSession, image: Image, params: DetectorParams | None
+) -> tuple[RbcMeasurement | None, ScaleEstimate | None, str | None]:
+    """Re-run RBC detection under candidate tuning — read-only (#1867).
+
+    Mirrors ``scan_image``'s guard rails but writes nothing; returns the
+    detector measurement, the calibrated estimate, and a ``reason`` when
+    detection could not run or found no population.
+    """
+    path = await _latest_source_path(db, image.id)
+    if not path or not await asyncio.to_thread(os.path.isfile, path):
+        return None, None, "source_missing"
+    if max(image.width or 0, image.height or 0) > RBC_MAX_SIDE_PX:
+        return None, None, "slide_too_large_for_rbc"
+    try:
+        measurement, estimate = await asyncio.to_thread(
+            _detect_measurement, path, image.width, image.height, params
+        )
+    except Exception:
+        logger.warning(
+            "measurement preview failed for image %s", image.id, exc_info=True
+        )
+        return None, None, "detect_failed"
+    if measurement is None:
+        return None, None, "no_rbc_population"
+    return measurement, estimate, None
 
 
 async def _latest_source_path(db: AsyncSession, image_id: int) -> str | None:

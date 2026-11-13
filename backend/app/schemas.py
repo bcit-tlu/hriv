@@ -1350,6 +1350,20 @@ class DetectionTuning(BaseModel):
             raise ValueError(f"unknown detector params: {sorted(unknown)}")
         return value
 
+    @model_validator(mode="after")
+    def _translatable(self) -> "DetectionTuning":
+        """Reject tuning that cannot become a valid ``DetectorParams``.
+
+        ``__post_init__`` range checks (e.g. ``advanced.min_radius_px=0``)
+        raise ``ValueError`` — catching it here turns what would be a 500 in
+        the preview/PATCH handlers into a 422 at request validation.
+        """
+        try:
+            self.to_detector_params()
+        except ValueError as exc:
+            raise ValueError(f"invalid detector params: {exc}") from exc
+        return self
+
     def to_detector_params(self) -> DetectorParams:
         """Translate the semantic set into raw ``DetectorParams``."""
         from .measurement.detector import DetectorParams
@@ -1431,6 +1445,32 @@ class MeasurementApprove(BaseModel):
 
 class MeasurementBulkApprove(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=200)
+
+
+class MeasurementPreviewRequest(BaseModel):
+    # Candidate tuning to preview; the default maps to shipped constants.
+    tuning: DetectionTuning = DetectionTuning()
+
+
+class DetectionPreviewOut(BaseModel):
+    """Read-only detection + calibration preview under candidate tuning."""
+
+    diameter_px: float | None
+    component_count: int | None
+    selected_count: int | None
+    peak_fraction: float | None
+    proposed_scale: float | None
+    proposed_unit: str
+    objective: str | None
+    confidence: float
+    # Why no proposal was produced: source_missing, slide_too_large_for_rbc,
+    # detect_failed or no_rbc_population; None on success.
+    reason: str | None
+
+
+class MeasurementFindingUpdate(BaseModel):
+    # Tuned detection values persisted on a pending finding; null clears.
+    params: DetectionTuning | None
 
 
 class MeasurementBulkApproveOut(BaseModel):

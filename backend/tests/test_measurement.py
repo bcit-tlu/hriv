@@ -16,6 +16,7 @@ from app.measurement.calibration import (
     CAMERA_PROFILES,
     DETECTOR_VERSION,
     RBC_APPARENT_DIAMETER_UM,
+    ScaleEstimate,
     estimate_scale,
 )
 from app.measurement.detector import (
@@ -30,6 +31,8 @@ from app.schemas import (
     DetectionTuning,
     MeasurementApprove,
     MeasurementBulkApprove,
+    MeasurementFindingUpdate,
+    MeasurementPreviewRequest,
     MeasurementScanRequest,
 )
 from app.worker import EnqueueResult, TaskQueueUnavailableError
@@ -1711,3 +1714,194 @@ async def test_approved_objective_sort_uses_approved_objective() -> None:
     sql = str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
     order = sql.split("ORDER BY", 1)[1].strip()
     assert order.startswith("CAST(measurement_findings.approved_objective AS FLOAT) DESC")
+
+
+# ── detection preview + params persistence (#1867) ──────
+
+_MEAS = RbcMeasurement(
+    diameter_px=12.5,
+    component_count=48,
+    selected_count=31,
+    peak_fraction=0.64,
+    work_scale=0.5,
+)
+_EST = ScaleEstimate(scale=1.67, confidence=0.85, objective="20", evidence={})
+
+
+async def test_preview_recalculates_and_writes_nothing(monkeypatch) -> None:
+    finding, image = _finding(), _image()
+    db = _db_with(finding, image)
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.preview(
+        5,
+        _user(),
+        MeasurementPreviewRequest(tuning=DetectionTuning(sensitivity=0.9)),
+        db,
+    )
+    assert out.diameter_px == 12.5 and out.selected_count == 31
+    assert out.proposed_scale == 1.67 and out.objective == "20"
+    assert out.confidence == 0.85 and out.reason is None
+    db.commit.assert_not_awaited()
+    # The semantic tuning became raw DetectorParams for the service.
+    passed = preview.await_args.args[2]
+    assert isinstance(passed, DetectorParams)
+    assert passed.sat_above_background == 8  # round(30 − 25·0.9)
+
+
+async def test_preview_default_body_uses_shipped_params(monkeypatch) -> None:
+    preview = AsyncMock(return_value=(None, None, "no_rbc_population"))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.preview(5, _user(), None, _db_with(_finding(), _image()))
+    assert out.reason == "no_rbc_population" and out.confidence == 0.0
+    assert out.proposed_scale is None and out.diameter_px is None
+    assert preview.await_args.args[2] == DetectorParams()
+
+
+@pytest.mark.parametrize("status", ["pending", "approved", "rejected"])
+async def test_preview_allowed_on_any_non_superseded_finding(
+    monkeypatch, status
+) -> None:
+    finding, image = _finding(status=status), _image()
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(None, None, "x"))
+    )
+    out = await router.preview(5, _user(), None, _db_with(finding, image))
+    assert out.reason == "x"
+
+
+async def test_preview_superseded_is_409() -> None:
+    db = _db_with(_finding(status="superseded"), _image())
+    with pytest.raises(HTTPException) as exc:
+        await router.preview(5, _user(), None, db)
+    assert exc.value.status_code == 409
+
+
+async def test_preview_missing_finding_is_404() -> None:
+    db = AsyncMock()
+    db.get.return_value = None
+    with pytest.raises(HTTPException) as exc:
+        await router.preview(9, _user(), None, db)
+    assert exc.value.status_code == 404
+
+
+async def test_preview_missing_image_is_404() -> None:
+    db = _db_with(_finding(), None)
+    with pytest.raises(HTTPException) as exc:
+        await router.preview(5, _user(), None, db)
+    assert exc.value.status_code == 404
+
+
+async def test_preview_detection_missing_source() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = None  # _latest_source_path finds nothing
+    out = await service.preview_detection(db, _image(), None)
+    assert out == (None, None, "source_missing")
+
+
+async def test_preview_detection_skips_huge_slide() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    out = await service.preview_detection(
+        db, _image(width=9000, height=9000), None
+    )
+    assert out == (None, None, "slide_too_large_for_rbc")
+
+
+async def test_preview_detection_no_population(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    monkeypatch.setattr(
+        service, "_detect_measurement", MagicMock(return_value=(None, None))
+    )
+    out = await service.preview_detection(db, _image(), None)
+    assert out == (None, None, "no_rbc_population")
+
+
+async def test_preview_detection_reports_detector_failure(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    boom = MagicMock(side_effect=RuntimeError("vips"))
+    monkeypatch.setattr(service, "_detect_measurement", boom)
+    out = await service.preview_detection(db, _image(), None)
+    assert out == (None, None, "detect_failed")
+
+
+async def test_preview_detection_threads_params(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    detect = MagicMock(return_value=(_MEAS, _EST))
+    monkeypatch.setattr(service, "_detect_measurement", detect)
+    params = DetectorParams(min_radius_px=8.0)
+    out = await service.preview_detection(db, _image(), params)
+    assert out == (_MEAS, _EST, None)
+    assert detect.call_args.args[3] is params
+
+
+async def test_update_finding_persists_params() -> None:
+    finding, image = _finding(), _image()
+    db = _db_with(finding, image)
+    tuning = DetectionTuning(sensitivity=0.9, min_cell_size=5.0)
+    out = await router.update_finding(
+        5, MeasurementFindingUpdate(params=tuning), _user(), db
+    )
+    assert finding.params == tuning.model_dump()
+    assert out.params == tuning
+    db.commit.assert_awaited_once()
+
+
+async def test_update_finding_null_clears_params() -> None:
+    finding = _finding(params={"sensitivity": 0.9})
+    db = _db_with(finding, _image())
+    out = await router.update_finding(
+        5, MeasurementFindingUpdate(params=None), _user(), db
+    )
+    assert finding.params is None and out.params is None
+
+
+@pytest.mark.parametrize("status", ["approved", "rejected", "superseded"])
+async def test_update_finding_reviewed_is_409(status) -> None:
+    db = _db_with(_finding(status=status), _image())
+    with pytest.raises(HTTPException) as exc:
+        await router.update_finding(
+            5, MeasurementFindingUpdate(params=DetectionTuning()), _user(), db
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_update_finding_missing_image_is_404() -> None:
+    db = _db_with(_finding(), None)
+    with pytest.raises(HTTPException) as exc:
+        await router.update_finding(
+            5, MeasurementFindingUpdate(params=None), _user(), db
+        )
+    assert exc.value.status_code == 404
+
+
+def test_parameterized_routes_never_shadow_literals() -> None:
+    """``/{finding_id}`` routes must be declared after same-method literals —
+    FastAPI resolves in declaration order (#1867)."""
+    for method in ("GET", "POST", "PATCH", "DELETE", "PUT"):
+        seen_param = False
+        for route in router.router.routes:
+            if method not in (route.methods or ()):
+                continue
+            if "{" in route.path:
+                seen_param = True
+            elif seen_param:
+                pytest.fail(f"{method} literal {route.path} declared after /{{id}}")
+
+
+def test_detection_tuning_rejects_untranslatable_advanced() -> None:
+    """`advanced` values failing DetectorParams' range checks must fail
+    request validation (422), not blow up inside preview/PATCH (#1867
+    review)."""
+    for bad in (
+        {"min_radius_px": 0.0},
+        {"sat_above_background": 0.0},
+        {"purple_hue_min": 200.0, "purple_hue_max": 100.0},
+    ):
+        with pytest.raises(ValidationError):
+            MeasurementPreviewRequest(tuning=DetectionTuning(advanced=dict(bad)))
+        with pytest.raises(ValidationError):
+            MeasurementFindingUpdate(params=DetectionTuning(advanced=dict(bad)))
