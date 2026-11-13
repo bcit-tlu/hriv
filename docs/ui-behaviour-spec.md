@@ -333,10 +333,12 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
 - Both tools are available to every role — presenting is a student activity
   too. Toggle telemetry rides `ui.toolbar_action`
   (`laser_pointer_on|off`, `ink_on|off`).
-- Keyboard shortcuts mirror the toolbar: **H** = home, **G** = selection
-  box, **F** = laser, **D** = ink. Laser/ink keys only respond in full-page
-  (like their buttons); all keys are ignored while typing in a field, inside
-  a dialog, or when focus/hover belongs to a different viewer on the page.
+- Keyboard shortcuts mirror the toolbar: **H** = home, **B** = selection
+  box, **L** = laser, **I** = ink — chosen to dodge OSD's own bindings
+  (WASD/arrows pan, F flips, R rotates, 0 homes, J/K page). Laser/ink keys
+  only respond in full-page (like their buttons); all keys are ignored
+  while typing in a field, inside a dialog, or when focus/hover belongs to
+  a different viewer on the page.
 - The layer is a single `<svg>` appended to `viewer.canvas` at `z-index: 11`
   (above the measurement-label container, `pointer-events: none`), holding
   the ink paths, a pooled set of trail circles, and the laser dot; a

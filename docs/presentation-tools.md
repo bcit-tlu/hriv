@@ -30,11 +30,12 @@ cursor was too small for participants in the back to follow.
   (user testing found them useless in that context); they return in normal
   view. Mouse click-to-zoom is disabled everywhere — scroll, pinch and touch
   double-tap zoom are unchanged (#1877).
-- Keyboard shortcuts mirror the toolbar: **H** = home, **G** = selection
-  box, **F** = laser, **D** = ink. The laser/ink keys only respond in
-  full-page (like their buttons), and all keys are ignored while typing in
-  an input, inside a dialog, or when focus/hover belongs to a different
-  viewer on the page.
+- Keyboard shortcuts mirror the toolbar: **H** = home, **B** = selection
+  box, **L** = laser, **I** = ink — deliberately avoiding OSD's own
+  bindings (WASD/arrows pan, F flips, R rotates, 0 homes, J/K page). The
+  laser/ink keys only respond in full-page (like their buttons), and all
+  keys are ignored while typing in an input, inside a dialog, or when
+  focus/hover belongs to a different viewer on the page.
 
 ## Laser pointer
 

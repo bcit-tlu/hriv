@@ -1837,7 +1837,7 @@ describe('ImageViewer presentation tools (#1876)', () => {
     expect(ink).toBeGreaterThan(laser)
   })
 
-  it('binds H/G/F/D keys to the toolbar, gating laser/ink on full-page', () => {
+  it('binds H/B/L/I keys to the toolbar, gating laser/ink on full-page', () => {
     render(<ImageViewer tileSources="/tiles.dzi" />)
     document.body.appendChild(viewer().element)
     const press = (key: string, target: EventTarget = viewer().canvas) => {
@@ -1854,21 +1854,21 @@ describe('ImageViewer presentation tools (#1876)', () => {
     expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'home' }),
     )
-    press('g')
+    press('b')
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
-    press('g')
+    press('b')
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
 
-    press('f')
-    press('d')
+    press('l')
+    press('i')
     expect(viewer().canvas.style.cursor).toBe('')
 
     enterFullPage()
-    press('d')
+    press('i')
     expect(viewer().canvas.style.cursor).toBe('crosshair')
-    press('f')
+    press('l')
     expect(viewer().canvas.style.cursor).toBe('none')
-    press('f')
+    press('l')
     expect(viewer().canvas.style.cursor).toBe('')
     expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'ink_on' }),
@@ -1885,11 +1885,11 @@ describe('ImageViewer presentation tools (#1876)', () => {
     const input = document.createElement('input')
     viewer().container.appendChild(input)
     act(() => {
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true }))
     })
     // No laser arm: target is an input field.
     expect(viewer().canvas.style.cursor).toBe('none') // auto-armed on entry
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }))
     expect(viewer().canvas.style.cursor).toBe('none') // still laser, no ink
   })
 
@@ -1904,7 +1904,7 @@ describe('ImageViewer presentation tools (#1876)', () => {
     vi.spyOn(second.container, 'matches').mockImplementation((sel) => sel === ':hover')
 
     act(() => {
-      first.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }))
+      first.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }))
     })
     expect(first.setMouseNavEnabled).toHaveBeenLastCalledWith(false)
     expect(second.setMouseNavEnabled).not.toHaveBeenCalledWith(false)

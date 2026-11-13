@@ -976,10 +976,11 @@ export default function ImageViewer({
     inkWrapper.style.display = 'none'
     inkWrapper.appendChild(inkButton.element)
 
-    // Toolbar keyboard shortcuts — H: home, G: selection box, F: laser,
-    // D: ink. Laser/ink mirror their buttons and only respond in full-page.
-    // Ignored while typing, inside dialogs, or when the pointer/focus
-    // belongs to a different viewer on the page.
+    // Toolbar keyboard shortcuts — H: home, B: selection box, L: laser,
+    // I: ink. Chosen to avoid OSD's own keys (WASD/arrows pan, F flips,
+    // R rotates, 0 homes, J/K page). Laser/ink mirror their buttons and
+    // only respond in full-page. Ignored while typing, inside dialogs, or
+    // when the pointer/focus belongs to a different viewer on the page.
     const handleToolbarKey = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return
       const target = event.target
@@ -1006,16 +1007,19 @@ export default function ImageViewer({
         case 'h':
           viewer.viewport.goHome()
           break
-        case 'g':
+        case 'b':
           toggleSelectionMode()
           break
-        case 'f':
+        case 'l':
           if (viewer.isFullPage()) toggleLaser()
           break
-        case 'd':
+        case 'i':
           if (viewer.isFullPage()) toggleInk()
           break
+        default:
+          return
       }
+      event.preventDefault()
     }
     document.addEventListener('keydown', handleToolbarKey)
     mountedViewerElements.add(viewer.element)
