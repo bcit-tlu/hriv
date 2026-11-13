@@ -83,6 +83,7 @@ def test_embedded_media_ids_limits_to_embed_position() -> None:
         "See ![shot](/api/media/4) inline and the video below.\n\n"
         "/api/media/9\n\n"
         "The URL `/api/media/11` is retired and /api/media/7 in prose is too.\n\n"
+        "Inline code with image syntax `![x](/api/media/5)` embeds nothing.\n\n"
         "```\n/api/media/13\n```"
     )
     assert embedded_media_ids(message) == [4, 9]

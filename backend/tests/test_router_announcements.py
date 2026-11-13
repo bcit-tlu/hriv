@@ -257,7 +257,7 @@ async def test_broadcast_mints_tokens_only_for_embedded_media() -> None:
     message = (
         "See ![shot](/api/media/4) inline and the video below.\n\n"
         "/api/media/9\n\n"
-        "The URL `/api/media/11` is retired.\n\n"
+        "The URL `/api/media/11` is retired; `![x](/api/media/5)` shows code.\n\n"
         "```\n/api/media/13\n```"
     )
     db = _db([_ann(id=1, kind="notice", banner=True, message=message)])

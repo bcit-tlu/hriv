@@ -249,7 +249,10 @@ def media_ids_in(message: str) -> list[int]:
     return seen
 
 
-_FENCED_CODE_RE = re.compile(r"```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~", re.DOTALL)
+_CODE_SPAN_RE = re.compile(
+    r"```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~|``[^`]*``|`[^`\n]*`",
+    re.DOTALL,
+)
 _EMBEDDED_MEDIA_RE = re.compile(
     r"!\[[^\]]*\]\(/api/media/(\d+)[^)]*\)|^[ \t]*/api/media/(\d+)(?:\?\S*)?[ \t]*$",
     re.MULTILINE,
@@ -263,10 +266,11 @@ def embedded_media_ids(message: str) -> list[int]:
     one — ``![alt](/api/media/{id})`` image syntax and the bare-line
     ``/api/media/{id}`` video embed (optional query, like the frontend's
     ``MEDIA_PATH_REGEX``) — so a plain-text or code mention of a media
-    URL in a public post cannot leak a usable token. Fenced code is
-    stripped and CRLF normalized before scanning."""
+    URL in a public post cannot leak a usable token. Code — fenced
+    blocks and backtick spans — is stripped and CRLF normalized before
+    scanning (``renderInline`` shows code literally, never media)."""
     text = (message or "").replace("\r\n", "\n").replace("\r", "\n")
-    text = _FENCED_CODE_RE.sub("", text)
+    text = _CODE_SPAN_RE.sub("", text)
     seen: list[int] = []
     for match in _EMBEDDED_MEDIA_RE.finditer(text):
         media_id = int(match.group(1) or match.group(2))
