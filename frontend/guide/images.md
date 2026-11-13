@@ -79,8 +79,8 @@ or links to label them.
 - Click **Save** when finished — annotations are visible to everyone who can
   see the image. Press `Esc` or **Cancel** to discard your changes.
 
-Annotating also works in fullscreen — open the viewer's fullscreen mode first,
-then click the pencil.
+Annotating is a normal-view activity — the pencil isn't available in the
+viewer's fullscreen mode (fullscreen is for presenting; see below).
 
 ## Presenting an image
 

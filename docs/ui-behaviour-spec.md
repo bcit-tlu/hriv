@@ -249,9 +249,10 @@ images> / Empty` format used on category tiles.
   `useDraggablePosition.ts`) and resets on page reload. Starting a drag closes
   any open tool submenu.
 - The whole `CanvasOverlay` (view canvas, fabric edit canvas, toolbar, status
-  label) is portaled into `viewer.container`, so annotation viewing and
-  editing work in OSD full-page mode — previously the overlay stayed under
-  `#root`, which full-page hides (#1311). MUI submenus/dialogs portal to
+  label) is portaled into `viewer.container`, so an annotation session
+  survives an OSD full-page transition — previously the overlay stayed under
+  `#root`, which full-page hides (#1311). The pencil toggle itself hides in
+  full-page, though: entering edit mode is a normal-view action. MUI submenus/dialogs portal to
   `document.body`, so they close on `full-page` transitions rather than
   ending up hidden or detached. Every top-level portaled child is tagged
   `data-hriv-canvas-ui` so the selection `MouseTracker` on `viewer.element`

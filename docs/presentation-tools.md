@@ -77,8 +77,9 @@ cursor was too small for participants in the back to follow.
   triggers the cancel flow (a dirty draft shows the discard prompt), and
   the tool stays queued behind `pendingPresentationTool` until edit mode
   actually exits — "Keep editing" leaves everything untouched. Entering
-  full-page during an edit queues the laser the same way, since annotation
-  editing works in full-page too.
+  full-page during an edit queues the laser the same way: the edit session
+  survives the transition (the overlay is portal-mounted), and the queued
+  tool arms when it exits.
 - The shared `MouseTracker`'s `preProcessEventHandler` skips gestures whose
   target is tagged `data-hriv-canvas-ui`, and rejects **pointerdown**
   targets outside `viewer.canvas` so presses on the OSD control
