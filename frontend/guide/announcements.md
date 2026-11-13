@@ -12,10 +12,10 @@ An amber dot on the **bell** means something's new.
 - Click the **bell** to peek at the newest posts — **See all** opens the
   full **Inbox**.
 - **Pinned** posts sit on the **Home** notices shelf; **banner** posts
-  appear across the top of the app — and the sign-in screen — until
-  closed.
+  appear across the top of the app until closed — and on the sign-in
+  screen when they're addressed to **Everyone**.
 - Tap an emoji under a post to react. Seen posts stay in the Inbox,
-  quieter — nothing is ever removed.
+  quieter — readers can't dismiss them.
 
 ![Pinned announcements on Home](images/announcements-notices.png)
 
@@ -48,6 +48,7 @@ an edit only when readers should see it as new.
 
 ![The My announcements filter](images/announcements-mine.png)
 
-The **My announcements** filter lists your posts by status — Draft,
-Scheduled, Live, Expired — with **Seen by N of M** counts, plus Edit,
-Duplicate, and Delete.
+**My announcements** shows only your own posts; the status filters —
+Draft, Scheduled, Live, Expired — narrow any view by state. Staff see
+**Seen by N of M** counts, plus Edit, Duplicate, and Delete on the card
+menu.
