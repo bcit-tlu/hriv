@@ -43,6 +43,10 @@ specified in detail.
   `params`; raw `DetectorParams` constants never cross the API. The semantic
   defaults map exactly onto the shipped constants, so tuning is opt-in and
   `detector_version` stays put.
+- Approval promotes `params` to `metadata.detection_params` even when the
+  reviewer corrected scale or objective — tuning describes detection, not
+  the promoted value, so a correction never holds it back. Reset removes it
+  only while the stored value still equals the finding's `params` (#1869).
 
 ## UI conventions
 
@@ -75,6 +79,14 @@ specified in detail.
 - Announcement kind is a controlled icon set and the icon _is_ the kind
   (Release and Warning are admin-only); emoji are reactions only. "Seen by N
   of M" shows counts to admin/instructor/staff only, never names.
+- Mouse click-to-zoom is disabled in the image viewer — user testing found it
+  useless, and it would fire on every laser-pointer/ink click. Scroll, pinch
+  and touch double-tap zoom remain. The zoom +/- toolbar buttons stay in
+  normal view but hide in full-page mode (#1877).
+- Presentation pointer tools (laser pointer, freehand ink) exist only in OSD
+  full-page mode, are available to every role, and are strictly ephemeral:
+  ink fades ~10s after each stroke and is never persisted to image metadata,
+  share links, or exports (#1876).
 
 ## Telemetry
 

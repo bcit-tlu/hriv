@@ -26,6 +26,12 @@ import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
+import {
+  CollectionImageDetails,
+  CollectionImageDetailsDrawer,
+  CollectionImageDetailsTrigger,
+  type MemberInfoNames,
+} from './CollectionImageDetails'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
   canvasAnnotationsFromMetadata,
@@ -46,6 +52,12 @@ export interface SynchronizedCollectionViewerProps {
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
+  /**
+   * Program/group display names per member image id for the details drawer
+   * (#1862), resolved by the parent from the category tree. Members with no
+   * entry (unfiled, or a category the user cannot see) omit those rows.
+   */
+  memberInfoNames?: ReadonlyMap<number, MemberInfoNames>
   /**
    * Host element for the view controls (#1683). On the collection detail the
    * header exposes a slot beside the description so Restore/Set-as-default
@@ -112,6 +124,7 @@ export default function SynchronizedCollectionViewer({
   onOpenImage,
   onImageRenewed,
   onError,
+  memberInfoNames,
   actionsContainer,
 }: SynchronizedCollectionViewerProps) {
   const images = collection.images
@@ -627,38 +640,51 @@ export default function SynchronizedCollectionViewer({
                     ...(gridPanes ? { minHeight: { md: 200 } } : {}),
                   }}
                 >
-                  <ImageViewer
-                    tileSources={image.tileSources}
-                    imageId={image.id}
-                    categoryId={image.categoryId ?? undefined}
-                    height={{ xs: gridPanes ? '34vh' : '55vh', md: '100%' }}
-                    initialViewport={pane.initialViewport}
-                    initialOverlays={pane.initialOverlays}
-                    overlaysLocked={pane.initialOverlays != null}
-                    canvasAnnotations={pane.canvasAnnotations}
-                    canEditContent={false}
+                  {/* Per-pane details provider (#1862) — each pane gets its
+                      own drawer state and source-info fetch. */}
+                  <CollectionImageDetails
+                    image={image}
+                    programNames={memberInfoNames?.get(image.id)?.programNames ?? []}
+                    groupNames={memberInfoNames?.get(image.id)?.groupNames ?? []}
                     measurement={pane.measurement}
-                    onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
-                    onTileSourceRenewed={onImageRenewed}
-                    onError={(message) => handleViewerError(image, message)}
-                    viewportOverlay={
-                      <ViewportDialog
-                        open={noteDialogImageId === image.id}
-                        title="Notes"
-                        onClose={() => setNoteDialogImageId(null)}
-                      >
-                        <Box
-                          sx={{
-                            typography: 'body2',
-                            whiteSpace: 'pre-wrap',
-                            overflowWrap: 'anywhere',
-                          }}
-                        >
-                          {image.note}
-                        </Box>
-                      </ViewportDialog>
-                    }
-                  />
+                  >
+                    <ImageViewer
+                      tileSources={image.tileSources}
+                      imageId={image.id}
+                      categoryId={image.categoryId ?? undefined}
+                      height={{ xs: gridPanes ? '34vh' : '55vh', md: '100%' }}
+                      initialViewport={pane.initialViewport}
+                      initialOverlays={pane.initialOverlays}
+                      overlaysLocked={pane.initialOverlays != null}
+                      canvasAnnotations={pane.canvasAnnotations}
+                      canEditContent={false}
+                      measurement={pane.measurement}
+                      onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
+                      onTileSourceRenewed={onImageRenewed}
+                      onError={(message) => handleViewerError(image, message)}
+                      viewportControl={<CollectionImageDetailsTrigger />}
+                      viewportOverlay={
+                        <>
+                          <CollectionImageDetailsDrawer />
+                          <ViewportDialog
+                            open={noteDialogImageId === image.id}
+                            title="Notes"
+                            onClose={() => setNoteDialogImageId(null)}
+                          >
+                            <Box
+                              sx={{
+                                typography: 'body2',
+                                whiteSpace: 'pre-wrap',
+                                overflowWrap: 'anywhere',
+                              }}
+                            >
+                              {image.note}
+                            </Box>
+                          </ViewportDialog>
+                        </>
+                      }
+                    />
+                  </CollectionImageDetails>
                   {/* Link toggle sits top-right of the viewport (the
                       ImageViewer's own toolbar docks bottom-left, so no
                       overlap). Linked = synced; unlinking detaches this

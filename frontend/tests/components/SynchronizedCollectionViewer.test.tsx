@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import { useEffect, type ReactNode } from 'react'
 
+import * as api from '../../src/api'
 import type { Collection, ImageItem } from '../../src/types'
 import { makeCollection, makeImage } from '../helpers/fixtures'
 import SynchronizedCollectionViewer, {
@@ -140,11 +141,19 @@ vi.mock('../../src/components/ImageViewer', () => ({
     }, [imageId, props.initialOverlays, props.initialViewport])
     return (
       <div data-testid="image-viewer" data-image-id={String(imageId)}>
+        {props.viewportControl as ReactNode}
         {props.viewportOverlay as ReactNode}
       </div>
     )
   },
 }))
+
+// Source info is lazy-fetched when a pane's details drawer opens (#1862).
+vi.mock('../../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api')>()
+  return { ...actual, fetchImageSourceInfo: vi.fn() }
+})
+const fetchImageSourceInfoMock = vi.mocked(api.fetchImageSourceInfo)
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -216,6 +225,7 @@ beforeEach(() => {
   mockState.lastProps.clear()
   mockState.fakes.clear()
   mockState.mounts.clear()
+  fetchImageSourceInfoMock.mockReset()
 })
 
 const realMatchMedia = window.matchMedia
@@ -1101,5 +1111,83 @@ describe('caption note', () => {
       'Frontal suture intact.\nNo asymmetry detected.',
     )
     expect(more).toHaveAttribute('aria-expanded', 'true')
+  })
+})
+
+describe('per-pane image details drawer (#1862)', () => {
+  const detailed = () =>
+    syncCollection({
+      images: [
+        makeImage({ id: 100, name: 'Slice 1', copyright: 'CC-BY-4.0', width: 2048, height: 1536 }),
+        makeImage({ id: 101, name: 'Slice 2', copyright: 'CC0' }),
+      ],
+    })
+
+  it('mounts an Image details trigger in every pane', () => {
+    renderViewer({ collection: detailed() })
+    for (const viewer of screen.getAllByTestId('image-viewer')) {
+      expect(within(viewer).getByRole('button', { name: 'Image details' })).toBeInTheDocument()
+    }
+  })
+
+  it("opens one pane's drawer independently and fetches that image's source info", async () => {
+    fetchImageSourceInfoMock.mockResolvedValue({
+      originalFilename: 'slice-1.svs',
+      fileType: 'SVS',
+      uploadedByName: 'Dr. Who',
+    })
+    renderViewer({ collection: detailed() })
+    expect(fetchImageSourceInfoMock).not.toHaveBeenCalled()
+
+    const viewers = screen.getAllByTestId('image-viewer')
+    const first = viewers.find((v) => v.getAttribute('data-image-id') === '100')!
+    const second = viewers.find((v) => v.getAttribute('data-image-id') === '101')!
+
+    // Drawer rows render `<strong>label</strong> value` — assert on the row.
+    const row = (viewer: HTMLElement, label: string) =>
+      within(viewer).getByText(label).parentElement!
+    fireEvent.click(within(first).getByRole('button', { name: 'Image details' }))
+    await within(first).findByText('Copyright:')
+    expect(row(first, 'Copyright:')).toHaveTextContent('Copyright: CC-BY-4.0')
+    await within(first).findByText('Original file:')
+    expect(row(first, 'Original file:')).toHaveTextContent('Original file: slice-1.svs')
+    expect(fetchImageSourceInfoMock).toHaveBeenCalledWith(100)
+    expect(fetchImageSourceInfoMock).toHaveBeenCalledTimes(1)
+    // The other pane stays closed — no fetch, no drawer fields.
+    expect(within(second).getByRole('button', { name: 'Image details' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(within(second).queryByText(/Copyright:/)).not.toBeInTheDocument()
+  })
+
+  it('shows memberInfoNames resolved per pane', async () => {
+    fetchImageSourceInfoMock.mockResolvedValue({
+      originalFilename: null,
+      fileType: null,
+      uploadedByName: null,
+    })
+    renderViewer({
+      collection: detailed(),
+      memberInfoNames: new Map([
+        [100, { programNames: ['Histology'], groupNames: ['Block A'] }],
+        [101, { programNames: ['Radiology'], groupNames: [] }],
+      ]),
+    })
+    const viewers = screen.getAllByTestId('image-viewer')
+    const first = viewers.find((v) => v.getAttribute('data-image-id') === '100')!
+    const second = viewers.find((v) => v.getAttribute('data-image-id') === '101')!
+
+    const row = (viewer: HTMLElement, label: string) =>
+      within(viewer).getByText(label).parentElement!
+    fireEvent.click(within(first).getByRole('button', { name: 'Image details' }))
+    await within(first).findByText('Program:')
+    expect(row(first, 'Program:')).toHaveTextContent('Program: Histology')
+    expect(row(first, 'Group:')).toHaveTextContent('Group: Block A')
+
+    fireEvent.click(within(second).getByRole('button', { name: 'Image details' }))
+    await within(second).findByText('Program:')
+    expect(row(second, 'Program:')).toHaveTextContent('Program: Radiology')
+    expect(within(second).queryByText(/Groups?:/)).not.toBeInTheDocument()
   })
 })
