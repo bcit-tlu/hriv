@@ -36,6 +36,22 @@ describe('useMyCollectionsShelf', () => {
     expect(fetchCollections).not.toHaveBeenCalled()
   })
 
+  it('keeps loaded rows when a refetch resolves a non-array (#1892)', async () => {
+    // A 304 short-circuit resolves `undefined`; it must not blank the shelf.
+    const first = makeApiCollectionSummary({ id: 1 })
+    fetchCollections
+      .mockResolvedValueOnce([first])
+      .mockResolvedValueOnce(undefined as unknown as api.ApiCollectionSummary[])
+    const { result } = renderHook(() => useMyCollectionsShelf(true))
+    await waitFor(() =>
+      expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)]),
+    )
+
+    act(() => result.current.reload())
+    await waitFor(() => expect(fetchCollections).toHaveBeenCalledTimes(2))
+    expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)])
+  })
+
   it('returns an empty list when the fetch fails', async () => {
     fetchCollections.mockRejectedValue(new Error('network'))
     const { result } = renderHook(() => useMyCollectionsShelf(true))

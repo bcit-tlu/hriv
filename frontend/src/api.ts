@@ -816,7 +816,10 @@ export function fetchCollections(
   init?: RequestInit,
 ): Promise<ApiCollectionSummary[]> {
   const qs = collectionsQueryString(filters)
-  return request(`/collections${qs ? `?${qs}` : ''}`, init)
+  // no-store (as in fetchCollectionsPaged): these callers never opt into
+  // conditional requests, so a browser-synthesized If-None-Match → 304
+  // would resolve `undefined` and crash their `.map(...)` (#1892).
+  return request(`/collections${qs ? `?${qs}` : ''}`, { cache: 'no-store', ...init })
 }
 
 export interface PaginatedCollections {
