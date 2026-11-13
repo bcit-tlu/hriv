@@ -86,11 +86,9 @@ export async function decodeDetectionOutline(
   if (!ctx || canvas.width === 0 || canvas.height === 0) return null
   ctx.drawImage(img, 0, 0)
   const src = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  ctx.putImageData(
-    new ImageData(tintOutlineMask(src.data, canvas.width, canvas.height), canvas.width),
-    0,
-    0,
-  )
+  const tinted = ctx.createImageData(canvas.width, canvas.height)
+  tinted.data.set(tintOutlineMask(src.data, canvas.width, canvas.height))
+  ctx.putImageData(tinted, 0, 0)
   return { canvas, workScale }
 }
 

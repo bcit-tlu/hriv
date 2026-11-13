@@ -225,6 +225,31 @@ def test_detector_outline_none_without_population(tmp_path) -> None:
     ) is None
 
 
+def test_dominant_clump_survives_split_background(tmp_path) -> None:
+    """A foreground region bigger than each background pocket still counts
+    as a component: background labels always have radius 0, so identifying
+    background by area would drop the clump and flip the verdict."""
+    canvas = pyvips.Image.black(
+        300, 300, bands=3
+    ).new_from_image([240, 236, 236]).copy_memory()
+    # Thick pink cross spanning edge to edge splits the background into
+    # four ~120x120 pockets, each smaller than the cross itself.
+    canvas = canvas.draw_rect([215, 120, 140], 0, 120, 300, 60, fill=True)
+    canvas = canvas.draw_rect([215, 120, 140], 120, 0, 60, 300, fill=True)
+    # Twelve small cells packed into the top-left pocket.
+    for x in (15, 45, 75, 105):
+        for y in (15, 45, 75):
+            canvas = canvas.draw_circle([215, 120, 140], x, y, 6, fill=True)
+    path = tmp_path / "cross.png"
+    canvas.write_to_file(str(path))
+    work = load_work_image(str(path))
+    # The cross's mass dominates the log-mode, so no RBC population is
+    # proposed — exactly the pre-outline behaviour. Were it mistaken for
+    # background, the 12 cells would form a population instead.
+    assert measure_rbc_diameter(work, work.width) is None
+    assert measure_rbc_diameter(work, work.width, with_outline=True) is None
+
+
 def test_detector_purple_sat_disables_nuclei_exclusion(tmp_path) -> None:
     path = tmp_path / "nuclei.png"
     _film_with_nuclei().write_to_file(str(path))
