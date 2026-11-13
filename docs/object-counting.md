@@ -313,7 +313,7 @@ data) — the `Outliner` protocol remains the plugin point.
 - **Pixel size (mpp)** comes from image metadata at enqueue
   (`app/counting/mpp.py`): `mpp_x` (pyramidal/TIFF calibration) wins;
   otherwise `unit / measurement_scale` (#1868). That key is written by
-  an approved measurement review *or* entered directly under Edit image —
+  an approved measurement review _or_ entered directly under Edit image —
   the counter trusts the metadata either way, so measurement review and
   hand-entered scales both calibrate counting. Without either, nuclei
   assumes InstanSeg's native 0.5 µm/px.
