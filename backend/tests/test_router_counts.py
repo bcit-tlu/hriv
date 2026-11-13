@@ -74,6 +74,7 @@ def _image(
     *,
     active: bool = True,
     tile_sources: str = f"/api/tiles/{SID}/image.dzi",
+    metadata_: dict | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=IMAGE_ID,
@@ -81,6 +82,7 @@ def _image(
         active=active,
         tile_sources=tile_sources,
         category_id=3,
+        metadata_=metadata_,
     )
 
 def _db(img: SimpleNamespace | None) -> AsyncMock:
@@ -181,6 +183,116 @@ async def test_create_count_202_for_every_role(
     assert kwargs["image_id"] == IMAGE_ID
     # The record exists before the enqueue and carries the owner set entry.
     assert await pool.sismember("count:user:5", out.job_id)
+
+async def test_create_count_mpp_fallback_from_approved_scale(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """An instructor-approved ``measurement_scale`` calibrates counting:
+    with no ``mpp_x`` the record carries ``1 / scale`` µm/px (#1868)."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    img = _image(
+        metadata_={"measurement_scale": 4.0, "measurement_unit": "um"}
+    )
+    out = await create_count(
+        IMAGE_ID, _body(), _user(), False, _db(img)
+    )
+    record = await jobs.get_record(pool, out.job_id)
+    assert record["mpp"] == pytest.approx(0.25)
+
+async def test_create_count_mpp_x_beats_approved_scale(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """Embedded ``mpp_x`` stays authoritative over a reviewed scale."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    img = _image(
+        metadata_={
+            "mpp_x": 0.11,
+            "measurement_scale": 4.0,
+            "measurement_unit": "um",
+        }
+    )
+    out = await create_count(
+        IMAGE_ID, _body(), _user(), False, _db(img)
+    )
+    record = await jobs.get_record(pool, out.job_id)
+    assert record["mpp"] == pytest.approx(0.11)
+
+async def test_create_count_no_scale_metadata_mpp_none(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """No usable pixel size -> record mpp is None (unchanged path)."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    out = await create_count(
+        IMAGE_ID, _body(), _user(), False, _db(_image())
+    )
+    record = await jobs.get_record(pool, out.job_id)
+    assert record["mpp"] is None
+
+async def test_create_count_nuclei_derived_mpp_preflights_worker_level(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """Nuclei pre-flight plans the worker's fixed mpp level: at 0.25
+    µm/px (scale=4 px/µm) the shared rule picks d=2, not d=1 (#1868)."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    plan_spy = Mock(wraps=plan_region)
+    monkeypatch.setattr(counts_router, "plan_region", plan_spy)
+    img = _image(
+        metadata_={"measurement_scale": 4.0, "measurement_unit": "um"}
+    )
+    out = await create_count(
+        IMAGE_ID, _body(mode="nuclei"), _user(), False, _db(img)
+    )
+    assert out.status == "queued"
+    assert plan_spy.call_args.kwargs["downsample"] == 2
+
+async def test_create_count_nuclei_derived_mpp_too_large_422(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """#1868 review: a derived scale no longer admits selections the
+    worker cannot run. At mpp=0.25 the worker's rule fixes d=2; an
+    800×800 box is 160k px there — over budget — so the API must 422
+    rather than queue a job that would fail ``too_large``."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    monkeypatch.setattr(settings, "counting_nuclei_outliner", "instanseg")
+    monkeypatch.setattr(settings, "counting_max_pixels", 65_536)
+    monkeypatch.setattr(settings, "counting_classical_max_pixels", 2_000_000)
+    monkeypatch.setattr(settings, "counting_max_downsample", 8)
+    img = _image(
+        metadata_={"measurement_scale": 4.0, "measurement_unit": "um"}
+    )
+    body = CountCreate(
+        mode="nuclei",
+        selection=CountSelection(x=0, y=0, width=800, height=800),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await create_count(IMAGE_ID, body, _user(), False, _db(img))
+    assert exc.value.status_code == 422
+    assert exc.value.detail == "selection_too_large"
+
+async def test_create_count_nuclei_no_mpp_forces_level0(
+    monkeypatch, counting_tiles, pool
+) -> None:
+    """Control case: without any scale, nuclei keeps the d=1 forcing."""
+    _enable(monkeypatch, counting_tiles)
+    _mock_pool(monkeypatch, pool)
+    await _live_worker(pool)
+    plan_spy = Mock(wraps=plan_region)
+    monkeypatch.setattr(counts_router, "plan_region", plan_spy)
+    out = await create_count(
+        IMAGE_ID, _body(mode="nuclei"), _user(), False, _db(_image())
+    )
+    assert out.status == "queued"
+    assert plan_spy.call_args.kwargs["downsample"] == 1
 
 async def test_create_count_student_hidden_image_404(
     monkeypatch, counting_tiles, pool
