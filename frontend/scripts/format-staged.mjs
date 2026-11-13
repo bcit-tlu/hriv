@@ -1,4 +1,12 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -59,6 +67,28 @@ if (stagedFiles.length === 0) {
   process.exit(0)
 }
 
+// Advisory size budgets by purpose — warn but never block the commit.
+// In-app images are fetched by every browser that opens the page, so they
+// get a tight budget; anything larger should be compressed or downsized.
+const SIZE_BUDGETS = [
+  {
+    match: /^(frontend\/public|frontend\/guide\/images)\/.*\.(png|jpe?g|gif|webp|avif)$/i,
+    maxBytes: 512 * 1024,
+    hint: 'in-app images slow page loads — compress it (pngquant, cwebp, or ImageMagick -quality 75)',
+  },
+]
+for (const file of stagedFiles) {
+  const budget = SIZE_BUDGETS.find((b) => b.match.test(file))
+  if (!budget) continue
+  const sizeKb = statSync(join(repoRoot, file)).size / 1024
+  const budgetKb = budget.maxBytes / 1024
+  if (sizeKb > budgetKb) {
+    console.warn(
+      `warning: ${file} is ${sizeKb.toFixed(0)} KB — over the ${budgetKb} KB budget; ${budget.hint}`,
+    )
+  }
+}
+
 const tempRoot = mkdtempSync(join(tmpdir(), 'hriv-format-staged-'))
 const prettierCli = fileURLToPath(
   new URL('../node_modules/prettier/bin/prettier.cjs', import.meta.url),
@@ -72,7 +102,7 @@ try {
     const fileInfo = await getFileInfo(join(repoRoot, file), {
       ignorePath: prettierIgnorePath,
     })
-    if (fileInfo.ignored) continue
+    if (fileInfo.ignored || fileInfo.inferredParser == null) continue
 
     const tempFile = join(tempRoot, file)
     mkdirSync(dirname(tempFile), { recursive: true })
