@@ -40,6 +40,8 @@ interface MockTrackerOptions {
     originalEvent?: { shiftKey?: boolean }
   }) => void
   releaseHandler: () => void
+  moveHandler?: (event: { position?: { x: number; y: number } }) => void
+  leaveHandler?: () => void
   preProcessEventHandler?: (event: {
     originalEvent?: { target?: EventTarget | null }
     preventGesture: boolean
@@ -96,6 +98,8 @@ interface MockViewer {
   setMouseNavEnabled: ReturnType<typeof vi.fn>
   isFullPage: ReturnType<typeof vi.fn>
   fullPageButton: MockButton
+  zoomInButton: MockButton
+  zoomOutButton: MockButton
   setFullPage: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   removeHandler: ReturnType<typeof vi.fn>
@@ -186,6 +190,10 @@ vi.mock('openseadragon', () => {
     const navigatorElement = document.createElement('div')
     bottomRightDock.appendChild(navigatorElement)
     const activeOverlays = new Set<HTMLElement>()
+    // Track full-page state the way real OSD does: setFullPage(true) flips it
+    // immediately (the 'full-page' event fires during construction in the
+    // handoff path, before ImageViewer's handlers exist).
+    let fullPageState = false
     const homeBounds = {
       x: 0,
       y: 0,
@@ -263,12 +271,22 @@ vi.mock('openseadragon', () => {
       updateOverlay: vi.fn(),
       removeOverlay: vi.fn((element: HTMLElement) => activeOverlays.delete(element)),
       setMouseNavEnabled: vi.fn(),
-      isFullPage: vi.fn(() => false),
+      isFullPage: vi.fn(() => fullPageState),
       fullPageButton: new OSDButton({
         tooltip: 'Full screen',
         onClick: () => {},
       }),
-      setFullPage: vi.fn(),
+      zoomInButton: new OSDButton({
+        tooltip: 'Zoom in',
+        onClick: () => {},
+      }),
+      zoomOutButton: new OSDButton({
+        tooltip: 'Zoom out',
+        onClick: () => {},
+      }),
+      setFullPage: vi.fn((value: boolean) => {
+        fullPageState = value
+      }),
       open: vi.fn(() => {
         if (!viewer.preserveOverlays) activeOverlays.clear()
       }),
@@ -1695,5 +1713,267 @@ describe('ImageViewer object counting (#1667)', () => {
         name: 'Count objects in selection 1',
       }),
     ).toBeNull()
+  })
+})
+
+describe('ImageViewer presentation tools (#1876)', () => {
+  const enterFullPage = () => {
+    viewer().isFullPage.mockReturnValue(true)
+    act(() => viewer().fire('full-page', { fullPage: true }))
+  }
+  const exitFullPage = () => {
+    viewer().isFullPage.mockReturnValue(false)
+    act(() => viewer().fire('full-page', { fullPage: false }))
+  }
+  const presentationButtonWrapper = (tooltip: string) =>
+    buttonByTooltip(tooltip).element.parentElement as HTMLElement
+  const drawInkStroke = () => {
+    act(() => {
+      tracker().options.pressHandler({ position: { x: 10, y: 10 } })
+      tracker().options.dragHandler({ position: { x: 40, y: 30 } })
+      tracker().options.releaseHandler()
+    })
+  }
+
+  it('disables mouse click-to-zoom while keeping scroll zoom', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    expect(osdState.viewerOptions[0]).toMatchObject({
+      gestureSettingsMouse: { scrollToZoom: true, clickToZoom: false },
+    })
+  })
+
+  it('hides the zoom +/- buttons only while in full-page mode (#1877)', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    const zoomIn = viewer().zoomInButton.element
+    const zoomOut = viewer().zoomOutButton.element
+
+    expect(zoomIn.style.display).toBe('')
+    expect(zoomOut.style.display).toBe('')
+
+    enterFullPage()
+    expect(zoomIn.style.display).toBe('none')
+    expect(zoomOut.style.display).toBe('none')
+
+    exitFullPage()
+    expect(zoomIn.style.display).toBe('')
+    expect(zoomOut.style.display).toBe('')
+  })
+
+  it('shows pointer buttons and auto-arms the laser only in full-page mode', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    expect(presentationButtonWrapper('Laser pointer').style.display).toBe('none')
+    expect(presentationButtonWrapper('Freehand ink').style.display).toBe('none')
+
+    enterFullPage()
+    expect(presentationButtonWrapper('Laser pointer').style.display).toBe('inline-block')
+    expect(presentationButtonWrapper('Freehand ink').style.display).toBe('inline-block')
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'ui.toolbar_action', action: 'laser_pointer_on' }),
+    )
+    expect(buttonByTooltip('Laser pointer').element.querySelector('img')?.src).toContain(
+      'laser_pointer_active_rest.svg',
+    )
+    expect(viewer().canvas.style.cursor).toBe('none')
+
+    exitFullPage()
+    expect(presentationButtonWrapper('Laser pointer').style.display).toBe('none')
+    expect(viewer().canvas.style.cursor).toBe('')
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'laser_pointer_off' }),
+    )
+  })
+
+  it('arms the laser through the browser-fullscreen handoff path', () => {
+    setFullscreenElement(document.body)
+    const { rerender } = render(
+      <ImageViewer key="first" fullScreenHandoffKey="sequence:1" tileSources="/first.dzi" />,
+    )
+    viewer().isFullPage.mockReturnValue(true)
+
+    rerender(
+      <ImageViewer key="second" fullScreenHandoffKey="sequence:1" tileSources="/second.dzi" />,
+    )
+    const second = viewer()
+    // The claimed handoff calls setFullPage(true) during construction; the
+    // initial presentation sync must arm the laser without a 'full-page' event.
+    expect(second.setFullPage).toHaveBeenCalledWith(true)
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'laser_pointer_on' }),
+    )
+  })
+
+  it('positions the laser dot on pointer move and ages the trail out', () => {
+    vi.useFakeTimers()
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    const laser = viewer().canvas.querySelector('[data-hriv-laser]') as SVGGElement
+    // Hidden until the first move so no stale origin dot shows.
+    expect(laser.getAttribute('display')).toBe('none')
+
+    act(() => tracker().options.moveHandler?.({ position: { x: 40, y: 50 } }))
+    expect(laser.getAttribute('display')).toBe('')
+    expect(laser.getAttribute('transform')).toBe('translate(40.0 50.0)')
+
+    act(() => {
+      vi.advanceTimersByTime(600)
+    })
+    const trailOpacities = Array.from(
+      viewer().canvas.querySelectorAll('[data-hriv-laser-trail] circle'),
+    ).map((c) => c.getAttribute('opacity'))
+    expect(trailOpacities.every((o) => o === '0')).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('hides the laser dot when the pointer leaves the viewer', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => tracker().options.moveHandler?.({ position: { x: 40, y: 50 } }))
+    const laser = viewer().canvas.querySelector('[data-hriv-laser]') as SVGGElement
+    expect(laser.getAttribute('display')).toBe('')
+
+    act(() => tracker().options.leaveHandler?.())
+    expect(laser.getAttribute('display')).toBe('none')
+  })
+
+  it('draws a cyan ink stroke anchored to the image', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+    expect(viewer().canvas.style.cursor).toBe('crosshair')
+
+    drawInkStroke()
+    const path = viewer().canvas.querySelector('[data-hriv-ink] path') as SVGPathElement
+    expect(path).not.toBeNull()
+    expect(path.getAttribute('stroke')).toBe('#00E5FF')
+    expect(path.getAttribute('d')).toBe('M10.0 10.0 L40.0 30.0')
+
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+    expect(viewer().canvas.style.cursor).toBe('')
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ink_on' }),
+    )
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ink_off' }),
+    )
+  })
+
+  it('reprojects ink strokes when the viewport changes', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    drawInkStroke()
+    const path = viewer().canvas.querySelector('[data-hriv-ink] path') as SVGPathElement
+
+    viewer().viewport.pixelFromPoint.mockImplementation((p: { x: number; y: number }) => ({
+      x: p.x * 50,
+      y: p.y * 50,
+    }))
+    act(() => viewer().fire('animation'))
+    expect(path.getAttribute('d')).toBe('M5.0 5.0 L20.0 15.0')
+  })
+
+  it('renders a lone-point stroke as a round-capped dot', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    act(() => {
+      tracker().options.pressHandler({ position: { x: 10, y: 10 } })
+      tracker().options.releaseHandler()
+    })
+    const path = viewer().canvas.querySelector('[data-hriv-ink] path') as SVGPathElement
+    expect(path.getAttribute('d')).toBe('M10.0 10.0 L10.0 10.0')
+  })
+
+  it('fades each stroke out after ten seconds', () => {
+    vi.useFakeTimers()
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    drawInkStroke()
+    const inkGroup = viewer().canvas.querySelector('[data-hriv-ink]') as SVGGElement
+    const path = () => inkGroup.querySelector('path')
+    expect(path()).not.toBeNull()
+
+    act(() => vi.advanceTimersByTime(8_500))
+    expect(Number(path()!.getAttribute('opacity'))).toBeCloseTo(0.75, 1)
+
+    act(() => vi.advanceTimersByTime(2_000))
+    expect(path()).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('clears all ink on full-page exit', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    drawInkStroke()
+    const inkGroup = viewer().canvas.querySelector('[data-hriv-ink]') as SVGGElement
+    expect(inkGroup.querySelector('path')).not.toBeNull()
+
+    exitFullPage()
+    expect(inkGroup.querySelector('path')).toBeNull()
+    expect(viewer().canvas.style.cursor).toBe('')
+  })
+
+  it('disarms selection mode and the laser as mutually exclusive modes', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+
+    // Entering selection mode disarms the auto-armed laser.
+    act(() => buttonByTooltip('Draw selection rectangle').options.onClick())
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'laser_pointer_off' }),
+    )
+    expect(viewer().canvas.style.cursor).toBe('')
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+
+    // Arming ink disarms selection (icon restored) and keeps nav disabled.
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    expect(buttonByTooltip('Draw selection rectangle').element.querySelector('img')?.src).toContain(
+      'selection_rest.svg',
+    )
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+
+    // Arming the laser restores navigation (the laser must not block pan/zoom).
+    act(() => buttonByTooltip('Laser pointer').options.onClick())
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+    expect(viewer().canvas.style.cursor).toBe('none')
+  })
+
+  it('disarms the laser when canvas edit mode is entered', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    enterFullPage()
+    act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'laser_pointer_off' }),
+    )
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+  })
+
+  it('does not draw ink strokes unless the ink tool is armed', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage() // laser armed, not ink
+    act(() => {
+      tracker().options.pressHandler({ position: { x: 10, y: 10 } })
+      tracker().options.dragHandler({ position: { x: 40, y: 30 } })
+      tracker().options.releaseHandler()
+    })
+    expect(viewer().canvas.querySelector('[data-hriv-ink] path')).toBeNull()
+  })
+
+  it('cleans up the layer, ticker and cursor on unmount', () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<ImageViewer tileSources="/tiles.dzi" />)
+    enterFullPage()
+    act(() => tracker().options.moveHandler?.({ position: { x: 5, y: 5 } }))
+    const canvas = viewer().canvas
+    expect(canvas.querySelector('[data-hriv-presentation-layer]')).not.toBeNull()
+
+    unmount()
+    expect(canvas.querySelector('[data-hriv-presentation-layer]')).toBeNull()
+    expect(canvas.style.cursor).toBe('')
+    vi.useRealTimers()
   })
 })

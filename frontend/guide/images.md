@@ -82,6 +82,16 @@ or links to label them.
 Annotating also works in fullscreen — open the viewer's fullscreen mode first,
 then click the pencil.
 
+## Presenting an image
+
+Showing a slide to a room? Open the viewer's **fullscreen** mode (bottom-left
+diagonal-arrows button) — the pointer becomes a big glowing **laser dot** with
+a short trail, easy to follow from the back row. Need to circle something?
+Click the **squiggle** button for a pen that fades away on its own about ten
+seconds after each stroke, so nothing is left behind on the image. Click the
+buttons again to switch back and forth, and leave fullscreen to clear
+everything.
+
 ## Hide an image
 
 Open **Edit Details** and click **Hide Image** (top right). Hidden images

@@ -290,6 +290,42 @@ images> / Empty` format used on category tiles.
   arbitration for the next gesture. Covered by `measurement.test.ts`
   (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
+### Viewer: presentation pointer tools (`ImageViewer.test.tsx`, `presentationTools.test.ts`)
+
+Epic #1876 (user-testing feedback): tools for presenting an image to a room,
+armed only while the viewer is in OSD full-page mode. Everything here is
+ephemeral — nothing is persisted to metadata, share links, or exports.
+
+- **Given** full-page mode is entered (OSD button or the browser-fullscreen
+  handoff), **Then** the laser pointer auto-arms and two buttons — **Laser
+  pointer** and **Freehand ink** — appear in the bottom-left dock, and the
+  zoom +/- buttons hide (they stay in normal view). Exiting full-page
+  disarms the active tool, clears all ink, and restores the zoom buttons.
+- The laser is a glowing red dot (~20–24px halo) with a short fading trail
+  (~450ms); the native cursor hides (`cursor: none`) while armed, and the
+  dot stays hidden until the first pointer move and again on pointer-leave.
+  Mouse navigation stays enabled so the presenter can pan/zoom while
+  pointing.
+- The ink tool draws solid cyan (`#00E5FF`) ~4px round-capped strokes while
+  armed (`crosshair` cursor, mouse nav disabled like selection mode).
+  Strokes are stored in viewport coordinates and reprojected every frame, so
+  they track structures across pan/zoom. Each stroke holds full opacity for
+  ~8s, fades linearly to gone at ~10s, and at most ~100 strokes are kept
+  (oldest dropped). A press with no drag renders a round-capped dot.
+- Laser / ink / selection / canvas-edit are mutually exclusive; a single
+  `setMouseNavEnabled` arbiter computes navigation from the active modes.
+- Mouse click-to-zoom is disabled everywhere
+  (`gestureSettingsMouse.clickToZoom: false`); scroll, pinch and touch
+  double-tap zoom are unchanged (#1877).
+- Both tools are available to every role — presenting is a student activity
+  too. Toggle telemetry rides `ui.toolbar_action`
+  (`laser_pointer_on|off`, `ink_on|off`).
+- The layer is a single `<svg>` appended to `viewer.canvas` at `z-index: 11`
+  (above the measurement-label container, `pointer-events: none`), holding
+  the ink paths, a pooled set of trail circles, and the laser dot; a
+  `requestAnimationFrame` loop runs only while trail points or fading
+  strokes remain.
+
 ### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `CollectionsTable.test.tsx`, `App.test.tsx`)
 
 See [collections.md](collections.md#frontend-behaviour) for the full contract.

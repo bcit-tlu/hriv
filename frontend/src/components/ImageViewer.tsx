@@ -16,6 +16,19 @@ import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import SelectionCountLayer from './SelectionCountLayer'
 import {
+  createPresentationLayer,
+  inkStrokeAlpha,
+  strokePathD,
+  trailAlpha,
+  INK_MIN_POINT_PX,
+  LASER_CORE_RADIUS,
+  LASER_TRAIL_MS,
+  LASER_TRAIL_POINTS,
+  MAX_INK_STROKES,
+  type InkStroke,
+  type PresentationTool,
+} from './presentationTools'
+import {
   formatMeasurement,
   createMeasurementLabel,
   computeMagnification,
@@ -245,6 +258,10 @@ export default function ImageViewer({
   }, [])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
+  // Single arbiter for viewer.setMouseNavEnabled — selection, canvas edit and
+  // the ink tool all disable navigation, so raw set(true) calls can stomp an
+  // armed mode (epic #1876).
+  const syncMouseNavRef = useRef<(() => void) | null>(null)
   const canvasCancelRef = useRef<(() => Promise<void>) | null>(null)
   const registerCanvasCancel = useCallback((handler: (() => Promise<void>) | null) => {
     canvasCancelRef.current = handler
@@ -537,7 +554,9 @@ export default function ImageViewer({
       showNavigator: true,
       navigatorPosition: 'BOTTOM_RIGHT',
       navigatorSizeRatio: 0.15,
-      gestureSettingsMouse: { scrollToZoom: true },
+      // Scroll zooms; a plain click does not (user testing found click-to-zoom
+      // unused, and it would fire on every laser-pointer/ink click — #1877).
+      gestureSettingsMouse: { scrollToZoom: true, clickToZoom: false },
       // Rotation controls
       showRotationControl: true,
       gestureSettingsTouch: { pinchRotate: true },
@@ -709,7 +728,8 @@ export default function ImageViewer({
       onClick: () => {
         selectionModeRef.current = !selectionModeRef.current
         emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
-        viewer.setMouseNavEnabled(!selectionModeRef.current)
+        if (selectionModeRef.current) setPresentationTool(null)
+        syncMouseNav()
         setButtonIcons(selectionButton, selectionModeRef.current ? 'selection_active' : 'selection')
       },
     })
@@ -717,6 +737,222 @@ export default function ImageViewer({
     viewer.addControl(selectionButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
+
+    // --- Presentation pointer tools (epic #1876): laser pointer + ephemeral
+    // ink, armed only in OSD full-page mode. Ink is never persisted.
+    const presentationUi = createPresentationLayer()
+    viewer.canvas.appendChild(presentationUi.svg)
+
+    let presentationTool: PresentationTool | null = null
+    const inkStrokes: InkStroke[] = []
+    let inkDrawing: InkStroke | null = null
+    let inkLastPx: OpenSeadragon.Point | null = null
+    const trailPoints: { x: number; y: number; t: number }[] = []
+    let presentationRaf: number | null = null
+
+    const syncMouseNav = () => {
+      viewer.setMouseNavEnabled(
+        !(selectionModeRef.current || canvasEditModeRef.current || presentationTool === 'ink'),
+      )
+    }
+    syncMouseNavRef.current = syncMouseNav
+
+    const projectToCanvas = (p: { x: number; y: number }) =>
+      viewer.viewport.pixelFromPoint(new OpenSeadragon.Point(p.x, p.y), true)
+
+    const reprojectInk = () => {
+      for (const stroke of inkStrokes) {
+        stroke.element.setAttribute('d', strokePathD(stroke.points.map(projectToCanvas)))
+      }
+    }
+
+    const clearInk = () => {
+      inkDrawing = null
+      inkLastPx = null
+      for (const stroke of inkStrokes) stroke.element.remove()
+      inkStrokes.length = 0
+    }
+
+    const presentationTick = () => {
+      presentationRaf = null
+      const now = performance.now()
+      while (trailPoints.length > 0 && now - trailPoints[0].t > LASER_TRAIL_MS) {
+        trailPoints.shift()
+      }
+      presentationUi.trailDots.forEach((dot, i) => {
+        const point = trailPoints[trailPoints.length - 1 - i]
+        if (!point) {
+          dot.setAttribute('opacity', '0')
+          return
+        }
+        dot.setAttribute('cx', point.x.toFixed(1))
+        dot.setAttribute('cy', point.y.toFixed(1))
+        dot.setAttribute('r', Math.max(0.5, LASER_CORE_RADIUS - i * 0.3).toFixed(1))
+        dot.setAttribute('opacity', (trailAlpha(now - point.t) * 0.7).toFixed(2))
+      })
+      for (let i = inkStrokes.length - 1; i >= 0; i -= 1) {
+        const stroke = inkStrokes[i]
+        if (stroke.finishedAt == null) continue
+        const alpha = inkStrokeAlpha(now - stroke.finishedAt)
+        if (alpha <= 0) {
+          stroke.element.remove()
+          inkStrokes.splice(i, 1)
+        } else {
+          stroke.element.setAttribute('opacity', alpha.toFixed(2))
+        }
+      }
+      const inkStillAnimating = inkStrokes.some(
+        (stroke) => stroke.finishedAt != null && inkStrokeAlpha(now - stroke.finishedAt) > 0,
+      )
+      if (trailPoints.length > 0 || inkStillAnimating) {
+        presentationRaf = window.requestAnimationFrame(presentationTick)
+      }
+    }
+    const ensurePresentationTicker = () => {
+      if (presentationRaf == null) {
+        presentationRaf = window.requestAnimationFrame(presentationTick)
+      }
+    }
+
+    const startInkStroke = (position: OpenSeadragon.Point) => {
+      const vp = viewer.viewport.pointFromPixel(position)
+      const stroke: InkStroke = {
+        points: [{ x: vp.x, y: vp.y }],
+        finishedAt: null,
+        element: presentationUi.createStrokeElement(),
+      }
+      inkStrokes.push(stroke)
+      if (inkStrokes.length > MAX_INK_STROKES) {
+        inkStrokes.shift()?.element.remove()
+      }
+      inkDrawing = stroke
+      inkLastPx = position
+      stroke.element.setAttribute('d', strokePathD([{ x: position.x, y: position.y }]))
+      ensurePresentationTicker()
+    }
+
+    const appendInkPoint = (position: OpenSeadragon.Point) => {
+      if (!inkDrawing || !inkLastPx) return
+      const dx = position.x - inkLastPx.x
+      const dy = position.y - inkLastPx.y
+      if (dx * dx + dy * dy < INK_MIN_POINT_PX * INK_MIN_POINT_PX) return
+      inkLastPx = position
+      const vp = viewer.viewport.pointFromPixel(position)
+      inkDrawing.points.push({ x: vp.x, y: vp.y })
+      // Append the new segment only — reprojecting the whole polyline per
+      // sample would make long strokes quadratic.
+      const px = projectToCanvas({ x: vp.x, y: vp.y })
+      const d = inkDrawing.element.getAttribute('d') ?? ''
+      inkDrawing.element.setAttribute('d', `${d} L${px.x.toFixed(1)} ${px.y.toFixed(1)}`)
+    }
+
+    const finishInkStroke = () => {
+      if (!inkDrawing) return
+      // A lone point needs a degenerate segment so the round caps render a dot.
+      if (inkDrawing.points.length === 1) {
+        inkDrawing.points.push({ ...inkDrawing.points[0] })
+        reprojectInk()
+      }
+      inkDrawing.finishedAt = performance.now()
+      inkDrawing = null
+      inkLastPx = null
+      ensurePresentationTicker()
+    }
+
+    const laserMoved = (position: OpenSeadragon.Point) => {
+      presentationUi.setLaserVisible(true)
+      presentationUi.setLaserPosition(position.x, position.y)
+      trailPoints.push({ x: position.x, y: position.y, t: performance.now() })
+      if (trailPoints.length > LASER_TRAIL_POINTS) trailPoints.shift()
+      ensurePresentationTicker()
+    }
+
+    const setPresentationTool = (tool: PresentationTool | null) => {
+      if (tool === presentationTool) return
+      const leaving = presentationTool
+      presentationTool = tool
+      if (leaving === 'laser') {
+        presentationUi.setLaserVisible(false)
+        trailPoints.length = 0
+      }
+      if (leaving === 'ink') finishInkStroke()
+      viewer.canvas.style.cursor = ''
+      if (tool != null) {
+        if (selectionModeRef.current) {
+          selectionModeRef.current = false
+          setSelectionDrawing(false)
+          setButtonIcons(selectionButton, 'selection')
+        }
+        if (canvasEditModeRef.current && canvasCancelRef.current) {
+          void canvasCancelRef.current()
+        }
+        emitToolbarAction(tool === 'laser' ? 'laser_pointer_on' : 'ink_on')
+      } else if (leaving != null) {
+        emitToolbarAction(leaving === 'laser' ? 'laser_pointer_off' : 'ink_off')
+      }
+      if (tool === 'laser') {
+        // The dot stays hidden until the first pointermove — no stale (0,0).
+        presentationUi.setLaserVisible(false)
+        viewer.canvas.style.cursor = 'none'
+      } else if (tool === 'ink') {
+        viewer.canvas.style.cursor = 'crosshair'
+      }
+      syncMouseNav()
+      setButtonIcons(laserButton, tool === 'laser' ? 'laser_pointer_active' : 'laser_pointer')
+      setButtonIcons(inkButton, tool === 'ink' ? 'ink_active' : 'ink')
+    }
+
+    const laserButton = new OpenSeadragon.Button({
+      tooltip: 'Laser pointer',
+      srcRest: prefix + 'laser_pointer_rest.svg',
+      srcGroup: prefix + 'laser_pointer_grouphover.svg',
+      srcHover: prefix + 'laser_pointer_hover.svg',
+      srcDown: prefix + 'laser_pointer_pressed.svg',
+      onClick: () => setPresentationTool(presentationTool === 'laser' ? null : 'laser'),
+    })
+    laserButton.element.style.lineHeight = '0'
+    const laserWrapper = document.createElement('div')
+    laserWrapper.style.display = 'none'
+    laserWrapper.appendChild(laserButton.element)
+    viewer.addControl(laserWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
+    const inkButton = new OpenSeadragon.Button({
+      tooltip: 'Freehand ink',
+      srcRest: prefix + 'ink_rest.svg',
+      srcGroup: prefix + 'ink_grouphover.svg',
+      srcHover: prefix + 'ink_hover.svg',
+      srcDown: prefix + 'ink_pressed.svg',
+      onClick: () => setPresentationTool(presentationTool === 'ink' ? null : 'ink'),
+    })
+    inkButton.element.style.lineHeight = '0'
+    const inkWrapper = document.createElement('div')
+    inkWrapper.style.display = 'none'
+    inkWrapper.appendChild(inkButton.element)
+    viewer.addControl(inkWrapper, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
+    // Full-page entry arms the laser; exit disarms and clears all ink.
+    const applyFullPagePresentation = (fullPage: boolean) => {
+      laserWrapper.style.display = fullPage ? 'inline-block' : 'none'
+      inkWrapper.style.display = fullPage ? 'inline-block' : 'none'
+      if (fullPage) {
+        setPresentationTool('laser')
+      } else {
+        setPresentationTool(null)
+        clearInk()
+      }
+    }
+
+    // User testing found the +/- buttons useless; hide them in full-screen so
+    // presenting declutters the dock. They stay in normal view (#1877).
+    const setZoomControlsHidden = (hidden: boolean) => {
+      for (const button of [viewer.zoomInButton, viewer.zoomOutButton]) {
+        if (button?.element) button.element.style.display = hidden ? 'none' : ''
+      }
+    }
 
     // --- Mouse tracker for drawing selection rectangles ---
     let currentRect: OpenSeadragon.Rect | null = null
@@ -736,6 +972,10 @@ export default function ImageViewer({
         }
       },
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (presentationTool === 'ink') {
+          if (event.position) startInkStroke(event.position)
+          return
+        }
         if (!selectionModeRef.current || !event.position) return
         setSelectionDrawing(true)
         const overlayElement = document.createElement('div')
@@ -757,7 +997,19 @@ export default function ImageViewer({
         dragRef.current = { overlayElement, startPos: viewportPos, widthLabel, heightLabel }
         currentRect = new OpenSeadragon.Rect(viewportPos.x, viewportPos.y, 0, 0)
       },
+      moveHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (presentationTool !== 'laser' || !event.position) return
+        laserMoved(event.position)
+      },
+      leaveHandler: () => {
+        presentationUi.setLaserVisible(false)
+        trailPoints.length = 0
+      },
       dragHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (inkDrawing) {
+          if (event.position) appendInkPoint(event.position)
+          return
+        }
         if (!dragRef.current || !event.position) return
         const viewportPos = viewer.viewport.pointFromPixel(event.position)
         let diffX = viewportPos.x - dragRef.current.startPos.x
@@ -784,6 +1036,10 @@ export default function ImageViewer({
         updateMeasurementLabels(location, dragRef.current.widthLabel, dragRef.current.heightLabel)
       },
       releaseHandler: () => {
+        if (inkDrawing) {
+          finishInkStroke()
+          return
+        }
         if (!dragRef.current) return
         // Store the final rect and labels for repositioning on zoom/pan
         if (currentRect && currentRect.width > 0 && currentRect.height > 0) {
@@ -810,7 +1066,7 @@ export default function ImageViewer({
         currentRect = null
         selectionModeRef.current = false
         setSelectionDrawing(false)
-        viewer.setMouseNavEnabled(true)
+        syncMouseNav()
         setButtonIcons(selectionButton, 'selection')
       },
     })
@@ -831,6 +1087,17 @@ export default function ImageViewer({
     }
     viewer.addHandler('animation', repositionLabels)
     viewer.addHandler('animation-finish', repositionLabels)
+    // Ink strokes are image-anchored: reproject viewport points on every
+    // viewport/frame change so they track the underlying structures.
+    for (const eventName of [
+      'animation',
+      'animation-finish',
+      'resize',
+      'viewport-change',
+      'open',
+    ] as const) {
+      viewer.addHandler(eventName, reprojectInk)
+    }
 
     // --- Lock overlay toolbar button (visible to admin/instructor) ---
     let lockButton: OpenSeadragon.Button | null = null
@@ -922,7 +1189,8 @@ export default function ImageViewer({
           }
           canvasEditModeRef.current = entering
           setCanvasEditMode(entering)
-          viewer.setMouseNavEnabled(!entering)
+          if (entering) setPresentationTool(null)
+          syncMouseNav()
           onCanvasEditModeChangeRef.current?.(entering)
           setButtonIcons(canvasEditButton, entering ? 'canvas_edit_active' : 'canvas_edit')
         },
@@ -1141,10 +1409,14 @@ export default function ImageViewer({
       // Fires on both enter and exit; count only entering full screen.
       if (event.fullPage) emitToolbarAction('full_screen')
       syncFullPageIcon()
+      setZoomControlsHidden(event.fullPage)
+      applyFullPagePresentation(event.fullPage)
     })
     // Run once now: a setFullPage(true) from the fullscreen handoff path can
     // fire 'full-page' before this handler is registered.
     syncFullPageIcon()
+    setZoomControlsHidden(viewer.isFullPage())
+    applyFullPagePresentation(viewer.isFullPage())
     viewer.addHandler('resize', () => {
       pendingHomeResize = homeViewportAtLastSettledStateRef.current
     })
@@ -1211,6 +1483,16 @@ export default function ImageViewer({
       canvasEditModeRef.current = false
       setCanvasEditMode(false)
       setViewerInstance(null)
+      presentationTool = null
+      if (presentationRaf != null) {
+        window.cancelAnimationFrame(presentationRaf)
+        presentationRaf = null
+      }
+      clearInk()
+      trailPoints.length = 0
+      presentationUi.svg.remove()
+      viewer.canvas.style.cursor = ''
+      syncMouseNavRef.current = null
       if (renewalTimerRef.current != null) {
         window.clearTimeout(renewalTimerRef.current)
         renewalTimerRef.current = null
@@ -1289,7 +1571,7 @@ export default function ImageViewer({
   const handleCanvasEditModeChange = useCallback((mode: boolean) => {
     canvasEditModeRef.current = mode
     setCanvasEditMode(mode)
-    viewerRef.current?.setMouseNavEnabled(!mode)
+    syncMouseNavRef.current?.()
     updateCanvasEditUiRef.current?.(mode)
     onCanvasEditModeChangeRef.current?.(mode)
   }, [])
