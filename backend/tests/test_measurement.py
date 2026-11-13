@@ -381,6 +381,115 @@ def test_approve_schema_rejects_unknown_unit() -> None:
         MeasurementApprove(unit="in")
 
 
+# ── detection_params promotion (#1869) ──────────────────
+
+_PARAMS = {"sensitivity": 0.9, "min_cell_size": 5.0, "exclude_nuclei": True}
+
+
+async def test_approve_promotes_detection_params() -> None:
+    finding, image = _finding(params=dict(_PARAMS)), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert image.metadata_["detection_params"] == _PARAMS
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+    assert image.version == 5
+
+
+async def test_approve_without_params_leaves_metadata_untouched() -> None:
+    finding, image = _finding(params=None), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert "detection_params" not in image.metadata_
+
+
+async def test_approve_params_promote_with_corrected_scale() -> None:
+    """Tuning describes detection, not the value — a reviewer correction
+    does not hold the params back (#1869)."""
+    finding, image = _finding(params=dict(_PARAMS)), _image()
+    await service.approve_finding(
+        AsyncMock(), finding, image, 3, scale=18.7
+    )
+    assert image.metadata_["detection_params"] == _PARAMS
+    assert image.metadata_["measurement_scale_source"] == "manual"
+
+
+def test_reset_strips_detection_params_it_promoted() -> None:
+    params = dict(_PARAMS)
+    finding = _finding(
+        status="approved",
+        params=params,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+            "detection_params": dict(params),
+            "canvas_annotations": [{"id": "x"}],
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+
+
+def test_reset_keeps_detection_params_changed_since() -> None:
+    params = dict(_PARAMS)
+    finding = _finding(
+        status="approved",
+        params=params,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+            # Someone re-tuned since approval — authoritative, not ours.
+            "detection_params": dict(params, sensitivity=0.4),
+        }
+    )
+    service.reset_finding(finding, image)
+    assert image.metadata_["detection_params"]["sensitivity"] == 0.4
+
+
+def test_reset_approved_without_params_is_unaffected() -> None:
+    finding = _finding(
+        status="approved",
+        params=None,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+
+
+async def test_bulk_approve_promotes_detection_params(monkeypatch) -> None:
+    finding = _finding(id=1, image_id=11, params=dict(_PARAMS))
+    image = _image(id=11)
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    db = AsyncMock()
+    db.get.side_effect = lambda model, i, **_kw: (
+        finding if model is MeasurementFinding else image
+    )
+    out = await router.bulk_approve(
+        MeasurementBulkApprove(ids=[1]), _user("admin"), db
+    )
+    assert out.approved == [1]
+    assert image.metadata_["detection_params"] == _PARAMS
+
+
 async def test_approve_without_scale_raises() -> None:
     with pytest.raises(ValueError):
         await service.approve_finding(

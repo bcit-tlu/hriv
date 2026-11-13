@@ -111,6 +111,7 @@ and every other key are preserved:
 | `measurement_unit`         | `um` unless the reviewer picked `nm`, `mm` or `cm`                              |
 | `measurement_scale_source` | Finding `source` (e.g. `rbc`), or `manual` when the scale or unit was corrected |
 | `measurement_finding_id`   | The approved finding                                                            |
+| `detection_params`         | The finding's tuned `params` (DetectionTuning), when set (#1869)                |
 
 When the image has no `objective_power` yet, approval also writes the
 finding's objective (or the reviewer's corrected one) as a float, e.g. `40.0`,
@@ -140,6 +141,9 @@ scale is still exactly the value the finding approved (`measurement_scale`,
 are removed and `version` incremented again. A scale changed since — by Edit
 image, a newer finding, or tooling — is authoritative and kept; the finding
 still returns to pending but stays hidden there while a scale exists.
+Promoted `detection_params` are removed under the same ownership rule —
+while the stored value still equals the finding's `params` — and a
+re-tuned-since value is kept.
 
 Replacing an image's source supersedes all its findings, so the replacement
 becomes eligible for a fresh scan.

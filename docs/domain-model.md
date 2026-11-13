@@ -145,7 +145,8 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   (nullable FK, `SET NULL`); `copyright`; `note`; `active` (boolean — inactive
   images are hidden from students); `metadata_` (JSONB, DB column `metadata` —
   stores `canvas_annotations`, `locked_overlays`, `measurement_scale`,
-  `measurement_unit`); `sort_order`; `version` (integer, starts at 1, used for
+  `measurement_unit`, `detection_params` — approved DetectionTuning);
+  `sort_order`; `version` (integer, starts at 1, used for
   optimistic concurrency); `width`; `height`; `file_size`.
 - **Common mistakes:**
   - `metadata_` is the Python attribute but the DB column is `metadata`.
