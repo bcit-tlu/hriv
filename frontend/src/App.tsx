@@ -155,6 +155,7 @@ import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { useShareableImageState } from './useShareableImageState'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
+import type { CanvasDraftHandle } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
 import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
@@ -969,6 +970,11 @@ export default function App() {
   } | null>(null)
   const pendingNavigationRef = useRef<(() => void) | null>(null)
   const [discardNavigationOpen, setDiscardNavigationOpen] = useState(false)
+  // Edit draft living inside a collection viewer (#1863) — the sequence
+  // viewer registers its dirty/saving state + discard here so the same
+  // navigation guards that protect the image-viewer draft cover collection
+  // item switching and closing the collection.
+  const collectionCanvasDraftRef = useRef<CanvasDraftHandle | null>(null)
   const [imagesVersion, setImagesVersion] = useState(0)
   useEffect(() => {
     setImagesVersionRef.current = setImagesVersion
@@ -993,11 +999,11 @@ export default function App() {
       traversal?: { historyIndex?: number },
       poppedCollectionFromBrowse?: boolean,
     ) => {
-      if (canvasSavingRef.current && traversal) {
+      if ((canvasSavingRef.current || collectionCanvasDraftRef.current?.saving) && traversal) {
         setErrorSnack('Please wait for the annotation save to finish.')
         return false
       }
-      if (canvasDraftDirtyRef.current && traversal) {
+      if ((canvasDraftDirtyRef.current || collectionCanvasDraftRef.current?.dirty) && traversal) {
         pendingPopStateRef.current = {
           page: popPage,
           catIds,
@@ -1389,6 +1395,13 @@ export default function App() {
     [setGroups],
   )
 
+  // After any image metadata write (annotations, locked overlays) the
+  // image-viewer host refreshes both lists (#1863 generalized the hooks to
+  // this callback so collection viewers can swap the member instead).
+  const handleImageSaved = useCallback(async () => {
+    await Promise.all([loadCategories(), loadUncategorizedImages()])
+  }, [loadCategories, loadUncategorizedImages])
+
   // Canvas annotations (extracted to useCanvasAnnotations hook)
   const {
     localCanvasAnnotations,
@@ -1402,8 +1415,7 @@ export default function App() {
     latestMetadataRef,
   } = useCanvasAnnotations({
     selectedImage,
-    loadCategories,
-    loadUncategorizedImages,
+    onImageSaved: handleImageSaved,
     setErrorSnack,
   })
 
@@ -1413,7 +1425,13 @@ export default function App() {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!canvasDraftDirtyRef.current && !canvasSavingRef.current) return
+      if (
+        !canvasDraftDirtyRef.current &&
+        !canvasSavingRef.current &&
+        !collectionCanvasDraftRef.current?.dirty &&
+        !collectionCanvasDraftRef.current?.saving
+      )
+        return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -1422,11 +1440,11 @@ export default function App() {
   }, [])
 
   const runCanvasNavigation = useCallback((action: () => void) => {
-    if (canvasSavingRef.current) {
+    if (canvasSavingRef.current || collectionCanvasDraftRef.current?.saving) {
       setErrorSnack('Please wait for the annotation save to finish.')
       return
     }
-    if (!canvasDraftDirtyRef.current) {
+    if (!canvasDraftDirtyRef.current && !collectionCanvasDraftRef.current?.dirty) {
       setCanvasEditActive(false)
       action()
       return
@@ -1436,11 +1454,14 @@ export default function App() {
   }, [])
 
   const confirmCanvasNavigationDiscard = useCallback(() => {
-    if (canvasSavingRef.current) {
+    if (canvasSavingRef.current || collectionCanvasDraftRef.current?.saving) {
       setErrorSnack('Please wait for the annotation save to finish.')
       return
     }
-    discardCanvasAnnotations()
+    // Discard whichever draft was blocking (at most one can be dirty — the
+    // guards prevent navigating from one dirty context into another).
+    collectionCanvasDraftRef.current?.discard()
+    if (canvasDraftDirtyRef.current) discardCanvasAnnotations()
     canvasDraftDirtyRef.current = false
     setCanvasEditActive(false)
     setDiscardNavigationOpen(false)
@@ -1490,8 +1511,7 @@ export default function App() {
     selectedImage,
     latestVersionRef,
     latestMetadataRef,
-    loadCategories,
-    loadUncategorizedImages,
+    onImageSaved: handleImageSaved,
     setLockEngaged,
     setErrorSnack,
   })
@@ -1950,26 +1970,28 @@ export default function App() {
   )
 
   const handleCloseCollection = useCallback(() => {
-    setSelectedCollectionId(null)
-    setSelectedCollectionItemId(null)
-    if (collectionFromBrowse) {
-      // `path` still holds the Browse scope the tile was opened from (#1529).
-      setCollectionFromBrowse(false)
-      setPage('browse')
+    runCanvasNavigation(() => {
+      setSelectedCollectionId(null)
+      setSelectedCollectionItemId(null)
+      if (collectionFromBrowse) {
+        // `path` still holds the Browse scope the tile was opened from (#1529).
+        setCollectionFromBrowse(false)
+        setPage('browse')
+        pushNavState(
+          'browse',
+          path.map((c) => c.id),
+        )
+        return
+      }
+      setCollectionsRefreshToken((n) => n + 1)
       pushNavState(
-        'browse',
-        path.map((c) => c.id),
+        'collections',
+        [],
+        null,
+        collectionsData.filters.type === 'all' ? undefined : { type: collectionsData.filters.type },
       )
-      return
-    }
-    setCollectionsRefreshToken((n) => n + 1)
-    pushNavState(
-      'collections',
-      [],
-      null,
-      collectionsData.filters.type === 'all' ? undefined : { type: collectionsData.filters.type },
-    )
-  }, [collectionFromBrowse, path, pushNavState, collectionsData.filters.type])
+    })
+  }, [collectionFromBrowse, path, pushNavState, collectionsData.filters.type, runCanvasNavigation])
 
   // Detail-header breadcrumb (#1559): jump from the open collection to its
   // filed Browse scope (or the root for `Home`). Clears the detail like
@@ -2145,21 +2167,23 @@ export default function App() {
   // shareable and in history, so back steps through viewed items (#1416).
   const handleSelectCollectionItem = useCallback(
     (imageId: number) => {
-      setSelectedCollectionItemId(imageId)
-      if (selectedCollectionId != null) {
-        pushNavState(
-          'collections',
-          collectionFromBrowse ? path.map((c) => c.id) : [],
-          null,
-          {
-            collection: String(selectedCollectionId),
-            item: String(imageId),
-          },
-          { collectionFromBrowse },
-        )
-      }
+      runCanvasNavigation(() => {
+        setSelectedCollectionItemId(imageId)
+        if (selectedCollectionId != null) {
+          pushNavState(
+            'collections',
+            collectionFromBrowse ? path.map((c) => c.id) : [],
+            null,
+            {
+              collection: String(selectedCollectionId),
+              item: String(imageId),
+            },
+            { collectionFromBrowse },
+          )
+        }
+      })
     },
-    [collectionFromBrowse, path, pushNavState, selectedCollectionId],
+    [collectionFromBrowse, path, pushNavState, selectedCollectionId, runCanvasNavigation],
   )
 
   // Drop an `?item=` that does not resolve to a visible member (deleted image,
@@ -2553,6 +2577,8 @@ export default function App() {
               onReorderImages={collectionsData.reorderImages}
               onCollectionImageRenewed={collectionsData.renewCollectionImage}
               onViewerError={setErrorSnack}
+              canAnnotateImages={canEditContent}
+              canvasDraftRef={collectionCanvasDraftRef}
               onViewChange={setCollectionsListView}
               onSaveViewport={collectionsData.saveViewport}
               loadCollection={collectionsData.loadCollection}

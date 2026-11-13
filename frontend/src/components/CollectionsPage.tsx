@@ -102,6 +102,7 @@ import CollectionManageDialog, { type StageAddImages } from './CollectionManageD
 import CollectionOwnersDialog from './CollectionOwnersDialog'
 import SequenceCollectionViewer from './SequenceCollectionViewer'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
+import type { CanvasDraftHandle } from '../useCanvasAnnotations'
 
 export interface CollectionsPageProps {
   currentUser: User | null
@@ -152,6 +153,17 @@ export interface CollectionsPageProps {
   onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
+  /**
+   * `canEditContent` from auth (#1863) — admins/instructors get the
+   * sequence viewer's annotation/overlay editing; students stay read-only.
+   * Orthogonal to `collection.permissions.canEdit` (curation).
+   */
+  canAnnotateImages?: boolean
+  /**
+   * Shared handle the sequence viewer registers its canvas-draft state on
+   * (#1863) so App's navigation guards cover item switching and closing.
+   */
+  canvasDraftRef?: React.MutableRefObject<CanvasDraftHandle | null>
   /** Reports the current Cards/Table/Graph view so the shell can fill the
    *  viewport in graph view (#1630 feedback). */
   onViewChange?: (view: CollectionsView) => void
@@ -664,6 +676,8 @@ export default function CollectionsPage({
   onReorderImages,
   onCollectionImageRenewed,
   onViewerError,
+  canAnnotateImages,
+  canvasDraftRef,
   onViewChange,
   onSaveViewport,
   loadCollection,
@@ -1207,6 +1221,8 @@ export default function CollectionsPage({
             onError={onViewerError}
             memberInfoNames={memberInfoNames}
             hidden={detail.hidden || detailCategoryHidden}
+            canEditContent={canAnnotateImages ?? false}
+            canvasDraftRef={canvasDraftRef}
           />
         </Box>
       )

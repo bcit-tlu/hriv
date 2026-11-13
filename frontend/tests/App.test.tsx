@@ -1032,6 +1032,89 @@ describe('App breadcrumbs', () => {
     expect(authState.logout).toHaveBeenCalledOnce()
   })
 
+  // #1863 — the sequence viewer registers its edit draft on the shared
+  // `canvasDraftRef` handle; the same dialog/guards then cover collection
+  // item switches and collection close.
+  async function openCollectionsPage() {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Shell tab collections' }))
+    expect(await screen.findByTestId('collections-page')).toBeInTheDocument()
+  }
+  function registerCollectionDraft(draft: { dirty: boolean; saving?: boolean }) {
+    const ref = collectionsPageProps.current?.canvasDraftRef as
+      { current: { dirty: boolean; saving: boolean; discard: () => void } | null } | undefined
+    expect(ref, 'canvasDraftRef prop').toBeTruthy()
+    ref!.current = { dirty: draft.dirty, saving: draft.saving ?? false, discard: vi.fn() }
+    return ref!.current!
+  }
+
+  it('passes the annotation gate and shared draft handle to the collections page', async () => {
+    await openCollectionsPage()
+    // The App-level user is an instructor → canEditContent.
+    expect(collectionsPageProps.current!.canAnnotateImages).toBe(true)
+    expect(collectionsPageProps.current!.canvasDraftRef).toBeTruthy()
+  })
+
+  it('confirms before switching collection items with a dirty collection draft', async () => {
+    await openCollectionsPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    const handle = registerCollectionDraft({ dirty: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard annotation changes?' })
+    expect(dialog).toHaveAccessibleDescription('Your unsaved annotation changes will be lost.')
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    // Keep Editing cancels the switch and stays on the current member.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep Editing' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+
+    // Retry → Discard Changes runs the registered discard and switches.
+    fireEvent.click(await screen.findByRole('button', { name: 'Select item 99' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(handle.discard).toHaveBeenCalledOnce()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', '99')
+  })
+
+  it('confirms before closing the collection with a dirty draft', async () => {
+    await openCollectionsPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Open collection 5' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+    registerCollectionDraft({ dirty: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close collection' }))
+    expect(screen.getByRole('dialog', { name: 'Discard annotation changes?' })).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', '5')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('blocks navigation while a collection draft save is pending', async () => {
+    await openCollectionsPage()
+    registerCollectionDraft({ dirty: false, saving: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select item 99' }))
+
+    expect(screen.queryByText('Discard annotation changes?')).not.toBeInTheDocument()
+    expect(screen.getByText('Please wait for the annotation save to finish.')).toBeInTheDocument()
+    expect(screen.getByTestId('collections-page')).toHaveAttribute('data-item', 'null')
+  })
+
+  it('blocks beforeunload while a collection draft is dirty or saving', async () => {
+    await openCollectionsPage()
+    const handle = registerCollectionDraft({ dirty: true })
+
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+
+    handle.dirty = false
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
+  })
+
   it('blocks navigation while an explicit canvas save is pending', async () => {
     let finishSave: ((saved: boolean) => void) | undefined
     canvasAnnotationsMock.saveCanvasAnnotations.mockReturnValue(

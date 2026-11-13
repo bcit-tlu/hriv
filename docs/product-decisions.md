@@ -25,6 +25,13 @@ specified in detail.
   See [`collections.md`](collections.md).
 - Concurrent edits use validate-then-compare-and-swap; no server-side sync of
   `hrivpref:` browser preferences.
+- Annotations on collection member images are **shared**: they live on the
+  image record and appear everywhere the image does — never stored
+  per-collection or per-member. Editing them inside a collection viewer is
+  gated on the auth `canEditContent` role gate (admin/instructor) — a
+  student's `permissions.canEdit` on the collection grants curation, not
+  image annotation rights (#1861, #1863). See
+  [`collections.md`](collections.md).
 
 ## Measurement review
 
