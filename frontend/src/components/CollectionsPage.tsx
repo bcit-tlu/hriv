@@ -710,6 +710,26 @@ export default function CollectionsPage({
   }
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
+  // Details-drawer program/group names per member (#1862): same narrowing
+  // semantics as the browse breadcrumb, resolved against the member's filed
+  // category. Unfiled members and categories absent from the caller's tree
+  // resolve to empty lists — the drawer omits those rows.
+  const memberInfoNames = useMemo(() => {
+    const byId = new Map<number, { programNames: string[]; groupNames: string[] }>()
+    for (const image of detail?.images ?? []) {
+      const seg = image.categoryId != null ? categoryPaths.get(image.categoryId) : undefined
+      const path = seg ? [...seg.ancestors, seg.category] : []
+      byId.set(image.id, {
+        programNames: narrowProgramIds(path).map(
+          (id) => programs.find((program) => program.id === id)?.name ?? String(id),
+        ),
+        groupNames: narrowGroupIds(path).map(
+          (id) => groups.find((group) => group.id === id)?.name ?? String(id),
+        ),
+      })
+    }
+    return byId
+  }, [categoryPaths, detail?.images, programs, groups])
   const detailCategoryPath = useMemo(() => {
     if (detail?.categoryId == null) return []
     const seg = categoryPaths.get(detail.categoryId)
@@ -1185,6 +1205,7 @@ export default function CollectionsPage({
             onOpenImage={onOpenImage}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
+            memberInfoNames={memberInfoNames}
             hidden={detail.hidden || detailCategoryHidden}
           />
         </Box>
@@ -1216,6 +1237,7 @@ export default function CollectionsPage({
             onOpenImage={onOpenImage}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
+            memberInfoNames={memberInfoNames}
             actionsContainer={syncActionsEl}
           />
         </Box>

@@ -1390,6 +1390,8 @@ label is rendered by the fitted cell;
 `CollectionsPage` for `type === 'sequence'` below the shared detail header.
 `App`/`useShareableImageState` own the selected item (`?item={image_id}`)
 and pass it down, so the position is shareable and participates in history.
+The member's metadata drawer is `components/CollectionImageDetails.tsx`
+(#1862) around `components/ImageDetailsDrawer.tsx`.
 
 **Read-only surface.** One `ImageViewer` at a time, `key={image.id}` so
 switching items remounts it and no viewport state bleeds between images.
@@ -1407,6 +1409,19 @@ current member exactly as in the image viewer
 selection and are cancelled when an item change remounts the viewer.
 Member visibility already matches the count endpoint's gate, so no extra
 authorization is needed.
+
+**Image details (#1862).** The same "i" trigger + metadata drawer the image
+viewer has is mounted here through `ImageViewer`'s `viewportControl` /
+`viewportOverlay` slots via `CollectionImageDetails` — a provider that
+carries the open state, focus ref and lazy `useImageSourceInfo` fetch
+between the two slots (source info loads only on first open). The provider
+is keyed `key={current.id}` like the viewer, so stepping to the next member
+resets the drawer closed. `CollectionsPage` resolves each member's
+**Program**/**Group** rows into a `memberInfoNames` map — the member's
+filed-category path narrowed with `narrowProgramIds`/`narrowGroupIds`,
+mapped to names with the `String(id)` fallback — so the drawer shows the
+same names the browse breadcrumb would; unfiled members and categories
+absent from the caller's tree get no entry and those rows are omitted.
 
 **Caption.** A caption row under the viewport — the same `ImageCaptionRow`
 the synchronized panes and the image-view info bar use — holds the member
@@ -1551,6 +1566,15 @@ each pane's selection-rectangle → **Count objects** flow works
 independently — jobs, outlines and the report belong to that pane's image
 and do not sync to the other panes
 ([object-counting.md](object-counting.md)).
+
+**Image details (#1862).** Each pane wraps its `ImageViewer` in its own
+`CollectionImageDetails` provider, so every pane gets an independent "i"
+trigger, drawer and lazy source-info fetch — opening one pane's drawer does
+not affect the others. Names resolve from the same `memberInfoNames` map the
+sequence viewer uses. Because two drawers can be open at once, the provider
+also gives each drawer a unique `drawerId` and member-qualified landmark
+names (`Image details — ‹member›`, `Viewer controls — ‹member›`) so the
+landmarks stay distinguishable to assistive tech.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw
@@ -1838,7 +1862,9 @@ the shared group-chip palette.
   editable-target key guard, read-only `ImageViewer` props
   (annotations / overlays / measurement from `metadataExtra`), tile-renewal
   forwarding, mid-session failure skip + all-failed state, hidden-prop
-  filmstrip desaturation; the Manage dialog covers `move()` reorder →
+  filmstrip desaturation, image-details trigger/drawer mount, lazy
+  source-info fetch on open, `memberInfoNames` rows and drawer reset on
+  member change (#1862); the Manage dialog covers `move()` reorder →
   `PUT` with version, optimistic order in
   `detail`, rollback on error, corner-control removal, `renewCollectionImage`
   member swap.
@@ -1852,7 +1878,8 @@ the shared group-chip palette.
   a saved view, portrait
   hint, `< 2`
   fallback + "Showing _N_ of _M_" over the four-pane cap, member failure
-  slide-up, editor-only Save;
+  slide-up, editor-only Save, per-pane image-details trigger/drawer with
+  independent open state and lazy source-info fetch (#1862);
   `saveViewport` whole-replace `PUT` with `version`, queue sharing with
   `reorderImages`, cross-collection detail guard;
   `ImageViewer.test.tsx` — `onViewerReady` mount/unmount contract.
