@@ -11,12 +11,14 @@ import {
   trailAlpha,
   INK_FADE_START_MS,
   INK_LIFETIME_MS,
-  INK_STROKE_COLOUR,
   INK_STROKE_WIDTH,
-  LASER_COLOUR,
   LASER_TRAIL_MS,
   LASER_TRAIL_POINTS,
+  type PresentationColors,
 } from '../src/components/presentationTools'
+
+// The real values come from the theme palette; fixtures mirror them.
+const COLORS: PresentationColors = { laser: '#FF2D2D', ink: '#00E5FF' }
 
 describe('inkStrokeAlpha', () => {
   it('is fully opaque until the fade window starts', () => {
@@ -63,7 +65,7 @@ describe('strokePathD', () => {
 
 describe('createPresentationLayer', () => {
   it('builds a passive, canvas-sized SVG overlay above the label container', () => {
-    const layer = createPresentationLayer()
+    const layer = createPresentationLayer(COLORS)
     const style = layer.svg.getAttribute('style') ?? ''
     expect(style).toContain('pointer-events:none')
     expect(style).toContain('position:absolute')
@@ -71,14 +73,14 @@ describe('createPresentationLayer', () => {
   })
 
   it('keeps the laser hidden until shown, then tracks positions', () => {
-    const layer = createPresentationLayer()
+    const layer = createPresentationLayer(COLORS)
     expect(layer.laserDot.getAttribute('display')).toBe('none')
 
     layer.setLaserVisible(true)
     layer.setLaserPosition(12.34, 56.78)
     expect(layer.laserDot.getAttribute('display')).toBe('')
     expect(layer.laserDot.getAttribute('transform')).toBe('translate(12.3 56.8)')
-    expect(layer.laserDot.querySelectorAll('circle')[1].getAttribute('fill')).toBe(LASER_COLOUR)
+    expect(layer.laserDot.querySelectorAll('circle')[1].getAttribute('fill')).toBe(COLORS.laser)
 
     layer.setLaserVisible(false)
     expect(layer.laserDot.getAttribute('display')).toBe('none')
@@ -86,17 +88,29 @@ describe('createPresentationLayer', () => {
   })
 
   it('pools the configured number of trail circles', () => {
-    const layer = createPresentationLayer()
+    const layer = createPresentationLayer(COLORS)
     expect(layer.trailDots).toHaveLength(LASER_TRAIL_POINTS)
   })
 
   it('creates round-capped cyan stroke elements inside the ink group', () => {
-    const layer = createPresentationLayer()
+    const layer = createPresentationLayer(COLORS)
     const path = layer.createStrokeElement()
     expect(path.parentElement).toBe(layer.inkGroup)
-    expect(path.getAttribute('stroke')).toBe(INK_STROKE_COLOUR)
+    expect(path.getAttribute('stroke')).toBe(COLORS.ink)
     expect(path.getAttribute('stroke-width')).toBe(String(INK_STROKE_WIDTH))
     expect(path.getAttribute('stroke-linecap')).toBe('round')
     expect(path.getAttribute('fill')).toBe('none')
+  })
+
+  it('re-themes laser, trail and existing strokes via setColors', () => {
+    const layer = createPresentationLayer(COLORS)
+    const path = layer.createStrokeElement()
+    const next: PresentationColors = { laser: '#123456', ink: '#654321' }
+    layer.setColors(next)
+
+    expect(layer.laserDot.querySelectorAll('circle')[1].getAttribute('fill')).toBe(next.laser)
+    expect(layer.trailDots.every((d) => d.getAttribute('fill') === next.laser)).toBe(true)
+    expect(path.getAttribute('stroke')).toBe(next.ink)
+    expect(layer.createStrokeElement().getAttribute('stroke')).toBe(next.ink)
   })
 })

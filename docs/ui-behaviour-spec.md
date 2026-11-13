@@ -313,7 +313,16 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
   ~8s, fades linearly to gone at ~10s, and at most ~100 strokes are kept
   (oldest dropped). A press with no drag renders a round-capped dot.
 - Laser / ink / selection / canvas-edit are mutually exclusive; a single
-  `setMouseNavEnabled` arbiter computes navigation from the active modes.
+  `setMouseNavEnabled` arbiter computes navigation from the active modes. A
+  pointer tool never arms over an active canvas edit — it queues behind the
+  draft's discard flow and arms when edit mode exits (a "Keep editing"
+  answer leaves everything as it was); entering full-page while editing
+  skips the auto-arm entirely.
+- Tracker gestures only start inside `viewer.canvas`: presses on the OSD
+  control dock or navigator (and any `data-hriv-canvas-ui` element) are
+  preprocessed away so a toolbar press can't drop a stray ink dot.
+- Laser and ink colours are theme tokens (`getPresentationColors`), not
+  hard-coded hex; the overlay re-themes on palette switches.
 - Mouse click-to-zoom is disabled everywhere
   (`gestureSettingsMouse.clickToZoom: false`); scroll, pinch and touch
   double-tap zoom are unchanged (#1877).
@@ -323,8 +332,10 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
 - The layer is a single `<svg>` appended to `viewer.canvas` at `z-index: 11`
   (above the measurement-label container, `pointer-events: none`), holding
   the ink paths, a pooled set of trail circles, and the laser dot; a
-  `requestAnimationFrame` loop runs only while trail points or fading
-  strokes remain.
+  `requestAnimationFrame` loop runs only while trail points or actively
+  fading strokes remain, and opaque strokes wake it with a one-shot
+  `setTimeout` at their fade start. Full detail:
+  [docs/presentation-tools.md](presentation-tools.md).
 
 ### Collections pages + manage table (`CollectionsPage.test.tsx`, `CollectionCard.test.tsx`, `CollectionEditDialog.test.tsx`, `CollectionOwnersDialog.test.tsx`, `CollectionsTable.test.tsx`, `App.test.tsx`)
 

@@ -44,6 +44,12 @@ const lightPalette = {
    * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
    */
   visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
+  /**
+   * Presentation pointer tools (epic #1876). A saturated red laser dot and
+   * bright cyan ink — both must read against stained-tissue imagery and a
+   * projection screen, so the values are identical across modes.
+   */
+  presentation: { laser: '#FF2D2D', ink: '#00E5FF' },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -88,6 +94,8 @@ const darkPalette = {
     inactive: '#E0DDD999',
     inactiveChipBg: '#6B6966',
   },
+  /** Presentation pointer tools — same values as light mode (see comment there). */
+  presentation: { laser: '#FF2D2D', ink: '#00E5FF' },
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +164,17 @@ export function getVisibilityColors(mode: HrivThemeMode): {
   inactiveChipBg: string
 } {
   return mode === 'dark' ? darkPalette.visibility : lightPalette.visibility
+}
+
+/**
+ * Presentation pointer-tool colours for the current mode: `laser` is the
+ * glowing dot/trail fill, `ink` the ephemeral freehand stroke colour.
+ */
+export function getPresentationColors(mode: HrivThemeMode): {
+  laser: string
+  ink: string
+} {
+  return mode === 'dark' ? darkPalette.presentation : lightPalette.presentation
 }
 
 // ---------------------------------------------------------------------------

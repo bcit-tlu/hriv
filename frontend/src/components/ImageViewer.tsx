@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import { useTheme } from '@mui/material/styles'
 import type { ResponsiveStyleValue } from '@mui/system'
 import {
   emitEvent,
@@ -20,14 +21,17 @@ import {
   inkStrokeAlpha,
   strokePathD,
   trailAlpha,
+  INK_FADE_START_MS,
   INK_MIN_POINT_PX,
   LASER_CORE_RADIUS,
   LASER_TRAIL_MS,
   LASER_TRAIL_POINTS,
   MAX_INK_STROKES,
   type InkStroke,
+  type PresentationLayer,
   type PresentationTool,
 } from './presentationTools'
+import { getPresentationColors } from '../theme'
 import {
   formatMeasurement,
   createMeasurementLabel,
@@ -160,6 +164,7 @@ export default function ImageViewer({
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
+  const theme = useTheme()
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
   // Object counting (epic #1661): drawn selections with stable keys.
@@ -167,6 +172,7 @@ export default function ImageViewer({
     { key: number; index: number; rect: { x: number; y: number; width: number; height: number } }[]
   >([])
   const [clearedToken, setClearedToken] = useState(0)
+  const [presentationLayer, setPresentationLayer] = useState<PresentationLayer | null>(null)
   const [selectionDrawing, setSelectionDrawing] = useState(false)
   const [controlWrapper, setControlWrapper] = useState<HTMLDivElement | null>(null)
   const [viewerMountReady, setViewerMountReady] = useState(!deferViewerInitializationForStrictMode)
@@ -247,6 +253,13 @@ export default function ImageViewer({
   useEffect(() => {
     onCanvasEditModeChangeRef.current = onCanvasEditModeChange
   }, [onCanvasEditModeChange])
+  // Keep the presentation overlay on the active palette (#1876).
+  useEffect(() => {
+    presentationLayer?.setColors(getPresentationColors(theme.palette.mode))
+  }, [presentationLayer, theme.palette.mode])
+  const getCurrentPresentationColors = useEffectEvent(() =>
+    getPresentationColors(theme.palette.mode),
+  )
   const emitToolbarAction = useCallback((action: string) => {
     emitEvent({
       event: 'ui.toolbar_action',
@@ -262,6 +275,9 @@ export default function ImageViewer({
   // the ink tool all disable navigation, so raw set(true) calls can stomp an
   // armed mode (epic #1876).
   const syncMouseNavRef = useRef<(() => void) | null>(null)
+  // Arms a presentation tool queued while a dirty canvas draft blocked it;
+  // invoked when edit mode exits (epic #1876).
+  const notifyCanvasEditExitedRef = useRef<(() => void) | null>(null)
   const canvasCancelRef = useRef<(() => Promise<void>) | null>(null)
   const registerCanvasCancel = useCallback((handler: (() => Promise<void>) | null) => {
     canvasCancelRef.current = handler
@@ -740,15 +756,21 @@ export default function ImageViewer({
 
     // --- Presentation pointer tools (epic #1876): laser pointer + ephemeral
     // ink, armed only in OSD full-page mode. Ink is never persisted.
-    const presentationUi = createPresentationLayer()
+    const presentationUi = createPresentationLayer(getCurrentPresentationColors())
+    setPresentationLayer(presentationUi)
     viewer.canvas.appendChild(presentationUi.svg)
 
     let presentationTool: PresentationTool | null = null
+    // A tool queued while a dirty canvas draft blocked arming (a discard
+    // prompt can end in "Keep editing", which leaves edit mode active).
+    let pendingPresentationTool: PresentationTool | null = null
     const inkStrokes: InkStroke[] = []
     let inkDrawing: InkStroke | null = null
     let inkLastPx: OpenSeadragon.Point | null = null
     const trailPoints: { x: number; y: number; t: number }[] = []
     let presentationRaf: number | null = null
+    // One-shot wake so opaque strokes don't keep the RAF loop alive.
+    let inkWakeTimer: number | null = null
 
     const syncMouseNav = () => {
       viewer.setMouseNavEnabled(
@@ -790,6 +812,8 @@ export default function ImageViewer({
         dot.setAttribute('r', Math.max(0.5, LASER_CORE_RADIUS - i * 0.3).toFixed(1))
         dot.setAttribute('opacity', (trailAlpha(now - point.t) * 0.7).toFixed(2))
       })
+      let inkFading = false
+      let inkWakeAt = Number.POSITIVE_INFINITY
       for (let i = inkStrokes.length - 1; i >= 0; i -= 1) {
         const stroke = inkStrokes[i]
         if (stroke.finishedAt == null) continue
@@ -799,13 +823,23 @@ export default function ImageViewer({
           inkStrokes.splice(i, 1)
         } else {
           stroke.element.setAttribute('opacity', alpha.toFixed(2))
+          if (alpha < 1) inkFading = true
+          else inkWakeAt = Math.min(inkWakeAt, stroke.finishedAt + INK_FADE_START_MS)
         }
       }
-      const inkStillAnimating = inkStrokes.some(
-        (stroke) => stroke.finishedAt != null && inkStrokeAlpha(now - stroke.finishedAt) > 0,
-      )
-      if (trailPoints.length > 0 || inkStillAnimating) {
+      if (trailPoints.length > 0 || inkFading) {
         presentationRaf = window.requestAnimationFrame(presentationTick)
+      } else if (inkWakeAt !== Number.POSITIVE_INFINITY) {
+        // Opaque strokes look identical every frame — wake once when the
+        // earliest one reaches its fade start instead of spinning on RAF.
+        if (inkWakeTimer != null) window.clearTimeout(inkWakeTimer)
+        inkWakeTimer = window.setTimeout(
+          () => {
+            inkWakeTimer = null
+            ensurePresentationTicker()
+          },
+          Math.max(0, inkWakeAt - now),
+        )
       }
     }
     const ensurePresentationTicker = () => {
@@ -869,6 +903,15 @@ export default function ImageViewer({
 
     const setPresentationTool = (tool: PresentationTool | null) => {
       if (tool === presentationTool) return
+      // A canvas draft gates arming: its cancel flow may open a discard
+      // prompt, and "Keep editing" leaves edit mode active — a pointer tool
+      // must never arm over the Fabric canvas. The queued tool arms via
+      // notifyCanvasEditExited when edit mode actually exits.
+      if (tool != null && canvasEditModeRef.current && canvasCancelRef.current) {
+        pendingPresentationTool = tool
+        void canvasCancelRef.current()
+        return
+      }
       const leaving = presentationTool
       presentationTool = tool
       if (leaving === 'laser') {
@@ -882,9 +925,6 @@ export default function ImageViewer({
           selectionModeRef.current = false
           setSelectionDrawing(false)
           setButtonIcons(selectionButton, 'selection')
-        }
-        if (canvasEditModeRef.current && canvasCancelRef.current) {
-          void canvasCancelRef.current()
         }
         emitToolbarAction(tool === 'laser' ? 'laser_pointer_on' : 'ink_on')
       } else if (leaving != null) {
@@ -935,15 +975,27 @@ export default function ImageViewer({
     })
 
     // Full-page entry arms the laser; exit disarms and clears all ink.
+    // Auto-arming is skipped while canvas edit mode is active — annotation
+    // editing works in full-page too, so entering must not tear it down.
     const applyFullPagePresentation = (fullPage: boolean) => {
       laserWrapper.style.display = fullPage ? 'inline-block' : 'none'
       inkWrapper.style.display = fullPage ? 'inline-block' : 'none'
       if (fullPage) {
-        setPresentationTool('laser')
+        if (!canvasEditModeRef.current) setPresentationTool('laser')
       } else {
+        pendingPresentationTool = null
         setPresentationTool(null)
         clearInk()
       }
+    }
+
+    // When canvas edit mode exits, arm the tool a presenter queued behind a
+    // dirty-draft discard prompt — but only while still in full-page, since
+    // the buttons are hidden otherwise.
+    notifyCanvasEditExitedRef.current = () => {
+      const pending = pendingPresentationTool
+      pendingPresentationTool = null
+      if (pending != null && viewer.isFullPage()) setPresentationTool(pending)
     }
 
     // User testing found the +/- buttons useless; hide them in full-screen so
@@ -967,7 +1019,12 @@ export default function ImageViewer({
       // breaks the toolbar's arrow-key nudge. preventGesture skips both.
       preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
         const target = event.originalEvent?.target
-        if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
+        // Presses outside viewer.canvas (OSD control dock, navigator) or on
+        // tagged canvas UI must not start a selection rect or ink stroke.
+        if (
+          target instanceof Element &&
+          (target.closest('[data-hriv-canvas-ui]') || !viewer.canvas.contains(target))
+        ) {
           event.preventGesture = true
         }
       },
@@ -1484,15 +1541,22 @@ export default function ImageViewer({
       setCanvasEditMode(false)
       setViewerInstance(null)
       presentationTool = null
+      pendingPresentationTool = null
       if (presentationRaf != null) {
         window.cancelAnimationFrame(presentationRaf)
         presentationRaf = null
       }
+      if (inkWakeTimer != null) {
+        window.clearTimeout(inkWakeTimer)
+        inkWakeTimer = null
+      }
       clearInk()
       trailPoints.length = 0
       presentationUi.svg.remove()
+      setPresentationLayer(null)
       viewer.canvas.style.cursor = ''
       syncMouseNavRef.current = null
+      notifyCanvasEditExitedRef.current = null
       if (renewalTimerRef.current != null) {
         window.clearTimeout(renewalTimerRef.current)
         renewalTimerRef.current = null
@@ -1574,6 +1638,8 @@ export default function ImageViewer({
     syncMouseNavRef.current?.()
     updateCanvasEditUiRef.current?.(mode)
     onCanvasEditModeChangeRef.current?.(mode)
+    // Arm a presentation tool that waited on this exit (#1876).
+    if (!mode) notifyCanvasEditExitedRef.current?.()
   }, [])
 
   return (

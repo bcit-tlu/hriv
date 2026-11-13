@@ -7,17 +7,19 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 
 export type PresentationTool = 'laser' | 'ink'
 
+/** Theme-palette colours driving the overlay (see getPresentationColors). */
+export interface PresentationColors {
+  laser: string
+  ink: string
+}
+
 /** Ms a trail point lingers behind the laser dot. */
 export const LASER_TRAIL_MS = 450
 /** Pooled trail circles (oldest first is dimmest). */
 export const LASER_TRAIL_POINTS = 10
-export const LASER_COLOUR = '#ff2d2d'
-/** Core dot radius; the halo around it reads from the back of a room. */
 export const LASER_CORE_RADIUS = 4.5
 export const LASER_GLOW_RADIUS = 14
 
-/** Bright cyan — reads against H&E pink/purple stains. */
-export const INK_STROKE_COLOUR = '#00E5FF'
 export const INK_STROKE_WIDTH = 4
 export const INK_FADE_START_MS = 8_000
 export const INK_LIFETIME_MS = 10_000
@@ -64,9 +66,12 @@ export interface PresentationLayer {
   setLaserPosition(x: number, y: number): void
   setLaserVisible(visible: boolean): void
   createStrokeElement(): SVGPathElement
+  /** Re-apply theme colours (e.g. on a light/dark switch). */
+  setColors(colors: PresentationColors): void
 }
 
-export function createPresentationLayer(): PresentationLayer {
+export function createPresentationLayer(colors: PresentationColors): PresentationLayer {
+  let currentColors = colors
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('data-hriv-presentation-layer', '')
   svg.setAttribute(
@@ -85,7 +90,7 @@ export function createPresentationLayer(): PresentationLayer {
   const trailDots: SVGCircleElement[] = []
   for (let i = 0; i < LASER_TRAIL_POINTS; i += 1) {
     const dot = document.createElementNS(SVG_NS, 'circle')
-    dot.setAttribute('fill', LASER_COLOUR)
+    dot.setAttribute('fill', colors.laser)
     dot.setAttribute('opacity', '0')
     trailGroup.appendChild(dot)
     trailDots.push(dot)
@@ -97,11 +102,11 @@ export function createPresentationLayer(): PresentationLayer {
   laserDot.setAttribute('display', 'none')
   const glow = document.createElementNS(SVG_NS, 'circle')
   glow.setAttribute('r', String(LASER_GLOW_RADIUS))
-  glow.setAttribute('fill', LASER_COLOUR)
+  glow.setAttribute('fill', colors.laser)
   glow.setAttribute('opacity', '0.3')
   const core = document.createElementNS(SVG_NS, 'circle')
   core.setAttribute('r', String(LASER_CORE_RADIUS))
-  core.setAttribute('fill', LASER_COLOUR)
+  core.setAttribute('fill', colors.laser)
   laserDot.appendChild(glow)
   laserDot.appendChild(core)
   svg.appendChild(laserDot)
@@ -124,12 +129,19 @@ export function createPresentationLayer(): PresentationLayer {
     createStrokeElement() {
       const path = document.createElementNS(SVG_NS, 'path')
       path.setAttribute('fill', 'none')
-      path.setAttribute('stroke', INK_STROKE_COLOUR)
+      path.setAttribute('stroke', currentColors.ink)
       path.setAttribute('stroke-width', String(INK_STROKE_WIDTH))
       path.setAttribute('stroke-linecap', 'round')
       path.setAttribute('stroke-linejoin', 'round')
       inkGroup.appendChild(path)
       return path
+    },
+    setColors(next) {
+      currentColors = next
+      core.setAttribute('fill', next.laser)
+      glow.setAttribute('fill', next.laser)
+      for (const dot of trailDots) dot.setAttribute('fill', next.laser)
+      for (const path of inkGroup.children) path.setAttribute('stroke', next.ink)
     },
   }
 }

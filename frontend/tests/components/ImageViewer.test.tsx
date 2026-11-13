@@ -319,6 +319,12 @@ vi.mock('openseadragon', () => {
   return { default: OSD }
 })
 
+const canvasOverlayMockState = vi.hoisted(() => ({
+  // When true the registered cancel handler behaves like a dirty-draft cancel
+  // answered with "Keep editing": edit mode stays on.
+  cancelKeepsEditing: false,
+}))
+
 vi.mock('../../src/components/CanvasOverlay', () => ({
   default: ({
     editMode,
@@ -329,7 +335,9 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
     onEditModeChange: (mode: boolean) => void
     registerCancelHandler: (handler: (() => Promise<void>) | null) => void
   }) => {
-    registerCancelHandler(async () => onEditModeChange(false))
+    registerCancelHandler(async () => {
+      if (!canvasOverlayMockState.cancelKeepsEditing) onEditModeChange(false)
+    })
     return (
       <div>
         <div>canvas edit: {String(editMode)}</div>
@@ -389,6 +397,7 @@ beforeEach(() => {
   osdState.buttons.length = 0
   osdState.trackers.length = 0
   osdState.initError = null
+  canvasOverlayMockState.cancelKeepsEditing = false
   resetTileTokenRenewalCacheForTests()
   setFullscreenElement(null)
   vi.useRealTimers()
@@ -1347,10 +1356,20 @@ describe('ImageViewer selection rectangles', () => {
     preProcess!(uiEvent)
     expect(uiEvent.preventGesture).toBe(true)
 
+    // Targets inside viewer.canvas (the tile surface, overlays, labels) are
+    // gestures; anything else in viewer.element — the OSD control dock,
+    // navigator — is not, so a dock press can't start a rect or ink stroke.
     const canvasTarget = document.createElement('div')
+    viewer().canvas.appendChild(canvasTarget)
     const viewerEvent = { originalEvent: { target: canvasTarget }, preventGesture: false }
     preProcess!(viewerEvent)
     expect(viewerEvent.preventGesture).toBe(false)
+
+    const dockTarget = document.createElement('div')
+    viewer().container.appendChild(dockTarget)
+    const dockEvent = { originalEvent: { target: dockTarget }, preventGesture: false }
+    preProcess!(dockEvent)
+    expect(dockEvent.preventGesture).toBe(true)
 
     const noTarget = { originalEvent: {}, preventGesture: false }
     preProcess!(noTarget)
@@ -1961,6 +1980,38 @@ describe('ImageViewer presentation tools (#1876)', () => {
       tracker().options.releaseHandler()
     })
     expect(viewer().canvas.querySelector('[data-hriv-ink] path')).toBeNull()
+  })
+
+  it('never arms a pointer tool over a dirty canvas draft', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    // Enter canvas edit mode, then full-page: annotation editing works in
+    // full-page too, so entry must not tear it down to arm the laser.
+    act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
+    canvasOverlayMockState.cancelKeepsEditing = true
+    enterFullPage()
+    expect(presentationButtonWrapper('Laser pointer').style.display).toBe('inline-block')
+    expect(observabilityMocks.emitEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'laser_pointer_on' }),
+    )
+
+    // Pressing ink opens the discard prompt; answering "Keep editing" leaves
+    // the tool disarmed instead of fighting the Fabric canvas for input.
+    act(() => buttonByTooltip('Freehand ink').options.onClick())
+    expect(viewer().canvas.style.cursor).not.toBe('crosshair')
+    expect(observabilityMocks.emitEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ink_on' }),
+    )
+
+    // When the draft is later discarded and edit mode exits, the queued ink
+    // tool arms — still inside full-page.
+    act(() => {
+      screen.getByText('Overlay done').click()
+    })
+    expect(observabilityMocks.emitEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'ink_on' }),
+    )
+    expect(viewer().canvas.style.cursor).toBe('crosshair')
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
   })
 
   it('cleans up the layer, ticker and cursor on unmount', () => {
