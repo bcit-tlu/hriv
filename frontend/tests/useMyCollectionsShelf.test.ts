@@ -37,10 +37,9 @@ describe('useMyCollectionsShelf', () => {
   })
 
   it('keeps loaded rows when a refetch resolves a non-array (#1892)', async () => {
-    // A 304 short-circuit resolves a non-array body; it must not blank the
-    // shelf. (JSON.parse returns `any`, so the mock needs no type escape.)
+    // A 304 short-circuit resolves `undefined`; it must not blank the shelf.
     const first = makeApiCollectionSummary({ id: 1 })
-    fetchCollections.mockResolvedValueOnce([first]).mockResolvedValueOnce(JSON.parse('null'))
+    fetchCollections.mockResolvedValueOnce([first]).mockResolvedValueOnce(undefined)
     const { result } = renderHook(() => useMyCollectionsShelf(true))
     await waitFor(() =>
       expect(result.current.collections).toEqual([apiCollectionSummaryToSummary(first)]),

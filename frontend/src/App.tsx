@@ -681,7 +681,7 @@ export default function App() {
         if (!cancelled) {
           setMyCollectionsCapState({
             userId: currentUser.id,
-            types: studentTypesAtCap(rows.map(apiCollectionSummaryToSummary), currentUser),
+            types: studentTypesAtCap((rows ?? []).map(apiCollectionSummaryToSummary), currentUser),
           })
         }
       })

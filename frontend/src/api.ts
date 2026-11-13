@@ -814,7 +814,7 @@ function collectionsQueryString(filters: CollectionFilters): string {
 export function fetchCollections(
   filters: CollectionFilters = {},
   init?: RequestInit,
-): Promise<ApiCollectionSummary[]> {
+): Promise<ApiCollectionSummary[] | undefined> {
   const qs = collectionsQueryString(filters)
   // no-store (as in fetchCollectionsPaged): these callers never opt into
   // conditional requests, so a browser-synthesized If-None-Match → 304
