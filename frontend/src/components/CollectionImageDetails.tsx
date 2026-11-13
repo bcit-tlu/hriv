@@ -23,7 +23,10 @@ interface CollectionImageDetailsContextValue {
   sourceInfo: ImageSourceInfo | null
   /** Unique drawer id — synchronized panes can have two drawers open at once. */
   drawerId: string
-  /** Member name qualifying the landmark names so open panes' drawers are distinguishable. */
+  /**
+   * Member label (name + id) qualifying the landmark names so open panes'
+   * drawers are distinguishable even when two members share a name.
+   */
   drawerLabel: string
 }
 
@@ -58,7 +61,9 @@ export function CollectionImageDetails({
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const drawerId = `collection-details-${useId()}`
-  const drawerLabel = image.name
+  // The id suffix keeps landmark names unique when two members share a
+  // name — image names are not constrained unique.
+  const drawerLabel = `${image.name} (${image.id})`
   const sourceInfo = useImageSourceInfo(image.id, image.version, open)
 
   // A canvas-edit session (or any future `disabled` cause) closes the

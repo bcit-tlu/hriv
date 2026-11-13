@@ -1573,8 +1573,9 @@ trigger, drawer and lazy source-info fetch — opening one pane's drawer does
 not affect the others. Names resolve from the same `memberInfoNames` map the
 sequence viewer uses. Because two drawers can be open at once, the provider
 also gives each drawer a unique `drawerId` and member-qualified landmark
-names (`Image details — ‹member›`, `Viewer controls — ‹member›`) so the
-landmarks stay distinguishable to assistive tech.
+names (`Image details — ‹member› (‹id›)`, `Viewer controls — ‹member›
+(‹id›)`) so the landmarks stay distinguishable to assistive tech even when
+two members share a name.
 
 **Linked navigation.** `ImageViewer` exposes the OSD instance through a new
 `onViewerReady(viewer | null)` prop; the component attaches raw
