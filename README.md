@@ -183,6 +183,7 @@ reconciliation model for both environments.
 | [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
 | [docs/announcements.md](docs/announcements.md)                                             | Announcements model, audience union rule, kinds, seen-state, reactions, API      |
 | [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
+| [docs/presentation-tools.md](docs/presentation-tools.md)                                   | Full-screen laser pointer and ephemeral ink tools for presenting images          |
 | [docs/user-deactivation.md](docs/user-deactivation.md)                                     | Admin user deactivation flow, API, auth enforcement, and People page behavior    |
 | [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                                   | In-app feedback routing, provider contract, and environment policy               |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md)       | Dual-gate student visibility (programs AND groups), cascade rules, tree loading  |
