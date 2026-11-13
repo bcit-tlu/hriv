@@ -981,7 +981,10 @@ export default function ImageViewer({
       laserWrapper.style.display = fullPage ? 'inline-block' : 'none'
       inkWrapper.style.display = fullPage ? 'inline-block' : 'none'
       if (fullPage) {
-        if (!canvasEditModeRef.current) setPresentationTool('laser')
+        // Editing continues into full-page, so the entry auto-arm becomes a
+        // queued arm — the laser turns on when edit mode exits.
+        if (canvasEditModeRef.current) pendingPresentationTool = 'laser'
+        else setPresentationTool('laser')
       } else {
         pendingPresentationTool = null
         setPresentationTool(null)

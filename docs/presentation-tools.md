@@ -68,7 +68,9 @@ cursor was too small for participants in the back to follow.
 - A pointer tool never arms over an active canvas-edit session: arming first
   triggers the cancel flow (a dirty draft shows the discard prompt), and
   the tool stays queued behind `pendingPresentationTool` until edit mode
-  actually exits — "Keep editing" leaves everything untouched.
+  actually exits — "Keep editing" leaves everything untouched. Entering
+  full-page during an edit queues the laser the same way, since annotation
+  editing works in full-page too.
 - The shared `MouseTracker`'s `preProcessEventHandler` skips gestures whose
   target is tagged `data-hriv-canvas-ui` **or outside `viewer.canvas`**, so
   presses on the OSD control dock/navigator can't start a rect or stroke.

@@ -317,7 +317,7 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
   pointer tool never arms over an active canvas edit — it queues behind the
   draft's discard flow and arms when edit mode exits (a "Keep editing"
   answer leaves everything as it was); entering full-page while editing
-  skips the auto-arm entirely.
+  queues the laser the same way rather than arming over the Fabric canvas.
 - Tracker gestures only start inside `viewer.canvas`: presses on the OSD
   control dock or navigator (and any `data-hriv-canvas-ui` element) are
   preprocessed away so a toolbar press can't drop a stray ink dot.
