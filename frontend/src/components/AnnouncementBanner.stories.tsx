@@ -222,7 +222,7 @@ export const MarkdownBody: Story = {
   args: {
     title: 'Laser pointer in full-screen view',
     message:
-      'Switch into **full-screen mode** and your cursor becomes a laser pointer — [read the guide](?page=guide) for the rest of the pointer tools.\n\n![full-screen.png](/api/media/4)',
+      'Switch into **full-screen mode** and your cursor becomes a laser pointer — [read the guide](?page=guide) for the rest of the pointer tools.',
     kind: 'release',
     variant: 'app',
     onDismiss: () => {},

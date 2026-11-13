@@ -61,7 +61,10 @@ export default function AnnouncementBanner({
   const [expanded, setExpanded] = useState(false)
   if (!message && !title) return null
   const clamped = clamp && !expanded
-  const longBody = message.length > 160 || message.includes('\n')
+  // Media refs get a More/Less toggle too — an image or video under the
+  // two-line clamp is clipped with no controls otherwise.
+  const longBody =
+    message.length > 160 || message.includes('\n') || /\/api\/media\/\d+/.test(message)
   const meta = kind ? kindMeta(kind) : null
 
   const alert = (

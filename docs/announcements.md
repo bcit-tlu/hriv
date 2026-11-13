@@ -172,7 +172,9 @@ menu and the Admin **Changelog** tab, so the Admin page opens on **Backups**.
 - **Login broadcast** (`fetchAnnouncementBroadcast`): the newest live
   `everyone` + `banner` post renders above the login form, read-only — the
   response mints `media_tokens` too (stateless HMAC, no session needed) so
-  embedded media resolves pre-auth.
+  embedded media resolves pre-auth. Broadcast tokens cover _embed-position_
+  refs only — `![..](..)` images and bare-line video — so a plain-text or
+  code mention in a public post can't mint a usable token.
 - **Bell peek** lists titles only; reactions live on the Announcements page.
 
 | Surface            | File                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

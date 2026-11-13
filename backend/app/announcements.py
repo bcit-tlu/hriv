@@ -249,6 +249,37 @@ def media_ids_in(message: str) -> list[int]:
     return seen
 
 
+_FENCED_CODE_RE = re.compile(r"```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~", re.DOTALL)
+_EMBEDDED_MEDIA_RE = re.compile(
+    r"!\[[^\]]*\]\(/api/media/(\d+)[^)]*\)|^[ \t]*/api/media/(\d+)[ \t]*$",
+    re.MULTILINE,
+)
+
+
+def embedded_media_ids(message: str) -> list[int]:
+    """Distinct media ids in *embed* position only (#1898).
+
+    The public broadcast mints tokens only where a reader actually needs
+    one — ``![alt](/api/media/{id})`` image syntax and the bare-line
+    ``/api/media/{id}`` video embed — so a plain-text or code mention of
+    a media URL in a public post cannot leak a usable token. Fenced code
+    is stripped before scanning."""
+    text = _FENCED_CODE_RE.sub("", message or "")
+    seen: list[int] = []
+    for match in _EMBEDDED_MEDIA_RE.finditer(text):
+        media_id = int(match.group(1) or match.group(2))
+        if media_id not in seen:
+            seen.append(media_id)
+    return seen
+
+
+def embedded_media_tokens_for(message: str) -> dict[str, str]:
+    """``media_tokens`` scoped to embedded media — for the public broadcast."""
+    from .media_tokens import issue_media_token
+
+    return {str(media_id): issue_media_token(media_id) for media_id in embedded_media_ids(message)}
+
+
 def reaction_counts(ann: Announcement) -> dict[str, int]:
     counts: dict[str, int] = {}
     for reaction in ann.reactions:

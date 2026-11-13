@@ -252,6 +252,19 @@ async def test_broadcast_returns_minimal_shape_and_filters_in_sql() -> None:
     assert "announcements.publish_at IS NOT NULL" in sql
 
 
+async def test_broadcast_mints_tokens_only_for_embedded_media() -> None:
+    """A public post must not leak tokens for plain-text/code media mentions."""
+    message = (
+        "See ![shot](/api/media/4) inline and the video below.\n\n"
+        "/api/media/9\n\n"
+        "The URL `/api/media/11` is retired.\n\n"
+        "```\n/api/media/13\n```"
+    )
+    db = _db([_ann(id=1, kind="notice", banner=True, message=message)])
+    (out,) = await list_broadcast(db)
+    assert set(out.media_tokens) == {"4", "9"}
+
+
 # ── create ────────────────────────────────────────────────────
 
 
