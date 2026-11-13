@@ -23,6 +23,8 @@ UNIT_KEY = "measurement_unit"
 SOURCE_KEY = "measurement_scale_source"
 FINDING_KEY = "measurement_finding_id"
 OBJECTIVE_KEY = "objective_power"
+# Instructor-tuned detection values (DetectionTuning dict); counting reads it.
+DETECTION_PARAMS_KEY = "detection_params"
 
 # Slide scans this large shrink cells below detection in the work thumbnail.
 RBC_MAX_SIDE_PX = 8000
@@ -186,6 +188,12 @@ async def scan_image(
                 await db.flush()
                 finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
                 finding.approved_objective = owner.approved_objective
+                # Same hand-off for detection params: carry only while the
+                # stored value is still what the superseded approval
+                # promoted, so a later reset can undo it; a retuned-since
+                # value stays externally owned and is never claimed.
+                if meta.get(DETECTION_PARAMS_KEY) == owner.params:
+                    finding.params = owner.params
                 image.metadata_ = {**meta, FINDING_KEY: finding.id}
                 image.version = image.version + 1
             return finding
@@ -327,13 +335,18 @@ async def approve_finding(
     if final_scale is None or final_scale <= 0:
         raise ValueError("finding has no scale to approve")
     final_unit = unit or finding.proposed_unit
-    image.metadata_ = merged_measurement_metadata(
+    merged = merged_measurement_metadata(
         image.metadata_,
         final_scale,
         final_unit,
         "manual" if edited else finding.source,
         finding.id,
     )
+    if finding.params is not None:
+        # Tuning describes detection, not the promoted scale — it promotes
+        # even when the reviewer corrected scale or objective (#1869).
+        merged[DETECTION_PARAMS_KEY] = finding.params
+    image.metadata_ = merged
     written_objective = None
     if objective and image.metadata_.get(OBJECTIVE_KEY) is None:
         image.metadata_ = {**image.metadata_, OBJECTIVE_KEY: float(objective)}
@@ -396,8 +409,9 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
     promoted — a scale since changed by anything else is authoritative and
     left alone (the finding still returns to pending, where the list hides
     it while a scale exists). The objective it wrote (``approved_objective``)
-    is removed whenever it is still the stored value. Returns True when image
-    metadata changed.
+    is removed whenever it is still the stored value, and promoted
+    ``detection_params`` are removed while they still equal the finding's
+    params. Returns True when image metadata changed.
     """
     meta = image.metadata_ or {}
     stripped = False
@@ -411,6 +425,14 @@ def reset_finding(finding: MeasurementFinding, image: Image) -> bool:
             finding.approved_objective
         ):
             kept.pop(OBJECTIVE_KEY, None)
+        # Detection params follow the same ownership: removed only while the
+        # stored value is still exactly what this approval promoted; a
+        # changed-since value is authoritative (#1869).
+        if (
+            finding.params is not None
+            and meta.get(DETECTION_PARAMS_KEY) == finding.params
+        ):
+            kept.pop(DETECTION_PARAMS_KEY, None)
         if kept != meta:
             image.metadata_ = kept
             image.version = image.version + 1

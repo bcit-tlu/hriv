@@ -381,6 +381,115 @@ def test_approve_schema_rejects_unknown_unit() -> None:
         MeasurementApprove(unit="in")
 
 
+# ── detection_params promotion (#1869) ──────────────────
+
+_PARAMS = {"sensitivity": 0.9, "min_cell_size": 5.0, "exclude_nuclei": True}
+
+
+async def test_approve_promotes_detection_params() -> None:
+    finding, image = _finding(params=dict(_PARAMS)), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert image.metadata_["detection_params"] == _PARAMS
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+    assert image.version == 5
+
+
+async def test_approve_without_params_leaves_metadata_untouched() -> None:
+    finding, image = _finding(params=None), _image()
+    await service.approve_finding(AsyncMock(), finding, image, 3)
+    assert "detection_params" not in image.metadata_
+
+
+async def test_approve_params_promote_with_corrected_scale() -> None:
+    """Tuning describes detection, not the value — a reviewer correction
+    does not hold the params back (#1869)."""
+    finding, image = _finding(params=dict(_PARAMS)), _image()
+    await service.approve_finding(
+        AsyncMock(), finding, image, 3, scale=18.7
+    )
+    assert image.metadata_["detection_params"] == _PARAMS
+    assert image.metadata_["measurement_scale_source"] == "manual"
+
+
+def test_reset_strips_detection_params_it_promoted() -> None:
+    params = dict(_PARAMS)
+    finding = _finding(
+        status="approved",
+        params=params,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+            "detection_params": dict(params),
+            "canvas_annotations": [{"id": "x"}],
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+    assert image.metadata_["canvas_annotations"] == [{"id": "x"}]
+
+
+def test_reset_keeps_detection_params_changed_since() -> None:
+    params = dict(_PARAMS)
+    finding = _finding(
+        status="approved",
+        params=params,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+            # Someone re-tuned since approval — authoritative, not ours.
+            "detection_params": dict(params, sensitivity=0.4),
+        }
+    )
+    service.reset_finding(finding, image)
+    assert image.metadata_["detection_params"]["sensitivity"] == 0.4
+
+
+def test_reset_approved_without_params_is_unaffected() -> None:
+    finding = _finding(
+        status="approved",
+        params=None,
+        approved_scale=7.3,
+        approved_unit="um",
+    )
+    image = _image(
+        metadata_={
+            "measurement_scale": 7.3,
+            "measurement_unit": "um",
+            "measurement_scale_source": "rbc",
+            "measurement_finding_id": finding.id,
+        }
+    )
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+
+
+async def test_bulk_approve_promotes_detection_params(monkeypatch) -> None:
+    finding = _finding(id=1, image_id=11, params=dict(_PARAMS))
+    image = _image(id=11)
+    monkeypatch.setattr(router, "bump_browse_revision", AsyncMock())
+    db = AsyncMock()
+    db.get.side_effect = lambda model, i, **_kw: (
+        finding if model is MeasurementFinding else image
+    )
+    out = await router.bulk_approve(
+        MeasurementBulkApprove(ids=[1]), _user("admin"), db
+    )
+    assert out.approved == [1]
+    assert image.metadata_["detection_params"] == _PARAMS
+
+
 async def test_approve_without_scale_raises() -> None:
     with pytest.raises(ValueError):
         await service.approve_finding(
@@ -1269,6 +1378,80 @@ async def test_scan_image_rescan_repoints_scale_ownership() -> None:
     # The full undo round-trip: resetting the new owner strips the scale.
     assert service.reset_finding(finding, image) is True
     assert "measurement_scale" not in image.metadata_
+
+
+async def test_scan_image_rescan_repoints_detection_params() -> None:
+    """The re-recorded finding inherits params ownership too, so a later
+    reset still strips the tuning the superseded approval promoted."""
+    params = {"sensitivity": 0.9, "min_cell_size": 5.0}
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+        params=dict(params),
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+
+    async def _flush() -> None:
+        for call in db.add.call_args_list:
+            if call.args[0].id is None:
+                call.args[0].id = 77
+
+    db.flush = AsyncMock(side_effect=_flush)
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,
+        "detection_params": dict(params),
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.params == params
+    # Full undo: resetting the new owner removes the promoted tuning.
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+
+
+async def test_scan_image_rescan_keeps_retuned_params_unowned() -> None:
+    """A `detection_params` changed since approval stays externally owned —
+    the replacement must not claim it, so reset leaves it in place."""
+    params = {"sensitivity": 0.9}
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+        params=dict(params),
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+    db.flush = AsyncMock()
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,
+        # Retuned after approval — authoritative, not owned by the finding.
+        "detection_params": {"sensitivity": 0.4},
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.params is None
+    service.reset_finding(finding, image)
+    assert image.metadata_["detection_params"] == {"sensitivity": 0.4}
 
 
 async def test_scan_image_rescan_keeps_edited_scale_unowned() -> None:
