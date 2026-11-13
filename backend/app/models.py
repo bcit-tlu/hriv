@@ -1082,6 +1082,8 @@ class MeasurementFinding(Base):
     evidence: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=dict, server_default=text("'{}'::jsonb")
     )
+    # Instructor-tuned detection values (DetectionTuning); NULL = defaults.
+    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     detector_version: Mapped[str] = mapped_column(String(50), nullable=False)
     approved_scale: Mapped[float | None] = mapped_column(Float, nullable=True)
     approved_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)

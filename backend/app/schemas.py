@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+
+if TYPE_CHECKING:
+    from .measurement.detector import DetectorParams
 
 MAX_NOTE_LENGTH = 500
 
@@ -1304,6 +1309,70 @@ class MeasurementScanRemainingOut(BaseModel):
     remaining: int
 
 
+# Int-typed DetectorParams fields (``advanced`` values are rounded into them).
+_DETECTOR_INT_FIELDS = frozenset({
+    "sat_above_background",
+    "purple_hue_min",
+    "purple_hue_max",
+    "purple_sat_min",
+})
+
+
+class DetectionTuning(BaseModel):
+    """Instructor-facing detection tuning (epic #1865, #1866).
+
+    The small semantic set the review dialog exposes — raw detector
+    constants never leave the backend. ``advanced`` may override any
+    ``DetectorParams`` field by name for API callers but is not surfaced
+    in the UI.
+    """
+
+    # 0 → strict (only obvious cells), 1 → permissive (fainter cells).
+    sensitivity: float = Field(default=0.6, ge=0.0, le=1.0)
+    # Smallest component radius (work-image px) that counts as a cell.
+    min_cell_size: float = Field(default=3.0, gt=0.0, le=100.0)
+    # Exclude dark purple-stained objects (leukocyte nuclei).
+    exclude_nuclei: bool = True
+    # Optional raw DetectorParams field overrides, kept out of the UI.
+    advanced: dict[str, float] | None = None
+
+    @field_validator("advanced")
+    @classmethod
+    def _advanced_keys_known(
+        cls, value: dict[str, float] | None
+    ) -> dict[str, float] | None:
+        if value is None:
+            return value
+        from .measurement.detector import DetectorParams
+
+        unknown = set(value) - set(DetectorParams.__dataclass_fields__)
+        if unknown:
+            raise ValueError(f"unknown detector params: {sorted(unknown)}")
+        return value
+
+    def to_detector_params(self) -> DetectorParams:
+        """Translate the semantic set into raw ``DetectorParams``."""
+        from .measurement.detector import DetectorParams
+
+        # Sensitivity is the inverse of the background threshold:
+        # 0 → 30 (strict), ~0.6 → 15 (shipped default), 1 → 5 (faint).
+        overrides: dict = {
+            "sat_above_background": round(30 - 25 * self.sensitivity),
+            "min_radius_px": self.min_cell_size,
+        }
+        if not self.exclude_nuclei:
+            # ``sat > 255`` is never true — the purple mask comes out
+            # empty and every foreground component is kept, nuclei too.
+            overrides["purple_sat_min"] = 255
+        if self.advanced:
+            overrides.update(self.advanced)
+        overrides = {
+            k: int(round(v)) if k in _DETECTOR_INT_FIELDS else v
+            for k, v in overrides.items()
+        }
+        return DetectorParams(**overrides)
+
+
 class MeasurementFindingOut(BaseModel):
     id: int
     image_id: int
@@ -1326,6 +1395,8 @@ class MeasurementFindingOut(BaseModel):
     approved_objective: str | None
     # Calibrated px/µm per objective for this camera; None for unknown cameras.
     objective_scales: dict[str, float] | None
+    # Instructor-tuned detection values saved on the finding; None = defaults.
+    params: DetectionTuning | None
     reviewed_by: int | None
     reviewed_at: datetime | None
     created_at: datetime

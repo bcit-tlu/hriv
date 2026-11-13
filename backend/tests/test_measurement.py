@@ -19,6 +19,7 @@ from app.measurement.calibration import (
     estimate_scale,
 )
 from app.measurement.detector import (
+    DetectorParams,
     RbcMeasurement,
     load_work_image,
     measure_rbc_diameter,
@@ -26,6 +27,7 @@ from app.measurement.detector import (
 from app.models import MeasurementFinding
 from app.routers import measurements as router
 from app.schemas import (
+    DetectionTuning,
     MeasurementApprove,
     MeasurementBulkApprove,
     MeasurementScanRequest,
@@ -89,6 +91,155 @@ def test_detector_returns_none_when_few_cells_dominate(tmp_path) -> None:
     path = tmp_path / "blobs.png"
     canvas.write_to_file(str(path))
     assert measure_rbc_diameter(load_work_image(str(path)), 600) is None
+
+
+# ── detector params (#1866) ──────────────────────────────
+
+
+def _faint_film(
+    radius: int = 10, cols: int = 8, rows: int = 4
+) -> pyvips.Image:
+    """Discs only ~6 sat points above the background — below the default
+    threshold, so default params see nothing."""
+    pitch = radius * 3
+    img = pyvips.Image.black(
+        cols * pitch, rows * pitch, bands=3
+    ).new_from_image([240, 236, 236]).copy_memory()
+    for r in range(rows):
+        for c in range(cols):
+            cx, cy = c * pitch + pitch // 2, r * pitch + pitch // 2
+            img = img.draw_circle([238, 228, 230], cx, cy, radius, fill=True)
+    return img
+
+
+def _film_with_nuclei(radius: int = 10) -> pyvips.Image:
+    """Pink RBC film with two purple (leukocyte) cells drawn over pink
+    lattice positions — exclusion removes exactly those components
+    without merging neighbours."""
+    img = _blood_film(radius=radius)
+    pitch = radius * 3
+    for cx, cy in ((pitch + pitch // 2, pitch // 2),
+                   (3 * pitch + pitch // 2, 2 * pitch + pitch // 2)):
+        img = img.draw_circle([90, 60, 160], cx, cy, radius, fill=True)
+    return img
+
+
+def test_default_params_reproduce_unparametrized_call(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    a = measure_rbc_diameter(work, work.width)
+    b = measure_rbc_diameter(work, work.width, DetectorParams())
+    assert (a.diameter_px, a.component_count, a.selected_count) == (
+        b.diameter_px, b.component_count, b.selected_count)
+
+
+def test_detector_higher_sensitivity_finds_faint_cells(tmp_path) -> None:
+    path = tmp_path / "faint.png"
+    _faint_film().write_to_file(str(path))
+    work = load_work_image(str(path))
+    assert measure_rbc_diameter(work, work.width) is None
+    m = measure_rbc_diameter(
+        work, work.width, DetectorParams(sat_above_background=5)
+    )
+    assert m is not None
+    assert m.selected_count >= 20
+
+
+def test_detector_min_radius_filters_small_cells(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    # A floor above the real radius drops every component -> no population.
+    m = measure_rbc_diameter(
+        work, work.width, DetectorParams(min_radius_px=15.0)
+    )
+    assert m is None
+
+
+def test_detector_purple_sat_disables_nuclei_exclusion(tmp_path) -> None:
+    path = tmp_path / "nuclei.png"
+    _film_with_nuclei().write_to_file(str(path))
+    work = load_work_image(str(path))
+    excluded = measure_rbc_diameter(work, work.width)
+    included = measure_rbc_diameter(
+        work, work.width, DetectorParams(purple_sat_min=255)
+    )
+    assert excluded is not None and included is not None
+    assert included.component_count > excluded.component_count
+
+
+def test_detector_params_range_validation() -> None:
+    for kw in (
+        {"sat_above_background": 0},
+        {"sat_above_background": 256},
+        {"purple_hue_min": 200, "purple_hue_max": 200},
+        {"purple_sat_min": -1},
+        {"min_radius_px": 0},
+        {"min_radius_px": 200},
+        {"mode_window_lo": 1.5, "mode_window_hi": 1.0},
+        {"mode_window_lo": 0},
+    ):
+        with pytest.raises(ValueError):
+            DetectorParams(**kw)
+
+
+# ── DetectionTuning schema (#1866) ───────────────────────
+
+
+def test_tuning_defaults_translate_to_shipped_params() -> None:
+    """The semantic defaults must map onto the frozen raw defaults —
+    an untouched tuning changes nothing."""
+    assert DetectionTuning().to_detector_params() == DetectorParams()
+
+
+def test_tuning_sensitivity_maps_inverse_threshold() -> None:
+    assert (
+        DetectionTuning(sensitivity=0.0)
+        .to_detector_params().sat_above_background == 30
+    )
+    assert (
+        DetectionTuning(sensitivity=1.0)
+        .to_detector_params().sat_above_background == 5
+    )
+
+
+def test_tuning_min_cell_size_and_exclude_nuclei() -> None:
+    p = DetectionTuning(
+        min_cell_size=8.0, exclude_nuclei=False
+    ).to_detector_params()
+    assert p.min_radius_px == 8.0
+    # Purple mask made unsatisfiable -> nuclei kept.
+    assert p.purple_sat_min == 255
+
+
+def test_tuning_advanced_overrides_and_coerces() -> None:
+    p = DetectionTuning(
+        sensitivity=1.0,
+        advanced={"sat_above_background": 20.7, "mode_window_lo": 0.7},
+    ).to_detector_params()
+    # advanced wins over the sensitivity-derived value; int fields round.
+    assert p.sat_above_background == 21
+    assert p.mode_window_lo == 0.7
+
+
+def test_tuning_rejects_unknown_advanced_keys() -> None:
+    with pytest.raises(ValidationError):
+        DetectionTuning(advanced={"nonsense": 1.0})
+
+
+def test_tuning_field_bounds() -> None:
+    with pytest.raises(ValidationError):
+        DetectionTuning(sensitivity=1.5)
+    with pytest.raises(ValidationError):
+        DetectionTuning(sensitivity=-0.1)
+    with pytest.raises(ValidationError):
+        DetectionTuning(min_cell_size=0)
+
+
+def test_tuning_out_of_range_advanced_raises() -> None:
+    with pytest.raises(ValueError):
+        DetectionTuning(advanced={"min_radius_px": 0}).to_detector_params()
 
 
 # ── calibration ───────────────────────────────────────────
@@ -171,6 +322,7 @@ def _finding(**kw) -> SimpleNamespace:
         objective="40",
         confidence=0.8,
         evidence={},
+        params=None,
         detector_version=DETECTOR_VERSION,
         approved_scale=None,
         approved_unit=None,
@@ -349,6 +501,8 @@ def test_reject_finding() -> None:
 
 def test_model_shape() -> None:
     cols = MeasurementFinding.__table__.c
+    assert cols.params.nullable
+    assert type(cols.params.type).__name__ == "JSONB"
     assert next(iter(cols.image_id.foreign_keys)).ondelete == "CASCADE"
     assert next(iter(cols.reviewed_by.foreign_keys)).ondelete == "SET NULL"
     idx = {i.name: i for i in MeasurementFinding.__table__.indexes}
@@ -443,6 +597,30 @@ async def test_list_findings_serializes_and_tokenizes_thumb() -> None:
     assert "tile_token=" in item["image_thumb"]
     assert item["objective"] == "40"
     assert item["category_path"] == "Hematology › Blood films"
+    assert item["params"] is None
+
+
+async def test_list_findings_serializes_tuned_params() -> None:
+    """Saved params ride the finding response as the semantic shape."""
+    db = AsyncMock()
+    db.scalar.return_value = 1
+    rows = MagicMock()
+    rows.all.return_value = [
+        (
+            _finding(params={"sensitivity": 0.9, "min_cell_size": 5.0}),
+            _image(),
+            "Hematology › Blood films",
+        )
+    ]
+    db.execute.return_value = rows
+    page = await router.list_findings(
+        _user(), db, "pending", None, 0.0, "confidence_desc", 50, 0
+    )
+    params = page.items[0].params
+    assert params is not None
+    assert params.sensitivity == 0.9
+    assert params.min_cell_size == 5.0
+    assert params.exclude_nuclei is True  # untouched field -> default
 
 
 def _db_with(finding, image) -> AsyncMock:

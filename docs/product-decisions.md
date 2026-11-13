@@ -38,6 +38,11 @@ specified in detail.
 - Objective ↔ scale auto-coordination exists only in Measurement review; Edit
   image keeps the two fields independent. Review and Edit image share one
   scale + unit component. See [`measurement-review.md`](measurement-review.md).
+- Detection tuning is a small **semantic** set (`DetectionTuning`:
+  sensitivity, min cell size, exclude nuclei) persisted on the finding's
+  `params`; raw `DetectorParams` constants never cross the API. The semantic
+  defaults map exactly onto the shipped constants, so tuning is opt-in and
+  `detector_version` stays put.
 
 ## UI conventions
 
