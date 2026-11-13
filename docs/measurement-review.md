@@ -137,6 +137,12 @@ derives `mpp = unit / measurement_scale` whenever `mpp_x` is absent
 `pixel_size` and the mpp-driven nuclei level rule instead of the 0.5
 µm/px default.
 
+Promoted `detection_params` are consumed by counting too (#1870): the
+enqueue sanitizes them (`detection_params_from_metadata` — malformed
+fields dropped, `advanced` ignored) and the classical mask maps
+`sensitivity` → Otsu threshold scale, `min_cell_size` → small-object
+floor, `exclude_nuclei` → purple-stain subtraction in cells mode.
+
 Resetting an approved finding reverses that promotion: while the stored
 scale is still exactly the value the finding approved (`measurement_scale`,
 `measurement_unit` and `measurement_finding_id` all matching), the four keys

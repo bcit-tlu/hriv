@@ -61,8 +61,14 @@ against the specimen. Expect weaker results for:
 - thick smear areas and tissue folds,
 - debris and stain artefacts,
 - very faint or very dense regions,
+- uneven staining or illumination drift across the field,
 - selections that are too large (the count may be refused — draw a smaller
   box or zoom in).
+
+The counter automatically corrects for slowly-varying background staining
+(flat-field preprocessing) and honours detection settings tuned during
+measurement review when they were saved onto the image. Neither replaces a
+visual check.
 
 If a count looks wrong, remove the outlines that shouldn't count or add
 the ones it missed — or cancel and try a tighter selection.

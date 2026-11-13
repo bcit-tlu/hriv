@@ -58,12 +58,51 @@ class Outliner(Protocol):
         *,
         plan: RegionPlan,
         mpp: float | None,
+        params: dict | None = None,
+        preprocess: bool = True,
     ) -> np.ndarray:  # (H, W) int32 labels, 0 = background
         """Label every object in *rgb* — including the stitched margin."""
 
 
-def _mask_and_signal(rgb: np.ndarray, mode: str):
-    """Classical foreground mask + labelled components (before watershed)."""
+def _purple_mask(rgb: np.ndarray) -> np.ndarray:
+    """Dark purple-stained objects (leukocyte nuclei) — the same window
+    ``measurement/detector.py`` uses, in HSV fractions."""
+    from skimage import color
+
+    hsv = color.rgb2hsv(rgb / 255.0)
+    hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    return (hue >= 0.62) & (hue <= 0.85) & (sat >= 0.25) & (val < 0.75)
+
+
+def _tuned_number(params: dict, key: str) -> float | None:
+    """One numeric tuning field, or None when absent/malformed (#1870)."""
+    value = params.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _mask_and_signal(
+    rgb: np.ndarray,
+    mode: str,
+    *,
+    params: dict | None = None,
+    preprocess: bool = True,
+):
+    """Classical foreground mask + labelled components (before watershed).
+
+    ``preprocess`` (the ``counting_preprocess`` kill-switch) applies a
+    subtractive flat-field: ``signal − gaussian(signal, σ=25)`` removes
+    low-frequency staining/illumination drift that can bury faint cells
+    under Otsu's threshold — the generalization of detector.py's
+    background-relative threshold (#1870). It is a subtraction, not a
+    division: dividing by the background normalizes *and amplifies*
+    background noise into foreground speckle. A percentile stretch was
+    evaluated and deliberately omitted — Otsu's selection is invariant
+    under monotone rescaling, so it changed nothing measurable.
+    ``params`` is a persisted ``DetectionTuning`` dict; malformed fields
+    are ignored individually.
+    """
     from scipy import ndimage as ndi
     from skimage import color, filters, morphology
 
@@ -72,19 +111,46 @@ def _mask_and_signal(rgb: np.ndarray, mode: str):
     else:
         rgbf = rgb.astype(np.float32)
         signal = rgbf.max(axis=2) - rgbf.min(axis=2) + (255.0 - rgbf.mean(axis=2)) * 0.5
+    if preprocess:
+        signal = signal - filters.gaussian(signal, sigma=25.0)
     signal = filters.gaussian(signal, sigma=1.5)
-    mask = signal > filters.threshold_otsu(signal)
-    mask = ndi.binary_fill_holes(morphology.remove_small_objects(mask, 30))
+    threshold = filters.threshold_otsu(signal)
+    min_size = 30
+    if params is not None:
+        # sensitivity: 0 → stricter (×1.24), 0.6 (default) → ×1.0, 1 →
+        # permissive (×0.84) — admits fainter boundaries (#1870).
+        if (s := _tuned_number(params, "sensitivity")) is not None:
+            threshold = threshold * (1.24 - 0.4 * min(1.0, max(0.0, s)))
+        # min_cell_size is a px radius; default 3.0 ↔ the shipped 30-px
+        # floor, so default tuning stays bit-identical.
+        if (mcs := _tuned_number(params, "min_cell_size")) is not None and mcs > 0:
+            min_size = max(1, round(30 * mcs / 3.0))
+    mask = signal > threshold
+    mask = ndi.binary_fill_holes(morphology.remove_small_objects(mask, min_size))
+    if (
+        mode == "cells"
+        and params is not None
+        and params.get("exclude_nuclei") is True
+    ):
+        mask &= ~_purple_mask(rgb)
     lab, n = ndi.label(mask)
     return mask, lab, n
 
 
-def classical_labels(rgb: np.ndarray, mode: str) -> np.ndarray:
+def classical_labels(
+    rgb: np.ndarray,
+    mode: str,
+    *,
+    params: dict | None = None,
+    preprocess: bool = True,
+) -> np.ndarray:
     """Shared watershed used by the classical outliners (#1662 bench port)."""
     from scipy import ndimage as ndi
     from skimage import feature, segmentation
 
-    mask, lab0, n0 = _mask_and_signal(rgb, mode)
+    mask, lab0, n0 = _mask_and_signal(
+        rgb, mode, params=params, preprocess=preprocess
+    )
     dist = ndi.distance_transform_edt(mask)
     r = 6.0
     if n0:
@@ -102,7 +168,11 @@ def classical_labels(rgb: np.ndarray, mode: str) -> np.ndarray:
 
 
 def probe_object_stats(
-    rgb: np.ndarray, mode: str
+    rgb: np.ndarray,
+    mode: str,
+    *,
+    params: dict | None = None,
+    preprocess: bool = True,
 ) -> tuple[float | None, int]:
     """Median component diameter (processing px) and component count.
 
@@ -111,16 +181,26 @@ def probe_object_stats(
     trust it (#1670: a smear-photo crop had n=2 at d=4 and was coarsened
     until its cells vanished).
     """
-    mask, lab, n = _mask_and_signal(rgb, mode)
+    mask, lab, n = _mask_and_signal(
+        rgb, mode, params=params, preprocess=preprocess
+    )
     if not n:
         return None, 0
     areas = np.bincount(lab.ravel())[1:]
     return float(2.0 * np.sqrt(np.median(areas) / np.pi)), n
 
 
-def estimate_object_diameter(rgb: np.ndarray, mode: str) -> float | None:
+def estimate_object_diameter(
+    rgb: np.ndarray,
+    mode: str,
+    *,
+    params: dict | None = None,
+    preprocess: bool = True,
+) -> float | None:
     """Median component diameter (processing px) from the classical mask."""
-    _mask, lab, n = _mask_and_signal(rgb, mode)
+    _mask, lab, n = _mask_and_signal(
+        rgb, mode, params=params, preprocess=preprocess
+    )
     if not n:
         return None
     areas = np.bincount(lab.ravel())[1:]
@@ -131,16 +211,36 @@ class ClassicalCellsOutliner:
     name = "classical"
     max_pixels = 0  # assigned by build_outliners
 
-    def segment(self, rgb: np.ndarray, *, plan: RegionPlan, mpp: float | None) -> np.ndarray:
-        return classical_labels(rgb, "cells")
+    def segment(
+        self,
+        rgb: np.ndarray,
+        *,
+        plan: RegionPlan,
+        mpp: float | None,
+        params: dict | None = None,
+        preprocess: bool = True,
+    ) -> np.ndarray:
+        return classical_labels(
+            rgb, "cells", params=params, preprocess=preprocess
+        )
 
 
 class ClassicalNucleiOutliner:
     name = "classical"
     max_pixels = 0  # assigned by build_outliners
 
-    def segment(self, rgb: np.ndarray, *, plan: RegionPlan, mpp: float | None) -> np.ndarray:
-        return classical_labels(rgb, "nuclei")
+    def segment(
+        self,
+        rgb: np.ndarray,
+        *,
+        plan: RegionPlan,
+        mpp: float | None,
+        params: dict | None = None,
+        preprocess: bool = True,
+    ) -> np.ndarray:
+        return classical_labels(
+            rgb, "nuclei", params=params, preprocess=preprocess
+        )
 
 
 class InstanSegNucleiOutliner:
@@ -165,7 +265,15 @@ class InstanSegNucleiOutliner:
         torch.set_num_interop_threads(1)
         self._model = InstanSeg("brightfield_nuclei", verbosity=0, device="cpu")
 
-    def segment(self, rgb: np.ndarray, *, plan: RegionPlan, mpp: float | None) -> np.ndarray:
+    def segment(
+        self,
+        rgb: np.ndarray,
+        *,
+        plan: RegionPlan,
+        mpp: float | None,
+        params: dict | None = None,
+        preprocess: bool = True,
+    ) -> np.ndarray:
         px = mpp if mpp else INSTANSEG_PIXEL_SIZE
         labels = self._model.eval_small_image(rgb, pixel_size=px, return_image_tensor=False)
         lab = labels.squeeze().cpu().numpy().astype(np.int32)
@@ -207,7 +315,15 @@ class StubOutliner:
         )
         return int.from_bytes(hashlib.sha256(repr(material).encode()).digest()[:8], "big")
 
-    def segment(self, rgb: np.ndarray, *, plan: RegionPlan, mpp: float | None) -> np.ndarray:
+    def segment(
+        self,
+        rgb: np.ndarray,
+        *,
+        plan: RegionPlan,
+        mpp: float | None,
+        params: dict | None = None,
+        preprocess: bool = True,
+    ) -> np.ndarray:
         rng = random.Random(self._seed(plan))
         d = plan.downsample
         sel = plan.selection
