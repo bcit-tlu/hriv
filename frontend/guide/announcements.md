@@ -49,6 +49,6 @@ an edit only when readers should see it as new.
 ![The My announcements filter](images/announcements-mine.png)
 
 **My announcements** shows only your own posts; the status filters —
-Draft, Scheduled, Live, Expired — narrow any view by state. Post authors
-and admins see **Seen by N of M** counts, plus Edit, Duplicate, and
-Delete on the card menu.
+Draft, Scheduled, Live, Expired — narrow any view by state. Authors and
+admins get Edit, Duplicate, and Delete on the card menu; **Seen by N of
+M** counts also show for instructors co-managing a targeted group.
