@@ -610,11 +610,27 @@ async def update_finding(
     Reviewed findings are immutable — retuning history means nothing, so
     approved/rejected/superseded rows 409. Approval later promotes the
     params into ``Image.metadata_.detection_params`` (#1869).
+
+    The proposal is re-run under the saved tuning in the same write: a
+    stored proposal that predates the params would let approval promote a
+    scale the reviewer never previewed (#1871 review).
     """
     finding, image = await _pending_with_image(db, finding_id)
     finding.params = (
         body.params.model_dump() if body.params is not None else None
     )
+    _measurement, estimate, reason = await preview_detection(
+        db,
+        image,
+        body.params.to_detector_params() if body.params is not None else None,
+    )
+    evidence: dict = {}
+    if reason is not None:
+        evidence["reason"] = reason
+    finding.proposed_scale = estimate.scale if estimate else None
+    finding.objective = estimate.objective if estimate else None
+    finding.confidence = estimate.confidence if estimate else 0.0
+    finding.evidence = (estimate.evidence if estimate else {}) | evidence
     await db.commit()
     await db.refresh(finding)
     logger.info(

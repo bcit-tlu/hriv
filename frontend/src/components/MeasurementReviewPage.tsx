@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -169,6 +169,16 @@ export default function MeasurementReviewPage({
   const [scan, setScan] = useState<ScanState | null>(null)
   const [learnMoreOpen, setLearnMoreOpen] = useState(false)
   const [tuningFinding, setTuningFinding] = useState<ApiMeasurementFinding | null>(null)
+  // A fresh object each render would restart the dialog's fetch/preview
+  // effects — keep the dialog's api surface referentially stable.
+  const detectionApi = useMemo(
+    () => ({
+      fetchImage: api.fetchImage,
+      preview: api.preview,
+      updateParams: api.updateParams,
+    }),
+    [api],
+  )
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), [])
 
@@ -880,11 +890,7 @@ export default function MeasurementReviewPage({
         finding={tuningFinding}
         onClose={() => setTuningFinding(null)}
         onOpenImage={onOpenImage}
-        api={{
-          fetchImage: api.fetchImage,
-          preview: api.preview,
-          updateParams: api.updateParams,
-        }}
+        api={detectionApi}
         onApplied={(updated) => {
           setFindings((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
         }}

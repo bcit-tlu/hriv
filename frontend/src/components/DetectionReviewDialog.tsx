@@ -62,7 +62,21 @@ export interface DetectionReviewDialogProps {
   /** Preview debounce; shortened in tests. */
   previewDebounceMs?: number
   /** Viewer construction seam for stories (a fake DZI can't mount real OSD). */
-  viewerFactory?: (element: HTMLElement, tileSources: string) => { destroy(): void }
+  viewerFactory?: (element: HTMLElement, tileSources: string) => DetectionViewer
+}
+
+/** The slice of OpenSeadragon.Viewer the dialog needs — all optional after
+ *  mount so story fakes stay minimal. */
+export interface DetectionViewer {
+  destroy(): void
+  open?(tileSources: OpenSeadragon.TileSourceSpecifier): void
+  addHandler?(eventName: string, handler: () => void): void
+  viewport?: {
+    getZoom(): number
+    getCenter(): { x: number; y: number }
+    zoomTo(zoom: number, refPoint?: unknown, immediately?: boolean): void
+    panTo(center: { x: number; y: number }, immediately?: boolean): void
+  }
 }
 
 function tuningPayload(saved: DetectionTuning | null, tuning: DetectionTuning): DetectionTuning {
@@ -175,10 +189,12 @@ function DialogBody({
     }
   }, [api, finding.image_id])
 
-  // Mount the bare OSD viewer once the tile source resolves; destroy on close.
+  // Mount the bare OSD viewer once the tile source resolves; destroy on
+  // close. Tiles carry a ~15-minute token: on a load/open failure renew the
+  // image record once and reopen, restoring the viewport (#1890 review).
   useEffect(() => {
     if (tileSources == null || osdRef.current == null) return
-    const factory =
+    const factory: (element: HTMLElement, src: string) => DetectionViewer =
       viewerFactory ??
       ((element: HTMLElement, src: string) =>
         OpenSeadragon({
@@ -195,8 +211,38 @@ function DialogBody({
           gestureSettingsMouse: { scrollToZoom: true, clickToZoom: false },
         }))
     const viewer = factory(osdRef.current, tileSources)
-    return () => viewer.destroy()
-  }, [tileSources, viewerFactory])
+    let renewed = false
+    let renewalTimer: ReturnType<typeof setTimeout> | undefined
+    const renew = () => {
+      if (renewed) return // bursts: many tiles fail on one expired token
+      renewed = true
+      renewalTimer = setTimeout(() => {
+        api
+          .fetchImage(finding.image_id)
+          .then((fresh) => {
+            const vp = viewer.viewport
+            if (vp == null || typeof viewer.open !== 'function') {
+              setTileSources(fresh.tile_sources) // remount path
+              return
+            }
+            const zoom = vp.getZoom()
+            const center = vp.getCenter()
+            viewer.addHandler?.('open', () => {
+              vp.zoomTo(zoom, undefined, true)
+              vp.panTo(center, true)
+            })
+            viewer.open(fresh.tile_sources as unknown as OpenSeadragon.TileSourceSpecifier)
+          })
+          .catch(() => undefined) // keep the degraded viewer
+      }, 300)
+    }
+    viewer.addHandler?.('tile-load-failed', renew)
+    viewer.addHandler?.('open-failed', renew)
+    return () => {
+      clearTimeout(renewalTimer)
+      viewer.destroy()
+    }
+  }, [api, finding.image_id, tileSources, viewerFactory])
 
   // Debounced read-only preview under the candidate tuning.
   useEffect(() => {
