@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildTheme,
   getGroupChipColors,
+  getPresentationColors,
   getSurfaceVariant,
   getVisibilityColors,
 } from '../src/theme'
@@ -88,5 +89,21 @@ describe('getGroupChipColors', () => {
     expect(c.solidText).toBe('#1E1E1E')
     expect(c.subtleBg).toBe('rgba(168, 146, 136, 0.16)')
     expect(c.subtleText).toBe('#E0DDD9')
+  })
+})
+
+describe('getPresentationColors', () => {
+  it('returns light-mode laser and ink colours', () => {
+    const c = getPresentationColors('light')
+    expect(c.laser).toBe('#FF2D2D')
+    expect(c.ink).toBe('#00E5FF')
+  })
+
+  it('returns dark-mode laser and ink colours', () => {
+    // Both modes share the values deliberately — they must read against
+    // imagery and projector screens, not UI surfaces.
+    const c = getPresentationColors('dark')
+    expect(c.laser).toBe('#FF2D2D')
+    expect(c.ink).toBe('#00E5FF')
   })
 })
