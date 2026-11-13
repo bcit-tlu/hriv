@@ -1380,6 +1380,80 @@ async def test_scan_image_rescan_repoints_scale_ownership() -> None:
     assert "measurement_scale" not in image.metadata_
 
 
+async def test_scan_image_rescan_repoints_detection_params() -> None:
+    """The re-recorded finding inherits params ownership too, so a later
+    reset still strips the tuning the superseded approval promoted."""
+    params = {"sensitivity": 0.9, "min_cell_size": 5.0}
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+        params=dict(params),
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+
+    async def _flush() -> None:
+        for call in db.add.call_args_list:
+            if call.args[0].id is None:
+                call.args[0].id = 77
+
+    db.flush = AsyncMock(side_effect=_flush)
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,
+        "detection_params": dict(params),
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.params == params
+    # Full undo: resetting the new owner removes the promoted tuning.
+    assert service.reset_finding(finding, image) is True
+    assert "detection_params" not in image.metadata_
+
+
+async def test_scan_image_rescan_keeps_retuned_params_unowned() -> None:
+    """A `detection_params` changed since approval stays externally owned —
+    the replacement must not claim it, so reset leaves it in place."""
+    params = {"sensitivity": 0.9}
+    owner = _finding(
+        id=9,
+        status="approved",
+        source="rbc",
+        proposed_scale=4.0,
+        approved_scale=4.0,
+        approved_unit="um",
+        params=dict(params),
+    )
+    db = MagicMock()
+    db.execute = AsyncMock()
+    db.scalar = AsyncMock(return_value=42)
+    db.add = MagicMock()
+    db.get = AsyncMock(return_value=owner)
+    db.flush = AsyncMock()
+    meta = {
+        "measurement_scale": 4.0,
+        "measurement_unit": "um",
+        "measurement_scale_source": "rbc",
+        "measurement_finding_id": 9,
+        # Retuned after approval — authoritative, not owned by the finding.
+        "detection_params": {"sensitivity": 0.4},
+    }
+    image = _image(metadata_=meta)
+    finding = await service.scan_image(db, image, rescan=True)
+    assert finding is not None and finding.params is None
+    service.reset_finding(finding, image)
+    assert image.metadata_["detection_params"] == {"sensitivity": 0.4}
+
+
 async def test_scan_image_rescan_keeps_edited_scale_unowned() -> None:
     """A scale edited after approval is not handed to the re-recorded
     finding — resetting that finding must leave the edit alone."""

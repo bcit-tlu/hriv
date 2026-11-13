@@ -188,6 +188,12 @@ async def scan_image(
                 await db.flush()
                 finding.source = str(meta.get(SOURCE_KEY) or finding.source)[:50]
                 finding.approved_objective = owner.approved_objective
+                # Same hand-off for detection params: carry only while the
+                # stored value is still what the superseded approval
+                # promoted, so a later reset can undo it; a retuned-since
+                # value stays externally owned and is never claimed.
+                if meta.get(DETECTION_PARAMS_KEY) == owner.params:
+                    finding.params = owner.params
                 image.metadata_ = {**meta, FINDING_KEY: finding.id}
                 image.version = image.version + 1
             return finding
