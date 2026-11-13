@@ -1,5 +1,6 @@
 """Measurement review: RBC detector, objective calibration, service and router."""
 
+import base64
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -158,6 +159,70 @@ def test_detector_min_radius_filters_small_cells(tmp_path) -> None:
         work, work.width, DetectorParams(min_radius_px=15.0)
     )
     assert m is None
+
+
+# ── detection outlines (#1872) ──────────────────────────
+
+
+def _category_count(png: bytes, value: int) -> int:
+    """Connected components of ``png == value``.
+
+    ``labelregions`` gives the background a label too, so max() is one
+    more than the blob count.
+    """
+    mask = (pyvips.Image.new_from_buffer(png, "") == value).ifthenelse(255, 0)
+    return int(mask.cast("uchar").labelregions().max()) - 1
+
+
+def test_detector_outline_matches_component_counts(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    m = measure_rbc_diameter(work, work.width, with_outline=True)
+    assert m is not None and m.outline_png is not None
+    raster = pyvips.Image.new_from_buffer(m.outline_png, "")
+    # Geometry sits in work-image space, aligned with the source.
+    assert (raster.width, raster.height) == (work.width, work.height)
+    assert set(raster.tolist()[0]) <= {0, 1, 2}
+    # Selected rings ↔ selected_count, rejected rings ↔ the rest.
+    assert _category_count(m.outline_png, 2) == m.selected_count
+    assert _category_count(m.outline_png, 1) == (
+        m.component_count - m.selected_count
+    )
+
+
+def test_detector_outline_marks_rejected_clumps(tmp_path) -> None:
+    """Components outside the dominant window show as rejected rings."""
+    img = _blood_film(radius=10, cols=6, rows=4)
+    canvas = pyvips.Image.black(600, 300, bands=3).new_from_image([240, 236, 236])
+    canvas = canvas.insert(img, 0, 0).copy_memory()
+    canvas = canvas.draw_circle([215, 120, 140], 450, 200, 45, fill=True)
+    path = tmp_path / "clump.png"
+    canvas.write_to_file(str(path))
+    work = load_work_image(str(path))
+    m = measure_rbc_diameter(work, work.width, with_outline=True)
+    assert m is not None and m.selected_count < m.component_count
+    assert _category_count(m.outline_png, 1) == (
+        m.component_count - m.selected_count
+    )
+
+
+def test_detector_outline_absent_unless_requested(tmp_path) -> None:
+    path = tmp_path / "film.png"
+    _blood_film(radius=10).write_to_file(str(path))
+    work = load_work_image(str(path))
+    m = measure_rbc_diameter(work, work.width)
+    assert m is not None and m.outline_png is None
+
+
+def test_detector_outline_none_without_population(tmp_path) -> None:
+    path = tmp_path / "blank.png"
+    pyvips.Image.black(400, 300, bands=3).new_from_image([240, 236, 236]).write_to_file(
+        str(path)
+    )
+    assert measure_rbc_diameter(
+        load_work_image(str(path)), 400, with_outline=True
+    ) is None
 
 
 def test_detector_purple_sat_disables_nuclei_exclusion(tmp_path) -> None:
@@ -1836,6 +1901,47 @@ async def test_preview_detection_threads_params(monkeypatch) -> None:
     out = await service.preview_detection(db, _image(), params)
     assert out == (_MEAS, _EST, None)
     assert detect.call_args.args[3] is params
+
+
+async def test_preview_detection_threads_outline_flag(monkeypatch) -> None:
+    db = AsyncMock()
+    db.scalar.return_value = __file__
+    detect = MagicMock(return_value=(_MEAS, _EST))
+    monkeypatch.setattr(service, "_detect_measurement", detect)
+    await service.preview_detection(db, _image(), None, with_outline=True)
+    assert detect.call_args.args[4] is True
+
+
+async def test_preview_include_outline_returns_geometry(monkeypatch) -> None:
+    png = pyvips.Image.black(4, 4).draw_rect(2, 1, 1, 2, 2, fill=True)
+    meas = RbcMeasurement(
+        diameter_px=12.5,
+        component_count=48,
+        selected_count=31,
+        peak_fraction=0.64,
+        work_scale=0.5,
+        outline_png=png.write_to_buffer(".png"),
+    )
+    monkeypatch.setattr(
+        router, "preview_detection", AsyncMock(return_value=(meas, _EST, None))
+    )
+    out = await router.preview(
+        5,
+        _user(),
+        MeasurementPreviewRequest(include=["outline"]),
+        _db_with(_finding(), _image()),
+    )
+    assert out.work_scale == 0.5 and out.outline is not None
+    decoded = pyvips.Image.new_from_buffer(base64.b64decode(out.outline), "")
+    assert (decoded.width, decoded.height) == (4, 4)
+
+
+async def test_preview_omits_outline_unless_requested(monkeypatch) -> None:
+    preview = AsyncMock(return_value=(_MEAS, _EST, None))
+    monkeypatch.setattr(router, "preview_detection", preview)
+    out = await router.preview(5, _user(), None, _db_with(_finding(), _image()))
+    assert out.outline is None and out.work_scale == 0.5
+    assert preview.await_args.kwargs.get("with_outline") is not True
 
 
 async def test_update_finding_persists_params(monkeypatch) -> None:

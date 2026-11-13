@@ -51,6 +51,8 @@ const PREVIEW: DetectionPreviewOut = {
   objective: '40',
   confidence: 0.85,
   reason: null,
+  work_scale: null,
+  outline: null,
 }
 
 function makeImage(overrides: Partial<ApiImage> = {}): ApiImage {
@@ -217,6 +219,61 @@ describe('DetectionReviewDialog', () => {
     expect(api.fetchImage).toHaveBeenCalledTimes(2)
     expect(viewer.viewport?.zoomTo).toHaveBeenCalledWith(3, undefined, true)
     expect(viewer.viewport?.panTo).toHaveBeenCalledWith({ x: 0.4, y: 0.6 }, true)
+  })
+
+  it('requests the outline mask and shows the live cell count chip', async () => {
+    const api = makeApi()
+    renderDialog({ api })
+    await screen.findByText('140 cells')
+    expect(api.preview).toHaveBeenCalledWith(1, expect.objectContaining({ sensitivity: 0.6 }), [
+      'outline',
+    ])
+    expect(screen.getByTestId('detection-count-chip')).toHaveTextContent('140 cells')
+  })
+
+  it('updates the chip as previews land and hides it without a proposal', async () => {
+    const api = makeApi({
+      preview: vi
+        .fn()
+        .mockResolvedValueOnce({ ...PREVIEW, selected_count: 1 })
+        .mockResolvedValue({ ...PREVIEW, selected_count: null, proposed_scale: null }),
+    })
+    renderDialog({ api })
+    await screen.findByText('1 cell')
+    const slider = await screen.findByRole('slider', { name: 'Detection sensitivity' })
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(screen.queryByTestId('detection-count-chip')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('mounts the outline layer only when the viewer supports it', async () => {
+    const element = document.createElement('div')
+    const outlined: DetectionViewer = {
+      destroy: vi.fn(),
+      canvas: element,
+      addHandler: vi.fn(),
+      removeHandler: vi.fn(),
+      viewport: {
+        getZoom: () => 1,
+        getCenter: () => ({ x: 0.5, y: 0.5 }),
+        zoomTo: vi.fn(),
+        panTo: vi.fn(),
+        imageToViewerElementCoordinates: (p) => p,
+      },
+    }
+    render(
+      <DetectionReviewDialog
+        open
+        finding={makeFinding()}
+        onClose={vi.fn()}
+        onApplied={vi.fn()}
+        api={makeApi()}
+        previewDebounceMs={10}
+        viewerFactory={() => outlined}
+      />,
+    )
+    await waitFor(() => expect(element.querySelector('canvas')).not.toBeNull())
   })
 
   it('"Open in viewer" navigates and closes', async () => {
