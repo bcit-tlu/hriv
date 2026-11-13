@@ -249,9 +249,10 @@ images> / Empty` format used on category tiles.
   `useDraggablePosition.ts`) and resets on page reload. Starting a drag closes
   any open tool submenu.
 - The whole `CanvasOverlay` (view canvas, fabric edit canvas, toolbar, status
-  label) is portaled into `viewer.container`, so annotation viewing and
-  editing work in OSD full-page mode — previously the overlay stayed under
-  `#root`, which full-page hides (#1311). MUI submenus/dialogs portal to
+  label) is portaled into `viewer.container`, so an annotation session
+  survives an OSD full-page transition — previously the overlay stayed under
+  `#root`, which full-page hides (#1311). The pencil toggle itself hides in
+  full-page, though: entering edit mode is a normal-view action. MUI submenus/dialogs portal to
   `document.body`, so they close on `full-page` transitions rather than
   ending up hidden or detached. Every top-level portaled child is tagged
   `data-hriv-canvas-ui` so the selection `MouseTracker` on `viewer.element`
@@ -301,7 +302,9 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
 - **Given** full-page mode is entered (OSD button or the browser-fullscreen
   handoff), **Then** the laser pointer auto-arms and two buttons — **Laser
   pointer** and **Freehand ink** — appear in the bottom-left dock, and the
-  zoom +/- and rotate-left/right buttons hide (they stay in normal view).
+  zoom +/-, rotate-left/right, and canvas-edit (pencil) buttons hide —
+  full-page is presenter mode; editing happens in normal view (they stay
+  in normal view).
   Exiting full-page disarms the active tool, clears all ink, and restores
   the hidden buttons.
 - The laser is a glowing green dot (`#00CC00`, ~20–24px halo; green because red vanishes into H&E tissue) with a short fading trail

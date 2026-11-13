@@ -79,8 +79,8 @@ or links to label them.
 - Click **Save** when finished — annotations are visible to everyone who can
   see the image. Press `Esc` or **Cancel** to discard your changes.
 
-Annotating also works in fullscreen — open the viewer's fullscreen mode first,
-then click the pencil.
+Annotating is a normal-view activity — the pencil isn't available in the
+viewer's fullscreen mode (fullscreen is for presenting; see below).
 
 ## Presenting an image
 
@@ -90,8 +90,8 @@ a short trail, easy to follow from the back row. Need to circle something?
 Click the **squiggle** button for a pen that fades away on its own about ten
 seconds after each stroke, so nothing is left behind on the image. Click the
 buttons again to switch back and forth, and leave fullscreen to clear
-everything. While presenting, the zoom and rotate buttons hide, and the
-keyboard mirrors the toolbar: **L** toggles the laser, **I** the pen,
+everything. While presenting, the zoom, rotate, and pencil (edit) buttons
+hide, and the keyboard mirrors the toolbar: **L** toggles the laser, **I** the pen,
 **B** the selection box, and **H** returns the view home.
 
 ## Hide an image

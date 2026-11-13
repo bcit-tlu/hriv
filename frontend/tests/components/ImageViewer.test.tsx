@@ -1817,6 +1817,18 @@ describe('ImageViewer presentation tools (#1876)', () => {
     for (const el of navButtons) expect(el.style.display).toBe('inline-block')
   })
 
+  it('hides the canvas-edit pencil only while in full-page mode', () => {
+    render(<ImageViewer tileSources="/tiles.dzi" canEditContent />)
+    const pencil = buttonByTooltip('Canvas annotations (add shapes, text, links)').element
+    expect(pencil.style.display).toBe('inline-block')
+
+    enterFullPage()
+    expect(pencil.style.display).toBe('none')
+
+    exitFullPage()
+    expect(pencil.style.display).toBe('inline-block')
+  })
+
   it('docks lock/clear next to the selection button, pencil-edit last', () => {
     render(<ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={vi.fn()} />)
     const docked = viewer().addControl.mock.calls.map((call) => call[0] as HTMLElement)

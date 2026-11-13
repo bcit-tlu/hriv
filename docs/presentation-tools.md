@@ -26,10 +26,12 @@ cursor was too small for participants in the back to follow.
   the bottom-left control dock while `viewer.isFullPage()`; they hide again
   on exit. Entering full-page auto-arms the laser; exiting disarms the tool
   and clears all ink.
-- While in full-page the zoom +/- and rotate-left/right buttons are hidden
-  (user testing found them useless in that context); they return in normal
-  view. Mouse click-to-zoom is disabled everywhere — scroll, pinch and touch
-  double-tap zoom are unchanged (#1877).
+- While in full-page the zoom +/-, rotate-left/right, and canvas-edit
+  (pencil) buttons are hidden — zoom/rotate tested as useless there, and
+  hiding the pencil keeps full-page purely presenter mode: editing happens
+  in normal view. They return in normal view. Mouse click-to-zoom is
+  disabled everywhere — scroll, pinch and touch double-tap zoom are
+  unchanged (#1877).
 - Keyboard shortcuts mirror the toolbar: **H** = home, **B** = selection
   box, **L** = laser, **I** = ink — deliberately avoiding OSD's own
   bindings (WASD/arrows pan, F flips, R rotates, 0 homes, J/K page). The
@@ -75,8 +77,9 @@ cursor was too small for participants in the back to follow.
   triggers the cancel flow (a dirty draft shows the discard prompt), and
   the tool stays queued behind `pendingPresentationTool` until edit mode
   actually exits — "Keep editing" leaves everything untouched. Entering
-  full-page during an edit queues the laser the same way, since annotation
-  editing works in full-page too.
+  full-page during an edit queues the laser the same way: the edit session
+  survives the transition (the overlay is portal-mounted), and the queued
+  tool arms when it exits.
 - The shared `MouseTracker`'s `preProcessEventHandler` skips gestures whose
   target is tagged `data-hriv-canvas-ui`, and rejects **pointerdown**
   targets outside `viewer.canvas` so presses on the OSD control
