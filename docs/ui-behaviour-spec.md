@@ -304,7 +304,7 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
   zoom +/- and rotate-left/right buttons hide (they stay in normal view).
   Exiting full-page disarms the active tool, clears all ink, and restores
   the hidden buttons.
-- The laser is a glowing red dot (~20–24px halo) with a short fading trail
+- The laser is a glowing green dot (`#00CC00`, ~20–24px halo; green because red vanishes into H&E tissue) with a short fading trail
   (~450ms); the native cursor hides (`cursor: none`) while armed, and the
   dot stays hidden until the first pointer move and again on pointer-leave.
   Mouse navigation stays enabled so the presenter can pan/zoom while
