@@ -468,6 +468,35 @@ true; local compose needs no override outside this test.
 
 ---
 
+## Test Case 9c: Image Viewer — Full-Screen Presentation Tools (#1876)
+
+**Purpose:** Verify the ephemeral laser pointer and ink tools arm only in
+OSD full-page mode, track the image through pan/zoom, and leave nothing
+behind. Any role works — presenting is a student activity too.
+
+1. Open any image in the viewer. **Assert:** no laser/ink buttons in the
+   bottom-left dock; zoom +/- and rotate buttons are present.
+2. Enter full-page (diagonal-arrows button). **Assert:** the laser
+   auto-arms — the native cursor hides and a green dot with a short fading
+   trail follows the pointer; laser + ink buttons appear in the dock and
+   zoom/rotate buttons hide.
+3. Drag-pan and scroll-zoom while the laser is armed. **Assert:**
+   navigation still works normally.
+4. Press **I** (or the ink button) and draw a stroke across a structure.
+   **Assert:** a cyan ~4.6px line follows the pen; the stroke stays glued to
+   the structure while panning and zooming; it holds full opacity ~8s, then
+   fades out by ~10s. Reload the page — no strokes persist.
+5. Press **B** and drag a selection box; press **H**. **Assert:** the view
+   returns home.
+6. Exit full-page. **Assert:** the tools disarm, all ink clears, and the
+   zoom/rotate buttons come back.
+7. Keys mirror the toolbar: **L** laser, **I** ink, **B** selection box,
+   **H** home (L/I only respond in full-page, and all keys are ignored
+   while typing in a field). OSD's own bindings still work: arrows/WASD
+   pan, **F** flips, **R** rotates, **0** homes.
+
+---
+
 ## Test Case 10: Collection Orphaned by Program Deletion → Admin Reassign (API)
 
 **Purpose:** Verify that deleting a program leaves its collections in place as
