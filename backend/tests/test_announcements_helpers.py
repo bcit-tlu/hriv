@@ -94,6 +94,12 @@ def test_embedded_media_ids_accepts_crlf_and_video_query() -> None:
     assert embedded_media_ids(message) == [9, 10]
 
 
+def test_embedded_media_ids_keeps_media_between_backtick_only_lines() -> None:
+    # `` alone on a line is not a fence — the frontend renders the image.
+    message = "``\n![shot](/api/media/4)\n``"
+    assert embedded_media_ids(message) == [4]
+
+
 def test_embedded_media_ids_dedupes_in_order() -> None:
     message = "![a](/api/media/2)\n\n/api/media/1\n\n![b](/api/media/2)"
     assert embedded_media_ids(message) == [2, 1]

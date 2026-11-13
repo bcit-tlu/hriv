@@ -250,7 +250,7 @@ def media_ids_in(message: str) -> list[int]:
 
 
 _CODE_SPAN_RE = re.compile(
-    r"```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~|``[^`]*``|`[^`\n]*`",
+    r"```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~|``[^`\n]*``|`[^`\n]*`",
     re.DOTALL,
 )
 _EMBEDDED_MEDIA_RE = re.compile(
