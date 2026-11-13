@@ -18,7 +18,7 @@ const meta = {
       </AppBar>
     ),
   ],
-  parameters: { layout: 'padded' },
+  parameters: { layout: 'padded', chromatic: { pauseAnimationAtEnd: true } },
 } satisfies Meta<typeof AnnouncementsBell>
 
 export default meta

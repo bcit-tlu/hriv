@@ -1176,7 +1176,7 @@ Epic #1832, always on; see [announcements.md](announcements.md) for the model
 and API.
 
 - **Given** any signed-in role, **Then** the AppBar bell is visible; its badge
-  is the number of unseen _live_ Inbox posts. Opening it peeks the newest ≤5
+  is a pulsing amber dot while unseen _live_ Inbox posts exist. Opening it peeks the newest ≤5
   unseen titles with kind icon and relative time; **See all** navigates to
   `?page=announcements`; clicking a title opens the page focused on that card
   (`?id=`).

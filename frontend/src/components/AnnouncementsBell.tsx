@@ -1,4 +1,5 @@
 import { useState, type MouseEvent } from 'react'
+import { keyframes } from '@emotion/react'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -18,6 +19,12 @@ import { kindMeta } from '../announcementKinds'
 import { formatRelativeTime } from '../formatUtils'
 
 export const BELL_PEEK_LIMIT = 5
+
+// Expanding ring that radiates from the unseen-posts badge dot.
+const badgePulse = keyframes`
+  0% { transform: scale(1); opacity: 1; }
+  70%, 100% { transform: scale(3); opacity: 0; }
+`
 
 export interface AnnouncementsBellProps {
   announcements: ApiAnnouncement[]
@@ -61,7 +68,22 @@ export default function AnnouncementsBell({
             invisible={unseenCount === 0}
             overlap="circular"
             // A small amber dot (no number) with a ring in the bar colour so it reads on the red AppBar.
-            sx={{ '& .MuiBadge-dot': { boxShadow: (t) => `0 0 0 2px ${t.palette.primary.main}` } }}
+            // A ::after twin of the dot pulses outward on a loop until everything is seen.
+            sx={{
+              '& .MuiBadge-dot': {
+                boxShadow: (t) => `0 0 0 2px ${t.palette.primary.main}`,
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  backgroundColor: 'inherit',
+                  '@media (prefers-reduced-motion: no-preference)': {
+                    animation: `${badgePulse} 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
+                  },
+                },
+              },
+            }}
           >
             <NotificationsIcon />
           </Badge>
