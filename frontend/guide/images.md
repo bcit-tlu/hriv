@@ -90,8 +90,8 @@ a short trail, easy to follow from the back row. Need to circle something?
 Click the **squiggle** button for a pen that fades away on its own about ten
 seconds after each stroke, so nothing is left behind on the image. Click the
 buttons again to switch back and forth, and leave fullscreen to clear
-everything. While presenting, the zoom and rotate buttons hide, and the
-keyboard mirrors the toolbar: **L** toggles the laser, **I** the pen,
+everything. While presenting, the zoom, rotate, and pencil (edit) buttons
+hide, and the keyboard mirrors the toolbar: **L** toggles the laser, **I** the pen,
 **B** the selection box, and **H** returns the view home.
 
 ## Hide an image

@@ -301,7 +301,9 @@ ephemeral — nothing is persisted to metadata, share links, or exports.
 - **Given** full-page mode is entered (OSD button or the browser-fullscreen
   handoff), **Then** the laser pointer auto-arms and two buttons — **Laser
   pointer** and **Freehand ink** — appear in the bottom-left dock, and the
-  zoom +/- and rotate-left/right buttons hide (they stay in normal view).
+  zoom +/-, rotate-left/right, and canvas-edit (pencil) buttons hide —
+  full-page is presenter mode; editing happens in normal view (they stay
+  in normal view).
   Exiting full-page disarms the active tool, clears all ink, and restores
   the hidden buttons.
 - The laser is a glowing green dot (`#00CC00`, ~20–24px halo; green because red vanishes into H&E tissue) with a short fading trail

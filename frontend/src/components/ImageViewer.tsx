@@ -1053,20 +1053,24 @@ export default function ImageViewer({
 
     // User testing found the +/- and rotation buttons useless while
     // presenting; hide them in full-screen so the dock stays decluttered.
-    // They stay in normal view (#1877).
+    // They stay in normal view (#1877). The canvas-edit pencil joins the
+    // list at creation below: full-page is presenter mode, editing happens
+    // in normal view.
+    const fullPageHiddenEls: HTMLElement[] = []
     const setNavControlsHidden = (hidden: boolean) => {
-      for (const button of [
-        viewer.zoomInButton,
-        viewer.zoomOutButton,
-        viewer.rotateLeftButton,
-        viewer.rotateRightButton,
-      ]) {
-        // Restore 'inline-block' — ControlDock.addControl sets it inline; a
-        // blank string would collapse the buttons to display:block stacking.
-        if (button?.element) {
-          button.element.style.display = hidden ? 'none' : 'inline-block'
-        }
+      // Restore 'inline-block' — ControlDock.addControl sets it inline; a
+      // blank string would collapse the buttons to display:block stacking.
+      for (const el of fullPageHiddenEls) {
+        el.style.display = hidden ? 'none' : 'inline-block'
       }
+    }
+    for (const button of [
+      viewer.zoomInButton,
+      viewer.zoomOutButton,
+      viewer.rotateLeftButton,
+      viewer.rotateRightButton,
+    ]) {
+      if (button?.element) fullPageHiddenEls.push(button.element)
     }
 
     // --- Mouse tracker for drawing selection rectangles ---
@@ -1334,6 +1338,9 @@ export default function ImageViewer({
         },
       })
       canvasEditButton.element.style.lineHeight = '0'
+      // Hidden in full-page like zoom/rotate: presenting and editing are
+      // separate modes — exit full-screen to reach the pencil again.
+      fullPageHiddenEls.push(canvasEditButton.element)
       viewer.addControl(canvasEditButton.element, {
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
