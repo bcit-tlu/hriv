@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user
 from ..auth_events import actor_log_fields
 from ..counting import jobs
+from ..counting.mpp import mpp_from_metadata, nuclei_downsample
 from ..counting.stitch import (
     InvalidSelection,
     MissingTiles,
@@ -119,17 +120,10 @@ async def create_count(
                 raise HTTPException(status_code=409, detail="tiles_not_ready")
 
             # Cheap pre-flight validation — the worker re-plans identically
-            # before stitching, so both sides share ``plan_region``.
-            raw_mpp = (getattr(img, "metadata_", None) or {}).get("mpp_x")
-            # Metadata is free-form JSON: only a positive number counts as a
-            # known pixel size; anything else is treated as absent.
-            mpp_x = (
-                float(raw_mpp)
-                if isinstance(raw_mpp, (int, float))
-                and not isinstance(raw_mpp, bool)
-                and raw_mpp > 0
-                else None
-            )
+            # before stitching, so both sides share ``plan_region``. The
+            # resolved mpp rides the job record to the worker, so this one
+            # derivation feeds pre-flight, the level rule and the outliner.
+            mpp = mpp_from_metadata(getattr(img, "metadata_", None))
             try:
                 tile_root = resolve_tile_root(
                     settings.tiles_dir, source_image_id
@@ -156,17 +150,19 @@ async def create_count(
                         classical_max_pixels=settings.counting_classical_max_pixels,
                     ),
                     max_downsample=settings.counting_max_downsample,
-                    # Nuclei without mpp always run at level 0 (the
-                    # hematoxylin estimate merges dense tissue); forcing
-                    # the same d=1 here surfaces selection_too_large at
-                    # enqueue instead of after a wasted queue slot.
+                    # Nuclei run at the worker's fixed level rule — level
+                    # 0 with no pixel size (the hematoxylin estimate merges
+                    # dense tissue), the mpp-derived level otherwise.
+                    # Planning the same d here surfaces selection_too_large
+                    # at enqueue instead of after a wasted queue slot.
                     downsample=(
-                        1
+                        nuclei_downsample(
+                            mpp, settings.counting_max_downsample
+                        )
                         if (
                             body.mode == "nuclei"
                             and settings.counting_nuclei_outliner
                             not in CHEAP_OUTLINERS
-                            and mpp_x is None
                         )
                         else None
                     ),
@@ -213,11 +209,7 @@ async def create_count(
                     source_image_id=source_image_id,
                     mode=body.mode,
                     selection=body.selection.model_dump(),
-                    mpp=(
-                        mpp_x
-                        if isinstance(mpp_x, (int, float)) and mpp_x > 0
-                        else None
-                    ),
+                    mpp=mpp,
                     ttl_seconds=settings.counting_result_ttl_seconds,
                 )
                 reserved = await jobs.reserve_active_slot(

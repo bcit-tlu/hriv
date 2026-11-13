@@ -128,6 +128,12 @@ The image `version` is incremented (so stale viewer `If-Match` saves get 409)
 and the browse revision is bumped when the image is categorized or in a
 collection.
 
+An approved scale also calibrates **object counting**: the counts router
+derives `mpp = unit / measurement_scale` whenever `mpp_x` is absent
+(`app/counting/mpp.py`), so approved measurements feed InstanSeg
+`pixel_size` and the mpp-driven nuclei level rule instead of the 0.5
+µm/px default.
+
 Resetting an approved finding reverses that promotion: while the stored
 scale is still exactly the value the finding approved (`measurement_scale`,
 `measurement_unit` and `measurement_finding_id` all matching), the four keys

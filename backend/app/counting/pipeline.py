@@ -21,6 +21,7 @@ from opentelemetry import trace
 
 from .grouping import assign_groups
 from .metrics import record_run_step
+from .mpp import nuclei_downsample
 from .objects import objects_from_labels
 from .outliners import (
     NATIVE_DIAMETER,
@@ -131,13 +132,9 @@ def _choose_downsample(
         # no mpp the hematoxylin-mask diameter estimate merges dense tissue
         # and over-coarsens, so always stay at level 0 — an over-budget
         # selection then fails pre-flight rather than silently counting
-        # nothing.
-        if mpp and mpp > 0:
-            d = max_downsample
-            while d > 1 and mpp * d > 0.5:
-                d //= 2
-            return d
-        return 1
+        # nothing. Shared with the API via ``counting.mpp`` so pre-flight
+        # plans the exact level this returns (#1868).
+        return nuclei_downsample(mpp, max_downsample)
 
     native = NATIVE_DIAMETER[mode]
     # Probe at a coarse level bounded by ~0.25 MP; a probe that still can't
