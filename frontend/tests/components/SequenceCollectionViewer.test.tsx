@@ -919,6 +919,64 @@ describe('annotation and overlay editing (#1863)', () => {
     expect(lastViewerProps!.overlaysLocked).toBe(false)
   })
 
+  it('keeps initialOverlays stable across member metadata swaps for one image', () => {
+    // `initialOverlays` feeds ImageViewer's mount effect — a new reference
+    // after a lock/clear save would destroy the OSD viewer and reset zoom.
+    const { props, rerender } = renderViewer({
+      collection: seqCollection({
+        images: [
+          makeImage({
+            id: 100,
+            name: 'Slice 1',
+            metadataExtra: { locked_overlays: [overlayRect] },
+          }),
+          makeImage({ id: 101, name: 'Slice 2' }),
+        ],
+      }),
+      canEditContent: true,
+    })
+    const stableRef = lastViewerProps!.initialOverlays
+    expect(stableRef).toEqual([overlayRect])
+
+    // The parent swaps the member after the clear write — same id, metadata
+    // changed. The mount prop must keep the entry reference; the live lock
+    // state (`overlaysLocked`) still follows the fresh metadata.
+    rerender(
+      <SequenceCollectionViewer
+        {...props}
+        collection={seqCollection({
+          images: [
+            makeImage({ id: 100, name: 'Slice 1', metadataExtra: {} }),
+            makeImage({ id: 101, name: 'Slice 2' }),
+          ],
+        })}
+      />,
+    )
+    expect(lastViewerProps!.initialOverlays).toBe(stableRef)
+    expect(lastViewerProps!.overlaysLocked).toBe(false)
+  })
+
+  it('recomputes initialOverlays when the member changes', () => {
+    const { props, rerender } = renderViewer({
+      itemId: 100,
+      collection: seqCollection({
+        images: [
+          makeImage({ id: 100, name: 'Slice 1' }),
+          makeImage({
+            id: 101,
+            name: 'Slice 2',
+            metadataExtra: { locked_overlays: [overlayRect] },
+          }),
+        ],
+      }),
+      canEditContent: true,
+    })
+    expect(lastViewerProps!.initialOverlays).toBeUndefined()
+
+    rerender(<SequenceCollectionViewer {...props} itemId={101} />)
+    expect(lastViewerProps!.initialOverlays).toEqual([overlayRect])
+  })
+
   it('auto-engages the overlay lock when the member has stored locked overlays', () => {
     renderViewer({
       collection: seqCollection({

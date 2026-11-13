@@ -1696,6 +1696,24 @@ export default function App() {
     [setCategories, setUncategorizedImages],
   )
 
+  // Collection-viewer saves swap the member inside the open collection
+  // AND replace the record in the browse caches + selected image —
+  // otherwise a browser back into the regular viewer would restore the
+  // pre-edit record and show stale annotations. `mergeRenewedImageItemUrls`
+  // only covers tile credentials, so the saved record is swapped in whole
+  // via `apiImageToItem` (same as `renewCollectionImage` itself).
+  const renewCollectionImage = collectionsData.renewCollectionImage
+  const handleCollectionImageRenewed = useCallback(
+    (collectionId: number, image: ApiImage) => {
+      renewCollectionImage(collectionId, image)
+      const fresh = apiImageToItem(image)
+      setCategories((prev) => updateImageInTree(prev, image.id, () => fresh))
+      setUncategorizedImages((prev) => prev.map((cur) => (cur.id === image.id ? fresh : cur)))
+      setSelectedImage((prev) => (prev?.id === image.id ? fresh : prev))
+    },
+    [renewCollectionImage, setCategories, setUncategorizedImages],
+  )
+
   const handleCategoryTileClick = useCallback(
     (cat: Category) => {
       // Rebase onto the live ancestry so a reparent since the last
@@ -2575,7 +2593,7 @@ export default function App() {
               selectedCollectionItemId={selectedCollectionItemId}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
-              onCollectionImageRenewed={collectionsData.renewCollectionImage}
+              onCollectionImageRenewed={handleCollectionImageRenewed}
               onViewerError={setErrorSnack}
               canAnnotateImages={canEditContent}
               canvasDraftRef={collectionCanvasDraftRef}

@@ -522,22 +522,29 @@ vi.mock('../src/components/SortableTileGrid', () => ({
   ),
 }))
 
+const imageViewerProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
+}))
 vi.mock('../src/components/ImageViewer', () => ({
-  default: function MockImageViewer({
-    imageId,
-    onCanvasEditModeChange,
-    onCanvasAnnotationsChange,
-    onSaveCanvasAnnotations,
-    viewportOverlay,
-    viewportControl,
-  }: {
-    imageId?: number
-    onCanvasEditModeChange?: (active: boolean) => void
-    onCanvasAnnotationsChange?: (annotations: unknown[]) => void
-    onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
-    viewportOverlay?: ReactNode
-    viewportControl?: ReactNode
-  }) {
+  default: function MockImageViewer(
+    props: {
+      imageId?: number
+      onCanvasEditModeChange?: (active: boolean) => void
+      onCanvasAnnotationsChange?: (annotations: unknown[]) => void
+      onSaveCanvasAnnotations?: (annotations: unknown[]) => Promise<boolean>
+      viewportOverlay?: ReactNode
+      viewportControl?: ReactNode
+    } & Record<string, unknown>,
+  ) {
+    imageViewerProps.current = props
+    const {
+      imageId,
+      onCanvasEditModeChange,
+      onCanvasAnnotationsChange,
+      onSaveCanvasAnnotations,
+      viewportOverlay,
+      viewportControl,
+    } = props
     const [internalEditMode, setInternalEditMode] = useState(false)
     return (
       <div>
@@ -651,6 +658,7 @@ const collectionsDataMocks = vi.hoisted(() => ({
   move: vi.fn(),
   saveOwners: vi.fn(),
   setHidden: vi.fn(),
+  renewCollectionImage: vi.fn(),
   filters: {
     type: 'all' as string,
     mine: false,
@@ -714,7 +722,7 @@ vi.mock('../src/useCollectionsData', async () => {
             ? addToCollectionMocks.addImagesToCollection(id, imageIds)
             : addToCollectionMocks.addImagesToCollection(id, imageIds, role),
         removeImages: vi.fn(),
-        renewCollectionImage: vi.fn(),
+        renewCollectionImage: collectionsDataMocks.renewCollectionImage,
       }
     },
   }
@@ -1088,6 +1096,52 @@ describe('App breadcrumbs', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard Changes' }))
     expect(screen.getByTestId('collections-page')).toHaveAttribute('data-selected', 'null')
+  })
+
+  it('renews the browse caches when a collection member is saved', async () => {
+    await openCollectionsPage()
+    const onCollectionImageRenewed = collectionsPageProps.current?.onCollectionImageRenewed as (
+      collectionId: number,
+      image: ApiImage,
+    ) => void
+    expect(onCollectionImageRenewed).toBeTypeOf('function')
+
+    // Open the same image in the regular viewer first — the popstate/browse
+    // caches hold its pre-edit record.
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    expect(imageViewerProps.current?.imageId).toBe(101)
+    expect(imageViewerProps.current?.tileSources).toBe('/tiles.dzi')
+
+    const renewed = {
+      id: 101,
+      name: 'Specimen Image',
+      thumb: '/thumb.jpg',
+      tile_sources: '/renewed-tiles.dzi',
+      category_id: 1,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      version: 2,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+      metadata_extra: { canvas_annotations: [{ id: 'a1', type: 'rect', x: 0, y: 0, w: 1, h: 1 }] },
+      width: 100,
+      height: 100,
+      file_size: 10,
+    } as ApiImage
+
+    act(() => onCollectionImageRenewed(5, renewed))
+
+    // The collection detail swap still happens…
+    expect(collectionsDataMocks.renewCollectionImage).toHaveBeenCalledWith(5, renewed)
+    // …and the saved record is swapped into the browse caches + selected
+    // image wholesale, so the open regular viewer (and a later browser back
+    // into it) sees the saved metadata instead of the stale pre-edit record.
+    // (useCanvasAnnotations is mocked here, so tileSources is the observable
+    // proof the selectedImage object was replaced.)
+    expect(imageViewerProps.current?.tileSources).toBe('/renewed-tiles.dzi')
   })
 
   it('blocks navigation while a collection draft save is pending', async () => {

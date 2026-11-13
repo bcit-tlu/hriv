@@ -233,6 +233,18 @@ export default function SequenceCollectionViewer({
     JSON.stringify(currentMetadata?.locked_overlays ?? null),
     () => lockedOverlaysFromMetadata(currentMetadata),
   )
+  // `initialOverlays` is an ImageViewer mount dependency — keep it stable
+  // for the member's whole lifetime (id-keyed, like useShareableImageState
+  // does for the regular viewer). A content-keyed value would change on
+  // every lock/clear save and the mount effect would destroy the OSD
+  // viewer, resetting zoom/pan mid-edit. Live overlay changes arrive
+  // through the lock callbacks, not this prop; `lockedOverlays` above
+  // still seeds the auto-engaged lock.
+  const initialLockedOverlays = useMemo(
+    () => lockedOverlaysFromMetadata(currentMetadata),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on the member id only
+    [currentImageId],
+  )
   const canvasAnnotations = useStableJson(
     JSON.stringify(currentMetadata?.canvas_annotations ?? null),
     () => canvasAnnotationsFromMetadata(currentMetadata),
@@ -537,7 +549,7 @@ export default function SequenceCollectionViewer({
             imageId={current.id}
             categoryId={current.categoryId ?? undefined}
             height={{ xs: '60vh', md: '100%' }}
-            initialOverlays={lockedOverlays}
+            initialOverlays={initialLockedOverlays}
             overlaysLocked={lockEngaged}
             onLockOverlays={canEditContent ? handleLockOverlays : undefined}
             onUnlockOverlays={canEditContent ? handleUnlockOverlays : undefined}
