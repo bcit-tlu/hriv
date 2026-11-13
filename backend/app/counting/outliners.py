@@ -64,16 +64,6 @@ class Outliner(Protocol):
         """Label every object in *rgb* — including the stitched margin."""
 
 
-def _purple_mask(rgb: np.ndarray) -> np.ndarray:
-    """Dark purple-stained objects (leukocyte nuclei) — the same window
-    ``measurement/detector.py`` uses, in HSV fractions."""
-    from skimage import color
-
-    hsv = color.rgb2hsv(rgb / 255.0)
-    hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
-    return (hue >= 0.62) & (hue <= 0.85) & (sat >= 0.25) & (val < 0.75)
-
-
 def _tuned_number(params: dict, key: str) -> float | None:
     """One numeric tuning field, or None when absent/malformed (#1870)."""
     value = params.get(key)
@@ -117,22 +107,20 @@ def _mask_and_signal(
     threshold = filters.threshold_otsu(signal)
     min_size = 30
     if params is not None:
-        # sensitivity: 0 → stricter (×1.24), 0.6 (default) → ×1.0, 1 →
-        # permissive (×0.84) — admits fainter boundaries (#1870).
+        # sensitivity: 0 → stricter, 0.6 (default) → ±0, 1 → permissive.
+        # Additive, tied to the signal's own spread — a multiplicative
+        # offset reverses ordering whenever the Otsu threshold goes
+        # negative, which the flat-field makes common on dense fields
+        # (#1870 review).
         if (s := _tuned_number(params, "sensitivity")) is not None:
-            threshold = threshold * (1.24 - 0.4 * min(1.0, max(0.0, s)))
-        # min_cell_size is a px radius; default 3.0 ↔ the shipped 30-px
-        # floor, so default tuning stays bit-identical.
+            spread = float(np.percentile(signal, 99.0) - np.median(signal))
+            threshold = threshold + (0.6 - min(1.0, max(0.0, s))) * 0.4 * spread
+        # min_cell_size is a px radius; the shipped 30-px floor is the
+        # area of a radius-3 disc, so radii scale quadratically (area ∝ r²).
         if (mcs := _tuned_number(params, "min_cell_size")) is not None and mcs > 0:
-            min_size = max(1, round(30 * mcs / 3.0))
+            min_size = max(1, round(30 * (mcs / 3.0) ** 2))
     mask = signal > threshold
     mask = ndi.binary_fill_holes(morphology.remove_small_objects(mask, min_size))
-    if (
-        mode == "cells"
-        and params is not None
-        and params.get("exclude_nuclei") is True
-    ):
-        mask &= ~_purple_mask(rgb)
     lab, n = ndi.label(mask)
     return mask, lab, n
 

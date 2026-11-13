@@ -139,9 +139,12 @@ derives `mpp = unit / measurement_scale` whenever `mpp_x` is absent
 
 Promoted `detection_params` are consumed by counting too (#1870): the
 enqueue sanitizes them (`detection_params_from_metadata` — malformed
-fields dropped, `advanced` ignored) and the classical mask maps
-`sensitivity` → Otsu threshold scale, `min_cell_size` → small-object
-floor, `exclude_nuclei` → purple-stain subtraction in cells mode.
+fields dropped, `advanced` ignored, and fields still at DetectionTuning
+defaults dropped so an untouched approval ≡ no tuning) and the
+classical mask maps `sensitivity` → additive Otsu threshold offset,
+`min_cell_size` → area-scaled small-object floor. `exclude_nuclei` is a
+measurement-detector knob; counting never excluded purple objects, so
+it has no counting-side effect.
 
 Resetting an approved finding reverses that promotion: while the stored
 scale is still exactly the value the finding approved (`measurement_scale`,

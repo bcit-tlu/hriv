@@ -319,13 +319,18 @@ data) — the `Outliner` protocol remains the plugin point.
   assumes InstanSeg's native 0.5 µm/px.
 - **Detection params** come from `metadata.detection_params` (#1869,
   sanitized by `detection_params_from_metadata` — malformed fields are
-  dropped, `advanced` never crosses). They ride the job record into the
-  worker and map onto the classical mask: `sensitivity` scales the Otsu
-  threshold (0 → ×1.24 stricter, default 0.6 → ×1.0, 1 → ×0.84
-  permissive), `min_cell_size` scales the `remove_small_objects` floor
-  (default 3.0 ↔ 30 px), and `exclude_nuclei` subtracts a purple-stain
-  mask in cells mode. They apply to the probe that picks the level too —
-  the level rule sees the same signal as the segmenter.
+  dropped field-wise, `advanced` never crosses, and **fields still at
+  their DetectionTuning default are dropped too** so an approval of
+  untouched values behaves identically to no tuning). They ride the job
+  record into the worker and map onto the classical mask: `sensitivity`
+  applies an additive offset to the Otsu threshold scaled by the
+  signal's own p99–median spread (0 → stricter, default 0.6 → ±0, 1 →
+  permissive; additive because a multiplier inverts ordering when the
+  threshold goes negative on dense fields), and `min_cell_size` scales
+  the `remove_small_objects` floor quadratically (radius 3.0 ↔ shipped
+  30-px area). `exclude_nuclei` has no counting-side effect — counting
+  never excluded purple objects. They apply to the probe that picks the
+  level too — the level rule sees the same signal as the segmenter.
 - **Preprocessing**: `_mask_and_signal` applies a subtractive flat-field
   (`signal − gaussian(signal, σ=25)`) before Otsu, removing low-frequency
   staining/illumination drift that buries faint cells (#1870). A division

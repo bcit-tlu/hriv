@@ -75,26 +75,37 @@ def test_sensitivity_loosens_the_threshold() -> None:
 def test_min_cell_size_scales_the_small_object_floor() -> None:
     rgb = _field([(60, 60), (240, 240)], 8)
     _, _, n_default = _mask_and_signal(rgb, "cells")
-    _, _, n_big = _mask_and_signal(rgb, "cells", params={"min_cell_size": 24.0})
-    # radius-8 discs (area ~200px) survive the shipped 30px floor but not
-    # a floor scaled to 240px.
+    _, _, n_big = _mask_and_signal(rgb, "cells", params={"min_cell_size": 12.0})
+    # radius-8 discs (area ~200px) survive the shipped 30-px floor but not
+    # the area-scaled floor of radius 12 (30·(12/3)² = 480px).
     assert n_default >= 2
     assert n_big == 0
 
 
-def test_exclude_nuclei_subtracts_purple_objects() -> None:
-    # Dark purple discs are detected as foreground...
+def test_default_tuning_is_equivalent_to_untuned() -> None:
+    """An approval storing untouched DetectionTuning defaults must not
+    change counting — the same image before and after approval counts
+    the same (#1870 review: default `exclude_nuclei=True` used to drop
+    purple objects only after approval)."""
     rgb = _field([(60, 60), (240, 240)], 16, color=(95, 55, 140))
-    _, _, n_all = _mask_and_signal(rgb, "cells", params={"exclude_nuclei": False})
-    # ...and removed when the reviewer asked for it.
-    _, _, n_no_nuc = _mask_and_signal(rgb, "cells", params={"exclude_nuclei": True})
-    assert n_all == 2 and n_no_nuc == 0
+    defaults = {"sensitivity": 0.6, "min_cell_size": 3.0, "exclude_nuclei": True}
+    mask_none, _, n_none = _mask_and_signal(rgb, "cells", params=None)
+    mask_def, _, n_def = _mask_and_signal(rgb, "cells", params=defaults)
+    assert n_none == n_def
+    assert (mask_none == mask_def).all()
 
 
-def test_exclude_nuclei_keeps_pink_cells() -> None:
-    rgb = _field([(60, 60), (240, 240)], 16)
-    _, _, n = _mask_and_signal(rgb, "cells", params={"exclude_nuclei": True})
-    assert n == 2
+def test_sensitivity_never_shrinks_the_mask() -> None:
+    """On fields where the Otsu threshold is negative, multiplying it
+    reverses the ordering — the offset must be additive so higher
+    sensitivity never selects fewer pixels (#1870 review)."""
+    centers = [(60, 60), (150, 150), (240, 240), (60, 240), (240, 60)]
+    rgb = _field(centers, 16, color=(215, 190, 200), drift=160, period=45)
+    areas = [
+        _mask_and_signal(rgb, "cells", params={"sensitivity": s})[0].sum()
+        for s in (0.0, 0.6, 1.0)
+    ]
+    assert areas[0] <= areas[1] <= areas[2]
 
 
 def test_malformed_params_fields_are_ignored() -> None:
@@ -138,12 +149,21 @@ def test_detection_params_from_metadata_sanitizes() -> None:
         }
     }
     out = detection_params_from_metadata(meta)
-    assert out == {"sensitivity": 0.9, "min_cell_size": 5.0, "exclude_nuclei": True}
+    # `exclude_nuclei=True` is the DetectionTuning default → dropped.
+    assert out == {"sensitivity": 0.9, "min_cell_size": 5.0}
 
 
 @pytest.mark.parametrize(
     "raw",
-    [None, {}, {"detection_params": "tuned"}, {"detection_params": {"sensitivity": "x"}}, {"detection_params": {"sensitivity": 1.5}}],
+    [
+        None,
+        {},
+        {"detection_params": "tuned"},
+        {"detection_params": {"sensitivity": "x"}},
+        {"detection_params": {"sensitivity": 1.5}},
+        # An untouched-default tuning is no tuning at all.
+        {"detection_params": {"sensitivity": 0.6, "min_cell_size": 3.0, "exclude_nuclei": True}},
+    ],
 )
 def test_detection_params_from_metadata_rejects_garbage(raw) -> None:
     assert detection_params_from_metadata(raw) is None
