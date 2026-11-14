@@ -1,5 +1,5 @@
 {
-  "frontend": "0.69.1",
+  "frontend": "0.69.2",
   "backend": "0.70.1",
   "backup": "0.17.4",
   "restore-validation": "0.2.2",
