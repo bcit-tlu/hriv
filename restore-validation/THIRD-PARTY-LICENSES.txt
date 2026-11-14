@@ -4771,7 +4771,7 @@ standalone and requires a support library to be linked with it.  This
 support library is itself covered by the above license.
 
 ================================================================================
-psycopg@3.3.6
+psycopg@3.3.8
 License: LGPL-3.0-only
 ================================================================================
 
@@ -4942,7 +4942,7 @@ permanent authorization for you to choose that version for the
 Library.
 
 ================================================================================
-psycopg-binary@3.3.6
+psycopg-binary@3.3.8
 License: LGPL-3.0-only
 ================================================================================
 
