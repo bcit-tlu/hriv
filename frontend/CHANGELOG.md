@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.1...frontend-v0.69.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **announcements:** render banner bodies as markdown like the cards ([#1898](https://github.com/bcit-tlu/hriv/issues/1898)) ([687b337](https://github.com/bcit-tlu/hriv/commit/687b33784dee9aec9df9b6b2581f35068930767b))
+
 ## [0.69.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.69.0...frontend-v0.69.1) (2026-11-13)
 
 
