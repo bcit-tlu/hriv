@@ -258,7 +258,8 @@ async def test_sections_use_parent_board_occ_and_validate_membership(world):
     assert result.status_code == 428
     result = await world.client.delete(f"{path}/sections/{section['id']}", headers={"If-Match": "3"})
     assert result.status_code == 409
-    assert (await world.client.delete(f"{path}/sections/{section['id']}", headers={"If-Match": "4"})).status_code == 204
+    result = await world.client.delete(f"{path}/sections/{section['id']}", headers={"If-Match": "4"})
+    assert result.status_code == 204
 
 
 @pytest.mark.parametrize("resource", ["sections", "inuksuks"])
