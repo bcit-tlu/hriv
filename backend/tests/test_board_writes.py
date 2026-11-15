@@ -170,7 +170,8 @@ async def test_own_board_and_inuksuk_crud_occ(world, role):
     assert changed.json()["version"] == 2
     stale = await world.client.patch(path, json={"version": 1, "description": "stale"})
     assert stale.status_code == 409 and stale.json()["detail"]["version"] == 2
-    assert (await world.client.delete(path)).status_code == 428
+    result = await world.client.delete(path)
+    assert result.status_code == 428
     assert (await world.client.delete(path, headers={"If-Match": "1"})).status_code == 409
     assert (await world.client.delete(path, headers={"If-Match": "2"})).status_code == 204
     item = await world.create()
