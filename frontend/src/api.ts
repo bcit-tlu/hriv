@@ -2817,17 +2817,28 @@ export function replaceInuksukOwners(
 ): Promise<ApiInuksuk> {
   return request(`/inuksuks/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
 }
-export function inuksukConflictCurrent(err: unknown): ApiInuksuk | null {
+export type InuksukConflict = Pick<
+  ApiInuksuk,
+  'id' | 'version' | 'title' | 'description' | 'favourite' | 'board_ids' | 'permissions'
+>
+function isInuksukConflict(value: unknown): value is InuksukConflict {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'number' &&
+    typeof value.version === 'number' &&
+    typeof value.title === 'string' &&
+    (value.description === null || typeof value.description === 'string') &&
+    typeof value.favourite === 'boolean' &&
+    Array.isArray(value.board_ids) &&
+    value.board_ids.every((id: unknown) => typeof id === 'number') &&
+    isRecord(value.permissions) &&
+    typeof value.permissions.can_edit === 'boolean' &&
+    typeof value.permissions.can_delete === 'boolean'
+  )
+}
+export function inuksukConflictCurrent(err: unknown): InuksukConflict | null {
   if (!(err instanceof ApiError) || err.status !== 409) return null
-  const detail = err.data
-  return isRecord(detail) &&
-    typeof detail.id === 'number' &&
-    typeof detail.version === 'number' &&
-    typeof detail.title === 'string' &&
-    Array.isArray(detail.board_ids) &&
-    isRecord(detail.permissions)
-    ? (detail as unknown as ApiInuksuk)
-    : null
+  return isInuksukConflict(err.data) ? err.data : null
 }
 
 export function fetchVersions(): Promise<VersionsResponse> {

@@ -58,7 +58,7 @@ export default function InuksukFormDialog({
   onChanged,
   services = defaultServices,
 }: InuksukFormDialogProps) {
-  const [baseline, setBaseline] = useState(item)
+  const [baseline, setBaseline] = useState<api.InuksukConflict | null>(item)
   const [title, setTitle] = useState(item?.title ?? '')
   const [description, setDescription] = useState(item?.description ?? '')
   const [favourite, setFavourite] = useState(item?.favourite ?? false)
@@ -69,7 +69,7 @@ export default function InuksukFormDialog({
   const [boardsLoaded, setBoardsLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [conflict, setConflict] = useState<ApiInuksuk | null>(null)
+  const [conflict, setConflict] = useState<api.InuksukConflict | null>(null)
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [boardName, setBoardName] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)

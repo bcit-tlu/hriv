@@ -166,6 +166,36 @@ const cases: {
   },
 ]
 describe('Board / Section / Inuksuk API contracts', () => {
+  it.each([
+    null,
+    {},
+    { ...INUKSUK_FIXTURE, id: '7' },
+    { ...INUKSUK_FIXTURE, version: null },
+    { ...INUKSUK_FIXTURE, title: undefined },
+    { ...INUKSUK_FIXTURE, description: false },
+    { ...INUKSUK_FIXTURE, favourite: 'true' },
+    { ...INUKSUK_FIXTURE, board_ids: null },
+    { ...INUKSUK_FIXTURE, board_ids: ['1'] },
+    { ...INUKSUK_FIXTURE, permissions: null },
+    { ...INUKSUK_FIXTURE, permissions: { can_edit: true } },
+    { ...INUKSUK_FIXTURE, permissions: { can_edit: 'true', can_delete: false } },
+    { ...INUKSUK_FIXTURE, permissions: { can_edit: true, can_delete: 1 } },
+  ])('rejects malformed conflict fields consumed by reload (%#)', (detail: unknown) => {
+    expect(api.inuksukConflictCurrent(new api.ApiError(409, 'stale', detail))).toBeNull()
+  })
+  it('returns only a validated editable projection type without requiring unused response fields', () => {
+    const { id, version, title, description, favourite, board_ids, permissions } = INUKSUK_FIXTURE
+    const current: api.InuksukConflict = {
+      id,
+      version,
+      title,
+      description,
+      favourite,
+      board_ids,
+      permissions,
+    }
+    expect(api.inuksukConflictCurrent(new api.ApiError(409, 'stale', current))).toBe(current)
+  })
   it.each(cases)('$name', async ({ call, method, path, body, version }) => {
     await call()
     const [url, init] = fetchMock.mock.calls[0]
