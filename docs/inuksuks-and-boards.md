@@ -391,8 +391,9 @@ both default to shown. Group actions set the default for the entire source and
 clear all row overrides for that dimension, including cached rows on other
 images. A subsequent row action overrides that default. Mixed groups show
 counts and **Mixed**; toggling a mixed group shows all. Changing markers never
-changes labels, or vice versa. The explicit `inuksukVisibility` viewer prop,
-when provided by a controlled embed, still takes precedence over preferences.
+changes labels, or vice versa. Shared preferences are the viewer's single source
+of visibility state, so drawer controls always reflect the rendered markers and
+labels. Collection embeds use the same preferences rather than external overrides.
 
 Preferences use `hriv.inuksukVisibility.<userId>`. Parsing validates the shape
 and defaults corrupt values safely; at most 500 recently changed row overrides
