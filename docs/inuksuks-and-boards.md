@@ -276,6 +276,12 @@ Inuksuk locks; image replacement takes an exclusive Image row lock before
 deleting the old Inuksuks. The geometry read and write therefore serialize
 with replacement rather than inserting bookmarks into its deletion window.
 
+The shared membership revision helper invalidates every affected Board on
+assignment changes, Inuksuk deletion, user cleanup and image replacement or
+deletion (before links cascade away). Old Board versions then return 409,
+including when membership changes through an image endpoint rather than a
+Board endpoint. Orphan deletion has no surviving membership to invalidate.
+
 After create commits (id known), or a committed geometry change, thumbnail
 generation runs through `asyncio.to_thread`. It rechecks the Inuksuk version
 under a row lock so a stale generator cannot overwrite a newer edit or

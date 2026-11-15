@@ -19,7 +19,7 @@ from app.models import (
     Board, BoardInuksuk, BoardSection, Category, Group, Image, Inuksuk,
     Program, SourceImage, User,
 )
-from app.routers import boards, inuksuks, users as users_router
+from app.routers import boards, images as images_router, inuksuks, users as users_router
 
 DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 
@@ -104,6 +104,7 @@ async def world(tmp_path, monkeypatch):
         app = FastAPI()
         app.include_router(boards.router, prefix="/api")
         app.include_router(inuksuks.router, prefix="/api")
+        app.include_router(images_router.router, prefix="/api")
         app.include_router(users_router.router, prefix="/api")
         app.dependency_overrides[get_db] = session
         app.dependency_overrides[auth.get_current_user] = current_user
@@ -503,6 +504,40 @@ async def test_board_delete_orphan_cleanup_preserves_other_boards_and_files(worl
     assert (root / "inuksuks" / f"{shared['id']}.jpg").exists()
 
 
+async def test_inuksuk_delete_and_assignment_changes_invalidate_every_affected_board(world):
+    assignment = [{"board_id": world.boards["student"]}, {"board_id": world.boards["shared"]}]
+    item = await world.create(assignments=assignment)
+    before_student, before_shared = await world.board("student"), await world.board("shared")
+    result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={
+        "version": 1, "board_assignments": [{"board_id": world.boards["shared"]}],
+    })
+    assert result.status_code == 200, result.text
+    after_student, after_shared = await world.board("student"), await world.board("shared")
+    assert after_student["version"] == before_student["version"] + 1
+    assert after_shared["version"] == before_shared["version"] + 1
+    result = await world.client.delete(f"/api/inuksuks/{item['id']}", headers={"If-Match": "2"})
+    assert result.status_code == 204, result.text
+    final = await world.board("shared")
+    assert final["version"] == after_shared["version"] + 1
+    result = await world.client.patch(f"/api/boards/{final['id']}", json={"version": after_shared["version"], "name": "Stale"})
+    assert result.status_code == 409 and result.json()["detail"]["version"] == final["version"]
+    assert (await world.board("student"))["version"] == after_student["version"]
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+async def test_image_delete_invalidates_linked_boards(world, bulk):
+    world.caller["role"] = "admin"
+    await world.create()
+    before = await world.board("admin")
+    if bulk:
+        result = await world.client.request("DELETE", "/api/images/bulk", json={"image_ids": [world.images["visible"]]})
+    else:
+        result = await world.client.delete(f"/api/images/{world.images['visible']}")
+    assert result.status_code == 204, result.text
+    after = await world.board("admin")
+    assert after["version"] == before["version"] + 1 and after["inuksuks"] == []
+
+
 @pytest.mark.parametrize("bulk", [False, True])
 async def test_user_deletion_cleans_board_orphans_and_sole_owned_files(world, bulk):
     root = make_pyramid(world)
@@ -511,6 +546,7 @@ async def test_user_deletion_cleans_board_orphans_and_sole_owned_files(world, bu
     shared = await world.create(assignments=[{"board_id": world.boards["other"]}, {"board_id": world.boards["admin"]}])
     world.caller["role"] = "other"
     sole = await world.create(assignments=[{"board_id": world.boards["shared"]}])
+    before = await world.board("shared")
     world.caller["role"] = "admin"
     if bulk:
         result = await world.client.request("DELETE", "/api/users/bulk", json={"user_ids": [world.users["other"]]})
@@ -524,6 +560,8 @@ async def test_user_deletion_cleans_board_orphans_and_sole_owned_files(world, bu
     for item in (orphan, sole):
         assert not (root / "inuksuks" / f"{item['id']}.jpg").exists()
     assert (root / "inuksuks" / f"{shared['id']}.jpg").exists()
+    after = await world.board("shared")
+    assert after["version"] == before["version"] + 1
 
 
 async def test_commit_failure_preserves_rows_and_thumbnails(world, monkeypatch):
@@ -540,6 +578,7 @@ async def test_commit_failure_preserves_rows_and_thumbnails(world, monkeypatch):
 async def test_replace_deletes_rows_links_and_old_files(world, monkeypatch):
     root = make_pyramid(world)
     item = await world.create()
+    before = await world.board("student")
     async with world.sessions() as db:
         source = SourceImage(original_filename="new.tiff", stored_path="/unused", status="pending", file_size=1)
         db.add(source)
@@ -572,3 +611,9 @@ async def test_replace_deletes_rows_links_and_old_files(world, monkeypatch):
         assert await db.get(Inuksuk, item["id"]) is None
         assert await db.scalar(select(func.count()).select_from(BoardInuksuk).where(BoardInuksuk.inuksuk_id == item["id"])) == 0
     assert not (root / "inuksuks").exists()
+    after = await world.board("student")
+    assert after["version"] == before["version"] + 1
+    result = await world.client.patch(
+        f"/api/boards/{after['id']}", json={"version": before["version"], "name": "Stale"},
+    )
+    assert result.status_code == 409 and result.json()["detail"]["version"] == after["version"]

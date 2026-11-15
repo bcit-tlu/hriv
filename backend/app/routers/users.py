@@ -11,10 +11,11 @@ from ..auth import require_role, hash_password
 from ..auth_events import AUTH_METHOD_LOCAL, AUTH_OUTCOME_SUCCESS, auth_event_fields
 from ..authz import ADMIN_PROGRAM_NAME
 from ..browse_state import bump_browse_revision
+from ..board_memberships import bump_board_membership_versions
 from ..board_views import load_memberships
 from ..board_writes import (
     cleanup_thumbnails, delete_orphans, lock_boards, lock_inuksuks,
-    thumbnail_target, touch_boards, touch_inuksuks,
+    thumbnail_target, touch_inuksuks,
 )
 from ..database import get_db
 from ..models import Board, BoardInuksuk, Collection, Image, Inuksuk, Program, User
@@ -136,16 +137,18 @@ async def _delete_sole_owned_inuksuks_and_boards(
     if any(link.board_id not in locked for memberships in links.values() for link in memberships):
         raise HTTPException(409, "Board membership changed; retry user deletion")
     targets = []
-    deleted_ids = set()
-    for item in items:
-        if item.id in owned_item_ids and all(owner.id in departing_ids for owner in item.owners):
-            targets.append(thumbnail_target(item))
-            deleted_ids.add(item.id)
-            await db.delete(item)
+    sole_owned = [
+        item for item in items if item.id in owned_item_ids
+        and all(owner.id in departing_ids for owner in item.owners)
+    ]
+    deleted_ids = {item.id for item in sole_owned}
+    await bump_board_membership_versions(db, inuksuk_ids=deleted_ids)
+    for item in sole_owned:
+        targets.append(thumbnail_target(item))
+        await db.delete(item)
     for board in dying:
         await db.delete(board)
     await db.flush()
-    await touch_boards(db, (link.board_id for item_id in deleted_ids for link in links.get(item_id, [])))
     await touch_inuksuks(db, affected_ids - deleted_ids)
     targets.extend(await delete_orphans(db, [item for item in items if item.id in affected_ids - deleted_ids]))
     return targets

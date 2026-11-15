@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
+from .board_memberships import bump_board_membership_versions
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .measurement.service import scan_after_processing
@@ -1076,6 +1077,7 @@ async def process_replace_image(
                 current_meta = dict(img.metadata_ or {})
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
+                await bump_board_membership_versions(db, image_ids=[img.id])
                 await db.execute(
                     delete(Inuksuk).where(Inuksuk.image_id == img.id)
                 )

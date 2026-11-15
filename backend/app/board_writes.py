@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import attributes, selectinload
 
 from .authz import can_edit_board
+from .board_memberships import bump_board_membership_versions
 from .board_views import (
     BoardViewerContext, board_load_options, board_out, inuksuk_load_options,
     inuksuk_out, load_memberships,
@@ -131,15 +132,6 @@ async def bump_inuksuk(
     attributes.set_committed_value(item, "version", version + 1)
 
 
-async def touch_boards(db: AsyncSession, ids: Iterable[int]) -> None:
-    ids = set(ids)
-    if ids:
-        await db.execute(
-            update(Board).where(Board.id.in_(ids)).values(version=Board.version + 1)
-            .execution_options(synchronize_session=False)
-        )
-
-
 async def touch_inuksuks(db: AsyncSession, ids: Iterable[int]) -> None:
     ids = set(ids)
     if ids:
@@ -252,7 +244,7 @@ async def replace_assignments(
         link.section_id = assignment.section_id
         if assignment.sort_order is not None:
             link.sort_order = assignment.sort_order
-    await touch_boards(db, set(editable) | requested)
+    await bump_board_membership_versions(db, set(editable) | requested)
 
 
 async def commit_write(
@@ -281,6 +273,7 @@ async def delete_orphans(db: AsyncSession, items: list[Inuksuk]) -> list[tuple[I
     )).scalars())
     orphans = [item for item in items if item.id not in linked]
     if orphans:
+        await bump_board_membership_versions(db, inuksuk_ids=[item.id for item in orphans])
         await db.execute(delete(Inuksuk).where(Inuksuk.id.in_([item.id for item in orphans])))
     return [thumbnail_target(item) for item in orphans]
 

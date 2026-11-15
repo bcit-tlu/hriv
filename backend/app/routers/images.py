@@ -27,6 +27,7 @@ from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
 from ..image_source_info import build_image_source_info
 from ..inuksuk_thumbs import remove_image_inuksuk_thumbnails
+from ..board_memberships import bump_board_membership_versions
 from ..inuksuks import require_inuksuks_enabled
 from .inuksuks import image_inuksuks
 from ..upload_staging import (
@@ -250,7 +251,7 @@ async def bulk_update_images(
     with tracer.start_as_current_span("image.bulk_update") as span:
         try:
             span.set_attribute("image.count", len(body.image_ids))
-            stmt = select(Image).where(Image.id.in_(body.image_ids))
+            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.id).with_for_update()
             result = await db.execute(stmt)
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
@@ -819,6 +820,7 @@ async def bulk_delete_images(
                     db, {image_id for image_id, _, _ in deleted_images}
                 )
             )
+            await bump_board_membership_versions(db, image_ids=body.image_ids)
             for img in images:
                 await db.delete(img)
             if browse_dirty:
@@ -853,7 +855,7 @@ async def delete_image(
     with tracer.start_as_current_span("image.delete") as span:
         try:
             span.set_attribute("image.id", image_id)
-            img = await db.get(Image, image_id)
+            img = await db.get(Image, image_id, with_for_update=True)
             if not img:
                 raise HTTPException(status_code=404, detail="Image not found")
             image_name = img.name
@@ -864,6 +866,7 @@ async def delete_image(
             member_of_collection = bool(
                 await image_ids_in_collections(db, {image_id})
             )
+            await bump_board_membership_versions(db, image_ids=[image_id])
             await db.delete(img)
             if category_id is not None or member_of_collection:
                 await bump_browse_revision(db)

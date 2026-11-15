@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user
 from ..authz import can_delete_inuksuk, can_edit_inuksuk
+from ..board_memberships import bump_board_membership_versions
 from ..board_views import (
     BoardViewerContext, get_visible_board, inuksuk_load_options, inuksuk_out,
     load_memberships, page_rows, read_response,
@@ -17,7 +18,7 @@ from ..board_writes import (
     bump_inuksuk, cleanup_thumbnails, commit_write, enforce_cap,
     expected_version, inuksuk_projection, lock_boards, lock_image_geometry, lock_inuksuk_graph,
     owner_targets, regenerate_thumbnail, replace_assignments,
-    thumbnail_target, touch_boards, validate_assignments,
+    thumbnail_target, validate_assignments,
 )
 from ..inuksuks import require_inuksuks_enabled
 from ..models import Image, Inuksuk, User
@@ -210,13 +211,13 @@ async def delete_inuksuk(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     ctx = await BoardViewerContext.build(db, user)
-    _, items, links = await lock_inuksuk_graph(db, ctx, [inuksuk_id])
+    _, items, _ = await lock_inuksuk_graph(db, ctx, [inuksuk_id])
     item = items[inuksuk_id]
     if not can_delete_inuksuk(user, item):
         raise HTTPException(403, "You may not delete this Inuksuk")
     await bump_inuksuk(db, ctx, item, expected_version(request))
     target = thumbnail_target(item)
-    await touch_boards(db, (link.board_id for link in links.get(item.id, [])))
+    await bump_board_membership_versions(db, inuksuk_ids=[item.id])
     await db.execute(delete(Inuksuk).where(Inuksuk.id == item.id))
     await commit_write(db, user, "inuksuk.deleted", inuksuk_id)
     await cleanup_thumbnails([target])
