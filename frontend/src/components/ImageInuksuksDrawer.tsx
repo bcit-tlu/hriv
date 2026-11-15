@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import { alpha } from '@mui/material/styles'
 import {
   Alert,
   Badge,
@@ -59,9 +60,9 @@ export function ImageInuksuksTrigger({
             width: 48,
             height: 48,
             borderRadius: 0,
-            bgcolor: 'rgba(0,0,0,0.65)',
-            color: 'common.white',
-            '&:hover': { bgcolor: 'rgba(0,0,0,0.85)' },
+            bgcolor: (theme) => alpha(theme.palette.background.paper, 0.85),
+            color: 'text.primary',
+            '&:hover': { bgcolor: (theme) => alpha(theme.palette.background.paper, 0.95) },
           }}
         >
           <Badge badgeContent={count} color="primary" max={999}>
