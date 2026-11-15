@@ -71,8 +71,9 @@ def test_slot_tokenizer_and_invalid_id():
         issue_slot_thumb_token(42, 0)
 
 
-def test_export_import_slots_and_legacy(monkeypatch):
-    monkeypatch.setattr(settings, "inuksuks_enabled", True)
+@pytest.mark.parametrize("enabled", [False, True])
+def test_export_import_slots_and_legacy(monkeypatch, enabled):
+    monkeypatch.setattr(settings, "inuksuks_enabled", enabled)
     original = Collection(image_links=[CollectionImage(image_id=7, viewport_state=VIEW, label="first", thumb="/api/tiles/42/collection_slots/8.jpg"), CollectionImage(image_id=7, label="second")])
     dump = export_slots(original, {7})
     restored = Collection(image_links=import_slots({"slots": dump, "image_ids": [999]}))
@@ -83,11 +84,7 @@ def test_export_import_slots_and_legacy(monkeypatch):
     assert import_slots({"slots": []}) == []
     with pytest.raises(ValueError):
         import_slots({"slots": [{"image_id": 7, "thumb": "../../private"}]})
-    monkeypatch.setattr(settings, "inuksuks_enabled", False)
-    with pytest.raises(ValueError):
-        import_slots({"slots": dump})
-    with pytest.raises(ValueError):
-        import_slots({"image_ids": [7, 7]})
+    assert [row.image_id for row in import_slots({"image_ids": [7, 7]})] == [7, 7]
 
 
 async def test_cleanup_only_canonical_slot_paths(tmp_path, monkeypatch):

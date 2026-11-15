@@ -1980,5 +1980,6 @@ clears their geometry and thumbnail, and invalidates the Collection version.
 
 With the feature disabled, slot request fields and duplicate image IDs are
 rejected and responses omit `slot`. Admin exports include ordered `slots`
-alongside `image_ids` when enabled; imports prefer slots, otherwise accept
-legacy IDs. Slot-bearing dumps require the feature enabled on import.
+alongside `image_ids` regardless of the feature flag; imports prefer slots,
+otherwise accept legacy IDs, including duplicates. Admin backup and restore
+are lossless even while user-facing slot workflows are disabled.

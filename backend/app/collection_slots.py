@@ -51,8 +51,6 @@ def export_slots(collection: Collection, image_ids: set[int]) -> list[dict]:
 
 def import_slots(data: dict) -> list[CollectionImage]:
     if "slots" in data:
-        if not settings.inuksuks_enabled:
-            raise ValueError("Collection slots require Inuksuks to be enabled")
         links = []
         for position, raw in enumerate(data["slots"]):
             entry = CollectionSlotInput.model_validate(raw)
@@ -75,8 +73,6 @@ def import_slots(data: dict) -> list[CollectionImage]:
             )
         return links
     image_ids = data.get("image_ids", [])
-    if not settings.inuksuks_enabled and len(set(image_ids)) != len(image_ids):
-        raise ValueError("image_ids must not contain duplicates")
     return [
         CollectionImage(image_id=image_id, sort_order=position)
         for position, image_id in enumerate(image_ids)

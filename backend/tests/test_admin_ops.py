@@ -1327,7 +1327,7 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             "version": 2,
             "owner_ids": [1, 2],
             "image_ids": [9_400_005],
-            **({"slots": [{"image_id": 9_400_005, "viewport_state": {"x": .5, "y": .3, "zoom": 2}, "thumb": "/api/tiles/42/collection_slots/8.jpg", "label": "saved"}]} if slots_enabled else {}),
+            "slots": [{"image_id": 9_400_005, "viewport_state": {"x": .5, "y": .3, "zoom": 2}, "thumb": "/api/tiles/42/collection_slots/8.jpg", "label": "saved"}],
             "cover_image_id": 9_400_005,
             "cover_blank": False,
             "program_ids": [2],
@@ -1645,13 +1645,13 @@ def _full_dump() -> dict:
     }
 
 
-@pytest.mark.parametrize("slots_enabled", [False, True])
-async def test_run_db_import_happy_path(tmp_path, monkeypatch, slots_enabled) -> None:
+@pytest.mark.parametrize("slots_enabled, slot_dump", [(False, False), (True, False), (False, True), (True, True)])
+async def test_run_db_import_happy_path(tmp_path, monkeypatch, slots_enabled, slot_dump) -> None:
     """Full import drives all flush/commit calls and marks the task completed."""
     monkeypatch.setattr(settings, "inuksuks_enabled", slots_enabled)
     input_file = tmp_path / "dump.json"
     dump = _full_dump()
-    if slots_enabled:
+    if slot_dump:
         dump["collections"][0]["slots"] = [
             {"image_id": image_id, "viewport_state": {"x": .5, "y": .3, "zoom": 2},
              "thumb": f"/api/tiles/42/collection_slots/{position + 8}.jpg", "label": f"slot-{position}"}
@@ -1736,7 +1736,7 @@ async def test_run_db_import_happy_path(tmp_path, monkeypatch, slots_enabled) ->
     assert seq.user_id == 1 and seq.version == 3
     assert seq.category_id == 2 and seq.sort_order == 4
     assert [(l.image_id, l.sort_order) for l in seq.image_links] == [(2, 0), (1, 1)]
-    if slots_enabled:
+    if slot_dump:
         assert [link.label for link in seq.image_links] == ["slot-0", "slot-1"]
         assert seq.image_links[0].viewport_state == {"x": .5, "y": .3, "zoom": 2}
         assert seq.image_links[0].thumb == "/api/tiles/42/collection_slots/8.jpg"
