@@ -1139,6 +1139,8 @@ async def create_collection(
     if body.visibility == "restricted":
         progs = await _resolve_programs(db, user, body.program_ids, set())
         grps = await _resolve_groups(db, user, body.group_ids, set())
+    if body.category_id is not None:
+        await bump_scopes(db, collection_scope_keys({body.category_id}))
     plans = (
         await resolve_slots(db, ctx, body, body.image_ids)
         if settings.inuksuks_enabled else None
@@ -1152,11 +1154,6 @@ async def create_collection(
         await _resolve_images(db, ctx, body.type, body.image_ids)
         if plans is None else []
     )
-    if body.category_id is not None:
-        affected = collection_scope_keys({body.category_id})
-        if affected:
-            await bump_scopes(db, affected)
-
     collection = Collection(
         name=body.name,
         description=body.description,
@@ -1548,6 +1545,8 @@ async def replace_collection_images(
         retained=len(unseen),
         existing_ids=existing_ids,
     )
+    if settings.inuksuks_enabled and collection.category_id is not None:
+        await bump_scopes(db, collection_scope_keys({collection.category_id}))
     plans = (
         await resolve_slots(db, ctx, body, body.image_ids, collection)
         if settings.inuksuks_enabled else None

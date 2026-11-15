@@ -1983,3 +1983,7 @@ rejected and responses omit `slot`. Admin exports include ordered `slots`
 alongside `image_ids` regardless of the feature flag; imports prefer slots,
 otherwise accept legacy IDs, including duplicates. Admin backup and restore
 are lossless even while user-facing slot workflows are disabled.
+
+Slot creation and membership replacement take the filed destination's tile
+scope before image row locks, matching tile reorder's scope-first protocol.
+The image locks protect copied geometry against concurrent source replacement.

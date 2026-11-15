@@ -175,6 +175,32 @@ async def create(world, **payload):
     return result.json()
 
 
+async def test_slot_image_locks_follow_destination_scope(world, monkeypatch):
+    events = []
+    bump = collections.bump_scopes
+    resolve = collections.resolve_slots
+
+    async def scoped(db, keys):
+        await bump(db, keys)
+        events.append("scope")
+
+    async def resolved(*args):
+        assert events == ["scope"]
+        events.append("images")
+        return await resolve(*args)
+
+    monkeypatch.setattr(collections, "bump_scopes", scoped)
+    monkeypatch.setattr(collections, "resolve_slots", resolved)
+    result = await create(world, image_ids=[world.image.id])
+    assert events == ["scope", "images"]
+    events.clear()
+    response = await world.client.put(f"/api/collections/{result['id']}/images", json={
+        "version": result["version"], "image_ids": [world.image.id],
+    })
+    assert response.status_code == 200, response.text
+    assert events == ["scope", "images"]
+
+
 async def test_three_inuksuks_same_image_are_independent_snapshots(world):
     result = await create(world, inuksuk_ids=[item.id for item in world.items])
     assert [row["id"] for row in result["images"]] == [world.image.id] * 3
