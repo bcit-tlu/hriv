@@ -13,7 +13,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from fastapi import FastAPI
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import auth
@@ -331,14 +331,56 @@ async def test_replacement_clear_preserves_slots_and_labels(world):
     assert not slot_thumb_file(urlsplit(slot["thumb"]).path).exists()
 
 
-async def test_replacement_without_snapshot_keeps_legacy_version(world, monkeypatch):
+async def test_replacement_without_snapshot_invalidates_old_version(world, monkeypatch):
     result = await create(world, image_ids=[world.image.id])
     monkeypatch.setattr(settings, "inuksuks_enabled", False)
     await image_slot_thumbs(world.db, [world.image.id], clear=True)
     await world.db.commit()
     collection = await world.db.get(Collection, result["id"])
     await world.db.refresh(collection)
-    assert collection.version == result["version"]
+    assert collection.version == result["version"] + 1
+    monkeypatch.setattr(settings, "inuksuks_enabled", True)
+    response = await world.client.put(f"/api/collections/{result['id']}/viewport", json={
+        "version": result["version"],
+        "slot_viewports": {str(result["images"][0]["slot"]["id"]): VIEW},
+    })
+    assert response.status_code == 409
+
+
+async def test_replacement_rechecks_blank_slots_after_viewport_save(world, monkeypatch):
+    result = await create(world, image_ids=[world.image.id])
+    slot_id = result["images"][0]["slot"]["id"]
+    thumb = f"/api/tiles/42/collection_slots/{slot_id}.jpg"
+    directory = world.root / "collection_slots"
+    directory.mkdir()
+    slot_thumb_file(thumb).write_bytes(b"racing snapshot")
+    execute = world.db.execute
+    scanned = False
+
+    async def interleave(statement, *args, **kwargs):
+        nonlocal scanned
+        response = await execute(statement, *args, **kwargs)
+        if not scanned and statement.is_select and statement.column_descriptions[0].get("entity") is CollectionImage:
+            scanned = True
+            response = response.freeze()()
+            await execute(update(CollectionImage).where(CollectionImage.id == slot_id)
+                          .values(viewport_state=VIEW, thumb=thumb)
+                          .execution_options(synchronize_session=False))
+            await execute(update(Collection).where(Collection.id == result["id"])
+                          .values(version=Collection.version + 1)
+                          .execution_options(synchronize_session=False))
+        return response
+
+    monkeypatch.setattr(world.db, "execute", interleave)
+    paths = await image_slot_thumbs(world.db, [world.image.id], clear=True)
+    assert scanned
+    assert paths == [thumb]
+    await world.db.commit()
+    row = (await execute(select(CollectionImage).where(CollectionImage.id == slot_id)
+                         .execution_options(populate_existing=True))).scalar_one()
+    assert row.viewport_state is None and row.thumb is None
+    await cleanup_slot_thumbs(paths)
+    assert not slot_thumb_file(thumb).exists()
 
 
 @pytest.mark.parametrize("count, status", [(0, 422), (1, 422), (2, 201), (4, 201), (5, 422)])

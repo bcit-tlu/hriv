@@ -1987,3 +1987,9 @@ are lossless even while user-facing slot workflows are disabled.
 Slot creation and membership replacement take the filed destination's tile
 scope before image row locks, matching tile reorder's scope-first protocol.
 The image locks protect copied geometry against concurrent source replacement.
+
+Source replacement locks every containing Collection before refreshing and
+clearing all of that image's slots, including initially blank slots. Every
+affected Collection version advances, so a viewport write with a pre-replacement
+version conflicts instead of restoring geometry for the old source. Thumbnails
+are collected again after locking so racing snapshots are removed after commit.

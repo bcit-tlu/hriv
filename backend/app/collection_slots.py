@@ -348,21 +348,25 @@ async def image_slot_thumbs(
     )).scalars().all()
     paths = [link.thumb for link in links]
     if clear:
-        changed = [
-            link for link in links
-            if link.viewport_state is not None or link.thumb is not None
-        ]
-        collection_ids = {link.collection_id for link in changed}
+        collection_ids = {link.collection_id for link in links}
         if collection_ids:
             await db.execute(
                 select(Collection.id).where(Collection.id.in_(collection_ids))
                 .order_by(Collection.id).with_for_update()
             )
+            links = (await db.execute(
+                select(CollectionImage)
+                .where(CollectionImage.image_id.in_(image_ids))
+                .execution_options(populate_existing=True)
+            )).scalars().all()
+            paths = [link.thumb for link in links]
             await db.execute(
                 update(Collection).where(Collection.id.in_(collection_ids))
                 .values(version=Collection.version + 1, updated_at=func.now())
             )
-        for link in changed:
-            link.viewport_state = None
-            link.thumb = None
+            await db.execute(
+                update(CollectionImage)
+                .where(CollectionImage.image_id.in_(image_ids))
+                .values(viewport_state=None, thumb=None)
+            )
     return paths
