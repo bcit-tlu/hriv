@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeApiCollection, makeCategory } from '../helpers/fixtures'
 import * as api from '../../src/api'
 import { AuthContext } from '../../src/authContextValue'
 import BoardsPage from '../../src/components/BoardsPage'
@@ -14,6 +15,8 @@ import {
 vi.mock('../../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
   fetchBoards: vi.fn(),
+  fetchCollections: vi.fn(),
+  createCollection: vi.fn(),
   fetchBoard: vi.fn(),
   fetchInuksuks: vi.fn(),
   fetchInuksuk: vi.fn(),
@@ -27,6 +30,7 @@ vi.mock('../../src/api', async (importOriginal) => ({
 }))
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(api.fetchCollections).mockResolvedValue([])
   vi.mocked(api.fetchBoards).mockResolvedValue(BOARDS_FIXTURES)
   vi.mocked(api.fetchBoard).mockImplementation(
     async (id) => BOARDS_FIXTURES.find((board) => board.id === id) ?? BOARDS_FIXTURES[0],
@@ -356,4 +360,81 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All Inuksuks' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(null)
   })
+})
+
+it('offers Sequence for any selection and synchronized actions only for two to four', async () => {
+  await setup()
+  fireEvent.click(screen.getByRole('button', { name: 'Select' }))
+  const toolbar = screen.getByRole('toolbar', { name: 'Selected Inuksuks' })
+  expect(within(toolbar).getByRole('button', { name: 'Create Sequence Collection' })).toBeDisabled()
+  const checks = screen.getAllByRole('checkbox', { name: /^Select / })
+  fireEvent.click(checks[0])
+  expect(within(toolbar).getByRole('button', { name: 'Create Sequence Collection' })).toBeEnabled()
+  expect(
+    within(toolbar).getByRole('button', { name: 'Create Synchronized Collection' }),
+  ).toBeDisabled()
+  fireEvent.click(checks[1])
+  expect(
+    within(toolbar).getByRole('button', { name: 'Create Synchronized Collection' }),
+  ).toBeEnabled()
+  expect(
+    within(toolbar).getByRole('button', { name: 'Add to Synchronized Collection' }),
+  ).toBeEnabled()
+})
+
+it('does not expose collection controls when collections are disabled', async () => {
+  await setup(null, { collectionsEnabled: false })
+  expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
+})
+
+it('creates a Sequence from the Board source and navigates to it', async () => {
+  const open = vi.fn()
+  vi.mocked(api.createCollection).mockResolvedValue(makeApiCollection({ id: 77, type: 'sequence' }))
+  await setup(1, {
+    onOpenCollection: open,
+    categories: [makeCategory({ id: 10, label: 'Studies' })],
+  })
+  fireEvent.click(screen.getAllByRole('button', { name: 'Create Sequence Collection' })[0])
+  fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
+    target: { value: 'Board sequence' },
+  })
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Category' }))
+  fireEvent.click(await screen.findByRole('option', { name: /Studies/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() => expect(open).toHaveBeenCalledWith(77))
+  expect(api.createCollection).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'sequence', source_board_id: 1 }),
+  )
+  expect(vi.mocked(api.createCollection).mock.calls[0][0]).not.toHaveProperty('image_ids')
+})
+
+it('seeds selected views in displayed Section and member order, then Unsectioned', async () => {
+  const board = BOARDS_FIXTURES[0]
+  vi.mocked(api.fetchBoard).mockResolvedValue({
+    ...board,
+    sections: [...board.sections].reverse(),
+    inuksuks: [...board.inuksuks].reverse(),
+  })
+  vi.mocked(api.createCollection).mockResolvedValue(makeApiCollection({ id: 77, type: 'sequence' }))
+  await setup(1, { categories: [makeCategory({ id: 10, label: 'Studies' })] })
+  fireEvent.click(screen.getByRole('button', { name: 'Select' }))
+  const checkboxes = screen.getAllByRole('checkbox', { name: /^Select / })
+  expect(checkboxes).toHaveLength(6)
+  for (const checkbox of [...checkboxes].reverse()) fireEvent.click(checkbox)
+  fireEvent.click(
+    within(screen.getByRole('toolbar', { name: 'Selected Inuksuks' })).getByRole('button', {
+      name: 'Create Sequence Collection',
+    }),
+  )
+  fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
+    target: { value: 'Ordered views' },
+  })
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Category' }))
+  fireEvent.click(await screen.findByRole('option', { name: /Studies/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() =>
+    expect(api.createCollection).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sequence', inuksuk_ids: [11, 10, 9, 8, 7, 12] }),
+    ),
+  )
 })

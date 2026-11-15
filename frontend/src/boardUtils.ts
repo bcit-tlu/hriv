@@ -8,6 +8,13 @@ export function ownsBoard(board: ApiBoardSummary, user: User | null): boolean {
   )
 }
 
+export function groupBoardMembers(board: ApiBoard) {
+  return [...board.sections, { id: null, name: 'Unsectioned' }].map((section) => ({
+    ...section,
+    inuksuks: board.inuksuks.filter((item) => item.section_id === section.id),
+  }))
+}
+
 export function boardMemberOrder(board: ApiBoard, ids: number[], sectionId: number | null) {
   const moved = new Set(ids)
   return [

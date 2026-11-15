@@ -1,3 +1,9 @@
+import { memberKey, renewSlotThumbnail } from '../collectionMembers'
+import { useBoardsData } from '../useBoardsData'
+import { apiImageToItem } from '../collectionUtils'
+import TextField from '@mui/material/TextField'
+import MenuItem from '@mui/material/MenuItem'
+import Alert from '@mui/material/Alert'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import Box from '@mui/material/Box'
@@ -27,10 +33,10 @@ import { move } from '@dnd-kit/helpers'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
-import { userMessage, type ApiImage } from '../api'
+import { fetchImage, userMessage, type ApiImage } from '../api'
 import { AuthContext } from '../authContextValue'
 import { fitsCollectionCapacity } from '../useAddToCollection'
-import type { Collection, ImageItem } from '../types'
+import type { Collection, CollectionMember as ImageItem } from '../types'
 import RenewingThumbnail from './RenewingThumbnail'
 
 /**
@@ -61,6 +67,7 @@ export type ManageStageResult =
 export type StageAddImages = (images: ImageItem[]) => ManageStageResult
 
 export interface CollectionManageDialogProps {
+  inuksuksEnabled?: boolean
   open: boolean
   onClose: () => void
   /** Detail record — `null` renders an empty dialog (kept mounted for DnD). */
@@ -69,7 +76,7 @@ export interface CollectionManageDialogProps {
    * Commit the staged member list — fired once by Done. Receives the full
    * ordered id list (reorder + removals + additions in one shot).
    */
-  onSaveMembers: (imageIds: number[]) => Promise<unknown>
+  onSaveMembers: (imageIds: number[], members?: ImageItem[]) => Promise<unknown>
   /**
    * "Choose images" opens the global search modal; the dialog hands over
    * its staging channel so picks land in the draft instead of persisting
@@ -108,16 +115,23 @@ const removeBadgeSx = {
 /** Thumb + caption shared by the sortable tile and the drag overlay replica. */
 function MemberTileFace({
   image,
+  collectionId,
   onImageRenewed,
 }: {
   image: ImageItem
+  collectionId?: number
   onImageRenewed: (image: ApiImage) => void
 }) {
   return (
     <>
       <Box sx={{ width: 72, mx: 'auto' }}>
         <RenewingThumbnail
-          image={image}
+          image={{ ...image, thumb: image.slot?.thumb || image.thumb }}
+          renewThumb={
+            image.slot?.thumb && collectionId != null
+              ? () => renewSlotThumbnail(collectionId, image)
+              : undefined
+          }
           // Presentational — the caption below and the tile's aria-label
           // already carry the name (image-redundant-alt).
           alt=""
@@ -133,7 +147,7 @@ function MemberTileFace({
         noWrap
         sx={{ display: 'block', mt: 0.5 }}
       >
-        {image.name}
+        {image.slot?.label || image.name}
       </Typography>
     </>
   )
@@ -171,10 +185,12 @@ function PositionBadge({ position }: { position: number }) {
 /** Thumb + caption for a position-map slot, shared with the drag overlay. */
 function PositionTileFace({
   image,
+  collectionId,
   position,
   onImageRenewed,
 }: {
   image: ImageItem
+  collectionId?: number
   position: number
   onImageRenewed: (image: ApiImage) => void
 }) {
@@ -191,7 +207,12 @@ function PositionTileFace({
         }}
       >
         <RenewingThumbnail
-          image={image}
+          image={{ ...image, thumb: image.slot?.thumb || image.thumb }}
+          renewThumb={
+            image.slot?.thumb && collectionId != null
+              ? () => renewSlotThumbnail(collectionId, image)
+              : undefined
+          }
           alt=""
           onImageRenewed={onImageRenewed}
           draggable={false}
@@ -205,7 +226,7 @@ function PositionTileFace({
         noWrap
         sx={{ display: 'block', mt: 0.5 }}
       >
-        {image.name}
+        {image.slot?.label || image.name}
       </Typography>
     </>
   )
@@ -221,6 +242,7 @@ const slotCornerSx = {
 
 interface PositionSlotTileProps {
   image: ImageItem
+  collectionId?: number
   /** 1-based pane position in the synchronized viewer. */
   position: number
   disabled: boolean
@@ -236,6 +258,7 @@ interface PositionSlotTileProps {
     it swaps the two positions, so the rest of the map never shifts. */
 function PositionSlotTile({
   image,
+  collectionId,
   position,
   disabled,
   selecting,
@@ -245,12 +268,12 @@ function PositionSlotTile({
   onImageRenewed,
 }: PositionSlotTileProps) {
   const { ref, handleRef, isDragSource } = useDraggable({
-    id: itemIdFor(image.id),
+    id: itemIdFor(memberKey(image)),
     type: POSITION_ITEM_TYPE,
     disabled: disabled || selecting,
   })
   const { ref: dropRef, isDropTarget } = useDroppable({
-    id: slotIdFor(image.id),
+    id: slotIdFor(memberKey(image)),
     accept: POSITION_ITEM_TYPE,
     disabled: disabled || selecting,
   })
@@ -279,7 +302,7 @@ function PositionSlotTile({
     >
       <Box
         ref={ref}
-        data-testid={`manage-tile-${image.id}`}
+        data-testid={`manage-tile-${memberKey(image)}`}
         onClick={selecting ? toggleSelect : undefined}
         sx={{
           position: 'relative',
@@ -297,7 +320,9 @@ function PositionSlotTile({
           role={selecting ? 'checkbox' : 'button'}
           aria-checked={selecting ? selected : undefined}
           aria-label={
-            selecting ? `Select ${image.name}` : `Drag to swap position ${position}, ${image.name}`
+            selecting
+              ? `Select ${image.slot?.label || image.name}`
+              : `Drag to swap position ${position}, ${image.slot?.label || image.name}`
           }
           onKeyDown={selecting ? handleSelectKeyDown : undefined}
           sx={{
@@ -311,14 +336,19 @@ function PositionSlotTile({
             '&:focus-visible': { outline: '2px solid', outlineColor: 'info.main' },
           }}
         >
-          <PositionTileFace image={image} position={position} onImageRenewed={onImageRenewed} />
+          <PositionTileFace
+            collectionId={collectionId}
+            image={image}
+            position={position}
+            onImageRenewed={onImageRenewed}
+          />
         </Box>
         {selecting ? (
           <Checkbox
             checked={selected}
             tabIndex={-1}
             inputProps={{ 'aria-hidden': true }}
-            data-testid={`select-indicator-${image.id}`}
+            data-testid={`select-indicator-${memberKey(image)}`}
             sx={{
               ...slotCornerSx,
               p: 0,
@@ -345,7 +375,7 @@ function PositionSlotTile({
           <Tooltip title="Remove image">
             <IconButton
               size="small"
-              aria-label={`Remove ${image.name} from collection`}
+              aria-label={`Remove ${image.slot?.label || image.name} from collection`}
               disabled={disabled}
               onClick={() => onRemove(image)}
               sx={{
@@ -396,6 +426,7 @@ function EmptyPositionSlot({ position }: { position: number }) {
 
 interface SortableMemberTileProps {
   image: ImageItem
+  collectionId?: number
   index: number
   disabled: boolean
   /** Selection mode (#1567): tiles toggle a removal set instead of dragging. */
@@ -414,6 +445,7 @@ interface SortableMemberTileProps {
     no nested-interactive axe violation and no accidental drag pickup. */
 function SortableMemberTile({
   image,
+  collectionId,
   index,
   disabled,
   selecting,
@@ -426,7 +458,7 @@ function SortableMemberTile({
   // tile into the removal set instead of arming a drag — pointer AND
   // keyboard (the sensor returns early on `source.disabled`).
   const { ref, handleRef, isDragSource } = useSortable({
-    id: itemIdFor(image.id),
+    id: itemIdFor(memberKey(image)),
     index,
     type: 'collection-manage-item',
     disabled: disabled || selecting,
@@ -446,7 +478,7 @@ function SortableMemberTile({
   return (
     <Box
       ref={ref}
-      data-testid={`manage-tile-${image.id}`}
+      data-testid={`manage-tile-${memberKey(image)}`}
       onClick={selecting ? toggleSelect : undefined}
       sx={{
         position: 'relative',
@@ -469,14 +501,18 @@ function SortableMemberTile({
         tabIndex={0}
         role={selecting ? 'checkbox' : 'button'}
         aria-checked={selecting ? selected : undefined}
-        aria-label={selecting ? `Select ${image.name}` : `Drag to reorder ${image.name}`}
+        aria-label={
+          selecting
+            ? `Select ${image.slot?.label || image.name}`
+            : `Drag to reorder ${image.slot?.label || image.name}`
+        }
         onKeyDown={selecting ? handleSelectKeyDown : undefined}
         sx={{
           cursor: selecting ? 'pointer' : disabled ? 'default' : isDragSource ? 'grabbing' : 'grab',
           '&:focus-visible': { outline: '2px solid', outlineColor: 'info.main' },
         }}
       >
-        <MemberTileFace image={image} onImageRenewed={onImageRenewed} />
+        <MemberTileFace collectionId={collectionId} image={image} onImageRenewed={onImageRenewed} />
       </Box>
       {selecting ? (
         // A stock MUI checkbox as the visual state cue (#1567) — decorative:
@@ -489,7 +525,7 @@ function SortableMemberTile({
           checked={selected}
           tabIndex={-1}
           inputProps={{ 'aria-hidden': true }}
-          data-testid={`select-indicator-${image.id}`}
+          data-testid={`select-indicator-${memberKey(image)}`}
           sx={{
             position: 'absolute',
             top: 4,
@@ -519,7 +555,7 @@ function SortableMemberTile({
         <Tooltip title="Remove image">
           <IconButton
             size="small"
-            aria-label={`Remove ${image.name} from collection`}
+            aria-label={`Remove ${image.slot?.label || image.name} from collection`}
             disabled={disabled}
             onClick={() => onRemove(image)}
             sx={{
@@ -540,6 +576,7 @@ export default function CollectionManageDialog({
   onClose,
   collection,
   onSaveMembers,
+  inuksuksEnabled = false,
   onAddImages,
   onImageRenewed,
   onError,
@@ -551,6 +588,12 @@ export default function CollectionManageDialog({
   // the stage-add channel (invoked by App while the modal is open) always
   // reads the latest draft without waiting for a render.
   const [draft, setDraft] = useState<ImageItem[]>(collection?.images ?? [])
+  const nextDraftKey = useRef(-1)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerBoardId, setPickerBoardId] = useState<number | null>(null)
+  const [pickerSectionId, setPickerSectionId] = useState<number | null>(null)
+  const [pickerBusy, setPickerBusy] = useState(false)
+  const pickerData = useBoardsData(pickerBoardId, false, pickerOpen && inuksuksEnabled)
   const draftRef = useRef<ImageItem[]>(draft)
   const seededFor = useRef<number | null>(null)
   // The member list as it stood when the draft was seeded — the Done diff
@@ -558,7 +601,7 @@ export default function CollectionManageDialog({
   // external change landing mid-edit can't silently become part of the
   // commit (or make an untouched draft look dirty). (#1567)
   const [baselineIds, setBaselineIds] = useState<number[]>(() =>
-    (collection?.images ?? []).map((img) => img.id),
+    (collection?.images ?? []).map((img) => memberKey(img)),
   )
   const updateDraft = useCallback((next: ImageItem[]) => {
     draftRef.current = next
@@ -588,12 +631,12 @@ export default function CollectionManageDialog({
     }
     if (collection != null && seededFor.current !== collection.id) {
       seededFor.current = collection.id
-      setBaselineIds(collection.images.map((img) => img.id))
+      setBaselineIds(collection.images.map((img) => memberKey(img)))
       updateDraft(collection.images)
     }
   }, [open, collection, updateDraft])
 
-  const itemIds = useMemo(() => draft.map((img) => itemIdFor(img.id)), [draft])
+  const itemIds = useMemo(() => draft.map((img) => itemIdFor(memberKey(img))), [draft])
   // Synchronized members map 1:1 onto viewer panes (#1614).
   const positional = collection?.type === 'synchronized'
   // The viewer lays panes in two columns — a pair side by side, three or
@@ -613,25 +656,27 @@ export default function CollectionManageDialog({
   const toggleSelectImage = useCallback((image: ImageItem) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      if (next.has(image.id)) next.delete(image.id)
-      else next.add(image.id)
+      if (next.has(memberKey(image))) next.delete(memberKey(image))
+      else next.add(memberKey(image))
       return next
     })
   }, [])
   // Count against the live draft so an id removed some other way can't
   // inflate the button label or the removal set.
   const selectedCount = useMemo(
-    () => draft.reduce((n, img) => (selectedIds.has(img.id) ? n + 1 : n), 0),
+    () => draft.reduce((n, img) => (selectedIds.has(memberKey(img)) ? n + 1 : n), 0),
     [draft, selectedIds],
   )
   const removeSelected = useCallback(() => {
-    updateDraft(draftRef.current.filter((img) => !selectedIds.has(img.id)))
+    updateDraft(draftRef.current.filter((img) => !selectedIds.has(memberKey(img))))
     setSelectedIds(new Set())
   }, [selectedIds, updateDraft])
 
   /** The staged list differs from the seed-time member list (order or set). */
   const dirty = useMemo(
-    () => draft.length !== baselineIds.length || draft.some((img, i) => img.id !== baselineIds[i]),
+    () =>
+      draft.length !== baselineIds.length ||
+      draft.some((img, i) => memberKey(img) !== baselineIds[i]),
     [draft, baselineIds],
   )
 
@@ -674,7 +719,15 @@ export default function CollectionManageDialog({
     (images) => {
       const prev = draftRef.current
       const seen = new Set(prev.map((img) => img.id))
-      const fresh = images.filter((img) => !seen.has(img.id))
+      const fresh = images
+        .filter((img) => {
+          const alreadyPresent = seen.has(img.id)
+          seen.add(img.id)
+          return img.inuksukId != null || !alreadyPresent
+        })
+        .map((img) =>
+          inuksuksEnabled && !img.slot ? { ...img, draftKey: nextDraftKey.current-- } : img,
+        )
       if (fresh.length === 0) return { status: 'already' }
       if (
         collection != null &&
@@ -683,7 +736,7 @@ export default function CollectionManageDialog({
           // Hidden restricted members still occupy capacity server-side —
           // reserve their slots so an accepted pick can't 422 on Done.
           prev.length + hiddenRestrictedCount,
-          fresh.map((img) => img.id),
+          fresh.map((img) => memberKey(img)),
           currentUser?.role,
         )
       ) {
@@ -692,12 +745,12 @@ export default function CollectionManageDialog({
       updateDraft([...prev, ...fresh])
       return { status: 'added', addedCount: fresh.length }
     },
-    [collection, currentUser?.role, hiddenRestrictedCount, updateDraft],
+    [collection, currentUser?.role, hiddenRestrictedCount, updateDraft, inuksuksEnabled],
   )
 
   const remove = useCallback(
     (imageId: number) => {
-      updateDraft(draftRef.current.filter((img) => img.id !== imageId))
+      updateDraft(draftRef.current.filter((img) => memberKey(img) !== imageId))
     },
     [updateDraft],
   )
@@ -705,7 +758,7 @@ export default function CollectionManageDialog({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const sourceId = String(event.operation.source?.id)
     if (!sourceId.startsWith(ITEM_PREFIX)) return
-    setActiveImage(draftRef.current.find((img) => itemIdFor(img.id) === sourceId) ?? null)
+    setActiveImage(draftRef.current.find((img) => itemIdFor(memberKey(img)) === sourceId) ?? null)
     setActiveWidth(event.operation.source?.element?.getBoundingClientRect().width ?? null)
   }, [])
 
@@ -723,8 +776,8 @@ export default function CollectionManageDialog({
         const target = String(targetId)
         if (!target.startsWith(SLOT_PREFIX)) return
         const current = draftRef.current
-        const from = current.findIndex((img) => itemIdFor(img.id) === String(sourceId))
-        const to = current.findIndex((img) => slotIdFor(img.id) === target)
+        const from = current.findIndex((img) => itemIdFor(memberKey(img)) === String(sourceId))
+        const to = current.findIndex((img) => slotIdFor(memberKey(img)) === target)
         if (from < 0 || to < 0 || from === to) return
         const next = [...current]
         ;[next[from], next[to]] = [next[to], next[from]]
@@ -733,11 +786,17 @@ export default function CollectionManageDialog({
       }
       const reordered = move(itemIds, event)
       if (reordered.length !== itemIds.length) return
-      const byId = new Map(draftRef.current.map((img) => [img.id, img] as const))
+      const byId = new Map(draftRef.current.map((img) => [memberKey(img), img] as const))
       const next = reordered
         .map((id) => byId.get(imageIdFor(id)))
         .filter((img): img is ImageItem => img != null)
-      if (next.every((img, i) => img.id === draftRef.current[i]?.id)) return
+      if (
+        next.every(
+          (img, i) =>
+            memberKey(img) === (draftRef.current[i] ? memberKey(draftRef.current[i]) : undefined),
+        )
+      )
+        return
       updateDraft(next)
     },
     [itemIds, positional, updateDraft],
@@ -756,15 +815,16 @@ export default function CollectionManageDialog({
       // stale draft clobber them — drop baseline members removed elsewhere,
       // keep members added elsewhere (appended, matching the add semantics).
       const baselineSet = new Set(baselineIds)
-      const liveIds = new Set(collection.images.map((img) => img.id))
-      const externalAdds = collection.images.filter((img) => !baselineSet.has(img.id))
+      const liveIds = new Set(collection.images.map((img) => memberKey(img)))
+      const externalAdds = collection.images.filter((img) => !baselineSet.has(memberKey(img)))
       const externalRemoves = new Set(baselineIds.filter((id) => !liveIds.has(id)))
-      const draftIds = new Set(draftRef.current.map((img) => img.id))
+      const draftIds = new Set(draftRef.current.map((img) => memberKey(img)))
       const merged = [
-        ...draftRef.current.filter((img) => !externalRemoves.has(img.id)),
-        ...externalAdds.filter((img) => !draftIds.has(img.id)),
+        ...draftRef.current.filter((img) => !externalRemoves.has(memberKey(img))),
+        ...externalAdds.filter((img) => !draftIds.has(memberKey(img))),
       ]
-      await onSaveMembers(merged.map((img) => img.id))
+      if (inuksuksEnabled) await onSaveMembers(merged.map(memberKey), merged)
+      else await onSaveMembers(merged.map(memberKey))
       onClose()
     } catch (err) {
       // Keep the dialog open with the draft intact so nothing is lost.
@@ -772,7 +832,7 @@ export default function CollectionManageDialog({
     } finally {
       setSaving(false)
     }
-  }, [collection, dirty, baselineIds, onSaveMembers, onClose, onError])
+  }, [collection, dirty, baselineIds, onSaveMembers, onClose, onError, inuksuksEnabled])
 
   /** Esc/backdrop discard the draft — guarded when edits are staged. */
   const handleRequestClose = useCallback(() => {
@@ -782,227 +842,369 @@ export default function CollectionManageDialog({
   }, [dirty, saving, onClose])
 
   return (
-    <Dialog
-      open={open}
-      onClose={handleRequestClose}
-      // The position map is at most two 200px slots wide — a narrower
-      // dialog keeps it from floating in whitespace (#1614).
-      maxWidth={positional ? 'sm' : 'lg'}
-      fullWidth
-      data-testid="collection-manage"
-    >
-      <DialogTitle
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 1,
-          flexWrap: 'wrap',
-        }}
+    <>
+      <Dialog
+        open={open}
+        onClose={handleRequestClose}
+        // The position map is at most two 200px slots wide — a narrower
+        // dialog keeps it from floating in whitespace (#1614).
+        maxWidth={positional ? 'sm' : 'lg'}
+        fullWidth
+        data-testid="collection-manage"
       >
-        Manage Collection Images{collection ? ` — ${collection.name}` : ''}
-        {/* ml:auto keeps the actions right-aligned when the narrow
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            flexWrap: 'wrap',
+          }}
+        >
+          Manage Collection Images{collection ? ` — ${collection.name}` : ''}
+          {/* ml:auto keeps the actions right-aligned when the narrow
             synchronized dialog wraps them under the title (#1614). */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
-          {/* Selection mode toggle (#1567): switches tiles into a multi-pick
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
+            {/* Selection mode toggle (#1567): switches tiles into a multi-pick
               removal set — drag-order is suspended while it's on. Stays
               visible while selecting even if the draft empties, so the mode
               is never stranded without its exit. */}
-          {(draft.length > 0 || selecting) && (
-            <Button
-              size="small"
-              variant={selecting ? 'contained' : 'outlined'}
-              startIcon={<SelectAllIcon />}
-              onClick={toggleSelectMode}
-              aria-pressed={selecting}
-              disabled={saving}
-              data-testid="collection-manage-select-toggle"
-            >
-              Multi-select
-            </Button>
-          )}
-          {onAddImages && (
-            /* Labeled button with the Browse toolbar's Add-Images icon (#1567). */
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<AddPhotoAlternateIcon />}
-              onClick={() => onAddImages(stageAdd)}
-              disabled={saving}
-              data-testid="collection-manage-add"
-            >
-              Choose images
-            </Button>
-          )}
-        </Box>
-      </DialogTitle>
-      <DialogContent sx={{ position: 'relative', minHeight: 220 }}>
-        {draft.length > 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {selecting
-              ? 'Click thumbnails to select them, then use the button below to stage the ' +
-                'removal. Choose Multi-select again to go back to reordering.'
-              : positional
-                ? 'Drag an image over another to swap positions. Remove images with the X. ' +
-                  'Changes apply when you choose Done.'
-                : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
-                  'from the collection. Changes apply when you choose Done.'}
-          </Typography>
-        )}
-        {hiddenRestrictedCount > 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
-            {hiddenRestrictedCount} restricted {hiddenRestrictedCount === 1 ? 'image' : 'images'}{' '}
-            not shown.
-          </Typography>
-        )}
-        <DragDropProvider sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <>
-            {draft.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
-                No images in this collection yet — use Choose images to pick some.
-              </Typography>
-            ) : positional ? (
-              <Box
-                data-testid="manage-position-map"
-                sx={{
-                  display: 'grid',
-                  // Shrinks below 200px on narrow screens so both columns stay visible.
-                  gridTemplateColumns: `repeat(2, minmax(0, ${SLOT_WIDTH}px))`,
-                  justifyContent: 'center',
-                  columnGap: 2,
-                  rowGap: 2,
-                  py: 1,
-                }}
+            {(draft.length > 0 || selecting) && (
+              <Button
+                size="small"
+                variant={selecting ? 'contained' : 'outlined'}
+                startIcon={<SelectAllIcon />}
+                onClick={toggleSelectMode}
+                aria-pressed={selecting}
+                disabled={saving}
+                data-testid="collection-manage-select-toggle"
               >
-                {Array.from({ length: slotCount }, (_, index) => {
-                  const img = draft[index]
-                  return img ? (
-                    <PositionSlotTile
-                      key={img.id}
+                Multi-select
+              </Button>
+            )}
+            {inuksuksEnabled && (
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={saving}
+                onClick={() => setPickerOpen(true)}
+              >
+                Add from Board
+              </Button>
+            )}
+            {onAddImages && (
+              /* Labeled button with the Browse toolbar's Add-Images icon (#1567). */
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddPhotoAlternateIcon />}
+                onClick={() => onAddImages(stageAdd)}
+                disabled={saving}
+                data-testid="collection-manage-add"
+              >
+                Choose images
+              </Button>
+            )}
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ position: 'relative', minHeight: 220 }}>
+          {draft.length > 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {selecting
+                ? 'Click thumbnails to select them, then use the button below to stage the ' +
+                  'removal. Choose Multi-select again to go back to reordering.'
+                : positional
+                  ? 'Drag an image over another to swap positions. Remove images with the X. ' +
+                    'Changes apply when you choose Done.'
+                  : 'Drag thumbnails to reorder, or use a tile’s corner control to remove an image ' +
+                    'from the collection. Changes apply when you choose Done.'}
+            </Typography>
+          )}
+          {hiddenRestrictedCount > 0 && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontStyle: 'italic' }}>
+              {hiddenRestrictedCount} restricted {hiddenRestrictedCount === 1 ? 'image' : 'images'}{' '}
+              not shown.
+            </Typography>
+          )}
+          <DragDropProvider
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <>
+              {draft.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" data-testid="manage-empty">
+                  No images in this collection yet — use Choose images to pick some.
+                </Typography>
+              ) : positional ? (
+                <Box
+                  data-testid="manage-position-map"
+                  sx={{
+                    display: 'grid',
+                    // Shrinks below 200px on narrow screens so both columns stay visible.
+                    gridTemplateColumns: `repeat(2, minmax(0, ${SLOT_WIDTH}px))`,
+                    justifyContent: 'center',
+                    columnGap: 2,
+                    rowGap: 2,
+                    py: 1,
+                  }}
+                >
+                  {Array.from({ length: slotCount }, (_, index) => {
+                    const img = draft[index]
+                    return img ? (
+                      <PositionSlotTile
+                        key={memberKey(img)}
+                        collectionId={collection?.id}
+                        image={img}
+                        position={index + 1}
+                        disabled={saving}
+                        selecting={selecting}
+                        selected={selectedIds.has(memberKey(img))}
+                        onRemove={(image) => remove(memberKey(image))}
+                        onToggleSelect={toggleSelectImage}
+                        onImageRenewed={onImageRenewed}
+                      />
+                    ) : (
+                      <EmptyPositionSlot key={`empty-${index}`} position={index + 1} />
+                    )
+                  })}
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                  {draft.map((img, index) => (
+                    <SortableMemberTile
+                      collectionId={collection?.id}
+                      key={memberKey(img)}
                       image={img}
-                      position={index + 1}
+                      index={index}
                       disabled={saving}
                       selecting={selecting}
-                      selected={selectedIds.has(img.id)}
-                      onRemove={(image) => remove(image.id)}
+                      selected={selectedIds.has(memberKey(img))}
+                      onRemove={(image) => remove(memberKey(image))}
                       onToggleSelect={toggleSelectImage}
                       onImageRenewed={onImageRenewed}
                     />
-                  ) : (
-                    <EmptyPositionSlot key={`empty-${index}`} position={index + 1} />
-                  )
-                })}
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                {draft.map((img, index) => (
-                  <SortableMemberTile
-                    key={img.id}
-                    image={img}
-                    index={index}
-                    disabled={saving}
-                    selecting={selecting}
-                    selected={selectedIds.has(img.id)}
-                    onRemove={(image) => remove(image.id)}
-                    onToggleSelect={toggleSelectImage}
-                    onImageRenewed={onImageRenewed}
-                  />
-                ))}
-              </Box>
-            )}
-            {/* Overlay replica keeps the tile (and its corner badge) together
+                  ))}
+                </Box>
+              )}
+              {/* Overlay replica keeps the tile (and its corner badge) together
                 under the pointer while the source stays dimmed in place —
                 the same DragOverlay pattern as the Browse grid (#1567). */}
-            <DragOverlay dropAnimation={null}>
-              {activeImage && positional ? (
-                <Box
-                  aria-hidden
-                  sx={{
-                    width: activeWidth ?? SLOT_WIDTH,
-                    pointerEvents: 'none',
-                    cursor: 'grabbing',
-                    position: 'relative',
-                    // Opaque card so the caption doesn't blend into the
-                    // caption of the slot underneath.
-                    bgcolor: 'background.paper',
-                    borderRadius: 1,
-                    boxShadow: 6,
-                    pb: 0.5,
-                  }}
-                >
-                  <PositionTileFace
-                    image={activeImage}
-                    position={draft.findIndex((img) => img.id === activeImage.id) + 1}
-                    onImageRenewed={onImageRenewed}
-                  />
-                </Box>
-              ) : activeImage ? (
-                <Box
-                  aria-hidden
-                  sx={{
-                    width: 96,
-                    opacity: 0.9,
-                    pointerEvents: 'none',
-                    cursor: 'grabbing',
-                    position: 'relative',
-                  }}
-                >
-                  <MemberTileFace image={activeImage} onImageRenewed={onImageRenewed} />
+              <DragOverlay dropAnimation={null}>
+                {activeImage && positional ? (
                   <Box
-                    component="span"
+                    aria-hidden
                     sx={{
-                      ...removeBadgeSx,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: '50%',
+                      width: activeWidth ?? SLOT_WIDTH,
+                      pointerEvents: 'none',
+                      cursor: 'grabbing',
+                      position: 'relative',
+                      // Opaque card so the caption doesn't blend into the
+                      // caption of the slot underneath.
+                      bgcolor: 'background.paper',
+                      borderRadius: 1,
+                      boxShadow: 6,
+                      pb: 0.5,
                     }}
                   >
-                    <CloseIcon />
+                    <PositionTileFace
+                      collectionId={collection?.id}
+                      image={activeImage}
+                      position={
+                        draft.findIndex((img) => memberKey(img) === memberKey(activeImage)) + 1
+                      }
+                      onImageRenewed={onImageRenewed}
+                    />
                   </Box>
-                </Box>
-              ) : null}
-            </DragOverlay>
-          </>
-        </DragDropProvider>
-      </DialogContent>
-      {/* Bulk remove — a dialog-spanning error button pinned above the
+                ) : activeImage ? (
+                  <Box
+                    aria-hidden
+                    sx={{
+                      width: 96,
+                      opacity: 0.9,
+                      pointerEvents: 'none',
+                      cursor: 'grabbing',
+                      position: 'relative',
+                    }}
+                  >
+                    <MemberTileFace
+                      collectionId={collection?.id}
+                      image={activeImage}
+                      onImageRenewed={onImageRenewed}
+                    />
+                    <Box
+                      component="span"
+                      sx={{
+                        ...removeBadgeSx,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '50%',
+                      }}
+                    >
+                      <CloseIcon />
+                    </Box>
+                  </Box>
+                ) : null}
+              </DragOverlay>
+            </>
+          </DragDropProvider>
+        </DialogContent>
+        {/* Bulk remove — a dialog-spanning error button pinned above the
           actions, matching the Edit Image dialog's delete style (#1567).
           Staged removal needs no confirm step: Discard/Cancel restores. */}
-      {selecting && (
-        <Box sx={{ px: 3, pb: 1 }}>
-          <Divider sx={{ mb: 2 }} />
-          <Button
-            color="error"
-            variant="outlined"
-            fullWidth
-            onClick={removeSelected}
-            disabled={selectedCount === 0 || saving}
-            data-testid="collection-manage-remove-selected"
-          >
-            Remove {selectedCount > 0 ? `${selectedCount} ` : ''}Selected{' '}
-            {selectedCount === 1 ? 'Image' : 'Images'}
-          </Button>
-        </Box>
-      )}
-      <DialogActions>
-        {dirty && (
-          <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', pl: 2 }}>
-            Unsaved changes — apply with Done.
-          </Typography>
+        {selecting && (
+          <Box sx={{ px: 3, pb: 1 }}>
+            <Divider sx={{ mb: 2 }} />
+            <Button
+              color="error"
+              variant="outlined"
+              fullWidth
+              onClick={removeSelected}
+              disabled={selectedCount === 0 || saving}
+              data-testid="collection-manage-remove-selected"
+            >
+              Remove {selectedCount > 0 ? `${selectedCount} ` : ''}Selected{' '}
+              {selectedCount === 1 ? 'Image' : 'Images'}
+            </Button>
+          </Box>
         )}
-        <Button onClick={handleRequestClose} disabled={saving} data-testid="manage-cancel">
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={() => void handleDone()}
-          disabled={saving}
-          data-testid="manage-done"
-        >
-          Done
-        </Button>
-      </DialogActions>
-    </Dialog>
+        <DialogActions>
+          {dirty && (
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', pl: 2 }}>
+              Unsaved changes — apply with Done.
+            </Typography>
+          )}
+          <Button onClick={handleRequestClose} disabled={saving} data-testid="manage-cancel">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void handleDone()}
+            disabled={saving}
+            data-testid="manage-done"
+          >
+            Done
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={pickerOpen && open && inuksuksEnabled}
+        onClose={() => !pickerBusy && setPickerOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Add from Board</DialogTitle>
+        <DialogContent>
+          {pickerData.error && (
+            <Alert
+              severity="error"
+              action={<Button onClick={() => void pickerData.reload()}>Retry</Button>}
+            >
+              {pickerData.error}
+            </Alert>
+          )}
+          <TextField
+            select
+            fullWidth
+            margin="normal"
+            label="Board"
+            disabled={pickerBusy}
+            value={pickerBoardId ?? ''}
+            onChange={(e) => {
+              setPickerBoardId(Number(e.target.value))
+              setPickerSectionId(null)
+            }}
+          >
+            {pickerData.boards.map((board) => (
+              <MenuItem key={board.id} value={board.id}>
+                {board.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          {pickerData.board && (
+            <TextField
+              select
+              fullWidth
+              margin="normal"
+              label="Section"
+              disabled={pickerBusy}
+              value={pickerSectionId ?? ''}
+              onChange={(e) =>
+                setPickerSectionId(e.target.value === '' ? null : Number(e.target.value))
+              }
+            >
+              <MenuItem value="">All Sections</MenuItem>
+              {pickerData.board.sections.map((section) => (
+                <MenuItem key={section.id} value={section.id}>
+                  {section.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+          {!pickerData.loading && !pickerData.boards.length && (
+            <Typography>No visible Boards.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={pickerBusy} onClick={() => setPickerOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={pickerBusy || pickerData.loading || !pickerData.board?.inuksuks.length}
+            onClick={async () => {
+              const items = pickerData.board
+                ? pickerSectionId == null
+                  ? [...pickerData.board.sections.map((section) => section.id), null].flatMap(
+                      (sectionId) =>
+                        pickerData.board!.inuksuks.filter((item) => item.section_id === sectionId),
+                    )
+                  : pickerData.board.inuksuks.filter((item) => item.section_id === pickerSectionId)
+                : []
+              setPickerBusy(true)
+              try {
+                const imageIds = [...new Set(items.map((item) => item.image_id))]
+                const records = new Map(
+                  await Promise.all(
+                    imageIds.map(async (id) => [id, apiImageToItem(await fetchImage(id))] as const),
+                  ),
+                )
+                const result = stageAdd(
+                  items.map((item) => {
+                    const image = records.get(item.image_id)!
+                    const key = nextDraftKey.current--
+                    return {
+                      ...image,
+                      draftKey: key,
+                      inuksukId: item.id,
+                      slot: {
+                        id: key,
+                        label: item.title,
+                        thumb: item.thumb,
+                        viewport_state: {
+                          x: item.x,
+                          y: item.y,
+                          zoom: item.zoom,
+                          rotation: item.rotation,
+                        },
+                      },
+                    }
+                  }),
+                )
+                if (result.status === 'full')
+                  throw new Error('These saved views exceed the collection capacity.')
+                setPickerOpen(false)
+              } catch (err) {
+                onError(userMessage(err, 'Unable to stage saved views.'))
+              } finally {
+                setPickerBusy(false)
+              }
+            }}
+          >
+            Stage saved views
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   )
 }

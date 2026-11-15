@@ -1148,7 +1148,10 @@ async def create_collection(
     if plans is not None:
         validate_slot_caps(
             user, body.type, plans, [],
-            slot_request=bool(body.model_fields_set & {"slots", "source_board_id", "inuksuk_ids"}),
+            seeded_create=(
+                body.inuksuk_ids is not None or body.source_board_id is not None
+                or body.source_section_id is not None
+            ),
         )
     images = (
         await _resolve_images(db, ctx, body.type, body.image_ids)
@@ -1554,7 +1557,6 @@ async def replace_collection_images(
     if plans is not None:
         validate_slot_caps(
             user, collection.type, plans, list(collection.image_links),
-            slot_request=bool(body.model_fields_set & {"slots", "source_board_id", "inuksuk_ids"}),
         )
     images = (
         await _resolve_images(

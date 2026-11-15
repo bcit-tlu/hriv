@@ -171,3 +171,18 @@ replacement hooks, and `admin_ops.py` must remain aligned. Runtime additions
 require `INUKSUKS_ENABLED`; the frontend slot-identity rollout is #1774.
 Tests: `test_collection_slots.py`, existing Collection persistence/API tests,
 thumbnail/token and admin operation tests, plus Helm regression checks.
+
+### Board-seeded Collections and multi-slot viewers (#1774)
+
+- Member identity/payload helpers: `frontend/src/collectionMembers.ts`;
+  types and API source fields: `types.ts`, `api.ts`.
+- Snapshot conversion, renewal and serialized writes:
+  `collectionUtils.ts`, `useCollectionsData.ts`, `useAddToCollection.ts`.
+- Board selection/create/add: `components/BoardsPage.tsx`; staged Board/Section
+  additions: `components/CollectionManageDialog.tsx`.
+- Sequence slot URL state: `App.tsx`, `useShareableImageState.ts`,
+  `components/SequenceCollectionViewer.tsx`. Synchronized per-slot registration
+  and defaults: `components/SynchronizedCollectionViewer.tsx`.
+- Regression coverage: `tests/collectionMembers.test.ts`,
+  `tests/components/CollectionSlotViewers.test.tsx`, the existing collection
+  data/manage tests, and saved-view Collection/Boards Storybook variants.

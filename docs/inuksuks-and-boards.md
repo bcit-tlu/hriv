@@ -491,3 +491,20 @@ whole-image thumbs, Inuksuk thumbs or other slots. nginx isolates slot JPEG
 auth verdicts by exact URI rather than its shared tile class. Cleanup follows
 successful database commits. Image replacement invalidates slot geometry and
 snapshots because the old coordinates no longer describe the new source.
+
+## Collections from saved views (#1774)
+
+Boards now offer a Select toolbar: any selected Inuksuks can seed a Sequence,
+and 2–4 can seed a Synchronized Collection. Both reuse the existing collection
+form and Add to Collection destination dialog. Board and Section headers create
+ordered Sequences directly, while the collection Manage dialog can stage a
+Board or Section into its draft.
+Selected views follow the displayed Board order: Sections in their listed order,
+members in each Section's order, then Unsectioned. Click order does not change
+the resulting Collection sequence.
+
+A Collection slot is an independent snapshot. Its crop, label and starting
+coordinates survive independently of the original saved view; changing the
+Collection view does not edit the Inuksuk. Multiple slots on one slide are
+separate Sequence steps or side-by-side Synchronized panes. These controls and
+slot writes require the Inuksuks feature flag.

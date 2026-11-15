@@ -1,3 +1,5 @@
+import { memberSlotInput } from './collectionMembers'
+import type { CollectionSources } from './api'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   createCollection,
@@ -43,6 +45,7 @@ export async function addImagesToCollection(
   collectionId: number,
   imageIds: readonly number[],
   role?: Role | null,
+  inuksuksEnabled = false,
 ): Promise<AddToCollectionResult> {
   const current = apiCollectionToCollection(await fetchCollection(collectionId))
   const existing = current.images.map((img) => img.id)
@@ -53,7 +56,14 @@ export async function addImagesToCollection(
     return { status: 'full', collection: current }
   }
   const updated = await replaceCollectionImages(collectionId, {
-    image_ids: [...existing, ...missing],
+    ...(inuksuksEnabled
+      ? {
+          slots: [
+            ...current.images.map(memberSlotInput),
+            ...missing.map((id) => ({ image_id: id })),
+          ],
+        }
+      : { image_ids: [...existing, ...missing] }),
     version: current.version,
   })
   return {
@@ -78,13 +88,19 @@ export async function removeImagesFromCollection(
   collectionId: number,
   imageIds: readonly number[],
   base?: Collection,
+  inuksuksEnabled = false,
 ): Promise<Collection> {
   const current = base ?? apiCollectionToCollection(await fetchCollection(collectionId))
   const drop = new Set(imageIds)
-  const keep = current.images.filter((img) => !drop.has(img.id)).map((img) => img.id)
+  const keep = current.images.filter((img) => !drop.has(img.id))
   if (keep.length === current.images.length) return current
   return apiCollectionToCollection(
-    await replaceCollectionImages(collectionId, { image_ids: keep, version: current.version }),
+    await replaceCollectionImages(collectionId, {
+      ...(inuksuksEnabled
+        ? { slots: keep.map(memberSlotInput) }
+        : { image_ids: keep.map((img) => img.id) }),
+      version: current.version,
+    }),
   )
 }
 
@@ -92,6 +108,7 @@ export async function removeImagesFromCollection(
 export async function createCollectionWithImages(
   values: CollectionFormValues,
   imageIds: readonly number[],
+  inuksuksEnabled = false,
 ): Promise<Collection> {
   return apiCollectionToCollection(
     await createCollection({
@@ -100,7 +117,9 @@ export async function createCollectionWithImages(
       type: values.type,
       visibility: values.visibility,
       ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
-      image_ids: Array.from(new Set(imageIds)),
+      ...(inuksuksEnabled
+        ? { slots: Array.from(new Set(imageIds)).map((id) => ({ image_id: id })) }
+        : { image_ids: Array.from(new Set(imageIds)) }),
       ...(values.visibility === 'restricted'
         ? { program_ids: values.programIds, group_ids: values.groupIds }
         : {}),
@@ -165,4 +184,37 @@ export function useEditableCollections(enabled: boolean) {
   const { collections, ...rest } = useVisibleCollections(enabled)
   const editable = useMemo(() => collections.filter((c) => c.permissions.canEdit), [collections])
   return { collections: editable, ...rest }
+}
+
+export async function createCollectionFromSources(
+  values: CollectionFormValues,
+  sources: CollectionSources,
+): Promise<Collection> {
+  return apiCollectionToCollection(
+    await createCollection({
+      name: values.name,
+      description: values.description,
+      type: values.type,
+      visibility: values.visibility,
+      ...(values.categoryId != null ? { category_id: values.categoryId } : {}),
+      ...(values.visibility === 'restricted'
+        ? { program_ids: values.programIds, group_ids: values.groupIds }
+        : {}),
+      ...sources,
+    }),
+  )
+}
+
+export async function addSourcesToCollection(
+  collectionId: number,
+  sources: CollectionSources,
+): Promise<Collection> {
+  const current = apiCollectionToCollection(await fetchCollection(collectionId))
+  return apiCollectionToCollection(
+    await replaceCollectionImages(collectionId, {
+      ...sources,
+      slots: [...current.images.map(memberSlotInput), ...(sources.slots ?? [])],
+      version: current.version,
+    }),
+  )
 }

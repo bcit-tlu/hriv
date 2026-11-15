@@ -28,13 +28,15 @@ import {
   studentTypesAtCap,
   SYNCHRONIZED_MAX_IMAGES,
 } from '../collectionUtils'
-import type { Category, CollectionSummary, Group, Program } from '../types'
+import type { Category, CollectionSummary, CollectionType, Group, Program } from '../types'
 import CollectionEditDialog, {
   type CollectionEditDialogProps,
   type CollectionFormValues,
 } from './CollectionEditDialog'
 
 export interface AddToCollectionDialogProps {
+  defaultType?: CollectionType
+  slotMode?: boolean
   open: boolean
   onClose: () => void
   /** Images to add; the viewer passes one, multi-select (#1418) passes many. */
@@ -68,6 +70,8 @@ export const CAP_REACHED_TOOLTIP = `Synchronized collections hold at most ${SYNC
 const STUDENT_SEQUENCE_CAP_REACHED_TOOLTIP = `Students can add at most ${STUDENT_SEQUENCE_MAX_IMAGES} images to a sequence collection.`
 
 export default function AddToCollectionDialog({
+  defaultType,
+  slotMode = false,
   open,
   onClose,
   imageIds,
@@ -230,7 +234,11 @@ export default function AddToCollectionDialog({
                 >
                   {section.items.map((collection) => {
                     const cap = collectionImageCap(collection.type, currentUser?.role)
-                    const full = cap != null && collection.imageCount >= cap
+                    const full =
+                      cap != null &&
+                      (slotMode
+                        ? collection.imageCount + imageIds.length > cap
+                        : collection.imageCount >= cap)
                     const disabled = full || busy
                     const fullTooltip =
                       collection.type === 'synchronized'
@@ -299,6 +307,7 @@ export default function AddToCollectionDialog({
         open={open && createOpen}
         onClose={() => setCreateOpen(false)}
         collection={null}
+        defaultType={defaultType}
         programs={programs}
         groups={groups}
         typesAtLimit={typesAtLimit}

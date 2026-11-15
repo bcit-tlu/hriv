@@ -233,10 +233,30 @@ export interface CollectionSummary {
 
 export interface Collection extends CollectionSummary {
   /** Ordered member images (only those visible to the caller). */
-  images: ImageItem[]
+  images: CollectionMember[]
   viewportState: Record<string, unknown>
   /** Nominal member count for unfiltered viewers; for students the backend
    * clamps it to `imageCount + 1` when members are hidden, so it signals
    * "restricted members exist" without revealing how many (#1529). */
   memberCount: number
+}
+
+export interface SlotViewport {
+  x: number
+  y: number
+  zoom: number
+  rotation?: number
+}
+
+export interface CollectionSlot {
+  id: number
+  viewport_state: SlotViewport | null
+  thumb: string | null
+  label: string | null
+}
+
+export interface CollectionMember extends ImageItem {
+  slot?: CollectionSlot | null
+  draftKey?: number
+  inuksukId?: number
 }

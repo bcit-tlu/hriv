@@ -162,3 +162,20 @@ export const ReadOnlyOwnedBoard: Story = {
     ).toBeVisible()
   },
 }
+
+export const CollectionSelection: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Select' }))
+    const checkboxes = await canvas.findAllByRole('checkbox', { name: /^Select / })
+    await userEvent.click(checkboxes[0])
+    await userEvent.click(checkboxes[1])
+    const toolbar = canvas.getByRole('toolbar', { name: 'Selected Inuksuks' })
+    await expect(
+      within(toolbar).getByRole('button', { name: 'Create Sequence Collection' }),
+    ).toBeEnabled()
+    await expect(
+      within(toolbar).getByRole('button', { name: 'Create Synchronized Collection' }),
+    ).toBeEnabled()
+  },
+}

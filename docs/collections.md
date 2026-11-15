@@ -1967,8 +1967,11 @@ The caller must see the source Board; inaccessible Board members are skipped.
 Explicit inaccessible Inuksuks return 404. Seeding snapshots geometry, title,
 and an independent JPEG; it never changes or retains a link to the Inuksuk.
 Student Sequence limits count slots and distinguish additions by slot identity.
-New synchronized slot/seeding payloads require 2–4 slots; legacy image-ID
-payloads retain the previous empty/single-member editing workflow and maximum 4.
+Synchronized creation from `inuksuk_ids`, `source_board_id`, or
+`source_section_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
+payloads retain the 0–4 member bounds on create and update, including the
+empty/single-member editing, removal, and undo workflows. Source-based updates
+also allow 0–4 slots; the two-slot minimum applies only to seeded creation.
 
 PUT `/api/collections/{id}/viewport` also accepts
 `{version, slot_viewports: {"<slot_id>": {x,y,zoom,rotation?}|null}}` under the
@@ -1996,3 +1999,40 @@ clearing all of that image's slots, including initially blank slots. Every
 affected Collection version advances, so a viewport write with a pre-replacement
 version conflicts instead of restoring geometry for the old source. Thumbnails
 are collected again after locking so racing snapshots are removed after commit.
+
+## Board-based curation and multi-slot viewers (#1774)
+
+With `features.inuksuks`, a Board or Section header can create a Sequence
+Collection using the existing collection form. Select mode offers Sequence
+create/add for any non-empty selection and Synchronized create/add for 2–4
+Inuksuks. Existing collection destinations use the normal Add to Collection
+dialog. Creating opens the new collection; adding keeps the Board open.
+
+The Manage dialog stages **Add from Board**, optionally limited to one Section,
+alongside its existing image-search staging. Reorders, selection and concurrent
+membership merging identify saved slots independently. Draft additions have
+temporary negative keys and do not allocate persisted slots until Done. Save
+retains existing slot ids; cancelling discards all staged additions.
+Whole-image search picks deduplicate by their source image id, including picks
+already staged in the draft. Board/Inuksuk picks may intentionally add further
+slots for that same image.
+
+Sequence filmstrips display slot crops and labels and open the copied viewport,
+even when consecutive steps use the same slide. Share links include
+`?collection=7&item=100&slot=11`: `slot` selects the saved view and `item`
+remains the real-image fallback. Image APIs always receive the real image id.
+
+Synchronized panes register, link, unlink and restore by slot identity. Their
+initial positions prefer slot snapshots, then the legacy image-keyed defaults.
+Set as default view sends separate `slot_viewports` and legacy
+`viewport_state` dictionaries; it never writes to the source Inuksuks.
+Slot crop renewal fetches the containing Collection to obtain a fresh
+authorized thumbnail token. Covers remain image-based, with one picker row per
+source image.
+
+Uncommitted Board picks renew their source Inuksuk thumbnail until Done
+allocates a persisted slot. Renewal only reads the source; it never edits it.
+
+When the feature is disabled, the new controls are absent and writes retain the
+legacy `image_ids` and image-keyed viewport payloads. Server permissions,
+visibility, capacity checks and optimistic concurrency remain authoritative.

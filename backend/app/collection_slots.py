@@ -310,9 +310,9 @@ def validate_slot_caps(
     plans: list[SlotPlan],
     existing: list[CollectionImage],
     *,
-    slot_request: bool = False,
+    seeded_create: bool = False,
 ) -> None:
-    if collection_type == "synchronized" and slot_request and len(plans) < 2:
+    if collection_type == "synchronized" and seeded_create and len(plans) < 2:
         raise HTTPException(422, "synchronized collections require at least 2 slots")
     if (
         collection_type == "synchronized"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   boardMemberOrder,
+  groupBoardMembers,
   inuksukViewParams,
   moveBoardMember,
   ownsBoard,
@@ -9,6 +10,35 @@ import {
 import { BOARDS_FIXTURES, BOARD_ITEMS, BOARD_USER } from '../src/components/boardsFixtures'
 
 describe('Board navigation and membership order', () => {
+  it('groups by displayed Section order, retaining member order and placing Unsectioned last', () => {
+    const board = BOARDS_FIXTURES[0]
+    const groups = groupBoardMembers({
+      ...board,
+      sections: [...board.sections].reverse(),
+      inuksuks: [...board.inuksuks].reverse(),
+    })
+    expect(groups.map((section) => [section.id, section.inuksuks.map((item) => item.id)])).toEqual([
+      [12, [11, 10]],
+      [11, [9, 8, 7]],
+      [null, [12]],
+    ])
+  })
+  it('retains empty Sections and the empty Unsectioned group', () => {
+    const board = BOARDS_FIXTURES[0]
+    expect(
+      groupBoardMembers({ ...board, inuksuks: [] }).map((section) => [
+        section.id,
+        section.inuksuks,
+      ]),
+    ).toEqual([
+      [11, []],
+      [12, []],
+      [null, []],
+    ])
+    expect(groupBoardMembers({ ...board, sections: [], inuksuks: [] })).toEqual([
+      { id: null, name: 'Unsectioned', inuksuks: [] },
+    ])
+  })
   it.each([
     '',
     '?page=boards',

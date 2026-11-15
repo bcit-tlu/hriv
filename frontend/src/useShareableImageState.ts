@@ -149,6 +149,11 @@ export interface UseShareableImageStateDeps {
    */
   collectionItemId?: number | null
   /**
+   * Collection-scoped slot inside a sequence — written as `&slot={id}` alongside
+   * `item` so repeated images restore the correct member of this collection.
+   */
+  collectionSlotId?: number | null
+  /**
    * Collection detail opened from a Browse tile (#1529): the URL sync keeps
    * `?cat=` next to `?collection=` so the deep link restores the Browse scope
    * — or `?from=browse` when that scope is the param-less root (#1592).
@@ -216,6 +221,7 @@ export function useShareableImageState(
     path,
     collectionId = null,
     collectionItemId = null,
+    collectionSlotId = null,
     collectionFromBrowse = false,
     collectionTypeFilter,
     setPath,
@@ -325,6 +331,7 @@ export function useShareableImageState(
         }
       }
       params.set('collection', String(collectionId))
+      if (collectionSlotId != null) params.set('slot', String(collectionSlotId))
       if (collectionItemId != null) params.set('item', String(collectionItemId))
     } else if (page !== 'browse') {
       params.set('page', page)
@@ -386,6 +393,7 @@ export function useShareableImageState(
     overlays,
     collectionId,
     collectionItemId,
+    collectionSlotId,
     collectionFromBrowse,
     collectionTypeFilter,
     boardId,

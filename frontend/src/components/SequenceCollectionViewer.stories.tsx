@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Box from '@mui/material/Box'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, fn, userEvent, within } from 'storybook/test'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
@@ -114,9 +115,10 @@ const EMPTY = makeCollection([], true)
 const EMPTY_READ_ONLY = makeCollection([], false)
 
 interface StoryArgs {
+  inuksuksEnabled?: boolean
   collection: Collection
   itemId: number | null
-  onSelectItem: (id: number) => void
+  onSelectItem: (id: number, slotId?: number) => void
   onOpenImage: (image: ImageItem) => void
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
@@ -125,15 +127,20 @@ interface StoryArgs {
 
 function SequenceViewerExample(args: StoryArgs) {
   const [itemId, setItemId] = useState<number | null>(args.itemId)
+  const [slotId, setSlotId] = useState<number | null>(null)
   const user = makeUser()
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <SequenceCollectionViewer
+        inuksuksEnabled={args.inuksuksEnabled}
+        slotId={slotId}
         collection={args.collection}
         itemId={itemId}
-        onSelectItem={(id) => {
+        onSelectItem={(id, slot) => {
           setItemId(id)
-          args.onSelectItem(id)
+          setSlotId(slot ?? null)
+          if (slot != null) args.onSelectItem(id, slot)
+          else args.onSelectItem(id)
         }}
         onOpenImage={args.onOpenImage}
         onImageRenewed={args.onImageRenewed}
@@ -229,4 +236,54 @@ export const EmptySequence: Story = {
 export const EmptySequenceReadOnly: Story = {
   name: 'Empty Sequence Read Only',
   args: { collection: EMPTY_READ_ONLY },
+}
+
+export const SameImageSlots: Story = {
+  decorators: [
+    (Story) => (
+      <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <Story />
+      </Box>
+    ),
+  ],
+  beforeEach: () => {
+    const original = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        window.location.href,
+      )
+      if (/^\/api\/images\/\d+\/inuksuks$/.test(url.pathname)) return Response.json([])
+      return original(input, init)
+    }
+    return () => {
+      globalThis.fetch = original
+    }
+  },
+  args: {
+    inuksuksEnabled: true,
+    collection: makeCollection(
+      [0.3, 0.7].map((x, index) => ({
+        ...makeImage(101, 'Architectural study'),
+        tileSources: '/inuksuk-image.json',
+        slot: {
+          id: 501 + index,
+          label: index ? 'Right study' : 'Left study',
+          thumb: '/hriv-splash2.jpg',
+          viewport_state: { x, y: 0.4, zoom: 2, rotation: index * 15 },
+        },
+      })),
+      true,
+    ),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Go to Right study' }))
+    await expect(canvas.getByRole('button', { name: 'Go to Right study' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('2 of 2')
+    await expect(args.onSelectItem).toHaveBeenCalledWith(101, 502)
+  },
 }

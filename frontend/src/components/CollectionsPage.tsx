@@ -1,3 +1,4 @@
+import type { CollectionMember, SlotViewport } from '../types'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -146,12 +147,17 @@ export interface CollectionsPageProps {
   onOpenImageById?: (imageId: number) => void
   /** Sequence viewer state (`?item=` position) and mutations (#1416). */
   selectedCollectionItemId: number | null
-  onSelectCollectionItem: (imageId: number) => void
+  selectedCollectionSlotId?: number | null
+  onSelectCollectionItem: (imageId: number, slotId?: number) => void
   /**
    * Whole-replace member order — the Manage dialog's Done commits its staged
    * draft (reorder + removals + additions) through this one PUT (#1567).
    */
-  onReorderImages: (id: number, imageIds: number[]) => Promise<unknown>
+  onReorderImages: (
+    id: number,
+    imageIds: number[],
+    members?: CollectionMember[],
+  ) => Promise<unknown>
   onCollectionImageRenewed: (collectionId: number, image: ApiImage) => void
   onViewerError: (message: string) => void
   /**
@@ -169,7 +175,11 @@ export interface CollectionsPageProps {
    *  viewport in graph view (#1630 feedback). */
   onViewChange?: (view: CollectionsView) => void
   /** Synchronized viewer mutation — whole-replace `viewport_state` (#1417). */
-  onSaveViewport: (id: number, viewportState: Record<string, unknown>) => Promise<unknown>
+  onSaveViewport: (
+    id: number,
+    viewportState: Record<string, unknown>,
+    slotViewports?: Record<string, SlotViewport | null>,
+  ) => Promise<unknown>
   /** Mutations — reject with an ApiError to surface the message in the dialog. */
   loadCollection: (id: number) => Promise<Collection>
   onCreate: (values: CollectionFormValues) => Promise<Collection>
@@ -674,6 +684,7 @@ export default function CollectionsPage({
   onCloseCollection,
   onOpenImage,
   selectedCollectionItemId,
+  selectedCollectionSlotId = null,
   onSelectCollectionItem,
   onReorderImages,
   onCollectionImageRenewed,
@@ -1220,6 +1231,7 @@ export default function CollectionsPage({
             inuksuksEnabled={inuksuksEnabled}
             collection={detail}
             itemId={selectedCollectionItemId}
+            slotId={selectedCollectionSlotId}
             onSelectItem={onSelectCollectionItem}
             onOpenImage={onOpenImage}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
@@ -1255,7 +1267,11 @@ export default function CollectionsPage({
           <SynchronizedCollectionViewer
             inuksuksEnabled={inuksuksEnabled}
             collection={detail}
-            onSaveViewport={(viewportState) => onSaveViewport(detail.id, viewportState)}
+            onSaveViewport={(viewportState, slotViewports) =>
+              slotViewports
+                ? onSaveViewport(detail.id, viewportState, slotViewports)
+                : onSaveViewport(detail.id, viewportState)
+            }
             onOpenImage={onOpenImage}
             onImageRenewed={(image) => onCollectionImageRenewed(detail.id, image)}
             onError={onViewerError}
@@ -1898,11 +1914,16 @@ export default function CollectionsPage({
           commits them through one whole-replace PUT — only then does the
           detail behind it change. */}
       <CollectionManageDialog
+        inuksuksEnabled={inuksuksEnabled}
         open={manageOpen}
         onClose={() => setManageOpen(false)}
         collection={detail}
-        onSaveMembers={(imageIds) =>
-          detail ? onReorderImages(detail.id, imageIds) : Promise.resolve()
+        onSaveMembers={(imageIds, members) =>
+          detail
+            ? members
+              ? onReorderImages(detail.id, imageIds, members)
+              : onReorderImages(detail.id, imageIds)
+            : Promise.resolve()
         }
         onAddImages={
           detail && onRequestCollectionImageSearch

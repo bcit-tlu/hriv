@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import {
   addImagesToCollection,
+  addSourcesToCollection,
+  createCollectionFromSources,
   createCollectionWithImages,
   fitsCollectionCapacity,
   removeImagesFromCollection,
@@ -210,6 +212,35 @@ describe('addImagesToCollection', () => {
 })
 
 describe('removeImagesFromCollection (#1530)', () => {
+  it('keeps the remaining slot when a synchronized collection is reduced to one image', async () => {
+    const slot = { id: 21, viewport_state: null, thumb: null, label: null }
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'synchronized',
+        version: 4,
+        images: [
+          { ...apiImage(1), slot },
+          { ...apiImage(2), slot: { ...slot, id: 22 } },
+        ],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'synchronized',
+        version: 5,
+        images: [{ ...apiImage(1), slot }],
+      }),
+    )
+    const result = await removeImagesFromCollection(5, [2], undefined, true)
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      slots: [{ id: 21, image_id: 1 }],
+      version: 4,
+    })
+    expect(result.images.map((image) => image.slot?.id)).toEqual([21])
+  })
+
   it('PUTs the member list minus the removed ids with the current version', async () => {
     apiMocks.fetchCollection.mockResolvedValue(
       makeApiCollection({
@@ -295,6 +326,32 @@ describe('removeImagesFromCollection (#1530)', () => {
 })
 
 describe('createCollectionWithImages', () => {
+  it('creates a synchronized collection from one whole-image slot with the feature enabled', async () => {
+    apiMocks.createCollection.mockResolvedValue(
+      makeApiCollection({ id: 8, type: 'synchronized', images: [apiImage(42)] }),
+    )
+    const result = await createCollectionWithImages(
+      {
+        name: 'Start comparison',
+        description: null,
+        type: 'synchronized',
+        visibility: 'private',
+        programIds: [],
+        groupIds: [],
+      },
+      [42],
+      true,
+    )
+    expect(apiMocks.createCollection).toHaveBeenCalledWith({
+      name: 'Start comparison',
+      description: null,
+      type: 'synchronized',
+      visibility: 'private',
+      slots: [{ image_id: 42 }],
+    })
+    expect(result.images.map((image) => image.id)).toEqual([42])
+  })
+
   it('posts the form values with the images preset and only sends scope when restricted', async () => {
     apiMocks.createCollection.mockResolvedValue(makeApiCollection({ id: 8, name: 'New' }))
     const created = await createCollectionWithImages(
@@ -414,5 +471,60 @@ describe('useEditableCollections', () => {
     })
     expect(result.current.error).toBeNull()
     expect(result.current.collections).toHaveLength(1)
+  })
+})
+
+describe('saved-view collection sources', () => {
+  const slot = (id: number) => ({
+    id,
+    viewport_state: { x: id / 10, y: 0.5, zoom: 2 },
+    thumb: '/snapshot.jpg',
+    label: 'Study ' + id,
+  })
+  it('creates a Board sequence without deduplicating same-image slots in its response', async () => {
+    apiMocks.createCollection.mockResolvedValue(
+      makeApiCollection({ images: [1, 2, 3].map((id) => ({ ...apiImage(9), slot: slot(id) })) }),
+    )
+    const result = await createCollectionFromSources(
+      {
+        name: 'Board sequence',
+        description: null,
+        type: 'sequence',
+        visibility: 'private',
+        categoryId: null,
+        programIds: [],
+        groupIds: [],
+        hidden: false,
+      },
+      { source_board_id: 7, source_section_id: 8 },
+    )
+    expect(apiMocks.createCollection).toHaveBeenCalledWith(
+      expect.objectContaining({ source_board_id: 7, source_section_id: 8 }),
+    )
+    expect(result.images.map((image) => image.id)).toEqual([9, 9, 9])
+    expect(result.images.map((image) => image.slot?.id)).toEqual([1, 2, 3])
+  })
+  it('appends selected Inuksuks while preserving every existing slot id', async () => {
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        version: 4,
+        images: [1, 2].map((id) => ({ ...apiImage(9), slot: slot(id) })),
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(makeApiCollection())
+    await addSourcesToCollection(5, { inuksuk_ids: [31, 32] })
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      version: 4,
+      slots: [
+        { id: 1, image_id: 9 },
+        { id: 2, image_id: 9 },
+      ],
+      inuksuk_ids: [31, 32],
+    })
+  })
+  it('keeps source failures visible to the caller', async () => {
+    apiMocks.fetchCollection.mockRejectedValue(new Error('Access lost'))
+    await expect(addSourcesToCollection(5, { source_board_id: 7 })).rejects.toThrow('Access lost')
+    expect(apiMocks.replaceCollectionImages).not.toHaveBeenCalled()
   })
 })

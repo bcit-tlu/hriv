@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import Box from '@mui/material/Box'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, fn, userEvent, within } from 'storybook/test'
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
 import type { ApiImage } from '../api'
-import type { Collection, ImageItem, User } from '../types'
+import type { Collection, ImageItem, SlotViewport, User } from '../types'
 import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 
 const FIXED_AT = '2026-09-01T09:00:00Z'
@@ -121,8 +122,12 @@ const READ_ONLY = makeCollection(
 const SINGLE = makeCollection([makeImage(101, 'Skull — frontal')], true)
 
 interface StoryArgs {
+  inuksuksEnabled?: boolean
   collection: Collection
-  onSaveViewport: (state: Record<string, unknown>) => Promise<void>
+  onSaveViewport: (
+    state: Record<string, unknown>,
+    slots?: Record<string, SlotViewport | null>,
+  ) => Promise<void>
   onOpenImage: (image: ImageItem) => void
   onImageRenewed: (image: ApiImage) => void
   onError: (message: string) => void
@@ -133,6 +138,7 @@ function SynchronizedViewerExample(args: StoryArgs) {
   return (
     <AuthContext.Provider value={makeAuth(user)}>
       <SynchronizedCollectionViewer
+        inuksuksEnabled={args.inuksuksEnabled}
         collection={args.collection}
         onSaveViewport={args.onSaveViewport}
         onOpenImage={args.onOpenImage}
@@ -262,5 +268,72 @@ export const TooFewImages: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByTestId('synchronized-viewer-fallback')).toBeInTheDocument()
     await expect(canvas.getByText('1. Skull — frontal')).toBeInTheDocument()
+  },
+}
+
+export const SameImageSlots: Story = {
+  decorators: [
+    (Story) => (
+      <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <Story />
+      </Box>
+    ),
+  ],
+  beforeEach: () => {
+    const original = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        window.location.href,
+      )
+      if (/^\/api\/images\/\d+\/inuksuks$/.test(url.pathname)) return Response.json([])
+      return original(input, init)
+    }
+    return () => {
+      globalThis.fetch = original
+    }
+  },
+  args: {
+    inuksuksEnabled: true,
+    collection: makeCollection(
+      [0.3, 0.7].map((x, index) => ({
+        ...makeImage(101, 'Architectural study'),
+        tileSources: '/inuksuk-image.json',
+        slot: {
+          id: 501 + index,
+          label: index ? 'Right study' : 'Left study',
+          thumb: '/hriv-splash2.jpg',
+          viewport_state: { x, y: 0.4, zoom: 2, rotation: index * 15 },
+        },
+      })),
+      true,
+    ),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByTestId('synchronized-viewer-frame-501')).toBeVisible()
+    await expect(canvas.getByTestId('synchronized-viewer-frame-502')).toBeVisible()
+    await waitFor(
+      () => {
+        for (const id of [501, 502]) {
+          const image = canvas
+            .getByTestId(`synchronized-viewer-frame-${id}`)
+            .querySelector<HTMLCanvasElement>('.openseadragon-canvas canvas')
+          const context = image?.getContext('2d')
+          const pixel = context?.getImageData(image!.width / 2, image!.height / 2, 1, 1).data
+          expect(pixel?.[0]).toBeGreaterThan(70)
+        }
+      },
+      { timeout: 10000 },
+    )
+    await expect(canvas.getByTestId('synchronized-save')).toBeEnabled()
+    await userEvent.click(canvas.getByTestId('synchronized-save'))
+    await expect(args.onSaveViewport).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        '501': expect.objectContaining({ zoom: 2 }),
+        '502': expect.objectContaining({ zoom: 2 }),
+      }),
+    )
   },
 }

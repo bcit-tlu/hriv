@@ -1,3 +1,4 @@
+import { memberKey, memberViewport } from '../collectionMembers'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
@@ -21,7 +22,7 @@ import SaveIcon from '@mui/icons-material/Save'
 import ScreenRotationIcon from '@mui/icons-material/ScreenRotation'
 
 import { userMessage, type ApiImage } from '../api'
-import type { Collection, ImageItem } from '../types'
+import type { Collection, CollectionMember as ImageItem, SlotViewport } from '../types'
 import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
@@ -47,7 +48,10 @@ export interface SynchronizedCollectionViewerProps {
   inuksuksEnabled?: boolean
   collection: Collection
   /** Persist `{ "<image_id>": ViewportState }` for the pair via `PUT …/viewport`. */
-  onSaveViewport: (viewportState: Record<string, unknown>) => Promise<unknown>
+  onSaveViewport: (
+    viewportState: Record<string, unknown>,
+    slotViewports?: Record<string, SlotViewport | null>,
+  ) => Promise<unknown>
   /** "Open image" → the regular `?image={id}` view where annotations can be edited. */
   onOpenImage: (image: ImageItem) => void
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
@@ -179,7 +183,7 @@ export default function SynchronizedCollectionViewer({
   }, [unpinnedIds])
 
   const available = useMemo(
-    () => images.filter((img) => !failedIds.has(img.id)),
+    () => images.filter((img) => !failedIds.has(memberKey(img))),
     [images, failedIds],
   )
   const panes = useMemo(() => available.slice(0, MAX_PANES), [available])
@@ -188,7 +192,7 @@ export default function SynchronizedCollectionViewer({
   // malformed entries, so a junk `viewport_state` can't enable a button
   // that only goes home.
   const hasSavedView = panes.some(
-    (image) => viewportStateFromSaved(collection.viewportState[String(image.id)]) != null,
+    (image) => viewportStateFromSaved(memberViewport(image, collection.viewportState)) != null,
   )
 
   // `initialViewport` is mount-only input for ImageViewer — freeze the saved
@@ -206,10 +210,13 @@ export default function SynchronizedCollectionViewer({
   }
   const initialViewportFor = (image: ImageItem): ViewportState | undefined => {
     const { map } = initialViewports.current
-    if (!map.has(image.id)) {
-      map.set(image.id, viewportStateFromSaved(collection.viewportState[String(image.id)]))
+    if (!map.has(memberKey(image))) {
+      map.set(
+        memberKey(image),
+        viewportStateFromSaved(memberViewport(image, collection.viewportState)),
+      )
     }
-    return map.get(image.id)
+    return map.get(memberKey(image))
   }
 
   // Per-image pane props cached by image id with each prop invalidated by its
@@ -235,7 +242,7 @@ export default function SynchronizedCollectionViewer({
       image.metadataExtra?.measurement_scale ?? null,
       image.metadataExtra?.measurement_unit ?? null,
     ])
-    const cached = panePropsCache.current.map.get(image.id)
+    const cached = panePropsCache.current.map.get(memberKey(image))
     const value =
       cached?.value ??
       ({
@@ -253,7 +260,7 @@ export default function SynchronizedCollectionViewer({
     if (!cached || cached.measurementKey !== measurementKey) {
       value.measurement = measurementFromMetadata(image.metadataExtra)
     }
-    panePropsCache.current.map.set(image.id, {
+    panePropsCache.current.map.set(memberKey(image), {
       value,
       overlaysKey,
       annotationsKey,
@@ -267,10 +274,10 @@ export default function SynchronizedCollectionViewer({
   // keeps its entry, so its viewer is not remounted by a new prop identity.)
   // Keyed on the occupant ids: a same-membership refresh (e.g. tile-token
   // renewal swapping image records) must not re-arm mid-gesture.
-  const paneIds = panes.map((p) => p.id).join(',')
+  const paneIds = panes.map(memberKey).join(',')
   useEffect(() => {
     baselineRef.current.clear()
-    const ids = new Set(panes.map((p) => p.id))
+    const ids = new Set(panes.map(memberKey))
     for (const { map } of [initialViewports.current, panePropsCache.current]) {
       for (const id of [...map.keys()]) {
         if (!ids.has(id)) map.delete(id)
@@ -307,16 +314,16 @@ export default function SynchronizedCollectionViewer({
   useEffect(() => {
     const detach: (() => void)[] = []
     for (const image of panes) {
-      const viewer = viewersByImage.current.get(image.id)
+      const viewer = viewersByImage.current.get(memberKey(image))
       if (!viewer) {
-        openedRef.current.delete(image.id)
+        openedRef.current.delete(memberKey(image))
         continue
       }
       // 'open' is a once-handler: it runs after ImageViewer's own open handler
       // (registered at viewer creation, before onViewerReady), so the saved
       // viewport restore has already settled when baselines are captured.
       const markOpened = () => {
-        openedRef.current.add(image.id)
+        openedRef.current.add(memberKey(image))
         if (openedRef.current.size >= 2) {
           // Re-arm whenever a pane joins: the newcomers' saved positions and
           // the already-linked panes' current positions become the epoch.
@@ -326,10 +333,10 @@ export default function SynchronizedCollectionViewer({
       const onViewportChange = () => {
         // An unpinned leader moves on its own; pinned leaders still drive
         // the remaining pinned panes (#1564).
-        if (unpinnedRef.current.has(image.id) || syncingRef.current) return
-        if (!openedRef.current.has(image.id)) return
+        if (unpinnedRef.current.has(memberKey(image)) || syncingRef.current) return
+        if (!openedRef.current.has(memberKey(image))) return
         const leader = readViewport(viewer)
-        const leaderBase = baselineRef.current.get(image.id)
+        const leaderBase = baselineRef.current.get(memberKey(image))
         if (!leader) return
         if (!leaderBase) {
           // First armed event just locks the baselines — applying here would
@@ -344,11 +351,12 @@ export default function SynchronizedCollectionViewer({
         syncingRef.current = true
         try {
           for (const other of panes) {
-            if (other.id === image.id || !openedRef.current.has(other.id)) continue
+            if (memberKey(other) === memberKey(image) || !openedRef.current.has(memberKey(other)))
+              continue
             // Unpinned panes do not follow a leader's movement.
-            if (unpinnedRef.current.has(other.id)) continue
-            const followerBase = baselineRef.current.get(other.id)
-            const follower = viewersByImage.current.get(other.id)
+            if (unpinnedRef.current.has(memberKey(other))) continue
+            const followerBase = baselineRef.current.get(memberKey(other))
+            const follower = viewersByImage.current.get(memberKey(other))
             if (!followerBase || !follower) continue
             applyTarget(follower, {
               zoom: followerBase.zoom * zoomRatio,
@@ -398,17 +406,21 @@ export default function SynchronizedCollectionViewer({
   const handleViewerError = useCallback(
     (image: ImageItem, message: string) => {
       onError(message)
-      setFailedIds((prev) => (prev.has(image.id) ? prev : new Set(prev).add(image.id)))
+      setFailedIds((prev) =>
+        prev.has(memberKey(image)) ? prev : new Set(prev).add(memberKey(image)),
+      )
     },
     [onError],
   )
 
   const handleSave = useCallback(async () => {
     const entries: Record<string, ViewportState> = {}
+    const slots: Record<string, SlotViewport> = {}
     for (const image of panes) {
-      const state = readViewport(viewersByImage.current.get(image.id) ?? null)
+      const state = readViewport(viewersByImage.current.get(memberKey(image)) ?? null)
       if (!state) return
-      entries[String(image.id)] = {
+      const target = inuksuksEnabled && image.slot ? slots : entries
+      target[String(inuksuksEnabled && image.slot ? image.slot.id : image.id)] = {
         zoom: state.zoom,
         x: state.x,
         y: state.y,
@@ -417,13 +429,14 @@ export default function SynchronizedCollectionViewer({
     }
     setSaving(true)
     try {
-      await onSaveViewport(entries)
+      if (inuksuksEnabled) await onSaveViewport(entries, slots)
+      else await onSaveViewport(entries)
     } catch (err) {
       onError(userMessage(err, 'Failed to save the collection view.'))
     } finally {
       setSaving(false)
     }
-  }, [panes, onSaveViewport, onError])
+  }, [panes, onSaveViewport, onError, inuksuksEnabled])
 
   const handleReset = useCallback(() => {
     // The default view is defined across linked panes, so Restore re-links any
@@ -435,10 +448,10 @@ export default function SynchronizedCollectionViewer({
       setUnpinnedIds(relinked)
     }
     const apply = (image: ImageItem) => {
-      const viewer = viewersByImage.current.get(image.id)
+      const viewer = viewersByImage.current.get(memberKey(image))
       const viewport = viewer?.viewport
       if (!viewer || !viewport) return
-      const saved = viewportStateFromSaved(collection.viewportState[String(image.id)])
+      const saved = viewportStateFromSaved(memberViewport(image, collection.viewportState))
       if (saved) {
         applyTarget(viewer, saved)
       } else {
@@ -475,7 +488,7 @@ export default function SynchronizedCollectionViewer({
           <List dense sx={{ mt: 2 }}>
             {images.map((img, index) => (
               <ListItem
-                key={img.id}
+                key={memberKey(img)}
                 divider
                 secondaryAction={
                   <Button size="small" endIcon={<ImageIcon />} onClick={() => onOpenImage(img)}>
@@ -609,10 +622,10 @@ export default function SynchronizedCollectionViewer({
           }
         >
           {paneProps.map(({ image, pane }) => {
-            const pinned = !unpinnedIds.has(image.id)
+            const pinned = !unpinnedIds.has(memberKey(image))
             return (
               <Box
-                key={image.id}
+                key={memberKey(image)}
                 sx={
                   gridPanes
                     ? {
@@ -630,7 +643,7 @@ export default function SynchronizedCollectionViewer({
               >
                 <Paper
                   elevation={3}
-                  data-testid={`synchronized-viewer-frame-${image.id}`}
+                  data-testid={`synchronized-viewer-frame-${memberKey(image)}`}
                   sx={{
                     position: 'relative',
                     borderRadius: 2,
@@ -662,7 +675,7 @@ export default function SynchronizedCollectionViewer({
                       canvasAnnotations={pane.canvasAnnotations}
                       canEditContent={false}
                       measurement={pane.measurement}
-                      onViewerReady={(viewer) => handleViewerReady(image.id, viewer)}
+                      onViewerReady={(viewer) => handleViewerReady(memberKey(image), viewer)}
                       onTileSourceRenewed={onImageRenewed}
                       onError={(message) => handleViewerError(image, message)}
                       viewportControl={<CollectionImageDetailsTrigger />}
@@ -670,7 +683,7 @@ export default function SynchronizedCollectionViewer({
                         <>
                           <CollectionImageDetailsDrawer />
                           <ViewportDialog
-                            open={noteDialogImageId === image.id}
+                            open={noteDialogImageId === memberKey(image)}
                             title="Notes"
                             onClose={() => setNoteDialogImageId(null)}
                           >
@@ -703,8 +716,8 @@ export default function SynchronizedCollectionViewer({
                       size="small"
                       aria-label={pinned ? `Unlink ${image.name}` : `Link ${image.name}`}
                       aria-pressed={pinned}
-                      onClick={() => handlePinToggle(image.id)}
-                      data-testid={`pin-toggle-${image.id}`}
+                      onClick={() => handlePinToggle(memberKey(image))}
+                      data-testid={`pin-toggle-${memberKey(image)}`}
                       sx={(theme) => ({
                         position: 'absolute',
                         top: 8,
@@ -722,12 +735,12 @@ export default function SynchronizedCollectionViewer({
                   </Tooltip>
                 </Paper>
                 <ImageCaptionRow
-                  key={`caption-${image.id}`}
-                  name={image.name}
+                  key={`caption-${memberKey(image)}`}
+                  name={inuksuksEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
                   note={image.note}
-                  noteDialogOpen={noteDialogImageId === image.id}
-                  onShowNote={() => setNoteDialogImageId(image.id)}
+                  noteDialogOpen={noteDialogImageId === memberKey(image)}
+                  onShowNote={() => setNoteDialogImageId(memberKey(image))}
                   end={
                     <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
                       <Button
