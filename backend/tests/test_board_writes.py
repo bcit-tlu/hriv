@@ -570,11 +570,23 @@ async def test_image_delete_invalidates_linked_boards(world, bulk):
     world.caller["role"] = "admin"
     await world.create()
     before = await world.board("admin")
-    if bulk:
-        result = await world.client.request("DELETE", "/api/images/bulk", json={"image_ids": [world.images["visible"]]})
-    else:
-        result = await world.client.delete(f"/api/images/{world.images['visible']}")
+    statements = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(world.engine.sync_engine, "before_cursor_execute", capture)
+    try:
+        if bulk:
+            result = await world.client.request("DELETE", "/api/images/bulk", json={"image_ids": [world.images["visible"]]})
+        else:
+            result = await world.client.delete(f"/api/images/{world.images['visible']}")
+    finally:
+        event.remove(world.engine.sync_engine, "before_cursor_execute", capture)
     assert result.status_code == 204, result.text
+    image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR UPDATE" in sql)
+    board_update = next(i for i, sql in enumerate(statements) if "UPDATE boards SET" in sql)
+    assert image_lock < board_update
     after = await world.board("admin")
     assert after["version"] == before["version"] + 1 and after["inuksuks"] == []
 

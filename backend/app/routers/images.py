@@ -251,7 +251,7 @@ async def bulk_update_images(
     with tracer.start_as_current_span("image.bulk_update") as span:
         try:
             span.set_attribute("image.count", len(body.image_ids))
-            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.id).with_for_update()
+            stmt = select(Image).where(Image.id.in_(body.image_ids))
             result = await db.execute(stmt)
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
@@ -807,7 +807,7 @@ async def bulk_delete_images(
     with tracer.start_as_current_span("image.bulk_delete") as span:
         try:
             span.set_attribute("image.count", len(body.image_ids))
-            stmt = select(Image).where(Image.id.in_(body.image_ids))
+            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.id).with_for_update()
             result = await db.execute(stmt)
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
