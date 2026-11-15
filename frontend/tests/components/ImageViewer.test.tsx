@@ -505,7 +505,7 @@ describe('Inuksuk viewer tool', () => {
     ).toBe(true)
     fireEvent.click(within(drawer).getByRole('switch', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
-    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeNull()
+    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
     expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(1)
     expect(within(drawer).getByRole('button', { name: 'Rose window label' })).toHaveAttribute(

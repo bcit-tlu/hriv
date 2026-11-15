@@ -66,7 +66,11 @@ beforeEach(() => localStorage.clear())
 describe('ImageInuksuksDrawer', () => {
   it.each(['light', 'dark'] as const)('uses %s theme colors for the trigger', (mode) => {
     const theme = createTheme({ palette: { mode } })
-    render(<ThemeProvider theme={theme}><Example /></ThemeProvider>)
+    render(
+      <ThemeProvider theme={theme}>
+        <Example />
+      </ThemeProvider>,
+    )
     expect(screen.getByRole('button', { name: 'Inuksuks (4)' })).toHaveStyle({
       backgroundColor: alpha(theme.palette.background.paper, 0.85),
       color: theme.palette.text.primary,

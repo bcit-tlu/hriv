@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import OpenSeadragon from 'openseadragon'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, within, waitFor } from 'storybook/test'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import ImageViewer from './ImageViewer'
@@ -37,12 +37,14 @@ function MarkerViewer() {
         >
           Rotate and zoom
         </Button>
-        <Button onClick={() => {
-          for (const item of items) {
-            prefs.setItem(item, 'markerVisible', true)
-            prefs.setItem(item, 'labelVisible', true)
-          }
-        }}>
+        <Button
+          onClick={() => {
+            for (const item of items) {
+              prefs.setItem(item, 'markerVisible', true)
+              prefs.setItem(item, 'labelVisible', true)
+            }
+          }}
+        >
           Reset visibility
         </Button>
       </Box>
@@ -96,7 +98,10 @@ export const IndependentVisibility: Story = {
     await userEvent.click(drawer.getByRole('switch', { name: 'Rose window marker' }))
     await userEvent.click(drawer.getByRole('button', { name: 'Stone columns label' }))
     await userEvent.click(drawer.getByRole('button', { name: 'Close Inuksuks' }))
-    await expect(canvas.queryByRole('button', { name: 'View Inuksuk: Rose window' })).not.toBeInTheDocument()
+    await waitFor(() => expect(canvas.queryByRole('complementary')).not.toBeInTheDocument())
+    await expect(
+      canvas.queryByRole('button', { name: 'View Inuksuk: Rose window' }),
+    ).not.toBeInTheDocument()
     await expect(canvas.getByText('Rose window')).toBeVisible()
     await expect(canvas.getByRole('button', { name: 'View Inuksuk: Stone columns' })).toBeVisible()
   },
