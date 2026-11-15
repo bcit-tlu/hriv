@@ -1987,6 +1987,9 @@ are lossless even while user-facing slot workflows are disabled.
 Slot creation and membership replacement take the filed destination's tile
 scope before image row locks, matching tile reorder's scope-first protocol.
 The image locks protect copied geometry against concurrent source replacement.
+Membership replacement only locks the scope revision: it does not advance the
+tile-order revision, because adding or reordering slots does not move the
+Collection's Browse tile. Creating a filed Collection still advances it.
 
 Source replacement locks every containing Collection before refreshing and
 clearing all of that image's slots, including initially blank slots. Every

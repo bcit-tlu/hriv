@@ -22,8 +22,8 @@ from app.collection_slots import (
     SlotPlan, finish_slot_changes, slot_thumb_file, snapshot_thumbnail,
 )
 from app.database import get_db, settings
-from app.models import Board, BoardInuksuk, BoardSection, Category, Collection, CollectionImage, Image, Inuksuk, User
-from app.routers import collections, images
+from app.models import Board, BoardInuksuk, BoardSection, Category, Collection, CollectionImage, Image, Inuksuk, TileOrderRevision, User
+from app.routers import collections, images, tile_order
 from app.schemas import CollectionCreate, CollectionImagesUpdate, CollectionViewportUpdate, SlotViewport
 from app.tile_tokens import TileTokenError, append_slot_thumb_token, issue_slot_thumb_token, validate_tile_token
 
@@ -153,6 +153,7 @@ async def world(monkeypatch, tmp_path):
             app = FastAPI()
             app.include_router(collections.router, prefix="/api")
             app.include_router(images.router, prefix="/api")
+            app.include_router(tile_order.router, prefix="/api")
 
             async def current_user():
                 return users[caller["role"]]
@@ -178,6 +179,7 @@ async def create(world, **payload):
 async def test_slot_image_locks_follow_destination_scope(world, monkeypatch):
     events = []
     bump = collections.bump_scopes
+    lock = collections.lock_scope_revision
     resolve = collections.resolve_slots
 
     async def scoped(db, keys):
@@ -189,7 +191,13 @@ async def test_slot_image_locks_follow_destination_scope(world, monkeypatch):
         events.append("images")
         return await resolve(*args)
 
+    async def locked(db, key):
+        revision = await lock(db, key)
+        events.append("scope")
+        return revision
+
     monkeypatch.setattr(collections, "bump_scopes", scoped)
+    monkeypatch.setattr(collections, "lock_scope_revision", locked)
     monkeypatch.setattr(collections, "resolve_slots", resolved)
     result = await create(world, image_ids=[world.image.id])
     assert events == ["scope", "images"]
@@ -199,6 +207,25 @@ async def test_slot_image_locks_follow_destination_scope(world, monkeypatch):
     })
     assert response.status_code == 200, response.text
     assert events == ["scope", "images"]
+
+
+async def test_slot_replacement_preserves_tile_order_revision(world):
+    result = await create(world, image_ids=[world.image.id])
+    statement = select(TileOrderRevision.revision).where(
+        TileOrderRevision.scope_key == world.category.id
+    )
+    revision = (await world.db.execute(statement)).scalar_one()
+    response = await world.client.put(f"/api/collections/{result['id']}/images", json={
+        "version": result["version"], "slots": [{"image_id": world.image.id}] * 2,
+    })
+    assert response.status_code == 200, response.text
+    assert (await world.db.execute(statement)).scalar_one() == revision
+    reordered = await world.client.put("/api/tile-order", json={
+        "scope": {"parent_category_id": world.category.id},
+        "expected_revision": revision,
+        "items": [{"type": "collection", "id": result["id"]}],
+    })
+    assert reordered.status_code == 200, reordered.text
 
 
 async def test_three_inuksuks_same_image_are_independent_snapshots(world):

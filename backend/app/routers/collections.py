@@ -122,7 +122,7 @@ from ..schemas import (
     CollectionViewportUpdate,
     CollectionsGraphOut,
 )
-from ..tile_order import bump_scopes, collection_scope_keys
+from ..tile_order import bump_scopes, collection_scope_keys, lock_scope_revision
 
 _meter = metrics.get_meter(__name__)
 
@@ -1546,7 +1546,7 @@ async def replace_collection_images(
         existing_ids=existing_ids,
     )
     if settings.inuksuks_enabled and collection.category_id is not None:
-        await bump_scopes(db, collection_scope_keys({collection.category_id}))
+        await lock_scope_revision(db, collection.category_id)
     plans = (
         await resolve_slots(db, ctx, body, body.image_ids, collection)
         if settings.inuksuks_enabled else None
