@@ -1492,6 +1492,7 @@ class FeaturesOut(BaseModel):
     """
 
     collections: bool
+    inuksuks: bool
     collections_student_access: bool
     collections_home_shelf: bool
     # Always true; kept for one release so SPAs built before the gate's

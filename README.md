@@ -181,6 +181,7 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                           | Groups model, authorization, API surface, and frontend behaviour                 |
 | [docs/collections.md](docs/collections.md)                                                 | Collections model, ownership, visibility/authorization rules, and API surface    |
+| [docs/inuksuks-and-boards.md](docs/inuksuks-and-boards.md)                                 | Inuksuk and Board schema and dark-launch flag                                    |
 | [docs/announcements.md](docs/announcements.md)                                             | Announcements model, audience union rule, kinds, seen-state, reactions, API      |
 | [docs/object-counting.md](docs/object-counting.md)                                         | Object counting: selection stitching, ephemeral Redis jobs, count-job API        |
 | [docs/presentation-tools.md](docs/presentation-tools.md)                                   | Full-screen laser pointer and ephemeral ink tools for presenting images          |

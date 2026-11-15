@@ -237,6 +237,10 @@ collections:
   # collections surfaces from students (404); non-students retain access.
   studentAccess: true
 
+# Inuksuks and Boards dark launch (epic #1765), API pod only.
+inuksuks:
+  enabled: false
+
 api:
   # SQLAlchemy pool sizing for the API process (DB_POOL_SIZE /
   # DB_MAX_OVERFLOW).  The defaults match the backend code defaults in

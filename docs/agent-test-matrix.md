@@ -17,6 +17,16 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ## Matrix
 
+### Changed Inuksuk/Board schema or feature gating
+
+- Backend: `poetry run pytest tests/test_inuksuks.py tests/test_inuksuks_db.py tests/test_main.py tests/test_router_users.py tests/test_migrations_bootstrap.py`.
+- `tests/test_inuksuks_db.py` requires `TEST_DATABASE_URL` pointing to a
+  migrated PostgreSQL database. Verify fresh bootstrap, upgrade/downgrade,
+  and autogenerate drift when changing the schema.
+- `INUKSUKS_ENABLED` (default false) / Helm `inuksuks.enabled`:
+  `helm lint charts/backend` and `bash scripts/test-helm-chart-regressions.sh`.
+- See [Inuksuks and Boards](inuksuks-and-boards.md).
+
 ### Changed category visibility or program restrictions
 
 - backend: `poetry run pytest tests/test_visibility.py tests/test_categories.py tests/test_router_images.py`

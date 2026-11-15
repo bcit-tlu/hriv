@@ -1,5 +1,15 @@
 # HRIV Test Plan
 
+## Inuksuks and Boards dark launch
+
+`INUKSUKS_ENABLED` defaults to false (Helm `inuksuks.enabled`); local
+Compose defaults it to true. `GET /api/features` must report `inuksuks`
+accordingly. With the flag off, all methods on `/api/boards` and
+`/api/inuksuks` (including descendants and malformed writes) return 404;
+maintenance takes precedence with 503. With it on, requests pass to routing
+(no CRUD endpoints exist in the schema-only release). See
+[Inuksuks and Boards](inuksuks-and-boards.md) for automated checks.
+
 This document describes the manual test cases used to verify the HRIV application. All tests assume the app is running via `docker compose up --build` with a freshly seeded database (`docker compose down -v` first if needed).
 
 ## Prerequisites

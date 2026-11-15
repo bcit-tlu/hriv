@@ -15,6 +15,10 @@ implemented.
 
 ## Feature flags (`COLLECTIONS_ENABLED`, `COLLECTIONS_HOME_SHELF`, `COLLECTIONS_STUDENT_ACCESS`)
 
+The independent Inuksuks and Boards dark launch uses `INUKSUKS_ENABLED`
+(default false), Helm `inuksuks.enabled`, and the `inuksuks` features response
+field. See [Inuksuks and Boards](inuksuks-and-boards.md).
+
 Collections are **dark-launched** so the rest of the app can keep releasing
 (patch/minor bumps via release-please, `stable` re-pins) while the epic lands
 one child issue at a time on `main`.

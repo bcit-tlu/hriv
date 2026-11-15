@@ -484,6 +484,29 @@ class CollectionsFeatureMiddleware:
         await self.app(scope, receive, send)
 
 
+class InuksuksFeatureMiddleware:
+    """Hide Board and Inuksuk routes before request parsing while disabled."""
+
+    _PREFIXES = ("/api/boards", "/api/inuksuks")
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path: str = scope["path"]
+        if not settings.inuksuks_enabled and any(
+            path == prefix or path.startswith(prefix + "/")
+            for prefix in self._PREFIXES
+        ):
+            response = JSONResponse(status_code=404, content={"detail": "Not Found"})
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 class MaintenanceMiddleware:
     """Return 503 for non-exempt endpoints when the maintenance flag is set.
 

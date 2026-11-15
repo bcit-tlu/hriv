@@ -663,6 +663,237 @@ SYNCHRONIZED_COLLECTION_MAX_IMAGES = 4
 # Student collection caps (#1583).
 STUDENT_SEQUENCE_MAX_IMAGES = 20
 STUDENT_MAX_COLLECTIONS_PER_TYPE = 10
+STUDENT_MAX_BOARDS = 10
+STUDENT_MAX_INUKSUKS = 200
+
+
+inuksuk_owners = Table(
+    "inuksuk_owners", Base.metadata,
+    Column("inuksuk_id", Integer, ForeignKey("inuksuks.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Index("idx_inuksuk_owners_user", "user_id"),
+)
+
+board_owners = Table(
+    "board_owners", Base.metadata,
+    Column("board_id", Integer, ForeignKey("boards.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Index("idx_board_owners_user", "user_id"),
+)
+
+board_programs = Table(
+    "board_programs", Base.metadata,
+    Column("board_id", Integer, ForeignKey("boards.id", ondelete="CASCADE"), primary_key=True),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
+board_groups = Table(
+    "board_groups", Base.metadata,
+    Column("board_id", Integer, ForeignKey("boards.id", ondelete="CASCADE"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class Inuksuk(Base):
+    __tablename__ = "inuksuks"
+    __table_args__ = (Index("idx_inuksuks_image", "image_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    image_id: Mapped[int] = mapped_column(
+        ForeignKey("images.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    x: Mapped[float] = mapped_column(Float, nullable=False)
+    y: Mapped[float] = mapped_column(Float, nullable=False)
+    zoom: Mapped[float] = mapped_column(Float, nullable=False)
+    rotation: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    thumb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    favourite: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    image: Mapped["Image"] = relationship("Image")
+    creator: Mapped["User | None"] = relationship("User", lazy="selectin")
+    owners: Mapped[list["User"]] = relationship(
+        "User",
+        secondary=inuksuk_owners,
+        lazy="selectin",
+    )
+
+
+class Board(Base):
+    __tablename__ = "boards"
+    __table_args__ = (
+        CheckConstraint("visibility IN ('private', 'public', 'restricted')", name="ck_boards_visibility"),
+        Index("idx_boards_creator", "created_by_user_id"),
+        Index("idx_boards_owner_program", "owner_program_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="private",
+        server_default=text("'private'"),
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    owner_program_id: Mapped[int | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    creator: Mapped["User | None"] = relationship("User", lazy="selectin")
+    owners: Mapped[list["User"]] = relationship(
+        "User",
+        secondary=board_owners,
+        lazy="selectin",
+    )
+    owner_program: Mapped["Program | None"] = relationship("Program", lazy="selectin")
+    programs: Mapped[list["Program"]] = relationship(
+        "Program",
+        secondary=board_programs,
+        lazy="selectin",
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group",
+        secondary=board_groups,
+        lazy="selectin",
+    )
+    sections: Mapped[list["BoardSection"]] = relationship(
+        "BoardSection",
+        back_populates="board",
+        cascade="all, delete-orphan",
+        order_by="BoardSection.sort_order",
+        lazy="selectin",
+    )
+    inuksuk_links: Mapped[list["BoardInuksuk"]] = relationship(
+        "BoardInuksuk",
+        back_populates="board",
+        cascade="all, delete-orphan",
+        order_by="BoardInuksuk.sort_order",
+        lazy="selectin",
+    )
+
+
+class BoardSection(Base):
+    __tablename__ = "board_sections"
+    __table_args__ = (Index("idx_board_sections_board", "board_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    board_id: Mapped[int] = mapped_column(
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    board: Mapped["Board"] = relationship("Board", back_populates="sections")
+
+
+class BoardInuksuk(Base):
+    __tablename__ = "board_inuksuks"
+    __table_args__ = (
+        Index("idx_board_inuksuks_order", "board_id", "sort_order"),
+        Index("idx_board_inuksuks_section_order", "board_id", "section_id", "sort_order"),
+    )
+
+    board_id: Mapped[int] = mapped_column(
+        ForeignKey("boards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    inuksuk_id: Mapped[int] = mapped_column(
+        ForeignKey("inuksuks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    section_id: Mapped[int | None] = mapped_column(
+        ForeignKey("board_sections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    board: Mapped["Board"] = relationship("Board", back_populates="inuksuk_links")
+    inuksuk: Mapped["Inuksuk"] = relationship("Inuksuk", lazy="selectin")
+    section: Mapped["BoardSection | None"] = relationship("BoardSection")
 
 
 class Collection(Base):
