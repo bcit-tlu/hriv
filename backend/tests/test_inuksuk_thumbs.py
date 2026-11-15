@@ -225,7 +225,7 @@ async def test_replacement_cleanup_after_commit(pyramid, monkeypatch, commit_fai
     assert src.status == ("failed" if commit_fails else "completed")
     assert (root / "inuksuks").exists() == commit_fails
     updates = [str(call.args[0]) for call in db.execute.call_args_list]
-    assert any("UPDATE inuksuks SET thumb=" in stmt for stmt in updates)
+    assert any("DELETE FROM inuksuks" in stmt for stmt in updates)
     if commit_fails:
         db.rollback.assert_awaited_once()
     else:

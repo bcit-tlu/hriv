@@ -1485,6 +1485,181 @@ class MeasurementBulkApproveOut(BaseModel):
     skipped: list[int]
 
 
+class BoardCreate(BaseModel):
+    name: str = Field(max_length=255)
+    description: str | None = None
+    visibility: Literal["private", "public", "restricted"] = "private"
+    program_ids: list[int] = []
+    group_ids: list[int] = []
+
+    _name = field_validator("name", mode="before")(normalize_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+
+    @model_validator(mode="after")
+    def _scope(self) -> "BoardCreate":
+        if self.visibility != "restricted" and (self.program_ids or self.group_ids):
+            raise ValueError("program_ids/group_ids require restricted visibility")
+        return self
+
+
+class BoardUpdate(BaseModel):
+    name: str | None = Field(None, max_length=255)
+    description: str | None = None
+    visibility: Literal["private", "public", "restricted"] | None = None
+    program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
+    version: int | None = Field(None, ge=1)
+
+    _name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+
+
+class BoardOwnersUpdate(BaseModel):
+    user_ids: list[int]
+    version: int | None = Field(None, ge=1)
+
+    @field_validator("user_ids")
+    @classmethod
+    def _dedupe(cls, value: list[int]) -> list[int]:
+        return list(dict.fromkeys(value))
+
+
+class BoardTransfer(BaseModel):
+    program_id: int | None
+    version: int | None = Field(None, ge=1)
+
+
+class BoardOrderItem(BaseModel):
+    board_id: int
+    version: int | None = Field(None, ge=1)
+
+
+class BoardOrderUpdate(BaseModel):
+    items: list[BoardOrderItem]
+
+    @model_validator(mode="after")
+    def _unique(self) -> "BoardOrderUpdate":
+        if len({item.board_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Board IDs")
+        return self
+
+
+class BoardSectionCreate(BaseModel):
+    name: str = Field(max_length=255)
+    sort_order: int = 0
+    version: int | None = Field(None, ge=1)
+
+    _name = field_validator("name", mode="before")(normalize_nonblank_value)
+
+
+class BoardSectionUpdate(BaseModel):
+    name: str | None = Field(None, max_length=255)
+    sort_order: int | None = None
+    version: int | None = Field(None, ge=1)
+
+    _name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+
+
+class BoardSectionsOrder(BaseModel):
+    section_ids: list[int]
+    version: int | None = Field(None, ge=1)
+
+    @field_validator("section_ids")
+    @classmethod
+    def _unique(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("Duplicate section IDs")
+        return value
+
+
+class BoardAssignment(BaseModel):
+    board_id: int = Field(gt=0)
+    section_id: int | None = Field(None, gt=0)
+    sort_order: int | None = None
+
+
+def validate_board_assignments(value: list[BoardAssignment]) -> list[BoardAssignment]:
+    if len({item.board_id for item in value}) != len(value):
+        raise ValueError("Duplicate Board assignments")
+    return value
+
+
+class InuksukCreate(BaseModel):
+    image_id: int
+    title: str = Field(max_length=255)
+    description: str | None = None
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    zoom: float = Field(gt=0, allow_inf_nan=False)
+    rotation: float = Field(0, allow_inf_nan=False)
+    favourite: bool = False
+    board_assignments: list[BoardAssignment] = Field(min_length=1)
+
+    _title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+    _assignments = field_validator("board_assignments")(validate_board_assignments)
+
+
+class InuksukUpdate(BaseModel):
+    title: str | None = Field(None, max_length=255)
+    description: str | None = None
+    x: float | None = Field(None, allow_inf_nan=False)
+    y: float | None = Field(None, allow_inf_nan=False)
+    zoom: float | None = Field(None, gt=0, allow_inf_nan=False)
+    rotation: float | None = Field(None, allow_inf_nan=False)
+    favourite: bool | None = None
+    board_assignments: list[BoardAssignment] | None = None
+    version: int | None = Field(None, ge=1)
+
+    _title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _description = field_validator("description", mode="before")(normalize_collection_description)
+
+    @field_validator("x", "y", "zoom", "rotation", "favourite", "board_assignments")
+    @classmethod
+    def _not_null(
+        cls, value: float | bool | list[BoardAssignment] | None,
+    ) -> float | bool | list[BoardAssignment]:
+        if value is None:
+            raise ValueError("Field may not be null")
+        return value
+
+    @field_validator("board_assignments")
+    @classmethod
+    def _assignments(cls, value: list[BoardAssignment] | None) -> list[BoardAssignment] | None:
+        return validate_board_assignments(value) if value is not None else value
+
+
+class InuksukOrderItem(BaseModel):
+    inuksuk_id: int
+    version: int | None = Field(None, ge=1)
+
+
+class InuksukOrderUpdate(BaseModel):
+    items: list[InuksukOrderItem]
+
+    @model_validator(mode="after")
+    def _unique(self) -> "InuksukOrderUpdate":
+        if len({item.inuksuk_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Inuksuk IDs")
+        return self
+
+
+class BoardInuksukOrderItem(BaseModel):
+    inuksuk_id: int
+    section_id: int | None = None
+
+
+class BoardInuksuksOrder(BaseModel):
+    items: list[BoardInuksukOrderItem]
+    version: int | None = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def _unique(self) -> "BoardInuksuksOrder":
+        if len({item.inuksuk_id for item in self.items}) != len(self.items):
+            raise ValueError("Duplicate Inuksuk IDs")
+        return self
+
+
 class BoardPermissionsOut(BaseModel):
     can_edit: bool
     can_change_scope: bool

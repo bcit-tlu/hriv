@@ -17,7 +17,7 @@ See the [domain model](domain-model.md) for fields and deletion rules.
   precedence (503). Other paths and non-HTTP scopes pass through.
 - `require_inuksuks_enabled` in `app/inuksuks.py` is the secondary
   router-level dependency for subsequent routers. Enabling the flag alone
-  exposes the read endpoints below; write endpoints are not implemented yet.
+  exposes the read and write endpoints below.
 - Helm `inuksuks.enabled: false` renders `INUKSUKS_ENABLED` on the API
   Deployment. Enable it explicitly in deployment overlays for incremental
   testing; leave it off elsewhere until the epic ships.
@@ -77,14 +77,14 @@ crossing Inuksuk ids; the `tiles` class remains shared.
 
 `remove_inuksuk_thumbnail` is the helper for future Inuksuk-delete routers.
 Single/bulk image deletion removes the `inuksuks/` directory after commit.
-Successful image replacement clears stored Inuksuk thumbnail references
-and removes the old thumbnails only after commit; failed replacement
-preserves them. Neither helper removes source tiles or whole-image thumbnails.
+Successful image replacement deletes the old image's Inuksuk records and
+removes the old thumbnails only after commit; failed replacement preserves
+both. Neither cleanup helper removes source tiles or whole-image thumbnails.
 
 The API container already mounts `tiles-data` at `/data/tiles` when chart
 persistence is enabled, with `TILES_DIR` supplied from chart values. No
 mount change is needed for future API-side generation; generation is not
-wired to endpoints in this increment.
+wired to create and geometry-update endpoints in #1769.
 
 `backend/tests/test_inuksuk_thumbs.py` covers geometry, synthetic clockwise
 rotation, padding, missing/corrupt tiles, and file lifecycle.
@@ -185,3 +185,107 @@ Verification: `test_board_authz.py` covers the role × visibility × dual-gate
 and capability matrices; `test_board_reads.py` exercises PostgreSQL reads,
 hidden/inactive image exclusion, drawer precedence, filtering/paging,
 ETags, flag-off paths and token scoping.
+
+## Write API (#1769)
+
+All writes share the feature gate and authenticated-user dependency of the
+read routers. Visibility is checked before authority: invisible ids return
+404, visible resources the caller cannot edit return 403. Read projections
+and permission fields are reused in write responses.
+
+| Endpoint                                        | Body / result                                                                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/boards`                              | `name`, optional `description`, `visibility`, `program_ids`, `group_ids`; 201 Board detail                                        |
+| `PATCH /api/boards/{id}`                        | Same editable fields plus concurrency token; Board detail                                                                         |
+| `DELETE /api/boards/{id}`                       | Concurrency header; 204, deletes orphaned Inuksuks and derived files                                                              |
+| `PUT /api/boards/order`                         | `items: [{board_id, version}]`; ordered Board details                                                                             |
+| `PUT /api/boards/{id}/owners`                   | `user_ids` and token; Board detail                                                                                                |
+| `POST /api/boards/{id}/transfer`                | Required nullable `program_id` and token; Board detail                                                                            |
+| `POST /api/boards/{id}/sections`                | `name`, optional `sort_order`, parent token; 201 Board detail                                                                     |
+| `PATCH /api/boards/{id}/sections/{section_id}`  | `name` / `sort_order`, parent token; Board detail                                                                                 |
+| `DELETE /api/boards/{id}/sections/{section_id}` | Parent concurrency header; 204; member `section_id` becomes null                                                                  |
+| `PUT /api/boards/{id}/sections/order`           | `section_ids` containing all Board sections once, parent token; Board detail                                                      |
+| `POST /api/inuksuks`                            | `image_id`, `title`, `x`, `y`, `zoom`, nonempty `board_assignments`; optional `description`, `rotation`, `favourite`; 201 Inuksuk |
+| `PATCH /api/inuksuks/{id}`                      | Mutable create fields except `image_id`, plus token; Inuksuk                                                                      |
+| `DELETE /api/inuksuks/{id}`                     | Concurrency header; 204 and thumbnail cleanup                                                                                     |
+| `PUT /api/inuksuks/order`                       | `items: [{inuksuk_id, version}]`; ordered Inuksuks                                                                                |
+| `PUT /api/inuksuks/{id}/owners`                 | Nonempty active-user `user_ids` and token; Inuksuk                                                                                |
+| `PUT /api/boards/{id}/inuksuks/order`           | `items: [{inuksuk_id, section_id?}]`, parent token; Board detail                                                                  |
+| `DELETE /api/boards/{id}/inuksuks/{inuksuk_id}` | Parent concurrency header; Board detail                                                                                           |
+
+Every Inuksuk must have at least one Board link. Missing/empty
+`board_assignments` on create is 422. Assignments contain `board_id`,
+optional nullable `section_id`, and optional `sort_order`; new links
+append by default. Duplicate Board assignments are 422. Every submitted
+Board must be visible and editable; a section from another Board is 422.
+Create checks image visibility using the same context as the drawer.
+Coordinates/rotation must be finite; zoom must be positive.
+
+An Inuksuk editor's assignment PATCH replaces **only editable-Board links**.
+Uneditable-Board links retain their section and order unchanged, even if
+omitted. An empty replacement is accepted only if such retained links keep
+the Inuksuk on at least one Board; otherwise it is 422. Explicitly submitting
+an uneditable Board is 403 (404 if invisible). Board editors can reorder or
+remove someone else's Inuksuk from their own Board without gaining edit
+authority over the Inuksuk itself. Board removal returns 422 for the last
+link. Deleting a Board instead deletes any newly orphaned Inuksuks and cleans
+their files after commit; shared Inuksuks and their thumbnails survive.
+
+Board member reorder submits every **visible** member once. It may move
+members between that Board's sections (null means unsectioned); invisible
+members are preserved and appended, like hidden image retention in
+Collections. Global Board/Inuksuk order endpoints update only the listed
+editable rows, assigning zero-based order in submitted sequence. Empty
+reorder lists are valid no-ops.
+
+### Write concurrency, ownership and lifecycle
+
+PATCH, owners, transfer, section mutations and Board-member mutations require
+an integer `version` in the body or `If-Match: "<version>"`. DELETE uses the
+header. Missing both returns **428**, malformed/conflicting header/body tokens
+return 400, and atomic CAS mismatch returns **409** with the current read
+projection in `detail`. Success returns the new integer version as the ETag.
+Sections use their **parent Board's version**, not a separate section version;
+their writes return Board detail (DELETE returns its new ETag).
+Multi-row global reorder uses each item's `version`.
+Collections currently requires body `version`; these endpoints retain that
+format while also implementing the explicit If-Match/428 contract.
+
+Board content, scope, deletion and transfer predicates remain the read API's
+capabilities. Creating/changing restricted scope requires admin/instructor;
+new program attachments require membership for instructors, and new group
+attachments require instructor co-ownership of the group. Existing scope
+may be retained/narrowed like Collections. Leaving restricted clears scope.
+Board owners PUT uses Collections' transfer authority and active-user
+validation; an empty owner set requires an owning program. Program transfer
+clears user owners; clearing program ownership requires user owners to remain.
+Inuksuk owners PUT requires Inuksuk edit authority and cannot remove all
+owners. Students may own at most 10 Boards and 200 Inuksuks, including
+co-ownership and owner additions; excess ownership is 422. Other roles have
+no cap.
+
+Writes lock Boards in id order before affected Inuksuks, recheck visibility
+and edit authority, and use atomic version updates. A new parent linked
+during graph-lock acquisition is 409 and must be retried. Student quota
+checks lock target owners before resource locks. Membership changes advance
+the affected aggregate versions. Mutations bump browse revision and are
+covered by the existing HTTP audit middleware plus mutation logs.
+
+After create commits (id known), or a committed geometry change, thumbnail
+generation runs through `asyncio.to_thread`. It rechecks the Inuksuk version
+under a row lock so a stale generator cannot overwrite a newer edit or
+resurrect a deleted record. Geometry changes clear the old reference; the
+old crop is removed/replaced. Missing pyramids or generation failures are
+logged and leave `thumb=null`, so reads use the plain image-thumb fallback
+without failing the successful write. Inuksuk/Board orphan deletion removes
+files only after commit, with cleanup failures logged.
+
+Single/bulk user deletion applies the same invariant: deleted sole-owned Boards
+also delete newly orphaned Inuksuks owned by surviving users. Co-owned and
+program-owned Boards survive; solely departing-user-owned Inuksuks are deleted
+even on surviving Boards. Their thumbnail cleanup is deferred until commit.
+
+`test_board_writes.py` exercises PostgreSQL CRUD, role gates, CAS/428,
+sections/assignments/reorder, ownership/caps, real thumbnail generation,
+fallback and deletion, commit-failure file preservation and replacement.
+`test_inuksuk_thumbs.py` also checks replacement rollback cleanup boundaries.

@@ -24,7 +24,7 @@ from uuid import uuid4
 import pyvips
 from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -1077,7 +1077,7 @@ async def process_replace_image(
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
                 await db.execute(
-                    update(Inuksuk).where(Inuksuk.image_id == img.id).values(thumb=None)
+                    delete(Inuksuk).where(Inuksuk.image_id == img.id)
                 )
 
                 # Clear old pyramid metadata before merging new
