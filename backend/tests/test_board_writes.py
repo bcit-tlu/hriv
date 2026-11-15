@@ -163,8 +163,10 @@ async def test_own_board_and_inuksuk_crud_occ(world, role):
     board = created.json()
     assert board["name"] == "New board" and board["version"] == 1
     path = f"/api/boards/{board['id']}"
-    assert (await world.client.patch(path, json={"name": "Missing token"})).status_code == 428
-    assert (await world.client.patch(path, json={"name": "Bad token"}, headers={"If-Match": "bad"})).status_code == 400
+    result = await world.client.patch(path, json={"name": "Missing token"})
+    assert result.status_code == 428
+    result = await world.client.patch(path, json={"name": "Bad token"}, headers={"If-Match": "bad"})
+    assert result.status_code == 400
     changed = await world.client.patch(path, json={"name": "Renamed"}, headers={"If-Match": '"1"'})
     assert changed.status_code == 200, changed.text
     assert changed.json()["version"] == 2
@@ -178,7 +180,8 @@ async def test_own_board_and_inuksuk_crud_occ(world, role):
     assert result.status_code == 204
     item = await world.create()
     path = f"/api/inuksuks/{item['id']}"
-    assert (await world.client.patch(path, json={"title": "missing"})).status_code == 428
+    result = await world.client.patch(path, json={"title": "missing"})
+    assert result.status_code == 428
     changed = await world.client.patch(path, json={"version": 1, "title": "Edited", "favourite": True})
     assert changed.status_code == 200, changed.text
     assert changed.json()["version"] == 2 and changed.json()["favourite"]
@@ -327,8 +330,10 @@ async def test_geometry_writes_lock_image_before_boards_and_inuksuks(world):
 
 async def test_assignment_validation_last_board_and_preservation(world):
     base = {"image_id": world.images["visible"], "title": "Point", "x": .5, "y": .375, "zoom": 2}
-    assert (await world.client.post("/api/inuksuks", json=base)).status_code == 422
-    assert (await world.client.post("/api/inuksuks", json={**base, "board_assignments": []})).status_code == 422
+    result = await world.client.post("/api/inuksuks", json=base)
+    assert result.status_code == 422
+    result = await world.client.post("/api/inuksuks", json={**base, "board_assignments": []})
+    assert result.status_code == 422
     for assignment, status in [
         ({"board_id": world.boards["student"], "section_id": world.sections["other"]}, 422),
         ({"board_id": world.boards["other"]}, 403),
@@ -556,7 +561,8 @@ async def test_inuksuk_delete_and_assignment_changes_invalidate_every_affected_b
     assert final["version"] == after_shared["version"] + 1
     result = await world.client.patch(f"/api/boards/{final['id']}", json={"version": after_shared["version"], "name": "Stale"})
     assert result.status_code == 409 and result.json()["detail"]["version"] == final["version"]
-    assert (await world.board("student"))["version"] == after_student["version"]
+    final_student = await world.board("student")
+    assert final_student["version"] == after_student["version"]
 
 
 @pytest.mark.parametrize("bulk", [False, True])
