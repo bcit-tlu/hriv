@@ -153,7 +153,10 @@ import { formatCategoryItemCountsForCategory } from './components/categoryOption
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
-import { useShareableImageState } from './useShareableImageState'
+import { parseShareableUrlParams, useShareableImageState } from './useShareableImageState'
+import BoardsPage from './components/BoardsPage'
+import { inuksukViewParams, parseBoardLocation } from './boardUtils'
+import type { ApiInuksuk } from './types'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
 import type { CanvasDraftHandle } from './useCanvasAnnotations'
 import { useOverlayPersistence } from './useOverlayPersistence'
@@ -272,6 +275,9 @@ export default function App() {
   })
   const [collectionTypeSeedNonce, setCollectionTypeSeedNonce] = useState(0)
   const [collectionsRefreshToken, setCollectionsRefreshToken] = useState(0)
+  const [boardLocation, setBoardLocation] = useState(() =>
+    parseBoardLocation(window.location.search),
+  )
   const [page, setPage] = useState<Page>(() => {
     if (parseCollectionIdParam(window.location.search) != null) return 'collections'
     const p = new URLSearchParams(window.location.search).get('page')
@@ -279,6 +285,7 @@ export default function App() {
     if (p === LEGACY_MANAGE_COLLECTIONS_PAGE) return 'collections'
     if (
       p === 'collections' ||
+      p === 'boards' ||
       p === 'manage' ||
       p === 'measurement' ||
       p === 'people' ||
@@ -300,7 +307,16 @@ export default function App() {
         ? 'browse'
         : page === 'collections' && features != null && !collectionsEnabled
           ? 'browse'
-          : page
+          : page === 'boards' && features != null && !features.inuksuks
+            ? 'browse'
+            : page
+
+  useEffect(() => {
+    if (features == null || features.inuksuks || page !== 'boards') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- flags arrive after the deep link is parsed
+    setPage('browse')
+    setBoardLocation({ boardId: null, sectionId: null })
+  }, [features, page])
 
   // A collections deep link on a deployment with the flag off falls back to
   // browse once the flags are known (the page renders nothing until then).
@@ -372,6 +388,7 @@ export default function App() {
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  const graphImageEpoch = useRef(0)
   // "Image details" drawer open state; closed on every image change
   // (including leave -> return to the same image) and on canvas edit entry.
   const [imageDetailsOpen, setImageDetailsOpen] = useState(false)
@@ -930,6 +947,8 @@ export default function App() {
     collectionFromBrowse,
     collectionTypeFilter:
       collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
+    boardId: boardLocation.boardId,
+    sectionId: boardLocation.sectionId,
     setPath,
     setSelectedImage,
   })
@@ -1026,6 +1045,7 @@ export default function App() {
           ? 'collections'
           : [
                 'browse',
+                'boards',
                 'collections',
                 'manage',
                 'measurement',
@@ -1038,6 +1058,11 @@ export default function App() {
             : 'browse'
       ) as Page
       setPage(validPage)
+      setBoardLocation(
+        validPage === 'boards'
+          ? parseBoardLocation(window.location.search)
+          : { boardId: null, sectionId: null },
+      )
       if (popPage === LEGACY_MANAGE_COLLECTIONS_PAGE) setCollectionsInitialView('table')
       // The collection id lives in the URL (`?collection=`), which the browser
       // has already restored by the time popstate fires. `?item=` (sequence
@@ -1104,7 +1129,7 @@ export default function App() {
       } else {
         setSelectedImage(null)
       }
-      setViewportState(undefined)
+      setViewportState(parseShareableUrlParams().viewport)
       setOverlays([])
       return true
     },
@@ -1927,9 +1952,11 @@ export default function App() {
 
   const handleTabChange = useCallback(
     (v: Page) => {
+      graphImageEpoch.current++
       runCanvasNavigation(() => {
         if (v === 'collections') setCollectionsRefreshToken((n) => n + 1)
         setPage(v)
+        setBoardLocation({ boardId: null, sectionId: null })
         setSelectedCollectionId(null)
         setCollectionFromBrowse(false)
         clearImage()
@@ -2388,10 +2415,16 @@ export default function App() {
   // hop (#1636 review): navigating anywhere, clicking another node, or
   // switching the collection detail before the fetch lands must not be
   // overwritten by the stale result (#1638 review).
-  const graphImageEpoch = useRef(0)
   useEffect(() => {
     graphImageEpoch.current += 1
-  }, [page, selectedCollectionId])
+  }, [
+    page,
+    selectedCollectionId,
+    boardLocation.boardId,
+    boardLocation.sectionId,
+    currentUser?.id,
+    features?.inuksuks,
+  ])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
       const epoch = ++graphImageEpoch.current
@@ -2405,6 +2438,32 @@ export default function App() {
         })
     },
     [handleOpenCollectionImage],
+  )
+
+  const handleOpenBoardInuksuk = useCallback(
+    (item: ApiInuksuk) => {
+      const epoch = ++graphImageEpoch.current
+      void apiFetchImage(item.image_id)
+        .then((api) => {
+          if (epoch !== graphImageEpoch.current) return
+          runCanvasNavigation(() => {
+            clearPending()
+            setOverlays([])
+            setViewportState({ x: item.x, y: item.y, zoom: item.zoom, rotation: item.rotation })
+            setSelectedImage(apiImageToItem(api))
+            setPath([])
+            setSelectedCollectionId(null)
+            setCollectionFromBrowse(false)
+            setPage('browse')
+            pushNavState('browse', [], item.image_id, inuksukViewParams(item))
+          })
+        })
+        .catch((err) => {
+          if (epoch === graphImageEpoch.current)
+            setErrorSnack(userMessage(err, 'Failed to load the image.'))
+        })
+    },
+    [clearPending, setOverlays, setViewportState, runCanvasNavigation, pushNavState],
   )
 
   // Saving/deleting from the shared edit modal can change an image's stored
@@ -2446,6 +2505,7 @@ export default function App() {
       canManageUsers={canManageUsers}
       canViewPeople={canViewPeople}
       collectionsEnabled={collectionsEnabled}
+      inuksuksEnabled={features?.inuksuks === true}
       currentUser={currentUser}
       bannerSlot={
         bannerPost ? (
@@ -2552,7 +2612,26 @@ export default function App() {
               : {}),
           }}
         >
-          {page === 'announcements' ? (
+          {page === 'boards' ? (
+            <BoardsPage
+              key={`${currentUser.id}:${boardLocation.boardId}`}
+              enabled={features?.inuksuks === true}
+              currentUser={currentUser}
+              programs={programs}
+              groups={groups}
+              boardId={boardLocation.boardId}
+              sectionId={boardLocation.sectionId}
+              onOpenInuksuk={handleOpenBoardInuksuk}
+              onSelectBoard={(boardId, sectionId = null) => {
+                graphImageEpoch.current++
+                setBoardLocation({ boardId, sectionId })
+                const params: Record<string, string> = {}
+                if (boardId != null) params.board = String(boardId)
+                if (boardId != null && sectionId != null) params.section = String(sectionId)
+                pushNavState('boards', [], null, params)
+              }}
+            />
+          ) : page === 'announcements' ? (
             <AnnouncementsPage
               currentUser={currentUser}
               feed={announcementsFeed}

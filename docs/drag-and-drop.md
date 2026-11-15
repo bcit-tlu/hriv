@@ -293,3 +293,37 @@ Items 1–9: <pass/fail each>
 Activation stall at 600 tiles: <imperceptible / noticeable / disruptive>
 Notes: <…>
 ```
+
+## Boards page (#1771)
+
+`components/BoardsPage.tsx` owns a separate `DragDropProvider`. Browse's
+`SortableTileGrid` detectors, zones, priorities and activation logic are untouched.
+The Boards provider has three typed surfaces, all using drag handles:
+
+- `board-card` / `board:{id}`: owned Board cards reorder within the Boards row;
+  Shared/Public cards have no handles. The complete owned order and per-Board
+  versions go to `PUT /boards/order`.
+- `board-section` / `section:{id}`: named Sections reorder with the parent Board
+  version. Unsectioned is fixed last, never a sortable target.
+- `board-member` / `item:{id}`: members sort within Section groups and move
+  between them. `bin:{sectionId}` / `bin:none` are lower-priority section bins
+  that append the item, including empty Sections. Normal member sortables win
+  over a surrounding bin. Every committed order includes every visible member
+  exactly once, leaving hidden members to the backend.
+
+`save:{boardId}` bins on other editable Board cards accept owned/editable
+Inuksuks and add a link without removing the source. Non-owner Board editors
+can reorder/move members within their Board but cannot use cross-Board save.
+The explicit Move/Save dialog supports atomic cross-Board moves and is also the
+accessible alternative; per-item menu actions move to every Section or Unsectioned.
+
+Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
+5px tolerance, plus KeyboardSensor. Only the drag handle activates sorting, so
+card clicks, favourite buttons and menus retain their normal behavior. Cancelled
+drags make no request. Same-surface ordering reuses `resolveReorderedKeys` and
+the dnd-kit projected source index. No Browse near/far-half split applies here.
+Failures retain the server-rendered order and 409s require explicit reload.
+
+Verify Board/Section reorder, cross-Section moves (including empty bins),
+cross-Board save, keyboard handles, and touch scroll on the new surface before
+merge. The Browse feel-test contract above remains unchanged.

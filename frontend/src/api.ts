@@ -2717,6 +2717,9 @@ export function fetchBoards(
 export function fetchBoard(id: number, init?: RequestInit): Promise<ApiBoard> {
   return request(`/boards/${id}`, init)
 }
+export function fetchInuksuk(id: number, init?: RequestInit): Promise<ApiInuksuk> {
+  return request(`/inuksuks/${id}`, init)
+}
 export function createBoard(body: BoardCreate): Promise<ApiBoard> {
   return request('/boards', { method: 'POST', body: JSON.stringify(body) })
 }

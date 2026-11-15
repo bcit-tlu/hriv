@@ -2,6 +2,9 @@ import { createRef, useEffect, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../src/App'
+import { INUKSUK_FIXTURE } from '../src/components/inuksukFixtures'
+import type { ApiInuksuk, ImageItem } from '../src/types'
+import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
 import type { ProcessingJob } from '../src/useProcessingJobs'
 import {
   ApiError,
@@ -112,7 +115,7 @@ const mockCategories = [
     label: 'Slides',
     parentId: null,
     children: [],
-    images: [],
+    images: new Array<ImageItem>(),
     programIds: [1],
     groupIds: [10],
     status: 'active',
@@ -151,9 +154,12 @@ const mockDeepPath: MockCategory[] = [
 ]
 
 let mockInitialPath: MockCategory[] = []
+const realBoardNavigation = vi.hoisted(() => ({ enabled: false }))
 
 /** Restore every shared mutable fixture; call from each suite's beforeEach. */
 function resetFixtures() {
+  realBoardNavigation.enabled = false
+  mockCategories[0].images = []
   // resetAllMocks drops implementations and unconsumed *Once queue entries
   // left by earlier suites, so defaults must be re-established below.
   vi.resetAllMocks()
@@ -396,6 +402,7 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion,
     onReportIssue,
     collectionsEnabled,
+    inuksuksEnabled,
     fillViewport,
     footerDockSlot,
   }: {
@@ -412,12 +419,14 @@ vi.mock('../src/components/AppShell', () => ({
     backendVersion: string | null
     onReportIssue: () => void
     collectionsEnabled: boolean
+    inuksuksEnabled?: boolean
   }) => (
     <div data-fill-viewport={fillViewport ? 'true' : undefined}>
       <div>
         versions: {String(frontendVersion)}/{String(backendVersion)}
       </div>
       <div data-testid="shell-collections-enabled">{String(collectionsEnabled)}</div>
+      {inuksuksEnabled && <button onClick={() => onTabChange('boards')}>Shell Boards</button>}
       <button type="button" onClick={onReportIssue}>
         Shell report issue
       </button>
@@ -728,6 +737,29 @@ vi.mock('../src/useCollectionsData', async () => {
   }
 })
 vi.mock('../src/components/ManagePage', () => ({ default: () => null }))
+vi.mock('../src/components/BoardsPage', () => ({
+  default: ({
+    enabled,
+    boardId,
+    sectionId,
+    onSelectBoard,
+    onOpenInuksuk,
+  }: {
+    enabled: boolean
+    boardId: number | null
+    sectionId: number | null
+    onSelectBoard: (id: number, sectionId: number) => void
+    onOpenInuksuk: (item: ApiInuksuk) => void
+  }) =>
+    enabled ? (
+      <div data-testid="boards-page" data-board={String(boardId)} data-section={String(sectionId)}>
+        <button onClick={() => onSelectBoard(5, 11)}>Select Board Section</button>
+        <button onClick={() => onOpenInuksuk({ ...INUKSUK_FIXTURE, image_id: 101, rotation: 90 })}>
+          Open saved view
+        </button>
+      </div>
+    ) : null,
+}))
 const addToCollectionMocks = vi.hoisted(() => ({
   addImagesToCollection: vi.fn(),
   createCollectionWithImages: vi.fn(),
@@ -958,20 +990,26 @@ let popStateHandler:
     ) => boolean)
   | null = null
 
-vi.mock('../src/useNavigationHistory', () => ({
-  useNavigationHistory: (
-    onPopState: (
-      page: string,
-      catIds: number[],
-      imageId: number | null,
-      traversal?: { collectionFromBrowse?: boolean },
-    ) => boolean,
-  ) => {
-    popStateHandler = onPopState
-    return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
-  },
-  buildNavHistoryState: vi.fn(),
-}))
+vi.mock('../src/useNavigationHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/useNavigationHistory')>()
+  return {
+    ...actual,
+    useNavigationHistory: (
+      onPopState: (
+        page: string,
+        catIds: number[],
+        imageId: number | null,
+        traversal?: { collectionFromBrowse?: boolean },
+      ) => boolean,
+    ) => {
+      if (realBoardNavigation.enabled) return actual.useNavigationHistory(onPopState)
+      popStateHandler = onPopState
+      return { pushNavState: pushNavStateMock, replayPopState: vi.fn() }
+    },
+    buildNavHistoryState: (...args: Parameters<typeof actual.buildNavHistoryState>) =>
+      realBoardNavigation.enabled ? actual.buildNavHistoryState(...args) : undefined,
+  }
+})
 
 vi.mock('../src/useProcessingJobs', () => ({
   useProcessingJobs: () => processingJobsMock,
@@ -979,16 +1017,22 @@ vi.mock('../src/useProcessingJobs', () => ({
   FAILURE_COLLAPSE_THRESHOLD: 5,
 }))
 
-vi.mock('../src/useShareableImageState', () => ({
-  useShareableImageState: ({ setPath }: { setPath: (path: MockCategory[]) => void }) => {
-    useEffect(() => {
-      if (mockInitialPath.length > 0) {
-        setPath(mockInitialPath)
-      }
-    }, [setPath])
-    return shareableImageStateMock
-  },
-}))
+vi.mock('../src/useShareableImageState', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/useShareableImageState')>()
+  return {
+    ...actual,
+    useShareableImageState: (deps: UseShareableImageStateDeps) => {
+      const { setPath } = deps
+      useEffect(() => {
+        if (!realBoardNavigation.enabled && mockInitialPath.length > 0) {
+          setPath(mockInitialPath)
+        }
+      }, [setPath])
+      if (realBoardNavigation.enabled) return actual.useShareableImageState(deps)
+      return shareableImageStateMock
+    },
+  }
+})
 
 vi.mock('../src/useUserProfile', () => ({
   useUserProfile: () => userProfileMock,
@@ -3583,5 +3627,112 @@ describe('App search collections integration (#1418)', () => {
     expect(
       await screen.findByText('Staged 2 images for "Managed set" — press Done to apply.'),
     ).toBeInTheDocument()
+  })
+})
+
+describe('Boards navigation', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/')
+  })
+  beforeEach(() => {
+    resetFixtures()
+    mockCategories[0].images = [mockImage]
+    realBoardNavigation.enabled = true
+    window.history.replaceState(null, '', '/?page=boards&board=5&section=11')
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, inuksuks: true })
+    apiMocks.fetchImage.mockResolvedValue({
+      id: 101,
+      name: 'Specimen Image',
+      thumb: '/thumb.jpg',
+      tile_sources: '/tiles.dzi',
+      category_id: 1,
+      copyright: null,
+      note: null,
+      active: true,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 1,
+      width: 1024,
+      height: 1024,
+      file_size: 100,
+      created_at: '',
+      updated_at: '',
+    })
+  })
+  it('restores the Board and Section deep link, and resets to the overview on utility entry', async () => {
+    render(<App />)
+    const page = await screen.findByTestId('boards-page')
+    expect(page).toHaveAttribute('data-board', '5')
+    expect(page).toHaveAttribute('data-section', '11')
+    fireEvent.click(screen.getByRole('button', { name: 'Shell Boards' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', 'null'),
+    )
+    expect(window.location.search).toBe('?page=boards')
+  })
+  it('keeps the saved viewport and browser Back returns to the Board', async () => {
+    const goBack = async () => {
+      await act(async () => {
+        const popped = new Promise<void>((resolve) =>
+          window.addEventListener('popstate', () => resolve(), { once: true }),
+        )
+        window.history.back()
+        await popped
+      })
+    }
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    await screen.findByText(/Image Viewer 101/)
+    expect(imageViewerProps.current?.initialViewport).toEqual({
+      x: 0.46,
+      y: 0.29,
+      zoom: 2.5,
+      rotation: 90,
+    })
+    expect(window.location.search).toContain('rotation=90')
+    await goBack()
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-section', '11'),
+    )
+    expect(window.location.search).toBe('?page=boards&board=5&section=11')
+  })
+  it('does not navigate after a late image fetch if the user left Boards', async () => {
+    let finish: (image: ApiImage) => void = () => {}
+    apiMocks.fetchImage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open saved view' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shell tab browse' }))
+    await act(async () =>
+      finish({
+        id: 101,
+        name: 'Specimen Image',
+        thumb: '/thumb.jpg',
+        tile_sources: '/tiles.dzi',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: 1024,
+        height: 1024,
+        file_size: 100,
+        created_at: '',
+        updated_at: '',
+      }),
+    )
+    expect(screen.queryByText(/Image Viewer 101/)).not.toBeInTheDocument()
+  })
+  it('falls back to Browse from a direct link when the flag is off', async () => {
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, inuksuks: false })
+    render(<App />)
+    await waitFor(() => expect(window.location.search).not.toContain('page=boards'))
+    expect(screen.queryByTestId('boards-page')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Shell Boards' })).not.toBeInTheDocument()
   })
 })

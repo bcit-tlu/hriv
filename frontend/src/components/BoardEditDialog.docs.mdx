@@ -1,0 +1,19 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as BoardStories from './BoardEditDialog.stories'
+
+<Meta of={BoardStories} />
+
+<Title />
+
+Boards default to private and require a name. Restricted scope is available to
+instructors and admins and requires a Program or Group. Program membership and
+managed Groups govern new attachments; existing attachments may be removed.
+Scope controls are hidden when `can_change_scope` is false, and metadata-only
+writes omit scope fields. Backend permissions remain authoritative.
+
+The dialog keeps the Board version from opening. A stale save is blocked until
+Reload latest explicitly replaces the draft with current server values.
+
+<Primary />
+
+<Stories />

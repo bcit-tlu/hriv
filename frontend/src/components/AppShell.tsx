@@ -34,6 +34,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/Search'
+import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import CloseIcon from '@mui/icons-material/Close'
 import HomeIcon from '@mui/icons-material/Home'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
@@ -65,6 +66,7 @@ import {
 
 export type Page =
   | 'browse'
+  | 'boards'
   | 'collections'
   | 'manage'
   | 'measurement'
@@ -84,6 +86,7 @@ export interface AppShellProps {
   canViewPeople: boolean
   /** Deployment flag (`GET /api/features`); hides the Collections tab when off. */
   collectionsEnabled: boolean
+  inuksuksEnabled?: boolean
   currentUser: {
     name: string
     email: string
@@ -137,6 +140,7 @@ export default function AppShell(props: AppShellProps) {
     canManageUsers,
     canViewPeople,
     collectionsEnabled,
+    inuksuksEnabled = false,
     currentUser,
     bannerSlot,
     profileOpen,
@@ -350,7 +354,7 @@ export default function AppShell(props: AppShellProps) {
           ) : (
             <Tabs
               // 'guide' has no AppBar tab — it opens via the notification menu.
-              value={page === 'guide' || page === 'measurement' ? false : page}
+              value={page === 'guide' || page === 'measurement' || page === 'boards' ? false : page}
               onChange={(_, v: Page) => {
                 if (
                   v === 'browse' ||
@@ -508,6 +512,17 @@ export default function AppShell(props: AppShellProps) {
                 <SearchIcon />
               </IconButton>
             </Tooltip>
+            {inuksuksEnabled && (
+              <Tooltip title="Boards & Inuksuks">
+                <IconButton
+                  aria-label="Boards & Inuksuks"
+                  onClick={() => onTabChange('boards')}
+                  sx={{ color: 'inherit', ...appBarIconButtonSx }}
+                >
+                  <SpaceDashboardOutlined />
+                </IconButton>
+              </Tooltip>
+            )}
             {notificationSlot}
             <IconButton
               ref={avatarRef}
