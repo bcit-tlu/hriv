@@ -1,11 +1,12 @@
 """Batch-loaded Board/Inuksuk visibility and response projections."""
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from datetime import datetime
 import hashlib
 import json
 import time
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import HTTPException, Request, Response
@@ -205,11 +206,37 @@ def board_out(
     )
 
 
+SortValue = str | int | bool | datetime | None
+Row = TypeVar("Row", BoardSummaryOut, InuksukOut)
+
+_BOARD_SORT_ACCESSORS: dict[str, Callable[[BoardSummaryOut], SortValue]] = {
+    "id": lambda row: row.id,
+    "name": lambda row: row.name,
+    "description": lambda row: row.description,
+    "visibility": lambda row: row.visibility,
+    "owner": lambda row: ", ".join(owner.name for owner in row.owners),
+    "inuksuk_count": lambda row: row.inuksuk_count,
+    "sort_order": lambda row: row.sort_order,
+    "created_at": lambda row: row.created_at,
+    "updated_at": lambda row: row.updated_at,
+}
+_INUKSUK_SORT_ACCESSORS: dict[str, Callable[[InuksukOut], SortValue]] = {
+    "id": lambda row: row.id,
+    "title": lambda row: row.title,
+    "description": lambda row: row.description,
+    "image_id": lambda row: row.image_id,
+    "favourite": lambda row: row.favourite,
+    "sort_order": lambda row: row.sort_order,
+    "created_at": lambda row: row.created_at,
+    "updated_at": lambda row: row.updated_at,
+}
+
+
 def page_rows(
-    rows: list, *, sort: str, allowed_sorts: set[str], order: str | None,
+    rows: list[Row], *, sort: str, allowed_sorts: set[str], order: str | None,
     direction: str | None, limit: int | None, page: int | None,
     page_size: int | None,
-) -> tuple[list, int]:
+) -> tuple[list[Row], int]:
     if sort not in allowed_sorts:
         raise HTTPException(status_code=422, detail=f"sort must be one of {', '.join(sorted(allowed_sorts))}")
     if any(value not in (None, "asc", "desc") for value in (order, direction)):
@@ -224,11 +251,11 @@ def page_rows(
         "desc" if sort in ("id", "created_at", "updated_at", "inuksuk_count") else "asc"
     )) == "desc"
 
-    def key(row: BaseModel) -> tuple:
-        if sort == "owner":
-            value = ", ".join(owner.name for owner in row.owners)
+    def key(row: BoardSummaryOut | InuksukOut) -> tuple[SortValue, int]:
+        if isinstance(row, BoardSummaryOut):
+            value = _BOARD_SORT_ACCESSORS[sort](row)
         else:
-            value = getattr(row, sort)
+            value = _INUKSUK_SORT_ACCESSORS[sort](row)
         if value is None:
             value = ""
         if isinstance(value, str):

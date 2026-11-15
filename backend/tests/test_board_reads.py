@@ -351,6 +351,35 @@ async def test_search_sort_pagination_and_validation(world):
         assert response.status_code == 422, (url, response.text)
 
 
+async def test_all_known_sort_accessors_preserve_order(world):
+    for endpoint, fields in [
+        ("boards", boards._SORTS), ("inuksuks", inuksuks._SORTS),
+    ]:
+        response = await world.client.get(f"/api/{endpoint}")
+        assert response.status_code == 200
+        rows = response.json()
+
+        for field in fields:
+            def key(row):
+                value = (
+                    ", ".join(owner["name"] for owner in row["owners"])
+                    if field == "owner" else row[field]
+                )
+                if value is None:
+                    value = ""
+                if isinstance(value, str):
+                    value = value.casefold()
+                return value, row["id"]
+
+            for direction in ("asc", "desc"):
+                expected = sorted(rows, key=key, reverse=direction == "desc")
+                result = await world.client.get(
+                    f"/api/{endpoint}?sort={field}&order={direction}"
+                )
+                assert result.status_code == 200, result.text
+                assert [r["id"] for r in result.json()] == [r["id"] for r in expected]
+
+
 async def test_empty_reads_and_no_n_plus_one(world):
     world.caller["role"] = "staff"
     statements = []
