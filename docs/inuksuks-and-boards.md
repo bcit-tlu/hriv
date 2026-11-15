@@ -324,8 +324,8 @@ pixels and titles use 13-pixel text; neither scales nor rotates with the image.
 The layer reprojects anchors on animation, animation-finish, open, resize,
 rotate and flip. Each marker accepts independent `markerVisible` and
 `labelVisible` props, both true by default: labels may remain visible when
-markers are hidden. `ImageViewer.inuksukVisibility` exposes the same per-id
-overrides for the future drawer. Clicking a marker smoothly restores its
+markers are hidden. The drawer's shared visibility preferences drive the
+viewer layer directly, without separate viewer-level overrides. Clicking a marker smoothly restores its
 saved pan/zoom/rotation, highlights it and opens its details.
 
 Flip remains a presentation setting, not a saved coordinate transform.

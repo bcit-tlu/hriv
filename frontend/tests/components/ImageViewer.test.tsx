@@ -504,6 +504,9 @@ describe('Inuksuk viewer tool', () => {
         .some((button) => button.getAttribute('aria-pressed') === 'true'),
     ).toBe(true)
     fireEvent.click(within(drawer).getByRole('switch', { name: 'Rose window marker' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
+    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeNull()
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
     expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(1)
     expect(within(drawer).getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
       'aria-pressed',

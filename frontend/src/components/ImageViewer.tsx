@@ -90,7 +90,6 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 interface ImageViewerProps {
   inuksuksEnabled?: boolean
   onInuksuksDrawerOpenChange?: (open: boolean) => void
-  inuksukVisibility?: Record<number, { markerVisible?: boolean; labelVisible?: boolean }>
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -154,7 +153,6 @@ interface DragState {
 export default function ImageViewer({
   inuksuksEnabled = false,
   onInuksuksDrawerOpenChange,
-  inuksukVisibility,
   tileSources,
   imageId,
   categoryId,
@@ -1945,7 +1943,6 @@ export default function ImageViewer({
               ...inuksuks.items.map((item) => ({
                 ...item,
                 ...visibilityPrefs.visibilityFor(item),
-                ...inuksukVisibility?.[item.id],
               })),
               ...(inuksukDraft?.imageId === imageId
                 ? [{ ...inuksukDraft.view, id: -1, title: 'New Inuksuk' }]
