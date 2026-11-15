@@ -10,7 +10,7 @@ import httpx
 import pyvips
 import pytest
 from fastapi import Depends, FastAPI
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app import auth, board_writes, processing
@@ -126,7 +126,7 @@ async def world(tmp_path, monkeypatch):
             yield NS(
                 client=client, sessions=sessions, caller=caller, users=user_ids,
                 boards=board_ids, sections=section_ids, images=image_ids,
-                programs=program_ids, groups=group_ids, root=tmp_path,
+                programs=program_ids, groups=group_ids, root=tmp_path, engine=engine,
                 create=create, board=board,
             )
         await outer.rollback()
@@ -261,6 +261,32 @@ async def test_creation_image_visibility(world, role):
             "board_assignments": [{"board_id": world.boards[role]}],
         })
         assert result.status_code == (404 if role == "student" else 201), result.text
+
+
+async def test_geometry_writes_lock_image_before_boards_and_inuksuks(world):
+    statements = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(world.engine.sync_engine, "before_cursor_execute", capture)
+    try:
+        item = await world.create()
+        image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR SHARE" in sql)
+        board_lock = next(i for i, sql in enumerate(statements) if "FROM boards" in sql and "FOR UPDATE" in sql)
+        insert = next(i for i, sql in enumerate(statements) if sql.startswith("INSERT INTO inuksuks "))
+        assert image_lock < board_lock < insert
+        statements.clear()
+        result = await world.client.patch(
+            f"/api/inuksuks/{item['id']}", json={"version": 1, "zoom": 3},
+        )
+        assert result.status_code == 200, result.text
+        image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR SHARE" in sql)
+        board_lock = next(i for i, sql in enumerate(statements) if "FROM boards" in sql and "FOR UPDATE" in sql)
+        item_lock = next(i for i, sql in enumerate(statements) if "FROM inuksuks" in sql and "FOR UPDATE" in sql)
+        assert image_lock < board_lock < item_lock
+    finally:
+        event.remove(world.engine.sync_engine, "before_cursor_execute", capture)
 
 
 async def test_assignment_validation_last_board_and_preservation(world):
@@ -527,7 +553,19 @@ async def test_replace_deletes_rows_links_and_old_files(world, monkeypatch):
     monkeypatch.setattr(processing, "_best_effort_source_checksum", AsyncMock(return_value=None))
     monkeypatch.setattr(processing, "image_ids_in_collections", AsyncMock(return_value=set()))
     monkeypatch.setattr(processing, "scan_after_processing", AsyncMock())
-    await processing.process_replace_image(source_id, world.images["visible"])
+    statements = []
+
+    def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(" ".join(statement.split()))
+
+    event.listen(world.engine.sync_engine, "before_cursor_execute", capture)
+    try:
+        await processing.process_replace_image(source_id, world.images["visible"])
+    finally:
+        event.remove(world.engine.sync_engine, "before_cursor_execute", capture)
+    image_lock = next(i for i, sql in enumerate(statements) if "FROM images" in sql and "FOR UPDATE" in sql)
+    delete = next(i for i, sql in enumerate(statements) if sql.startswith("DELETE FROM inuksuks "))
+    assert image_lock < delete
     async with world.sessions() as db:
         source = await db.get(SourceImage, source_id)
         assert source.status == "completed", source.error_message

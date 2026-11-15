@@ -1063,7 +1063,7 @@ async def process_replace_image(
                 file_size = _source_image_file_size_bytes(src)
 
                 # Re-fetch to pick up any concurrent metadata changes
-                await db.refresh(img)
+                await db.refresh(img, with_for_update=True)
 
                 img.tile_sources = tile_sources_url
                 img.thumb = thumb_url

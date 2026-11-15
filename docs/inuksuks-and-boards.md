@@ -271,6 +271,11 @@ checks lock target owners before resource locks. Membership changes advance
 the affected aggregate versions. Mutations bump browse revision and are
 covered by the existing HTTP audit middleware plus mutation logs.
 
+Create and geometry PATCH take a shared Image row lock before Board and
+Inuksuk locks; image replacement takes an exclusive Image row lock before
+deleting the old Inuksuks. The geometry read and write therefore serialize
+with replacement rather than inserting bookmarks into its deletion window.
+
 After create commits (id known), or a committed geometry change, thumbnail
 generation runs through `asyncio.to_thread`. It rechecks the Inuksuk version
 under a row lock so a stale generator cannot overwrite a newer edit or

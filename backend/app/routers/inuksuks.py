@@ -15,7 +15,7 @@ from ..board_views import (
 from ..database import get_db
 from ..board_writes import (
     bump_inuksuk, cleanup_thumbnails, commit_write, enforce_cap,
-    expected_version, inuksuk_projection, lock_boards, lock_inuksuk_graph,
+    expected_version, inuksuk_projection, lock_boards, lock_image_geometry, lock_inuksuk_graph,
     owner_targets, regenerate_thumbnail, replace_assignments,
     thumbnail_target, touch_boards, validate_assignments,
 )
@@ -109,7 +109,7 @@ async def create_inuksuk(
     owners = await owner_targets(db, [user.id])
     await enforce_cap(db, owners, set(), "inuksuk")
     ctx = await BoardViewerContext.build(db, user)
-    image = await db.get(Image, body.image_id)
+    image = await lock_image_geometry(db, body.image_id)
     if image is None or not ctx.can_view_image(image):
         raise HTTPException(404, "Image not found")
     boards = await lock_boards(db, (assignment.board_id for assignment in body.board_assignments))
@@ -156,6 +156,13 @@ async def update_inuksuk(
     db: AsyncSession = Depends(get_db),
 ) -> InuksukOut:
     ctx = await BoardViewerContext.build(db, user)
+    if body.model_fields_set & {"x", "y", "zoom", "rotation"}:
+        image_id = await db.scalar(select(Inuksuk.image_id).where(Inuksuk.id == inuksuk_id))
+        if image_id is None:
+            raise HTTPException(404, "Inuksuk not found")
+        image = await lock_image_geometry(db, image_id)
+        if image is None or not ctx.can_view_image(image):
+            raise HTTPException(404, "Image not found")
     targets = (assignment.board_id for assignment in body.board_assignments or [])
     boards, items, links = await lock_inuksuk_graph(db, ctx, [inuksuk_id], targets)
     item = items[inuksuk_id]

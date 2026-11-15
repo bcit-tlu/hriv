@@ -44,6 +44,13 @@ def expected_version(request: Request, version: int | None = None) -> int:
     return version
 
 
+async def lock_image_geometry(db: AsyncSession, image_id: int) -> Image | None:
+    return (await db.execute(
+        select(Image).where(Image.id == image_id).with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )).scalars().unique().one_or_none()
+
+
 async def lock_boards(db: AsyncSession, ids: Iterable[int]) -> dict[int, Board]:
     boards = (await db.execute(
         select(Board).where(Board.id.in_(set(ids))).order_by(Board.id)
