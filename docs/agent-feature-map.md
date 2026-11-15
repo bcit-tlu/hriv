@@ -133,6 +133,15 @@ item switches and collection close.
 - Component stories/docs and corresponding Vitest tests cover these surfaces;
   [feature contract](inuksuks-and-boards.md#imageviewer-frontend-1772).
 
+### Inuksuks drawer (#1773)
+
+See `frontend/src/components/ImageInuksuksDrawer.tsx` for its
+trigger, grouped controls and rows; `frontend/src/useInuksukVisibilityPrefs.ts`
+owns bounded, per-user marker/label defaults and overrides shared across panes.
+`ImageViewer.tsx` hosts the TOP_LEFT control and reuses `useImageInuksuks`;
+`SequenceCollectionViewer.tsx` hides conflicting navigation arrows while open.
+See [the drawer contract](inuksuks-and-boards.md#inuksuks-drawer-1773).
+
 For schema/relationship details before touching models or migrations, see
 [`docs/domain-model.md`](domain-model.md). For the project-wide rules agents must
 not break, see the **Critical Invariants** section in

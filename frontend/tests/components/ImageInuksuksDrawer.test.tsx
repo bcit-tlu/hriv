@@ -1,0 +1,139 @@
+import { useRef, useState } from 'react'
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import Drawer, { ImageInuksuksTrigger } from '../../src/components/ImageInuksuksDrawer'
+import { useInuksukVisibilityPrefs } from '../../src/useInuksukVisibilityPrefs'
+import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
+import type { ApiInuksuk } from '../../src/types'
+
+const rows: ApiInuksuk[] = [
+  INUKSUK_FIXTURE,
+  { ...INUKSUK_FIXTURE, id: 8, title: 'My second', source: 'mine' },
+  {
+    ...INUKSUK_FIXTURE,
+    id: 9,
+    title: 'Instructor view',
+    source: 'instructor',
+    permissions: { can_edit: false, can_delete: false },
+  },
+  {
+    ...INUKSUK_FIXTURE,
+    id: 10,
+    title: 'Public view',
+    source: 'public',
+    permissions: { can_edit: false, can_delete: false },
+  },
+]
+function Example({
+  items = rows,
+  onSelect = vi.fn(),
+  onEdit = vi.fn(),
+  error,
+}: {
+  items?: ApiInuksuk[]
+  onSelect?: (item: ApiInuksuk) => void
+  onEdit?: (item: ApiInuksuk) => void
+  error?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const prefs = useInuksukVisibilityPrefs(9)
+  return (
+    <div style={{ position: 'relative', width: 600, height: 600 }}>
+      <ImageInuksuksTrigger
+        open={open}
+        count={items.length}
+        onOpenChange={setOpen}
+        triggerRef={triggerRef}
+        drawerId="drawer"
+      />
+      <Drawer
+        drawerId="drawer"
+        open={open}
+        onOpenChange={setOpen}
+        triggerRef={triggerRef}
+        items={items}
+        prefs={prefs}
+        error={error}
+        onSelect={onSelect}
+        onEdit={onEdit}
+      />
+    </div>
+  )
+}
+beforeEach(() => localStorage.clear())
+describe('ImageInuksuksDrawer', () => {
+  it('groups by source, defaults public collapsed, navigates only on the row and restricts editing', () => {
+    const select = vi.fn()
+    const edit = vi.fn()
+    render(<Example onSelect={select} onEdit={edit} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+    expect(screen.getByRole('button', { name: 'My Inuksuks' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: 'Instructor Inuksuks' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.queryByRole('button', { name: 'View Inuksuk: Public view' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Public Inuksuks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'View Inuksuk: Public view' }))
+    expect(select).toHaveBeenCalledWith(rows[3])
+    expect(screen.queryByRole('button', { name: 'Edit Instructor view' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Rose window' }))
+    expect(edit).toHaveBeenCalledWith(rows[0])
+    expect(select).toHaveBeenCalledTimes(1)
+    expect(
+      within(screen.getByRole('region', { name: 'My Inuksuks' })).getAllByText(/tracery/),
+    ).toHaveLength(2)
+  })
+  it('keeps labels independent, exposes mixed groups and group operations replace row overrides', () => {
+    render(<Example />)
+    fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'My Inuksuks markers' }))
+    expect(screen.getByRole('switch', { name: 'Rose window marker' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.click(screen.getByRole('switch', { name: 'Rose window marker' }))
+    expect(screen.getByText(/1\/2 markers.*Mixed/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Rose window label' }))
+    expect(screen.getByRole('button', { name: 'My Inuksuks labels' })).toHaveAttribute(
+      'aria-pressed',
+      'mixed',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks labels' }))
+    expect(screen.getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('switch', { name: 'My second marker' })).not.toBeChecked()
+    fireEvent.click(screen.getByRole('switch', { name: 'My Inuksuks markers' }))
+    expect(screen.getByRole('switch', { name: 'My second marker' })).toBeChecked()
+  })
+  it('restores focus on Escape and persists label-only state through remount', async () => {
+    const first = render(<Example />)
+    fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Rose window marker' }))
+    fireEvent.keyDown(screen.getByRole('complementary'), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Inuksuks (4)' })).toHaveFocus()
+    first.unmount()
+    render(<Example />)
+    fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+    expect(screen.getByRole('switch', { name: 'Rose window marker' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close Inuksuks' }))
+    await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull())
+  })
+  it.each([undefined, 'Unable to load Inuksuks.'])('handles empty/error data %s', (error) => {
+    render(<Example items={[]} error={error} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (0)' }))
+    expect(error ? screen.getByRole('alert') : screen.getByText(/No Inuksuks/)).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'My Inuksuks markers' })).toBeDisabled()
+  })
+})

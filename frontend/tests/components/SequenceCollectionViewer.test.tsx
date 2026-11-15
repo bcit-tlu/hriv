@@ -77,6 +77,22 @@ beforeEach(() => {
 })
 
 describe('SequenceCollectionViewer', () => {
+  it('keeps navigation from covering an open Inuksuks drawer', () => {
+    renderViewer({ inuksuksEnabled: true })
+    const frame = screen.getByTestId('sequence-viewer-frame')
+    fireEvent.pointerMove(frame)
+    const callback = lastViewerProps?.onInuksuksDrawerOpenChange
+    if (typeof callback !== 'function') throw new Error('Missing drawer callback')
+    act(() => callback(true))
+    expect(screen.getByRole('button', { name: 'Next image' })).toHaveAttribute('tabindex', '-1')
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '0' })
+    expect(screen.getByRole('button', { name: 'Next image' })).toHaveStyle({
+      pointerEvents: 'none',
+    })
+    act(() => callback(false))
+    expect(screen.getByRole('button', { name: 'Next image' })).toHaveAttribute('tabindex', '0')
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ opacity: '1' })
+  })
   it('renders the first image and position when no item is selected', () => {
     renderViewer()
     expect(screen.getByTestId('image-viewer')).toHaveAttribute('data-image-id', '100')
