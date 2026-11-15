@@ -12,7 +12,7 @@ from ..auth_events import AUTH_METHOD_LOCAL, AUTH_OUTCOME_SUCCESS, auth_event_fi
 from ..authz import ADMIN_PROGRAM_NAME
 from ..browse_state import bump_browse_revision
 from ..database import get_db
-from ..models import Collection, Program, User
+from ..models import Board, Collection, Inuksuk, Program, User
 from ..password_tokens import issue_password_setup_token, validate_password_setup_token
 from ..tile_order import bump_scopes, collection_scope_keys
 from ..schemas import (
@@ -97,6 +97,24 @@ async def _delete_sole_owned_collections(
         .all()
     )
     return bool(affected) or creator_linked
+
+
+async def _delete_sole_owned_inuksuks_and_boards(
+    db: AsyncSession, departing_ids: set[int]
+) -> None:
+    if not departing_ids:
+        return
+    for model in (Board, Inuksuk):
+        rows = (
+            await db.execute(
+                select(model).where(model.owners.any(User.id.in_(departing_ids)))
+            )
+        ).scalars().unique().all()
+        for row in rows:
+            if isinstance(row, Board) and row.owner_program_id is not None:
+                continue
+            if all(owner.id in departing_ids for owner in row.owners):
+                await db.delete(row)
 
 
 async def _set_user_programs(
@@ -325,6 +343,7 @@ async def bulk_delete_users(
     collections_affected = await _delete_sole_owned_collections(
         db, set(body.user_ids)
     )
+    await _delete_sole_owned_inuksuks_and_boards(db, set(body.user_ids))
     for user in users:
         await db.delete(user)
     if collections_affected:
@@ -456,6 +475,7 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     collections_affected = await _delete_sole_owned_collections(db, {user_id})
+    await _delete_sole_owned_inuksuks_and_boards(db, {user_id})
     await db.delete(user)
     if collections_affected:
         await bump_browse_revision(db)

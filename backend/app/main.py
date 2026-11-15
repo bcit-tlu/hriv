@@ -25,7 +25,7 @@ from .schemas import FeaturesOut
 from .worker import TaskQueueUnavailableError, get_pool
 from .maintenance import is_maintenance_mode
 from .upload_staging import UPLOAD_SPOOL_DIR_NAME
-from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
+from .middleware import AuditMiddleware, CollectionsFeatureMiddleware, InuksuksFeatureMiddleware, MaintenanceMiddleware, UploadBodyLimitMiddleware
 from .routers import (
     admin,
     announcements,
@@ -338,6 +338,7 @@ app.add_middleware(UploadBodyLimitMiddleware)
 # Registered inside MaintenanceMiddleware (Starlette runs the last-added
 # middleware first) so maintenance 503s win over the collections 404.
 app.add_middleware(CollectionsFeatureMiddleware)
+app.add_middleware(InuksuksFeatureMiddleware)
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)
 
@@ -404,6 +405,7 @@ async def features() -> FeaturesOut:
     """Deployment feature flags (unauthenticated; see docs/collections.md)."""
     return FeaturesOut(
         collections=settings.collections_enabled,
+        inuksuks=settings.inuksuks_enabled,
         collections_student_access=settings.collections_student_access,
         collections_home_shelf=(
             settings.collections_enabled and settings.collections_home_shelf

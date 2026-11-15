@@ -7,6 +7,39 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Entities
 
+### Inuksuk, Board, and BoardSection _(added in `0046_inuksuks_and_boards`)_
+
+- **Inuksuk** (`inuksuks`): a bookmark on one image, with required `title`
+  (255 characters), `x`, `y`, and `zoom`; `rotation` defaults to zero.
+  Optional `description` and `thumb` store text and a cropped thumbnail path.
+  `favourite` defaults to false; `sort_order` to zero; `version` to one
+  (optimistic concurrency). `image_id` is indexed and **CASCADE** on image
+  deletion. `created_by_user_id` is nullable creator audit (**SET NULL**).
+- **Board** (`boards`): required `name` (255 characters), optional
+  `description`, `visibility` (CHECK: private/public/restricted, default
+  private), `sort_order` (zero), and OCC `version` (one).
+  `created_by_user_id` and optional `owner_program_id` are **SET NULL** FKs.
+- **BoardSection** (`board_sections`): one-level grouping with required
+  `name`, `board_id` (indexed, **CASCADE**), and `sort_order` (zero).
+  There is deliberately no parent-section FK. All three entities have
+  timezone-aware `created_at` / `updated_at` timestamps.
+- **Ownership and scope:** `inuksuk_owners(inuksuk_id, user_id)`,
+  `board_owners(board_id, user_id)`, `board_programs(board_id, program_id)`,
+  and `board_groups(board_id, group_id)` use composite PKs and **CASCADE**
+  FKs; both owner junctions index `user_id`. User deletion removes objects
+  whose entire owner set is departing, except program-owned boards. Co-owned
+  objects survive. Creator audit does not grant ownership.
+- **Membership:** `board_inuksuks` has composite PK `(board_id, inuksuk_id)`
+  with **CASCADE** FKs, nullable `section_id` (**SET NULL** on section
+  deletion), and `sort_order` (zero). Indexes cover `(board_id, sort_order)`
+  and `(board_id, section_id, sort_order)`. Removing a board or section
+  never deletes an Inuksuk. Future write APIs must validate that a section
+  belongs to the membership's board.
+- **Caps:** `STUDENT_MAX_BOARDS = 10`, `STUDENT_MAX_INUKSUKS = 200`.
+  These constants are for subsequent creation APIs, not DB constraints.
+- **Dark launch:** `INUKSUKS_ENABLED=false` by default. See
+  [Inuksuks and Boards](inuksuks-and-boards.md); no CRUD endpoints ship yet.
+
 ### User
 
 - **Purpose:** authenticated user with role-based access.
