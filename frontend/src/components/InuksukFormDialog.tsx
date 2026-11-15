@@ -66,6 +66,7 @@ export default function InuksukFormDialog({
   const [details, setDetails] = useState<Record<number, ApiBoard>>({})
   const [assignments, setAssignments] = useState<BoardAssignment[]>([])
   const [loading, setLoading] = useState(true)
+  const [boardsLoaded, setBoardsLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<ApiInuksuk | null>(null)
@@ -95,11 +96,13 @@ export default function InuksukFormDialog({
           })),
         )
         setLoading(false)
+        setBoardsLoaded(true)
       })
       .catch((err) => {
         if (!cancelled) {
           setError(api.userMessage(err, 'Unable to load Boards.'))
           setLoading(false)
+          setBoardsLoaded(false)
         }
       })
     return () => {
@@ -143,6 +146,7 @@ export default function InuksukFormDialog({
     }
   }
   const persist = async (deleting = false) => {
+    if (!deleting && baseline && !boardsLoaded) return
     setBusy(true)
     setError(null)
     try {
@@ -209,6 +213,12 @@ export default function InuksukFormDialog({
         {baseline ? (editable ? 'Edit Inuksuk' : 'Inuksuk details') : 'Save a view'}
       </DialogTitle>
       <DialogContent>
+        {baseline && !loading && !boardsLoaded && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Existing Board assignments could not be loaded. Close and reopen this dialog before
+            saving changes.
+          </Alert>
+        )}
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
             Keep this exact position, zoom and rotation on your Boards.
@@ -364,6 +374,7 @@ export default function InuksukFormDialog({
             disabled={
               busy ||
               loading ||
+              (!!baseline && !boardsLoaded) ||
               missingDetails ||
               !!conflict ||
               !title.trim() ||

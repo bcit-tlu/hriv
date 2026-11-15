@@ -354,6 +354,10 @@ container for full-page mode. Backend caps and permission failures surface
 inline without closing it. Crops and source-thumb fallbacks remain server
 responsibilities; the frontend never mints tile tokens.
 
+If existing Board assignments cannot be loaded, saving an edit is blocked
+even after an inline Board is created. Close and reopen the dialog to retry;
+an incomplete assignment list must never replace the existing links.
+
 Frontend verification: `inuksukApi.test.ts`, `useImageInuksuks.test.ts`,
 `useFeatures.test.ts`, `ImageViewer.test.tsx`,
 `InuksukMarkersLayer.test.tsx` and `InuksukFormDialog.test.tsx`.

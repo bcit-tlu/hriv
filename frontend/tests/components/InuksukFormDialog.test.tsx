@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InuksukFormDialog from '../../src/components/InuksukFormDialog'
@@ -53,6 +53,27 @@ async function setup(props: Partial<React.ComponentProps<typeof InuksukFormDialo
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
 describe('InuksukFormDialog', () => {
+  it.each(['list', 'details'])(
+    'blocks edits after Board %s loading fails, even after creating a Board inline',
+    async (failure) => {
+      const api = services()
+      if (failure === 'list') api.fetchBoards.mockRejectedValue(new Error('offline'))
+      else api.fetchBoard.mockRejectedValue(new Error('offline'))
+      const { user, onClose, onChanged } = await setup({ services: api, item: INUKSUK_FIXTURE })
+      expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+      await user.click(screen.getByRole('button', { name: '+ Create new board' }))
+      await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
+      await user.click(screen.getByRole('button', { name: 'Create Board' }))
+      await screen.findByText('My new Board')
+      expect(screen.getByText(/Existing Board assignments could not be loaded/)).toBeInTheDocument()
+      const save = screen.getByRole('button', { name: 'Save changes' })
+      expect(save).toBeDisabled()
+      fireEvent.click(save)
+      expect(api.updateInuksuk).not.toHaveBeenCalled()
+      expect(onChanged).not.toHaveBeenCalled()
+      expect(onClose).not.toHaveBeenCalled()
+    },
+  )
   it('requires a nonblank title and at least one editable Board, including empty lists', async () => {
     const api = services()
     api.fetchBoards.mockResolvedValue([])
