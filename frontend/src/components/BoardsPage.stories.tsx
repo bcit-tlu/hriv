@@ -57,9 +57,10 @@ const meta = {
               ...BOARDS_FIXTURES[1],
               owners: [],
               owner_program_id: 1,
+              sort_order: 1,
               permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
             },
-            { ...BOARDS_FIXTURES[0], id: 4, name: 'Another editable Board' },
+            { ...BOARDS_FIXTURES[0], id: 4, name: 'Another editable Board', sort_order: 2 },
           ]
         : BOARDS_FIXTURES,
     )
@@ -133,6 +134,10 @@ export const ReadOnlyOwnedBoard: Story = {
     await expect(
       canvas.queryByRole('button', { name: 'Reorder Next studio project' }),
     ).not.toBeInTheDocument()
+    const readOnly = canvas.getByRole('region', { name: 'Read-only owned Boards' })
+    await expect(
+      within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
+    ).toBeVisible()
     handle.focus()
     await userEvent.keyboard('[Space][ArrowRight][Space]')
     await waitFor(() =>
@@ -143,5 +148,17 @@ export const ReadOnlyOwnedBoard: Story = {
         ],
       }),
     )
+    await waitFor(() =>
+      expect(
+        within(canvas.getByRole('region', { name: 'Editable owned Boards' })).getAllByRole(
+          'button',
+          { name: /^Open Board:/ },
+        )[0],
+      ).toHaveAccessibleName('Open Board: Another editable Board'),
+    )
+    await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
+    await expect(
+      within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
+    ).toBeVisible()
   },
 }

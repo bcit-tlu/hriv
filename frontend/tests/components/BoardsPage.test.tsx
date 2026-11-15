@@ -67,6 +67,46 @@ async function actions() {
   fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rose window' }))
 }
 describe('BoardsPage', () => {
+  it('keeps read-only Boards separate when a reload returns colliding global positions', async () => {
+    const first = { ...BOARDS_FIXTURES[0], sort_order: 0 }
+    const readOnly = {
+      ...BOARDS_FIXTURES[1],
+      owners: [],
+      owner_program_id: 1,
+      sort_order: 1,
+      permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
+    }
+    const last = { ...first, id: 4, name: 'Another editable Board', sort_order: 2 }
+    vi.mocked(api.fetchBoards).mockResolvedValue([first, readOnly, last])
+    await setup(null, { currentUser: { ...BOARD_USER, role: 'student' } })
+    const editable = screen.getByRole('region', { name: 'Editable owned Boards' })
+    const fixed = screen.getByRole('region', { name: 'Read-only owned Boards' })
+    expect(
+      within(editable)
+        .getAllByRole('button', { name: /^Open Board:/ })
+        .map((row) => row.textContent),
+    ).toEqual([expect.stringContaining(first.name), expect.stringContaining(last.name)])
+    expect(within(fixed).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
+    expect(
+      within(fixed).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
+    ).toBeVisible()
+    vi.mocked(api.fetchBoards).mockResolvedValue([
+      { ...last, sort_order: 0 },
+      { ...first, sort_order: 1 },
+      readOnly,
+    ])
+    fireEvent.click(screen.getByRole('switch', { name: 'Favourites only' }))
+    await waitFor(() =>
+      expect(
+        within(editable).getAllByRole('button', { name: /^Open Board:/ })[0],
+      ).toHaveAccessibleName(`Open Board: ${last.name}`),
+    )
+    const reloadedFixed = screen.getByRole('region', { name: 'Read-only owned Boards' })
+    expect(within(reloadedFixed).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
+    expect(
+      within(reloadedFixed).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
+    ).toBeVisible()
+  })
   it('names Board save targets and Section move targets', async () => {
     await setup(1)
     expect(screen.getByRole('region', { name: 'Save to Architecture inspiration' })).toBeVisible()

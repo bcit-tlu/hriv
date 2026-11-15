@@ -433,7 +433,10 @@ export default function BoardsPage({
   const [conflict, setConflict] = useState(false)
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
-  const rows = shared ? data.boards.filter((row) => !ownsBoard(row, currentUser)) : own
+  const readOnlyBoards = own.filter((row) => !row.permissions.can_edit)
+  const rows = shared
+    ? data.boards.filter((row) => !ownsBoard(row, currentUser))
+    : reorderableBoards
   const canEdit = !!board?.permissions.can_edit
   const sensors = useMemo(
     () => [
@@ -650,75 +653,103 @@ export default function BoardsPage({
           <Tab label="Your Boards" value="own" />
           <Tab label="Shared with me / Public" value="shared" />
         </Tabs>
-        <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', py: 2, mb: 2 }}>
-          {rows.map((row) => (
-            <Box key={row.id} sx={{ flex: '0 0 220px' }}>
-              <SortableFrame
-                id={`board:${row.id}`}
-                index={reorderableBoards.findIndex((candidate) => candidate.id === row.id)}
-                type="board-card"
-                group="boards"
-                disabled={shared || !row.permissions.can_edit}
-                label={row.name}
-              >
-                <DropArea
-                  id={`save:${row.id}`}
-                  label={`Save to ${row.name}`}
-                  enabled={
-                    !!activeItem?.permissions.can_edit &&
-                    row.permissions.can_edit &&
-                    !activeItem.board_ids.includes(row.id)
-                  }
-                >
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 3,
-                      borderColor: row.id === boardId ? 'primary.main' : 'divider',
-                      borderWidth: row.id === boardId ? 2 : 1,
-                    }}
-                  >
-                    <CardActionArea
-                      onClick={() => onSelectBoard(row.id)}
-                      aria-label={`Open Board: ${row.name}`}
-                    >
-                      <BoardCover board={row} />
-                      <CardContent>
-                        <Typography variant="subtitle1" component="p" noWrap fontWeight={600}>
-                          {row.name}
-                        </Typography>
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          justifyContent="space-between"
-                          sx={{ mt: 1 }}
-                        >
-                          <Chip label={row.visibility} size="small" variant="outlined" />
-                          <Typography variant="caption">{row.inuksuk_count} Inuksuks</Typography>
-                        </Stack>
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                </DropArea>
-              </SortableFrame>
-            </Box>
-          ))}
-          <Card
-            variant="outlined"
-            sx={{ flex: '0 0 160px', minHeight: 230, borderStyle: 'dashed', borderRadius: 3 }}
+        {[
+          { id: 'main', boards: rows, readOnly: false },
+          ...(!shared && readOnlyBoards.length
+            ? [{ id: 'read-only', boards: readOnlyBoards, readOnly: true }]
+            : []),
+        ].map((group) => (
+          <Box
+            key={group.id}
+            role="region"
+            aria-label={
+              group.readOnly
+                ? 'Read-only owned Boards'
+                : shared
+                  ? 'Shared Boards'
+                  : 'Editable owned Boards'
+            }
           >
-            <CardActionArea
-              onClick={() => {
-                setError(null)
-                setEdit('new')
-              }}
-              sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}
-            >
-              <Add fontSize="large" />
-              <Typography>New Board</Typography>
-            </CardActionArea>
-          </Card>
-        </Box>
+            {group.readOnly && (
+              <Typography variant="h6" component="h2">
+                Read-only Boards
+              </Typography>
+            )}
+            <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', py: 2, mb: 2 }}>
+              {group.boards.map((row) => (
+                <Box key={row.id} sx={{ flex: '0 0 220px' }}>
+                  <SortableFrame
+                    id={`board:${row.id}`}
+                    index={reorderableBoards.findIndex((candidate) => candidate.id === row.id)}
+                    type="board-card"
+                    group="boards"
+                    disabled={shared || !row.permissions.can_edit}
+                    label={row.name}
+                  >
+                    <DropArea
+                      id={`save:${row.id}`}
+                      label={`Save to ${row.name}`}
+                      enabled={
+                        !!activeItem?.permissions.can_edit &&
+                        row.permissions.can_edit &&
+                        !activeItem.board_ids.includes(row.id)
+                      }
+                    >
+                      <Card
+                        variant="outlined"
+                        sx={{
+                          borderRadius: 3,
+                          borderColor: row.id === boardId ? 'primary.main' : 'divider',
+                          borderWidth: row.id === boardId ? 2 : 1,
+                        }}
+                      >
+                        <CardActionArea
+                          onClick={() => onSelectBoard(row.id)}
+                          aria-label={`Open Board: ${row.name}`}
+                        >
+                          <BoardCover board={row} />
+                          <CardContent>
+                            <Typography variant="subtitle1" component="p" noWrap fontWeight={600}>
+                              {row.name}
+                            </Typography>
+                            <Stack
+                              direction="row"
+                              alignItems="center"
+                              justifyContent="space-between"
+                              sx={{ mt: 1 }}
+                            >
+                              <Chip label={row.visibility} size="small" variant="outlined" />
+                              <Typography variant="caption">
+                                {row.inuksuk_count} Inuksuks
+                              </Typography>
+                            </Stack>
+                          </CardContent>
+                        </CardActionArea>
+                      </Card>
+                    </DropArea>
+                  </SortableFrame>
+                </Box>
+              ))}
+              {!group.readOnly && (
+                <Card
+                  variant="outlined"
+                  sx={{ flex: '0 0 160px', minHeight: 230, borderStyle: 'dashed', borderRadius: 3 }}
+                >
+                  <CardActionArea
+                    onClick={() => {
+                      setError(null)
+                      setEdit('new')
+                    }}
+                    sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}
+                  >
+                    <Add fontSize="large" />
+                    <Typography>New Board</Typography>
+                  </CardActionArea>
+                </Card>
+              )}
+            </Box>
+          </Box>
+        ))}
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
         {board ? (
           <>

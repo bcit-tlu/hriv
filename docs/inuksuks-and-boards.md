@@ -450,6 +450,9 @@ Section deletion moves its members to Unsectioned, not out of the Board.
 Handle-based DnD and menu actions reorder and move members between Sections;
 Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.
+They appear in a separate read-only row under Your Boards. Board positions are
+stored globally on each Board, not per user; separating the rows prevents
+read-only cards from moving among editable cards after a reorder and reload.
 These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
 Dropping an editable Inuksuk on another editable Board **saves a copy of the

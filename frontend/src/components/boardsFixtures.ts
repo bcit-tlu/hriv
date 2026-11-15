@@ -157,10 +157,14 @@ export function installBoardsFetch(
           ? [item.board_id]
           : [],
       )
-      boards = [
-        ...ids.flatMap((id) => boards.find((board) => board.id === id) ?? []),
-        ...boards.filter((board) => !ids.includes(board.id)),
-      ]
+      ids.forEach((id, position) => {
+        const board = boards.find((row) => row.id === id)
+        if (board) {
+          board.sort_order = position
+          board.version += 1
+        }
+      })
+      boards.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
       return Response.json(boards)
     }
     if (
