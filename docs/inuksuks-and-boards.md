@@ -2,8 +2,9 @@
 
 Inuksuks bookmark an image's exact viewport coordinates, zoom, and rotation.
 Boards curate shared Inuksuks into ordered, one-level sections. Migration
-`0046_inuksuks_and_boards` introduces the additive schema; creation, access
-control, thumbnails, and UI arrive in subsequent issues of epic #1765.
+`0046_inuksuks_and_boards` introduces the additive schema; thumbnails and
+read access follow in #1767/#1768, with creation and UI in subsequent issues
+of epic #1765.
 See the [domain model](domain-model.md) for fields and deletion rules.
 
 ## Feature flag (`INUKSUKS_ENABLED`)
@@ -16,7 +17,7 @@ See the [domain model](domain-model.md) for fields and deletion rules.
   precedence (503). Other paths and non-HTTP scopes pass through.
 - `require_inuksuks_enabled` in `app/inuksuks.py` is the secondary
   router-level dependency for subsequent routers. Enabling the flag alone
-  does not add endpoints in this schema-only release.
+  exposes the read endpoints below; write endpoints are not implemented yet.
 - Helm `inuksuks.enabled: false` renders `INUKSUKS_ENABLED` on the API
   Deployment. Enable it explicitly in deployment overlays for incremental
   testing; leave it off elsewhere until the epic ships.
@@ -34,9 +35,10 @@ PostgreSQL for cascades and user-deletion cleanup.
 Every Inuksuk belongs to at least one Board. Boards follow Collections
 visibility: admins, instructors, and staff see all; students see their own,
 public, and restricted Boards that pass both program and group gates.
-An Inuksuk is visible only when its image is visible **and** at least one of
-its Boards is visible. These rules are for the forthcoming CRUD routers;
-the thumbnail generator does not perform authorization or create endpoints.
+An Inuksuk requires a visible image; students additionally must own the
+Inuksuk or see at least one of its Boards. Non-students can view all
+Inuksuks. The read API enforces these rules; the thumbnail generator itself
+does not perform authorization or create endpoints.
 
 ## Viewport thumbnails
 
@@ -86,3 +88,100 @@ wired to endpoints in this increment.
 
 `backend/tests/test_inuksuk_thumbs.py` covers geometry, synthetic clockwise
 rotation, padding, missing/corrupt tiles, and file lifecycle.
+
+## Read API (#1768)
+
+All four reads require an authenticated user and `INUKSUKS_ENABLED=true`.
+The Board/Inuksuk routers use both the middleware and router dependency;
+the image drawer route explicitly applies `require_inuksuks_enabled`
+because it lives outside those middleware path prefixes. Flag-off returns
+404 even before authentication.
+
+| Endpoint                        | Response                                                                                                        |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `GET /api/boards`               | Visible Board summaries with owners, scope ids, permissions, visible `inuksuk_count` and cover thumbnail        |
+| `GET /api/boards/{id}`          | Board summary plus ordered `sections` and visible `inuksuks`, each with per-Board `section_id` and `sort_order` |
+| `GET /api/inuksuks`             | Visible Inuksuks, with owners, permissions, source tag and only their visible `board_ids`                       |
+| `GET /api/images/{id}/inuksuks` | Drawer items tagged `mine`, `instructor`, or `public`, once each                                                |
+
+Admins, instructors and staff see all Boards, including private Boards.
+Students see Boards they own/co-own, public Boards, and restricted Boards
+passing **both** the program and group gates; empty restrictions on a
+dimension mean unrestricted. An invisible or nonexistent Board detail
+(or explicit `board_id` filter) is 404, never 403.
+
+Inuksuks require an **active image for students only**, matching image reads.
+Students also pass the image category's inherited program/group/hidden-subtree gates,
+even when they own the Inuksuk or it is on a public Board. With that image
+gate satisfied, students need ownership of the Inuksuk or a visible Board
+containing it; non-students need no further gate. This owner exception
+permits an owner to retain access even if all its Boards are private to
+someone else. `board_ids` never discloses those private Boards.
+The drawer returns 404 for an invisible or nonexistent image.
+
+Source tags have strict precedence:
+
+1. `mine`: the caller is an Inuksuk owner.
+2. `instructor`: a **visible** containing Board has an instructor/admin
+   owner or an `owner_program`.
+3. `public`: another user's Inuksuk is on a public Board.
+
+Other visible Inuksuks have `source: null` in the Organize list and remain
+reachable through Boards, but are omitted from the drawer. For example,
+staff can see a student's private/restricted Board without its Inuksuks
+appearing in the drawer. Drawer order is source precedence, then
+Inuksuk `sort_order`, then id.
+
+### Filtering, ordering and conditional requests
+
+Board list search `q` is a case-insensitive literal substring of name,
+description or owner label. `visibility` may be repeated. Board sorts:
+`id`, `name`, `description`, `visibility`, `owner`, `inuksuk_count`,
+`sort_order`, `created_at`, `updated_at`.
+
+Inuksuk list filters: `board_id`, `section_id`, `image_id`, `favourite`,
+and `scope=mine|instructor|public` (using the same precedence as drawer tags).
+Board/section membership filters only match visible Boards. `q` searches
+title/description. Inuksuk sorts: `id`, `title`, `description`,
+`image_id`, `favourite`, `sort_order`, `created_at`, `updated_at`.
+
+Both lists accept `order=asc|desc` (or Collections-compatible `direction`).
+The default is `sort=updated_at` descending; text and explicit
+`sort_order` sorts default ascending, magnitude/recency sorts descending.
+Ties use id in the same direction. Filtering precedes pagination.
+`page` requires `page_size` (1–200); `page_size` alone means page 1.
+`limit` (1–100) cannot be combined with page parameters. Bad filters,
+sorts or paging combinations return 422. Lists expose pre-slice
+`X-Total-Count`; results are arrays, including empty arrays.
+
+Reads carry weak content-derived ETags, `Cache-Control: private, no-cache`,
+and support comma-separated/weak/strong `If-None-Match` comparison and
+`*` for 304. Unlike Collections' revision shortcut, these are computed
+after loading and filtering, so image/owner/scope changes cannot leave a
+stale authorization result even before #1769 introduces write endpoints.
+The fingerprint includes viewer memberships, query, filtered content,
+total count and a token-TTL epoch. Token strings are excluded from the
+content hash; the epoch forces renewal before cached thumbnail tokens
+expire. Board membership, images and owners/scopes are eager-loaded in
+batches, not queried per item.
+
+### Capability predicates for upcoming writes
+
+Board predicates reuse Collections' rules: admins manage all; instructors
+edit/change scope/delete/transfer when owners/co-owners or members of the
+owning program. Students/staff edit their own/co-owned Boards, but may
+change scope/delete only as sole user-owner with no program owner, and
+cannot transfer. Inuksuk edit/delete is granted to admins or any user-owner
+(including co-owners); merely viewing an instructor/public Board does not
+grant edit authority over someone else's Inuksuks. Permissions in read
+responses are UX hints, not a substitute for checking future mutations.
+
+Every thumbnail projection, including Board covers, uses only
+`append_inuksuk_thumb_token` for a saved crop and `append_thumb_token`
+for the image-thumbnail fallback, after image visibility checks.
+No read projection issues a full tile token.
+
+Verification: `test_board_authz.py` covers the role × visibility × dual-gate
+and capability matrices; `test_board_reads.py` exercises PostgreSQL reads,
+hidden/inactive image exclusion, drawer precedence, filtering/paging,
+ETags, flag-off paths and token scoping.

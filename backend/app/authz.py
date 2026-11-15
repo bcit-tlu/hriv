@@ -22,6 +22,42 @@ from collections.abc import Iterable
 ADMIN_PROGRAM_NAME = "Admin"
 
 
+def is_board_owner(user, board) -> bool:
+    return is_collection_owner(user, board)
+
+
+def can_view_board(user, board, user_program_ids: set[int], user_group_ids: set[int]) -> bool:
+    return can_view_collection(user, board, user_program_ids, user_group_ids)
+
+
+def can_edit_board(user, board) -> bool:
+    return can_edit_collection(user, board)
+
+
+def can_change_board_scope(user, board) -> bool:
+    return can_change_collection_scope(user, board)
+
+
+def can_delete_board(user, board) -> bool:
+    return can_change_board_scope(user, board)
+
+
+def can_transfer_board(user, board) -> bool:
+    return can_transfer_collection(user, board)
+
+
+def is_inuksuk_owner(user, inuksuk) -> bool:
+    return any(owner.id == user.id for owner in inuksuk.owners)
+
+
+def can_edit_inuksuk(user, inuksuk) -> bool:
+    return user.role == "admin" or is_inuksuk_owner(user, inuksuk)
+
+
+def can_delete_inuksuk(user, inuksuk) -> bool:
+    return can_edit_inuksuk(user, inuksuk)
+
+
 def user_has_admin_program(user) -> bool:
     """Return True when the user is associated with the special Admin program."""
     return any(
