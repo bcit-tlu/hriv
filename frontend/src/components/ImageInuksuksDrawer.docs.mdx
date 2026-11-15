@@ -1,0 +1,26 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as DrawerStories from './ImageInuksuksDrawer.stories'
+
+<Meta of={DrawerStories} />
+
+<Title />
+
+The CompassCalibration trigger is an auto-fading TOP_LEFT OpenSeadragon control.
+Its count is the number of authorized Inuksuks on the current image, not the
+number of enabled markers. The left-anchored panel stays inside the viewer in
+full-page mode and shares its existing image-data request with the markers.
+
+My and Instructor start expanded; Public starts collapsed. Each row has an
+independent marker switch and label eye. Group actions replace all row overrides
+for that dimension; a later row action overrides the group. Mixed groups show
+counts and “Mixed”; clicking a mixed group shows all. Neither dimension hides
+the other. A row navigates without opening an editor; the explicit owner edit
+action opens the existing dialog. Escape restores focus to the trigger.
+
+Preferences are scoped to the signed-in user, bounded to 500 recent overrides,
+and shared across synchronized panes and browser tabs. Sequence navigation
+arrows hide while this panel is open, rather than painting over its rows.
+
+<Primary />
+
+<Stories />

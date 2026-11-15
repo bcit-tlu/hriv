@@ -324,8 +324,8 @@ pixels and titles use 13-pixel text; neither scales nor rotates with the image.
 The layer reprojects anchors on animation, animation-finish, open, resize,
 rotate and flip. Each marker accepts independent `markerVisible` and
 `labelVisible` props, both true by default: labels may remain visible when
-markers are hidden. `ImageViewer.inuksukVisibility` exposes the same per-id
-overrides for the future drawer. Clicking a marker smoothly restores its
+markers are hidden. The drawer's shared visibility preferences drive the
+viewer layer directly, without separate viewer-level overrides. Clicking a marker smoothly restores its
 saved pan/zoom/rotation, highlights it and opens its details.
 
 Flip remains a presentation setting, not a saved coordinate transform.
@@ -369,3 +369,47 @@ Frontend verification: `inuksukApi.test.ts`, `useImageInuksuks.test.ts`,
 `InuksukMarkersLayer.test.tsx` and `InuksukFormDialog.test.tsx`.
 Both new components have attached Storybook docs and deterministic stories;
 the marker stories exercise the real viewer with fixture API responses.
+
+### Inuksuks drawer (#1773)
+
+The feature-gated CompassCalibration trigger lives in an OSD **TOP_LEFT** control,
+participates in auto-fade, and keeps keyboard-focused controls visible. Its badge
+counts authorized image Inuksuks, including ones whose markers are hidden. The
+left-anchored panel and its dialogs are portaled into the viewer, including in
+OSD full-page mode. It reuses `useImageInuksuks`; opening the drawer does not
+issue another image request.
+
+**My Inuksuks**, **Instructor Inuksuks**, and **Public Inuksuks** follow the API's
+source tags and precedence. Empty source groups are hidden rather than showing
+unusable controls. My and Instructor start expanded; Public starts
+collapsed. Row selection smoothly restores saved pan, zoom and rotation and
+highlights the marker without opening the form. The separate edit action uses
+API `permissions.can_edit` and opens the existing OCC-protected form.
+
+Marker switches and label eyes are independent at both row and group levels;
+both default to shown. Group actions set the default for the entire source and
+clear all row overrides for that dimension, including cached rows on other
+images. A subsequent row action overrides that default. Mixed groups show
+counts and **Mixed**; toggling a mixed group shows all. Changing markers never
+changes labels, or vice versa. Shared preferences are the viewer's single source
+of visibility state, so drawer controls always reflect the rendered markers and
+labels. Collection embeds use the same preferences rather than external overrides.
+
+Preferences use `hriv.inuksukVisibility.<userId>`. Parsing validates the shape
+and defaults corrupt values safely; at most 500 recently changed row overrides
+are retained. A source change invalidates an old source-specific row override.
+Mounted synchronized panes share changes immediately, and browser tabs observe
+storage events. Storage failures fall back to memory; anonymous previews use
+memory only. Switching users selects a different preference key immediately.
+
+Each embedded viewer has unique drawer/control IDs. Sequence edge-navigation
+arrows hide while the drawer is open, avoiding controls over its rows; filmstrip
+and caption navigation remain available. Synchronized panes keep independent
+open/selected state while sharing user visibility preferences, and reserve the
+rightmost 48px for existing controls. Errors appear below the top-left trigger
+and inside the drawer. Escape/Close restores focus to the trigger.
+
+Tests: `useInuksukVisibilityPrefs.test.ts`, `ImageInuksuksDrawer.test.tsx`,
+`ImageViewer.test.tsx`, and collection-viewer tests. Attached drawer stories
+cover expanded/collapsed groups, label-only visibility, sequence and synchronized
+embeds with deterministic API fixtures.

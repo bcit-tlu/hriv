@@ -140,6 +140,8 @@ export default function SequenceCollectionViewer({
   // fading back out after a short idle. The buttons stay mounted (opacity +
   // pointer-events only) so keyboard focus can reveal them.
   const [navVisible, setNavVisible] = useState(false)
+  const [inuksuksDrawerOpen, setInuksuksDrawerOpen] = useState(false)
+  const navShown = navVisible && !inuksuksDrawerOpen
   const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Focus inside the nav holds it open regardless of pointer idle/leave.
   const navFocusedRef = useRef(false)
@@ -546,6 +548,7 @@ export default function SequenceCollectionViewer({
         >
           <ImageViewer
             inuksuksEnabled={inuksuksEnabled}
+            onInuksuksDrawerOpenChange={setInuksuksDrawerOpen}
             key={current.id}
             fullScreenHandoffKey={`sequence:${collectionId}`}
             tileSources={current.tileSources}
@@ -598,7 +601,7 @@ export default function SequenceCollectionViewer({
         </CollectionImageDetails>
         <Box
           data-testid="sequence-nav-overlay"
-          style={{ opacity: navVisible ? 1 : 0 }}
+          style={{ opacity: navShown ? 1 : 0 }}
           onFocusCapture={holdNavForFocus}
           onBlurCapture={releaseNavForBlur}
           sx={{
@@ -612,7 +615,8 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex - 1)}
             disabled={currentIndex <= 0}
             aria-label="Previous image"
-            style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
+            tabIndex={inuksuksDrawerOpen ? -1 : 0}
+            style={{ pointerEvents: navShown ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, left: 8 }}
           >
             <ChevronLeftIcon sx={{ fontSize: 52.5 }} />
@@ -621,7 +625,8 @@ export default function SequenceCollectionViewer({
             onClick={() => goTo(currentIndex + 1)}
             disabled={currentIndex >= available.length - 1}
             aria-label="Next image"
-            style={{ pointerEvents: navVisible ? 'auto' : 'none' }}
+            tabIndex={inuksuksDrawerOpen ? -1 : 0}
+            style={{ pointerEvents: navShown ? 'auto' : 'none' }}
             sx={{ ...navEdgeButton, right: 8 }}
           >
             <ChevronRightIcon sx={{ fontSize: 52.5 }} />

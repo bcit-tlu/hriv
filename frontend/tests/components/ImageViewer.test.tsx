@@ -192,9 +192,11 @@ vi.mock('openseadragon', () => {
     const bottomLeftDock = document.createElement('div')
     const bottomRightDock = document.createElement('div')
     const topRightDock = document.createElement('div')
+    const topLeftDock = document.createElement('div')
     container.appendChild(bottomLeftDock)
     container.appendChild(bottomRightDock)
     container.appendChild(topRightDock)
+    container.appendChild(topLeftDock)
     const navigatorElement = document.createElement('div')
     bottomRightDock.appendChild(navigatorElement)
     const activeOverlays = new Set<HTMLElement>()
@@ -272,7 +274,12 @@ vi.mock('openseadragon', () => {
       addControl: vi.fn((el: HTMLElement, options?: { anchor?: number }) => {
         const wrapper = document.createElement('div')
         wrapper.appendChild(el)
-        const dock = options?.anchor === OSD.ControlAnchor.TOP_RIGHT ? topRightDock : bottomLeftDock
+        const dock =
+          options?.anchor === OSD.ControlAnchor.TOP_RIGHT
+            ? topRightDock
+            : options?.anchor === OSD.ControlAnchor.TOP_LEFT
+              ? topLeftDock
+              : bottomLeftDock
         dock.appendChild(wrapper)
       }),
       removeControl: vi.fn(),
@@ -337,7 +344,7 @@ vi.mock('openseadragon', () => {
   OSD.Rect = OSDRect
   OSD.Button = OSDButton
   OSD.MouseTracker = OSDMouseTracker
-  OSD.ControlAnchor = { TOP_RIGHT: 1, BOTTOM_LEFT: 3 }
+  OSD.ControlAnchor = { TOP_RIGHT: 1, TOP_LEFT: 2, BOTTOM_LEFT: 3 }
   return { default: OSD }
 })
 
@@ -465,6 +472,53 @@ afterEach(() => {
 })
 
 describe('Inuksuk viewer tool', () => {
+  it('shares one image request with the TOP_LEFT drawer, navigates, highlights and independently hides markers', async () => {
+    apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
+    const onOpenChange = vi.fn()
+    render(
+      <ImageViewer
+        tileSources="/test.dzi"
+        imageId={42}
+        inuksuksEnabled
+        onInuksuksDrawerOpenChange={onOpenChange}
+      />,
+    )
+    const canvas = within(viewer().container)
+    const trigger = await canvas.findByRole('button', { name: 'Inuksuks (1)' })
+    expect(viewer().addControl).toHaveBeenCalledWith(expect.any(HTMLDivElement), { anchor: 2 })
+    fireEvent.focusIn(trigger)
+    expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(true)
+    fireEvent.click(trigger)
+    const drawer = await canvas.findByRole('complementary')
+    expect(onOpenChange).toHaveBeenLastCalledWith(true)
+    expect(trigger).toHaveAttribute('aria-controls', drawer.id)
+    fireEvent.click(within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window' }))
+    expect(viewer().viewport.panTo).toHaveBeenCalledWith(
+      expect.objectContaining({ x: 0.46, y: 0.29 }),
+      false,
+    )
+    expect(viewer().viewport.zoomTo).toHaveBeenCalledWith(2.5, undefined, false)
+    expect(
+      canvas
+        .getAllByRole('button', { name: 'View Inuksuk: Rose window' })
+        .some((button) => button.getAttribute('aria-pressed') === 'true'),
+    ).toBe(true)
+    fireEvent.click(within(drawer).getByRole('switch', { name: 'Rose window marker' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
+    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
+    expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(1)
+    expect(within(drawer).getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.click(within(drawer).getByRole('switch', { name: 'Rose window marker' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Edit Rose window' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Close Inuksuks' }))
+    expect(onOpenChange).toHaveBeenLastCalledWith(false)
+  })
   it('is completely gated off, including network loading', () => {
     render(<ImageViewer tileSources="/test.dzi" imageId={42} />)
     expect(osdState.buttons.some((button) => button.options.tooltip === 'Add Inuksuk')).toBe(false)

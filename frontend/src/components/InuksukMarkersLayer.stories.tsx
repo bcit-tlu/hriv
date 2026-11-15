@@ -1,13 +1,15 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import OpenSeadragon from 'openseadragon'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, within, waitFor } from 'storybook/test'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import ImageViewer from './ImageViewer'
+import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
+import type { ApiInuksuk } from '../types'
 import { BOARD_FIXTURE, INUKSUK_FIXTURE } from './inuksukFixtures'
 
-const items = [
+const items: ApiInuksuk[] = [
   INUKSUK_FIXTURE,
   {
     ...INUKSUK_FIXTURE,
@@ -20,9 +22,9 @@ const items = [
   },
 ]
 const tileSource = { type: 'image', url: '/hriv-splash2.jpg', width: 1024, height: 1024 }
-function MarkerViewer({ independentVisibility = false }: { independentVisibility?: boolean }) {
+function MarkerViewer() {
   const viewer = useRef<OpenSeadragon.Viewer | null>(null)
-  const [separate, setSeparate] = useState(independentVisibility)
+  const prefs = useInuksukVisibilityPrefs()
   return (
     <Box sx={{ p: 2, maxWidth: 1000 }}>
       <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
@@ -35,8 +37,15 @@ function MarkerViewer({ independentVisibility = false }: { independentVisibility
         >
           Rotate and zoom
         </Button>
-        <Button onClick={() => setSeparate((value) => !value)}>
-          Toggle independent visibility
+        <Button
+          onClick={() => {
+            for (const item of items) {
+              prefs.setItem(item, 'markerVisible', true)
+              prefs.setItem(item, 'labelVisible', true)
+            }
+          }}
+        >
+          Reset visibility
         </Button>
       </Box>
       <ImageViewer
@@ -44,14 +53,6 @@ function MarkerViewer({ independentVisibility = false }: { independentVisibility
         inuksuksEnabled
         height={560}
         tileSources={tileSource}
-        inuksukVisibility={
-          separate
-            ? {
-                7: { markerVisible: false, labelVisible: true },
-                8: { markerVisible: true, labelVisible: false },
-              }
-            : undefined
-        }
         onViewerReady={(value) => {
           viewer.current = value
         }}
@@ -82,15 +83,33 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: 'Reset visibility' }))
     await expect(
       await within(canvasElement).findByRole('button', { name: 'View Inuksuk: Rose window' }),
     ).toBeInTheDocument()
   },
 }
-export const IndependentVisibility: Story = { args: { independentVisibility: true } }
+export const IndependentVisibility: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
+    const drawer = within(canvas.getByRole('complementary'))
+    await userEvent.click(drawer.getByRole('switch', { name: 'Rose window marker' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Stone columns label' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Close Inuksuks' }))
+    await waitFor(() => expect(canvas.queryByRole('complementary')).not.toBeInTheDocument())
+    await expect(
+      canvas.queryByRole('button', { name: 'View Inuksuk: Rose window' }),
+    ).not.toBeInTheDocument()
+    await expect(canvas.getByText('Rose window')).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'View Inuksuk: Stone columns' })).toBeVisible()
+  },
+}
 export const Placement: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
     await canvas.findByRole('button', { name: 'View Inuksuk: Rose window' })
     const tool = canvasElement.querySelector<HTMLElement>('[title="Add Inuksuk"]')
     const surface = canvasElement.querySelector<HTMLElement>('.openseadragon-canvas')

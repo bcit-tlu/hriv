@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useCallback, useState, useContext } from 'react'
+import { useEffect, useEffectEvent, useRef, useCallback, useState, useContext, useId } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
@@ -7,7 +7,9 @@ import Alert from '@mui/material/Alert'
 import { AuthContext } from '../authContextValue'
 import type { ApiInuksuk, InuksukView } from '../types'
 import { useImageInuksuks } from '../useImageInuksuks'
-import { adjustInuksukPixelForFlip } from '../inuksukViewport'
+import { adjustInuksukPixelForFlip, navigateToInuksuk } from '../inuksukViewport'
+import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
+import ImageInuksuksDrawer, { ImageInuksuksTrigger } from './ImageInuksuksDrawer'
 import InuksukFormDialog from './InuksukFormDialog'
 import InuksukMarkersLayer from './InuksukMarkersLayer'
 import { useTheme } from '@mui/material/styles'
@@ -87,7 +89,7 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 
 interface ImageViewerProps {
   inuksuksEnabled?: boolean
-  inuksukVisibility?: Record<number, { markerVisible?: boolean; labelVisible?: boolean }>
+  onInuksuksDrawerOpenChange?: (open: boolean) => void
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -150,7 +152,7 @@ interface DragState {
 
 export default function ImageViewer({
   inuksuksEnabled = false,
-  inuksukVisibility,
+  onInuksuksDrawerOpenChange,
   tileSources,
   imageId,
   categoryId,
@@ -179,6 +181,12 @@ export default function ImageViewer({
 }: ImageViewerProps) {
   const auth = useContext(AuthContext)
   const inuksuks = useImageInuksuks(imageId, inuksuksEnabled)
+  const visibilityPrefs = useInuksukVisibilityPrefs(auth?.currentUser?.id, inuksuksEnabled)
+  const drawerId = useId()
+  const drawerIdentity = `${auth?.currentUser?.id ?? 'session'}:${imageId}`
+  const [drawerFor, setDrawerFor] = useState<string | null>(null)
+  const inuksuksTriggerRef = useRef<HTMLButtonElement>(null)
+  const [leftControlWrapper, setLeftControlWrapper] = useState<HTMLDivElement | null>(null)
   const [inuksukDraft, setInuksukDraft] = useState<{ imageId: number; view: InuksukView } | null>(
     null,
   )
@@ -193,6 +201,12 @@ export default function ImageViewer({
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const theme = useTheme()
   const [canvasEditMode, setCanvasEditMode] = useState(false)
+  const inuksuksDrawerOpen =
+    inuksuksEnabled && imageId != null && drawerFor === drawerIdentity && !canvasEditMode
+  useEffect(() => {
+    onInuksuksDrawerOpenChange?.(inuksuksDrawerOpen)
+    return () => onInuksuksDrawerOpenChange?.(false)
+  }, [inuksuksDrawerOpen, onInuksuksDrawerOpenChange])
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
   // Object counting (epic #1661): drawn selections with stable keys.
   const [countSelections, setCountSelections] = useState<
@@ -1465,11 +1479,17 @@ export default function ImageViewer({
     const topRightControl = document.createElement('div')
     topRightControl.style.display = 'inline-block'
     topRightControl.style.lineHeight = '0'
+    const topLeftControl = inuksuksEnabled && imageId != null ? document.createElement('div') : null
+    if (topLeftControl) {
+      topLeftControl.style.display = 'inline-block'
+      topLeftControl.style.lineHeight = '0'
+    }
     const keepControlsEnabled = () => viewer.setControlsEnabled(true)
     // Don't start auto-hide when focus moves within the control, or while
     // the pointer still hovers the viewer — OSD's own leave handler resumes it.
     const releaseControls = (e: FocusEvent) => {
       if (e.relatedTarget instanceof Node && topRightControl.contains(e.relatedTarget)) return
+      if (e.relatedTarget instanceof Node && topLeftControl?.contains(e.relatedTarget)) return
       if (viewer.container.matches(':hover')) return
       viewer.setControlsEnabled(false)
     }
@@ -1484,6 +1504,15 @@ export default function ImageViewer({
     }
     if (topRightAnchor) topRightAnchor.style.zIndex = '26'
     setControlWrapper(topRightControl)
+    if (topLeftControl) {
+      topLeftControl.addEventListener('focusin', keepControlsEnabled)
+      topLeftControl.addEventListener('focusout', releaseControls)
+      viewer.addControl(topLeftControl, { anchor: OpenSeadragon.ControlAnchor.TOP_LEFT })
+      let anchor: HTMLElement | null = topLeftControl
+      while (anchor && anchor.parentElement !== viewer.container) anchor = anchor.parentElement
+      if (anchor) anchor.style.zIndex = '26'
+      setLeftControlWrapper(topLeftControl)
+    }
 
     // --- Magnification factor badge (inside the navigator mini-map) ---
     // Only visible when the image has measurement settings (scale + unit).
@@ -1758,6 +1787,13 @@ export default function ImageViewer({
       const registeredControl = viewer.controls?.find((c) => c.element === topRightControl)
       if (registeredControl) viewer.removeControl(registeredControl)
       setControlWrapper(null)
+      if (topLeftControl) {
+        topLeftControl.removeEventListener('focusin', keepControlsEnabled)
+        topLeftControl.removeEventListener('focusout', releaseControls)
+        const control = viewer.controls?.find((c) => c.element === topLeftControl)
+        if (control) viewer.removeControl(control)
+      }
+      setLeftControlWrapper(null)
       onViewerReadyRef.current?.(null)
       if (handleFullscreenChange) {
         document.removeEventListener('fullscreenchange', handleFullscreenChange)
@@ -1867,10 +1903,47 @@ export default function ImageViewer({
       )}
       {viewerInstance && imageId != null && inuksuksEnabled && (
         <>
+          {leftControlWrapper &&
+            createPortal(
+              <ImageInuksuksTrigger
+                open={inuksuksDrawerOpen}
+                count={inuksuks.items.length}
+                disabled={canvasEditMode}
+                drawerId={drawerId}
+                triggerRef={inuksuksTriggerRef}
+                onOpenChange={(open) => setDrawerFor(open ? drawerIdentity : null)}
+              />,
+              leftControlWrapper,
+            )}
+          {createPortal(
+            <ImageInuksuksDrawer
+              key={drawerIdentity}
+              items={inuksuks.items}
+              open={inuksuksDrawerOpen}
+              onOpenChange={(open) => setDrawerFor(open ? drawerIdentity : null)}
+              triggerRef={inuksuksTriggerRef}
+              drawerId={drawerId}
+              prefs={visibilityPrefs}
+              selectedId={selectedInuksukId}
+              error={inuksuks.error}
+              onSelect={(item) => {
+                navigateToInuksuk(viewerInstance, item)
+                setSelectedInuksukId(item.id)
+              }}
+              onEdit={(item) => {
+                setInuksukDraft(null)
+                setEditingInuksuk(item)
+              }}
+            />,
+            viewerInstance.container,
+          )}
           <InuksukMarkersLayer
             viewer={viewerInstance}
             items={[
-              ...inuksuks.items.map((item) => ({ ...item, ...inuksukVisibility?.[item.id] })),
+              ...inuksuks.items.map((item) => ({
+                ...item,
+                ...visibilityPrefs.visibilityFor(item),
+              })),
               ...(inuksukDraft?.imageId === imageId
                 ? [{ ...inuksukDraft.view, id: -1, title: 'New Inuksuk' }]
                 : []),
@@ -1904,7 +1977,7 @@ export default function ImageViewer({
               <Alert
                 severity="error"
                 data-hriv-canvas-ui
-                sx={{ position: 'absolute', top: 8, left: 8, zIndex: 25 }}
+                sx={{ position: 'absolute', bottom: 64, left: 8, zIndex: 25 }}
               >
                 {inuksuks.error}
               </Alert>,

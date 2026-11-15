@@ -256,6 +256,17 @@ ImageViewer` (from `frontend/`).
   marker/label visibility and create/edit in the viewer. See
   [Inuksuks and Boards](inuksuks-and-boards.md#imageviewer-frontend-1772).
 
+### Inuksuks drawer (#1773)
+
+- Preferences, groups, independent eyes/switches, remount/storage events:
+  `npm test -- useInuksukVisibilityPrefs ImageInuksuksDrawer`.
+- OSD control portal, gating, navigation, single-fetch integration and embeds:
+  `npm test -- ImageViewer SequenceCollectionViewer SynchronizedCollectionViewer`.
+- Browser stories: `npm run test:storybook -- --run src/components/ImageInuksuksDrawer.stories.tsx`.
+- Visually check open groups, label-only and collapsed Public, plus collection
+  pane placement and full-page behavior. Run the full frontend/build/lint/format
+  and Storybook checks listed above.
+
 - Vitest patterns match by path substring, so `npm test -- api.test` runs
   `api.test.ts`, and `npm test -- useImageActions` runs `useImageActions.test.ts`.
 - When in doubt about which files a feature touches, consult the
