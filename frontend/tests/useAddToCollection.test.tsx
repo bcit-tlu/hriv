@@ -212,6 +212,35 @@ describe('addImagesToCollection', () => {
 })
 
 describe('removeImagesFromCollection (#1530)', () => {
+  it('keeps the remaining slot when a synchronized collection is reduced to one image', async () => {
+    const slot = { id: 21, viewport_state: null, thumb: null, label: null }
+    apiMocks.fetchCollection.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'synchronized',
+        version: 4,
+        images: [
+          { ...apiImage(1), slot },
+          { ...apiImage(2), slot: { ...slot, id: 22 } },
+        ],
+      }),
+    )
+    apiMocks.replaceCollectionImages.mockResolvedValue(
+      makeApiCollection({
+        id: 5,
+        type: 'synchronized',
+        version: 5,
+        images: [{ ...apiImage(1), slot }],
+      }),
+    )
+    const result = await removeImagesFromCollection(5, [2], undefined, true)
+    expect(apiMocks.replaceCollectionImages).toHaveBeenCalledWith(5, {
+      slots: [{ id: 21, image_id: 1 }],
+      version: 4,
+    })
+    expect(result.images.map((image) => image.slot?.id)).toEqual([21])
+  })
+
   it('PUTs the member list minus the removed ids with the current version', async () => {
     apiMocks.fetchCollection.mockResolvedValue(
       makeApiCollection({
@@ -297,6 +326,32 @@ describe('removeImagesFromCollection (#1530)', () => {
 })
 
 describe('createCollectionWithImages', () => {
+  it('creates a synchronized collection from one whole-image slot with the feature enabled', async () => {
+    apiMocks.createCollection.mockResolvedValue(
+      makeApiCollection({ id: 8, type: 'synchronized', images: [apiImage(42)] }),
+    )
+    const result = await createCollectionWithImages(
+      {
+        name: 'Start comparison',
+        description: null,
+        type: 'synchronized',
+        visibility: 'private',
+        programIds: [],
+        groupIds: [],
+      },
+      [42],
+      true,
+    )
+    expect(apiMocks.createCollection).toHaveBeenCalledWith({
+      name: 'Start comparison',
+      description: null,
+      type: 'synchronized',
+      visibility: 'private',
+      slots: [{ image_id: 42 }],
+    })
+    expect(result.images.map((image) => image.id)).toEqual([42])
+  })
+
   it('posts the form values with the images preset and only sends scope when restricted', async () => {
     apiMocks.createCollection.mockResolvedValue(makeApiCollection({ id: 8, name: 'New' }))
     const created = await createCollectionWithImages(

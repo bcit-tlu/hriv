@@ -410,15 +410,63 @@ async def test_replacement_rechecks_blank_slots_after_viewport_save(world, monke
     assert not slot_thumb_file(thumb).exists()
 
 
-@pytest.mark.parametrize("count, status", [(0, 422), (1, 422), (2, 201), (4, 201), (5, 422)])
-async def test_synchronized_caps_count_slots(world, count, status):
+@pytest.mark.parametrize("count, status", [(0, 201), (1, 201), (2, 201), (4, 201), (5, 422)])
+@pytest.mark.parametrize("field", ["slots", "image_ids"])
+async def test_synchronized_caps_count_slots(world, count, status, field):
     response = await world.client.post("/api/collections", json={
         "name": "caps", "type": "synchronized", "category_id": world.category.id,
-        "slots": [{"image_id": world.image.id}] * count,
+        field: ([{"image_id": world.image.id}] if field == "slots" else [world.image.id]) * count,
     })
     assert response.status_code == status, response.text
     if status == 201:
         assert len(response.json()["images"]) == count
+
+
+@pytest.mark.parametrize("source", ["inuksuks", "board", "section"])
+@pytest.mark.parametrize("count,status", [(0, 422), (1, 422), (2, 201), (4, 201), (5, 422)])
+async def test_synchronized_seed_minimum_only_applies_on_create(world, source, count, status):
+    ids = [world.items[0].id] * count
+    if source == "inuksuks":
+        payload = {"inuksuk_ids": ids}
+    else:
+        links = (await world.db.execute(select(BoardInuksuk).where(
+            BoardInuksuk.board_id == world.board.id
+        ))).scalars().all()
+        for link in links:
+            await world.db.delete(link)
+        for index in range(count):
+            item = Inuksuk(image=world.image, title=f"seed-{index}", x=.5, y=.3,
+                           zoom=2, owners=[world.users["student"]])
+            world.db.add(item)
+            await world.db.flush()
+            world.db.add(BoardInuksuk(board_id=world.board.id, inuksuk_id=item.id,
+                                     section_id=world.sections[0].id, sort_order=index))
+        await world.db.commit()
+        payload = {"source_board_id": world.board.id}
+        if source == "section":
+            payload["source_section_id"] = world.sections[0].id
+    response = await world.client.post("/api/collections", json={
+        "name": "seeded", "type": "synchronized", "category_id": world.category.id,
+        **payload,
+    })
+    assert response.status_code == status, response.text
+    current = await create(world, type="synchronized", slots=[])
+    response = await world.client.put(f"/api/collections/{current['id']}/images", json={
+        "version": current["version"], **payload,
+    })
+    assert response.status_code == (422 if count > 4 else 200), response.text
+
+
+async def test_synchronized_slot_edits_support_add_remove_and_undo(world):
+    current = await create(world, type="synchronized", slots=[])
+    for count in (1, 2, 1, 0, 1, 2):
+        response = await world.client.put(f"/api/collections/{current['id']}/images", json={
+            "version": current["version"],
+            "slots": [{"image_id": world.image.id}] * count,
+        })
+        assert response.status_code == 200, response.text
+        current = response.json()
+        assert len(current["images"]) == count
 
 
 async def test_student_reorder_is_by_slot_identity_and_preserves_hidden(world):

@@ -1967,8 +1967,11 @@ The caller must see the source Board; inaccessible Board members are skipped.
 Explicit inaccessible Inuksuks return 404. Seeding snapshots geometry, title,
 and an independent JPEG; it never changes or retains a link to the Inuksuk.
 Student Sequence limits count slots and distinguish additions by slot identity.
-New synchronized slot/seeding payloads require 2–4 slots; legacy image-ID
-payloads retain the previous empty/single-member editing workflow and maximum 4.
+Synchronized creation from `inuksuk_ids`, `source_board_id`, or
+`source_section_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
+payloads retain the 0–4 member bounds on create and update, including the
+empty/single-member editing, removal, and undo workflows. Source-based updates
+also allow 0–4 slots; the two-slot minimum applies only to seeded creation.
 
 PUT `/api/collections/{id}/viewport` also accepts
 `{version, slot_viewports: {"<slot_id>": {x,y,zoom,rotation?}|null}}` under the
