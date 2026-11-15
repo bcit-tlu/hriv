@@ -1,3 +1,4 @@
+import { memberKey, renewSlotThumbnail } from '../collectionMembers'
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -30,6 +31,7 @@ import {
   lockedOverlaysFromMetadata,
   measurementFromMetadata,
   useStableJson,
+  viewportStateFromSaved,
 } from './imageViewerUtils'
 
 export interface SequenceCollectionViewerProps {
@@ -37,7 +39,8 @@ export interface SequenceCollectionViewerProps {
   collection: Collection
   /** `?item={image_id}` — desired current image; falls back to the first visible image. */
   itemId: number | null
-  onSelectItem: (imageId: number) => void
+  slotId?: number | null
+  onSelectItem: (imageId: number, slotId?: number) => void
   /** "Open image" → the regular `?image={id}` view where annotations can be edited. */
   onOpenImage: (image: ImageItem) => void
   /** Refresh a member's tokenized URLs after the viewer's tile-token renewal. */
@@ -122,6 +125,7 @@ export default function SequenceCollectionViewer({
   inuksuksEnabled = false,
   collection,
   itemId,
+  slotId = null,
   onSelectItem,
   onOpenImage,
   onImageRenewed,
@@ -198,21 +202,34 @@ export default function SequenceCollectionViewer({
   }, [collectionId])
 
   const available = useMemo(
-    () => images.filter((img) => !failedIds.has(img.id)),
+    () => images.filter((img) => !failedIds.has(memberKey(img))),
     [images, failedIds],
   )
 
   const currentIndex = useMemo(() => {
     if (available.length === 0) return 0
-    const idx = itemId != null ? available.findIndex((img) => img.id === itemId) : -1
+    let idx =
+      inuksuksEnabled && slotId != null ? available.findIndex((img) => img.slot?.id === slotId) : -1
+    if (idx < 0 && itemId != null) idx = available.findIndex((img) => img.id === itemId)
     return idx >= 0 ? idx : 0
-  }, [available, itemId])
+  }, [available, itemId, slotId, inuksuksEnabled])
+  const selectMember = useCallback(
+    (image: Collection['images'][number]) => {
+      if (inuksuksEnabled && image.slot) onSelectItem(image.id, image.slot.id)
+      else onSelectItem(image.id)
+    },
+    [inuksuksEnabled, onSelectItem],
+  )
   const current = available[currentIndex] ?? null
+  const initialSlotViewport = useStableJson(
+    JSON.stringify(inuksuksEnabled ? current?.slot?.viewport_state : null),
+    () => viewportStateFromSaved(inuksuksEnabled ? current?.slot?.viewport_state : undefined),
+  )
   // Notes dialog open state; closed on every image change (same
   // adjust-during-render pattern as the App's image-details drawer).
   const [noteDialogOpen, setNoteDialogOpen] = useState(false)
   const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
-  const currentImageId = current?.id ?? null
+  const currentImageId = (current ? memberKey(current) : null) ?? null
   if (currentImageId !== noteDialogImageId) {
     setNoteDialogImageId(currentImageId)
     setNoteDialogOpen(false)
@@ -370,9 +387,10 @@ export default function SequenceCollectionViewer({
   const goTo = useCallback(
     (index: number) => {
       const target = available[index]
-      if (target && target.id !== current?.id) onSelectItem(target.id)
+      if (target && memberKey(target) !== (current ? memberKey(current) : null))
+        selectMember(target)
     },
-    [available, current?.id, onSelectItem],
+    [available, current, selectMember],
   )
 
   const handleViewerError = useCallback(
@@ -380,19 +398,19 @@ export default function SequenceCollectionViewer({
       onError(message)
       if (current == null) return
       setFailedIds((prev) => {
-        if (prev.has(current.id)) return prev
-        return new Set(prev).add(current.id)
+        if (prev.has(memberKey(current))) return prev
+        return new Set(prev).add(memberKey(current))
       })
       // Skip to the nearest still-available image, preferring the next one.
       const nextIds = new Set(failedIds)
-      nextIds.add(current.id)
-      const idx = images.findIndex((img) => img.id === current.id)
-      const after = images.slice(idx + 1).find((img) => !nextIds.has(img.id))
-      const before = [...images.slice(0, idx)].reverse().find((img) => !nextIds.has(img.id))
+      nextIds.add(memberKey(current))
+      const idx = images.findIndex((img) => memberKey(img) === memberKey(current))
+      const after = images.slice(idx + 1).find((img) => !nextIds.has(memberKey(img)))
+      const before = [...images.slice(0, idx)].reverse().find((img) => !nextIds.has(memberKey(img)))
       const next = after ?? before
-      if (next) onSelectItem(next.id)
+      if (next) selectMember(next)
     },
-    [current, failedIds, images, onError, onSelectItem],
+    [current, failedIds, images, onError, selectMember],
   )
 
   // Arrow keys step the sequence from anywhere on the page (#1567): a
@@ -484,16 +502,16 @@ export default function SequenceCollectionViewer({
         }}
       >
         {images.map((img) => {
-          const isCurrent = img.id === current.id
-          const isFailed = failedIds.has(img.id)
+          const isCurrent = memberKey(img) === memberKey(current)
+          const isFailed = failedIds.has(memberKey(img))
           return (
             <Box
-              key={img.id}
+              key={memberKey(img)}
               component="button"
               type="button"
-              onClick={() => onSelectItem(img.id)}
+              onClick={() => selectMember(img)}
               disabled={isFailed}
-              aria-label={`Go to ${img.name}`}
+              aria-label={`Go to ${inuksuksEnabled ? img.slot?.label || img.name : img.name}`}
               aria-current={isCurrent ? 'true' : undefined}
               sx={{
                 ...stripThumbRing(isCurrent),
@@ -508,12 +526,28 @@ export default function SequenceCollectionViewer({
               }}
             >
               <RenewingThumbnail
-                image={img}
-                alt={img.name}
+                image={{
+                  ...img,
+                  thumb: inuksuksEnabled ? img.slot?.thumb || img.thumb : img.thumb,
+                }}
+                renewThumb={
+                  inuksuksEnabled && img.slot?.thumb
+                    ? () => renewSlotThumbnail(collection.id, img)
+                    : undefined
+                }
+                alt={inuksuksEnabled && img.slot?.label ? '' : img.name}
                 onImageRenewed={onImageRenewed}
                 draggable={false}
                 sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
               />
+              {inuksuksEnabled && img.slot?.label && (
+                <Typography
+                  variant="caption"
+                  sx={{ display: 'block', maxWidth: 100, lineHeight: 1.5 }}
+                >
+                  {img.slot.label}
+                </Typography>
+              )}
             </Box>
           )
         })}
@@ -539,7 +573,7 @@ export default function SequenceCollectionViewer({
         {/* Details provider keyed like the viewer — a new member resets the
             drawer closed (the note dialog resets the same way above). */}
         <CollectionImageDetails
-          key={current.id}
+          key={memberKey(current)}
           image={current}
           programNames={memberInfoNames?.get(current.id)?.programNames ?? []}
           groupNames={memberInfoNames?.get(current.id)?.groupNames ?? []}
@@ -549,8 +583,9 @@ export default function SequenceCollectionViewer({
           <ImageViewer
             inuksuksEnabled={inuksuksEnabled}
             onInuksuksDrawerOpenChange={setInuksuksDrawerOpen}
-            key={current.id}
+            key={memberKey(current)}
             fullScreenHandoffKey={`sequence:${collectionId}`}
+            initialViewport={initialSlotViewport}
             tileSources={current.tileSources}
             imageId={current.id}
             categoryId={current.categoryId ?? undefined}
@@ -636,8 +671,8 @@ export default function SequenceCollectionViewer({
       {/* Caption row mirrors the synchronized pane captions (#1564): the
           member name + note left, the position readout + Open image right. */}
       <ImageCaptionRow
-        key={`caption-${current.id}`}
-        name={current.name}
+        key={`caption-${memberKey(current)}`}
+        name={inuksuksEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
         note={current.note}
         noteDialogOpen={noteDialogOpen}

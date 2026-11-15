@@ -1863,6 +1863,62 @@ describe('useCollectionsData', () => {
       expect(replaceCollectionImagesMock).not.toHaveBeenCalled()
     })
 
+    it('persists and renews duplicate-image members without losing their slot identities', async () => {
+      const images = [11, 12].map((id) => ({
+        id: 100,
+        name: 'Slide',
+        active: true,
+        thumb: '/image.jpg',
+        tile_sources: '/image.dzi',
+        category_id: 1,
+        copyright: null,
+        note: null,
+        sort_order: 0,
+        version: 1,
+        created_at: null,
+        updated_at: null,
+        metadata_extra: null,
+        width: null,
+        height: null,
+        file_size: null,
+        slot: { id, viewport_state: null, label: 'Study ' + id, thumb: '/crop-' + id + '.jpg' },
+      }))
+      fetchCollectionMock.mockResolvedValueOnce(makeApiCollection({ id: 1, version: 5, images }))
+      replaceCollectionImagesMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 6, images: [...images].reverse() }),
+      )
+      saveCollectionViewportMock.mockResolvedValueOnce(
+        makeApiCollection({ id: 1, version: 7, images: [...images].reverse() }),
+      )
+      const { result } = renderData({ selectedCollectionId: 1, inuksuksEnabled: true })
+      await waitFor(() => expect(result.current.detail?.images.length).toBe(2))
+      const members = [...result.current.detail!.images].reverse()
+      await act(async () => {
+        await result.current.reorderImages(1, [12, 11], members)
+      })
+      expect(replaceCollectionImagesMock).toHaveBeenCalledWith(1, {
+        version: 5,
+        slots: [
+          { id: 12, image_id: 100 },
+          { id: 11, image_id: 100 },
+        ],
+      })
+      const viewports = { '11': { x: 0.2, y: 0.4, zoom: 2 }, '12': { x: 0.8, y: 0.4, zoom: 3 } }
+      await act(async () => {
+        await result.current.saveViewport(1, {}, viewports)
+      })
+      expect(saveCollectionViewportMock).toHaveBeenCalledWith(1, {
+        version: 6,
+        viewport_state: {},
+        slot_viewports: viewports,
+      })
+      act(() => result.current.renewCollectionImage(1, { ...images[0], thumb: '/renewed.jpg' }))
+      expect(result.current.detail!.images.map((image) => image.slot?.id)).toEqual([12, 11])
+      expect(result.current.detail!.images.every((image) => image.thumb === '/renewed.jpg')).toBe(
+        true,
+      )
+    })
+
     it('saveViewport sends the whole state with version and updates detail (#1417)', async () => {
       fetchCollectionsMock.mockResolvedValue([makeApiCollectionSummary({ id: 1 })])
       fetchCollectionMock.mockResolvedValueOnce(

@@ -653,3 +653,53 @@ describe('CollectionManageDialog — synchronized position map (#1614)', () => {
     )
   })
 })
+
+it('reorders same-image slots independently and keeps their ids when saving', async () => {
+  const images = [11, 12].map((id) => ({
+    ...makeImage({ id: 100 }),
+    slot: { id, viewport_state: null, thumb: null, label: 'View ' + id },
+  }))
+  const { props } = renderDialog({
+    inuksuksEnabled: true,
+    collection: manageCollection({ images }),
+  })
+  act(() =>
+    capturedOnDragEnd!({
+      operation: {
+        source: sortableDrag('cmi-11', 1, 0),
+        target: sortableDrag('cmi-12', 1, 1),
+        canceled: false,
+      },
+    }),
+  )
+  expect(draftOrder()).toEqual([12, 11])
+  fireEvent.click(screen.getByTestId('manage-done'))
+  await vi.waitFor(() =>
+    expect(props.onSaveMembers).toHaveBeenCalledWith([12, 11], [images[1], images[0]]),
+  )
+})
+
+it('merges a concurrent slot removal without removing another view of the same image', async () => {
+  const images = [11, 12].map((id) => ({
+    ...makeImage({ id: 100 }),
+    slot: { id, viewport_state: null, thumb: null, label: 'View ' + id },
+  }))
+  const { props, rerender } = renderDialog({
+    inuksuksEnabled: true,
+    collection: manageCollection({ images }),
+  })
+  act(() =>
+    capturedOnDragEnd!({
+      operation: {
+        source: sortableDrag('cmi-11', 1, 0),
+        target: sortableDrag('cmi-12', 1, 1),
+        canceled: false,
+      },
+    }),
+  )
+  rerender(
+    <CollectionManageDialog {...props} collection={manageCollection({ images: [images[0]] })} />,
+  )
+  fireEvent.click(screen.getByTestId('manage-done'))
+  await vi.waitFor(() => expect(props.onSaveMembers).toHaveBeenCalledWith([11], [images[0]]))
+})

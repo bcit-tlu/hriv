@@ -1,5 +1,6 @@
 import { getClientSyntheticMode } from './syntheticMode'
 import type { ImageSourceInfo, User, Role } from './types'
+import type { CollectionSlot, SlotViewport } from './types'
 import type {
   ApiBoard,
   ApiBoardSummary,
@@ -769,7 +770,7 @@ export interface ApiCollectionSummary {
 
 export interface ApiCollection extends ApiCollectionSummary {
   /** Ordered, visible-to-caller members with tokenized `thumb` / `tile_sources`. */
-  images: ApiImage[]
+  images: ApiCollectionMember[]
   viewport_state: Record<string, unknown>
   /**
    * Nominal member count including members hidden from the caller
@@ -1034,16 +1035,37 @@ export function fetchImageCollectionsMap(
   return request(`/images/collections-map`, init)
 }
 
-export function createCollection(body: {
-  name: string
-  description?: string | null
-  type: ApiCollectionType
-  visibility: ApiCollectionVisibility
-  category_id?: number
-  image_ids: number[]
-  program_ids?: number[]
-  group_ids?: number[]
-}): Promise<ApiCollection> {
+export interface CollectionSlotInput {
+  id?: number
+  image_id: number
+  inuksuk_id?: number
+  viewport_state?: SlotViewport | null
+  label?: string | null
+}
+
+export interface CollectionSources {
+  slots?: CollectionSlotInput[]
+  inuksuk_ids?: number[]
+  source_board_id?: number
+  source_section_id?: number
+}
+
+export interface ApiCollectionMember extends ApiImage {
+  slot?: CollectionSlot | null
+}
+
+export function createCollection(
+  body: CollectionSources & {
+    name: string
+    description?: string | null
+    type: ApiCollectionType
+    visibility: ApiCollectionVisibility
+    category_id?: number
+    image_ids?: number[]
+    program_ids?: number[]
+    group_ids?: number[]
+  },
+): Promise<ApiCollection> {
   return request('/collections', { method: 'POST', body: JSON.stringify(body) })
 }
 
@@ -1074,14 +1096,18 @@ export function deleteCollection(id: number): Promise<void> {
 /** Replaces the whole ordered member list (add / remove / reorder in one call). */
 export function replaceCollectionImages(
   id: number,
-  body: { image_ids: number[]; version: number },
+  body: CollectionSources & { image_ids?: number[]; version: number },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/images`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 export function saveCollectionViewport(
   id: number,
-  body: { viewport_state: Record<string, unknown>; version: number },
+  body: {
+    viewport_state: Record<string, unknown>
+    slot_viewports?: Record<string, SlotViewport | null>
+    version: number
+  },
 ): Promise<ApiCollection> {
   return request(`/collections/${id}/viewport`, { method: 'PUT', body: JSON.stringify(body) })
 }

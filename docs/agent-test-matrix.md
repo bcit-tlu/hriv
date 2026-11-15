@@ -284,3 +284,19 @@ ImageViewer` (from `frontend/`).
   [agent feature map](agent-feature-map.md).
 - This matrix lists the _most relevant_ tests, not an exhaustive set — always run
   the full suite before merging.
+
+## Board-seeded Collection slots (#1774)
+
+For slot identity, staging, source payloads, renewal or viewport/URL changes run
+from `frontend/`:
+
+```sh
+npm test -- collectionMembers collectionUtils useAddToCollection useCollectionsData useShareableImageState CollectionSlotViewers CollectionManageDialog SequenceCollectionViewer SynchronizedCollectionViewer BoardsPage CollectionsPage AddToCollectionDialog CollectionCoverPickerModal App.test
+npm run test:storybook -- --run src/components/BoardsPage.stories.tsx src/components/SequenceCollectionViewer.stories.tsx src/components/SynchronizedCollectionViewer.stories.tsx src/components/CollectionManageDialog.stories.tsx
+```
+
+Then run the full frontend suite, build, lint and format checks. Visually verify
+the Board selection toolbar, labeled same-image Sequence filmstrip and
+same-image Synchronized comparison. The feature-off stories and data-hook tests
+protect legacy payload compatibility; the slot stories use deterministic
+saved-coordinate snapshots.

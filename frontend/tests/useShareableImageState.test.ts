@@ -730,3 +730,24 @@ describe('useShareableImageState', () => {
     })
   })
 })
+
+it('serializes a saved slot alongside the real image fallback and removes it on close', () => {
+  window.history.replaceState(null, '', '/')
+  const { rerender } = renderHook(
+    ({ slot }) =>
+      useShareableImageState(
+        makeDeps({
+          page: 'collections',
+          collectionId: 7,
+          collectionItemId: 100,
+          collectionSlotId: slot,
+        }),
+      ),
+    { initialProps: { slot: 11 as number | null } },
+  )
+  expect(window.location.search).toContain('slot=11')
+  expect(window.location.search).toContain('item=100')
+  rerender({ slot: null })
+  expect(window.location.search).not.toContain('slot=')
+  expect(window.location.search).toContain('item=100')
+})

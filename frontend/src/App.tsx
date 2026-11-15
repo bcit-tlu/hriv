@@ -83,6 +83,7 @@ import {
   collectionLinkFromBrowse,
   parseCollectionIdParam,
   parseCollectionItemParam,
+  parseCollectionSlotParam,
   studentTypesAtCap,
 } from './collectionUtils'
 import type { StageAddImages } from './components/CollectionManageDialog'
@@ -254,6 +255,9 @@ export default function App() {
   // `&item={image_id}` is the sequence viewer position (#1416).
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(() =>
     parseCollectionIdParam(window.location.search),
+  )
+  const [selectedCollectionSlotId, setSelectedCollectionSlotId] = useState<number | null>(() =>
+    parseCollectionSlotParam(window.location.search),
   )
   const [selectedCollectionItemId, setSelectedCollectionItemId] = useState<number | null>(() =>
     parseCollectionItemParam(window.location.search),
@@ -577,6 +581,7 @@ export default function App() {
   // active; the `move`/`loadCollection` actions are mounted unconditionally
   // so filed Browse collection moves (#1529) keep list/detail state in sync.
   const collectionsData = useCollectionsData({
+    inuksuksEnabled: features?.inuksuks === true,
     enabled: collectionsEnabled && page === 'collections' && currentUser != null,
     currentUser,
     selectedCollectionId,
@@ -944,6 +949,7 @@ export default function App() {
     path,
     collectionId: selectedCollectionId,
     collectionItemId: selectedCollectionItemId,
+    collectionSlotId: features?.inuksuks ? selectedCollectionSlotId : null,
     collectionFromBrowse,
     collectionTypeFilter:
       collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
@@ -1080,6 +1086,9 @@ export default function App() {
           setCollectionsRefreshToken((n) => n + 1)
         }
       }
+      setSelectedCollectionSlotId(
+        validPage === 'collections' ? parseCollectionSlotParam(window.location.search) : null,
+      )
       setSelectedCollectionItemId(
         validPage === 'collections' ? parseCollectionItemParam(window.location.search) : null,
       )
@@ -2003,6 +2012,7 @@ export default function App() {
         setPage('collections')
         setSelectedCollectionId(id)
         setSelectedCollectionItemId(null)
+        setSelectedCollectionSlotId(null)
         clearImage()
         // From a Browse tile the detail sits "on top of" the current scope:
         // `path` keeps the Browse location, the URL carries `?cat=` so the
@@ -2025,6 +2035,7 @@ export default function App() {
     runCanvasNavigation(() => {
       setSelectedCollectionId(null)
       setSelectedCollectionItemId(null)
+      setSelectedCollectionSlotId(null)
       if (collectionFromBrowse) {
         // `path` still holds the Browse scope the tile was opened from (#1529).
         setCollectionFromBrowse(false)
@@ -2053,6 +2064,7 @@ export default function App() {
       runCanvasNavigation(() => {
         setSelectedCollectionId(null)
         setSelectedCollectionItemId(null)
+        setSelectedCollectionSlotId(null)
         setCollectionFromBrowse(false)
         setPath(categoryPath)
         setPage('browse')
@@ -2218,9 +2230,10 @@ export default function App() {
   // Sequence viewer: `?collection={id}&item={image_id}` keeps the position
   // shareable and in history, so back steps through viewed items (#1416).
   const handleSelectCollectionItem = useCallback(
-    (imageId: number) => {
+    (imageId: number, slotId?: number) => {
       runCanvasNavigation(() => {
         setSelectedCollectionItemId(imageId)
+        setSelectedCollectionSlotId(slotId ?? null)
         if (selectedCollectionId != null) {
           pushNavState(
             'collections',
@@ -2229,13 +2242,21 @@ export default function App() {
             {
               collection: String(selectedCollectionId),
               item: String(imageId),
+              ...(features?.inuksuks && slotId != null ? { slot: String(slotId) } : {}),
             },
             { collectionFromBrowse },
           )
         }
       })
     },
-    [collectionFromBrowse, path, pushNavState, selectedCollectionId, runCanvasNavigation],
+    [
+      collectionFromBrowse,
+      path,
+      pushNavState,
+      selectedCollectionId,
+      runCanvasNavigation,
+      features?.inuksuks,
+    ],
   )
 
   // Drop an `?item=` that does not resolve to a visible member (deleted image,
@@ -2246,13 +2267,18 @@ export default function App() {
     if (
       detail == null ||
       selectedCollectionItemId == null ||
-      detail.images.some((img) => img.id === selectedCollectionItemId)
+      detail.images.some(
+        (img) =>
+          img.id === selectedCollectionItemId ||
+          (selectedCollectionSlotId != null && img.slot?.id === selectedCollectionSlotId),
+      )
     ) {
       return
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- drop a stale ?item= once the collection detail resolves
     setSelectedCollectionItemId(null)
-  }, [collectionsData.detail, selectedCollectionItemId])
+    setSelectedCollectionSlotId(null)
+  }, [collectionsData.detail, selectedCollectionItemId, selectedCollectionSlotId])
 
   // "Add to Collection" from the image view (#1415) and from search
   // multi-select (#1418) — both paths set the target image ids before opening.
@@ -2384,12 +2410,20 @@ export default function App() {
 
   const handleCreateCollectionWithImage = useCallback(
     async (values: CollectionFormValues) => {
-      const created = await createCollectionWithImages(values, addToCollectionImageIds)
+      const created = features?.inuksuks
+        ? await createCollectionWithImages(values, addToCollectionImageIds, true)
+        : await createCollectionWithImages(values, addToCollectionImageIds)
       if (created.categoryId != null) refreshCategories()
       reloadMyCollectionsShelf()
       reportAddedToCollection(created, addToCollectionImageIds.length)
     },
-    [addToCollectionImageIds, refreshCategories, reloadMyCollectionsShelf, reportAddedToCollection],
+    [
+      addToCollectionImageIds,
+      refreshCategories,
+      reloadMyCollectionsShelf,
+      reportAddedToCollection,
+      features?.inuksuks,
+    ],
   )
 
   // "Open image" from the collection detail placeholder → the regular
@@ -2622,6 +2656,9 @@ export default function App() {
               boardId={boardLocation.boardId}
               sectionId={boardLocation.sectionId}
               onOpenInuksuk={handleOpenBoardInuksuk}
+              collectionsEnabled={collectionsEnabled}
+              categories={categories}
+              onOpenCollection={handleOpenCollection}
               onSelectBoard={(boardId, sectionId = null) => {
                 graphImageEpoch.current++
                 setBoardLocation({ boardId, sectionId })
@@ -2679,6 +2716,7 @@ export default function App() {
               onOpenImage={handleOpenCollectionImage}
               onOpenImageById={handleOpenGraphImage}
               selectedCollectionItemId={selectedCollectionItemId}
+              selectedCollectionSlotId={features?.inuksuks ? selectedCollectionSlotId : null}
               onSelectCollectionItem={handleSelectCollectionItem}
               onReorderImages={collectionsData.reorderImages}
               onCollectionImageRenewed={handleCollectionImageRenewed}

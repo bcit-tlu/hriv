@@ -1,3 +1,15 @@
+import Checkbox from '@mui/material/Checkbox'
+import CollectionEditDialog from './CollectionEditDialog'
+import type { CollectionFormValues } from './CollectionEditDialog'
+import AddToCollectionDialog from './AddToCollectionDialog'
+import {
+  addSourcesToCollection,
+  createCollectionFromSources,
+  useEditableCollections,
+} from '../useAddToCollection'
+import { studentTypesAtCap } from '../collectionUtils'
+import type { Category, CollectionType } from '../types'
+import type { CollectionSources } from '../api'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
@@ -71,6 +83,9 @@ import RenewingThumbnail from './RenewingThumbnail'
 import { resolveReorderedKeys } from './columnVisibilityUtils'
 
 interface BoardsPageProps {
+  collectionsEnabled?: boolean
+  categories?: Category[]
+  onOpenCollection?: (id: number) => void
   enabled: boolean
   currentUser: User | null
   programs?: Program[]
@@ -403,6 +418,9 @@ function SaveToDialog({
 
 export default function BoardsPage({
   enabled,
+  collectionsEnabled = true,
+  categories = [],
+  onOpenCollection,
   currentUser,
   programs = [],
   groups = [],
@@ -411,6 +429,41 @@ export default function BoardsPage({
   onSelectBoard,
   onOpenInuksuk,
 }: BoardsPageProps) {
+  const [selecting, setSelecting] = useState(false)
+  const [selection, setSelection] = useState<{ boardId: number | null; ids: number[] }>({
+    boardId,
+    ids: [],
+  })
+  const selectedIds = selection.boardId === boardId ? selection.ids : []
+  const [collectionSource, setCollectionSource] = useState<{
+    sources: CollectionSources
+    items: ApiInuksuk[]
+    type: CollectionType
+    add: boolean
+  } | null>(null)
+  const editableCollections = useEditableCollections(
+    enabled && collectionsEnabled && collectionSource != null,
+  )
+  const beginCollection = (
+    items: ApiInuksuk[],
+    type: CollectionType,
+    add = false,
+    sources: CollectionSources = { inuksuk_ids: items.map((item) => item.id) },
+  ) => {
+    setError(null)
+    setCollectionSource({ items, type, add, sources })
+  }
+  const createSeededCollection = async (values: CollectionFormValues) => {
+    if (!collectionSource) return
+    const created = await createCollectionFromSources(values, collectionSource.sources)
+    setCollectionSource(null)
+    onOpenCollection?.(created.id)
+  }
+  const toggleSelected = (id: number) =>
+    setSelection((prev) => {
+      const ids = prev.boardId === boardId ? prev.ids : []
+      return { boardId, ids: ids.includes(id) ? ids.filter((key) => key !== id) : [...ids, id] }
+    })
   const [shared, setShared] = useState(false)
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
@@ -541,12 +594,12 @@ export default function BoardsPage({
       index={index}
       type="board-member"
       group={section}
-      disabled={!canEdit || !board}
+      disabled={selecting || !canEdit || !board}
       label={item.title}
     >
       <Card sx={{ mb: 2, breakInside: 'avoid', borderRadius: 3 }}>
         <CardActionArea
-          onClick={() => onOpenInuksuk(item)}
+          onClick={() => (selecting ? toggleSelected(item.id) : onOpenInuksuk(item))}
           aria-label={`Open Inuksuk: ${item.title}`}
         >
           {item.thumb ? (
@@ -583,6 +636,13 @@ export default function BoardsPage({
           </CardContent>
         </CardActionArea>
         <Stack direction="row" justifyContent="flex-end" sx={{ px: 1, pb: 0.5 }}>
+          {selecting && (
+            <Checkbox
+              checked={selectedIds.includes(item.id)}
+              onChange={() => toggleSelected(item.id)}
+              inputProps={{ 'aria-label': `Select ${item.title}` }}
+            />
+          )}
           {item.permissions.can_edit ? (
             <IconButton
               aria-label={`Favourite ${item.title}`}
@@ -637,6 +697,96 @@ export default function BoardsPage({
           {error || data.error}
         </Alert>
       )}
+      {collectionsEnabled && (
+        <Stack spacing={1} sx={{ mb: 2 }}>
+          <Button
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting(!selecting)
+              setSelection({ boardId, ids: [] })
+            }}
+          >
+            {selecting ? 'Cancel selection' : 'Select'}
+          </Button>
+          {selecting && (
+            <Stack
+              role="toolbar"
+              aria-label="Selected Inuksuks"
+              direction="row"
+              spacing={1}
+              flexWrap="wrap"
+              useFlexGap
+            >
+              <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
+              {(['sequence', 'synchronized'] as const).map((type) => {
+                const items = (board?.inuksuks ?? data.recent).filter((item) =>
+                  selectedIds.includes(item.id),
+                )
+                const valid =
+                  items.length > 0 &&
+                  (type === 'sequence' || (items.length >= 2 && items.length <= 4))
+                const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
+                return (
+                  <Box key={type} sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="contained"
+                      disabled={!valid}
+                      onClick={() => beginCollection(items, type)}
+                    >
+                      Create {label} Collection
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      disabled={!valid}
+                      onClick={() => beginCollection(items, type, true)}
+                    >
+                      Add to {label} Collection
+                    </Button>
+                  </Box>
+                )
+              })}
+            </Stack>
+          )}
+        </Stack>
+      )}
+      <CollectionEditDialog
+        open={!!collectionSource && !collectionSource.add}
+        onClose={() => setCollectionSource(null)}
+        collection={null}
+        defaultType={collectionSource?.type}
+        programs={programs}
+        groups={groups}
+        categories={categories}
+        typesAtLimit={studentTypesAtCap(editableCollections.collections, currentUser)}
+        onSave={createSeededCollection}
+      />
+      <AddToCollectionDialog
+        slotMode
+        open={collectionSource?.add === true}
+        onClose={() => setCollectionSource(null)}
+        defaultType={collectionSource?.type}
+        imageIds={collectionSource?.items.map((item) => item.image_id) ?? []}
+        collections={editableCollections.collections.filter(
+          (collection) => collection.type === collectionSource?.type,
+        )}
+        loading={editableCollections.loading}
+        error={error || editableCollections.error}
+        programs={programs}
+        groups={groups}
+        categories={categories}
+        onCreate={createSeededCollection}
+        onAdd={async (collection) => {
+          if (!collectionSource) return false
+          try {
+            await addSourcesToCollection(collection.id, collectionSource.sources)
+            setCollectionSource(null)
+            return true
+          } catch (err) {
+            setError(userMessage(err, 'Unable to add saved views.'))
+            return false
+          }
+        }}
+      />
       <DragDropProvider
         sensors={sensors}
         onDragStart={(event) => {
@@ -771,6 +921,18 @@ export default function BoardsPage({
                   Edit Board
                 </Button>
               )}
+              {collectionsEnabled && (
+                <Button
+                  disabled={!board.inuksuks.length}
+                  onClick={() =>
+                    beginCollection(board.inuksuks, 'sequence', false, {
+                      source_board_id: board.id,
+                    })
+                  }
+                >
+                  Create Sequence Collection
+                </Button>
+              )}
               {board.permissions.can_transfer && (
                 <Button disabled={busy || conflict} onClick={() => setOwners(true)}>
                   Owners
@@ -862,6 +1024,25 @@ export default function BoardsPage({
                       <Typography variant="h6" component="h3">
                         {section.name}
                       </Typography>
+                      {collectionsEnabled && section.id != null && (
+                        <Button
+                          size="small"
+                          disabled={!board.inuksuks.some((item) => item.section_id === section.id)}
+                          onClick={() =>
+                            beginCollection(
+                              board.inuksuks.filter((item) => item.section_id === section.id),
+                              'sequence',
+                              false,
+                              {
+                                source_board_id: board.id,
+                                source_section_id: section.id ?? undefined,
+                              },
+                            )
+                          }
+                        >
+                          Create Sequence Collection
+                        </Button>
+                      )}
                       {canEdit && section.id != null && (
                         <>
                           <Button
