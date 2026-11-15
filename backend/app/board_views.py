@@ -6,7 +6,7 @@ from datetime import datetime
 import hashlib
 import json
 import time
-from typing import Any, TypeVar
+from typing import TypeVar
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import HTTPException, Request, Response
@@ -272,12 +272,15 @@ def page_rows(
     return rows, total
 
 
+type JSONValue = str | int | float | bool | None | list[JSONValue] | dict[str, JSONValue]
+
+
 def read_response(
     request: Request, response: Response, user: User,
     payload: BaseModel | list[BaseModel], *, total: int | None = None,
 ) -> BaseModel | list[BaseModel] | Response:
     """Content ETags include filtered memberships and a thumbnail-token TTL epoch."""
-    def stable(value: Any, key: str = "") -> Any:
+    def stable(value: JSONValue, key: str = "") -> JSONValue:
         if isinstance(value, list):
             return [stable(item) for item in value]
         if isinstance(value, dict):
