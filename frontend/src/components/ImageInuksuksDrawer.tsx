@@ -169,16 +169,13 @@ export default function ImageInuksuksDrawer({
           )}
           {groups.map(({ source, title }) => {
             const rows = items.filter((item) => item.source === source)
+            if (rows.length === 0) return null
             const markerCount = rows.filter(
               (item) => prefs.visibilityFor(item).markerVisible,
             ).length
             const labelCount = rows.filter((item) => prefs.visibilityFor(item).labelVisible).length
-            const allMarkers = rows.length
-              ? markerCount === rows.length
-              : prefs.groups[source].markerVisible
-            const allLabels = rows.length
-              ? labelCount === rows.length
-              : prefs.groups[source].labelVisible
+            const allMarkers = markerCount === rows.length
+            const allLabels = labelCount === rows.length
             const mixedMarkers = markerCount > 0 && markerCount < rows.length
             const mixedLabels = labelCount > 0 && labelCount < rows.length
             return (
@@ -221,7 +218,6 @@ export default function ImageInuksuksDrawer({
                       <Switch
                         size="small"
                         checked={allMarkers}
-                        disabled={!rows.length}
                         onChange={() => prefs.setGroup(source, 'markerVisible', !allMarkers)}
                         slotProps={{
                           input: {
@@ -238,7 +234,6 @@ export default function ImageInuksuksDrawer({
                     <span>
                       <IconButton
                         size="small"
-                        disabled={!rows.length}
                         aria-label={`${title} labels`}
                         aria-pressed={mixedLabels ? 'mixed' : allLabels}
                         onClick={() => prefs.setGroup(source, 'labelVisible', !allLabels)}

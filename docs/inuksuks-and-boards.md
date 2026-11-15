@@ -380,7 +380,8 @@ OSD full-page mode. It reuses `useImageInuksuks`; opening the drawer does not
 issue another image request.
 
 **My Inuksuks**, **Instructor Inuksuks**, and **Public Inuksuks** follow the API's
-source tags and precedence. My and Instructor start expanded; Public starts
+source tags and precedence. Empty source groups are hidden rather than showing
+unusable controls. My and Instructor start expanded; Public starts
 collapsed. Row selection smoothly restores saved pan, zoom and rotation and
 highlights the marker without opening the form. The separate edit action uses
 API `permissions.can_edit` and opens the existing OCC-protected form.
