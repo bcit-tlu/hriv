@@ -253,6 +253,32 @@ async def test_sections_use_parent_board_occ_and_validate_membership(world):
     assert (await world.client.delete(f"{path}/sections/{section['id']}", headers={"If-Match": "4"})).status_code == 204
 
 
+@pytest.mark.parametrize("resource", ["sections", "inuksuks"])
+async def test_reorder_checks_version_before_membership_validation(world, resource):
+    before = await world.board("student")
+    path = f"/api/boards/{before['id']}"
+    if resource == "sections":
+        order = {"section_ids": [section["id"] for section in before["sections"]]}
+        result = await world.client.post(f"{path}/sections", json={"name": "Added", "version": before["version"]})
+        assert result.status_code == 201, result.text
+    else:
+        order = {"items": []}
+        await world.create()
+    current = await world.board("student")
+    result = await world.client.put(
+        f"{path}/{resource}/order", json={**order, "version": before["version"]},
+    )
+    assert result.status_code == 409, result.text
+    assert result.json()["detail"]["version"] == current["version"]
+    assert len(result.json()["detail"][resource]) == len(current[resource])
+    result = await world.client.put(
+        f"{path}/{resource}/order", json={**order, "version": current["version"]},
+    )
+    assert result.status_code == 422
+    after = await world.board("student")
+    assert after["version"] == current["version"]
+
+
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
 async def test_creation_image_visibility(world, role):
     world.caller["role"] = role

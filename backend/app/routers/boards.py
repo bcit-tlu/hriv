@@ -272,10 +272,10 @@ async def reorder_sections(
 ) -> BoardOut:
     ctx = await BoardViewerContext.build(db, user)
     board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
+    await bump_board(db, ctx, board, expected_version(request, body.version))
     by_id = {section.id: section for section in board.sections}
     if set(body.section_ids) != set(by_id):
         raise HTTPException(422, "section_ids must contain every section of this Board exactly once")
-    await bump_board(db, ctx, board, expected_version(request, body.version))
     for position, section_id in enumerate(body.section_ids):
         by_id[section_id].sort_order = position
     await commit_write(db, user, "board.sections_reordered", board_id)
@@ -335,13 +335,13 @@ async def reorder_board_inuksuks(
 ) -> BoardOut:
     ctx = await BoardViewerContext.build(db, user)
     board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
+    await bump_board(db, ctx, board, expected_version(request, body.version))
     visible = {link.inuksuk_id: link for link in board.inuksuk_links if ctx.can_view_image(link.inuksuk.image)}
     if {item.inuksuk_id for item in body.items} != set(visible):
         raise HTTPException(422, "items must contain every visible Board member exactly once")
     section_ids = {section.id for section in board.sections}
     if any(item.section_id is not None and item.section_id not in section_ids for item in body.items):
         raise HTTPException(422, "section_id must belong to this Board")
-    await bump_board(db, ctx, board, expected_version(request, body.version))
     await lock_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
     await touch_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
     for position, item in enumerate(body.items):

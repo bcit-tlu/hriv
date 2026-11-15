@@ -248,6 +248,9 @@ projection in `detail`. Success returns the new integer version as the ETag.
 Sections use their **parent Board's version**, not a separate section version;
 their writes return Board detail (DELETE returns its new ETag).
 Multi-row global reorder uses each item's `version`.
+Section and Board-member reorder checks the version before validating the
+submitted membership list: a stale list returns 409 with the current Board,
+while an invalid list at the current version returns 422 without mutation.
 Collections currently requires body `version`; these endpoints retain that
 format while also implementing the explicit If-Match/428 contract.
 
