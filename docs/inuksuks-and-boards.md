@@ -416,6 +416,12 @@ embeds with deterministic API fixtures.
 
 ### Boards page (#1771)
 
+`GET /api/inuksuks/{id}` provides a fresh, visibility-filtered `InuksukOut`
+for membership edits and thumbnail renewal. It uses the list's image and
+ownership/visible-Board gates, returning 404 for missing or invisible items.
+Only visible Board IDs are projected; thumbnails carry thumbnail-only tokens.
+The response uses viewer-bound, token-epoch ETags and supports conditional 304s.
+
 The feature-gated **Boards & Inuksuks** AppBar utility opens `?page=boards`.
 It does not add a primary tab: students retain two mobile navigation tabs, and
 Boards uses `Tabs value={false}`. Selecting a Board/Section writes

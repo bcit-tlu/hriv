@@ -101,6 +101,25 @@ async def list_inuksuks(
     return read_response(request, response, user, rows, total=total)
 
 
+@router.get("/{inuksuk_id}", response_model=InuksukOut)
+async def get_inuksuk(
+    inuksuk_id: int, request: Request, response: Response,
+    user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+) -> InuksukOut | Response:
+    ctx = await BoardViewerContext.build(db, user)
+    item = (await db.execute(
+        select(Inuksuk).where(Inuksuk.id == inuksuk_id).options(*inuksuk_load_options())
+    )).scalars().unique().one_or_none()
+    if item is None:
+        raise HTTPException(404, "Inuksuk not found")
+    memberships = await load_memberships(db, [item.id])
+    boards = ctx.visible_boards(memberships.get(item.id, []))
+    if not ctx.can_view_inuksuk(item, boards):
+        raise HTTPException(404, "Inuksuk not found")
+    return read_response(request, response, user, inuksuk_out(ctx, item, boards))
+
+
 @router.post("", response_model=InuksukOut, status_code=201)
 async def create_inuksuk(
     body: InuksukCreate, response: Response,

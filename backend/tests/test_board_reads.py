@@ -33,7 +33,7 @@ def make_app() -> FastAPI:
 
 
 @pytest.mark.parametrize("path", [
-    "/api/boards", "/api/boards/1", "/api/inuksuks", "/api/images/1/inuksuks",
+    "/api/boards", "/api/boards/1", "/api/inuksuks", "/api/inuksuks/1", "/api/images/1/inuksuks",
 ])
 async def test_router_dependency_flag_off_before_auth_or_database(monkeypatch, path):
     monkeypatch.setattr(settings, "inuksuks_enabled", False)
@@ -61,7 +61,7 @@ def test_main_registers_read_routes(tmp_path, monkeypatch):
     paths = set(app.openapi()["paths"])
     assert {
         "/api/boards", "/api/boards/{board_id}", "/api/inuksuks",
-        "/api/images/{image_id}/inuksuks",
+        "/api/images/{image_id}/inuksuks", "/api/inuksuks/{inuksuk_id}",
     } <= paths
 
 
@@ -193,6 +193,37 @@ async def world(monkeypatch):
 def by_title(response):
     assert response.status_code == 200, response.text
     return {row["title"]: row for row in response.json()}
+
+
+async def test_inuksuk_detail_projection_and_conditional_get(world):
+    item_id = world.items["mine"]
+    url = f"/api/inuksuks/{item_id}"
+    response = await world.client.get(url)
+    assert response.status_code == 200, response.text
+    row = response.json()
+    assert row["id"] == item_id
+    assert row["board_ids"] == sorted([world.boards["public"], world.boards["instructor"]])
+    assert row["permissions"]["can_edit"] is True
+    token = parse_qs(urlsplit(row["thumb"]).query)["tile_token"][0]
+    payload = jwt.decode(token, options={"verify_signature": False})
+    assert payload["purpose"] == "thumb"
+    assert response.headers["cache-control"] == "private, no-cache"
+    cached = await world.client.get(url, headers={"If-None-Match": response.headers["etag"]})
+    assert cached.status_code == 304
+    assert cached.content == b""
+
+
+@pytest.mark.parametrize("key", ["image_hidden", "image_inactive", "image_program", "image_group", "private", "missing"])
+async def test_inuksuk_detail_conceals_invisible_or_missing_items(world, key):
+    response = await world.client.get(f"/api/inuksuks/{world.items.get(key, -1)}")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Inuksuk not found"}
+
+
+async def test_inuksuk_detail_owner_without_visible_board_matches_list(world):
+    response = await world.client.get(f"/api/inuksuks/{world.items['owner_only']}")
+    assert response.status_code == 200
+    assert response.json()["board_ids"] == []
 
 
 @pytest.mark.parametrize("role", ["admin", "instructor", "staff", "student"])
