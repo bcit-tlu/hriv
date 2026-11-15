@@ -73,7 +73,7 @@ def test_image_gate_cannot_be_bypassed(role, active, category_id, owner, board_v
     ctx = BoardViewerContext(caller, {99} if role == "student" else None)
     item = NS(owners=[caller] if owner else [], image=NS(active=active, category_id=category_id))
     expected = (
-        active and (role != "student" or category_id != 99)
+        (role != "student" or (active and category_id != 99))
         and (role != "student" or owner or board_visible)
     )
     assert ctx.can_view_inuksuk(item, [NS()] if board_visible else []) == expected

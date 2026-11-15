@@ -36,7 +36,7 @@ Every Inuksuk belongs to at least one Board. Boards follow Collections
 visibility: admins, instructors, and staff see all; students see their own,
 public, and restricted Boards that pass both program and group gates.
 An Inuksuk requires a visible image; students additionally must own the
-Inuksuk or see at least one of its Boards. Non-students can view all active-image
+Inuksuk or see at least one of its Boards. Non-students can view all
 Inuksuks. The read API enforces these rules; the thumbnail generator itself
 does not perform authorization or create endpoints.
 
@@ -110,8 +110,8 @@ passing **both** the program and group gates; empty restrictions on a
 dimension mean unrestricted. An invisible or nonexistent Board detail
 (or explicit `board_id` filter) is 404, never 403.
 
-Inuksuks require an **active image for every role**. Students additionally
-pass the image category's inherited program/group/hidden-subtree gates,
+Inuksuks require an **active image for students only**, matching image reads.
+Students also pass the image category's inherited program/group/hidden-subtree gates,
 even when they own the Inuksuk or it is on a public Board. With that image
 gate satisfied, students need ownership of the Inuksuk or a visible Board
 containing it; non-students need no further gate. This owner exception

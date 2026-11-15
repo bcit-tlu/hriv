@@ -50,9 +50,10 @@ class BoardViewerContext:
         return can_view_board(self.user, board, self.program_ids, self.group_ids)
 
     def can_view_image(self, image: Image) -> bool:
+        if self.excluded_category_ids is None:
+            return True
         return bool(image.active) and (
-            self.excluded_category_ids is None
-            or image.category_id not in self.excluded_category_ids
+            image.category_id not in self.excluded_category_ids
         )
 
     def visible_boards(self, links: Iterable[BoardInuksuk]) -> list[Board]:

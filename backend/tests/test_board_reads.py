@@ -206,8 +206,8 @@ async def test_board_list_visibility_and_image_gate(world, role):
         expected -= {world.boards[key] for key in ("private", "wrong_program", "wrong_group", "private_instructor")}
     assert ids == expected
     public = next(row for row in response.json() if row["id"] == world.boards["public"])
-    # Inactive always hidden; hidden/program/group image gates apply to students.
-    assert public["inuksuk_count"] == (3 if role == "student" else 6)
+    # Inactive/hidden/program/group image gates apply only to students.
+    assert public["inuksuk_count"] == (3 if role == "student" else 7)
 
 
 async def test_invisible_board_404_and_visible_detail_order(world):
@@ -249,6 +249,20 @@ async def test_image_restrictions_hide_owned_public_inuksuks_and_drawer(world, k
     assert f"image_{key}" not in rows
     result = await world.client.get(f"/api/images/{world.images[key]}/inuksuks")
     assert result.status_code == 404
+
+
+@pytest.mark.parametrize("role", ["admin", "instructor", "staff"])
+async def test_non_students_see_inactive_image_inuksuks(world, role):
+    world.caller["role"] = role
+    image_id = world.images["inactive"]
+    rows = by_title(await world.client.get(f"/api/inuksuks?image_id={image_id}"))
+    assert set(rows) == {"image_inactive"}
+    drawer = by_title(await world.client.get(f"/api/images/{image_id}/inuksuks"))
+    assert set(drawer) == {"image_inactive"}
+    assert drawer["image_inactive"]["source"] == "public"
+    detail = await world.client.get(f"/api/boards/{world.boards['public']}")
+    assert detail.status_code == 200
+    assert "image_inactive" in {row["title"] for row in detail.json()["inuksuks"]}
 
 
 async def test_inuksuk_filters_and_unlabelled_items(world):
