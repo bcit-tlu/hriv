@@ -24,11 +24,12 @@ from uuid import uuid4
 import pyvips
 from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .browse_state import bump_browse_revision
+from .board_memberships import bump_board_membership_versions
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .measurement.service import scan_after_processing
@@ -1063,7 +1064,7 @@ async def process_replace_image(
                 file_size = _source_image_file_size_bytes(src)
 
                 # Re-fetch to pick up any concurrent metadata changes
-                await db.refresh(img)
+                await db.refresh(img, with_for_update=True)
 
                 img.tile_sources = tile_sources_url
                 img.thumb = thumb_url
@@ -1076,8 +1077,9 @@ async def process_replace_image(
                 current_meta = dict(img.metadata_ or {})
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
+                await bump_board_membership_versions(db, image_ids=[img.id])
                 await db.execute(
-                    update(Inuksuk).where(Inuksuk.image_id == img.id).values(thumb=None)
+                    delete(Inuksuk).where(Inuksuk.image_id == img.id)
                 )
 
                 # Clear old pyramid metadata before merging new
