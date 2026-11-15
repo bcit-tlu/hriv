@@ -6,9 +6,10 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import ImageViewer from './ImageViewer'
 import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
+import type { ApiInuksuk } from '../types'
 import { BOARD_FIXTURE, INUKSUK_FIXTURE } from './inuksukFixtures'
 
-const items = [
+const items: ApiInuksuk[] = [
   INUKSUK_FIXTURE,
   {
     ...INUKSUK_FIXTURE,
