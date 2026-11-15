@@ -718,9 +718,13 @@ export default function CollectionManageDialog({
   const stageAdd = useCallback<StageAddImages>(
     (images) => {
       const prev = draftRef.current
-      const seen = new Set(prev.map((img) => memberKey(img)))
+      const seen = new Set(prev.map((img) => img.id))
       const fresh = images
-        .filter((img) => img.inuksukId != null || !seen.has(memberKey(img)))
+        .filter((img) => {
+          const alreadyPresent = seen.has(img.id)
+          seen.add(img.id)
+          return img.inuksukId != null || !alreadyPresent
+        })
         .map((img) =>
           inuksuksEnabled && !img.slot ? { ...img, draftKey: nextDraftKey.current-- } : img,
         )

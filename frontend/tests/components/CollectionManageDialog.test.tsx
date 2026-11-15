@@ -111,7 +111,7 @@ const sortableDrag = (sourceId: string, index: number, initialIndex: number) => 
 /** Tile order as rendered — the draft's visible state. */
 const draftOrder = () =>
   screen
-    .getAllByTestId(/^manage-tile-\d+$/)
+    .getAllByTestId(/^manage-tile--?\d+$/)
     .map((el) => Number(el.getAttribute('data-testid')!.replace('manage-tile-', '')))
 
 beforeEach(() => {
@@ -269,6 +269,35 @@ describe('CollectionManageDialog', () => {
     act(() => {
       expect(stageFull([makeImage({ id: 300 })]).status).toBe('full')
     })
+  })
+
+  it('deduplicates whole-image picks by image id while allowing Board views of that image', () => {
+    const image = {
+      ...makeImage({ id: 100 }),
+      slot: { id: 11, viewport_state: null, thumb: null, label: null },
+    }
+    const { props } = renderDialog({
+      inuksuksEnabled: true,
+      collection: manageCollection({ images: [image] }),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Choose images' }))
+    const stageAdd = props.onAddImages.mock.calls[0][0] as StageAddImages
+    act(() => {
+      expect(stageAdd([makeImage({ id: 100 })])).toEqual({ status: 'already' })
+      expect(stageAdd([makeImage({ id: 11 })])).toEqual({ status: 'added', addedCount: 1 })
+      expect(stageAdd([makeImage({ id: 200 }), makeImage({ id: 200 })])).toEqual({
+        status: 'added',
+        addedCount: 1,
+      })
+      expect(stageAdd([makeImage({ id: 200 })])).toEqual({ status: 'already' })
+      expect(
+        stageAdd([
+          { ...makeImage({ id: 100 }), inuksukId: 88 },
+          { ...makeImage({ id: 100 }), inuksukId: 89 },
+        ]),
+      ).toEqual({ status: 'added', addedCount: 2 })
+    })
+    expect(draftOrder()).toEqual([11, -1, -2, -3, -4])
   })
 
   it('counts hidden restricted members toward the synchronized cap (#1567)', () => {

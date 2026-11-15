@@ -2013,6 +2013,9 @@ alongside its existing image-search staging. Reorders, selection and concurrent
 membership merging identify saved slots independently. Draft additions have
 temporary negative keys and do not allocate persisted slots until Done. Save
 retains existing slot ids; cancelling discards all staged additions.
+Whole-image search picks deduplicate by their source image id, including picks
+already staged in the draft. Board/Inuksuk picks may intentionally add further
+slots for that same image.
 
 Sequence filmstrips display slot crops and labels and open the copied viewport,
 even when consecutive steps use the same slide. Share links include
