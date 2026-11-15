@@ -174,7 +174,8 @@ async def test_own_board_and_inuksuk_crud_occ(world, role):
     assert result.status_code == 428
     result = await world.client.delete(path, headers={"If-Match": "1"})
     assert result.status_code == 409
-    assert (await world.client.delete(path, headers={"If-Match": "2"})).status_code == 204
+    result = await world.client.delete(path, headers={"If-Match": "2"})
+    assert result.status_code == 204
     item = await world.create()
     path = f"/api/inuksuks/{item['id']}"
     assert (await world.client.patch(path, json={"title": "missing"})).status_code == 428
