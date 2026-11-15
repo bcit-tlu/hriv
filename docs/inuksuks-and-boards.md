@@ -499,6 +499,9 @@ and 2–4 can seed a Synchronized Collection. Both reuse the existing collection
 form and Add to Collection destination dialog. Board and Section headers create
 ordered Sequences directly, while the collection Manage dialog can stage a
 Board or Section into its draft.
+Selected views follow the displayed Board order: Sections in their listed order,
+members in each Section's order, then Unsectioned. Click order does not change
+the resulting Collection sequence.
 
 A Collection slot is an independent snapshot. Its crop, label and starting
 coordinates survive independently of the original saved view; changing the

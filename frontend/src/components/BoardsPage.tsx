@@ -64,7 +64,7 @@ import {
   updateInuksuk,
   userMessage,
 } from '../api'
-import { boardMemberOrder, moveBoardMember, ownsBoard } from '../boardUtils'
+import { boardMemberOrder, groupBoardMembers, moveBoardMember, ownsBoard } from '../boardUtils'
 import type {
   ApiBoard,
   ApiBoardSection,
@@ -468,6 +468,7 @@ export default function BoardsPage({
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
   const board = data.board
+  const sections = useMemo(() => (board ? groupBoardMembers(board) : []), [board])
   const [edit, setEdit] = useState<'new' | 'edit' | null>(null)
   const [owners, setOwners] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -719,9 +720,9 @@ export default function BoardsPage({
             >
               <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
               {(['sequence', 'synchronized'] as const).map((type) => {
-                const items = (board?.inuksuks ?? data.recent).filter((item) =>
-                  selectedIds.includes(item.id),
-                )
+                const items = (
+                  board ? sections.flatMap((section) => section.inuksuks) : data.recent
+                ).filter((item) => selectedIds.includes(item.id))
                 const valid =
                   items.length > 0 &&
                   (type === 'sequence' || (items.length >= 2 && items.length <= 4))
@@ -992,7 +993,7 @@ export default function BoardsPage({
             {sectionId != null && !board.sections.some((section) => section.id === sectionId) && (
               <Alert severity="info">This Section no longer exists. Choose All Sections.</Alert>
             )}
-            {[...board.sections, { id: null, name: 'Unsectioned' }]
+            {sections
               .filter((section) => sectionId == null || section.id === sectionId)
               .map((section, index) => (
                 <SortableFrame
@@ -1088,13 +1089,11 @@ export default function BoardsPage({
                           gap: 2,
                         }}
                       >
-                        {board.inuksuks
-                          .filter((item) => item.section_id === section.id)
-                          .map((item, memberIndex) =>
-                            memberCard(item, memberIndex, `members:${section.id}`),
-                          )}
+                        {section.inuksuks.map((item, memberIndex) =>
+                          memberCard(item, memberIndex, `members:${section.id}`),
+                        )}
                       </Box>
-                      {!board.inuksuks.some((item) => item.section_id === section.id) && (
+                      {section.inuksuks.length === 0 && (
                         <Typography color="text.secondary" sx={{ py: 2 }}>
                           No Inuksuks yet. Drop one here or save a view from an image.
                         </Typography>

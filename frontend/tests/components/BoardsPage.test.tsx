@@ -407,3 +407,34 @@ it('creates a Sequence from the Board source and navigates to it', async () => {
   )
   expect(vi.mocked(api.createCollection).mock.calls[0][0]).not.toHaveProperty('image_ids')
 })
+
+it('seeds selected views in displayed Section and member order, then Unsectioned', async () => {
+  const board = BOARDS_FIXTURES[0]
+  vi.mocked(api.fetchBoard).mockResolvedValue({
+    ...board,
+    sections: [...board.sections].reverse(),
+    inuksuks: [...board.inuksuks].reverse(),
+  })
+  vi.mocked(api.createCollection).mockResolvedValue(makeApiCollection({ id: 77, type: 'sequence' }))
+  await setup(1, { categories: [makeCategory({ id: 10, label: 'Studies' })] })
+  fireEvent.click(screen.getByRole('button', { name: 'Select' }))
+  const checkboxes = screen.getAllByRole('checkbox', { name: /^Select / })
+  expect(checkboxes).toHaveLength(6)
+  for (const checkbox of [...checkboxes].reverse()) fireEvent.click(checkbox)
+  fireEvent.click(
+    within(screen.getByRole('toolbar', { name: 'Selected Inuksuks' })).getByRole('button', {
+      name: 'Create Sequence Collection',
+    }),
+  )
+  fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
+    target: { value: 'Ordered views' },
+  })
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Category' }))
+  fireEvent.click(await screen.findByRole('option', { name: /Studies/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+  await waitFor(() =>
+    expect(api.createCollection).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sequence', inuksuk_ids: [11, 10, 9, 8, 7, 12] }),
+    ),
+  )
+})
