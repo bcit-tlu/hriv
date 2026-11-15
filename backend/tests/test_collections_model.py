@@ -77,15 +77,17 @@ def test_collection_table_shape() -> None:
 def test_collection_image_table_shape() -> None:
     table = CollectionImage.__table__
     assert table.name == "collection_images"
-    assert {col.name for col in table.primary_key.columns} == {
-        "collection_id",
-        "image_id",
-    }
+    assert {col.name for col in table.primary_key.columns} == {"id"}
     assert _fk(table.c.collection_id).ondelete == "CASCADE"
     assert _fk(table.c.image_id).ondelete == "CASCADE"
     assert table.c.sort_order.nullable is False
     assert table.c.sort_order.server_default.arg == "0"
-    assert {i.name for i in table.indexes} == {"idx_collection_images_order"}
+    assert {i.name for i in table.indexes} == {"idx_collection_images_order", "idx_collection_images_image"}
+    assert all(not index.unique for index in table.indexes)
+    assert isinstance(table.c.viewport_state.type, JSONB)
+    assert table.c.viewport_state.nullable is True
+    assert table.c.thumb.nullable is True
+    assert table.c.label.nullable is True and table.c.label.type.length == 255
 
 
 def test_collection_scope_junctions() -> None:

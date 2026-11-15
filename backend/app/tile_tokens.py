@@ -28,6 +28,7 @@ from .auth import auth_settings
 
 TILE_TOKEN_PURPOSE = "tile"
 THUMB_TOKEN_PURPOSE = "thumb"
+SLOT_THUMB_TOKEN_PURPOSE = "slot_thumb"
 THUMBNAIL_FILENAME = "thumbnail.jpeg"
 TILE_URL_PREFIX = "/api/tiles/"
 
@@ -45,7 +46,7 @@ class TileTokenError(Exception):
         self.detail = detail
 
 
-def _issue(source_image_id: int, purpose: str, *, inuksuk_id: int | None = None) -> str:
+def _issue(source_image_id: int, purpose: str, *, inuksuk_id: int | None = None, slot_id: int | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=auth_settings.tile_token_ttl_minutes
     )
@@ -56,6 +57,8 @@ def _issue(source_image_id: int, purpose: str, *, inuksuk_id: int | None = None)
     }
     if inuksuk_id is not None:
         payload["iid"] = inuksuk_id
+    if slot_id is not None:
+        payload["path"] = f"collection_slots/{slot_id}.jpg"
     return jwt.encode(
         payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm
     )
@@ -78,6 +81,12 @@ def issue_inuksuk_thumb_token(source_image_id: int, inuksuk_id: int) -> str:
     return _issue(source_image_id, THUMB_TOKEN_PURPOSE, inuksuk_id=inuksuk_id)
 
 
+def issue_slot_thumb_token(source_image_id: int, slot_id: int) -> str:
+    if type(slot_id) is not int or slot_id <= 0:
+        raise ValueError("Slot id must be a positive integer")
+    return _issue(source_image_id, SLOT_THUMB_TOKEN_PURPOSE, slot_id=slot_id)
+
+
 def validate_tile_token(
     token: str, source_image_id: int, path: str | None = None
 ) -> None:
@@ -97,10 +106,14 @@ def validate_tile_token(
     except jwt.PyJWTError:
         raise TileTokenError(401, "Invalid or expired tile token")
     purpose = payload.get("purpose")
-    if purpose not in (TILE_TOKEN_PURPOSE, THUMB_TOKEN_PURPOSE):
+    if purpose not in (TILE_TOKEN_PURPOSE, THUMB_TOKEN_PURPOSE, SLOT_THUMB_TOKEN_PURPOSE):
         raise TileTokenError(401, "Invalid or expired tile token")
     if payload.get("sid") != source_image_id:
         raise TileTokenError(403, "Tile token does not match this image")
+    if purpose == SLOT_THUMB_TOKEN_PURPOSE:
+        expected = payload.get("path")
+        if not isinstance(expected, str) or not re.fullmatch(r"collection_slots/[1-9][0-9]*\.jpg", expected) or path != expected:
+            raise TileTokenError(403, "Slot token does not match this thumbnail")
     if purpose == THUMB_TOKEN_PURPOSE:
         if "iid" in payload:
             iid = payload["iid"]
@@ -183,3 +196,10 @@ def append_inuksuk_thumb_token(url: str) -> str:
     return _append_token(
         url, lambda sid: issue_inuksuk_thumb_token(sid, inuksuk_id)
     )
+
+
+def append_slot_thumb_token(url: str) -> str:
+    match = re.fullmatch(r"/api/tiles/([0-9]+)/collection_slots/([1-9][0-9]*)\.jpg", urlsplit(url).path)
+    if match is None:
+        return url
+    return _append_token(url, lambda sid: issue_slot_thumb_token(sid, int(match[2])))

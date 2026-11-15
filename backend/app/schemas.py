@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_serializer, model_validator
 
 if TYPE_CHECKING:
     from .measurement.detector import DetectorParams
@@ -948,8 +948,45 @@ class CollectionSummaryOut(BaseModel):
         return append_tile_token(value)
 
 
+class SlotViewport(BaseModel):
+    x: Annotated[float, Field(strict=True, allow_inf_nan=False)]
+    y: Annotated[float, Field(strict=True, allow_inf_nan=False)]
+    zoom: Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
+    rotation: Annotated[float, Field(strict=True, allow_inf_nan=False)] | None = None
+
+    @model_serializer
+    def _viewport_fields(self) -> dict[str, float]:
+        result = {"x": self.x, "y": self.y, "zoom": self.zoom}
+        if self.rotation is not None:
+            result["rotation"] = self.rotation
+        return result
+
+
+class CollectionSlotOut(BaseModel):
+    id: int
+    viewport_state: SlotViewport | None = None
+    thumb: str | None = None
+    label: str | None = None
+
+    @field_serializer("thumb")
+    def _tokenize_thumb(self, value: str | None) -> str | None:
+        from .tile_tokens import append_slot_thumb_token
+        return append_slot_thumb_token(value) if value else None
+
+
+class CollectionMemberOut(ImageOut):
+    slot: CollectionSlotOut | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_empty_slot(self, handler):
+        result = handler(self)
+        if self.slot is None:
+            result.pop("slot", None)
+        return result
+
+
 class CollectionOut(CollectionSummaryOut):
-    images: list[ImageOut] = []
+    images: list[CollectionMemberOut] = []
     viewport_state: dict = {}
     # Nominal member count for unfiltered viewers (non-students), so the
     # detail view can distinguish "empty collection" from "all members are
@@ -1067,7 +1104,8 @@ def validate_collection_image_ids(
     Existence and per-caller visibility of each id are checked by the router
     against the database; this is the request-shape half of the contract.
     """
-    if len(set(image_ids)) != len(image_ids):
+    from .database import settings
+    if not settings.inuksuks_enabled and len(set(image_ids)) != len(image_ids):
         raise ValueError("image_ids must not contain duplicates")
     if (
         collection_type == "synchronized"
@@ -1080,7 +1118,32 @@ def validate_collection_image_ids(
     return image_ids
 
 
-class CollectionCreate(BaseModel):
+class CollectionSlotInput(BaseModel):
+    id: int | None = Field(default=None, gt=0)
+    image_id: int = Field(gt=0)
+    inuksuk_id: int | None = Field(default=None, gt=0)
+    viewport_state: SlotViewport | None = None
+    label: str | None = Field(default=None, max_length=255)
+
+
+class CollectionSlotSources(BaseModel):
+    slots: list[CollectionSlotInput] | None = None
+    source_board_id: int | None = Field(default=None, gt=0)
+    source_section_id: int | None = Field(default=None, gt=0)
+    inuksuk_ids: list[int] | None = None
+
+    @model_validator(mode="after")
+    def _gate_slots(self):
+        from .database import settings
+        fields = {"slots", "source_board_id", "source_section_id", "inuksuk_ids"}
+        if not settings.inuksuks_enabled and self.model_fields_set & fields:
+            raise ValueError("Collection slots require Inuksuks to be enabled")
+        if self.source_section_id is not None and self.source_board_id is None:
+            raise ValueError("source_section_id requires source_board_id")
+        return self
+
+
+class CollectionCreate(CollectionSlotSources):
     name: str = Field(max_length=COLLECTION_NAME_MAX_LENGTH)
     description: str | None = None
     type: CollectionType
@@ -1146,15 +1209,22 @@ class CollectionMove(BaseModel):
     version: int
 
 
-class CollectionImagesUpdate(BaseModel):
+class CollectionImagesUpdate(CollectionSlotSources):
     """PUT body replacing the whole ordered image list (add/remove/reorder).
 
     The synchronized cap is enforced by the router, which knows the
     collection's type; duplicates are rejected here.
     """
 
-    image_ids: list[int]
+    image_ids: list[int] = []
     version: int
+
+    @model_validator(mode="after")
+    def _require_legacy_images(self):
+        from .database import settings
+        if not settings.inuksuks_enabled and "image_ids" not in self.model_fields_set:
+            raise ValueError("image_ids is required")
+        return self
 
     @field_validator("image_ids")
     @classmethod
@@ -1165,8 +1235,19 @@ class CollectionImagesUpdate(BaseModel):
 class CollectionViewportUpdate(BaseModel):
     """PUT body replacing ``viewport_state`` wholesale (never a partial merge)."""
 
-    viewport_state: dict
+    viewport_state: dict = Field(default_factory=dict)
     version: int
+    slot_viewports: dict[int, SlotViewport | None] | None = None
+
+    @model_validator(mode="after")
+    def _gate_slot_viewports(self):
+        from .database import settings
+        if not settings.inuksuks_enabled:
+            if "slot_viewports" in self.model_fields_set:
+                raise ValueError("Slot viewports require Inuksuks to be enabled")
+            if "viewport_state" not in self.model_fields_set:
+                raise ValueError("viewport_state is required")
+        return self
 
 
 class CollectionOwnersUpdate(BaseModel):

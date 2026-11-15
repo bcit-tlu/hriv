@@ -473,3 +473,21 @@ against late navigation. Browser Back returns to the Board/Section entry.
 Tests: `boardUtils.test.ts`, `useBoardsData.test.ts`, `BoardsPage.test.tsx`,
 `BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`, URL/history/App/AppShell
 tests, and attached deterministic component stories, including keyboard reorder.
+
+## Collection snapshots (#1770)
+
+The gated Collection API can seed independent member slots from visible
+Inuksuks, a Board, or a Section. Each slot snapshots the title and viewport;
+subsequent edits never write back to the source. Duplicate source images are
+valid slots with independent identity. See [Collections](collections.md#collection-slots-1770-backend)
+for payloads, compatibility and authorization.
+
+Seeded JPEGs are copied atomically into `collection_slots/<slot-id>.jpg` beneath
+the source tile root. Missing source JPEGs regenerate from the viewport using
+the shared renderer with a separate destination namespace; unavailable tile
+data leaves the thumb null for image-thumb fallback. The `slot_thumb` JWT
+purpose binds `sid` plus the exact relative `path`; it cannot authorize tiles,
+whole-image thumbs, Inuksuk thumbs or other slots. nginx isolates slot JPEG
+auth verdicts by exact URI rather than its shared tile class. Cleanup follows
+successful database commits. Image replacement invalidates slot geometry and
+snapshots because the old coordinates no longer describe the new source.

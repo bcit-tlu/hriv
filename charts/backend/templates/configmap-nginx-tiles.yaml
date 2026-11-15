@@ -49,6 +49,7 @@ data:
     map $uri $tile_path_class_from_uri {
         ~^/api/tiles/[0-9]+/thumbnail\.jpeg$ thumb;
         ~^/api/tiles/[0-9]+/inuksuks/[0-9]+\.jpg$ $uri;
+        ~^/api/tiles/[0-9]+/collection_slots/[0-9]+\.jpg$ $uri;
         default tiles;
     }
 

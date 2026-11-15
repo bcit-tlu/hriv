@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import os
+import re
 import queue
 import shutil
 import subprocess
@@ -39,6 +40,7 @@ from .backup_access import (
 from .browse_state import bump_browse_revision
 from .component_versions import get_app_version
 from .database import get_async_session, settings
+from .collection_slots import export_slots, import_slots
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
@@ -47,7 +49,6 @@ from .models import (
     Category,
     Collection,
     ContentMedia,
-    CollectionImage,
     Group,
     Image,
     MeasurementFinding,
@@ -1419,6 +1420,7 @@ async def run_db_export(task_id: int) -> None:
                             for link in c.image_links
                             if link.image_id in exported_image_ids
                         ],
+                        "slots": export_slots(c, exported_image_ids),
                         # Only meaningful while the pinned member is exported
                         # too — otherwise the tile falls back to first member.
                         "cover_image_id": (
@@ -1888,6 +1890,18 @@ async def run_db_import(task_id: int) -> None:
                 # Import collections (after users, programs, groups and images:
                 # owner, scope and image links all reference those rows)
                 await _update_task(status_session, task, log_line="Importing collections…", progress=68)
+                thumbnail_ids = [
+                    int(slot["thumb"].rsplit("/", 1)[1].removesuffix(".jpg"))
+                    for collection_data in dump.get("collections", [])
+                    for slot in collection_data.get("slots", [])
+                    if isinstance(slot.get("thumb"), str)
+                    and re.fullmatch(r"/api/tiles/[0-9]+/collection_slots/[1-9][0-9]*\.jpg", slot["thumb"])
+                ]
+                if thumbnail_ids:
+                    await data_session.execute(text(
+                        "SELECT setval('collection_images_id_seq', GREATEST("
+                        "(SELECT last_value FROM collection_images_id_seq), :maximum), true)"
+                    ), {"maximum": max(thumbnail_ids)})
                 for c in dump.get("collections", []):
                     collection = Collection(
                         id=c["id"],
@@ -1918,14 +1932,11 @@ async def run_db_import(task_id: int) -> None:
                             select(Group).where(Group.id.in_(group_ids))
                         )).scalars().all()
                         collection.groups = list(grps)
-                    collection.image_links = [
-                        CollectionImage(image_id=image_id, sort_order=position)
-                        for position, image_id in enumerate(c.get("image_ids", []))
-                    ]
+                    collection.image_links = import_slots(c)
                     # Pinned cover survives only while it names an imported
                     # member (older dumps predate the field). The explicit
                     # "no cover" flag survives independently of members.
-                    if c.get("cover_image_id") in (c.get("image_ids") or []):
+                    if c.get("cover_image_id") in {link.image_id for link in collection.image_links}:
                         collection.cover_image_id = c["cover_image_id"]
                     collection.cover_blank = bool(c.get("cover_blank"))
                     if collection.cover_blank:
@@ -2038,7 +2049,7 @@ async def run_db_import(task_id: int) -> None:
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "announcement_reactions", "content_media", "source_images", "collections", "measurement_findings"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "announcement_reactions", "content_media", "source_images", "collections", "collection_images", "measurement_findings"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "

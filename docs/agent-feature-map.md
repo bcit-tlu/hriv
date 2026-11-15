@@ -159,3 +159,15 @@ For schema/relationship details before touching models or migrations, see
 [`docs/domain-model.md`](domain-model.md). For the project-wide rules agents must
 not break, see the **Critical Invariants** section in
 [`AGENTS.md`](../AGENTS.md#critical-invariants).
+
+### Collection slots and saved-view seeding (#1770)
+
+Backend: `collection_slots.py` plans ordered membership changes and owns
+snapshot files; `routers/collections.py` retains permission/OCC enforcement;
+`collection_views.py` filters before projecting nested slot metadata.
+Migration `0047_collection_image_slots`, `models.CollectionImage`,
+`tile_tokens.py`, `inuksuk_thumbs.py`, nginx's slot URI class, Image deletion /
+replacement hooks, and `admin_ops.py` must remain aligned. Runtime additions
+require `INUKSUKS_ENABLED`; the frontend slot-identity rollout is #1774.
+Tests: `test_collection_slots.py`, existing Collection persistence/API tests,
+thumbnail/token and admin operation tests, plus Helm regression checks.
