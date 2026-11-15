@@ -470,21 +470,28 @@ describe('Inuksuk viewer tool', () => {
     expect(osdState.buttons.some((button) => button.options.tooltip === 'Add Inuksuk')).toBe(false)
     expect(apiMocks.fetchImageInuksuks).not.toHaveBeenCalled()
   })
-  it('captures viewport coordinates, zoom and rotation once and previews a new marker', async () => {
-    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
-    viewer().viewport.getZoom.mockReturnValue(4)
-    viewer().viewport.getRotation.mockReturnValue(35)
-    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
-    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
-    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
-    expect(await screen.findByRole('dialog')).toHaveTextContent(
-      JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
-    )
-    expect(viewer().container).toContainElement(
-      within(viewer().container).getByRole('button', { name: 'View Inuksuk: New Inuksuk' }),
-    )
-    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
-  })
+  it.each([false, true])(
+    'captures the same image point with flip=%s and previews it',
+    async (flip) => {
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+      Object.defineProperty(viewer().canvas, 'clientWidth', { value: 200 })
+      viewer().viewport.getFlip.mockReturnValue(flip)
+      viewer().viewport.getZoom.mockReturnValue(4)
+      viewer().viewport.getRotation.mockReturnValue(35)
+      act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+      expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+      act(() =>
+        tracker().options.clickHandler({ quick: true, position: { x: flip ? 170 : 30, y: 40 } }),
+      )
+      expect(await screen.findByRole('dialog')).toHaveTextContent(
+        JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
+      )
+      expect(viewer().container).toContainElement(
+        within(viewer().container).getByRole('button', { name: 'View Inuksuk: New Inuksuk' }),
+      )
+      expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+    },
+  )
   it('Escape cancels placement and a drag is never treated as a click', () => {
     render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
     act(() => buttonByTooltip('Add Inuksuk').options.onClick())

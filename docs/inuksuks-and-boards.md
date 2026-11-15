@@ -328,6 +328,12 @@ markers are hidden. `ImageViewer.inuksukVisibility` exposes the same per-id
 overrides for the future drawer. Clicking a marker smoothly restores its
 saved pan/zoom/rotation, highlights it and opens its details.
 
+Flip remains a presentation setting, not a saved coordinate transform.
+Placement unmirrors screen x before converting to viewport coordinates;
+markers mirror the projected screen x around the canvas width. This follows
+the count-outlines layer's handling of OSD's flip-unaware pixel conversions,
+so saved points keep referring to the same image feature with flip on or off.
+
 The image endpoint is the sole viewer marker source, retaining the backend's
 `mine > instructor > public` tags and thumbnail fallbacks. The viewer reloads
 it after successful create/edit/delete and discards responses for old images.

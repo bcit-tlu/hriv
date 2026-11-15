@@ -8,12 +8,14 @@ function fakeViewer() {
   const container = document.createElement('div')
   const handlers = new Map<string, () => void>()
   const viewport = {
+    getFlip: vi.fn(() => false),
     pixelFromPoint: vi.fn(() => ({ x: 120, y: 90 })),
     setRotation: vi.fn(),
     panTo: vi.fn(),
     zoomTo: vi.fn(),
   }
   const instance = {
+    canvas: container,
     container,
     viewport,
     addHandler: vi.fn((event: string, handler: () => void) => handlers.set(event, handler)),
@@ -22,6 +24,28 @@ function fakeViewer() {
   return { instance: instance as unknown as OpenSeadragon.Viewer, viewport, container, handlers }
 }
 describe('InuksukMarkersLayer', () => {
+  it('mirrors marker and title anchors on flip, resize, and back without mirroring their contents', () => {
+    const v = fakeViewer()
+    Object.defineProperty(v.container, 'clientWidth', { value: 1000, configurable: true })
+    render(<InuksukMarkersLayer viewer={v.instance} items={[INUKSUK_FIXTURE]} />)
+    const button = within(v.container).getByRole('button')
+    const anchor = button.parentElement!
+    const label = within(v.container).getByText('Rose window')
+    expect(label.parentElement).toBe(anchor)
+    expect(anchor.style.left).toBe('120px')
+    v.viewport.getFlip.mockReturnValue(true)
+    act(() => v.handlers.get('flip')?.())
+    expect(anchor.style.left).toBe('880px')
+    Object.defineProperty(v.container, 'clientWidth', { value: 1200 })
+    act(() => v.handlers.get('resize')?.())
+    expect(anchor.style.left).toBe('1080px')
+    expect(anchor.style.top).toBe('90px')
+    expect(anchor.style.transform).toBe('')
+    expect(button.style.width).toBe('32px')
+    v.viewport.getFlip.mockReturnValue(false)
+    act(() => v.handlers.get('flip')?.())
+    expect(anchor.style.left).toBe('120px')
+  })
   it('portals constant CSS-pixel upright markers and labels, reprojects each viewport event, and cleans up', () => {
     const v = fakeViewer()
     const { unmount } = render(

@@ -7,6 +7,7 @@ import Alert from '@mui/material/Alert'
 import { AuthContext } from '../authContextValue'
 import type { ApiInuksuk, InuksukView } from '../types'
 import { useImageInuksuks } from '../useImageInuksuks'
+import { adjustInuksukPixelForFlip } from '../inuksukViewport'
 import InuksukFormDialog from './InuksukFormDialog'
 import InuksukMarkersLayer from './InuksukMarkersLayer'
 import { useTheme } from '@mui/material/styles'
@@ -818,7 +819,9 @@ export default function ImageViewer({
       if (!inuksukMode || !event.quick || !event.position) return
       const target = event.originalEvent?.target
       if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) return
-      const point = viewer.viewport.pointFromPixel(event.position)
+      const point = viewer.viewport.pointFromPixel(
+        adjustInuksukPixelForFlip(viewer, event.position),
+      )
       const view = {
         x: point.x,
         y: point.y,

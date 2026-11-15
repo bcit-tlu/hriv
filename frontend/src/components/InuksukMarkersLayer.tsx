@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import CompassCalibration from '@mui/icons-material/CompassCalibration'
 import type { InuksukView } from '../types'
-import { navigateToInuksuk } from '../inuksukViewport'
+import { adjustInuksukPixelForFlip, navigateToInuksuk } from '../inuksukViewport'
 
 export interface InuksukMarker extends InuksukView {
   id: number
@@ -29,7 +29,10 @@ export default function InuksukMarkersLayer({
       for (const item of items) {
         const element = anchors.current.get(item.id)
         if (!element) continue
-        const point = viewer.viewport.pixelFromPoint(new OpenSeadragon.Point(item.x, item.y), true)
+        const point = adjustInuksukPixelForFlip(
+          viewer,
+          viewer.viewport.pixelFromPoint(new OpenSeadragon.Point(item.x, item.y), true),
+        )
         element.style.left = point.x + 'px'
         element.style.top = point.y + 'px'
       }
