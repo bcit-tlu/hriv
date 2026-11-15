@@ -17,6 +17,7 @@ describe('useFeatures', () => {
     expect(result.current).toBeNull()
     await waitFor(() =>
       expect(result.current).toEqual({
+        inuksuks: false,
         collections: true,
         collectionsStudentAccess: true,
         collectionsHomeShelf: true,
@@ -30,6 +31,7 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
       expect(result.current).toEqual({
+        inuksuks: false,
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
@@ -42,6 +44,7 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() =>
       expect(result.current).toEqual({
+        inuksuks: false,
         collections: false,
         collectionsStudentAccess: true,
         collectionsHomeShelf: false,
@@ -57,6 +60,16 @@ describe('useFeatures', () => {
     const { result } = renderHook(() => useFeatures())
     await waitFor(() => expect(result.current?.collectionsStudentAccess).toBe(studentAccess))
   })
+
+  it.each([true, false, undefined, 'true'])(
+    'only enables Inuksuks for boolean true (%s)',
+    async (value) => {
+      fetchFeatures.mockResolvedValue({ inuksuks: value })
+      const { result } = renderHook(() => useFeatures())
+      await waitFor(() => expect(result.current?.inuksuks).toBe(value === true))
+      expect(DEFAULT_FEATURES.inuksuks).toBe(false)
+    },
+  )
 
   it('resolves to DEFAULT_FEATURES (everything off) when the request fails', async () => {
     fetchFeatures.mockRejectedValue(new Error('network'))

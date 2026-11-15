@@ -303,3 +303,59 @@ even on surviving Boards. Their thumbnail cleanup is deferred until commit.
 sections/assignments/reorder, ownership/caps, real thumbnail generation,
 fallback and deletion, commit-failure file preservation and replacement.
 `test_inuksuk_thumbs.py` also checks replacement rollback cleanup boundaries.
+
+## ImageViewer frontend (#1772)
+
+The SPA reads `features.inuksuks` from `GET /api/features`, defaulting to
+false for missing flags or failed requests. When off, the viewer mounts no
+Inuksuk controls, markers or dialogs and makes no Inuksuk requests. This
+applies to regular, sequence and synchronized viewers. Boards-page navigation
+and the source-group drawer remain separate follow-ups (#1771 and #1773).
+
+The bottom-left **Add Inuksuk** compass arms single-click placement. It
+disarms selection and presentation tools, exits canvas editing through its
+existing dirty-draft/discard flow, and captures OSD viewport x/y, zoom and
+rotation without converting to image pixels. Escape cancels placement.
+Clicking opens **Save a view** immediately with a preview marker.
+
+`InuksukMarkersLayer` portals into `viewer.container` under
+`data-hriv-canvas-ui`, independently of Fabric. Compass icons are 32 CSS
+pixels and titles use 13-pixel text; neither scales nor rotates with the image.
+The layer reprojects anchors on animation, animation-finish, open, resize,
+rotate and flip. Each marker accepts independent `markerVisible` and
+`labelVisible` props, both true by default: labels may remain visible when
+markers are hidden. `ImageViewer.inuksukVisibility` exposes the same per-id
+overrides for the future drawer. Clicking a marker smoothly restores its
+saved pan/zoom/rotation, highlights it and opens its details.
+
+The image endpoint is the sole viewer marker source, retaining the backend's
+`mine > instructor > public` tags and thumbnail fallbacks. The viewer reloads
+it after successful create/edit/delete and discards responses for old images.
+Read failures are shown in the viewer rather than silently implying no saved
+views. The typed API client also covers all Board, section, membership,
+ownership, transfer and global-order writes for #1771; deletes use If-Match,
+other mutations send body versions, and section versions belong to the Board.
+
+`InuksukFormDialog` requires a nonblank title and at least one editable Board.
+The multi-picker only lists `permissions.can_edit` Boards. Selected Board
+details supply independent section pickers, including the existing section
+when editing. Other Boards' links are preserved by the backend assignment
+contract. **+ Create new board** always creates a private Board and selects
+it. The last successfully used Board is remembered under the user-scoped
+`hrivpref:inuksuk:lastBoard:<userId>` localStorage key, validated against the
+editable list on the next create; blocked storage is optional, not an error.
+
+Title, description, favourite and Board assignments are editable according
+to API permissions; other viewers get read-only details. Delete requires
+confirmation. Edits/deletes send the opened version. A 409 preserves local
+fields and offers **Reload current**, replacing them with the authoritative
+projection and new version before retry. The form stays inside the OSD
+container for full-page mode. Backend caps and permission failures surface
+inline without closing it. Crops and source-thumb fallbacks remain server
+responsibilities; the frontend never mints tile tokens.
+
+Frontend verification: `inuksukApi.test.ts`, `useImageInuksuks.test.ts`,
+`useFeatures.test.ts`, `ImageViewer.test.tsx`,
+`InuksukMarkersLayer.test.tsx` and `InuksukFormDialog.test.tsx`.
+Both new components have attached Storybook docs and deterministic stories;
+the marker stories exercise the real viewer with fixture API responses.

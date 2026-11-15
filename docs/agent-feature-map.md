@@ -118,6 +118,21 @@ item switches and collection close.
 
 ## Domain model & invariants
 
+### Inuksuk viewer (#1772)
+
+- Contracts/flag: `frontend/src/types.ts`, `api.ts`, `useFeatures.ts`.
+- Image marker loading and stale-response protection: `useImageInuksuks.ts`.
+- Tool/mode exclusion, coordinate capture and dialog lifecycle:
+  `components/ImageViewer.tsx`; flag propagation from `App.tsx` through
+  `CollectionsPage.tsx`, `SequenceCollectionViewer.tsx` and
+  `SynchronizedCollectionViewer.tsx`.
+- Constant-size icon/title portal: `components/InuksukMarkersLayer.tsx`;
+  shared smooth navigation: `inuksukViewport.ts`.
+- Editable Board multi-picker, private Board creation, user-scoped last Board
+  and OCC reload/delete: `components/InuksukFormDialog.tsx`.
+- Component stories/docs and corresponding Vitest tests cover these surfaces;
+  [feature contract](inuksuks-and-boards.md#imageviewer-frontend-1772).
+
 For schema/relationship details before touching models or migrations, see
 [`docs/domain-model.md`](domain-model.md). For the project-wide rules agents must
 not break, see the **Critical Invariants** section in

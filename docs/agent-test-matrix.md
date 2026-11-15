@@ -245,6 +245,17 @@ ImageViewer` (from `frontend/`).
 
 ## Notes
 
+### Inuksuk viewer (#1772)
+
+- Feature/API/hooks: `npm test -- inuksukApi useImageInuksuks useFeatures`.
+- Placement, modes, markers and form: `npm test -- ImageViewer Inuksuk`.
+- App/collection viewer propagation: `npm test -- App.test CollectionsPage SequenceCollectionViewer SynchronizedCollectionViewer`.
+- Full frontend: `npm test`, `npm run build`, `npm run lint`,
+  `npm run format:check`, `npm run build-storybook`.
+- Visually verify constant CSS sizing while zooming/rotating, independent
+  marker/label visibility and create/edit in the viewer. See
+  [Inuksuks and Boards](inuksuks-and-boards.md#imageviewer-frontend-1772).
+
 - Vitest patterns match by path substring, so `npm test -- api.test` runs
   `api.test.ts`, and `npm test -- useImageActions` runs `useImageActions.test.ts`.
 - When in doubt about which files a feature touches, consult the

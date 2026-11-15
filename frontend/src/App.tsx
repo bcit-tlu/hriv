@@ -2573,6 +2573,7 @@ export default function App() {
             />
           ) : page === 'collections' && !collectionsEnabled ? null : page === 'collections' ? (
             <CollectionsPage
+              inuksuksEnabled={features?.inuksuks === true}
               currentUser={currentUser}
               programs={programs}
               groups={groups}
@@ -2977,6 +2978,7 @@ export default function App() {
                 }}
               >
                 <ImageViewer
+                  inuksuksEnabled={features?.inuksuks === true}
                   key={selectedImage.id}
                   height={{ xs: '70vh', md: '100%' }}
                   tileSources={selectedImage.tileSources}

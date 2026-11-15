@@ -33,6 +33,7 @@ import {
 } from './imageViewerUtils'
 
 export interface SequenceCollectionViewerProps {
+  inuksuksEnabled?: boolean
   collection: Collection
   /** `?item={image_id}` — desired current image; falls back to the first visible image. */
   itemId: number | null
@@ -118,6 +119,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export default function SequenceCollectionViewer({
+  inuksuksEnabled = false,
   collection,
   itemId,
   onSelectItem,
@@ -543,6 +545,7 @@ export default function SequenceCollectionViewer({
           disabled={canvasEditActive}
         >
           <ImageViewer
+            inuksuksEnabled={inuksuksEnabled}
             key={current.id}
             fullScreenHandoffKey={`sequence:${collectionId}`}
             tileSources={current.tileSources}
