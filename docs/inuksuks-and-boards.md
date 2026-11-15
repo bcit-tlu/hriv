@@ -427,6 +427,7 @@ It does not add a primary tab: students retain two mobile navigation tabs, and
 Boards uses `Tabs value={false}`. Selecting a Board/Section writes
 `?page=boards&board={id}&section={id}`; Back/Forward restores the selection.
 The same flag gates direct links and all page requests.
+Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
 **Your Boards** includes user-owned and program-owned Boards for the caller;
 **Shared with me / Public** shows other server-authorized Boards. Boards have
