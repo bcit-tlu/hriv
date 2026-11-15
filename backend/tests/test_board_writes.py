@@ -11,7 +11,7 @@ import pyvips
 import pytest
 from fastapi import Depends, FastAPI
 from sqlalchemy import event, func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app import auth, board_writes, processing
 from app.database import get_db, settings
