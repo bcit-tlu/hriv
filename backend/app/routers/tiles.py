@@ -104,8 +104,7 @@ async def tiles_auth(
     if not token:
         raise HTTPException(status_code=401, detail="Missing tile token")
     # ``tile_path`` is the path after ``/api/tiles/<sid>/`` — thumbnail-scoped
-    # tokens must match ``thumbnail.jpeg`` exactly (missing or nested
-    # segments do not).
+    # tokens allow only thumbnail.jpeg and inuksuks/<integer>.jpg.
     try:
         validate_tile_token(token, source_image_id, tile_path)
     except TileTokenError as exc:

@@ -340,6 +340,8 @@ def tiles_app(tmp_path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     (image_dir / "image_files" / "0").mkdir(parents=True)
     (image_dir / "image.dzi").write_text("<?xml version='1.0'?><Image/>")
     (image_dir / "thumbnail.jpeg").write_bytes(b"\xff\xd8jpegdata")
+    (image_dir / "inuksuks").mkdir()
+    (image_dir / "inuksuks" / "7.jpg").write_bytes(b"\xff\xd8inuksuk")
     (image_dir / "image_files" / "0" / "0_0.jpeg").write_bytes(b"\xff\xd8tile")
     # A file outside the image directory that traversal must not reach.
     (tiles_dir / "secret.txt").write_text("secret")
@@ -645,6 +647,12 @@ def test_thumb_token_validates_thumbnail_path() -> None:
     validate_tile_token(token, 42, "thumbnail.jpeg")
 
 
+def test_thumb_token_validates_inuksuk_and_serializes_thumb_purpose() -> None:
+    url = append_thumb_token("/api/tiles/42/inuksuks/7.jpg")
+    assert "?tile_token=" in url
+    validate_tile_token(url.split("tile_token=")[1], 42, "inuksuks/7.jpg")
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -656,6 +664,12 @@ def test_thumb_token_validates_thumbnail_path() -> None:
         # paths, not the thumbnail.
         "foo/thumbnail.jpeg",
         "image_files/0/thumbnail.jpeg",
+        "inuksuks/../x",
+        "inuksuks/../thumbnail.jpeg",
+        "inuksuks/%2e%2e/thumbnail.jpeg",
+        "inuksuks/7.jpg/extra",
+        "inuksuks/-1.jpg",
+        "inuksuks/name.jpg",
     ],
 )
 def test_thumb_token_rejects_tile_paths_with_403(path: str) -> None:
@@ -725,6 +739,15 @@ async def test_tile_route_thumb_token_rejects_dzi(tiles_app: FastAPI) -> None:
     assert resp.status_code == 403
 
 
+async def test_tile_route_thumb_token_serves_inuksuk(tiles_app: FastAPI) -> None:
+    token = issue_thumb_token(42)
+    async with _client(tiles_app) as client:
+        response = await client.get(f"/api/tiles/42/inuksuks/7.jpg?tile_token={token}")
+    assert response.status_code == 200
+    assert response.content == b"\xff\xd8inuksuk"
+    assert response.headers["content-type"] == "image/jpeg"
+
+
 async def test_tile_route_thumb_token_rejects_image_files(
     tiles_app: FastAPI,
 ) -> None:
@@ -762,6 +785,22 @@ async def test_tiles_auth_thumb_token_allows_thumbnail(
             },
         )
     assert resp.status_code == 204
+
+
+@pytest.mark.parametrize("path,status", [
+    ("inuksuks/7.jpg", 204),
+    ("inuksuks/../thumbnail.jpeg", 403),
+    ("inuksuks/%2e%2e/thumbnail.jpeg", 403),
+    ("inuksuks/../image_files/0/0_0.jpeg", 403),
+])
+async def test_tiles_auth_inuksuk_paths(auth_app: FastAPI, path: str, status: int) -> None:
+    token = issue_thumb_token(42)
+    async with _client(auth_app) as client:
+        response = await client.get(
+            "/api/tiles-auth",
+            headers={"X-Original-URI": f"/api/tiles/42/{path}?tile_token={token}"},
+        )
+    assert response.status_code == status
 
 
 @pytest.mark.parametrize(

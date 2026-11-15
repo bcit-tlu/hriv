@@ -6,8 +6,8 @@ Two token purposes share the same signature + expiry + image-id binding:
 
 - ``purpose="tile"`` grants read access to the full tile set of one
   ``source_image_id`` (``image.dzi`` and every ``image_files/...`` tile).
-- ``purpose="thumb"`` grants read access to the ``thumbnail.jpeg`` of one
-  ``source_image_id`` only. It exists so a category card cover can render
+- ``purpose="thumb"`` grants read access to ``thumbnail.jpeg`` and numeric
+  ``inuksuks/<id>.jpg`` paths of one ``source_image_id``. A category card cover can render
   even when the pinned image is hidden from the viewer (#1609) without
   leaking deep-zoom tile access.
 
@@ -19,6 +19,7 @@ path never touches the DB.
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import jwt
@@ -28,6 +29,7 @@ from .auth import auth_settings
 TILE_TOKEN_PURPOSE = "tile"
 THUMB_TOKEN_PURPOSE = "thumb"
 THUMBNAIL_FILENAME = "thumbnail.jpeg"
+INUKSUK_THUMB_PATH = re.compile(r"inuksuks/[0-9]+\.jpg")
 TILE_URL_PREFIX = "/api/tiles/"
 
 
@@ -92,7 +94,9 @@ def validate_tile_token(
     if payload.get("sid") != source_image_id:
         raise TileTokenError(403, "Tile token does not match this image")
     if purpose == THUMB_TOKEN_PURPOSE:
-        if path != THUMBNAIL_FILENAME:
+        if path != THUMBNAIL_FILENAME and (
+            path is None or INUKSUK_THUMB_PATH.fullmatch(path) is None
+        ):
             raise TileTokenError(
                 403, "Thumbnail token does not grant tile access"
             )

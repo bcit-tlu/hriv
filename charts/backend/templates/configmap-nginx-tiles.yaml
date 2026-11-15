@@ -20,7 +20,7 @@ data:
     # TTL, so caching the 204 briefly collapses OpenSeadragon's per-tile
     # subrequest storm to ~one FastAPI hit per image per cache window. The
     # path class is in the key because ``purpose="thumb"`` tokens (#1609)
-    # authorize ``thumbnail.jpeg`` only: a thumbnail verdict must never be
+    # authorize thumbnails only: a thumbnail verdict must never be
     # replayed for a tile request, while all tile paths still share the
     # ``tiles`` class so the per-tile storm still collapses.
     proxy_cache_path /var/cache/nginx/tile_auth levels=1 keys_zone=tile_auth:1m max_size=8m inactive=60s use_temp_path=off;
@@ -46,10 +46,11 @@ data:
 
     # Split the verdict cache into two classes so a ``thumb``-scoped 204 is
     # never reused for a tile request (#1609). Matches the backend's
-    # exact-path rule for ``purpose="thumb"`` tokens: only the top-level
-    # ``thumbnail.jpeg`` is thumbnail scope; nested names are tile paths.
+    # allowlist for ``purpose="thumb"`` tokens: the whole-image thumbnail
+    # and numeric Inuksuk JPEGs; all other nested names are tile paths.
     map $uri $tile_path_class_from_uri {
         ~^/api/tiles/[0-9]+/thumbnail\.jpeg$ thumb;
+        ~^/api/tiles/[0-9]+/inuksuks/[0-9]+\.jpg$ thumb;
         default tiles;
     }
 
