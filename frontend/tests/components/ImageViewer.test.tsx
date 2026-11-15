@@ -34,6 +34,7 @@ interface MockButton {
 }
 
 interface MockTrackerOptions {
+  clickHandler: (event: { quick: boolean; position?: { x: number; y: number } }) => void
   pressHandler: (event: { position?: { x: number; y: number } }) => void
   dragHandler: (event: {
     position?: { x: number; y: number }
@@ -46,6 +47,7 @@ interface MockTrackerOptions {
     eventType?: string
     originalEvent?: { target?: EventTarget | null }
     preventGesture: boolean
+    preventDefault?: boolean
   }) => void
 }
 
@@ -129,6 +131,7 @@ const observabilityMocks = vi.hoisted(() => ({
 }))
 
 const apiMocks = vi.hoisted(() => ({
+  fetchImageInuksuks: vi.fn(),
   fetchImage: vi.fn(),
   userMessage: vi.fn((_err: unknown, fallback: string) => fallback),
   startCount: vi.fn(),
@@ -142,6 +145,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
   return {
     ...actual,
+    fetchImageInuksuks: apiMocks.fetchImageInuksuks,
     fetchImage: apiMocks.fetchImage,
     userMessage: apiMocks.userMessage,
     startCount: apiMocks.startCount,
@@ -368,6 +372,29 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
 }))
 
 import ImageViewer from '../../src/components/ImageViewer'
+import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
+import type { InuksukFormDialogProps } from '../../src/components/InuksukFormDialog'
+vi.mock('../../src/components/InuksukFormDialog', () => ({
+  default: ({ view, item, onChanged, onClose }: InuksukFormDialogProps) => (
+    <div role="dialog">
+      <span>
+        {JSON.stringify({ x: view.x, y: view.y, zoom: view.zoom, rotation: view.rotation })}
+      </span>
+      {item && <span>Editing Inuksuk {item.id}</span>}
+      {['Create', 'Edit', 'Delete'].map((action) => (
+        <button
+          key={action}
+          onClick={async () => {
+            await onChanged()
+            onClose()
+          }}
+        >
+          {action} Inuksuk
+        </button>
+      ))}
+    </div>
+  ),
+}))
 import type { ApiImage } from '../../src/api'
 import { resetTileTokenRenewalCacheForTests } from '../../src/tileTokenRenewal'
 
@@ -420,6 +447,7 @@ beforeEach(() => {
   setFullscreenElement(null)
   vi.useRealTimers()
   vi.clearAllMocks()
+  apiMocks.fetchImageInuksuks.mockReset().mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -434,6 +462,79 @@ afterEach(() => {
   } else {
     Reflect.deleteProperty(document, 'exitFullscreen')
   }
+})
+
+describe('Inuksuk viewer tool', () => {
+  it('is completely gated off, including network loading', () => {
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} />)
+    expect(osdState.buttons.some((button) => button.options.tooltip === 'Add Inuksuk')).toBe(false)
+    expect(apiMocks.fetchImageInuksuks).not.toHaveBeenCalled()
+  })
+  it.each([false, true])(
+    'captures the same image point with flip=%s and previews it',
+    async (flip) => {
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+      Object.defineProperty(viewer().canvas, 'clientWidth', { value: 200 })
+      viewer().viewport.getFlip.mockReturnValue(flip)
+      viewer().viewport.getZoom.mockReturnValue(4)
+      viewer().viewport.getRotation.mockReturnValue(35)
+      act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+      expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+      act(() =>
+        tracker().options.clickHandler({ quick: true, position: { x: flip ? 170 : 30, y: 40 } }),
+      )
+      expect(await screen.findByRole('dialog')).toHaveTextContent(
+        JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
+      )
+      expect(viewer().container).toContainElement(
+        within(viewer().container).getByRole('button', { name: 'View Inuksuk: New Inuksuk' }),
+      )
+      expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+    },
+  )
+  it('Escape cancels placement and a drag is never treated as a click', () => {
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    act(() => tracker().options.clickHandler({ quick: false, position: { x: 30, y: 40 } }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
+  })
+  it('mutually excludes selection, annotation edit and placement, respecting the dirty-draft cancel flow', async () => {
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled canEditContent />)
+    act(() => buttonByTooltip('Draw selection rectangle').options.onClick())
+    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    act(() => tracker().options.pressHandler({ position: { x: 10, y: 10 } }))
+    expect(viewer().addOverlay).not.toHaveBeenCalled()
+    act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
+    expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
+    canvasOverlayMockState.cancelKeepsEditing = true
+    await act(async () => buttonByTooltip('Add Inuksuk').options.onClick())
+    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    canvasOverlayMockState.cancelKeepsEditing = false
+    await act(async () => buttonByTooltip('Add Inuksuk').options.onClick())
+    expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
+    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+  it.each(['Create', 'Edit', 'Delete'])(
+    'refetches the image endpoint after %s and opens existing marker details',
+    async (action) => {
+      apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+      const marker = await within(viewer().container).findByRole('button', {
+        name: 'View Inuksuk: Rose window',
+      })
+      fireEvent.click(marker)
+      expect(screen.getByText('Editing Inuksuk 7')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: action + ' Inuksuk' }))
+      await waitFor(() => expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(2))
+      expect(apiMocks.fetchImageInuksuks).toHaveBeenLastCalledWith(42)
+    },
+  )
 })
 
 const setViewportAtHome = (v: MockViewer) => {
@@ -1370,9 +1471,17 @@ describe('ImageViewer selection rectangles', () => {
     const uiButton = document.createElement('button')
     uiRoot.appendChild(uiButton)
 
-    const uiEvent = { originalEvent: { target: uiButton }, preventGesture: false }
+    const uiEvent = {
+      originalEvent: { target: uiButton },
+      preventGesture: false,
+      preventDefault: true,
+    }
     preProcess!(uiEvent)
     expect(uiEvent.preventGesture).toBe(true)
+    expect(uiEvent.preventDefault).toBe(false)
+    const nativeClick = { eventType: 'click', preventGesture: false, preventDefault: true }
+    preProcess!(nativeClick)
+    expect(nativeClick.preventDefault).toBe(false)
 
     // Targets inside viewer.canvas (the tile surface, overlays, labels) are
     // gestures; anything else in viewer.element — the OSD control dock,

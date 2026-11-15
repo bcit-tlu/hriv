@@ -92,6 +92,7 @@ export interface Group {
  * the surface rather than rendering it against a 404 API.
  */
 export interface Features {
+  inuksuks: boolean
   /** Collections tab + ``?collection=`` deep links (epic #1409). */
   collections: boolean
   collectionsStudentAccess: boolean
@@ -100,12 +101,75 @@ export interface Features {
 }
 
 export const DEFAULT_FEATURES: Features = {
+  inuksuks: false,
   collections: false,
   collectionsStudentAccess: true,
   collectionsHomeShelf: false,
 }
 
 // ── Collections (docs/collections.md) ─────────────────────
+
+export type InuksukSource = 'mine' | 'instructor' | 'public'
+export type BoardVisibility = 'private' | 'restricted' | 'public'
+export interface InuksukView {
+  x: number
+  y: number
+  zoom: number
+  rotation: number
+}
+export interface ApiInuksuk extends InuksukView {
+  id: number
+  image_id: number
+  title: string
+  description: string | null
+  thumb: string | null
+  favourite: boolean
+  sort_order: number
+  version: number
+  owners: { user_id: number | null; program_id: number | null; name: string; role: Role | null }[]
+  board_ids: number[]
+  source: InuksukSource | null
+  permissions: { can_edit: boolean; can_delete: boolean }
+  created_at: string
+  updated_at: string
+}
+export interface ApiBoardSection {
+  id: number
+  board_id: number
+  name: string
+  sort_order: number
+}
+export interface ApiBoardSummary {
+  id: number
+  name: string
+  description: string | null
+  visibility: BoardVisibility
+  owners: ApiInuksuk['owners']
+  owner_program_id: number | null
+  program_ids: number[]
+  group_ids: number[]
+  inuksuk_count: number
+  cover_thumb: string | null
+  sort_order: number
+  version: number
+  permissions: {
+    can_edit: boolean
+    can_change_scope: boolean
+    can_delete: boolean
+    can_transfer: boolean
+  }
+  created_at: string
+  updated_at: string
+}
+export interface ApiBoard extends ApiBoardSummary {
+  sections: ApiBoardSection[]
+  inuksuks: (ApiInuksuk & { section_id: number | null })[]
+}
+export interface BoardAssignment {
+  board_id: number
+  section_id?: number | null
+  sort_order?: number
+}
 
 export type CollectionType = 'synchronized' | 'sequence'
 

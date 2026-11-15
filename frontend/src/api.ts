@@ -1,5 +1,23 @@
 import { getClientSyntheticMode } from './syntheticMode'
 import type { ImageSourceInfo, User, Role } from './types'
+import type {
+  ApiBoard,
+  ApiBoardSummary,
+  ApiInuksuk,
+  BoardAssignment,
+  BoardVisibility,
+  InuksukSource,
+  InuksukView,
+} from './types'
+export type {
+  ApiBoard,
+  ApiBoardSummary,
+  ApiInuksuk,
+  BoardAssignment,
+  BoardVisibility,
+  InuksukSource,
+  InuksukView,
+} from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -2622,6 +2640,7 @@ export interface VersionsResponse {
 
 /** ``GET /api/features`` — deployment feature flags (docs/collections.md). */
 export interface ApiFeatures {
+  inuksuks?: boolean
   collections_student_access?: boolean
   collections: boolean
   collections_home_shelf: boolean
@@ -2630,6 +2649,196 @@ export interface ApiFeatures {
 
 export function fetchFeatures(): Promise<ApiFeatures> {
   return request('/features')
+}
+
+export interface BoardFilters {
+  q?: string
+  visibility?: BoardVisibility[]
+  sort?:
+    | 'id'
+    | 'name'
+    | 'description'
+    | 'visibility'
+    | 'owner'
+    | 'inuksuk_count'
+    | 'sort_order'
+    | 'created_at'
+    | 'updated_at'
+  order?: 'asc' | 'desc'
+  limit?: number
+  page?: number
+  page_size?: number
+}
+export interface InuksukFilters extends Omit<BoardFilters, 'visibility' | 'sort'> {
+  board_id?: number
+  section_id?: number
+  image_id?: number
+  favourite?: boolean
+  scope?: InuksukSource
+  sort?:
+    | 'id'
+    | 'title'
+    | 'description'
+    | 'image_id'
+    | 'favourite'
+    | 'sort_order'
+    | 'created_at'
+    | 'updated_at'
+}
+export interface BoardCreate {
+  name: string
+  description?: string | null
+  visibility?: BoardVisibility
+  program_ids?: number[]
+  group_ids?: number[]
+}
+export interface InuksukCreate extends InuksukView {
+  image_id: number
+  title: string
+  description?: string | null
+  favourite?: boolean
+  board_assignments: BoardAssignment[]
+}
+type Versioned = { version: number }
+function inuksukQuery(filters: BoardFilters | InuksukFilters): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined) continue
+    for (const entry of Array.isArray(value) ? value : [value]) query.append(key, String(entry))
+  }
+  return query.size ? '?' + query.toString() : ''
+}
+export function fetchBoards(
+  filters: BoardFilters = {},
+  init?: RequestInit,
+): Promise<ApiBoardSummary[]> {
+  return request('/boards' + inuksukQuery(filters), init)
+}
+export function fetchBoard(id: number, init?: RequestInit): Promise<ApiBoard> {
+  return request(`/boards/${id}`, init)
+}
+export function createBoard(body: BoardCreate): Promise<ApiBoard> {
+  return request('/boards', { method: 'POST', body: JSON.stringify(body) })
+}
+export function updateBoard(id: number, body: Partial<BoardCreate> & Versioned): Promise<ApiBoard> {
+  return request(`/boards/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+export function deleteBoard(id: number, version: number): Promise<void> {
+  return request(`/boards/${id}`, { method: 'DELETE', headers: { 'If-Match': `"${version}"` } })
+}
+export function reorderBoards(items: { board_id: number; version: number }[]): Promise<ApiBoard[]> {
+  return request('/boards/order', { method: 'PUT', body: JSON.stringify({ items }) })
+}
+export function replaceBoardOwners(
+  id: number,
+  body: { user_ids: number[] } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export function transferBoard(
+  id: number,
+  body: { program_id: number | null } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
+}
+export function createBoardSection(
+  id: number,
+  body: { name: string; sort_order?: number } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/sections`, { method: 'POST', body: JSON.stringify(body) })
+}
+export function updateBoardSection(
+  id: number,
+  sectionId: number,
+  body: { name?: string; sort_order?: number } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/sections/${sectionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+export function deleteBoardSection(id: number, sectionId: number, version: number): Promise<void> {
+  return request(`/boards/${id}/sections/${sectionId}`, {
+    method: 'DELETE',
+    headers: { 'If-Match': `"${version}"` },
+  })
+}
+export function reorderBoardSections(
+  id: number,
+  body: { section_ids: number[] } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/sections/order`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export function reorderBoardInuksuks(
+  id: number,
+  body: { items: { inuksuk_id: number; section_id: number | null }[] } & Versioned,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/inuksuks/order`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export function removeBoardInuksuk(
+  id: number,
+  inuksukId: number,
+  version: number,
+): Promise<ApiBoard> {
+  return request(`/boards/${id}/inuksuks/${inuksukId}`, {
+    method: 'DELETE',
+    headers: { 'If-Match': `"${version}"` },
+  })
+}
+export function fetchInuksuks(
+  filters: InuksukFilters = {},
+  init?: RequestInit,
+): Promise<ApiInuksuk[]> {
+  return request('/inuksuks' + inuksukQuery(filters), init)
+}
+export function fetchImageInuksuks(imageId: number, init?: RequestInit): Promise<ApiInuksuk[]> {
+  return request(`/images/${imageId}/inuksuks`, init)
+}
+export function createInuksuk(body: InuksukCreate): Promise<ApiInuksuk> {
+  return request('/inuksuks', { method: 'POST', body: JSON.stringify(body) })
+}
+export function updateInuksuk(
+  id: number,
+  body: Partial<Omit<InuksukCreate, 'image_id'>> & Versioned,
+): Promise<ApiInuksuk> {
+  return request(`/inuksuks/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+export function deleteInuksuk(id: number, version: number): Promise<void> {
+  return request(`/inuksuks/${id}`, { method: 'DELETE', headers: { 'If-Match': `"${version}"` } })
+}
+export function reorderInuksuks(
+  items: { inuksuk_id: number; version: number }[],
+): Promise<ApiInuksuk[]> {
+  return request('/inuksuks/order', { method: 'PUT', body: JSON.stringify({ items }) })
+}
+export function replaceInuksukOwners(
+  id: number,
+  body: { user_ids: number[] } & Versioned,
+): Promise<ApiInuksuk> {
+  return request(`/inuksuks/${id}/owners`, { method: 'PUT', body: JSON.stringify(body) })
+}
+export type InuksukConflict = Pick<
+  ApiInuksuk,
+  'id' | 'version' | 'title' | 'description' | 'favourite' | 'board_ids' | 'permissions'
+>
+function isInuksukConflict(value: unknown): value is InuksukConflict {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'number' &&
+    typeof value.version === 'number' &&
+    typeof value.title === 'string' &&
+    (value.description === null || typeof value.description === 'string') &&
+    typeof value.favourite === 'boolean' &&
+    Array.isArray(value.board_ids) &&
+    value.board_ids.every((id: unknown) => typeof id === 'number') &&
+    isRecord(value.permissions) &&
+    typeof value.permissions.can_edit === 'boolean' &&
+    typeof value.permissions.can_delete === 'boolean'
+  )
+}
+export function inuksukConflictCurrent(err: unknown): InuksukConflict | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null
+  return isInuksukConflict(err.data) ? err.data : null
 }
 
 export function fetchVersions(): Promise<VersionsResponse> {

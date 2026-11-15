@@ -105,6 +105,7 @@ import SynchronizedCollectionViewer from './SynchronizedCollectionViewer'
 import type { CanvasDraftHandle } from '../useCanvasAnnotations'
 
 export interface CollectionsPageProps {
+  inuksuksEnabled?: boolean
   currentUser: User | null
   programs: Program[]
   groups: Group[]
@@ -647,6 +648,7 @@ function CollectionDetailHeader({
 }
 
 export default function CollectionsPage({
+  inuksuksEnabled = false,
   currentUser,
   programs,
   groups,
@@ -1215,6 +1217,7 @@ export default function CollectionsPage({
             />
           </Box>
           <SequenceCollectionViewer
+            inuksuksEnabled={inuksuksEnabled}
             collection={detail}
             itemId={selectedCollectionItemId}
             onSelectItem={onSelectCollectionItem}
@@ -1250,6 +1253,7 @@ export default function CollectionsPage({
             />
           </Box>
           <SynchronizedCollectionViewer
+            inuksuksEnabled={inuksuksEnabled}
             collection={detail}
             onSaveViewport={(viewportState) => onSaveViewport(detail.id, viewportState)}
             onOpenImage={onOpenImage}

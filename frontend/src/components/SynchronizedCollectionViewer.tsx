@@ -44,6 +44,7 @@ import {
 } from './imageViewerUtils'
 
 export interface SynchronizedCollectionViewerProps {
+  inuksuksEnabled?: boolean
   collection: Collection
   /** Persist `{ "<image_id>": ViewportState }` for the pair via `PUT …/viewport`. */
   onSaveViewport: (viewportState: Record<string, unknown>) => Promise<unknown>
@@ -119,6 +120,7 @@ function usePortrait(): boolean {
 }
 
 export default function SynchronizedCollectionViewer({
+  inuksuksEnabled = false,
   collection,
   onSaveViewport,
   onOpenImage,
@@ -649,6 +651,7 @@ export default function SynchronizedCollectionViewer({
                     measurement={pane.measurement}
                   >
                     <ImageViewer
+                      inuksuksEnabled={inuksuksEnabled}
                       tileSources={image.tileSources}
                       imageId={image.id}
                       categoryId={image.categoryId ?? undefined}

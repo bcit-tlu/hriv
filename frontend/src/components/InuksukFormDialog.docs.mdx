@@ -1,0 +1,19 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as InuksukFormDialogStories from './InuksukFormDialog.stories'
+
+<Meta of={InuksukFormDialogStories} />
+<Title />
+
+Save an exact image position, zoom and rotation to one or more editable Boards.
+Title and at least one Board are required. Each chosen Board can have its own
+section. The inline create action always makes a private Board and selects it.
+The last successfully used Board is remembered per user; unavailable Boards are
+never selected from storage.
+
+Owner capabilities come from the API, not role guesses. Edits and confirmed
+deletes send the current version. A stale-version response preserves the local
+draft and offers **Reload current** before retrying. The dialog is contained in
+the viewer during OSD full-page mode.
+
+<Primary />
+<Stories includePrimary={false} />

@@ -19,6 +19,7 @@ export function useFeatures(): Features | null {
       .then((data) => {
         if (!cancelled)
           setFeatures({
+            inuksuks: data.inuksuks === true,
             collections: data.collections === true,
             collectionsStudentAccess: data.collections_student_access ?? true,
             collectionsHomeShelf: data.collections === true && data.collections_home_shelf === true,

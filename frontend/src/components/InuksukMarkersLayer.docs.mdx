@@ -1,0 +1,19 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as InuksukMarkersLayerStories from './InuksukMarkersLayer.stories'
+
+<Meta of={InuksukMarkersLayerStories} />
+<Title />
+
+Real OpenSeadragon viewer with a DOM-portal marker layer, independent of Fabric.
+Marker icons and title labels have fixed CSS-pixel dimensions. Only anchor
+positions change on animation, open, resize, rotation and flip events; labels
+and icons remain upright.
+
+**Rotate and zoom** demonstrates constant sizing. **Toggle independent
+visibility** leaves one label without its marker and another marker without its
+label. Both default to visible. Clicking a marker restores its saved position,
+zoom and rotation, highlights it, and opens its details. The toolbar's compass
+button arms one-click placement; Escape cancels it.
+
+<Primary />
+<Stories includePrimary={false} />

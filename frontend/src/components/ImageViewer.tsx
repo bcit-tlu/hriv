@@ -1,8 +1,15 @@
-import { useEffect, useEffectEvent, useRef, useCallback, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useCallback, useState, useContext } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import Alert from '@mui/material/Alert'
+import { AuthContext } from '../authContextValue'
+import type { ApiInuksuk, InuksukView } from '../types'
+import { useImageInuksuks } from '../useImageInuksuks'
+import { adjustInuksukPixelForFlip } from '../inuksukViewport'
+import InuksukFormDialog from './InuksukFormDialog'
+import InuksukMarkersLayer from './InuksukMarkersLayer'
 import { useTheme } from '@mui/material/styles'
 import type { ResponsiveStyleValue } from '@mui/system'
 import {
@@ -79,6 +86,8 @@ const isViewportAtHome = (viewer: OpenSeadragon.Viewer) => {
 }
 
 interface ImageViewerProps {
+  inuksuksEnabled?: boolean
+  inuksukVisibility?: Record<number, { markerVisible?: boolean; labelVisible?: boolean }>
   tileSources: OpenSeadragon.TileSourceOptions | string
   /** Id of the image being viewed; emitted as a structured telemetry field. */
   imageId?: number
@@ -140,6 +149,8 @@ interface DragState {
 }
 
 export default function ImageViewer({
+  inuksuksEnabled = false,
+  inuksukVisibility,
   tileSources,
   imageId,
   categoryId,
@@ -166,6 +177,18 @@ export default function ImageViewer({
   viewportOverlay,
   viewportControl,
 }: ImageViewerProps) {
+  const auth = useContext(AuthContext)
+  const inuksuks = useImageInuksuks(imageId, inuksuksEnabled)
+  const [inuksukDraft, setInuksukDraft] = useState<{ imageId: number; view: InuksukView } | null>(
+    null,
+  )
+  const [editingInuksuk, setEditingInuksuk] = useState<ApiInuksuk | null>(null)
+  const [selectedInuksukId, setSelectedInuksukId] = useState<number | null>(null)
+  const placeInuksuk = useEffectEvent((view: InuksukView) => {
+    if (imageId == null || !inuksuksEnabled) return
+    setEditingInuksuk(null)
+    setInuksukDraft({ imageId, view })
+  })
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const theme = useTheme()
@@ -751,6 +774,67 @@ export default function ImageViewer({
     viewer.addControl(selectionButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
+    let inuksukMode = false
+    let pendingInuksukPlacement = false
+    let inuksukButton: OpenSeadragon.Button | null = null
+    const setInuksukMode = (active: boolean) => {
+      if (active && canvasEditModeRef.current && canvasCancelRef.current) {
+        pendingInuksukPlacement = true
+        pendingPresentationTool = null
+        void canvasCancelRef.current()
+        return
+      }
+      pendingInuksukPlacement = false
+      inuksukMode = active
+      if (active) {
+        setPresentationTool(null)
+        selectionModeRef.current = false
+        setSelectionDrawing(false)
+        setButtonIcons(selectionButton, 'selection')
+      }
+      viewer.canvas.style.cursor = active ? 'crosshair' : ''
+      if (inuksukButton) {
+        inuksukButton.element.setAttribute('aria-pressed', String(active))
+        if (active)
+          inuksukButton.element.querySelectorAll('img').forEach((img) => {
+            img.src = prefix + 'inuksuk_active.svg'
+          })
+        else setButtonIcons(inuksukButton, 'inuksuk')
+      }
+      syncMouseNav()
+    }
+    if (inuksuksEnabled && imageId != null) {
+      inuksukButton = new OpenSeadragon.Button({
+        tooltip: 'Add Inuksuk',
+        srcRest: prefix + 'inuksuk_rest.svg',
+        srcGroup: prefix + 'inuksuk_grouphover.svg',
+        srcHover: prefix + 'inuksuk_hover.svg',
+        srcDown: prefix + 'inuksuk_pressed.svg',
+        onClick: () => setInuksukMode(!inuksukMode),
+      })
+      inuksukButton.element.style.lineHeight = '0'
+      viewer.addControl(inuksukButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
+    }
+    const handleInuksukClick = (event: OpenSeadragon.ClickMouseTrackerEvent) => {
+      if (!inuksukMode || !event.quick || !event.position) return
+      const target = event.originalEvent?.target
+      if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) return
+      const point = viewer.viewport.pointFromPixel(
+        adjustInuksukPixelForFlip(viewer, event.position),
+      )
+      const view = {
+        x: point.x,
+        y: point.y,
+        zoom: viewer.viewport.getZoom(),
+        rotation: viewer.viewport.getRotation(),
+      }
+      setInuksukMode(false)
+      placeInuksuk(view)
+    }
+    const cancelInuksukPlacement = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && (inuksukMode || pendingInuksukPlacement)) setInuksukMode(false)
+    }
+    document.addEventListener('keydown', cancelInuksukPlacement)
 
     // --- Presentation pointer tools (epic #1876): laser pointer + ephemeral
     // ink, armed only in OSD full-page mode. Ink is never persisted.
@@ -772,7 +856,12 @@ export default function ImageViewer({
 
     const syncMouseNav = () => {
       viewer.setMouseNavEnabled(
-        !(selectionModeRef.current || canvasEditModeRef.current || presentationTool === 'ink'),
+        !(
+          selectionModeRef.current ||
+          inuksukMode ||
+          canvasEditModeRef.current ||
+          presentationTool === 'ink'
+        ),
       )
     }
     syncMouseNavRef.current = syncMouseNav
@@ -919,6 +1008,7 @@ export default function ImageViewer({
       if (leaving === 'ink') finishInkStroke()
       viewer.canvas.style.cursor = ''
       if (tool != null) {
+        setInuksukMode(false)
         if (selectionModeRef.current) {
           selectionModeRef.current = false
           setSelectionDrawing(false)
@@ -941,6 +1031,7 @@ export default function ImageViewer({
     }
 
     const toggleSelectionMode = () => {
+      setInuksukMode(false)
       selectionModeRef.current = !selectionModeRef.current
       emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
       if (selectionModeRef.current) setPresentationTool(null)
@@ -1046,6 +1137,11 @@ export default function ImageViewer({
     // dirty-draft discard prompt — but only while still in full-page, since
     // the buttons are hidden otherwise.
     notifyCanvasEditExitedRef.current = () => {
+      if (pendingInuksukPlacement) {
+        pendingInuksukPlacement = false
+        setInuksukMode(true)
+        return
+      }
       const pending = pendingPresentationTool
       pendingPresentationTool = null
       if (pending != null && viewer.isFullPage()) setPresentationTool(pending)
@@ -1078,6 +1174,7 @@ export default function ImageViewer({
 
     const selectionTracker = new OpenSeadragon.MouseTracker({
       element: viewer.element,
+      clickHandler: handleInuksukClick,
       // CanvasOverlay portals its UI (edit toolbar, link annotations, fabric
       // canvas) into viewer.container, inside this tracker's element. Without
       // this guard the tracker would capture every such press to
@@ -1085,9 +1182,11 @@ export default function ImageViewer({
       // — and preventDefault the pointerdown, which suppresses focus and
       // breaks the toolbar's arrow-key nudge. preventGesture skips both.
       preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
+        if (event.eventType === 'click' && !inuksukMode) event.preventDefault = false
         const target = event.originalEvent?.target
         if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
           event.preventGesture = true
+          event.preventDefault = false
           return
         }
         // A press on the OSD control dock or navigator must not start a rect
@@ -1330,6 +1429,7 @@ export default function ImageViewer({
             return
           }
           canvasEditModeRef.current = entering
+          if (entering) setInuksukMode(false)
           setCanvasEditMode(entering)
           if (entering) setPresentationTool(null)
           syncMouseNav()
@@ -1651,6 +1751,7 @@ export default function ImageViewer({
       }
       selectionTracker.destroy()
       document.removeEventListener('keydown', handleToolbarKey)
+      document.removeEventListener('keydown', cancelInuksukPlacement)
       mountedViewerElements.delete(viewer.element)
       topRightControl.removeEventListener('focusin', keepControlsEnabled)
       topRightControl.removeEventListener('focusout', releaseControls)
@@ -1683,6 +1784,7 @@ export default function ImageViewer({
       viewerRef.current = null
     }
   }, [
+    inuksuksEnabled,
     imageId,
     initialViewport,
     initialOverlays,
@@ -1762,6 +1864,53 @@ export default function ImageViewer({
           isDirty={canvasDraftDirty}
           registerCancelHandler={registerCanvasCancel}
         />
+      )}
+      {viewerInstance && imageId != null && inuksuksEnabled && (
+        <>
+          <InuksukMarkersLayer
+            viewer={viewerInstance}
+            items={[
+              ...inuksuks.items.map((item) => ({ ...item, ...inuksukVisibility?.[item.id] })),
+              ...(inuksukDraft?.imageId === imageId
+                ? [{ ...inuksukDraft.view, id: -1, title: 'New Inuksuk' }]
+                : []),
+            ]}
+            selectedId={selectedInuksukId}
+            onSelect={(marker) => {
+              const item = inuksuks.items.find((value) => value.id === marker.id)
+              if (!item) return
+              setSelectedInuksukId(item.id)
+              setInuksukDraft(null)
+              setEditingInuksuk(item)
+            }}
+          />
+          {(inuksukDraft?.imageId === imageId || editingInuksuk?.image_id === imageId) && (
+            <InuksukFormDialog
+              key={editingInuksuk?.id ?? 'new'}
+              imageId={imageId}
+              view={editingInuksuk ?? inuksukDraft!.view}
+              item={editingInuksuk?.image_id === imageId ? editingInuksuk : null}
+              userId={auth?.currentUser?.id}
+              container={viewerInstance.container}
+              onChanged={inuksuks.reload}
+              onClose={() => {
+                setEditingInuksuk(null)
+                setInuksukDraft(null)
+              }}
+            />
+          )}
+          {inuksuks.error &&
+            createPortal(
+              <Alert
+                severity="error"
+                data-hriv-canvas-ui
+                sx={{ position: 'absolute', top: 8, left: 8, zIndex: 25 }}
+              >
+                {inuksuks.error}
+              </Alert>,
+              viewerInstance.container,
+            )}
+        </>
       )}
       {/* Like CanvasOverlay, portal into viewer.container so the overlay
           survives OSD full-page reparenting; positioned children anchor to
