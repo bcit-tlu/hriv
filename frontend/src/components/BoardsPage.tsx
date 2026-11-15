@@ -428,6 +428,7 @@ export default function BoardsPage({
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
+  const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const rows = shared ? data.boards.filter((row) => !ownsBoard(row, currentUser)) : own
   const canEdit = !!board?.permissions.can_edit
   const sensors = useMemo(
@@ -474,14 +475,14 @@ export default function BoardsPage({
     if (event.canceled || !source || busy || conflict) return
     if (source.type === 'board-card' && !shared) {
       const ids = resolveReorderedKeys(
-        own.map((row) => `board:${row.id}`),
+        reorderableBoards.map((row) => `board:${row.id}`),
         event,
       )
       if (ids)
         void run(() =>
           reorderBoards(
             ids.flatMap((id) => {
-              const row = own.find((candidate) => `board:${candidate.id}` === id)
+              const row = reorderableBoards.find((candidate) => `board:${candidate.id}` === id)
               return row ? [{ board_id: row.id, version: row.version }] : []
             }),
           ),
@@ -646,11 +647,11 @@ export default function BoardsPage({
           <Tab label="Shared with me / Public" value="shared" />
         </Tabs>
         <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', py: 2, mb: 2 }}>
-          {rows.map((row, index) => (
+          {rows.map((row) => (
             <Box key={row.id} sx={{ flex: '0 0 220px' }}>
               <SortableFrame
                 id={`board:${row.id}`}
-                index={index}
+                index={reorderableBoards.findIndex((candidate) => candidate.id === row.id)}
                 type="board-card"
                 group="boards"
                 disabled={shared || !row.permissions.can_edit}

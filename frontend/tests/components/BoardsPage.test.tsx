@@ -67,6 +67,26 @@ async function actions() {
   fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rose window' }))
 }
 describe('BoardsPage', () => {
+  it.each(['student', 'staff'] as const)(
+    'keeps read-only program-owned Boards visible but not draggable for %s',
+    async (role) => {
+      const readOnly = {
+        ...BOARDS_FIXTURES[1],
+        owners: [],
+        owner_program_id: 1,
+        permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
+      }
+      vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0], readOnly])
+      await setup(null, { currentUser: { ...BOARD_USER, role } })
+      expect(screen.getByRole('button', { name: `Open Board: ${readOnly.name}` })).toBeVisible()
+      expect(
+        screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: `Reorder ${BOARDS_FIXTURES[0].name}` }),
+      ).toBeVisible()
+    },
+  )
   it('renews an Inuksuk thumbnail via its own endpoint, not the image id', async () => {
     vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...BOARD_ITEMS[0], thumb: '/renewed.jpg' })
     await setup()

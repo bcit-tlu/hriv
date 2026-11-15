@@ -5,6 +5,7 @@ import { AuthContext } from '../authContextValue'
 import BoardsPage from './BoardsPage'
 import {
   BOARD_AUTH,
+  BOARDS_FIXTURES,
   BOARD_GROUPS,
   BOARD_PROGRAMS,
   BOARD_USER,
@@ -15,9 +16,11 @@ const writes = fn()
 function Example({
   initialBoardId = null,
   state = 'ready',
+  readOnlyOwned = false,
 }: {
   initialBoardId?: number | null
   state?: 'ready' | 'empty' | 'error'
+  readOnlyOwned?: boolean
 }) {
   const [selection, setSelection] = useState<{ boardId: number | null; sectionId: number | null }>({
     boardId: initialBoardId,
@@ -28,7 +31,7 @@ function Example({
       <BoardsPage
         key={`${selection.boardId}:${state}`}
         enabled
-        currentUser={BOARD_USER}
+        currentUser={readOnlyOwned ? { ...BOARD_USER, role: 'student' } : BOARD_USER}
         programs={BOARD_PROGRAMS}
         groups={BOARD_GROUPS}
         {...selection}
@@ -44,7 +47,22 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   beforeEach: ({ args }) => {
     writes.mockClear()
-    return installBoardsFetch(args.state, writes)
+    return installBoardsFetch(
+      args.state,
+      writes,
+      args.readOnlyOwned
+        ? [
+            BOARDS_FIXTURES[0],
+            {
+              ...BOARDS_FIXTURES[1],
+              owners: [],
+              owner_program_id: 1,
+              permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
+            },
+            { ...BOARDS_FIXTURES[0], id: 4, name: 'Another editable Board' },
+          ]
+        : BOARDS_FIXTURES,
+    )
   },
 } satisfies Meta<typeof Example>
 export default meta
@@ -101,6 +119,29 @@ export const KeyboardReorder: Story = {
       expect(canvas.getAllByRole('button', { name: /^Open Board:/ })[0]).toHaveAccessibleName(
         'Open Board: Next studio project',
       ),
+    )
+  },
+}
+export const ReadOnlyOwnedBoard: Story = {
+  args: { readOnlyOwned: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const handle = await canvas.findByRole('button', { name: 'Reorder Architecture inspiration' })
+    await expect(
+      canvas.getByRole('button', { name: 'Open Board: Next studio project' }),
+    ).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: 'Reorder Next studio project' }),
+    ).not.toBeInTheDocument()
+    handle.focus()
+    await userEvent.keyboard('[Space][ArrowRight][Space]')
+    await waitFor(() =>
+      expect(writes).toHaveBeenCalledWith('/api/boards/order', {
+        items: [
+          { board_id: 4, version: BOARDS_FIXTURES[0].version },
+          { board_id: 1, version: BOARDS_FIXTURES[0].version },
+        ],
+      }),
     )
   },
 }

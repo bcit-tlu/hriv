@@ -107,9 +107,10 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
 export function installBoardsFetch(
   state: 'ready' | 'empty' | 'error' = 'ready',
   onWrite?: (path: string, body: unknown) => void,
+  initialBoards: ApiBoard[] = BOARDS_FIXTURES,
 ) {
   const original = globalThis.fetch
-  let boards = structuredClone(BOARDS_FIXTURES)
+  let boards = structuredClone(initialBoards)
   let items = structuredClone(BOARD_ITEMS)
   globalThis.fetch = async (input, init) => {
     const url = new URL(

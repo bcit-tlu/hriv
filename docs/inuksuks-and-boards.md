@@ -447,7 +447,9 @@ reload on 409; reload replaces the staged draft with current server values.
 The selected Board groups members into one-level Sections plus **Unsectioned**.
 Section deletion moves its members to Unsectioned, not out of the Board.
 Handle-based DnD and menu actions reorder and move members between Sections;
-Board reorder applies only to owned Boards. These are isolated from Browse's
+Board reorder applies only to editable owned Boards. Read-only program-owned
+Boards remain listed but have no drag handle and are omitted from reorder writes.
+These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
 Dropping an editable Inuksuk on another editable Board **saves a copy of the
 link**. **Move/Save to…** also offers an explicit atomic move that removes the
