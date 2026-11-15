@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 from copy import deepcopy
 import errno
@@ -25,6 +26,7 @@ from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
 from ..image_source_info import build_image_source_info
+from ..inuksuk_thumbs import remove_image_inuksuk_thumbnails
 from ..upload_staging import (
     UploadTooLargeError,
     cleanup_unowned_final,
@@ -826,6 +828,8 @@ async def bulk_delete_images(
                         **actor_log_fields(user, client_synthetic=x_client_synthetic),
                     },
                 )
+            for img in images:
+                await asyncio.to_thread(remove_image_inuksuk_thumbnails, img)
         except Exception as exc:
             record_exception_if_server_error(span, exc)
             raise
@@ -856,6 +860,7 @@ async def delete_image(
             if category_id is not None or member_of_collection:
                 await bump_browse_revision(db)
             await db.commit()
+            await asyncio.to_thread(remove_image_inuksuk_thumbnails, img)
             logger.info(
                 "Image deleted",
                 extra={

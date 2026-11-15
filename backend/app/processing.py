@@ -32,8 +32,9 @@ from .browse_state import bump_browse_revision
 from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .measurement.service import scan_after_processing
+from .inuksuk_thumbs import remove_image_inuksuk_thumbnails
 from .auth_events import actor_log_fields
-from .models import Image, MeasurementFinding, SourceImage, User
+from .models import Image, Inuksuk, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
 from .task_constants import (
     BULK_IMPORT_COORDINATOR_LIVENESS_KEY,
@@ -1040,6 +1041,7 @@ async def process_replace_image(
             # Capture old tile directory path before updating Image record
             old_tile_dir: str | None = None
             old_tile_sources = img.tile_sources  # e.g. /api/tiles/42/image.dzi
+            old_thumbnail_image = Image(tile_sources=old_tile_sources)
             if old_tile_sources:
                 parts = old_tile_sources.strip("/").split("/")
                 # Expected format: api/tiles/<old_src_id>/image.dzi
@@ -1074,6 +1076,9 @@ async def process_replace_image(
                 current_meta = dict(img.metadata_ or {})
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
+                await db.execute(
+                    update(Inuksuk).where(Inuksuk.image_id == img.id).values(thumb=None)
+                )
 
                 # Clear old pyramid metadata before merging new
                 for key in ("pyramid_detected", "pyramid_level_count",
@@ -1134,6 +1139,7 @@ async def process_replace_image(
 
             # Remove old tiles only after the commit succeeds, so a
             # failure cannot leave the Image record pointing at deleted files.
+            await asyncio.to_thread(remove_image_inuksuk_thumbnails, old_thumbnail_image)
             if old_tile_dir and os.path.isdir(old_tile_dir):
                 shutil.rmtree(old_tile_dir, ignore_errors=True)
                 logger.info(
