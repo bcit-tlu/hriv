@@ -22,6 +22,7 @@ from ..collection_views import (
     collections_accessible_to,
     image_ids_in_collections,
 )
+from ..collection_slots import cleanup_slot_thumbs, image_slot_thumbs
 from ..database import async_session, get_db, settings
 from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
@@ -131,9 +132,9 @@ async def image_collections_map(
     for image_id, img, collection in rows:
         if not ctx.can_view_image(img) or not ctx.can_view(collection):
             continue
-        result.setdefault(image_id, []).append(
-            CollectionRefOut(id=collection.id, name=collection.name)
-        )
+        refs = result.setdefault(image_id, [])
+        if not any(ref.id == collection.id for ref in refs):
+            refs.append(CollectionRefOut(id=collection.id, name=collection.name))
     return result
 
 
@@ -821,11 +822,13 @@ async def bulk_delete_images(
                 )
             )
             await bump_board_membership_versions(db, image_ids=body.image_ids)
+            slot_paths = await image_slot_thumbs(db, body.image_ids)
             for img in images:
                 await db.delete(img)
             if browse_dirty:
                 await bump_browse_revision(db)
             await db.commit()
+            await cleanup_slot_thumbs(slot_paths)
             for image_id, image_name, category_id in deleted_images:
                 logger.info(
                     "Image deleted",
@@ -867,10 +870,12 @@ async def delete_image(
                 await image_ids_in_collections(db, {image_id})
             )
             await bump_board_membership_versions(db, image_ids=[image_id])
+            slot_paths = await image_slot_thumbs(db, [image_id])
             await db.delete(img)
             if category_id is not None or member_of_collection:
                 await bump_browse_revision(db)
             await db.commit()
+            await cleanup_slot_thumbs(slot_paths)
             await asyncio.to_thread(remove_image_inuksuk_thumbnails, img)
             logger.info(
                 "Image deleted",

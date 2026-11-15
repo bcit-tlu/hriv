@@ -158,7 +158,8 @@ def _collection(
         programs=[SimpleNamespace(id=p) for p in (programs or [])],
         groups=[SimpleNamespace(id=g) for g in (groups or [])],
         image_links=[
-            SimpleNamespace(sort_order=i, image_id=img.id, image=img)
+            SimpleNamespace(id=i + 1, sort_order=i, image_id=img.id, image=img,
+                            viewport_state=None, thumb=None, label=None)
             for i, img in enumerate(images or [])
         ],
     )
@@ -813,7 +814,7 @@ async def test_get_collection_student_omits_invisible_images(
 
 async def test_get_collection_skips_dangling_links() -> None:
     col = _collection(1, "public", user_id=10, images=[_image(1)])
-    col.image_links.append(SimpleNamespace(sort_order=5, image=None))
+    col.image_links.append(SimpleNamespace(sort_order=5, image_id=999, image=None))
     out = await get_collection(1, _user("admin"), db=_mock_db(get=col))
     assert [i.id for i in out.images] == [1]
 

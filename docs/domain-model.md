@@ -418,3 +418,19 @@ See also: [Groups](groups.md), [Collections](collections.md),
 [Category visibility & program restriction](category-visibility-and-programs.md),
 [Admin import/export](admin-import-export.md),
 [agent feature map](agent-feature-map.md).
+
+### CollectionImage slots (#1770)
+
+Revision `0047_collection_image_slots` replaces the composite membership PK
+with an auto-incrementing `id`. Both cascading FKs remain. The ordered-member
+index `(collection_id, sort_order)` remains, and a non-unique
+`(collection_id, image_id)` index replaces composite uniqueness. Existing rows
+and collection-level viewport dictionaries are preserved. Downgrade keeps the
+minimum-ID row per Collection/Image pair before restoring the composite PK.
+
+Nullable slot fields are `viewport_state JSONB`, `thumb TEXT`, and
+`label VARCHAR(255)`. They snapshot saved views without an Inuksuk FK. Thumb
+paths use `/api/tiles/<source-id>/collection_slots/<slot-id>.jpg`; slot-scoped
+thumbnail-only JWTs are issued after member authorization. Slot identity is
+separate from Image identity. Admin import resets the new ID sequence and
+allocates imported IDs above restored snapshot filenames to avoid collisions.

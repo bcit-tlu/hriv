@@ -1945,3 +1945,40 @@ the shared group-chip palette.
   `transfer` hooks' version resolution (open detail vs fetched),
   mutation-queue serialization behind a reorder, filtered-list removal, and
   error propagation; and the `PUT /owners` + `POST /transfer` request bodies.
+
+## Collection slots (#1770, backend)
+
+With `INUKSUKS_ENABLED=true`, every member response retains its ImageOut fields
+and additionally carries `slot: {id, viewport_state, thumb, label}`. Repeated
+image IDs represent distinct ordered slots. Covers remain image-based; graph
+and reverse-lookup Collection references are deduplicated. Student image
+visibility filters slots before thumbnail token issuance; `member_count` is
+the visible slot count. The frontend slot-identity follow-up is #1774.
+
+POST and PUT `/api/collections/{id}/images` accept `image_ids` followed by
+`slots: [{id?, image_id, inuksuk_id?, viewport_state?, label?}]`, then optional
+`source_board_id`/`source_section_id` seeds and `inuksuk_ids` in supplied order.
+Board seeds follow section order, then member order, with Unsectioned last.
+An existing slot ID must belong to this collection and match its image. Omitted
+metadata survives; explicit null clears it. Legacy IDs reuse the first unused
+matching slot. Invisible existing members survive replacement as before.
+
+The caller must see the source Board; inaccessible Board members are skipped.
+Explicit inaccessible Inuksuks return 404. Seeding snapshots geometry, title,
+and an independent JPEG; it never changes or retains a link to the Inuksuk.
+Student Sequence limits count slots and distinguish additions by slot identity.
+New synchronized slot/seeding payloads require 2–4 slots; legacy image-ID
+payloads retain the previous empty/single-member editing workflow and maximum 4.
+
+PUT `/api/collections/{id}/viewport` also accepts
+`{version, slot_viewports: {"<slot_id>": {x,y,zoom,rotation?}|null}}` under the
+existing edit permission and OCC. Coordinates must be finite numbers and zoom
+positive. The legacy `viewport_state` dictionary is replaced only when supplied.
+Slot edits do not mutate Inuksuks. Removed slots/Collections/Images clean up
+their snapshots after commit. Image replacement retains slots and labels but
+clears their geometry and thumbnail, and invalidates the Collection version.
+
+With the feature disabled, slot request fields and duplicate image IDs are
+rejected and responses omit `slot`. Admin exports include ordered `slots`
+alongside `image_ids` when enabled; imports prefer slots, otherwise accept
+legacy IDs. Slot-bearing dumps require the feature enabled on import.

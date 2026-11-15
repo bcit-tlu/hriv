@@ -45,6 +45,7 @@ def _patch_browse_bump(monkeypatch: pytest.MonkeyPatch) -> None:
         "image_ids_in_collections",
         AsyncMock(return_value=set()),
     )
+    monkeypatch.setattr(images_router, "image_slot_thumbs", AsyncMock(return_value=[]))
 
 
 def _make_image(

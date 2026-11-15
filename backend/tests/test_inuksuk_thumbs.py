@@ -198,6 +198,12 @@ async def test_image_deletion_cleanup_after_commit(pyramid, monkeypatch, bulk, c
 async def test_replacement_cleanup_after_commit(pyramid, monkeypatch, commit_fails):
     image, base, root = pyramid
     _render(pyramid)
+    directory = root / "collection_slots"
+    directory.mkdir()
+    slot_file = directory / "9.jpg"
+    slot_file.write_bytes(b"snapshot")
+    slot_paths = AsyncMock(return_value=["/api/tiles/42/collection_slots/9.jpg"])
+    monkeypatch.setattr(processing, "image_slot_thumbs", slot_paths)
     image.version = 1
     image.metadata_ = {}
     src = SourceImage(id=43, status="pending", original_filename="new.tiff", stored_path="/unused", file_size=1)
@@ -224,6 +230,8 @@ async def test_replacement_cleanup_after_commit(pyramid, monkeypatch, commit_fai
     await processing.process_replace_image(43, 1)
     assert src.status == ("failed" if commit_fails else "completed")
     assert (root / "inuksuks").exists() == commit_fails
+    assert slot_file.exists() == commit_fails
+    slot_paths.assert_awaited_once_with(db, [1], clear=True)
     updates = [str(call.args[0]) for call in db.execute.call_args_list]
     assert any("DELETE FROM inuksuks" in stmt for stmt in updates)
     if commit_fails:

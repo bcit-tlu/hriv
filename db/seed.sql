@@ -210,7 +210,10 @@ SELECT c.id, v.image_id, v.sort_order
 FROM collections c
 CROSS JOIN (VALUES (1, 0), (2, 1)) AS v(image_id, sort_order)
 WHERE c.name = 'Italian Cathedrals' AND c.user_id = 2
-ON CONFLICT (collection_id, image_id) DO NOTHING;
+AND NOT EXISTS (
+  SELECT 1 FROM collection_images ci
+  WHERE ci.collection_id = c.id AND ci.image_id = v.image_id
+);
 
 SELECT setval('collections_id_seq', GREATEST((SELECT MAX(id) FROM collections), 1));
 

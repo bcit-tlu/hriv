@@ -1409,4 +1409,8 @@ assert_contains "$backend_counting_netpol" "port: 6379" \
 assert_contains "$backend_counting_netpol" "protocol: UDP" \
   "counting worker egress must allow DNS"
 
+slot_tiles_config="$(helm template test charts/backend --set tiles.enabled=true --set persistence.enabled=true)"
+assert_contains "$slot_tiles_config" '~^/api/tiles/[0-9]+/collection_slots/[0-9]+\.jpg$ $uri;' \
+  "slot thumbnail auth must be isolated by exact URI, not shared tile class"
+
 echo "Helm chart regression checks passed."

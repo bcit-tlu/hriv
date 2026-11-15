@@ -34,6 +34,7 @@ from .collection_views import image_ids_in_collections
 from .database import async_session, settings
 from .measurement.service import scan_after_processing
 from .inuksuk_thumbs import remove_image_inuksuk_thumbnails
+from .collection_slots import cleanup_slot_thumbs, image_slot_thumbs
 from .auth_events import actor_log_fields
 from .models import Image, Inuksuk, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
@@ -1078,6 +1079,7 @@ async def process_replace_image(
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
                 await bump_board_membership_versions(db, image_ids=[img.id])
+                slot_paths = await image_slot_thumbs(db, [img.id], clear=True)
                 await db.execute(
                     delete(Inuksuk).where(Inuksuk.image_id == img.id)
                 )
@@ -1142,6 +1144,7 @@ async def process_replace_image(
             # Remove old tiles only after the commit succeeds, so a
             # failure cannot leave the Image record pointing at deleted files.
             await asyncio.to_thread(remove_image_inuksuk_thumbnails, old_thumbnail_image)
+            await cleanup_slot_thumbs(slot_paths)
             if old_tile_dir and os.path.isdir(old_tile_dir):
                 shutil.rmtree(old_tile_dir, ignore_errors=True)
                 logger.info(

@@ -1013,15 +1013,20 @@ class CollectionImage(Base):
     __tablename__ = "collection_images"
     __table_args__ = (
         Index("idx_collection_images_order", "collection_id", "sort_order"),
+        Index("idx_collection_images_image", "collection_id", "image_id"),
     )
 
+    id: Mapped[int] = mapped_column(primary_key=True)
     collection_id: Mapped[int] = mapped_column(
-        ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True,
+        ForeignKey("collections.id", ondelete="CASCADE"), nullable=False,
     )
     image_id: Mapped[int] = mapped_column(
-        ForeignKey("images.id", ondelete="CASCADE"), primary_key=True,
+        ForeignKey("images.id", ondelete="CASCADE"), nullable=False,
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    viewport_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    thumb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     collection: Mapped["Collection"] = relationship("Collection", back_populates="image_links")
     image: Mapped["Image"] = relationship("Image", lazy="selectin")

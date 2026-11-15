@@ -70,6 +70,14 @@ from ..authz import (
     can_transfer_collection,
 )
 from ..browse_state import bump_browse_revision, get_browse_revision
+from ..collection_slots import (
+    SlotPlan,
+    apply_slots,
+    cleanup_slot_thumbs,
+    finish_slot_changes,
+    resolve_slots,
+    validate_slot_caps,
+)
 from ..collection_views import (
     _ViewerContext,
     _owners_out,
@@ -280,7 +288,11 @@ async def _caller_visible_image_counts(
     if not collection_ids:
         return {}
     stmt = (
-        select(CollectionImage.collection_id, func.count())
+        select(
+            CollectionImage.collection_id,
+            func.count() if settings.inuksuks_enabled
+            else func.count(func.distinct(CollectionImage.image_id)),
+        )
         .join(Image, Image.id == CollectionImage.image_id)
         .where(CollectionImage.collection_id.in_(collection_ids))
         .group_by(CollectionImage.collection_id)
@@ -686,7 +698,9 @@ async def collections_graph(
         for collection in visible:
             for image in ctx.visible_images(collection):
                 by_id.setdefault(image.id, image)
-                members.setdefault(image.id, []).append(collection.id)
+                refs = members.setdefault(image.id, [])
+                if collection.id not in refs:
+                    refs.append(collection.id)
         images = [
             _graph_image(by_id[image_id], sorted(collection_ids))
             for image_id, collection_ids in sorted(members.items())
@@ -777,7 +791,7 @@ async def collection_graph(
     ctx, collection = await get_visible_collection_or_404(
         db, user, collection_id
     )
-    hub_images = ctx.visible_images(collection)
+    hub_images = list({image.id: image for image in ctx.visible_images(collection)}.values())
     hub_image_ids = {image.id for image in hub_images}
     members: dict[int, list[int]] = {
         image.id: [collection.id] for image in hub_images
@@ -802,7 +816,8 @@ async def collection_graph(
         for other in related:
             for image in ctx.visible_images(other):
                 if image.id in hub_image_ids:
-                    members[image.id].append(other.id)
+                    if other.id not in members[image.id]:
+                        members[image.id].append(other.id)
 
     return CollectionGraphOut(
         order=order,
@@ -1124,7 +1139,19 @@ async def create_collection(
     if body.visibility == "restricted":
         progs = await _resolve_programs(db, user, body.program_ids, set())
         grps = await _resolve_groups(db, user, body.group_ids, set())
-    images = await _resolve_images(db, ctx, body.type, body.image_ids)
+    plans = (
+        await resolve_slots(db, ctx, body, body.image_ids)
+        if settings.inuksuks_enabled else None
+    )
+    if plans is not None:
+        validate_slot_caps(
+            user, body.type, plans, [],
+            slot_request=bool(body.model_fields_set & {"slots", "source_board_id", "inuksuk_ids"}),
+        )
+    images = (
+        await _resolve_images(db, ctx, body.type, body.image_ids)
+        if plans is None else []
+    )
     if body.category_id is not None:
         affected = collection_scope_keys({body.category_id})
         if affected:
@@ -1146,13 +1173,16 @@ async def create_collection(
     collection.owners = [user]
     collection.programs = progs
     collection.groups = grps
-    _replace_image_links(collection, images)
+    removed, renders = apply_slots(collection, plans) if plans is not None else ([], [])
+    if plans is None:
+        _replace_image_links(collection, images)
     db.add(collection)
     # Unconditional: an unfiled collection never reaches Browse but still
     # appears in ``GET /api/collections``, whose ETag rides this revision
     # (#1619).
     await bump_browse_revision(db)
     await db.commit()
+    await finish_slot_changes(db, removed, renders)
     await db.refresh(collection)
     return collection_out(ctx, collection)
 
@@ -1334,10 +1364,12 @@ async def bulk_delete_collections(
     locked = await _lock_and_verify_unchanged(
         db, body.collection_ids, snapshot
     )
+    removed = [link.thumb for c in locked for link in c.image_links]
     for c in locked:
         await db.delete(c)
     await bump_browse_revision(db)
     await db.commit()
+    await cleanup_slot_thumbs(removed)
     return Response(status_code=204)
 
 
@@ -1485,9 +1517,11 @@ async def delete_collection(
     affected = collection_scope_keys({collection.category_id})
     if affected:
         await bump_scopes(db, affected)
+    removed = [link.thumb for link in collection.image_links]
     await db.delete(collection)
     await bump_browse_revision(db)
     await db.commit()
+    await cleanup_slot_thumbs(removed)
     return Response(status_code=204)
 
 
@@ -1514,11 +1548,26 @@ async def replace_collection_images(
         retained=len(unseen),
         existing_ids=existing_ids,
     )
-    images = await _resolve_images(
-        db, ctx, collection.type, body.image_ids, retained=len(unseen)
+    plans = (
+        await resolve_slots(db, ctx, body, body.image_ids, collection)
+        if settings.inuksuks_enabled else None
+    )
+    if plans is not None:
+        validate_slot_caps(
+            user, collection.type, plans, list(collection.image_links),
+            slot_request=bool(body.model_fields_set & {"slots", "source_board_id", "inuksuk_ids"}),
+        )
+    images = (
+        await _resolve_images(
+            db, ctx, collection.type, body.image_ids, retained=len(unseen)
+        ) if plans is None else []
     )
     await _bump_version_or_409(db, ctx, collection, body.version)
-    _replace_image_links(collection, images, unseen)
+    removed, renders = apply_slots(collection, plans) if plans is not None else ([], [])
+    if plans is None:
+        previous = list(collection.image_links)
+        _replace_image_links(collection, images, unseen)
+        removed = [link.thumb for link in previous if link not in collection.image_links]
     # A pinned cover that is no longer a member reverts to the first-member
     # fallback — a retained *unseen* member still counts, so the pin survives
     # edits by callers who cannot view it.
@@ -1531,6 +1580,7 @@ async def replace_collection_images(
     # Member count and cover thumbnail are shown on the Browse tile.
     await bump_browse_revision(db)
     await db.commit()
+    await finish_slot_changes(db, removed, renders)
     await db.refresh(collection)
     return collection_out(ctx, collection)
 
@@ -1545,14 +1595,31 @@ async def replace_collection_viewport(
     """Replace ``viewport_state`` wholesale — the stored JSONB is overwritten,
     never merged key-by-key."""
     ctx, collection = await get_editable_collection_or_error(db, user, collection_id)
+    by_id = {link.id: link for link in collection.image_links} if body.slot_viewports else {}
+    for slot_id in body.slot_viewports or {}:
+        if slot_id not in by_id or not ctx.can_view_image(by_id[slot_id].image):
+            raise HTTPException(422, "Invalid collection slot")
     await _bump_version_or_409(db, ctx, collection, body.version)
-    collection.viewport_state = dict(body.viewport_state)
+    if "viewport_state" in body.model_fields_set:
+        collection.viewport_state = dict(body.viewport_state)
+    removed = []
+    renders = []
+    for slot_id, viewport in (body.slot_viewports or {}).items():
+        link = by_id[slot_id]
+        old_thumb = link.thumb
+        link.viewport_state = viewport.model_dump(exclude_none=True) if viewport else None
+        link.thumb = None
+        renders.append(SlotPlan(
+            link, link.viewport_state, link.label,
+            render=True, old_thumb=old_thumb,
+        ))
     # The CAS advances ``version``/``updated_at`` — both are in
     # ``CollectionSummaryOut`` and ``updated_at`` is the default list sort —
     # so the list ETag must invalidate even though tiles are unchanged
     # (#1619).
     await bump_browse_revision(db)
     await db.commit()
+    await finish_slot_changes(db, removed, renders)
     await db.refresh(collection)
     return collection_out(ctx, collection)
 

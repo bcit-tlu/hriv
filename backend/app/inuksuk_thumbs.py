@@ -74,17 +74,19 @@ def local_tile_root(image: Image, tiles_dir: str | Path | None = None) -> Path |
     return root
 
 
-def generate_inuksuk_thumbnail(
-    image: Image, inuksuk_id: int, x: float, y: float, zoom: float,
-    rotation: float = 0, *, tiles_dir: str | Path | None = None,
+def generate_viewport_thumbnail(
+    image: Image, thumbnail_id: int, x: float, y: float, zoom: float,
+    rotation: float = 0, *, namespace: str, tiles_dir: str | Path | None = None,
 ) -> str | None:
     """Write a 320x240 Q82 JPEG; return its local API path or None without DZI.
 
     Synchronous and request/session independent; callers may use asyncio.to_thread.
     Corrupt manifests or missing intersecting tiles propagate to the caller.
     """
-    if type(inuksuk_id) is not int or inuksuk_id <= 0:
-        raise ValueError("Inuksuk id must be a positive integer")
+    if type(thumbnail_id) is not int or thumbnail_id <= 0:
+        raise ValueError("Thumbnail id must be a positive integer")
+    if namespace not in {"inuksuks", "collection_slots"}:
+        raise ValueError("Invalid thumbnail namespace")
     root = local_tile_root(image, tiles_dir)
     if root is None or not (root / "image.dzi").is_file() or not (root / "image_files").is_dir():
         return None
@@ -110,18 +112,28 @@ def generate_inuksuk_thumbnail(
         plan.width, plan.height,
     )
     canvas = canvas.resize(THUMB_WIDTH / plan.width, vscale=THUMB_HEIGHT / plan.height)
-    directory = root / "inuksuks"
+    directory = root / namespace
     if directory.is_symlink():
         raise ValueError("Thumbnail directory must not be a symlink")
     directory.mkdir(exist_ok=True)
-    target = directory / f"{inuksuk_id}.jpg"
-    temporary = directory / f".{inuksuk_id}-{uuid4().hex}.jpg"
+    target = directory / f"{thumbnail_id}.jpg"
+    temporary = directory / f".{thumbnail_id}-{uuid4().hex}.jpg"
     try:
         canvas.jpegsave(str(temporary), Q=82)
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
-    return f"/api/tiles/{root.name}/inuksuks/{inuksuk_id}.jpg"
+    return f"/api/tiles/{root.name}/{namespace}/{thumbnail_id}.jpg"
+
+
+def generate_inuksuk_thumbnail(
+    image: Image, inuksuk_id: int, x: float, y: float, zoom: float,
+    rotation: float = 0, *, tiles_dir: str | Path | None = None,
+) -> str | None:
+    return generate_viewport_thumbnail(
+        image, inuksuk_id, x, y, zoom, rotation,
+        namespace="inuksuks", tiles_dir=tiles_dir,
+    )
 
 
 def remove_inuksuk_thumbnail(
