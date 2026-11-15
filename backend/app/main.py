@@ -34,6 +34,8 @@ from .routers import (
     bulk_import,
     categories,
     collections,
+    boards,
+    inuksuks,
     counts,
     groups,
     images,
@@ -362,6 +364,8 @@ app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcements.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(collections.router, prefix="/api")
+app.include_router(boards.router, prefix="/api")
+app.include_router(inuksuks.router, prefix="/api")
 app.include_router(counts.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(groups.router, prefix="/api")

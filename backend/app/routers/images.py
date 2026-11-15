@@ -27,6 +27,8 @@ from ..filenames import sanitize_upload_filename, storage_extension
 from ..image_validation import is_valid_image
 from ..image_source_info import build_image_source_info
 from ..inuksuk_thumbs import remove_image_inuksuk_thumbnails
+from ..inuksuks import require_inuksuks_enabled
+from .inuksuks import image_inuksuks
 from ..upload_staging import (
     UploadTooLargeError,
     cleanup_unowned_final,
@@ -45,6 +47,7 @@ from ..schemas import (
     ImageOut,
     ImageSourceInfoOut,
     ImageUpdate,
+    InuksukOut,
     SourceImageOut,
     normalize_note_value,
 )
@@ -57,6 +60,11 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/images", tags=["images"])
+router.add_api_route(
+    "/{image_id}/inuksuks", image_inuksuks, methods=["GET"],
+    response_model=list[InuksukOut],
+    dependencies=[Depends(require_inuksuks_enabled)],
+)
 
 
 @router.get("/", response_model=list[ImageOut])

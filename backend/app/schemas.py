@@ -1485,6 +1485,73 @@ class MeasurementBulkApproveOut(BaseModel):
     skipped: list[int]
 
 
+class BoardPermissionsOut(BaseModel):
+    can_edit: bool
+    can_change_scope: bool
+    can_delete: bool
+    can_transfer: bool
+
+
+class InuksukPermissionsOut(BaseModel):
+    can_edit: bool
+    can_delete: bool
+
+
+class InuksukOut(BaseModel):
+    id: int
+    image_id: int
+    title: str
+    description: str | None = None
+    x: float
+    y: float
+    zoom: float
+    rotation: float
+    thumb: str | None = None
+    favourite: bool
+    sort_order: int
+    version: int
+    owners: list[CollectionOwnerOut]
+    board_ids: list[int]
+    source: Literal["mine", "instructor", "public"] | None = None
+    permissions: InuksukPermissionsOut
+    created_at: datetime
+    updated_at: datetime
+
+
+class BoardInuksukOut(InuksukOut):
+    section_id: int | None = None
+
+
+class BoardSectionOut(BaseModel):
+    id: int
+    board_id: int
+    name: str
+    sort_order: int
+
+
+class BoardSummaryOut(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    visibility: Literal["private", "public", "restricted"]
+    owners: list[CollectionOwnerOut]
+    owner_program_id: int | None = None
+    program_ids: list[int]
+    group_ids: list[int]
+    inuksuk_count: int
+    cover_thumb: str | None = None
+    sort_order: int
+    version: int
+    permissions: BoardPermissionsOut
+    created_at: datetime
+    updated_at: datetime
+
+
+class BoardOut(BoardSummaryOut):
+    sections: list[BoardSectionOut]
+    inuksuks: list[BoardInuksukOut]
+
+
 class FeaturesOut(BaseModel):
     """``GET /api/features``: deployment-level feature flags the frontend
     reads at boot to decide which surfaces to render. Flags are not secrets;
