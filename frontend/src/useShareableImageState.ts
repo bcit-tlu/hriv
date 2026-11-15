@@ -148,6 +148,10 @@ export interface UseShareableImageStateDeps {
    * the link restores the sequence position (#1416).
    */
   collectionItemId?: number | null
+  /**
+   * Collection-scoped slot inside a sequence — written as `&slot={id}` alongside
+   * `item` so repeated images restore the correct member of this collection.
+   */
   collectionSlotId?: number | null
   /**
    * Collection detail opened from a Browse tile (#1529): the URL sync keeps
