@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useShareableImageState } from '../src/useShareableImageState'
+import { parseShareableUrlParams, useShareableImageState } from '../src/useShareableImageState'
 import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
 import { makeCategory, makeImage } from './helpers/fixtures'
 
@@ -26,6 +26,21 @@ function makeDeps(overrides: Partial<UseShareableImageStateDeps> = {}): UseShare
 }
 
 describe('useShareableImageState', () => {
+  it('parses Board and Section URLs without resolving an unrelated image', () => {
+    window.history.replaceState(null, '', '/?page=boards&board=2&section=11&image=42')
+    expect(parseShareableUrlParams()).toMatchObject({ boardId: 2, sectionId: 11, imageId: null })
+  })
+  it('syncs Board and Section selection, removes stale Sections and supports opt-out', () => {
+    const { rerender } = renderHook(
+      ({ boardId, sectionId, enableUrlSync }) =>
+        useShareableImageState(makeDeps({ page: 'boards', boardId, sectionId, enableUrlSync })),
+      { initialProps: { boardId: 2, sectionId: 11, enableUrlSync: true } },
+    )
+    expect(window.location.search).toBe('?page=boards&board=2&section=11')
+    expect(window.history.state).toMatchObject({ page: 'boards', boardId: 2, sectionId: 11 })
+    rerender({ boardId: 3, sectionId: 0, enableUrlSync: false })
+    expect(window.location.search).toBe('?page=boards&board=2&section=11')
+  })
   let replaceStateSpy: ReturnType<typeof vi.spyOn>
   let savedClipboard: Clipboard
   let savedExecCommand: typeof document.execCommand | undefined

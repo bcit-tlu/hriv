@@ -413,3 +413,63 @@ Tests: `useInuksukVisibilityPrefs.test.ts`, `ImageInuksuksDrawer.test.tsx`,
 `ImageViewer.test.tsx`, and collection-viewer tests. Attached drawer stories
 cover expanded/collapsed groups, label-only visibility, sequence and synchronized
 embeds with deterministic API fixtures.
+
+### Boards page (#1771)
+
+`GET /api/inuksuks/{id}` provides a fresh, visibility-filtered `InuksukOut`
+for membership edits and thumbnail renewal. It uses the list's image and
+ownership/visible-Board gates, returning 404 for missing or invisible items.
+Only visible Board IDs are projected; thumbnails carry thumbnail-only tokens.
+The response uses viewer-bound, token-epoch ETags and supports conditional 304s.
+
+The feature-gated **Boards & Inuksuks** AppBar utility opens `?page=boards`.
+It does not add a primary tab: students retain two mobile navigation tabs, and
+Boards uses `Tabs value={false}`. Selecting a Board/Section writes
+`?page=boards&board={id}&section={id}`; Back/Forward restores the selection.
+The same flag gates direct links and all page requests.
+Frontend telemetry preserves `boards` in both page and from-page dimensions.
+
+**Your Boards** includes user-owned and program-owned Boards for the caller;
+**Shared with me / Public** shows other server-authorized Boards. Boards have
+up to four renewing coordinate thumbnails, a themed placeholder, visibility
+and count. The hook pages through the complete Board list, so ordering is not
+truncated by the API default page size. The overview shows the 60 most recently
+updated visible Inuksuks in a responsive column collage, with server-side
+favourites filtering. Opening a Board shows all its authorized members.
+
+Board metadata defaults to private. Restricted scope reuses Collections'
+attach rules: admins may attach any Program/Group, instructors only their own
+Programs and managed Groups, while existing attachments can be removed.
+`can_change_scope` gates the scope fields; metadata-only writes omit them.
+Owners/transfer reuse the Collections picker via a Board adapter, and require
+`can_transfer`. Both dialogs carry Board OCC versions and require explicit
+reload on 409; reload replaces the staged draft with current server values.
+
+The selected Board groups members into one-level Sections plus **Unsectioned**.
+Section deletion moves its members to Unsectioned, not out of the Board.
+Handle-based DnD and menu actions reorder and move members between Sections;
+Board reorder applies only to editable owned Boards. Read-only program-owned
+Boards remain listed but have no drag handle and are omitted from reorder writes.
+They appear in a separate read-only row under Your Boards. Board positions are
+stored globally on each Board, not per user; separating the rows prevents
+read-only cards from moving among editable cards after a reorder and reload.
+These are isolated from Browse's
+near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
+Dropping an editable Inuksuk on another editable Board **saves a copy of the
+link**. **Move/Save to…** also offers an explicit atomic move that removes the
+source link in the same PATCH. Other editable Board links retain their Sections
+and positions; non-editable links remain server-preserved. If any membership or
+destination read fails, saving is blocked rather than sending a partial list.
+Board editors can remove other owners' Inuksuks from their Board, but only
+Inuksuk editors may save to another Board or edit/favourite the Inuksuk.
+
+Board deletion confirms that otherwise orphaned Inuksuks will be deleted.
+Removing one link instead surfaces the backend's last-Board 422 without deleting
+the Inuksuk. Mutations reload projections; no optimistic write survives failure.
+Opening a card fetches the authorized image record and reuses the existing
+`?image=&x=&y=&zoom=&rotation=` viewer/share mechanism, with an epoch guard
+against late navigation. Browser Back returns to the Board/Section entry.
+
+Tests: `boardUtils.test.ts`, `useBoardsData.test.ts`, `BoardsPage.test.tsx`,
+`BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`, URL/history/App/AppShell
+tests, and attached deterministic component stories, including keyboard reorder.

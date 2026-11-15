@@ -20,6 +20,7 @@ const cases: {
 }[] = [
   { name: 'list Boards', call: () => api.fetchBoards(), method: 'GET', path: '/boards' },
   { name: 'Board detail', call: () => api.fetchBoard(1), method: 'GET', path: '/boards/1' },
+  { name: 'Inuksuk detail', call: () => api.fetchInuksuk(7), method: 'GET', path: '/inuksuks/7' },
   {
     name: 'create Board',
     call: () => api.createBoard({ name: 'New', visibility: 'private' }),

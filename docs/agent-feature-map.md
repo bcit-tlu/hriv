@@ -142,6 +142,19 @@ owns bounded, per-user marker/label defaults and overrides shared across panes.
 `SequenceCollectionViewer.tsx` hides conflicting navigation arrows while open.
 See [the drawer contract](inuksuks-and-boards.md#inuksuks-drawer-1773).
 
+### Boards page (#1771)
+
+`components/BoardsPage.tsx` owns the Boards row, recent/favourite collage,
+Sections, isolated DnD surfaces and Move/Save links. `useBoardsData.ts` loads
+complete Board lists and selected projections; `boardUtils.ts` owns location,
+ownership and membership-order helpers. `BoardEditDialog.tsx` handles metadata
+and restricted scope; `BoardOwnersDialog.tsx` adapts the Collections picker.
+`AppShell.tsx`, `App.tsx`, `useShareableImageState.ts` and
+`useNavigationHistory.ts` wire the feature-gated utility and deep links.
+Cards reuse the existing saved image viewport URL, preserving Board history.
+See [the page contract](inuksuks-and-boards.md#boards-page-1771) and
+[its separate DnD contract](drag-and-drop.md#boards-page-1771).
+
 For schema/relationship details before touching models or migrations, see
 [`docs/domain-model.md`](domain-model.md). For the project-wide rules agents must
 not break, see the **Critical Invariants** section in

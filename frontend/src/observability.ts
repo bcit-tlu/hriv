@@ -88,6 +88,7 @@ export type TelemetryErrorCode =
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
 export type FrontendPage =
   | 'browse'
+  | 'boards'
   | 'collections'
   | 'manage'
   | 'measurement'
