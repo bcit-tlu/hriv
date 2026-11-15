@@ -150,10 +150,12 @@ function ActiveSortableFrame({
 
 function DropArea({
   id,
+  label,
   enabled,
   children,
 }: {
   id: string
+  label: string
   enabled: boolean
   children: ReactNode
 }) {
@@ -167,6 +169,8 @@ function DropArea({
   return (
     <Box
       ref={ref}
+      role="region"
+      aria-label={label}
       sx={{
         borderRadius: 2,
         outline: isDropTarget ? '3px solid' : undefined,
@@ -659,6 +663,7 @@ export default function BoardsPage({
               >
                 <DropArea
                   id={`save:${row.id}`}
+                  label={`Save to ${row.name}`}
                   enabled={
                     !!activeItem?.permissions.can_edit &&
                     row.permissions.can_edit &&
@@ -859,7 +864,11 @@ export default function BoardsPage({
                         </>
                       )}
                     </Stack>
-                    <DropArea id={`bin:${section.id ?? 'none'}`} enabled={canEdit}>
+                    <DropArea
+                      id={`bin:${section.id ?? 'none'}`}
+                      label={`Move to section ${section.name}`}
+                      enabled={canEdit}
+                    >
                       <Box
                         sx={{
                           display: 'grid',

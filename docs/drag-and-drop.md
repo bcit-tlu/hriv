@@ -316,6 +316,8 @@ Inuksuks and add a link without removing the source. Non-owner Board editors
 can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
 accessible alternative; per-item menu actions move to every Section or Unsectioned.
+Drop regions expose accessible names: `Save to {Board}` and
+`Move to section {Section}`, including Unsectioned.
 
 Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
 5px tolerance, plus KeyboardSensor. Only the drag handle activates sorting, so

@@ -67,6 +67,12 @@ async function actions() {
   fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rose window' }))
 }
 describe('BoardsPage', () => {
+  it('names Board save targets and Section move targets', async () => {
+    await setup(1)
+    expect(screen.getByRole('region', { name: 'Save to Architecture inspiration' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Move to section Windows' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Move to section Unsectioned' })).toBeVisible()
+  })
   it.each(['student', 'staff'] as const)(
     'keeps read-only program-owned Boards visible but not draggable for %s',
     async (role) => {
