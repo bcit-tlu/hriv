@@ -44,13 +44,11 @@ data:
         default "";
     }
 
-    # Split the verdict cache into two classes so a ``thumb``-scoped 204 is
-    # never reused for a tile request (#1609). Matches the backend's
-    # allowlist for ``purpose="thumb"`` tokens: the whole-image thumbnail
-    # and numeric Inuksuk JPEGs; all other nested names are tile paths.
+    # Whole-image thumbnails, exact Inuksuk paths, and shared tile scope
+    # must not reuse each other's verdicts. Inuksuk tokens bind one id.
     map $uri $tile_path_class_from_uri {
         ~^/api/tiles/[0-9]+/thumbnail\.jpeg$ thumb;
-        ~^/api/tiles/[0-9]+/inuksuks/[0-9]+\.jpg$ thumb;
+        ~^/api/tiles/[0-9]+/inuksuks/[0-9]+\.jpg$ $uri;
         default tiles;
     }
 

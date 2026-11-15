@@ -62,10 +62,16 @@ at arbitrary angles. Invalid/nonfinite geometry and excessive decode
 sizes raise `ValueError`. The shared 25-million-pixel guard applies.
 Writes use a unique temporary JPEG and atomic replacement.
 
-Use `append_thumb_token` when serializing these URLs after visibility
-checks. Thumbnail tokens authorize only `thumbnail.jpeg` and numeric
-`inuksuks/<id>.jpg` paths within the same source image, never DZI tiles.
-The nginx verdict cache uses the same thumbnail-vs-tile classification.
+Use `append_inuksuk_thumb_token(url)` when serializing these URLs after
+image and Board visibility checks. It derives the Inuksuk id from the URL
+and mints `purpose="thumb"` with an integer `iid` claim, using
+`issue_inuksuk_thumb_token(source_image_id, inuksuk_id)`. This token
+authorizes only `inuksuks/<iid>.jpg` within that source image: not another
+Inuksuk, `thumbnail.jpeg`, or DZI tiles. Plain `append_thumb_token`
+tokens remain limited to `thumbnail.jpeg`, so hidden card-cover tokens
+cannot reveal zoomed regions. The nginx verdict cache includes the exact
+normalized URI for Inuksuk paths, preventing cached authorization from
+crossing Inuksuk ids; the `tiles` class remains shared.
 
 `remove_inuksuk_thumbnail` is the helper for future Inuksuk-delete routers.
 Single/bulk image deletion removes the `inuksuks/` directory after commit.

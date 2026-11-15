@@ -6,10 +6,10 @@ Two token purposes share the same signature + expiry + image-id binding:
 
 - ``purpose="tile"`` grants read access to the full tile set of one
   ``source_image_id`` (``image.dzi`` and every ``image_files/...`` tile).
-- ``purpose="thumb"`` grants read access to ``thumbnail.jpeg`` and numeric
-  ``inuksuks/<id>.jpg`` paths of one ``source_image_id``. A category card cover can render
-  even when the pinned image is hidden from the viewer (#1609) without
-  leaking deep-zoom tile access.
+- ``purpose="thumb"`` without ``iid`` grants only ``thumbnail.jpeg`` of
+  one source image, including hidden category card covers (#1609).
+  With ``iid`` it grants only ``inuksuks/<iid>.jpg``, not the whole-image
+  thumbnail or other Inuksuks.
 
 They are issued at serialization time — only *after* the existing auth +
 student-visibility filtering — and validated by signature + expiry +
@@ -29,7 +29,6 @@ from .auth import auth_settings
 TILE_TOKEN_PURPOSE = "tile"
 THUMB_TOKEN_PURPOSE = "thumb"
 THUMBNAIL_FILENAME = "thumbnail.jpeg"
-INUKSUK_THUMB_PATH = re.compile(r"inuksuks/[0-9]+\.jpg")
 TILE_URL_PREFIX = "/api/tiles/"
 
 
@@ -46,7 +45,7 @@ class TileTokenError(Exception):
         self.detail = detail
 
 
-def _issue(source_image_id: int, purpose: str) -> str:
+def _issue(source_image_id: int, purpose: str, *, inuksuk_id: int | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=auth_settings.tile_token_ttl_minutes
     )
@@ -55,6 +54,8 @@ def _issue(source_image_id: int, purpose: str) -> str:
         "sid": source_image_id,
         "exp": expire,
     }
+    if inuksuk_id is not None:
+        payload["iid"] = inuksuk_id
     return jwt.encode(
         payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm
     )
@@ -70,6 +71,13 @@ def issue_thumb_token(source_image_id: int) -> str:
     return _issue(source_image_id, THUMB_TOKEN_PURPOSE)
 
 
+def issue_inuksuk_thumb_token(source_image_id: int, inuksuk_id: int) -> str:
+    """Sign a thumb-purpose token bound to exactly one Inuksuk JPEG."""
+    if type(inuksuk_id) is not int or inuksuk_id <= 0:
+        raise ValueError("Inuksuk id must be a positive integer")
+    return _issue(source_image_id, THUMB_TOKEN_PURPOSE, inuksuk_id=inuksuk_id)
+
+
 def validate_tile_token(
     token: str, source_image_id: int, path: str | None = None
 ) -> None:
@@ -77,7 +85,7 @@ def validate_tile_token(
 
     Raises :class:`TileTokenError` (401 for invalid/expired signatures or
     an unknown purpose, 403 for an id mismatch or a thumbnail token used
-    for anything but ``thumbnail.jpeg``). The underlying JWT library
+    outside its exact whole-image or Inuksuk thumbnail scope). The JWT library
     performs a constant-time HMAC comparison.
     """
     try:
@@ -94,9 +102,15 @@ def validate_tile_token(
     if payload.get("sid") != source_image_id:
         raise TileTokenError(403, "Tile token does not match this image")
     if purpose == THUMB_TOKEN_PURPOSE:
-        if path != THUMBNAIL_FILENAME and (
-            path is None or INUKSUK_THUMB_PATH.fullmatch(path) is None
-        ):
+        if "iid" in payload:
+            iid = payload["iid"]
+            allowed = (
+                type(iid) is int and iid > 0
+                and path == f"inuksuks/{iid}.jpg"
+            )
+        else:
+            allowed = path == THUMBNAIL_FILENAME
+        if not allowed:
             raise TileTokenError(
                 403, "Thumbnail token does not grant tile access"
             )
@@ -152,3 +166,20 @@ def append_thumb_token(url: str) -> str:
     while the token must not authorize ``image.dzi`` or tile access.
     """
     return _append_token(url, issue_thumb_token)
+
+
+def append_inuksuk_thumb_token(url: str) -> str:
+    """Tokenize an Inuksuk JPEG URL only after image and Board visibility checks.
+
+    Bind the token to the URL's exact Inuksuk id. Other URL shapes are unchanged.
+    """
+    match = re.fullmatch(
+        r"/api/tiles/([0-9]+)/inuksuks/([1-9][0-9]*)\.jpg",
+        urlsplit(url).path,
+    )
+    if match is None:
+        return url
+    inuksuk_id = int(match[2])
+    return _append_token(
+        url, lambda sid: issue_inuksuk_thumb_token(sid, inuksuk_id)
+    )
