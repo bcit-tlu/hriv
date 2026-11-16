@@ -88,6 +88,34 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
+  it.each(['Boards', 'Inuksuks'])(
+    'shows an initial %s load error instead of the empty state and allows retry',
+    async (source) => {
+      const fetch = source === 'Boards' ? vi.mocked(api.fetchBoards) : vi.mocked(api.fetchInuksuks)
+      fetch.mockRejectedValueOnce(new api.ApiError(422, 'Overview unavailable'))
+      await setup()
+      expect(screen.getByRole('alert')).toHaveTextContent('Overview unavailable')
+      expect(screen.queryByText(/No Inuksuks yet/)).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+      await screen.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    },
+  )
+  it('retains the loaded collage and covers when a silent refresh fails and allows retry', async () => {
+    await setup()
+    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    const cover = screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
+    vi.mocked(api.fetchBoards).mockRejectedValueOnce(new api.ApiError(422, 'Overview unavailable'))
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Overview unavailable')
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+    expect(screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })).toBe(cover)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByText(/No Inuksuks yet/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+  })
   it('keeps collage nodes mounted throughout a drag-save and silent refresh', async () => {
     const { container } = await setup()
     const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })

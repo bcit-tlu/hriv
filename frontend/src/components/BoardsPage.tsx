@@ -1071,7 +1071,7 @@ export default function BoardsPage({
           ))}
         </Box>
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
-        {!data.loading && (
+        {!data.loading && (!data.error || data.boards.length > 0 || data.recent.length > 0) && (
           <>
             {!boardId && collageToolbar('Inuksuks')}
             <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
