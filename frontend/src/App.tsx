@@ -2370,7 +2370,11 @@ export default function App() {
         )
         return false
       } catch (err) {
-        setErrorSnack(userMessage(err, 'Failed to add to collection.'))
+        setErrorSnack(
+          userMessage(err, "Couldn't add to the collection. Please try again.", {
+            includeServerDetail: true,
+          }),
+        )
         return false
       }
     },

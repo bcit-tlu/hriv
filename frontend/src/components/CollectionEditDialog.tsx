@@ -345,7 +345,13 @@ export default function CollectionEditDialog({
       const current = collectionConflictCurrent(err)
       if (current) setConflict(apiCollectionToCollection(current))
       setError(
-        userMessage(err, isEdit ? 'Failed to update collection.' : 'Failed to create collection.'),
+        userMessage(
+          err,
+          isEdit
+            ? 'Failed to update collection.'
+            : "Couldn't create the collection. Please try again.",
+          { includeServerDetail: !isEdit },
+        ),
       )
     } finally {
       setSaving(false)

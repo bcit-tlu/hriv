@@ -1183,7 +1183,10 @@ async def create_collection(
     await bump_browse_revision(db)
     await db.commit()
     await finish_slot_changes(db, removed, renders)
-    await db.refresh(collection)
+    collection = await db.get(
+        Collection, collection.id, populate_existing=True,
+        options=[selectinload(Collection.image_links).selectinload(CollectionImage.image)],
+    )
     return collection_out(ctx, collection)
 
 
@@ -1582,7 +1585,10 @@ async def replace_collection_images(
     await bump_browse_revision(db)
     await db.commit()
     await finish_slot_changes(db, removed, renders)
-    await db.refresh(collection)
+    collection = await db.get(
+        Collection, collection.id, populate_existing=True,
+        options=[selectinload(Collection.image_links).selectinload(CollectionImage.image)],
+    )
     return collection_out(ctx, collection)
 
 

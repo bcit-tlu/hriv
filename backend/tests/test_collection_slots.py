@@ -11,7 +11,7 @@ import pyvips
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from pydantic import ValidationError
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -197,9 +197,76 @@ async def world(monkeypatch, tmp_path):
             app.dependency_overrides[auth.get_current_user] = current_user
             app.dependency_overrides[get_db] = session
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-                yield NS(db=db, client=client, image=image, secret=secret, items=items, hidden=hidden_item, private=private_item, board=public, sections=sections, private_board=private, root=root, caller=caller, users=users, category=category)
+                yield NS(db=db, client=client, app=app, image=image, secret=secret, items=items, hidden=hidden_item, private=private_item, board=public, sections=sections, private_board=private, root=root, caller=caller, users=users, category=category)
         await transaction.rollback()
     await engine.dispose()
+
+
+@pytest.mark.parametrize("operation", ["create", "replace", "append"])
+@pytest.mark.parametrize("source", ["inuksuk_ids", "source_board_id", "slots", "image_ids"])
+async def test_membership_response_with_fresh_request_session(world, operation, source):
+    image_id, secret_id = world.image.id, world.secret.id
+    expected = [image_id, image_id]
+    payload = {}
+    if source == "inuksuk_ids":
+        payload[source] = [item.id for item in world.items[:2]]
+    elif source == "source_board_id":
+        payload[source] = world.board.id
+        expected = [image_id, image_id, image_id, secret_id]
+    elif source == "slots":
+        payload[source] = [{"image_id": image_id, "viewport_state": VIEW} for _ in range(2)]
+    else:
+        payload[source] = [image_id]
+        expected = [image_id]
+    if operation != "create":
+        baseline = await create(world, image_ids=[secret_id])
+        if operation == "append":
+            if source == "image_ids":
+                payload[source].insert(0, secret_id)
+            else:
+                payload["slots"] = [
+                    {"id": baseline["images"][0]["slot"]["id"], "image_id": secret_id},
+                    *payload.get("slots", []),
+                ]
+            expected.insert(0, secret_id)
+        payload["version"] = baseline["version"]
+
+    async def fresh_session():
+        async with AsyncSession(
+            bind=world.db.bind, expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        ) as db:
+            yield db
+
+    user_id = world.users[world.caller["role"]].id
+
+    async def fresh_user(db: AsyncSession = Depends(get_db)):
+        return await db.get(User, user_id)
+
+    world.app.dependency_overrides[get_db] = fresh_session
+    world.app.dependency_overrides[auth.get_current_user] = fresh_user
+    if operation == "create":
+        response = await world.client.post("/api/collections", json={
+            "name": "fresh session", "type": "sequence",
+            "category_id": world.category.id, **payload,
+        })
+        assert response.status_code == 201, response.text
+    else:
+        response = await world.client.put(f"/api/collections/{baseline['id']}/images", json=payload)
+        assert response.status_code == 200, response.text
+    body = response.json()
+    assert [member["id"] for member in body["images"]] == expected
+    assert len({member["slot"]["id"] for member in body["images"]}) == len(expected)
+    assert body["member_count"] == len(expected)
+    fetched = await world.client.get(f"/api/collections/{body['id']}")
+    assert fetched.status_code == 200, fetched.text
+    assert [
+        (member["id"], member["slot"]["id"], member["slot"]["viewport_state"])
+        for member in fetched.json()["images"]
+    ] == [
+        (member["id"], member["slot"]["id"], member["slot"]["viewport_state"])
+        for member in body["images"]
+    ]
 
 
 async def create(world, **payload):
