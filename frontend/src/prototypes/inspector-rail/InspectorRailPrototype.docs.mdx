@@ -5,27 +5,34 @@ import * as Stories from './InspectorRailPrototype.stories'
 
 # Inspector rail — design prototype, not app behavior
 
-This isolated Storybook exploration combines the Google Workspace side panel,
-Figma inspector and VS Code activity rail models. It is not imported by the app.
+This isolated Storybook exploration uses a standard, docked
+[Material 3 navigation rail](https://m3.material.io/components/navigation-rail/specs)
+to reduce image encroachment, rather than floating viewer buttons. It is not imported by the app.
 No ImageViewer, routes, production drawers, shared hooks or configuration are changed.
 The tissue image and bottom toolbar are static: pan, zoom and image navigation
 are deliberately outside this prototype. All data and mutations are mocked.
 
 ## Interaction model
 
-Details and Inuksuks occupy a 48px icon rail at the top-right. Both triggers are
-the real viewer buttons, retaining their existing icons and rest/hover/pressed
-states (including the Details SVG assets). A primary-palette inset outline marks
-the open tool without replacing its existing button treatment. More tools
-can extend the column. One shared panel opens to its left, anchored on the right.
+Details and Inuksuks occupy a 76px full-height rail docked flush to the right edge.
+Each destination has a 56 × 32px pill indicator and a short label underneath.
+MUI primitives, theme surface/text tokens and `alpha(primary.main, …)` supply
+the active, hover and pressed states in both themes; keyboard focus has an outline.
+More tools can extend the column. The shared 288px panel docks directly against
+the rail with no inset, gap, corner rounding or drop shadow. Panel and rail share
+`background.paper`, separated only by a divider. Long row titles ellipsize while
+their full accessible names, title tooltips and separate ⋮ controls remain intact.
 Switching tools preserves the panel DOM and the single pin; pressing the active
 tool closes it, including when pinned. Close and Escape also dismiss the panel.
 
 Unpinned panels overlay the image and retract on an outside pointer press,
 including mouse and touch. Inside-menu and Board-picker interactions do not count
-as outside presses. Pinned panels reserve viewport width on desktop. At xs
-(below 600px), the same panel becomes a bottom sheet; pinning reserves height
-instead. The rail stays top-right in both layouts.
+as outside presses. The desktop rail always reserves 76px, even when closed.
+Pinning reserves another 288px; unpinned panels overlay only that adjacent portion
+of the image. At xs (below 600px), the panel remains a bottom sheet; pinning reserves
+height instead of width. The rail becomes a 48px full-height strip with compact
+icons and accessible names (no visible labels), leaving more room for the image
+and sheet while retaining 48px touch targets and the same destination positions.
 
 The shared pin uses `usePinnedDrawerState('storybook',
 'prototype-inspector-rail', false)`: storage synchronization is disabled, so it
@@ -41,6 +48,17 @@ also use prototype-local memory, not app localStorage.
   Inuksuks is open; otherwise it floats top-right. Draft values survive the move.
 - Marker information uses the real `InuksukInfoCard`, positioned beside the marker
   instead of in the inspector. Its Board-name request is mocked in story setup.
+- Favourites use stars: the info card already renders `Star`/`StarBorder`; a
+  prototype-local MUI theme gives the form's Favourite checkbox the same star
+  icons, including inside More options. No production theme or component changes.
+
+### Production favourite audit (read-only)
+
+`BoardsPage.tsx` uses `Favorite`/`FavoriteBorder` hearts for Inuksuk card actions
+and the read-only favourite badge. `InuksukFormDialog.tsx` uses a standard checkbox,
+not a heart. `InuksukInfoCard.tsx` already uses `Star`/`StarBorder`. The source-wide
+heart/Favorite search found no other Inuksuk favourite icon sites. Production
+inconsistencies are reported for follow-up, not changed by this prototype.
 
 Prototype-only wrappers neutralize the drawers' original positioning and hide
 their individual headers; the shared panel supplies the one title, pin and Close.
@@ -60,7 +78,7 @@ not production collision detection or an OpenSeadragon projection.
 | Placement inline               | Inline form, retained draft across close/reopen, collapsed More options      |
 | Placement floating             | Existing top-right placement model with closed inspector                     |
 | Info card popover              | Marker-adjacent card versus today's top-right card                           |
-| Mobile                         | 390px viewport; bottom sheet and persistent top-right rail                   |
+| Mobile                         | 390px viewport; bottom sheet and compact 48px docked rail                    |
 
 Theme variants use Chromatic light/dark modes and the Storybook theme toolbar,
 not duplicate stories. The play functions also run accessibility checks.

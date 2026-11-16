@@ -1,8 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
-import { Close, PushPin, PushPinOutlined } from '@mui/icons-material'
-import ImageDetailsDrawer, { ImageDetailsTrigger } from '../../components/ImageDetailsDrawer'
-import ImageInuksuksDrawer, { ImageInuksuksTrigger } from '../../components/ImageInuksuksDrawer'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { alpha, createTheme, ThemeProvider, useTheme } from '@mui/material/styles'
+import {
+  Alert,
+  Box,
+  ButtonBase,
+  IconButton,
+  Paper,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import {
+  Close,
+  CompassCalibration,
+  InfoOutlined,
+  PushPin,
+  PushPinOutlined,
+  Star,
+  StarBorder,
+} from '@mui/icons-material'
+import ImageDetailsDrawer from '../../components/ImageDetailsDrawer'
+import ImageInuksuksDrawer from '../../components/ImageInuksuksDrawer'
 import InuksukFormDialog from '../../components/InuksukFormDialog'
 import InuksukInfoCard from '../../components/InuksukInfoCard'
 import { PROTOTYPE_BOARD, PROTOTYPE_ITEM as item } from './fixtures'
@@ -12,7 +30,12 @@ import type { InuksukVisibilityPrefs } from '../../useInuksukVisibilityPrefs'
 const items = [
   item,
   { ...item, id: 8, title: 'Surrounding tubules', favourite: false },
-  { ...item, id: 9, title: 'Instructor reference', source: 'instructor' as const },
+  {
+    ...item,
+    id: 9,
+    title: 'Instructor reference — adjacent tubules and capsule',
+    source: 'instructor' as const,
+  },
 ]
 const services = {
   fetchBoards: async () => [PROTOTYPE_BOARD],
@@ -45,6 +68,7 @@ const embeddedDrawerSx = {
     height: '100%',
     transform: 'none !important',
     boxShadow: 'none',
+    backgroundImage: 'none',
     bgcolor: 'transparent',
   },
   '& > aside > :first-of-type': { display: 'none' },
@@ -67,6 +91,21 @@ export default function InspectorRailPrototype({
   placement?: boolean
   infoCard?: boolean
 }) {
+  const theme = useTheme()
+  const formTheme = useMemo(
+    () =>
+      createTheme(theme, {
+        components: {
+          MuiCheckbox: {
+            defaultProps: {
+              icon: <StarBorder data-favourite-state="off" />,
+              checkedIcon: <Star data-favourite-state="on" />,
+            },
+          },
+        },
+      }),
+    [theme],
+  )
   const { open, pinned, setOpen, setPinned } = usePinnedDrawerState(
     'storybook',
     'prototype-inspector-rail',
@@ -134,12 +173,16 @@ export default function InspectorRailPrototype({
         data-testid="prototype-viewer"
         sx={{
           position: 'relative',
-          display: 'flex',
-          flexDirection: { xs: 'column', sm: 'row' },
+          display: 'grid',
+          gridTemplateColumns: { xs: 'minmax(0, 1fr) auto 48px', sm: 'minmax(0, 1fr) auto 76px' },
+          gridTemplateRows: {
+            xs: open && pinned ? 'minmax(0, 2fr) minmax(0, 3fr)' : '1fr',
+            sm: '1fr',
+          },
           flex: 1,
           minHeight: 0,
           overflow: 'hidden',
-          bgcolor: 'background.default',
+          bgcolor: 'background.paper',
           border: 1,
           borderColor: 'divider',
           borderRadius: 1,
@@ -147,7 +190,7 @@ export default function InspectorRailPrototype({
       >
         <Box
           data-testid="image-viewport"
-          sx={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0 }}
+          sx={{ position: 'relative', gridColumn: 1, gridRow: 1, minWidth: 0, minHeight: 0 }}
         >
           <Box
             component="button"
@@ -227,20 +270,25 @@ export default function InspectorRailPrototype({
             ref={panelRef}
             data-testid="inspector-panel"
             square
-            elevation={pinned ? 0 : 8}
+            elevation={0}
             onKeyDown={(event) => {
               if (event.key === 'Escape') setOpen(false)
             }}
             sx={{
               position: pinned ? 'relative' : 'absolute',
-              right: pinned ? 'auto' : { xs: 0, sm: 64 },
-              top: pinned ? 'auto' : { xs: 'auto', sm: 8 },
-              bottom: pinned ? 'auto' : { xs: 0, sm: 8 },
+              right: pinned ? 'auto' : { xs: 48, sm: 76 },
+              top: pinned ? 'auto' : { xs: 'auto', sm: 0 },
+              bottom: pinned ? 'auto' : 0,
               left: { xs: pinned ? 'auto' : 0, sm: 'auto' },
-              width: { xs: '100%', sm: 360 },
-              maxWidth: { xs: '100%', sm: 'calc(100% - 80px)' },
-              height: { xs: '60%', sm: pinned ? '100%' : 'auto' },
-              mr: { xs: 0, sm: pinned ? '64px' : 0 },
+              width: { xs: 'auto', sm: 288 },
+              minWidth: 0,
+              height: { xs: pinned ? 'auto' : '60%', sm: '100%' },
+              gridColumn: pinned ? { xs: '1 / 3', sm: 2 } : undefined,
+              gridRow: pinned ? { xs: 2, sm: 1 } : undefined,
+              borderLeft: { xs: 0, sm: 1 },
+              borderTop: { xs: 1, sm: 0 },
+              borderColor: 'divider',
+              bgcolor: 'background.paper',
               flexShrink: 0,
               display: 'flex',
               flexDirection: 'column',
@@ -331,34 +379,80 @@ export default function InspectorRailPrototype({
         )}
         <Box
           ref={railRef}
+          data-testid="inspector-rail"
           role="toolbar"
           aria-label="Inspector rail"
           aria-orientation="vertical"
           sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
+            gridColumn: 3,
+            gridRow: '1 / -1',
+            width: { xs: 48, sm: 76 },
+            boxSizing: 'border-box',
+            borderLeft: 1,
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
             zIndex: 5,
             display: 'flex',
             flexDirection: 'column',
-            '& button[aria-expanded="true"]': {
-              boxShadow: (theme) => `inset 0 0 0 3px ${theme.palette.primary.main}`,
-            },
+            alignItems: 'center',
+            gap: 1,
+            py: 1.5,
           }}
         >
-          <ImageDetailsTrigger
-            open={open && tab === 'Details'}
-            onOpenChange={() => toggle('Details')}
-            triggerRef={detailsTriggerRef}
-            drawerId="prototype-inspector-panel"
-          />
-          <ImageInuksuksTrigger
-            open={open && tab === 'Inuksuks'}
-            count={items.length}
-            onOpenChange={() => toggle('Inuksuks')}
-            triggerRef={inuksuksTriggerRef}
-            drawerId="prototype-inspector-panel"
-          />
+          {(['Details', 'Inuksuks'] as const).map((name) => {
+            const active = open && tab === name
+            return (
+              <ButtonBase
+                key={name}
+                ref={name === 'Details' ? detailsTriggerRef : inuksuksTriggerRef}
+                aria-label={name === 'Details' ? 'Image details' : `Inuksuks (${items.length})`}
+                aria-expanded={active}
+                aria-controls="prototype-inspector-panel"
+                onClick={() => toggle(name)}
+                sx={{
+                  width: '100%',
+                  minHeight: { xs: 48, sm: 64 },
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 0.5,
+                  color: 'text.primary',
+                  '&:hover .rail-indicator': {
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, active ? 0.24 : 0.08),
+                  },
+                  '&:active .rail-indicator': {
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.32),
+                  },
+                  '&.Mui-focusVisible': {
+                    outline: '2px solid',
+                    outlineColor: 'primary.main',
+                    outlineOffset: -2,
+                  },
+                }}
+              >
+                <Box
+                  className="rail-indicator"
+                  sx={{
+                    display: 'grid',
+                    placeItems: 'center',
+                    width: { xs: 40, sm: 56 },
+                    height: 32,
+                    borderRadius: 4,
+                    bgcolor: (theme) =>
+                      active ? alpha(theme.palette.primary.main, 0.16) : 'transparent',
+                  }}
+                >
+                  {name === 'Details' ? <InfoOutlined /> : <CompassCalibration />}
+                </Box>
+                <Typography
+                  component="span"
+                  variant="caption"
+                  sx={{ display: { xs: 'none', sm: 'block' }, fontWeight: active ? 700 : 500 }}
+                >
+                  {name}
+                </Typography>
+              </ButtonBase>
+            )
+          })}
         </Box>
         {draft && !(open && tab === 'Inuksuks') && (
           <Box
@@ -368,8 +462,8 @@ export default function InspectorRailPrototype({
               ...embeddedCardSx,
               position: 'absolute',
               top: 8,
-              right: 64,
-              width: { xs: 'calc(100% - 80px)', sm: 340 },
+              right: { xs: 56, sm: 84 },
+              width: { xs: 'calc(100% - 64px)', sm: 288 },
               maxHeight: 'calc(100% - 24px)',
               overflowY: 'auto',
               zIndex: 3,
@@ -378,18 +472,20 @@ export default function InspectorRailPrototype({
           />
         )}
         {draft && formHost && (
-          <InuksukFormDialog
-            placement
-            imageId={42}
-            view={item}
-            container={formHost}
-            services={services}
-            onClose={() => setDraft(false)}
-            onChanged={() => {
-              setDraft(false)
-              prototypeAction()
-            }}
-          />
+          <ThemeProvider theme={formTheme}>
+            <InuksukFormDialog
+              placement
+              imageId={42}
+              view={item}
+              container={formHost}
+              services={services}
+              onClose={() => setDraft(false)}
+              onChanged={() => {
+                setDraft(false)
+                prototypeAction()
+              }}
+            />
+          </ThemeProvider>
         )}
       </Box>
       {message ? (

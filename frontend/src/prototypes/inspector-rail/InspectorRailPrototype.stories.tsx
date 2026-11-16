@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import InspectorRailPrototype from './InspectorRailPrototype'
 import { PROTOTYPE_BOARD } from './fixtures'
 
@@ -32,10 +32,21 @@ export const Basic: Story = {
     const canvas = within(canvasElement)
     const details = canvas.getByRole('button', { name: 'Image details' })
     const inuksuks = canvas.getByRole('button', { name: 'Inuksuks (3)' })
+    const rail = canvas.getByTestId('inspector-rail').getBoundingClientRect()
+    const viewer = canvas.getByTestId('prototype-viewer').getBoundingClientRect()
+    await expect(rail.width).toBe(76)
+    await expect(rail.height).toBeCloseTo(viewer.height - 2, 0)
+    await expect(rail.right).toBeCloseTo(viewer.right - 1, 0)
+    await expect(canvas.getByTestId('image-viewport').getBoundingClientRect().right).toBe(rail.left)
     await expect(canvas.queryByTestId('inspector-panel')).not.toBeInTheDocument()
     await userEvent.click(details)
     const panel = canvas.getByTestId('inspector-panel')
     await expect(panel).toHaveAccessibleName('Details inspector')
+    await expect(panel.getBoundingClientRect().width).toBe(288)
+    await expect(panel.getBoundingClientRect().right).toBe(rail.left)
+    await expect(getComputedStyle(panel).backgroundColor).toBe(
+      getComputedStyle(canvas.getByTestId('inspector-rail')).backgroundColor,
+    )
     await expect(details).toHaveAttribute('aria-expanded', 'true')
     await userEvent.click(inuksuks)
     await expect(canvas.getByTestId('inspector-panel')).toBe(panel)
@@ -59,6 +70,10 @@ export const Inuksuks: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Inuksuks (3)' }))
+    await expect(
+      getComputedStyle(canvas.getByTestId('inspector-panel').querySelector('aside')!)
+        .backgroundImage,
+    ).toBe('none')
     await userEvent.click(canvas.getByRole('button', { name: 'Renal corpuscle options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Renal corpuscle marker' }))
     await expect(canvas.getByTestId('inspector-panel')).toBeVisible()
@@ -71,6 +86,23 @@ export const Inuksuks: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Renal corpuscle options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Renal corpuscle marker' }))
     await expect(canvas.getByRole('button', { name: 'Inspect renal corpuscle' })).toBeVisible()
+    const longTitle = canvas.getByText('Instructor reference — adjacent tubules and capsule')
+    await expect(getComputedStyle(longTitle).textOverflow).toBe('ellipsis')
+    await expect(longTitle.scrollWidth).toBeGreaterThan(longTitle.clientWidth)
+    await userEvent.click(
+      canvas.getByRole('button', {
+        name: 'Instructor reference — adjacent tubules and capsule options',
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        canvas.getByRole('menuitemcheckbox', {
+          name: 'Instructor reference — adjacent tubules and capsule marker',
+        }),
+      ).toBeVisible(),
+    )
+    await userEvent.keyboard('{Escape}')
+    await expect(canvas.getByTestId('inspector-panel')).toBeVisible()
   },
 }
 export const Pinned: Story = {
@@ -81,7 +113,10 @@ export const Pinned: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Image details' }))
     await expect(viewport.getBoundingClientRect().width).toBe(width)
     await userEvent.click(canvas.getByRole('button', { name: 'Pin inspector' }))
-    await expect(viewport.getBoundingClientRect().width).toBeLessThan(width - 300)
+    await expect(viewport.getBoundingClientRect().width).toBe(width - 288)
+    await expect(viewport.getBoundingClientRect().right).toBe(
+      canvas.getByTestId('inspector-panel').getBoundingClientRect().left,
+    )
     await userEvent.click(canvas.getByRole('button', { name: 'Inuksuks (3)' }))
     await expect(canvas.getByRole('button', { name: 'Unpin inspector' })).toHaveAttribute(
       'aria-pressed',
@@ -124,6 +159,17 @@ export const PlacementInline: Story = {
       'false',
     )
     await expect(canvas.getByRole('combobox', { name: /Board/ })).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'More options' }))
+    const favourite = canvas.getByRole('checkbox', { name: 'Favourite' })
+    await expect(
+      favourite.parentElement!.querySelector('[data-favourite-state="off"]'),
+    ).not.toBeNull()
+    await userEvent.click(favourite)
+    await expect(favourite).toBeChecked()
+    await expect(
+      favourite.parentElement!.querySelector('[data-favourite-state="on"]'),
+    ).not.toBeNull()
+    await userEvent.click(canvas.getByRole('button', { name: 'More options' }))
   },
 }
 export const PlacementFloating: Story = {
@@ -142,6 +188,7 @@ export const InfoCardPopover: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(await canvas.findByText(PROTOTYPE_BOARD.name)).toBeVisible()
+    await expect(canvas.getByTestId('marker-popover')).toHaveTextContent('Favourite')
     await expect(canvas.getByTestId('marker-popover').getBoundingClientRect().left).toBeGreaterThan(
       canvas.getByRole('button', { name: 'Inspect renal corpuscle' }).getBoundingClientRect().right,
     )
@@ -163,7 +210,16 @@ export const Mobile: Story = {
     const panel = canvas.getByTestId('inspector-panel').getBoundingClientRect()
     const viewer = canvas.getByTestId('prototype-viewer').getBoundingClientRect()
     await expect(panel.bottom).toBeCloseTo(viewer.bottom - 1, 0)
-    await expect(panel.width).toBeCloseTo(viewer.width - 2, 0)
+    const rail = canvas.getByTestId('inspector-rail').getBoundingClientRect()
+    await expect(rail.width).toBe(48)
+    await expect(panel.width).toBeCloseTo(viewer.width - 2 - rail.width, 0)
+    await expect(panel.right).toBe(rail.left)
     await expect(canvas.getByRole('toolbar', { name: 'Inspector rail' })).toBeVisible()
+    const height = canvas.getByTestId('image-viewport').getBoundingClientRect().height
+    await userEvent.click(canvas.getByRole('button', { name: 'Pin inspector' }))
+    await expect(canvas.getByTestId('image-viewport').getBoundingClientRect().height).toBeLessThan(
+      height,
+    )
+    await userEvent.click(canvas.getByRole('button', { name: 'Unpin inspector' }))
   },
 }
