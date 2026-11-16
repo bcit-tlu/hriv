@@ -854,9 +854,7 @@ export default function ImageViewer({
       const target = event.originalEvent?.target
       if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) return
       event.preventDefaultAction = true
-      const point = viewer.viewport.pointFromPixel(
-        adjustInuksukPixelForFlip(viewer, event.position),
-      )
+      const point = viewer.viewport.pointFromPixel(event.position)
       const view = {
         x: point.x,
         y: point.y,

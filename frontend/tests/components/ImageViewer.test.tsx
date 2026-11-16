@@ -563,7 +563,7 @@ describe('Inuksuk viewer tool', () => {
       act(() => buttonByTooltip('Add Inuksuk').options.onClick())
       expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
       act(() =>
-        viewer().fire('canvas-click', { quick: true, position: { x: flip ? 170 : 30, y: 40 } }),
+        viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }),
       )
       expect(await screen.findByRole('dialog')).toHaveTextContent(
         JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
@@ -571,6 +571,10 @@ describe('Inuksuk viewer tool', () => {
       expect(viewer().container).toContainElement(
         within(viewer().container).getByRole('button', { name: 'View Inuksuk: New Inuksuk' }),
       )
+      expect(viewer().container.querySelector('[data-inuksuk-id="-1"]')).toHaveStyle({
+        left: `${flip ? 170 : 30}px`,
+        top: '40px',
+      })
       expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
     },
   )
