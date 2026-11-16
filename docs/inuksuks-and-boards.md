@@ -319,8 +319,10 @@ Escape removes the draft first. Only one unsaved placement is open at a time.
 If a new point would sit beneath the panel, the viewer pans it clear of the panel.
 
 `InuksukMarkersLayer` portals into `viewer.container` under
-`data-hriv-canvas-ui`, independently of Fabric. Unbounded blue compass icons are 27 CSS
-pixels and titles use 13-pixel text; neither scales nor rotates with the image.
+`data-hriv-canvas-ui`, independently of Fabric. White circular discs with vibrant
+blue compass glyphs are 27 CSS pixels and titles use 13-pixel text; neither scales nor rotates with the image.
+Saved and draft markers share `frontend/public/inuksuk-marker.svg`, with a subtle
+contrast ring and shadow. Title-label styling is unchanged.
 The layer reprojects anchors on animation, animation-finish, open, resize,
 rotate and flip. Each marker accepts independent `markerVisible` and
 `labelVisible` props, both true by default: labels may remain visible when
@@ -387,20 +389,35 @@ collapsed. Row selection smoothly restores saved pan, zoom and rotation and
 highlights the marker without opening the form. The separate edit action uses
 API `permissions.can_edit` and opens the existing OCC-protected form.
 
-Marker eyes and label menu actions are independent at both row and group levels;
+Marker and label menu actions are independent at both row and group levels;
 both default to shown. Group actions set the default for the entire source and
 clear all row overrides for that dimension, including cached rows on other
 images. A subsequent row action overrides that default. Mixed states remain
-accessible on group controls and in label menus; toggling a mixed group shows all. Changing markers never
+accessible in group menus; toggling a mixed group shows all. Changing markers never
 changes labels, or vice versa. Shared preferences are the viewer's single source
 of visibility state, so drawer controls always reflect the rendered markers and
 labels. Collection embeds use the same preferences rather than external overrides.
-Rows show titles only. Their **⋮** menus contain Show/Hide label and permitted
-Edit/Delete actions; group menus contain label actions. The drawer stops above
+Rows show titles only. Their **⋮** menus start with Show/Hide marker, followed by
+Show/Hide label and permitted Edit/Delete actions; group menus offer Show/Hide
+markers and labels. Hidden-marker row titles use `text.disabled` (contrast-safe
+`text.secondary` in light mode, since the row is still navigable) and an accessible
+“marker hidden” suffix. The drawer stops above
 the bottom toolbar so tools remain usable. Unsaved placements also appear under
 My Inuksuks with an **Unsaved** status while the draft is open.
-Row hover backgrounds extend across the drawer, including the independent eye
-and options controls, without nesting interactive elements.
+Row hover backgrounds extend across the drawer, including the independent
+options control, without nesting interactive elements.
+
+The Pin/Unpin control mirrors `MyCollectionsDrawer.tsx`: a selected filled pin,
+no close button while pinned, and unpinning leaves the panel open. Both drawers
+use `usePinnedDrawerState` (via `useMyCollectionsDrawerState` for collections).
+Inuksuks persist `hrivpref:inuksuks-drawer:pinned:user:<id>`, matching collections'
+`hrivpref:my-collections-drawer:pinned:user:<id>` pattern; anonymous previews use
+`anonymous`. Pinned drawers stay open across image/sequence navigation and new
+viewer pages. Unpinned drawers close immediately on any outside press/click,
+including OSD canvas presses, without consuming the event: placement still works.
+Menu content is inside for click-away purposes; its viewer portal container stays
+stable through exit. Unlike collections' backdrop, this non-blocking listener
+allows the underlying image interaction to continue.
 
 Preferences use `hriv.inuksukVisibility.<userId>`. Parsing validates the shape
 and defaults corrupt values safely; at most 500 recently changed row overrides
@@ -414,7 +431,8 @@ arrows hide while the drawer is open, avoiding controls over its rows; filmstrip
 and caption navigation remain available. Synchronized panes keep independent
 open/selected state while sharing user visibility preferences, and reserve the
 rightmost 48px for existing controls. Errors appear below the top-left trigger
-and inside the drawer. Escape/Close restores focus to the trigger.
+and inside the drawer. Escape/Close restores focus to the trigger in unpinned mode;
+pinned panels ignore Escape and outside presses.
 
 Tests: `useInuksukVisibilityPrefs.test.ts`, `ImageInuksuksDrawer.test.tsx`,
 `ImageViewer.test.tsx`, and collection-viewer tests. Attached drawer stories

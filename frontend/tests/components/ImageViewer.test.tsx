@@ -449,6 +449,7 @@ function drawRect(opts: { shiftKey?: boolean; drag?: boolean } = {}) {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   osdState.viewers.length = 0
   osdState.viewerOptions.length = 0
   osdState.buttons.length = 0
@@ -477,6 +478,57 @@ afterEach(() => {
 })
 
 describe('Inuksuk viewer tool', () => {
+  it.each([false, true])(
+    'keeps only pinned drawers open across image changes and new viewer pages, pinned=%s',
+    async (pinned) => {
+      const view = (imageId: number) => (
+        <AuthContext.Provider value={BOARD_AUTH}>
+          <ImageViewer tileSources="/test.dzi" imageId={imageId} inuksuksEnabled />
+        </AuthContext.Provider>
+      )
+      const first = render(view(42))
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }),
+      )
+      if (pinned)
+        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Pin Inuksuks' }))
+      first.rerender(view(43))
+      const trigger = await within(viewer().container).findByRole('button', {
+        name: 'Inuksuks (0)',
+      })
+      expect(trigger).toHaveAttribute('aria-expanded', String(pinned))
+      if (pinned) {
+        expect(
+          within(viewer().container).getByRole('button', { name: 'Unpin Inuksuks' }),
+        ).toHaveAttribute('aria-pressed', 'true')
+        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Unpin Inuksuks' }))
+        expect(trigger).toHaveAttribute('aria-expanded', 'true')
+        fireEvent.click(within(viewer().container).getByRole('button', { name: 'Pin Inuksuks' }))
+      }
+      first.unmount()
+      render(view(44))
+      expect(
+        await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }),
+      ).toHaveAttribute('aria-expanded', String(pinned))
+      expect(localStorage.getItem('hrivpref:inuksuks-drawer:pinned:user:9')).toBe(
+        pinned ? 'true' : null,
+      )
+    },
+  )
+  it('closes the unpinned drawer on a canvas press without suppressing quick-click placement', async () => {
+    const rendered = render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+    rendered.container.appendChild(viewer().element)
+    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    const trigger = await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' })
+    fireEvent.click(trigger)
+    fireEvent.pointerDown(viewer().canvas)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
+    expect(await screen.findByRole('dialog')).toHaveTextContent(
+      JSON.stringify({ x: 0.3, y: 0.4, zoom: 2, rotation: 90 }),
+    )
+    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
+  })
   it.each([false, true])(
     'does not consume Escape without an image or draft, flag=%s',
     (inuksuksEnabled) => {
@@ -534,19 +586,20 @@ describe('Inuksuk viewer tool', () => {
       fireEvent.click(button)
       expect(commits.mock.calls.length).toBeLessThan(8)
     }
-    click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    const markerMenu = (name: string, group = false) => {
+      click(drawer.getByRole('button', { name: `${name} options` }))
+      return canvas.getByRole('menuitemcheckbox', {
+        name: `${name} ${group ? 'markers' : 'marker'}`,
+      })
+    }
+    click(markerMenu('My Inuksuks', true))
     expect(instance.container.querySelector('[data-inuksuk-id="7"] button')).toBeNull()
     expect(instance.container.querySelector('[data-inuksuk-id="7"] span')).not.toBeNull()
-    click(drawer.getByRole('button', { name: 'Rose window marker' }))
-    expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-      'aria-pressed',
-      'mixed',
-    )
-    click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
-    expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    click(markerMenu('Rose window'))
+    expect(markerMenu('My Inuksuks', true)).toHaveAttribute('aria-checked', 'mixed')
+    click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
+    expect(markerMenu('My Inuksuks', true)).toHaveAttribute('aria-checked', 'true')
+    fireEvent.keyDown(canvas.getByRole('menu'), { key: 'Escape' })
     const labels = (name: string) => {
       click(drawer.getByRole('button', { name: `${name} options` }))
       click(canvas.getByRole('menuitemcheckbox', { name: `${name} labels` }))
@@ -596,7 +649,8 @@ describe('Inuksuk viewer tool', () => {
         .getAllByRole('button', { name: 'View Inuksuk: Rose window' })
         .some((button) => button.getAttribute('aria-pressed') === 'true'),
     ).toBe(true)
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window marker' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     fireEvent.click(
       within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
@@ -606,12 +660,15 @@ describe('Inuksuk viewer tool', () => {
     fireEvent.click(
       within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
     )
-    expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(1)
-    expect(within(drawer).getByRole('button', { name: 'Rose window marker' })).toHaveAttribute(
-      'aria-pressed',
+    expect(
+      within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' }),
+    ).toBeDefined()
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    expect(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' })).toHaveAttribute(
+      'aria-checked',
       'false',
     )
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window marker' }))
+    fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     fireEvent.click(within(viewer().container).getByRole('menuitem', { name: 'Edit' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()

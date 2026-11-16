@@ -140,6 +140,7 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   beforeEach: ({ args }) => {
     localStorage.removeItem('hriv.inuksukVisibility.9')
+    localStorage.removeItem('hrivpref:inuksuks-drawer:pinned:user:9')
     const original = globalThis.fetch
     globalThis.fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -179,25 +180,25 @@ export const Basic: Story = {
       'true',
     )
     const drawer = within(canvas.getByRole('complementary'))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
-    await expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
     await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
     await waitFor(() =>
       expect(canvasElement.ownerDocument.querySelector('.MuiModal-root')).toBeNull(),
     )
-    await userEvent.hover(drawer.getByRole('button', { name: 'View Inuksuk: Rose window' }))
-    const row = drawer.getByRole('button', { name: 'View Inuksuk: Rose window' })
+    await userEvent.hover(
+      drawer.getByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' }),
+    )
+    const row = drawer.getByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' })
     const bounds = row.getBoundingClientRect()
     const rowBounds = row.closest('li')!.getBoundingClientRect()
     await expect(bounds.left).toBe(rowBounds.left)
     await expect(bounds.right).toBe(rowBounds.right)
     await expect(row.querySelector('button')).toBeNull()
     await expect(canvasElement.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
-    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
     await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
     await waitFor(() =>
@@ -209,7 +210,8 @@ export const LabelOnly: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'Rose window marker' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
     await expect(
       within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
@@ -217,19 +219,20 @@ export const LabelOnly: Story = {
       }),
     ).toHaveAttribute('aria-checked', 'true')
     await userEvent.keyboard('{Escape}')
-    await expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(
-      1,
-    )
+    await expect(
+      canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' }),
+    ).toHaveLength(1)
     const drawer = within(canvas.getByRole('complementary'))
-    await expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-      'aria-pressed',
-      'mixed',
-    )
-    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
-    await expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await expect(
+      canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }),
+    ).toHaveAttribute('aria-checked', 'mixed')
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await expect(
+      canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }),
+    ).toHaveAttribute('aria-checked', 'true')
+    await userEvent.keyboard('{Escape}')
   },
 }
 export const PublicCollapsed: Story = {
@@ -243,6 +246,45 @@ export const PublicCollapsed: Story = {
   },
 }
 export const Sequence: Story = { args: { kind: 'sequence' }, play: PublicCollapsed.play }
+export const Pinned: Story = {
+  args: { kind: 'sequence' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Pin Inuksuks' }))
+    await expect(canvas.getByRole('button', { name: 'Unpin Inuksuks' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await userEvent.click(canvas.getByRole('button', { name: 'Go to Architecture 43' }))
+    await expect(await canvas.findByRole('button', { name: 'Unpin Inuksuks' })).toBeVisible()
+    await expect(await canvas.findByRole('button', { name: 'Inuksuks (4)' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    await userEvent.keyboard('{Escape}')
+    await expect(canvas.getByRole('button', { name: 'Unpin Inuksuks' })).toBeVisible()
+  },
+}
+export const ClickAway: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
+    const surface = canvasElement.querySelector<HTMLElement>('.openseadragon-canvas')!
+    const bounds = surface.getBoundingClientRect()
+    await userEvent.pointer({
+      target: surface,
+      keys: '[MouseLeft>]',
+      coords: { clientX: bounds.right - 80, clientY: bounds.bottom - 100 },
+    })
+    await expect(canvas.getByRole('button', { name: 'Inuksuks (4)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    await userEvent.pointer({ keys: '[/MouseLeft]' })
+    await waitFor(() => expect(canvas.queryByRole('complementary')).not.toBeInTheDocument())
+  },
+}
 export const Closed: Story = {}
 export const OptionsMenu: Story = {
   play: async ({ canvasElement }) => {
@@ -286,7 +328,8 @@ export const Synchronized: Story = {
     await userEvent.click(triggers[0])
     await expect(await canvas.findByRole('complementary', { name: /Inuksuks/ })).toBeVisible()
     const drawer = within(canvas.getByRole('complementary'))
-    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' }))
     await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
     await expect(canvasElement.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()

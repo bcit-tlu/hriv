@@ -1466,13 +1466,24 @@ selection MouseTracker ignores their presses.
 - Marker clicks open a top-right information card showing title, optional description,
   visible Board names, favourite state and a close X. The authorized-only pencil
   opens the full edit form; marker clicks never directly open the editor.
-- The title-only drawer leaves the bottom toolbar visible. Row/group eyes change
-  marker visibility; their context menus change labels independently. Row menus
+- The title-only drawer leaves the bottom toolbar visible. Row/group context menus
+  put Show/Hide marker(s) first, then the independent label action. Row menus
   expose Edit/Delete only when permitted. Default/override/Mixed and localStorage
   semantics remain unchanged.
-- Drawer row hover backgrounds span the full width, including the separate eye
-  and options buttons; these buttons do not nest inside the row action.
-- Markers are upright constant-size 27px blue glyphs without a disc. Labels retain
+- Hidden-marker row titles use text.disabled (text.secondary in light mode for
+  AA contrast on the still-navigable row) and an accessible “marker hidden”
+  suffix; group Mixed → Show markers shows all and clears overrides as before.
+- Drawer row hover backgrounds span the full width, including the separate
+  options button; it does not nest inside the row action.
+- Pin/Unpin matches My collections (filled selected pin, no pinned close action,
+  unpin does not close). The shared state hook persists
+  `hrivpref:inuksuks-drawer:pinned:user:<id>`; pinning survives image/sequence
+  navigation and new viewer pages. Unpinned drawers close on outside presses/clicks,
+  including OSD, without consuming placement. Menu portal content is inside;
+  its stable container prevents leftover modal backdrops. Pinned drawers ignore
+  outside presses and Escape.
+- Markers are upright constant-size 27px white discs with blue glyphs and a subtle
+  contrast ring/shadow, using the shared inuksuk-marker.svg asset. Labels retain
   their existing styling. The top-left compass has no badge and matches the adjacent
   white-on-dark OSD controls; the placement tool shares all normal toolbar states.
 

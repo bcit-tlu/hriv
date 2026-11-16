@@ -17,11 +17,20 @@ or the toolbar compass, turns placement off. An unsaved view also appears in the
 Click a saved marker to restore its view and open its information card. The card
 shows its title, description, visible Boards and favourite state. Use the pencil
 to edit if permitted, or X to close. Saving an Inuksuk does not modify the source image.
+Markers have white circular backgrounds with blue icons, staying upright and
+the same size as you zoom or rotate; label styling is unchanged.
 
 The top-left compass opens the Inuksuks drawer without hiding the image toolbar.
-Each eye controls only its marker. Use **⋮** for Show/Hide label and, when allowed,
-Edit or Delete. Group eyes and menus apply to all views in that group; a Mixed
+Use **⋮** for Show/Hide marker, then Show/Hide label and, when allowed,
+Edit or Delete. Group menus apply to all views in that group; a Mixed
 group action shows all. These display preferences are remembered for your account.
+Hidden-marker titles are dimmed and identified as hidden to screen readers.
+**Pin Inuksuks** keeps the drawer open between images, through sequence navigation
+and when opening another image page. The pin is remembered for your account.
+Unpinning keeps it open until you press elsewhere; outside presses (including
+on the image) then retract it immediately. Drawer menus do not count as outside.
+In placement mode, pressing the image closes an unpinned drawer and still places
+the new marker. Escape closes an unpinned drawer; pinned drawers stay open.
 
 ## Organize a Board
 

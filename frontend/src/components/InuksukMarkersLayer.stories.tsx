@@ -65,6 +65,7 @@ const meta = {
   component: MarkerViewer,
   parameters: { layout: 'fullscreen' },
   beforeEach: () => {
+    localStorage.removeItem('hrivpref:inuksuks-drawer:pinned:user:anonymous')
     const original = globalThis.fetch
     globalThis.fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -95,7 +96,8 @@ export const IndependentVisibility: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
     await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
     const drawer = within(canvas.getByRole('complementary'))
-    await userEvent.click(drawer.getByRole('button', { name: 'Rose window marker' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Rose window options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     await userEvent.click(drawer.getByRole('button', { name: 'Stone columns options' }))
     await userEvent.click(
       within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
@@ -120,22 +122,27 @@ export const Placement: Story = {
     const surface = canvasElement.querySelector<HTMLElement>('.openseadragon-canvas')
     if (!tool || !surface) throw new Error('Viewer controls are not mounted')
     await userEvent.click(tool)
+    await userEvent.click(canvas.getByRole('button', { name: 'Inuksuks (2)' }))
     const bounds = surface.getBoundingClientRect()
     await userEvent.pointer({
       target: surface,
       keys: '[MouseLeft]',
       coords: {
-        clientX: bounds.x + 260,
+        clientX: bounds.x + 430,
         clientY: bounds.y + 220,
-        pageX: bounds.x + 260,
+        pageX: bounds.x + 430,
         pageY: bounds.y + 220,
       },
     })
     const page = within(canvasElement.ownerDocument.body)
+    await expect(canvas.getByRole('button', { name: 'Inuksuks (2)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
     await expect(await page.findByRole('heading', { name: 'Save a view' })).toBeInTheDocument()
     await expect(canvas.getByRole('button', { name: 'View Inuksuk: New Inuksuk' })).toBeVisible()
     const draft = canvasElement.querySelector('[data-inuksuk-id="-1"]')!.getBoundingClientRect()
-    await expect(draft.x).toBeCloseTo(bounds.x + 260, 0)
+    await expect(draft.x).toBeCloseTo(bounds.x + 430, 0)
     await expect(draft.y).toBeCloseTo(bounds.y + 220, 0)
     await userEvent.keyboard('A closer look')
     await expect(page.getByRole('textbox', { name: /^Title/ })).toHaveValue('A closer look')
