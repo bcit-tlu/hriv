@@ -549,7 +549,7 @@ export default function BoardsPage({
   )
   const ownerOptions = Array.from(
     new Map(
-      data.boards
+      [...data.boards, ...data.recent]
         .flatMap((row) => row.owners)
         .map((o) => [o.user_id != null ? `user:${o.user_id}` : `program:${o.program_id}`, o.name]),
     ).entries(),

@@ -236,8 +236,10 @@ export const SaveToBoard: Story = {
         board_assignments: [{ board_id: 1, sort_order: 0 }, { board_id: 3 }],
       }),
     )
-    await expect(
-      await within(canvasElement.ownerDocument.body).findByText('Saved to Next studio project'),
-    ).toBeVisible()
+    await waitFor(() =>
+      expect(
+        within(canvasElement.ownerDocument.body).getByText('Saved to Next studio project'),
+      ).toBeVisible(),
+    )
   },
 }

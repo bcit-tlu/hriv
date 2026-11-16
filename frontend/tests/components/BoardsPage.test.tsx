@@ -108,6 +108,29 @@ describe('BoardsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(screen.getByRole('button', { name: 'Open Inuksuk: Stone columns' })).toBeVisible()
   })
+  it('offers deduplicated Board and Inuksuk owners, including owners with no visible Board', async () => {
+    const guestOwner = { user_id: 88, program_id: null, name: 'Taylor', role: 'student' as const }
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+      { ...BOARD_ITEMS[0], owners: [guestOwner], board_ids: [2] },
+      BOARD_ITEMS[1],
+      { ...BOARD_ITEMS[2], owners: [guestOwner], board_ids: [2] },
+    ])
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Owner' }))
+    expect(screen.getAllByRole('menuitemradio').map((option) => option.textContent)).toEqual([
+      'Anyone',
+      'Mine',
+      'Alex',
+      'Morgan',
+      'Taylor',
+    ])
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Taylor' }))
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Open Board:/ })).not.toBeInTheDocument()
+  })
   it('uses visible Board memberships for scope, including multiple scopes on one Inuksuk', async () => {
     vi.mocked(api.fetchInuksuks).mockResolvedValue([
       { ...BOARD_ITEMS[0], board_ids: [1, 2] },
