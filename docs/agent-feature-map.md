@@ -193,7 +193,7 @@ thumbnail/token and admin operation tests, plus Helm regression checks.
   `useSavedViewSearch.ts`; reuse `GET /boards?q` and `GET /inuksuks?q` and their
   backend visibility checks. `App.tsx` reuses the saved-view viewport navigation.
 - Shared saved-view-to-draft conversion: `collectionMembers.ts`; Manage owns final
-  temporary member keys. Board expansion reuses `boardUtils.groupBoardMembers`.
+  temporary member keys. Board expansion follows the ordered `ApiBoard.inuksuks` list.
 - Flag-independent table archives: `backend/app/board_archives.py`, integrated
   into `admin_ops.py`'s snapshot export and atomic restore.
 - Selective authoritative JPEG inventory: `backend/app/snapshot_files.py`;
