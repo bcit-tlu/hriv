@@ -8,6 +8,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { Profiler } from 'react'
+import { AuthContext } from '../../src/authContextValue'
+import { BOARD_AUTH } from '../../src/components/boardsFixtures'
 import { cleanup, render, screen, act, fireEvent, waitFor, within } from '@testing-library/react'
 
 const hadFullscreenElementOwnProperty = Object.prototype.hasOwnProperty.call(
@@ -507,6 +510,60 @@ describe('Inuksuk viewer tool', () => {
     expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'false')
+  })
+  it('bounds viewer commits for group, per-row and Mixed visibility actions without remounting or refetching', async () => {
+    localStorage.removeItem('hriv.inuksukVisibility.9')
+    apiMocks.fetchImageInuksuks.mockResolvedValue([
+      INUKSUK_FIXTURE,
+      { ...INUKSUK_FIXTURE, id: 8, title: 'Second view' },
+    ])
+    const commits = vi.fn()
+    render(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <Profiler id="viewer" onRender={commits}>
+          <ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />
+        </Profiler>
+      </AuthContext.Provider>,
+    )
+    const instance = viewer()
+    const canvas = within(instance.container)
+    fireEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
+    const drawer = within(await canvas.findByRole('complementary'))
+    const click = (button: HTMLElement) => {
+      commits.mockClear()
+      fireEvent.click(button)
+      expect(commits.mock.calls.length).toBeLessThan(8)
+    }
+    click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    expect(instance.container.querySelector('[data-inuksuk-id="7"] button')).toBeNull()
+    expect(instance.container.querySelector('[data-inuksuk-id="7"] span')).not.toBeNull()
+    click(drawer.getByRole('button', { name: 'Rose window marker' }))
+    expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
+      'aria-pressed',
+      'mixed',
+    )
+    click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    const labels = (name: string) => {
+      click(drawer.getByRole('button', { name: `${name} options` }))
+      click(canvas.getByRole('menuitemcheckbox', { name: `${name} labels` }))
+    }
+    labels('My Inuksuks')
+    expect(instance.container.querySelector('[data-inuksuk-id="7"] span')).toBeNull()
+    expect(instance.container.querySelector('[data-inuksuk-id="7"] button')).not.toBeNull()
+    labels('Rose window')
+    click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    expect(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(
+      'aria-checked',
+      'mixed',
+    )
+    click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
+    expect(instance.container.querySelector('[data-inuksuk-id="8"] span')).not.toBeNull()
+    expect(osdState.viewers).toHaveLength(1)
+    expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
   })
   it('shares one image request with the TOP_LEFT drawer, navigates, highlights and independently hides markers', async () => {
     apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])

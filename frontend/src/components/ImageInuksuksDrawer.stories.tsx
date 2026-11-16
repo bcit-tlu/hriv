@@ -178,6 +178,31 @@ export const Basic: Story = {
       'aria-expanded',
       'true',
     )
+    const drawer = within(canvas.getByRole('complementary'))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    await expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
+    await waitFor(() =>
+      expect(canvasElement.ownerDocument.querySelector('.MuiModal-root')).toBeNull(),
+    )
+    await userEvent.hover(drawer.getByRole('button', { name: 'View Inuksuk: Rose window' }))
+    const row = drawer.getByRole('button', { name: 'View Inuksuk: Rose window' })
+    const bounds = row.getBoundingClientRect()
+    const rowBounds = row.closest('li')!.getBoundingClientRect()
+    await expect(bounds.left).toBe(rowBounds.left)
+    await expect(bounds.right).toBe(rowBounds.right)
+    await expect(row.querySelector('button')).toBeNull()
+    await expect(canvasElement.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
+    await waitFor(() =>
+      expect(canvasElement.ownerDocument.querySelector('.MuiModal-root')).toBeNull(),
+    )
   },
 }
 export const LabelOnly: Story = {
@@ -194,6 +219,16 @@ export const LabelOnly: Story = {
     await userEvent.keyboard('{Escape}')
     await expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(
       1,
+    )
+    const drawer = within(canvas.getByRole('complementary'))
+    await expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
+      'aria-pressed',
+      'mixed',
+    )
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    await expect(drawer.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     )
   },
 }
@@ -250,5 +285,11 @@ export const Synchronized: Story = {
     const triggers = await canvas.findAllByRole('button', { name: 'Inuksuks (4)' })
     await userEvent.click(triggers[0])
     await expect(await canvas.findByRole('complementary', { name: /Inuksuks/ })).toBeVisible()
+    const drawer = within(canvas.getByRole('complementary'))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks markers' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'My Inuksuks options' }))
+    await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
+    await expect(canvasElement.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
+    await expect(canvasElement.querySelector('[data-inuksuk-id="107"]')).toBeEmptyDOMElement()
   },
 }
