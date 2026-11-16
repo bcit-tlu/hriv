@@ -211,11 +211,7 @@ def validate_assignments(
     assignments: list[BoardAssignment],
 ) -> None:
     for assignment in assignments:
-        board = editable_board(ctx, boards, assignment.board_id)
-        if assignment.section_id is not None and not any(
-            section.id == assignment.section_id for section in board.sections
-        ):
-            raise HTTPException(422, "section_id must belong to the target Board")
+        editable_board(ctx, boards, assignment.board_id)
 
 
 async def replace_assignments(
@@ -241,7 +237,6 @@ async def replace_assignments(
                 board_id=board.id, inuksuk_id=item.id, sort_order=next_order,
             )
             db.add(link)
-        link.section_id = assignment.section_id
         if assignment.sort_order is not None:
             link.sort_order = assignment.sort_order
     await bump_board_membership_versions(db, set(editable) | requested)

@@ -24,7 +24,7 @@ from .authz import (
 from .collection_views import _owners_out
 from .models import Board, BoardInuksuk, Image, Inuksuk, User
 from .schemas import (
-    BoardInuksukOut, BoardOut, BoardPermissionsOut, BoardSectionOut,
+    BoardOut, BoardPermissionsOut,
     BoardSummaryOut, CollectionOwnerOut, InuksukOut, InuksukPermissionsOut,
 )
 from .tile_tokens import append_inuksuk_thumb_token, append_thumb_token
@@ -91,7 +91,6 @@ def board_load_options() -> tuple:
         selectinload(Board.owner_program),
         selectinload(Board.programs),
         selectinload(Board.groups),
-        selectinload(Board.sections),
         selectinload(Board.inuksuk_links).selectinload(BoardInuksuk.inuksuk)
         .selectinload(Inuksuk.image),
         selectinload(Board.inuksuk_links).selectinload(BoardInuksuk.inuksuk)
@@ -195,13 +194,9 @@ def board_out(
         if ctx.can_view_inuksuk(link.inuksuk, boards):
             fields = inuksuk_out(ctx, link.inuksuk, boards).model_dump()
             fields["sort_order"] = link.sort_order
-            members.append(BoardInuksukOut(**fields, section_id=link.section_id))
+            members.append(InuksukOut(**fields))
     return BoardOut(
         **board_summary_out(ctx, board).model_dump(),
-        sections=[
-            BoardSectionOut(id=s.id, board_id=s.board_id, name=s.name, sort_order=s.sort_order)
-            for s in sorted(board.sections, key=lambda s: (s.sort_order, s.id))
-        ],
         inuksuks=members,
     )
 

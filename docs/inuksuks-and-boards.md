@@ -1,7 +1,7 @@
 # Inuksuks and Boards
 
 Inuksuks bookmark an image's exact viewport coordinates, zoom, and rotation.
-Boards curate shared Inuksuks into ordered, one-level sections. Migration
+Boards curate shared Inuksuks into ordered studies. Migration
 `0046_inuksuks_and_boards` introduces the additive schema; thumbnails and
 read access follow in #1767/#1768, with creation and UI in subsequent issues
 of epic #1765.
@@ -97,12 +97,12 @@ the image drawer route explicitly applies `require_inuksuks_enabled`
 because it lives outside those middleware path prefixes. Flag-off returns
 404 even before authentication.
 
-| Endpoint                        | Response                                                                                                        |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `GET /api/boards`               | Visible Board summaries with owners, scope ids, permissions, visible `inuksuk_count` and cover thumbnail        |
-| `GET /api/boards/{id}`          | Board summary plus ordered `sections` and visible `inuksuks`, each with per-Board `section_id` and `sort_order` |
-| `GET /api/inuksuks`             | Visible Inuksuks, with owners, permissions, source tag and only their visible `board_ids`                       |
-| `GET /api/images/{id}/inuksuks` | Drawer items tagged `mine`, `instructor`, or `public`, once each                                                |
+| Endpoint                        | Response                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /api/boards`               | Visible Board summaries with owners, scope ids, permissions, visible `inuksuk_count` and cover thumbnail |
+| `GET /api/boards/{id}`          | Board summary plus visible `inuksuks` in per-Board `sort_order`                                          |
+| `GET /api/inuksuks`             | Visible Inuksuks, with owners, permissions, source tag and only their visible `board_ids`                |
+| `GET /api/images/{id}/inuksuks` | Drawer items tagged `mine`, `instructor`, or `public`, once each                                         |
 
 Admins, instructors and staff see all Boards, including private Boards.
 Students see Boards they own/co-own, public Boards, and restricted Boards
@@ -139,9 +139,9 @@ description or owner label. `visibility` may be repeated. Board sorts:
 `id`, `name`, `description`, `visibility`, `owner`, `inuksuk_count`,
 `sort_order`, `created_at`, `updated_at`.
 
-Inuksuk list filters: `board_id`, `section_id`, `image_id`, `favourite`,
+Inuksuk list filters: `board_id`, `image_id`, `favourite`,
 and `scope=mine|instructor|public` (using the same precedence as drawer tags).
-Board/section membership filters only match visible Boards. `q` searches
+Board membership filters only match visible Boards. `q` searches
 title/description. Inuksuk sorts: `id`, `title`, `description`,
 `image_id`, `favourite`, `sort_order`, `created_at`, `updated_at`.
 
@@ -201,28 +201,24 @@ and permission fields are reused in write responses.
 | `PUT /api/boards/order`                         | `items: [{board_id, version}]`; ordered Board details                                                                             |
 | `PUT /api/boards/{id}/owners`                   | `user_ids` and token; Board detail                                                                                                |
 | `POST /api/boards/{id}/transfer`                | Required nullable `program_id` and token; Board detail                                                                            |
-| `POST /api/boards/{id}/sections`                | `name`, optional `sort_order`, parent token; 201 Board detail                                                                     |
-| `PATCH /api/boards/{id}/sections/{section_id}`  | `name` / `sort_order`, parent token; Board detail                                                                                 |
-| `DELETE /api/boards/{id}/sections/{section_id}` | Parent concurrency header; 204; member `section_id` becomes null                                                                  |
-| `PUT /api/boards/{id}/sections/order`           | `section_ids` containing all Board sections once, parent token; Board detail                                                      |
 | `POST /api/inuksuks`                            | `image_id`, `title`, `x`, `y`, `zoom`, nonempty `board_assignments`; optional `description`, `rotation`, `favourite`; 201 Inuksuk |
 | `PATCH /api/inuksuks/{id}`                      | Mutable create fields except `image_id`, plus token; Inuksuk                                                                      |
 | `DELETE /api/inuksuks/{id}`                     | Concurrency header; 204 and thumbnail cleanup                                                                                     |
 | `PUT /api/inuksuks/order`                       | `items: [{inuksuk_id, version}]`; ordered Inuksuks                                                                                |
 | `PUT /api/inuksuks/{id}/owners`                 | Nonempty active-user `user_ids` and token; Inuksuk                                                                                |
-| `PUT /api/boards/{id}/inuksuks/order`           | `items: [{inuksuk_id, section_id?}]`, parent token; Board detail                                                                  |
+| `PUT /api/boards/{id}/inuksuks/order`           | `items: [{inuksuk_id}]`, parent token; Board detail                                                                               |
 | `DELETE /api/boards/{id}/inuksuks/{inuksuk_id}` | Parent concurrency header; Board detail                                                                                           |
 
 Every Inuksuk must have at least one Board link. Missing/empty
-`board_assignments` on create is 422. Assignments contain `board_id`,
-optional nullable `section_id`, and optional `sort_order`; new links
+`board_assignments` on create is 422. Assignments contain `board_id` and
+optional `sort_order`; new links
 append by default. Duplicate Board assignments are 422. Every submitted
-Board must be visible and editable; a section from another Board is 422.
+Board must be visible and editable.
 Create checks image visibility using the same context as the drawer.
 Coordinates/rotation must be finite; zoom must be positive.
 
 An Inuksuk editor's assignment PATCH replaces **only editable-Board links**.
-Uneditable-Board links retain their section and order unchanged, even if
+Uneditable-Board links retain their order unchanged, even if
 omitted. An empty replacement is accepted only if such retained links keep
 the Inuksuk on at least one Board; otherwise it is 422. Explicitly submitting
 an uneditable Board is 403 (404 if invisible). Board editors can reorder or
@@ -231,8 +227,7 @@ authority over the Inuksuk itself. Board removal returns 422 for the last
 link. Deleting a Board instead deletes any newly orphaned Inuksuks and cleans
 their files after commit; shared Inuksuks and their thumbnails survive.
 
-Board member reorder submits every **visible** member once. It may move
-members between that Board's sections (null means unsectioned); invisible
+Board member reorder submits every **visible** member once. Invisible
 members are preserved and appended, like hidden image retention in
 Collections. Global Board/Inuksuk order endpoints update only the listed
 editable rows, assigning zero-based order in submitted sequence. Empty
@@ -240,15 +235,13 @@ reorder lists are valid no-ops.
 
 ### Write concurrency, ownership and lifecycle
 
-PATCH, owners, transfer, section mutations and Board-member mutations require
+PATCH, owners, transfer and Board-member mutations require
 an integer `version` in the body or `If-Match: "<version>"`. DELETE uses the
 header. Missing both returns **428**, malformed/conflicting header/body tokens
 return 400, and atomic CAS mismatch returns **409** with the current read
 projection in `detail`. Success returns the new integer version as the ETag.
-Sections use their **parent Board's version**, not a separate section version;
-their writes return Board detail (DELETE returns its new ETag).
 Multi-row global reorder uses each item's `version`.
-Section and Board-member reorder checks the version before validating the
+Board-member reorder checks the version before validating the
 submitted membership list: a stale list returns 409 with the current Board,
 while an invalid list at the current version returns 422 without mutation.
 Collections currently requires body `version`; these endpoints retain that
@@ -300,7 +293,7 @@ program-owned Boards survive; solely departing-user-owned Inuksuks are deleted
 even on surviving Boards. Their thumbnail cleanup is deferred until commit.
 
 `test_board_writes.py` exercises PostgreSQL CRUD, role gates, CAS/428,
-sections/assignments/reorder, ownership/caps, real thumbnail generation,
+assignments/reorder, ownership/caps, real thumbnail generation,
 fallback and deletion, commit-failure file preservation and replacement.
 `test_inuksuk_thumbs.py` also checks replacement rollback cleanup boundaries.
 
@@ -338,14 +331,12 @@ The image endpoint is the sole viewer marker source, retaining the backend's
 `mine > instructor > public` tags and thumbnail fallbacks. The viewer reloads
 it after successful create/edit/delete and discards responses for old images.
 Read failures are shown in the viewer rather than silently implying no saved
-views. The typed API client also covers all Board, section, membership,
+views. The typed API client also covers all Board, membership,
 ownership, transfer and global-order writes for #1771; deletes use If-Match,
-other mutations send body versions, and section versions belong to the Board.
+other mutations send body versions.
 
 `InuksukFormDialog` requires a nonblank title and at least one editable Board.
-The multi-picker only lists `permissions.can_edit` Boards. Selected Board
-details supply independent section pickers, including the existing section
-when editing. Other Boards' links are preserved by the backend assignment
+The multi-picker only lists `permissions.can_edit` Boards. Selected Boards retain their existing membership when editing. Other Boards' links are preserved by the backend assignment
 contract. **+ Create new board** always creates a private Board and selects
 it. The last successfully used Board is remembered under the user-scoped
 `hrivpref:inuksuk:lastBoard:<userId>` localStorage key, validated against the
@@ -424,8 +415,8 @@ The response uses viewer-bound, token-epoch ETags and supports conditional 304s.
 
 The feature-gated **Boards & Inuksuks** AppBar utility opens `?page=boards`.
 It does not add a primary tab: students retain two mobile navigation tabs, and
-Boards uses `Tabs value={false}`. Selecting a Board/Section writes
-`?page=boards&board={id}&section={id}`; Back/Forward restores the selection.
+Boards uses `Tabs value={false}`. Selecting a Board writes
+`?page=boards&board={id}`; Back/Forward restores the selection.
 The same flag gates direct links and all page requests.
 Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
@@ -445,9 +436,8 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 `can_transfer`. Both dialogs carry Board OCC versions and require explicit
 reload on 409; reload replaces the staged draft with current server values.
 
-The selected Board groups members into one-level Sections plus **Unsectioned**.
-Section deletion moves its members to Unsectioned, not out of the Board.
-Handle-based DnD and menu actions reorder and move members between Sections;
+The selected Board displays a flat, ordered list of saved views.
+Handle-based DnD reorders members within the Board;
 Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.
 They appear in a separate read-only row under Your Boards. Board positions are
@@ -457,8 +447,7 @@ These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
 Dropping an editable Inuksuk on another editable Board **saves a copy of the
 link**. **Move/Save to…** also offers an explicit atomic move that removes the
-source link in the same PATCH. Other editable Board links retain their Sections
-and positions; non-editable links remain server-preserved. If any membership or
+source link in the same PATCH. Other editable Board links retain their positions; non-editable links remain server-preserved. If any membership or
 destination read fails, saving is blocked rather than sending a partial list.
 Board editors can remove other owners' Inuksuks from their Board, but only
 Inuksuk editors may save to another Board or edit/favourite the Inuksuk.
@@ -468,7 +457,7 @@ Removing one link instead surfaces the backend's last-Board 422 without deleting
 the Inuksuk. Mutations reload projections; no optimistic write survives failure.
 Opening a card fetches the authorized image record and reuses the existing
 `?image=&x=&y=&zoom=&rotation=` viewer/share mechanism, with an epoch guard
-against late navigation. Browser Back returns to the Board/Section entry.
+against late navigation. Browser Back returns to the Board entry.
 
 Tests: `boardUtils.test.ts`, `useBoardsData.test.ts`, `BoardsPage.test.tsx`,
 `BoardEditDialog.test.tsx`, `BoardOwnersDialog.test.tsx`, URL/history/App/AppShell
@@ -477,7 +466,7 @@ tests, and attached deterministic component stories, including keyboard reorder.
 ## Collection snapshots (#1770)
 
 The gated Collection API can seed independent member slots from visible
-Inuksuks, a Board, or a Section. Each slot snapshots the title and viewport;
+Inuksuks or a Board. Each slot snapshots the title and viewport;
 subsequent edits never write back to the source. Duplicate source images are
 valid slots with independent identity. See [Collections](collections.md#collection-slots-1770-backend)
 for payloads, compatibility and authorization.
@@ -496,11 +485,10 @@ snapshots because the old coordinates no longer describe the new source.
 
 Boards now offer a Select toolbar: any selected Inuksuks can seed a Sequence,
 and 2–4 can seed a Synchronized Collection. Both reuse the existing collection
-form and Add to Collection destination dialog. Board and Section headers create
+form and Add to Collection destination dialog. Board headers create
 ordered Sequences directly, while the collection Manage dialog can stage a
-Board or Section into its draft.
-Selected views follow the displayed Board order: Sections in their listed order,
-members in each Section's order, then Unsectioned. Click order does not change
+Board into its draft.
+Selected views follow the displayed Board member order. Click order does not change
 the resulting Collection sequence.
 
 A Collection slot is an independent snapshot. Its crop, label and starting

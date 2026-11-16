@@ -22,13 +22,13 @@ describe('buildNavHistoryState', () => {
 })
 
 describe('useNavigationHistory', () => {
-  it('preserves Board/Section history behind an existing saved-image URL', () => {
+  it('preserves Board history behind an existing saved-image URL', () => {
     const onPopState = vi.fn()
     const { result } = renderHook(() => useNavigationHistory(onPopState))
     act(() => result.current.pushNavState('boards', [], null, { board: '2', section: '11' }))
     expect(window.location.search).toBe('?page=boards&board=2&section=11')
     const boardState = window.history.state
-    expect(boardState).toMatchObject({ page: 'boards', boardId: 2, sectionId: 11 })
+    expect(boardState).toMatchObject({ page: 'boards', boardId: 2 })
     act(() =>
       result.current.pushNavState('browse', [], 42, {
         zoom: '3',

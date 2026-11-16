@@ -1957,8 +1957,8 @@ the visible slot count. The frontend slot-identity follow-up is #1774.
 
 POST and PUT `/api/collections/{id}/images` accept `image_ids` followed by
 `slots: [{id?, image_id, inuksuk_id?, viewport_state?, label?}]`, then optional
-`source_board_id`/`source_section_id` seeds and `inuksuk_ids` in supplied order.
-Board seeds follow section order, then member order, with Unsectioned last.
+`source_board_id` seeds and `inuksuk_ids` in supplied order.
+Board seeds follow member order.
 An existing slot ID must belong to this collection and match its image. Omitted
 metadata survives; explicit null clears it. Legacy IDs reuse the first unused
 matching slot. Invisible existing members survive replacement as before.
@@ -1967,8 +1967,7 @@ The caller must see the source Board; inaccessible Board members are skipped.
 Explicit inaccessible Inuksuks return 404. Seeding snapshots geometry, title,
 and an independent JPEG; it never changes or retains a link to the Inuksuk.
 Student Sequence limits count slots and distinguish additions by slot identity.
-Synchronized creation from `inuksuk_ids`, `source_board_id`, or
-`source_section_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
+Synchronized creation from `inuksuk_ids` or `source_board_id` requires 2–4 slots. Plain `slots` and legacy `image_ids`
 payloads retain the 0–4 member bounds on create and update, including the
 empty/single-member editing, removal, and undo workflows. Source-based updates
 also allow 0–4 slots; the two-slot minimum applies only to seeded creation.
@@ -2002,13 +2001,13 @@ are collected again after locking so racing snapshots are removed after commit.
 
 ## Board-based curation and multi-slot viewers (#1774)
 
-With `features.inuksuks`, a Board or Section header can create a Sequence
+With `features.inuksuks`, a Board header can create a Sequence
 Collection using the existing collection form. Select mode offers Sequence
 create/add for any non-empty selection and Synchronized create/add for 2–4
 Inuksuks. Existing collection destinations use the normal Add to Collection
 dialog. Creating opens the new collection; adding keeps the Board open.
 
-The Manage dialog stages **Add from Board**, optionally limited to one Section,
+The Manage dialog stages **Add from Board**,
 alongside its existing image-search staging. Reorders, selection and concurrent
 membership merging identify saved slots independently. Draft additions have
 temporary negative keys and do not allocate persisted slots until Done. Save
@@ -2041,7 +2040,7 @@ visibility, capacity checks and optimistic concurrency remain authoritative.
 
 With the Inuksuks flag enabled, Manage Collection's search picker also offers
 Boards and Inuksuks. A saved-view result stages one Inuksuk or the Board's visible
-views (displayed Section/card order, then Unsectioned), without navigating away
+views (displayed Board member order), without navigating away
 or saving the Collection. Source images are fetched through the authorized image
 endpoint, and each view becomes an independently keyed temporary slot. Empty Boards
 and failed requests leave the picker open with an error. Ordinary whole-image picks

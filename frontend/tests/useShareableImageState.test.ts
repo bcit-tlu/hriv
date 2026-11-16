@@ -26,20 +26,20 @@ function makeDeps(overrides: Partial<UseShareableImageStateDeps> = {}): UseShare
 }
 
 describe('useShareableImageState', () => {
-  it('parses Board and Section URLs without resolving an unrelated image', () => {
+  it('ignores legacy grouping query parameters on Board URLs without resolving an unrelated image', () => {
     window.history.replaceState(null, '', '/?page=boards&board=2&section=11&image=42')
-    expect(parseShareableUrlParams()).toMatchObject({ boardId: 2, sectionId: 11, imageId: null })
+    expect(parseShareableUrlParams()).toMatchObject({ boardId: 2, imageId: null })
   })
-  it('syncs Board and Section selection, removes stale Sections and supports opt-out', () => {
+  it('syncs Board selection and supports opt-out', () => {
     const { rerender } = renderHook(
-      ({ boardId, sectionId, enableUrlSync }) =>
-        useShareableImageState(makeDeps({ page: 'boards', boardId, sectionId, enableUrlSync })),
-      { initialProps: { boardId: 2, sectionId: 11, enableUrlSync: true } },
+      ({ boardId, enableUrlSync }) =>
+        useShareableImageState(makeDeps({ page: 'boards', boardId, enableUrlSync })),
+      { initialProps: { boardId: 2, enableUrlSync: true } },
     )
-    expect(window.location.search).toBe('?page=boards&board=2&section=11')
-    expect(window.history.state).toMatchObject({ page: 'boards', boardId: 2, sectionId: 11 })
-    rerender({ boardId: 3, sectionId: 0, enableUrlSync: false })
-    expect(window.location.search).toBe('?page=boards&board=2&section=11')
+    expect(window.location.search).toBe('?page=boards&board=2')
+    expect(window.history.state).toMatchObject({ page: 'boards', boardId: 2 })
+    rerender({ boardId: 3, enableUrlSync: false })
+    expect(window.location.search).toBe('?page=boards&board=2')
   })
   let replaceStateSpy: ReturnType<typeof vi.spyOn>
   let savedClipboard: Clipboard

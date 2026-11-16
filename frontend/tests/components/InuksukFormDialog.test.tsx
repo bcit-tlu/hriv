@@ -21,7 +21,7 @@ function services() {
       ...BOARD_FIXTURE,
       id: 2,
       name: 'My new Board',
-      sections: [],
+
       inuksuks: [],
     }),
     createInuksuk: vi.fn().mockResolvedValue(INUKSUK_FIXTURE),
@@ -83,17 +83,13 @@ describe('InuksukFormDialog', () => {
     expect(screen.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '+ Create new board' })).toBeEnabled()
   })
-  it('selects only editable Boards, exposes sections, captures all form values and persists the last Board', async () => {
+  it('selects only editable Boards, captures all form values and persists the last Board', async () => {
     const { api, user, onChanged, onClose } = await setup()
     await user.type(screen.getByLabelText('Title *'), '  Window detail  ')
     await user.type(screen.getByLabelText('Description'), '  A useful view  ')
     await user.click(screen.getByRole('combobox', { name: 'Boards' }))
     expect(screen.queryByRole('option', { name: 'Read-only Board' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('option', { name: 'Architecture inspiration' }))
-    await user.click(
-      await screen.findByRole('combobox', { name: 'Section in Architecture inspiration' }),
-    )
-    await user.click(screen.getByRole('option', { name: 'Windows' }))
     await user.click(screen.getByRole('checkbox', { name: 'Favourite' }))
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
@@ -106,7 +102,7 @@ describe('InuksukFormDialog', () => {
       title: 'Window detail',
       description: 'A useful view',
       favourite: true,
-      board_assignments: [{ board_id: 1, section_id: 11 }],
+      board_assignments: [{ board_id: 1 }],
     })
     expect(onChanged).toHaveBeenCalledOnce()
     expect(localStorage.getItem(LAST_BOARD)).toBe('1')
@@ -116,9 +112,6 @@ describe('InuksukFormDialog', () => {
     const { api } = await setup()
     await waitFor(() => expect(api.fetchBoard).toHaveBeenCalledWith(1))
     expect(screen.getByText('Architecture inspiration')).toBeInTheDocument()
-    expect(
-      screen.getByRole('combobox', { name: 'Section in Architecture inspiration' }),
-    ).toHaveTextContent('No section')
   })
   it.each(['99', 'not-json', '500'])(
     'ignores unavailable/non-editable persisted Board %s',
@@ -144,15 +137,12 @@ describe('InuksukFormDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))
     await waitFor(() =>
       expect(api.createInuksuk).toHaveBeenCalledWith(
-        expect.objectContaining({ board_assignments: [{ board_id: 2, section_id: null }] }),
+        expect.objectContaining({ board_assignments: [{ board_id: 2 }] }),
       ),
     )
   })
-  it('supports multiple Boards and preserves the existing per-Board section on edit', async () => {
+  it('supports multiple Boards and preserves existing Board assignments on edit', async () => {
     const { api, user } = await setup({ item: INUKSUK_FIXTURE })
-    expect(
-      screen.getByRole('combobox', { name: 'Section in Architecture inspiration' }),
-    ).toHaveTextContent('Windows')
     await user.click(screen.getByRole('button', { name: '+ Create new board' }))
     await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
@@ -163,10 +153,7 @@ describe('InuksukFormDialog', () => {
         7,
         expect.objectContaining({
           version: 3,
-          board_assignments: [
-            { board_id: 1, section_id: 11 },
-            { board_id: 2, section_id: null },
-          ],
+          board_assignments: [{ board_id: 1 }, { board_id: 2 }],
         }),
       ),
     )

@@ -741,19 +741,17 @@ vi.mock('../src/components/BoardsPage', () => ({
   default: ({
     enabled,
     boardId,
-    sectionId,
     onSelectBoard,
     onOpenInuksuk,
   }: {
     enabled: boolean
     boardId: number | null
-    sectionId: number | null
-    onSelectBoard: (id: number, sectionId: number) => void
+    onSelectBoard: (id: number) => void
     onOpenInuksuk: (item: ApiInuksuk) => void
   }) =>
     enabled ? (
-      <div data-testid="boards-page" data-board={String(boardId)} data-section={String(sectionId)}>
-        <button onClick={() => onSelectBoard(5, 11)}>Select Board Section</button>
+      <div data-testid="boards-page" data-board={String(boardId)}>
+        <button onClick={() => onSelectBoard(5)}>Select Board</button>
         <button onClick={() => onOpenInuksuk({ ...INUKSUK_FIXTURE, image_id: 101, rotation: 90 })}>
           Open saved view
         </button>
@@ -3659,11 +3657,11 @@ describe('Boards navigation', () => {
       updated_at: '',
     })
   })
-  it('restores the Board and Section deep link, and resets to the overview on utility entry', async () => {
+  it('ignores obsolete grouping parameters on the Board deep link, and resets to the overview on utility entry', async () => {
     render(<App />)
     const page = await screen.findByTestId('boards-page')
     expect(page).toHaveAttribute('data-board', '5')
-    expect(page).toHaveAttribute('data-section', '11')
+    expect(page).not.toHaveAttribute('data-section')
     fireEvent.click(screen.getByRole('button', { name: 'Shell Boards' }))
     await waitFor(() =>
       expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', 'null'),
@@ -3692,9 +3690,9 @@ describe('Boards navigation', () => {
     expect(window.location.search).toContain('rotation=90')
     await goBack()
     await waitFor(() =>
-      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-section', '11'),
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '5'),
     )
-    expect(window.location.search).toBe('?page=boards&board=5&section=11')
+    expect(window.location.search).toBe('?page=boards&board=5')
   })
   it('does not navigate after a late image fetch if the user left Boards', async () => {
     let finish: (image: ApiImage) => void = () => {}

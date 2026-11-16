@@ -23,7 +23,7 @@ from app.collection_slots import (
     SlotPlan, finish_slot_changes, slot_thumb_file, snapshot_thumbnail,
 )
 from app.database import get_db, settings
-from app.models import Board, BoardInuksuk, BoardSection, Category, Collection, CollectionImage, Image, Inuksuk, TileOrderRevision, User
+from app.models import Board, BoardInuksuk, Category, Collection, CollectionImage, Image, Inuksuk, TileOrderRevision, User
 from app.models import Group, Program, board_groups, board_owners, board_programs
 from app.routers import collections, images, tile_order
 from app.schemas import CollectionCreate, CollectionImagesUpdate, CollectionViewportUpdate, SlotViewport
@@ -47,10 +47,13 @@ async def test_saved_view_archive_round_trip(world, monkeypatch, enabled):
     await world.db.execute(board_groups.insert().values(board_id=world.board.id, group_id=group.id))
     image_ids = {world.image.id, world.secret.id}
     original = await export_saved_views(world.db, image_ids)
-    assert all(original[name] for name in ("boards", "board_sections", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
+    assert "board_sections" not in original
+    assert all(original[name] for name in ("boards", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
     await clear_saved_views(world.db)
     assert all(not rows for rows in (await export_saved_views(world.db, image_ids)).values())
-    await import_saved_views(world.db, original)
+    legacy = {**original, "board_sections": [{"id": 99, "board_id": world.board.id, "name": "Old"}]}
+    legacy["board_inuksuks"] = [{**row, "section_id": 99} for row in original["board_inuksuks"]]
+    await import_saved_views(world.db, legacy)
     assert await export_saved_views(world.db, image_ids) == original
     filtered = await export_saved_views(world.db, {world.image.id})
     assert world.hidden.id not in {row["id"] for row in filtered["inuksuks"]}
@@ -168,9 +171,6 @@ async def world(monkeypatch, tmp_path):
             private = Board(name="private", visibility="private", owners=[other], groups=[], programs=[])
             db.add_all([*users.values(), other, image, secret, public, private, category])
             await db.flush()
-            sections = [BoardSection(board_id=public.id, name=name, sort_order=order) for name, order in (("late", 20), ("early", 10))]
-            db.add_all(sections)
-            await db.flush()
             items = [Inuksuk(image=image, title=f"view-{i}", x=.1 + i * .2, y=.25, zoom=2, rotation=i * 10, owners=[users["student"]]) for i in range(3)]
             hidden_item = Inuksuk(image=secret, title="secret", x=.5, y=.3, zoom=2, owners=[users["student"]])
             private_item = Inuksuk(image=image, title="private", x=.5, y=.3, zoom=2, owners=[other])
@@ -179,7 +179,7 @@ async def world(monkeypatch, tmp_path):
             for i, item in enumerate(items):
                 item.thumb = f"/api/tiles/42/inuksuks/{item.id}.jpg"
                 pyvips.Image.black(8, 8).new_from_image([i * 70, 0, 0]).jpegsave(str(root / "inuksuks" / f"{item.id}.jpg"))
-                db.add(BoardInuksuk(board_id=public.id, inuksuk_id=item.id, section_id=sections[i].id if i < 2 else None, sort_order=i))
+                db.add(BoardInuksuk(board_id=public.id, inuksuk_id=item.id, sort_order=i))
             db.add_all([BoardInuksuk(board_id=public.id, inuksuk_id=hidden_item.id, sort_order=4), BoardInuksuk(board_id=private.id, inuksuk_id=private_item.id)])
             await db.flush()
             caller = {"role": "admin"}
@@ -197,7 +197,7 @@ async def world(monkeypatch, tmp_path):
             app.dependency_overrides[auth.get_current_user] = current_user
             app.dependency_overrides[get_db] = session
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-                yield NS(db=db, client=client, app=app, image=image, secret=secret, items=items, hidden=hidden_item, private=private_item, board=public, sections=sections, private_board=private, root=root, caller=caller, users=users, category=category)
+                yield NS(db=db, client=client, app=app, image=image, secret=secret, items=items, hidden=hidden_item, private=private_item, board=public, private_board=private, root=root, caller=caller, users=users, category=category)
         await transaction.rollback()
     await engine.dispose()
 
@@ -353,9 +353,9 @@ async def test_three_inuksuks_same_image_are_independent_snapshots(world):
     assert len(graph.json()["images"]) == 1
 
 
-async def test_section_source_and_invalid_slot_references(world):
-    result = await create(world, source_board_id=world.board.id, source_section_id=world.sections[1].id)
-    assert [row["slot"]["label"] for row in result["images"]] == [world.items[1].title]
+async def test_board_source_and_invalid_slot_references(world):
+    result = await create(world, source_board_id=world.board.id)
+    assert [row["slot"]["label"] for row in result["images"]] == [item.title for item in [*world.items, world.hidden]]
     other = await create(world, image_ids=[world.image.id])
     url = f"/api/collections/{result['id']}/images"
     foreign = {"id": other["images"][0]["slot"]["id"], "image_id": world.image.id}
@@ -364,8 +364,6 @@ async def test_section_source_and_invalid_slot_references(world):
     slot = {"id": result["images"][0]["slot"]["id"], "image_id": world.image.id}
     denied = await world.client.put(url, json={"version": result["version"], "slots": [slot, slot]})
     assert denied.status_code == 422
-    denied = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "category_id": world.category.id, "source_board_id": world.board.id, "source_section_id": 99999999})
-    assert denied.status_code == 404
 
 
 async def test_flag_disabled_on_existing_slots_returns_unique_images(world, monkeypatch):
@@ -403,7 +401,7 @@ async def test_student_filters_slots_and_board_seeds(world):
     assert visible.json()["member_count"] == 2
     assert len(visible.json()["images"]) == 2
     seeded = await create(world, source_board_id=world.board.id)
-    assert [row["slot"]["label"] for row in seeded["images"]] == [world.items[i].title for i in (1, 0, 2)]
+    assert [row["slot"]["label"] for row in seeded["images"]] == [world.items[i].title for i in (0, 1, 2)]
     for item_id in (world.hidden.id, world.private.id):
         denied = await world.client.post("/api/collections", json={"name": "bad", "type": "sequence", "inuksuk_ids": [item_id]})
         assert denied.status_code == 404
@@ -522,7 +520,7 @@ async def test_synchronized_caps_count_slots(world, count, status, field):
         assert len(response.json()["images"]) == count
 
 
-@pytest.mark.parametrize("source", ["inuksuks", "board", "section"])
+@pytest.mark.parametrize("source", ["inuksuks", "board"])
 @pytest.mark.parametrize("count,status", [(0, 422), (1, 422), (2, 201), (4, 201), (5, 422)])
 async def test_synchronized_seed_minimum_only_applies_on_create(world, source, count, status):
     ids = [world.items[0].id] * count
@@ -540,11 +538,9 @@ async def test_synchronized_seed_minimum_only_applies_on_create(world, source, c
             world.db.add(item)
             await world.db.flush()
             world.db.add(BoardInuksuk(board_id=world.board.id, inuksuk_id=item.id,
-                                     section_id=world.sections[0].id, sort_order=index))
+                                     sort_order=index))
         await world.db.commit()
         payload = {"source_board_id": world.board.id}
-        if source == "section":
-            payload["source_section_id"] = world.sections[0].id
     response = await world.client.post("/api/collections", json={
         "name": "seeded", "type": "synchronized", "category_id": world.category.id,
         **payload,

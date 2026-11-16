@@ -8,7 +8,6 @@ export interface NavHistoryState {
   catIds: number[]
   imageId: number | null
   boardId?: number | null
-  sectionId?: number | null
   /**
    * `?collection=` entries opened from a Browse tile (#1529): "back" from
    * the detail returns to Browse (restoring `catIds`) rather than the
@@ -61,7 +60,7 @@ export function buildNavHistoryState(
   imageId: number | null,
   historyIndex = historyIndexOf(window.history.state) ?? 0,
   collectionFromBrowse?: boolean,
-  boardLocation?: { boardId: number | null; sectionId: number | null },
+  boardLocation?: { boardId: number | null },
 ): NavHistoryState {
   return {
     _hriv: true,

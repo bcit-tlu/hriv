@@ -8,34 +8,10 @@ export function ownsBoard(board: ApiBoardSummary, user: User | null): boolean {
   )
 }
 
-export function groupBoardMembers(board: ApiBoard) {
-  return [...board.sections, { id: null, name: 'Unsectioned' }].map((section) => ({
-    ...section,
-    inuksuks: board.inuksuks.filter((item) => item.section_id === section.id),
-  }))
-}
-
-export function boardMemberOrder(board: ApiBoard, ids: number[], sectionId: number | null) {
-  const moved = new Set(ids)
-  return [
-    ...board.inuksuks
-      .filter((item) => !moved.has(item.id))
-      .map((item) => ({ inuksuk_id: item.id, section_id: item.section_id })),
-    ...ids.map((inuksuk_id) => ({ inuksuk_id, section_id: sectionId })),
-  ]
-}
-
-export function moveBoardMember(
-  board: ApiBoard,
-  id: number,
-  sectionId: number | null,
-  index: number,
-) {
-  const ids = board.inuksuks
-    .filter((item) => item.section_id === sectionId && item.id !== id)
-    .map((item) => item.id)
+export function moveBoardMember(board: ApiBoard, id: number, index: number) {
+  const ids = board.inuksuks.filter((item) => item.id !== id).map((item) => item.id)
   ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id)
-  return boardMemberOrder(board, ids, sectionId)
+  return ids.map((inuksuk_id) => ({ inuksuk_id }))
 }
 
 export function inuksukViewParams(item: ApiInuksuk): Record<string, string> {
@@ -55,5 +31,5 @@ export function parseBoardLocation(search: string) {
     return Number.isSafeInteger(value) && value > 0 ? value : null
   }
   const boardId = params.get('page') === 'boards' ? id('board') : null
-  return { boardId, sectionId: boardId == null ? null : id('section') }
+  return { boardId }
 }

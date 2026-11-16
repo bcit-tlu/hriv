@@ -267,16 +267,8 @@ async def resolve_slots(
         )).scalars().unique().one_or_none()
         if board is None or not board_ctx.can_view_board(board):
             raise HTTPException(404, "Board not found")
-        sections = {section.id: section.sort_order for section in board.sections}
-        if body.source_section_id is not None and body.source_section_id not in sections:
-            raise HTTPException(404, "Section not found")
-        links = sorted(board.inuksuk_links, key=lambda row: (
-            sections.get(row.section_id, float("inf")),
-            row.sort_order, row.inuksuk_id,
-        ))
+        links = sorted(board.inuksuk_links, key=lambda row: (row.sort_order, row.inuksuk_id))
         for link in links:
-            if body.source_section_id is not None and link.section_id != body.source_section_id:
-                continue
             item = await visible_inuksuk(link.inuksuk_id, explicit=False)
             if item is not None:
                 await add(CollectionSlotInput(image_id=item.image_id, inuksuk_id=item.id))

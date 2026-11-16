@@ -133,12 +133,6 @@ export interface ApiInuksuk extends InuksukView {
   created_at: string
   updated_at: string
 }
-export interface ApiBoardSection {
-  id: number
-  board_id: number
-  name: string
-  sort_order: number
-}
 export interface ApiBoardSummary {
   id: number
   name: string
@@ -162,12 +156,10 @@ export interface ApiBoardSummary {
   updated_at: string
 }
 export interface ApiBoard extends ApiBoardSummary {
-  sections: ApiBoardSection[]
-  inuksuks: (ApiInuksuk & { section_id: number | null })[]
+  inuksuks: ApiInuksuk[]
 }
 export interface BoardAssignment {
   board_id: number
-  section_id?: number | null
   sort_order?: number
 }
 
