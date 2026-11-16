@@ -586,3 +586,5 @@ Flag-off viewers retain the original Details trigger/drawer unchanged. Synchroni
 panes retain their independent Details and legacy Inuksuks drawers (including their
 pin model); the My Collections drawer also retains its shared pin hook. The side
 panel is attached inside OSD's root element so it survives full-page reparenting.
+If browser storage is blocked, the per-user fallback survives viewer remounts in
+the current session, including Sequence steps; it cannot survive a page reload.

@@ -2,12 +2,17 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useViewerPanelState } from '../src/useViewerPanelState'
 
-beforeEach(() => localStorage.clear())
+let userId = 0
+let key: string
+beforeEach(() => {
+  localStorage.clear()
+  userId += 1
+  key = `hrivpref:viewer-panel:user:${userId}`
+})
 afterEach(() => vi.restoreAllMocks())
-const key = 'hrivpref:viewer-panel:user:9'
 
 it('defaults closed on Inuksuks and restores both preferences after remounting', () => {
-  const first = renderHook(() => useViewerPanelState(9))
+  const first = renderHook(() => useViewerPanelState(userId))
   expect(first.result.current).toMatchObject({ open: false, tab: 'inuksuks' })
   act(() => {
     first.result.current.setOpen(true)
@@ -15,7 +20,7 @@ it('defaults closed on Inuksuks and restores both preferences after remounting',
   })
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ open: true, tab: 'details' })
   first.unmount()
-  expect(renderHook(() => useViewerPanelState(9)).result.current).toMatchObject({
+  expect(renderHook(() => useViewerPanelState(userId)).result.current).toMatchObject({
     open: true,
     tab: 'details',
   })
@@ -24,12 +29,12 @@ it('defaults closed on Inuksuks and restores both preferences after remounting',
 it('isolates users without writing the previous users preference to the new key', () => {
   localStorage.setItem(key, JSON.stringify({ open: true, tab: 'details' }))
   const { result, rerender } = renderHook(({ user }) => useViewerPanelState(user), {
-    initialProps: { user: 9 },
+    initialProps: { user: userId },
   })
-  rerender({ user: 10 })
+  rerender({ user: userId + 1000 })
   expect(result.current).toMatchObject({ open: false, tab: 'inuksuks' })
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ open: true, tab: 'details' })
-  rerender({ user: 9 })
+  rerender({ user: userId })
   expect(result.current).toMatchObject({ open: true, tab: 'details' })
 })
 
@@ -37,7 +42,7 @@ it.each(['{bad json', 'null', '{"open":"yes","tab":"bad"}'])(
   'handles invalid storage %s',
   (value) => {
     localStorage.setItem(key, value)
-    expect(renderHook(() => useViewerPanelState(9)).result.current).toMatchObject({
+    expect(renderHook(() => useViewerPanelState(userId)).result.current).toMatchObject({
       open: false,
       tab: 'inuksuks',
     })
@@ -57,17 +62,35 @@ it.each([undefined, 9])(
   },
 )
 
-it('falls back to memory when browser storage throws', () => {
-  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-    throw new Error('blocked')
-  })
-  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-    throw new Error('blocked')
-  })
-  const { result } = renderHook(() => useViewerPanelState(9))
-  act(() => {
-    result.current.setOpen(true)
-    result.current.setTab('details')
-  })
-  expect(result.current).toMatchObject({ open: true, tab: 'details' })
-})
+it.each(['reads and writes', 'writes'])(
+  'keeps per-user memory across remounts when storage blocks %s',
+  (blocked) => {
+    if (blocked === 'reads and writes') {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('blocked')
+      })
+    }
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const { result, unmount } = renderHook(() => useViewerPanelState(userId))
+    act(() => {
+      result.current.setOpen(true)
+      result.current.setTab('details')
+    })
+    expect(result.current).toMatchObject({ open: true, tab: 'details' })
+    unmount()
+    expect(renderHook(() => useViewerPanelState(userId + 1000)).result.current).toMatchObject({
+      open: false,
+      tab: 'inuksuks',
+    })
+    expect(renderHook(() => useViewerPanelState(userId)).result.current).toMatchObject({
+      open: true,
+      tab: 'details',
+    })
+    expect(renderHook(() => useViewerPanelState(userId, false)).result.current).toMatchObject({
+      open: false,
+      tab: 'inuksuks',
+    })
+  },
+)
