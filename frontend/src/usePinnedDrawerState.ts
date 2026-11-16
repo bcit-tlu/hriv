@@ -15,15 +15,15 @@ function loadPinned(userScope: string): boolean {
   }
 }
 
-export function usePinnedDrawerState(user: string, drawer: string) {
+export function usePinnedDrawerState(user: string, drawer: string, enableStorageSync = true) {
   const userScope = `hrivpref:${drawer}:pinned:user:${user}`
   const [state, setState] = useState<DrawerState>(() => {
-    const pinned = loadPinned(userScope)
+    const pinned = enableStorageSync && loadPinned(userScope)
     return { userScope, pinned, open: pinned }
   })
 
   if (state.userScope !== userScope) {
-    const pinned = loadPinned(userScope)
+    const pinned = enableStorageSync && loadPinned(userScope)
     setState({ userScope, pinned, open: pinned })
   }
 
@@ -41,13 +41,14 @@ export function usePinnedDrawerState(user: string, drawer: string) {
         pinned: nextPinned,
         open: current.open,
       }))
+      if (!enableStorageSync) return
       try {
         localStorage.setItem(userScope, String(nextPinned))
       } catch {
         // Ignore localStorage write failures and keep the in-memory preference.
       }
     },
-    [userScope],
+    [userScope, enableStorageSync],
   )
 
   return { open: state.open, setOpen, pinned: state.pinned, setPinned }
