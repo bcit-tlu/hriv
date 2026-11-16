@@ -172,7 +172,7 @@ async def test_upload_source_image_success(tmp_path) -> None:
         result = await upload_source_image(
             file=file, background_tasks=bg, user=user,
             name="Test Image", category_id=1, copyright="CC0",
-            note="A note", active=True,
+            description="A note", instructor_note="Staff note", active=True,
             db=db,
         )
 
@@ -181,9 +181,10 @@ async def test_upload_source_image_success(tmp_path) -> None:
     bg.add_task.assert_called_once()
     src = db.add.call_args.args[0]
     assert src.uploaded_by == user.id
+    assert (src.description, src.instructor_note) == ("A note", "Staff note")
 
 
-async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
+async def test_upload_source_image_normalizes_empty_notes(tmp_path) -> None:
     file = AsyncMock()
     file.filename = "test.png"
     file.content_type = "image/png"
@@ -200,12 +201,40 @@ async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
             file=file,
             background_tasks=MagicMock(),
             user=MagicMock(),
-            note="",
+            description="",
+            instructor_note="",
             db=db,
         )
 
     src = db.add.call_args.args[0]
     assert src.description is None
+    assert src.instructor_note is None
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    [("description", "Description"), ("instructor_note", "Instructor note")],
+)
+async def test_upload_source_image_rejects_overlong_notes(tmp_path, field, label) -> None:
+    file = AsyncMock()
+    file.filename = "test.png"
+    file.content_type = "image/png"
+    db = AsyncMock()
+
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await upload_source_image(
+                file=file,
+                background_tasks=MagicMock(),
+                user=MagicMock(),
+                db=db,
+                **{field: "x" * 501},
+            )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == f"{label} must be 500 characters or fewer"
+    file.read.assert_not_called()  # rejected before touching disk
 
 
 async def test_upload_source_image_rejects_oversized_file(tmp_path) -> None:
