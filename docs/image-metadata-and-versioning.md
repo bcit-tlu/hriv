@@ -75,6 +75,23 @@ that field, allowing the stored note to be removed. Bulk edit treats a blank
 note as “no change” and omits it from the request, preserving existing notes on
 the selected images.
 
+### Description and Instructor note
+
+Images and source images carry two optional free-text fields (`Text`, max 500
+characters each; blank normalizes to `null`):
+
+| Field             | Visible to                    | Writable by       | Notes                                                                 |
+| ----------------- | ----------------------------- | ----------------- | --------------------------------------------------------------------- |
+| `description`     | All roles, including students | admin, instructor | Renamed from `note` (migration `0049_image_description_split`).       |
+| `instructor_note` | admin, instructor, staff      | admin, instructor | `null` in every student payload; scrubbed server-side, not in the UI. |
+
+Scrubbing happens in `collection_views.image_out(img, scrub_instructor_note=...)`
+at the four student-reachable image read paths: `GET /images/`,
+`GET /images/{id}`, the category tree (`_load_tree`) and collection detail
+(`collection_out`). It clears the Pydantic copy only — never the ORM attribute,
+which would mark the row dirty and persist `NULL` on a later commit. Any new
+endpoint that returns `ImageOut` to students must go through `image_out`.
+
 ### Known metadata keys
 
 | Key                        | Type                            | Source                                                        | Description                                                                                                                                                                            |
