@@ -92,3 +92,8 @@ image; starting a new view with Details open switches the panel to Inuksuks.
 Escape still cancels a draft before turning off placement, without closing the panel.
 The earlier pin instructions apply only to the legacy Synchronized-pane drawers;
 flag-off viewers keep their original Details drawer.
+
+Saving a new Inuksuk selects it and opens its information card. Its panel row
+scrolls into view and receives keyboard focus, even if the panel was closed or
+showing Details. The card's star beside Close indicates favourite status; use Edit
+to change it. The panel and forms use compact text and spacing like the page footer.

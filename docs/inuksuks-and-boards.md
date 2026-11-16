@@ -588,3 +588,16 @@ pin model); the My Collections drawer also retains its shared pin hook. The side
 panel is attached inside OSD's root element so it survives full-page reparenting.
 If browser storage is blocked, the per-user fallback survives viewer remounts in
 the current session, including Sequence steps; it cannot survive a page reload.
+
+## Viewer polish
+
+After a successful creation, the new Inuksuk replaces the previous selection,
+including its marker and information card. The viewer opens the Inuksuks tab (or
+legacy drawer), expands the row's group, scrolls it into view and gives it keyboard
+focus. Selection does not revert to the previous row; failed saves keep the draft.
+The information card shows a read-only, named star immediately before Close,
+without a visible Favourite/Not a favourite sentence. Edit still changes favourite.
+Viewer panel rows, group labels, details and help now use caption typography,
+matching the 12px page footer at the default scale. Titles and form inputs use
+14px theme variants; small inputs and reduced spacing compact both Inuksuk forms.
+Legacy flag-off Details retains its original sizing.

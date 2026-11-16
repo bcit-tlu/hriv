@@ -30,6 +30,7 @@ export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
     await expect(page.getByRole('heading', { name: 'Save a view' })).toBeInTheDocument()
+    await expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus()
     await expect(page.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
   },
 }

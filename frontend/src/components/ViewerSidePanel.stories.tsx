@@ -12,13 +12,18 @@ import type { ViewerPanelTab } from '../useViewerPanelState'
 function Example({
   initialOpen = false,
   initialTab = 'inuksuks',
+  saved = false,
 }: {
   initialOpen?: boolean
   initialTab?: ViewerPanelTab
+  saved?: boolean
 }) {
   const [open, setOpen] = useState(initialOpen)
   const [tab, setTab] = useState<ViewerPanelTab>(initialTab)
   const prefs = useInuksukVisibilityPrefs()
+  const items = saved
+    ? [INUKSUK_FIXTURE, { ...INUKSUK_FIXTURE, id: 8, title: 'New saved view' }]
+    : [INUKSUK_FIXTURE]
   return (
     <Box
       sx={{ height: 560, position: 'relative', overflow: 'hidden', bgcolor: 'background.default' }}
@@ -44,10 +49,12 @@ function Example({
         onTabChange={setTab}
         onClose={() => setOpen(false)}
         panelId="example-panel"
-        count={1}
+        count={items.length}
         inuksuks={
           <ImageInuksuksList
-            items={[INUKSUK_FIXTURE]}
+            items={items}
+            selectedId={saved ? 8 : null}
+            focusId={saved ? 8 : null}
             drawerId="example-list"
             prefs={prefs}
             onSelect={() => {}}
@@ -56,6 +63,7 @@ function Example({
         }
         details={
           <ImageDetailsContent
+            dense
             image={{ copyright: 'Educational specimen', width: 4820, height: 3210 }}
             programNames={['Histology']}
             groupNames={[]}
@@ -109,6 +117,19 @@ export const Details: Story = {
     await expect(canvas.getByRole('button', { name: 'Show image details' })).toHaveAttribute(
       'aria-pressed',
       'true',
+    )
+  },
+}
+export const NewlySaved: Story = {
+  args: { initialOpen: true, saved: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const row = canvas.getByRole('button', { name: 'View Inuksuk: New saved view' })
+    await expect(row).toHaveFocus()
+    await expect(row).toHaveAttribute('aria-pressed', 'true')
+    await expect(canvas.getByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
     )
   },
 }

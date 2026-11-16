@@ -140,7 +140,10 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   beforeEach: ({ args }) => {
     localStorage.removeItem('hriv.inuksukVisibility.9')
-    localStorage.removeItem('hrivpref:viewer-panel:user:9')
+    localStorage.setItem(
+      'hrivpref:viewer-panel:user:9',
+      JSON.stringify({ open: false, tab: 'inuksuks' }),
+    )
     localStorage.removeItem('hrivpref:inuksuks-drawer:pinned:user:9')
     const original = globalThis.fetch
     globalThis.fetch = async (input, init) => {

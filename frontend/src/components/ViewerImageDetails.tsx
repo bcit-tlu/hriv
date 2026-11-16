@@ -17,6 +17,7 @@ export default function ViewerImageDetails({
   const sourceInfo = useImageSourceInfo(image.id, image.version, true)
   return (
     <ImageDetailsContent
+      dense
       image={image}
       programNames={programNames}
       groupNames={groupNames}

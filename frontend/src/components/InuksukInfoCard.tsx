@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Alert, Box, IconButton, Paper, Stack, Typography } from '@mui/material'
+import { Alert, Box, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
 import { Close, Edit, Star, StarBorder } from '@mui/icons-material'
 import { fetchBoards, userMessage } from '../api'
 import type { ApiBoardSummary, ApiInuksuk } from '../types'
@@ -44,7 +44,7 @@ export default function InuksukInfoCard({
       aria-label="Inuksuk information"
       data-hriv-canvas-ui
       elevation={8}
-      sx={{ ...inuksukPanelSx, p: 2 }}
+      sx={{ ...inuksukPanelSx, p: 1.5 }}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.stopPropagation()
@@ -52,45 +52,55 @@ export default function InuksukInfoCard({
         }
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'start', gap: 1 }}>
-        <Typography component="h2" variant="h6" sx={{ flex: 1, overflowWrap: 'anywhere' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Typography component="h2" variant="subtitle2" sx={{ flex: 1, overflowWrap: 'anywhere' }}>
           {item.title}
         </Typography>
+        <Tooltip title={item.favourite ? 'Favourite' : 'Not favourited'}>
+          <Box
+            component="span"
+            role="img"
+            aria-label={item.favourite ? 'Favourite' : 'Not favourited'}
+            sx={{ display: 'inline-flex', flexShrink: 0 }}
+          >
+            {item.favourite ? (
+              <Star color="warning" fontSize="small" />
+            ) : (
+              <StarBorder fontSize="small" />
+            )}
+          </Box>
+        </Tooltip>
         <IconButton size="small" aria-label="Close Inuksuk information" onClick={onClose}>
           <Close fontSize="small" />
         </IconButton>
       </Box>
-      <Stack spacing={1.5} sx={{ mt: 1 }}>
+      <Stack spacing={1} sx={{ mt: 0.5 }}>
         {item.description && (
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          <Typography
+            variant="caption"
+            component="p"
+            sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+          >
             {item.description}
           </Typography>
         )}
         {error ? (
           <Alert severity="error">{error}</Alert>
         ) : (
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="caption" component="p" color="text.secondary">
             {boards
               .filter((board) => item.board_ids.includes(board.id))
               .map((board) => board.name)
               .join(' · ') || (loaded ? 'No visible Boards' : 'Loading Boards…')}
           </Typography>
         )}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {item.favourite ? (
-            <Star color="warning" fontSize="small" />
-          ) : (
-            <StarBorder fontSize="small" />
-          )}
-          <Typography variant="body2" sx={{ flex: 1 }}>
-            {item.favourite ? 'Favourite' : 'Not a favourite'}
-          </Typography>
-          {item.permissions.can_edit && (
-            <IconButton aria-label={`Edit ${item.title}`} onClick={onEdit}>
+        {item.permissions.can_edit && (
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <IconButton size="small" aria-label={`Edit ${item.title}`} onClick={onEdit}>
               <Edit fontSize="small" />
             </IconButton>
-          )}
-        </Box>
+          </Box>
+        )}
       </Stack>
     </Paper>,
     container,

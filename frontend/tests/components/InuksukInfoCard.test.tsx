@@ -24,7 +24,12 @@ describe('InuksukInfoCard', () => {
     expect(await screen.findByText(BOARD_FIXTURE.name)).toBeInTheDocument()
     expect(screen.queryByText('Other Board')).not.toBeInTheDocument()
     expect(screen.getByText(INUKSUK_FIXTURE.description!)).toBeInTheDocument()
-    expect(screen.getByText('Favourite')).toBeInTheDocument()
+    const star = screen.getByRole('img', { name: 'Favourite' })
+    expect(star).toBeInTheDocument()
+    expect(star.nextElementSibling).toBe(
+      screen.getByRole('button', { name: 'Close Inuksuk information' }),
+    )
+    expect(screen.queryByText('Favourite', { exact: true })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Edit Rose window' }))
     expect(edit).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: 'Close Inuksuk information' }))
@@ -46,7 +51,8 @@ describe('InuksukInfoCard', () => {
       />,
     )
     expect(await screen.findByText('No visible Boards')).toBeInTheDocument()
-    expect(screen.getByText('Not a favourite')).toBeInTheDocument()
+    expect(screen.queryByText('Not a favourite')).not.toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Not favourited' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit/ })).not.toBeInTheDocument()
   })
   it('keeps the card usable when Board names cannot be loaded', async () => {

@@ -217,6 +217,7 @@ export default function ImageViewer({
   )
   const [editingInuksuk, setEditingInuksuk] = useState<ApiInuksuk | null>(null)
   const [selectedInuksukId, setSelectedInuksukId] = useState<number | null>(null)
+  const [focusInuksukId, setFocusInuksukId] = useState<number | null>(null)
   const [infoInuksukId, setInfoInuksukId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('New Inuksuk')
   const [deletingInuksuk, setDeletingInuksuk] = useState(false)
@@ -230,6 +231,7 @@ export default function ImageViewer({
     if (inuksukDraft?.imageId === imageId) return
     setEditingInuksuk(null)
     setInfoInuksukId(null)
+    setFocusInuksukId(null)
     setDraftTitle('New Inuksuk')
     setInuksukDraft({ imageId, view })
     if (panelEnabled && panelState.open) panelState.setTab('inuksuks')
@@ -2030,10 +2032,12 @@ export default function ImageViewer({
                       draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
                       prefs={visibilityPrefs}
                       selectedId={selectedInuksukId}
+                      focusId={focusInuksukId}
                       error={inuksuks.error}
                       onSelect={(item) => {
                         navigateToInuksuk(viewerInstance, item)
                         setSelectedInuksukId(item.id)
+                        setFocusInuksukId(null)
                       }}
                       onEdit={(item) => {
                         setInuksukDraft(null)
@@ -2068,10 +2072,12 @@ export default function ImageViewer({
                   drawerId={drawerId}
                   prefs={visibilityPrefs}
                   selectedId={selectedInuksukId}
+                  focusId={focusInuksukId}
                   error={inuksuks.error}
                   onSelect={(item) => {
                     navigateToInuksuk(viewerInstance, item)
                     setSelectedInuksukId(item.id)
+                    setFocusInuksukId(null)
                   }}
                   onEdit={(item) => {
                     setInuksukDraft(null)
@@ -2104,6 +2110,7 @@ export default function ImageViewer({
               const item = inuksuks.items.find((value) => value.id === marker.id)
               if (!item) return
               setSelectedInuksukId(item.id)
+              setFocusInuksukId(null)
               setInuksukDraft(null)
               setEditingInuksuk(null)
               setInfoInuksukId(item.id)
@@ -2137,7 +2144,19 @@ export default function ImageViewer({
               initialDelete={!!editingInuksuk && deletingInuksuk}
               onTitleChange={setDraftTitle}
               container={viewerInstance.container}
-              onChanged={inuksuks.reload}
+              onChanged={async (created) => {
+                await inuksuks.reload()
+                if (!created) return
+                setSelectedInuksukId(created.id)
+                setInfoInuksukId(created.id)
+                setFocusInuksukId(created.id)
+                if (panelEnabled) {
+                  panelState.setTab('inuksuks')
+                  panelState.setOpen(true)
+                } else {
+                  setInuksuksDrawerOpen(true)
+                }
+              }}
               onClose={() => {
                 setEditingInuksuk(null)
                 setInuksukDraft(null)

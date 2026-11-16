@@ -28,6 +28,10 @@ const defaultServices = {
   updateInuksuk: api.updateInuksuk,
   deleteInuksuk: api.deleteInuksuk,
 }
+const formSx = {
+  '& .MuiInputBase-root, & .MuiInputLabel-root': { typography: 'body2' },
+  '& .MuiAutocomplete-tag': { typography: 'caption' },
+}
 export interface InuksukFormDialogProps {
   imageId: number
   view: InuksukView
@@ -35,7 +39,7 @@ export interface InuksukFormDialogProps {
   userId?: number
   container?: HTMLElement | null
   onClose: () => void
-  onChanged: () => Promise<void> | void
+  onChanged: (created?: ApiInuksuk) => Promise<void> | void
   services?: typeof defaultServices
   placement?: boolean
   onTitleChange?: (title: string) => void
@@ -157,6 +161,7 @@ export default function InuksukFormDialog({
     setBusy(true)
     setError(null)
     try {
+      let created: ApiInuksuk | undefined
       if (deleting && baseline) await services.deleteInuksuk(baseline.id, baseline.version)
       else {
         const values = {
@@ -169,7 +174,14 @@ export default function InuksukFormDialog({
           await services.updateInuksuk(baseline.id, { ...values, version: baseline.version })
         else {
           const { x, y, zoom, rotation } = view
-          await services.createInuksuk({ x, y, zoom, rotation, ...values, image_id: imageId })
+          created = await services.createInuksuk({
+            x,
+            y,
+            zoom,
+            rotation,
+            ...values,
+            image_id: imageId,
+          })
         }
         const remembered = assignments.at(-1)?.board_id
         if (userId != null && remembered != null) {
@@ -180,7 +192,7 @@ export default function InuksukFormDialog({
           }
         }
       }
-      await onChanged()
+      await onChanged(created)
       onClose()
     } catch (err) {
       setConflict(api.inuksukConflictCurrent(err))
@@ -208,20 +220,23 @@ export default function InuksukFormDialog({
   const missingDetails = assignments.some((link) => !details[link.board_id])
   const content = (
     <>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <CompassCalibration color="primary" />
+      <DialogTitle
+        variant="subtitle2"
+        sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25 }}
+      >
+        <CompassCalibration color="primary" fontSize="small" />
         {baseline ? (editable ? 'Edit Inuksuk' : 'Inuksuk details') : 'Save a view'}
       </DialogTitle>
-      <DialogContent>
+      <DialogContent sx={{ px: 2 }}>
         {baseline && !loading && !boardsLoaded && (
           <Alert severity="error" sx={{ mb: 2 }}>
             Existing Board assignments could not be loaded. Close and reopen this dialog before
             saving changes.
           </Alert>
         )}
-        <Stack spacing={placement ? 1.5 : 2} sx={{ pt: 1 }}>
+        <Stack spacing={1} sx={{ pt: 1 }}>
           {!placement && (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="caption" component="p" color="text.secondary">
               Keep this exact position, zoom and rotation on your Boards.
             </Typography>
           )}
@@ -230,7 +245,7 @@ export default function InuksukFormDialog({
               severity="error"
               action={
                 conflict ? (
-                  <Button color="inherit" onClick={reloadConflict}>
+                  <Button size="small" color="inherit" onClick={reloadConflict}>
                     Reload current
                   </Button>
                 ) : undefined
@@ -250,7 +265,7 @@ export default function InuksukFormDialog({
             onFocus={(event) => {
               if (placement) event.target.select()
             }}
-            size={placement ? 'small' : 'medium'}
+            size="small"
             disabled={busy || !editable}
             slotProps={{ htmlInput: { maxLength: 255 } }}
             autoFocus
@@ -258,7 +273,7 @@ export default function InuksukFormDialog({
           {editable ? (
             <>
               <Autocomplete
-                size={placement ? 'small' : 'medium'}
+                size="small"
                 slotProps={{ popper: { container } }}
                 multiple
                 options={boards}
@@ -293,12 +308,17 @@ export default function InuksukFormDialog({
                     onChange={(event) => setBoardName(event.target.value)}
                     slotProps={{ htmlInput: { maxLength: 255 } }}
                   />
-                  <Button onClick={() => void createBoard()} disabled={busy || !boardName.trim()}>
+                  <Button
+                    size="small"
+                    onClick={() => void createBoard()}
+                    disabled={busy || !boardName.trim()}
+                  >
                     Create Board
                   </Button>
                 </Box>
               ) : (
                 <Button
+                  size="small"
                   onClick={() => setCreatingBoard(true)}
                   sx={{ alignSelf: 'flex-start' }}
                   disabled={busy || loading}
@@ -308,12 +328,13 @@ export default function InuksukFormDialog({
               )}
             </>
           ) : (
-            <Typography variant="body2">
+            <Typography variant="caption" component="p">
               Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Inuksuk.
             </Typography>
           )}
           {placement && (
             <Button
+              size="small"
               aria-expanded={moreOptions}
               onClick={() => setMoreOptions(!moreOptions)}
               sx={{ alignSelf: 'flex-start' }}
@@ -323,6 +344,7 @@ export default function InuksukFormDialog({
           )}
           <Collapse in={moreOptions} unmountOnExit>
             <TextField
+              size="small"
               label="Description"
               fullWidth
               multiline
@@ -334,19 +356,22 @@ export default function InuksukFormDialog({
             <FormControlLabel
               control={
                 <Checkbox
+                  size="small"
                   checked={favourite}
                   disabled={busy || !editable}
                   onChange={(event) => setFavourite(event.target.checked)}
                 />
               }
               label="Favourite"
+              slotProps={{ typography: { variant: 'caption' } }}
             />
           </Collapse>
         </Stack>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ px: 2, py: 1 }}>
         {baseline?.permissions.can_delete && (
           <Button
+            size="small"
             color="error"
             disabled={busy || !!conflict}
             onClick={() => (confirmDelete ? void persist(true) : setConfirmDelete(true))}
@@ -355,11 +380,12 @@ export default function InuksukFormDialog({
           </Button>
         )}
         <Box sx={{ flex: 1 }} />
-        <Button disabled={busy} onClick={onClose}>
+        <Button size="small" disabled={busy} onClick={onClose}>
           {editable ? 'Cancel' : 'Close'}
         </Button>
         {editable && (
           <Button
+            size="small"
             variant="contained"
             disabled={
               busy ||
@@ -386,7 +412,7 @@ export default function InuksukFormDialog({
         aria-modal={false}
         data-hriv-canvas-ui
         elevation={8}
-        sx={inuksukPanelSx}
+        sx={{ ...inuksukPanelSx, ...formSx }}
         onKeyDown={(event) => {
           if (event.key === 'Escape' && !busy) {
             event.stopPropagation()
@@ -406,6 +432,7 @@ export default function InuksukFormDialog({
       container={container}
       fullWidth
       maxWidth="sm"
+      slotProps={{ paper: { sx: formSx } }}
     >
       {content}
     </Dialog>

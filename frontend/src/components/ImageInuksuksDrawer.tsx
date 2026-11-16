@@ -86,6 +86,7 @@ export interface ImageInuksuksListProps {
   drawerId: string
   prefs: InuksukVisibilityPrefs
   selectedId?: number | null
+  focusId?: number | null
   error?: string | null
   onSelect: (item: ApiInuksuk) => void
   onEdit: (item: ApiInuksuk) => void
@@ -118,6 +119,7 @@ export default function ImageInuksuksDrawer({
   drawerId,
   prefs,
   selectedId,
+  focusId,
   error,
   onSelect,
   onEdit,
@@ -131,11 +133,32 @@ export default function ImageInuksuksDrawer({
     title: string
   } | null>(null)
   const [expanded, setExpanded] = useState({ mine: true, instructor: true, public: false })
+  const [focusRequest, setFocusRequest] = useState(focusId)
+  if (focusId !== focusRequest) {
+    setFocusRequest(focusId)
+    const source = items.find((item) => item.id === focusId)?.source
+    if (source) setExpanded((value) => ({ ...value, [source]: true }))
+  }
   const hasDraft = draftTitle !== undefined
   const closeRef = useRef<HTMLButtonElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuActions = useRef<PopoverActions>(null)
+  const focusedId = useRef<number | null>(null)
+  useEffect(() => {
+    if (focusId == null) {
+      focusedId.current = null
+      return
+    }
+    if (focusedId.current === focusId || !open) return
+    const row = drawerRef.current?.querySelector<HTMLButtonElement>(
+      `[data-inuksuk-row="${focusId}"]`,
+    )
+    if (!row) return
+    row.focus()
+    row.scrollIntoView?.({ block: 'nearest' })
+    focusedId.current = focusId
+  }, [focusId, items, expanded, open])
   const close = () => {
     setMenu(null)
     onOpenChange(false)
@@ -219,7 +242,7 @@ export default function ImageInuksuksDrawer({
             borderColor: 'divider',
           }}
         >
-          <Typography component="h2" variant="subtitle1" id={`${drawerId}-title`}>
+          <Typography component="h2" variant="body2" id={`${drawerId}-title`}>
             Inuksuks ({items.length})
           </Typography>
           <Box sx={{ display: 'flex' }}>
@@ -242,7 +265,7 @@ export default function ImageInuksuksDrawer({
       <Box sx={{ overflowY: 'auto', minHeight: 0, flex: 1 }} tabIndex={0}>
         {error && <Alert severity="error">{error}</Alert>}
         {!error && items.length === 0 && draftTitle === undefined && (
-          <Typography sx={{ p: 2 }} color="text.secondary">
+          <Typography variant="caption" component="p" sx={{ p: 1.5 }} color="text.secondary">
             No Inuksuks on this image yet. Use Add Inuksuk to save a view.
           </Typography>
         )}
@@ -272,14 +295,15 @@ export default function ImageInuksuksDrawer({
                   aria-expanded={groupExpanded}
                   aria-controls={`${drawerId}-${source}`}
                   aria-label={title}
-                  sx={{ px: 0.5, flex: 1, minWidth: 120 }}
+                  dense
+                  sx={{ px: 0.5, py: 0.5, flex: 1, minWidth: 120 }}
                 >
                   {groupExpanded ? (
                     <ExpandLess fontSize="small" />
                   ) : (
                     <ExpandMore fontSize="small" />
                   )}
-                  <Typography component="h3" variant="subtitle2">
+                  <Typography component="h3" variant="caption">
                     {title}
                   </Typography>
                 </ListItemButton>
@@ -297,12 +321,12 @@ export default function ImageInuksuksDrawer({
                 </Tooltip>
               </Box>
               <Collapse in={groupExpanded} unmountOnExit id={`${drawerId}-${source}`}>
-                <List disablePadding>
+                <List dense disablePadding>
                   {source === 'mine' && draftTitle !== undefined && (
                     <ListItem>
                       <ListItemText
                         primary={draftTitle || 'New Inuksuk'}
-                        slotProps={{ primary: { noWrap: true } }}
+                        slotProps={{ primary: { noWrap: true, variant: 'caption' } }}
                       />
                       <Typography variant="caption" color="text.secondary">
                         Unsaved
@@ -321,6 +345,7 @@ export default function ImageInuksuksDrawer({
                         }}
                       >
                         <ListItemButton
+                          data-inuksuk-row={item.id}
                           onClick={() => onSelect(item)}
                           aria-label={`View Inuksuk: ${item.title}${visible.markerVisible ? '' : ' (marker hidden)'}`}
                           aria-pressed={item.id === selectedId}
@@ -329,6 +354,7 @@ export default function ImageInuksuksDrawer({
                             width: '100%',
                             pl: 2,
                             pr: 5,
+                            py: 0.5,
                             '&:hover': { bgcolor: 'transparent' },
                           }}
                         >
@@ -337,6 +363,7 @@ export default function ImageInuksuksDrawer({
                             slotProps={{
                               primary: {
                                 noWrap: true,
+                                variant: 'caption',
                                 title: item.title,
                                 color: visible.markerVisible ? undefined : 'text.disabled',
                                 sx: visible.markerVisible

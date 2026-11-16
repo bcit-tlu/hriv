@@ -119,16 +119,19 @@ function DetailField({
   value,
   title,
   tooltip,
+  dense = false,
 }: {
   label: string
   value: string
   title?: string
   /** Tooltip shown on hover, tap or focus (touch-friendly timestamps). */
   tooltip?: string
+  dense?: boolean
 }) {
   const text = (
     <Typography
-      variant="body2"
+      variant={dense ? 'caption' : 'body2'}
+      component="p"
       color="text.secondary"
       noWrap
       title={tooltip ? undefined : (title ?? `${label} ${value}`)}
@@ -282,10 +285,11 @@ export function ImageDetailsContent({
   groupNames,
   measurement,
   sourceInfo,
+  dense = false,
 }: Pick<
   ImageDetailsDrawerProps,
   'image' | 'programNames' | 'groupNames' | 'measurement' | 'sourceInfo'
->) {
+> & { dense?: boolean }) {
   const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
   if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
   if (programNames.length > 0)
@@ -340,9 +344,9 @@ export function ImageDetailsContent({
     fields.push({ label: 'Uploaded by:', value: sourceInfo.uploadedByName })
 
   return (
-    <Stack spacing={0.75}>
+    <Stack spacing={dense ? 0.5 : 0.75}>
       {fields.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant={dense ? 'caption' : 'body2'} component="p" color="text.secondary">
           No details available.
         </Typography>
       ) : (
@@ -353,6 +357,7 @@ export function ImageDetailsContent({
             value={field.value}
             title={field.title}
             tooltip={field.tooltip}
+            dense={dense}
           />
         ))
       )}
@@ -360,7 +365,7 @@ export function ImageDetailsContent({
   )
 }
 
-export function ViewerControlHints() {
+export function ViewerControlHints({ dense = false }: { dense?: boolean }) {
   return (
     <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
       {[
@@ -372,9 +377,9 @@ export function ViewerControlHints() {
         <Typography
           key={item}
           component="li"
-          variant="body2"
+          variant={dense ? 'caption' : 'body2'}
           color="text.secondary"
-          sx={{ '& + li': { mt: 0.5 } }}
+          sx={{ '& + li': { mt: dense ? 0.25 : 0.5 } }}
         >
           {item}
         </Typography>

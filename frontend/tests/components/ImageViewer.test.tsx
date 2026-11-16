@@ -386,6 +386,7 @@ vi.mock('../../src/components/CanvasOverlay', () => ({
 import ImageViewer from '../../src/components/ImageViewer'
 import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
 import type { InuksukFormDialogProps } from '../../src/components/InuksukFormDialog'
+const CREATED_INUKSUK = { ...INUKSUK_FIXTURE, id: 99, title: 'New saved view' }
 vi.mock('../../src/components/InuksukFormDialog', () => ({
   default: ({ view, item, onChanged, onClose }: InuksukFormDialogProps) => (
     <div role="dialog">
@@ -397,7 +398,7 @@ vi.mock('../../src/components/InuksukFormDialog', () => ({
         <button
           key={action}
           onClick={async () => {
-            await onChanged()
+            await onChanged(action === 'Create' ? CREATED_INUKSUK : undefined)
             onClose()
           }}
         >
@@ -602,6 +603,39 @@ describe('Inuksuk viewer tool', () => {
       expect(onEscape).toHaveBeenCalledOnce()
       expect(event.defaultPrevented).toBe(false)
       target.remove()
+    },
+  )
+  it.each([false, true])(
+    'selects and focuses the created row, opening the Inuksuks tab when needed, panelOpen=%s',
+    async (keepOpen) => {
+      apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
+      render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+      fireEvent.click(
+        await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+      )
+      const previous = await screen.findByRole('button', { name: 'View Inuksuk: Rose window' })
+      fireEvent.click(previous)
+      fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks', exact: true }))
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: keepOpen ? 'Show image details' : 'Close viewer panel',
+        }),
+      )
+      act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+      act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
+      apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE, CREATED_INUKSUK])
+      fireEvent.click(screen.getByRole('button', { name: 'Create Inuksuk' }))
+      const created = await screen.findByRole('button', { name: 'View Inuksuk: New saved view' })
+      await waitFor(() => expect(created).toHaveFocus())
+      expect(created).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+      expect(
+        within(viewer().container).getByRole('region', { name: 'Inuksuk information' }),
+      ).toHaveTextContent('New saved view')
+      expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
     },
   )
   it('keeps the mode armed after save, lists the draft and cancels it before Escape disarms the tool', async () => {

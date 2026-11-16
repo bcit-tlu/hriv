@@ -128,6 +128,7 @@ describe('InuksukFormDialog', () => {
       board_assignments: [{ board_id: 1 }],
     })
     expect(onChanged).toHaveBeenCalledOnce()
+    expect(onChanged).toHaveBeenCalledWith(INUKSUK_FIXTURE)
     expect(localStorage.getItem(LAST_BOARD)).toBe('1')
   })
   it("defaults to the last editable Board per user and ignores stale or another user's keys", async () => {
