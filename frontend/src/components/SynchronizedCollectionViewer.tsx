@@ -678,6 +678,7 @@ export default function SynchronizedCollectionViewer({
                       onViewerReady={(viewer) => handleViewerReady(memberKey(image), viewer)}
                       onTileSourceRenewed={onImageRenewed}
                       onError={(message) => handleViewerError(image, message)}
+                      viewerPanel={false}
                       viewportControl={<CollectionImageDetailsTrigger />}
                       viewportOverlay={
                         <>

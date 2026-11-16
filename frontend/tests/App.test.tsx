@@ -2005,6 +2005,19 @@ describe('App failure notifications', () => {
 })
 
 describe('App image details drawer', () => {
+  it('replaces the old details controls with panel metadata only when Inuksuks is enabled', async () => {
+    resetFixtures()
+    apiMocks.fetchFeatures.mockResolvedValue({ collections: true, inuksuks: true })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+    await waitFor(() => expect(imageViewerProps.current?.inuksuksEnabled).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Image details' })).toBeNull()
+    expect(imageViewerProps.current?.sidePanelDetails).toMatchObject({
+      props: { image: expect.objectContaining({ id: mockImage.id }) },
+    })
+    expect(apiMocks.fetchImageSourceInfo).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     resetFixtures()
     Object.assign(mockImage, { copyright: 'Educational use only' })

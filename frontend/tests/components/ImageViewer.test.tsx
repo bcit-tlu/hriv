@@ -478,12 +478,70 @@ afterEach(() => {
 })
 
 describe('Inuksuk viewer tool', () => {
+  it('persists the permanent right panel across images and remounts, without dismissing on canvas presses or Escape', async () => {
+    const view = (imageId: number) => (
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <ImageViewer
+          imageId={imageId}
+          tileSources="/test.dzi"
+          inuksuksEnabled
+          canEditContent
+          sidePanelDetails={<p>Metadata</p>}
+        />
+      </AuthContext.Provider>
+    )
+    const first = render(view(42))
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
+    expect(viewer().container.style.width).toBe('calc(100% - 320px)')
+    const instance = viewer()
+    fireEvent.pointerDown(instance.canvas)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
+    expect(viewer()).toBe(instance)
+    act(() => buttonByTooltip('Canvas annotations (add shapes, text, links)').options.onClick())
+    expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
+    expect(viewer().container.style.width).toBe('calc(100% - 320px)')
+    fireEvent.click(screen.getByRole('button', { name: 'Overlay done' }))
+    first.rerender(view(43))
+    expect(screen.getByText('Metadata')).toBeVisible()
+    first.unmount()
+    render(view(44))
+    expect(await screen.findByRole('button', { name: 'Close viewer panel' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Show image details' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    const add = osdState.buttons
+      .filter((button) => button.options.tooltip === 'Add Inuksuk')
+      .at(-1)!
+    act(() => add.options.onClick())
+    act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
+    expect(screen.getByRole('button', { name: 'Show Inuksuks' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('complementary', { name: 'Viewer panel' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Close viewer panel' }))
+    expect(viewer().container.style.width).toBe('100%')
+    expect(viewer().container.style.getPropertyValue('--hriv-inuksuk-panel-right')).toBe('56px')
+  })
+
   it.each([false, true])(
     'keeps only pinned drawers open across image changes and new viewer pages, pinned=%s',
     async (pinned) => {
       const view = (imageId: number) => (
         <AuthContext.Provider value={BOARD_AUTH}>
-          <ImageViewer tileSources="/test.dzi" imageId={imageId} inuksuksEnabled />
+          <ImageViewer
+            tileSources="/test.dzi"
+            imageId={imageId}
+            inuksuksEnabled
+            viewerPanel={false}
+          />
         </AuthContext.Provider>
       )
       const first = render(view(42))
@@ -516,7 +574,9 @@ describe('Inuksuk viewer tool', () => {
     },
   )
   it('closes the unpinned drawer on a canvas press without suppressing quick-click placement', async () => {
-    const rendered = render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+    const rendered = render(
+      <ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled viewerPanel={false} />,
+    )
     rendered.container.appendChild(viewer().element)
     act(() => buttonByTooltip('Add Inuksuk').options.onClick())
     const trigger = await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' })
@@ -550,11 +610,13 @@ describe('Inuksuk viewer tool', () => {
     const event = { quick: true, position: { x: 30, y: 40 }, preventDefaultAction: false }
     act(() => viewer().fire('canvas-click', event))
     expect(event.preventDefaultAction).toBe(true)
-    fireEvent.click(await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }))
-    expect(viewer().container).toContainElement(within(viewer().container).getByText('Unsaved'))
+    fireEvent.click(
+      await within(viewer().container).findByRole('button', { name: 'Open viewer panel' }),
+    )
+    expect(screen.getByText('Unsaved')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(within(viewer().container).queryByText('Unsaved')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unsaved')).not.toBeInTheDocument()
     expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
     act(() => viewer().fire('canvas-click', event))
     fireEvent.click(screen.getByRole('button', { name: 'Create Inuksuk' }))
@@ -578,8 +640,10 @@ describe('Inuksuk viewer tool', () => {
       </AuthContext.Provider>,
     )
     const instance = viewer()
-    const canvas = within(instance.container)
-    fireEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
+    const canvas = screen
+    fireEvent.click(
+      await within(instance.container).findByRole('button', { name: 'Open viewer panel' }),
+    )
     const drawer = within(await canvas.findByRole('complementary'))
     const click = (button: HTMLElement) => {
       commits.mockClear()
@@ -618,7 +682,7 @@ describe('Inuksuk viewer tool', () => {
     expect(osdState.viewers).toHaveLength(1)
     expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
   })
-  it('shares one image request with the TOP_LEFT drawer, navigates, highlights and independently hides markers', async () => {
+  it('shares one image request with the right viewer panel, navigates, highlights and independently hides markers', async () => {
     apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
     const onOpenChange = vi.fn()
     render(
@@ -626,17 +690,19 @@ describe('Inuksuk viewer tool', () => {
         tileSources="/test.dzi"
         imageId={42}
         inuksuksEnabled
-        onInuksuksDrawerOpenChange={onOpenChange}
+        onViewerPanelWidthChange={onOpenChange}
       />,
     )
-    const canvas = within(viewer().container)
-    const trigger = await canvas.findByRole('button', { name: 'Inuksuks (1)' })
-    expect(viewer().addControl).toHaveBeenCalledWith(expect.any(HTMLDivElement), { anchor: 2 })
+    const canvas = screen
+    const trigger = await within(viewer().container).findByRole('button', {
+      name: 'Open viewer panel',
+    })
+    expect(viewer().addControl).toHaveBeenCalledWith(expect.any(HTMLDivElement), { anchor: 1 })
     fireEvent.focusIn(trigger)
     expect(viewer().setControlsEnabled).toHaveBeenLastCalledWith(true)
     fireEvent.click(trigger)
     const drawer = await canvas.findByRole('complementary')
-    expect(onOpenChange).toHaveBeenLastCalledWith(true)
+    expect(onOpenChange).toHaveBeenLastCalledWith(320)
     expect(trigger).toHaveAttribute('aria-controls', drawer.id)
     fireEvent.click(within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window' }))
     expect(viewer().viewport.panTo).toHaveBeenCalledWith(
@@ -652,14 +718,10 @@ describe('Inuksuk viewer tool', () => {
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
     fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(
-      within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
-    )
+    fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
     expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(
-      within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
-    )
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
     expect(
       within(drawer).getByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' }),
     ).toBeDefined()
@@ -670,11 +732,11 @@ describe('Inuksuk viewer tool', () => {
     )
     fireEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
-    fireEvent.click(within(viewer().container).getByRole('menuitem', { name: 'Edit' }))
+    fireEvent.click(canvas.getByRole('menuitem', { name: 'Edit' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Close Inuksuks' }))
-    expect(onOpenChange).toHaveBeenLastCalledWith(false)
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Close viewer panel' }))
+    expect(onOpenChange).toHaveBeenLastCalledWith(0)
   })
   it('is completely gated off, including network loading', () => {
     render(<ImageViewer tileSources="/test.dzi" imageId={42} />)

@@ -1503,3 +1503,26 @@ selection MouseTracker ignores their presses.
   the existing image/category checkbox footer remains for whole-image selections.
   A request failure or an empty Board keeps the picker open with a visible error.
 - The flag-off search UI and collection write payloads remain unchanged.
+
+## Permanent image/Sequence side panel (Inuksuks flag)
+
+- With `features.inuksuks`, image and Sequence viewers replace the old Details
+  and top-left Inuksuks controls with one top-right Open/Close viewer panel toggle.
+  Flag-off and Synchronized per-pane interfaces retain their previous behavior.
+- The panel starts closed with Inuksuks selected; open state and selected content
+  persist per signed-in user across images, Sequence steps and reloads. Corrupt or
+  blocked storage falls back safely; anonymous previews never write user preferences.
+- The open header places exclusive Inuksuks/Details content buttons left and the
+  close toggle right. Selection uses MUI rounded-square action states and exposes
+  `aria-pressed`; toggle controls expose expanded state and their panel id.
+- At sm+ the 320px permanent panel narrows OSD's image container; navigator, toolbar
+  and Sequence edge arrows remain in that area. At xs it overlays the full frame.
+- Only the toggle closes the panel: outside presses, selecting the current tab and
+  Escape leave it open. Menus, draft cancellation and placement keep their Escape
+  semantics. Canvas edit mode leaves an already-open panel in place. Its closed
+  trigger retains the existing canvas-edit disabled state; the stored preference
+  is unchanged.
+- Existing grouped row/visibility menus, dimmed hidden titles and stable menu portal
+  behavior are reused without per-item metadata. Placement floats beside the image
+  and switches an open Details panel to Inuksuks. Closed-panel floating cards leave
+  room for the toggle. Details retains its metadata and Viewer controls help text.

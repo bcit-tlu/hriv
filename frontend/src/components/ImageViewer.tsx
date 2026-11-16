@@ -10,7 +10,10 @@ import { useImageInuksuks } from '../useImageInuksuks'
 import { adjustInuksukPixelForFlip, navigateToInuksuk } from '../inuksukViewport'
 import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
 import { usePinnedDrawerState } from '../usePinnedDrawerState'
-import ImageInuksuksDrawer, { ImageInuksuksTrigger } from './ImageInuksuksDrawer'
+import ViewerSidePanel, { ViewerPanelToggle } from './ViewerSidePanel'
+import { useViewerPanelState } from '../useViewerPanelState'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import ImageInuksuksDrawer, { ImageInuksuksTrigger, ImageInuksuksList } from './ImageInuksuksDrawer'
 import InuksukFormDialog from './InuksukFormDialog'
 import InuksukMarkersLayer from './InuksukMarkersLayer'
 import InuksukInfoCard from './InuksukInfoCard'
@@ -138,6 +141,12 @@ interface ImageViewerProps {
   onViewerReady?: (viewer: OpenSeadragon.Viewer | null) => void
   /** Extra UI portaled into the OSD container (`viewer.container`) so it stays visible in OSD full-page mode. */
   viewportOverlay?: ReactNode
+  /** False for Synchronized panes, which retain their independent legacy drawers. */
+  viewerPanel?: boolean
+  /** Metadata rendered lazily when the feature-on panel selects Details. */
+  sidePanelDetails?: ReactNode
+  /** Reports the reserved desktop width; closed panels and xs overlays report zero. */
+  onViewerPanelWidthChange?: (width: number) => void
   /**
    * UI portaled into a top-right OSD control so it fades with the toolbar
    * (OSD `autoFade`) and also survives full-page mode.
@@ -180,15 +189,21 @@ export default function ImageViewer({
   onViewerReady,
   viewportOverlay,
   viewportControl,
+  viewerPanel = true,
+  sidePanelDetails,
+  onViewerPanelWidthChange,
 }: ImageViewerProps) {
   const auth = useContext(AuthContext)
   const inuksuks = useImageInuksuks(imageId, inuksuksEnabled)
   const visibilityPrefs = useInuksukVisibilityPrefs(auth?.currentUser?.id, inuksuksEnabled)
   const drawerId = useId()
+  const panelEnabled = inuksuksEnabled && viewerPanel && imageId != null
+  const panelState = useViewerPanelState(auth?.currentUser?.id, panelEnabled)
   const drawerIdentity = `${auth?.currentUser?.id ?? 'session'}:${imageId}`
   const drawerState = usePinnedDrawerState(
     auth?.currentUser?.id != null ? String(auth.currentUser.id) : 'anonymous',
     'inuksuks-drawer',
+    inuksuksEnabled && !viewerPanel,
   )
   const [drawerFor, setDrawerFor] = useState<string | null>(null)
   const setInuksuksDrawerOpen = (open: boolean) => {
@@ -217,14 +232,18 @@ export default function ImageViewer({
     setInfoInuksukId(null)
     setDraftTitle('New Inuksuk')
     setInuksukDraft({ imageId, view })
+    if (panelEnabled && panelState.open) panelState.setTab('inuksuks')
     return true
   })
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const theme = useTheme()
   const [canvasEditMode, setCanvasEditMode] = useState(false)
+  const mobilePanel = useMediaQuery(theme.breakpoints.down('sm'))
+  const panelOpen = panelEnabled && panelState.open
   const inuksuksDrawerOpen =
     inuksuksEnabled &&
+    !viewerPanel &&
     imageId != null &&
     drawerState.open &&
     (drawerState.pinned || drawerFor === drawerIdentity) &&
@@ -233,7 +252,34 @@ export default function ImageViewer({
     onInuksuksDrawerOpenChange?.(inuksuksDrawerOpen)
     return () => onInuksuksDrawerOpenChange?.(false)
   }, [inuksuksDrawerOpen, onInuksuksDrawerOpenChange])
+  const [panelHost, setPanelHost] = useState<HTMLElement | null>(null)
   const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  useEffect(() => {
+    const width = panelOpen && !mobilePanel ? 320 : 0
+    onViewerPanelWidthChange?.(width)
+    return () => onViewerPanelWidthChange?.(0)
+  }, [panelOpen, mobilePanel, onViewerPanelWidthChange])
+  useEffect(() => {
+    const container = viewerRef.current?.container
+    if (!container || !panelEnabled) return
+    const previousWidth = container.style.width
+    const previousTransition = container.style.transition
+    container.style.width = panelOpen && !mobilePanel ? 'calc(100% - 320px)' : '100%'
+    container.style.transition = theme.transitions.create('width', {
+      easing: theme.transitions.easing.sharp,
+      duration: panelOpen
+        ? theme.transitions.duration.enteringScreen
+        : theme.transitions.duration.leavingScreen,
+    })
+    container.style.setProperty('--hriv-inuksuk-panel-right', panelOpen ? '8px' : '56px')
+    container.dataset.viewerImageArea = 'true'
+    return () => {
+      container.style.width = previousWidth
+      container.style.transition = previousTransition
+      container.style.removeProperty('--hriv-inuksuk-panel-right')
+      delete container.dataset.viewerImageArea
+    }
+  }, [viewerInstance, panelEnabled, panelOpen, mobilePanel, theme])
   // Object counting (epic #1661): drawn selections with stable keys.
   const [countSelections, setCountSelections] = useState<
     { key: number; index: number; rect: { x: number; y: number; width: number; height: number } }[]
@@ -1522,7 +1568,8 @@ export default function ImageViewer({
     const topRightControl = document.createElement('div')
     topRightControl.style.display = 'inline-block'
     topRightControl.style.lineHeight = '0'
-    const topLeftControl = inuksuksEnabled && imageId != null ? document.createElement('div') : null
+    const topLeftControl =
+      inuksuksEnabled && !viewerPanel && imageId != null ? document.createElement('div') : null
     if (topLeftControl) {
       topLeftControl.style.display = 'inline-block'
       topLeftControl.style.lineHeight = '0'
@@ -1620,6 +1667,7 @@ export default function ImageViewer({
 
     // Expose viewer instance to React state for child components
     setViewerInstance(viewer)
+    setPanelHost(containerRef.current)
     onViewerReadyRef.current?.(viewer)
 
     // Restore viewport state and initial overlays after the image has loaded
@@ -1800,6 +1848,7 @@ export default function ImageViewer({
       canvasEditModeRef.current = false
       setCanvasEditMode(false)
       setViewerInstance(null)
+      setPanelHost(null)
       presentationTool = null
       pendingPresentationTool = null
       if (presentationRaf != null) {
@@ -1864,6 +1913,7 @@ export default function ImageViewer({
     }
   }, [
     inuksuksEnabled,
+    viewerPanel,
     imageId,
     initialViewport,
     initialOverlays,
@@ -1959,42 +2009,85 @@ export default function ImageViewer({
               />,
               leftControlWrapper,
             )}
-          {createPortal(
-            <ImageInuksuksDrawer
-              key={drawerIdentity}
-              items={inuksuks.items}
-              draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
-              open={inuksuksDrawerOpen}
-              pinned={drawerState.pinned}
-              onPinnedChange={(pinned) => {
-                drawerState.setPinned(pinned)
-                setDrawerFor(drawerIdentity)
-              }}
-              onOpenChange={setInuksuksDrawerOpen}
-              triggerRef={inuksuksTriggerRef}
-              drawerId={drawerId}
-              prefs={visibilityPrefs}
-              selectedId={selectedInuksukId}
-              error={inuksuks.error}
-              onSelect={(item) => {
-                navigateToInuksuk(viewerInstance, item)
-                setSelectedInuksukId(item.id)
-              }}
-              onEdit={(item) => {
-                setInuksukDraft(null)
-                setInfoInuksukId(null)
-                setDeletingInuksuk(false)
-                setEditingInuksuk(item)
-              }}
-              onDelete={(item) => {
-                setInuksukDraft(null)
-                setInfoInuksukId(null)
-                setDeletingInuksuk(true)
-                setEditingInuksuk(item)
-              }}
-            />,
-            viewerInstance.container,
-          )}
+          {panelEnabled && panelHost
+            ? createPortal(
+                <ViewerSidePanel
+                  open={panelOpen}
+                  tab={panelState.tab}
+                  onTabChange={panelState.setTab}
+                  onClose={() => {
+                    panelState.setOpen(false)
+                    requestAnimationFrame(() => inuksuksTriggerRef.current?.focus())
+                  }}
+                  panelId={drawerId}
+                  count={inuksuks.items.length}
+                  details={sidePanelDetails}
+                  inuksuks={
+                    <ImageInuksuksList
+                      key={drawerIdentity}
+                      drawerId={drawerId + '-list'}
+                      items={inuksuks.items}
+                      draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
+                      prefs={visibilityPrefs}
+                      selectedId={selectedInuksukId}
+                      error={inuksuks.error}
+                      onSelect={(item) => {
+                        navigateToInuksuk(viewerInstance, item)
+                        setSelectedInuksukId(item.id)
+                      }}
+                      onEdit={(item) => {
+                        setInuksukDraft(null)
+                        setInfoInuksukId(null)
+                        setDeletingInuksuk(false)
+                        setEditingInuksuk(item)
+                      }}
+                      onDelete={(item) => {
+                        setInuksukDraft(null)
+                        setInfoInuksukId(null)
+                        setDeletingInuksuk(true)
+                        setEditingInuksuk(item)
+                      }}
+                    />
+                  }
+                />,
+                panelHost,
+              )
+            : createPortal(
+                <ImageInuksuksDrawer
+                  key={drawerIdentity}
+                  items={inuksuks.items}
+                  draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
+                  open={inuksuksDrawerOpen}
+                  pinned={drawerState.pinned}
+                  onPinnedChange={(pinned) => {
+                    drawerState.setPinned(pinned)
+                    setDrawerFor(drawerIdentity)
+                  }}
+                  onOpenChange={setInuksuksDrawerOpen}
+                  triggerRef={inuksuksTriggerRef}
+                  drawerId={drawerId}
+                  prefs={visibilityPrefs}
+                  selectedId={selectedInuksukId}
+                  error={inuksuks.error}
+                  onSelect={(item) => {
+                    navigateToInuksuk(viewerInstance, item)
+                    setSelectedInuksukId(item.id)
+                  }}
+                  onEdit={(item) => {
+                    setInuksukDraft(null)
+                    setInfoInuksukId(null)
+                    setDeletingInuksuk(false)
+                    setEditingInuksuk(item)
+                  }}
+                  onDelete={(item) => {
+                    setInuksukDraft(null)
+                    setInfoInuksukId(null)
+                    setDeletingInuksuk(true)
+                    setEditingInuksuk(item)
+                  }}
+                />,
+                viewerInstance.container,
+              )}
           <InuksukMarkersLayer
             viewer={viewerInstance}
             items={[
@@ -2087,7 +2180,22 @@ export default function ImageViewer({
             viewerInstance.container,
           )
         : null}
-      {controlWrapper && viewportControl ? createPortal(viewportControl, controlWrapper) : null}
+      {controlWrapper && panelEnabled
+        ? createPortal(
+            !panelOpen && (
+              <ViewerPanelToggle
+                open={false}
+                panelId={drawerId}
+                triggerRef={inuksuksTriggerRef}
+                disabled={canvasEditMode}
+                onToggle={() => panelState.setOpen(true)}
+              />
+            ),
+            controlWrapper,
+          )
+        : controlWrapper && viewportControl
+          ? createPortal(viewportControl, controlWrapper)
+          : null}
     </Box>
   )
 }

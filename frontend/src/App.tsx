@@ -30,6 +30,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
+import ViewerImageDetails from './components/ViewerImageDetails'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
@@ -3116,17 +3117,9 @@ export default function App() {
                       setViewerDialog(null)
                     }
                   }}
-                  viewportControl={
-                    <ImageDetailsTrigger
-                      open={imageDetailsOpen}
-                      onOpenChange={setImageDetailsOpen}
-                      disabled={canvasEditActive}
-                      triggerRef={imageDetailsTriggerRef}
-                    />
-                  }
-                  viewportOverlay={
-                    <>
-                      <ImageDetailsDrawer
+                  sidePanelDetails={
+                    features?.inuksuks === true ? (
+                      <ViewerImageDetails
                         image={selectedImage}
                         programNames={ancestorProgramIds.map(
                           (pid) =>
@@ -3136,11 +3129,38 @@ export default function App() {
                           (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
                         )}
                         measurement={selectedImageMeasurement}
-                        sourceInfo={imageSourceInfo}
+                      />
+                    ) : undefined
+                  }
+                  viewportControl={
+                    features?.inuksuks === true ? null : (
+                      <ImageDetailsTrigger
                         open={imageDetailsOpen}
                         onOpenChange={setImageDetailsOpen}
+                        disabled={canvasEditActive}
                         triggerRef={imageDetailsTriggerRef}
                       />
+                    )
+                  }
+                  viewportOverlay={
+                    <>
+                      {features?.inuksuks !== true && (
+                        <ImageDetailsDrawer
+                          image={selectedImage}
+                          programNames={ancestorProgramIds.map(
+                            (pid) =>
+                              programs.find((program) => program.id === pid)?.name ?? String(pid),
+                          )}
+                          groupNames={ancestorGroupIds.map(
+                            (gid) => groups.find((group) => group.id === gid)?.name ?? String(gid),
+                          )}
+                          measurement={selectedImageMeasurement}
+                          sourceInfo={imageSourceInfo}
+                          open={imageDetailsOpen}
+                          onOpenChange={setImageDetailsOpen}
+                          triggerRef={imageDetailsTriggerRef}
+                        />
+                      )}
                       <ViewportDialog
                         open={viewerDialog === 'note'}
                         title="Notes"

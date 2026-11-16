@@ -179,59 +179,6 @@ export default function ImageDetailsDrawer({
   const asideLabel = drawerLabel ? `Image details — ${drawerLabel}` : undefined
   const controlsLabel = drawerLabel ? `Viewer controls — ${drawerLabel}` : undefined
 
-  const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
-  if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
-  if (programNames.length > 0)
-    fields.push({
-      label: `Program${programNames.length > 1 ? 's' : ''}:`,
-      value: programNames.join(', '),
-    })
-  if (groupNames.length > 0)
-    fields.push({
-      label: `Group${groupNames.length > 1 ? 's' : ''}:`,
-      value: groupNames.join(', '),
-    })
-  // Dates show the long-form date; the native title keeps the exact timestamp.
-  if (image.createdAt)
-    fields.push({
-      label: 'Created:',
-      value: new Date(image.createdAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      tooltip: `Created: ${new Date(image.createdAt).toLocaleString()}`,
-    })
-  if (image.updatedAt)
-    fields.push({
-      label: 'Modified:',
-      value: new Date(image.updatedAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      tooltip: `Modified: ${new Date(image.updatedAt).toLocaleString()}`,
-    })
-  if (image.width != null && image.height != null)
-    fields.push({ label: 'Dimensions:', value: `${image.width} × ${image.height}` })
-  if (image.fileSize != null) fields.push({ label: 'Size:', value: formatFileSize(image.fileSize) })
-  if (measurement) {
-    const value =
-      measurement.scale && measurement.unit
-        ? `${measurement.scale} px/${measurement.unit}`
-        : measurement.scale
-          ? `${measurement.scale} px`
-          : (measurement.unit ?? '')
-    if (value) fields.push({ label: 'Measurement:', value })
-  }
-  const objective = objectiveFromMetadata(image.metadataExtra)
-  if (objective) fields.push({ label: 'Objective:', value: objectiveLabel(objective) })
-  if (sourceInfo?.originalFilename != null)
-    fields.push({ label: 'Original file:', value: sourceInfo.originalFilename })
-  if (sourceInfo?.fileType != null) fields.push({ label: 'File type:', value: sourceInfo.fileType })
-  if (sourceInfo?.uploadedByName != null)
-    fields.push({ label: 'Uploaded by:', value: sourceInfo.uploadedByName })
-
   const close = () => {
     onOpenChange(false)
     triggerRef.current?.focus()
@@ -293,23 +240,13 @@ export default function ImageDetailsDrawer({
         </Box>
         {/* tabIndex makes the scroll region keyboard-scrollable (a11y). */}
         <Box tabIndex={0} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', px: 2, py: 1.5 }}>
-          <Stack spacing={0.75}>
-            {fields.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No details available.
-              </Typography>
-            ) : (
-              fields.map((field) => (
-                <DetailField
-                  key={field.label}
-                  label={field.label}
-                  value={field.value}
-                  title={field.title}
-                  tooltip={field.tooltip}
-                />
-              ))
-            )}
-          </Stack>
+          <ImageDetailsContent
+            image={image}
+            programNames={programNames}
+            groupNames={groupNames}
+            measurement={measurement}
+            sourceInfo={sourceInfo}
+          />
         </Box>
         {/* Footer instructions. `contain: inline-size` keeps the wrapping
               text out of the drawer's max-content width calculation. */}
@@ -332,26 +269,116 @@ export default function ImageDetailsDrawer({
           <Typography variant="subtitle2" component="h3" id={controlsId} sx={{ mb: 0.5 }}>
             Viewer controls
           </Typography>
-          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
-            {[
-              'Scroll or tap to zoom',
-              'Drag to move/pan',
-              'Bottom left buttons control view',
-              'Bottom right mini-map shows current view',
-            ].map((item) => (
-              <Typography
-                key={item}
-                component="li"
-                variant="body2"
-                color="text.secondary"
-                sx={{ '& + li': { mt: 0.5 } }}
-              >
-                {item}
-              </Typography>
-            ))}
-          </Box>
+          <ViewerControlHints />
         </Box>
       </Paper>
     </Slide>
+  )
+}
+
+export function ImageDetailsContent({
+  image,
+  programNames,
+  groupNames,
+  measurement,
+  sourceInfo,
+}: Pick<
+  ImageDetailsDrawerProps,
+  'image' | 'programNames' | 'groupNames' | 'measurement' | 'sourceInfo'
+>) {
+  const fields: { label: string; value: string; title?: string; tooltip?: string }[] = []
+  if (image.copyright) fields.push({ label: 'Copyright:', value: image.copyright })
+  if (programNames.length > 0)
+    fields.push({
+      label: `Program${programNames.length > 1 ? 's' : ''}:`,
+      value: programNames.join(', '),
+    })
+  if (groupNames.length > 0)
+    fields.push({
+      label: `Group${groupNames.length > 1 ? 's' : ''}:`,
+      value: groupNames.join(', '),
+    })
+  // Dates show the long-form date; the native title keeps the exact timestamp.
+  if (image.createdAt)
+    fields.push({
+      label: 'Created:',
+      value: new Date(image.createdAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+      tooltip: `Created: ${new Date(image.createdAt).toLocaleString()}`,
+    })
+  if (image.updatedAt)
+    fields.push({
+      label: 'Modified:',
+      value: new Date(image.updatedAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+      tooltip: `Modified: ${new Date(image.updatedAt).toLocaleString()}`,
+    })
+  if (image.width != null && image.height != null)
+    fields.push({ label: 'Dimensions:', value: `${image.width} × ${image.height}` })
+  if (image.fileSize != null) fields.push({ label: 'Size:', value: formatFileSize(image.fileSize) })
+  if (measurement) {
+    const value =
+      measurement.scale && measurement.unit
+        ? `${measurement.scale} px/${measurement.unit}`
+        : measurement.scale
+          ? `${measurement.scale} px`
+          : (measurement.unit ?? '')
+    if (value) fields.push({ label: 'Measurement:', value })
+  }
+  const objective = objectiveFromMetadata(image.metadataExtra)
+  if (objective) fields.push({ label: 'Objective:', value: objectiveLabel(objective) })
+  if (sourceInfo?.originalFilename != null)
+    fields.push({ label: 'Original file:', value: sourceInfo.originalFilename })
+  if (sourceInfo?.fileType != null) fields.push({ label: 'File type:', value: sourceInfo.fileType })
+  if (sourceInfo?.uploadedByName != null)
+    fields.push({ label: 'Uploaded by:', value: sourceInfo.uploadedByName })
+
+  return (
+    <Stack spacing={0.75}>
+      {fields.length === 0 ? (
+        <Typography variant="body2" color="text.secondary">
+          No details available.
+        </Typography>
+      ) : (
+        fields.map((field) => (
+          <DetailField
+            key={field.label}
+            label={field.label}
+            value={field.value}
+            title={field.title}
+            tooltip={field.tooltip}
+          />
+        ))
+      )}
+    </Stack>
+  )
+}
+
+export function ViewerControlHints() {
+  return (
+    <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+      {[
+        'Scroll or tap to zoom',
+        'Drag to move/pan',
+        'Bottom left buttons control view',
+        'Bottom right mini-map shows current view',
+      ].map((item) => (
+        <Typography
+          key={item}
+          component="li"
+          variant="body2"
+          color="text.secondary"
+          sx={{ '& + li': { mt: 0.5 } }}
+        >
+          {item}
+        </Typography>
+      ))}
+    </Box>
   )
 }

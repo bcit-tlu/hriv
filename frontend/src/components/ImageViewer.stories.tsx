@@ -2,7 +2,9 @@ import { useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import Box from '@mui/material/Box'
 import ImageViewer from './ImageViewer'
-import ImageDetailsDrawer, { ImageDetailsTrigger } from './ImageDetailsDrawer'
+import { expect, userEvent, within } from 'storybook/test'
+import { INUKSUK_FIXTURE, BOARD_FIXTURE } from './inuksukFixtures'
+import ImageDetailsDrawer, { ImageDetailsTrigger, ImageDetailsContent } from './ImageDetailsDrawer'
 
 const IMAGE = {
   copyright: '© Museo del Duomo',
@@ -13,26 +15,35 @@ const IMAGE = {
   fileSize: 4_718_592,
 }
 
-function ImageViewerExample() {
+function ImageViewerExample({ inuksuksEnabled = false }: { inuksuksEnabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   return (
-    <Box sx={{ width: 720 }}>
+    <Box sx={{ width: '100%', height: '100vh' }}>
       <ImageViewer
-        tileSources="/sample.dzi"
-        height={420}
+        tileSources="/inuksuk-image.json"
+        height="100%"
+        imageId={42}
+        inuksuksEnabled={inuksuksEnabled}
+        sidePanelDetails={
+          <ImageDetailsContent image={IMAGE} programNames={['Histology']} groupNames={[]} />
+        }
         viewportControl={
-          <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
+          inuksuksEnabled ? null : (
+            <ImageDetailsTrigger open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
+          )
         }
         viewportOverlay={
-          <ImageDetailsDrawer
-            image={IMAGE}
-            programNames={['Architecture']}
-            groupNames={['Image Research']}
-            open={open}
-            onOpenChange={setOpen}
-            triggerRef={triggerRef}
-          />
+          !inuksuksEnabled && (
+            <ImageDetailsDrawer
+              image={IMAGE}
+              programNames={['Architecture']}
+              groupNames={['Image Research']}
+              open={open}
+              onOpenChange={setOpen}
+              triggerRef={triggerRef}
+            />
+          )
         }
       />
     </Box>
@@ -42,8 +53,54 @@ function ImageViewerExample() {
 const meta = {
   title: 'Components/ImageViewer',
   component: ImageViewerExample,
+  parameters: { layout: 'fullscreen' },
+  beforeEach: () => {
+    const original = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const path = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        window.location.href,
+      ).pathname
+      if (/^\/api\/images\/\d+\/inuksuks$/.test(path)) return Response.json([INUKSUK_FIXTURE])
+      if (path === '/api/boards') return Response.json([BOARD_FIXTURE])
+      return original(input, init)
+    }
+    return () => {
+      globalThis.fetch = original
+    }
+  },
 } satisfies Meta<typeof ImageViewerExample>
 
 export default meta
 
 export const WithImageDetails: StoryObj<typeof meta> = {}
+
+type Story = StoryObj<typeof meta>
+export const PanelClosed: Story = {
+  args: { inuksuksEnabled: true },
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('button', { name: 'Open viewer panel' })
+  },
+}
+export const PanelInuksuks: Story = {
+  args: { inuksuksEnabled: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
+    await expect(canvas.getByRole('heading', { name: 'Inuksuks (1)' })).toBeVisible()
+  },
+}
+export const PanelDetails: Story = {
+  args: { inuksuksEnabled: true },
+  play: async (context) => {
+    await PanelInuksuks.play?.(context)
+    await userEvent.click(
+      within(context.canvasElement).getByRole('button', { name: 'Show image details' }),
+    )
+  },
+}
+export const PanelDark: Story = { ...PanelInuksuks, globals: { theme: 'dark' } }
+export const PanelMobile: Story = {
+  ...PanelInuksuks,
+  globals: { viewport: { value: 'mobile1', isRotated: false } },
+}

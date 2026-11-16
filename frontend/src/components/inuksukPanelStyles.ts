@@ -1,7 +1,7 @@
 export const inuksukPanelSx = {
   position: 'absolute',
   top: 8,
-  right: 8,
+  right: 'var(--hriv-inuksuk-panel-right, 8px)',
   width: 320,
   maxWidth: 'calc(50% - 16px)',
   maxHeight: 'calc(100% - 72px)',

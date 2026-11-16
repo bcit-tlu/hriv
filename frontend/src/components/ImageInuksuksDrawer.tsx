@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { alpha } from '@mui/material/styles'
 import type { PopoverActions } from '@mui/material/Popover'
 import {
@@ -81,13 +81,8 @@ export function ImageInuksuksTrigger({
     </Tooltip>
   )
 }
-interface Props {
+export interface ImageInuksuksListProps {
   items: ApiInuksuk[]
-  open: boolean
-  pinned: boolean
-  onPinnedChange: (pinned: boolean) => void
-  onOpenChange: (open: boolean) => void
-  triggerRef: RefObject<HTMLButtonElement | null>
   drawerId: string
   prefs: InuksukVisibilityPrefs
   selectedId?: number | null
@@ -97,12 +92,23 @@ interface Props {
   onDelete?: (item: ApiInuksuk) => void
   draftTitle?: string
 }
+
+interface Props extends ImageInuksuksListProps {
+  embedded?: boolean
+  open: boolean
+  pinned: boolean
+  onPinnedChange: (pinned: boolean) => void
+  onOpenChange: (open: boolean) => void
+  triggerRef: RefObject<HTMLButtonElement | null>
+}
+
 const groups: { source: InuksukSource; title: string }[] = [
   { source: 'mine', title: 'My Inuksuks' },
   { source: 'instructor', title: 'Instructor Inuksuks' },
   { source: 'public', title: 'Public Inuksuks' },
 ]
 export default function ImageInuksuksDrawer({
+  embedded = false,
   items,
   open,
   pinned,
@@ -136,7 +142,7 @@ export default function ImageInuksuksDrawer({
     triggerRef.current?.focus()
   }
   useEffect(() => {
-    if (!open || pinned) return
+    if (!open || pinned || embedded) return
     const onPress = (event: Event) => {
       const target = event.target
       if (
@@ -159,42 +165,49 @@ export default function ImageInuksuksDrawer({
       events.forEach((name) => document.removeEventListener(name, onPress, true))
       window.removeEventListener('keydown', onKey)
     }
-  }, [open, pinned, onOpenChange, triggerRef])
-  return (
-    <Slide
-      direction="right"
-      in={open}
-      mountOnEnter
-      unmountOnExit
-      onEntered={() => closeRef.current?.focus()}
+  }, [open, pinned, embedded, onOpenChange, triggerRef])
+  const content = (
+    <Paper
+      ref={drawerRef}
+      component={embedded ? 'div' : 'aside'}
+      id={drawerId}
+      aria-labelledby={embedded ? undefined : `${drawerId}-title`}
+      elevation={embedded ? 0 : 8}
+      square
+      data-hriv-canvas-ui
+      onKeyDown={(e: ReactKeyboardEvent<HTMLElement>) => {
+        if (e.key === 'Escape' && !pinned) {
+          e.stopPropagation()
+          close()
+        }
+      }}
+      sx={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 56,
+        zIndex: 30,
+        width: 320,
+        maxWidth: 'calc(100% - 48px)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        ...(embedded
+          ? {
+              position: 'relative',
+              width: '100%',
+              maxWidth: 'none',
+              top: 'auto',
+              left: 'auto',
+              bottom: 'auto',
+              height: '100%',
+              bgcolor: 'transparent',
+              backgroundImage: 'none',
+            }
+          : {}),
+      }}
     >
-      <Paper
-        ref={drawerRef}
-        component="aside"
-        id={drawerId}
-        aria-labelledby={`${drawerId}-title`}
-        elevation={8}
-        square
-        data-hriv-canvas-ui
-        onKeyDown={(e) => {
-          if (e.key === 'Escape' && !pinned) {
-            e.stopPropagation()
-            close()
-          }
-        }}
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          bottom: 56,
-          zIndex: 30,
-          width: 320,
-          maxWidth: 'calc(100% - 48px)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
+      {!embedded && (
         <Box
           sx={{
             display: 'flex',
@@ -225,216 +238,244 @@ export default function ImageInuksuksDrawer({
             )}
           </Box>
         </Box>
-        <Box sx={{ overflowY: 'auto', minHeight: 0, flex: 1 }} tabIndex={0}>
-          {error && <Alert severity="error">{error}</Alert>}
-          {!error && items.length === 0 && draftTitle === undefined && (
-            <Typography sx={{ p: 2 }} color="text.secondary">
-              No Inuksuks on this image yet. Use Add Inuksuk to save a view.
-            </Typography>
-          )}
-          {groups.map(({ source, title }) => {
-            const rows = items.filter((item) => item.source === source)
-            const groupExpanded = expanded[source] || (source === 'mine' && hasDraft)
-            if (rows.length === 0 && !(source === 'mine' && draftTitle !== undefined)) return null
-            return (
+      )}
+      <Box sx={{ overflowY: 'auto', minHeight: 0, flex: 1 }} tabIndex={0}>
+        {error && <Alert severity="error">{error}</Alert>}
+        {!error && items.length === 0 && draftTitle === undefined && (
+          <Typography sx={{ p: 2 }} color="text.secondary">
+            No Inuksuks on this image yet. Use Add Inuksuk to save a view.
+          </Typography>
+        )}
+        {groups.map(({ source, title }) => {
+          const rows = items.filter((item) => item.source === source)
+          const groupExpanded = expanded[source] || (source === 'mine' && hasDraft)
+          if (rows.length === 0 && !(source === 'mine' && draftTitle !== undefined)) return null
+          return (
+            <Box
+              component="section"
+              key={source}
+              aria-label={title}
+              sx={{ borderBottom: 1, borderColor: 'divider' }}
+            >
               <Box
-                component="section"
-                key={source}
-                aria-label={title}
-                sx={{ borderBottom: 1, borderColor: 'divider' }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  px: 1,
+                  py: 0.5,
+                  bgcolor: 'action.hover',
+                }}
               >
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    px: 1,
-                    py: 0.5,
-                    bgcolor: 'action.hover',
-                  }}
+                <ListItemButton
+                  onClick={() => setExpanded((value) => ({ ...value, [source]: !value[source] }))}
+                  aria-expanded={groupExpanded}
+                  aria-controls={`${drawerId}-${source}`}
+                  aria-label={title}
+                  sx={{ px: 0.5, flex: 1, minWidth: 120 }}
                 >
-                  <ListItemButton
-                    onClick={() => setExpanded((value) => ({ ...value, [source]: !value[source] }))}
-                    aria-expanded={groupExpanded}
-                    aria-controls={`${drawerId}-${source}`}
-                    aria-label={title}
-                    sx={{ px: 0.5, flex: 1, minWidth: 120 }}
-                  >
-                    {groupExpanded ? (
-                      <ExpandLess fontSize="small" />
-                    ) : (
-                      <ExpandMore fontSize="small" />
-                    )}
-                    <Typography component="h3" variant="subtitle2">
-                      {title}
-                    </Typography>
-                  </ListItemButton>
-                  <Tooltip title="Inuksuk options">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label={`${title} options`}
-                        aria-haspopup="menu"
-                        onClick={(event) => setMenu({ anchor: event.currentTarget, source, title })}
+                  {groupExpanded ? (
+                    <ExpandLess fontSize="small" />
+                  ) : (
+                    <ExpandMore fontSize="small" />
+                  )}
+                  <Typography component="h3" variant="subtitle2">
+                    {title}
+                  </Typography>
+                </ListItemButton>
+                <Tooltip title="Inuksuk options">
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label={`${title} options`}
+                      aria-haspopup="menu"
+                      onClick={(event) => setMenu({ anchor: event.currentTarget, source, title })}
+                    >
+                      <MoreVert fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Box>
+              <Collapse in={groupExpanded} unmountOnExit id={`${drawerId}-${source}`}>
+                <List disablePadding>
+                  {source === 'mine' && draftTitle !== undefined && (
+                    <ListItem>
+                      <ListItemText
+                        primary={draftTitle || 'New Inuksuk'}
+                        slotProps={{ primary: { noWrap: true } }}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        Unsaved
+                      </Typography>
+                    </ListItem>
+                  )}
+                  {rows.map((item) => {
+                    const visible = prefs.visibilityFor(item)
+                    return (
+                      <ListItem
+                        key={item.id}
+                        disablePadding
+                        sx={{
+                          '&:hover': { bgcolor: 'action.hover' },
+                          ...(item.id === selectedId && { bgcolor: 'action.selected' }),
+                        }}
                       >
-                        <MoreVert fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Box>
-                <Collapse in={groupExpanded} unmountOnExit id={`${drawerId}-${source}`}>
-                  <List disablePadding>
-                    {source === 'mine' && draftTitle !== undefined && (
-                      <ListItem>
-                        <ListItemText
-                          primary={draftTitle || 'New Inuksuk'}
-                          slotProps={{ primary: { noWrap: true } }}
-                        />
-                        <Typography variant="caption" color="text.secondary">
-                          Unsaved
-                        </Typography>
-                      </ListItem>
-                    )}
-                    {rows.map((item) => {
-                      const visible = prefs.visibilityFor(item)
-                      return (
-                        <ListItem
-                          key={item.id}
-                          disablePadding
+                        <ListItemButton
+                          onClick={() => onSelect(item)}
+                          aria-label={`View Inuksuk: ${item.title}${visible.markerVisible ? '' : ' (marker hidden)'}`}
+                          aria-pressed={item.id === selectedId}
                           sx={{
-                            '&:hover': { bgcolor: 'action.hover' },
-                            ...(item.id === selectedId && { bgcolor: 'action.selected' }),
+                            minWidth: 0,
+                            width: '100%',
+                            pl: 2,
+                            pr: 5,
+                            '&:hover': { bgcolor: 'transparent' },
                           }}
                         >
-                          <ListItemButton
-                            onClick={() => onSelect(item)}
-                            aria-label={`View Inuksuk: ${item.title}${visible.markerVisible ? '' : ' (marker hidden)'}`}
-                            aria-pressed={item.id === selectedId}
-                            sx={{
-                              minWidth: 0,
-                              width: '100%',
-                              pl: 2,
-                              pr: 5,
-                              '&:hover': { bgcolor: 'transparent' },
+                          <ListItemText
+                            primary={item.title}
+                            slotProps={{
+                              primary: {
+                                noWrap: true,
+                                title: item.title,
+                                color: visible.markerVisible ? undefined : 'text.disabled',
+                                sx: visible.markerVisible
+                                  ? undefined
+                                  : {
+                                      color: (theme) =>
+                                        theme.palette.mode === 'light'
+                                          ? theme.palette.text.secondary
+                                          : theme.palette.text.disabled,
+                                    },
+                              },
                             }}
+                          />
+                        </ListItemButton>
+                        <Box sx={{ position: 'absolute', right: 8, display: 'flex' }}>
+                          <IconButton
+                            size="small"
+                            aria-label={`${item.title} options`}
+                            aria-haspopup="menu"
+                            onClick={(event) =>
+                              setMenu({ anchor: event.currentTarget, item, title: item.title })
+                            }
                           >
-                            <ListItemText
-                              primary={item.title}
-                              slotProps={{
-                                primary: {
-                                  noWrap: true,
-                                  title: item.title,
-                                  color: visible.markerVisible ? undefined : 'text.disabled',
-                                  sx: visible.markerVisible
-                                    ? undefined
-                                    : {
-                                        color: (theme) =>
-                                          theme.palette.mode === 'light'
-                                            ? theme.palette.text.secondary
-                                            : theme.palette.text.disabled,
-                                      },
-                                },
-                              }}
-                            />
-                          </ListItemButton>
-                          <Box sx={{ position: 'absolute', right: 8, display: 'flex' }}>
-                            <IconButton
-                              size="small"
-                              aria-label={`${item.title} options`}
-                              aria-haspopup="menu"
-                              onClick={(event) =>
-                                setMenu({ anchor: event.currentTarget, item, title: item.title })
-                              }
-                            >
-                              <MoreVert fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        </ListItem>
-                      )
-                    })}
-                  </List>
-                </Collapse>
-              </Box>
-            )
-          })}
-        </Box>
-        <Menu
-          action={menuActions}
-          slotProps={{
-            paper: { ref: menuRef },
-            transition: { onEntered: () => menuActions.current?.updatePosition() },
-          }}
-          data-hriv-canvas-ui
-          open={!!menu}
-          anchorEl={menu?.anchor}
-          onClose={() => setMenu(null)}
-          container={() => drawerRef.current?.parentElement ?? null}
-        >
-          {menu &&
-            (() => {
-              const rows = items.filter((item) => item.source === menu.source)
-              return (['markerVisible', 'labelVisible'] as const).map((field) => {
-                const all = menu.item
-                  ? prefs.visibilityFor(menu.item)[field]
-                  : rows.every((item) => prefs.visibilityFor(item)[field])
-                const mixed =
-                  !menu.item && !all && rows.some((item) => prefs.visibilityFor(item)[field])
-                const marker = field === 'markerVisible'
-                const label = marker
-                  ? menu.item
-                    ? 'marker'
-                    : 'markers'
-                  : menu.item
-                    ? 'label'
-                    : 'labels'
-                return (
-                  <MenuItem
-                    key={field}
-                    aria-label={`${menu.title} ${marker ? (menu.item ? 'marker' : 'markers') : 'labels'}`}
-                    role="menuitemcheckbox"
-                    aria-checked={mixed ? 'mixed' : all}
-                    onClick={() => {
-                      if (menu.item) prefs.setItem(menu.item, field, !all)
-                      else if (menu.source) prefs.setGroup(menu.source, field, !all)
-                      setMenu(null)
-                    }}
-                  >
-                    {marker &&
-                      (all ? (
-                        <Visibility fontSize="small" sx={{ mr: 1 }} />
-                      ) : (
-                        <VisibilityOff fontSize="small" sx={{ mr: 1 }} />
-                      ))}
-                    {all ? 'Hide' : 'Show'} {label}
-                    {mixed ? ' (Mixed)' : ''}
-                  </MenuItem>
-                )
-              })
-            })()}
-          {menu?.item?.permissions.can_edit && (
-            <MenuItem
-              onClick={() => {
-                onEdit(menu.item!)
-                setMenu(null)
-              }}
-            >
-              <Edit fontSize="small" sx={{ mr: 1 }} />
-              Edit
-            </MenuItem>
-          )}
-          {menu?.item?.permissions.can_delete && (
-            <MenuItem
-              onClick={() => {
-                ;(onDelete ?? onEdit)(menu.item!)
-                setMenu(null)
-              }}
-            >
-              <Delete fontSize="small" sx={{ mr: 1 }} />
-              Delete
-            </MenuItem>
-          )}
-        </Menu>
-      </Paper>
+                            <MoreVert fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </ListItem>
+                    )
+                  })}
+                </List>
+              </Collapse>
+            </Box>
+          )
+        })}
+      </Box>
+      <Menu
+        action={menuActions}
+        slotProps={{
+          paper: { ref: menuRef },
+          transition: { onEntered: () => menuActions.current?.updatePosition() },
+        }}
+        data-hriv-canvas-ui
+        open={!!menu}
+        anchorEl={menu?.anchor}
+        onClose={() => setMenu(null)}
+        container={() => drawerRef.current?.parentElement ?? null}
+      >
+        {menu &&
+          (() => {
+            const rows = items.filter((item) => item.source === menu.source)
+            return (['markerVisible', 'labelVisible'] as const).map((field) => {
+              const all = menu.item
+                ? prefs.visibilityFor(menu.item)[field]
+                : rows.every((item) => prefs.visibilityFor(item)[field])
+              const mixed =
+                !menu.item && !all && rows.some((item) => prefs.visibilityFor(item)[field])
+              const marker = field === 'markerVisible'
+              const label = marker
+                ? menu.item
+                  ? 'marker'
+                  : 'markers'
+                : menu.item
+                  ? 'label'
+                  : 'labels'
+              return (
+                <MenuItem
+                  key={field}
+                  aria-label={`${menu.title} ${marker ? (menu.item ? 'marker' : 'markers') : 'labels'}`}
+                  role="menuitemcheckbox"
+                  aria-checked={mixed ? 'mixed' : all}
+                  onClick={() => {
+                    if (menu.item) prefs.setItem(menu.item, field, !all)
+                    else if (menu.source) prefs.setGroup(menu.source, field, !all)
+                    setMenu(null)
+                  }}
+                >
+                  {marker &&
+                    (all ? (
+                      <Visibility fontSize="small" sx={{ mr: 1 }} />
+                    ) : (
+                      <VisibilityOff fontSize="small" sx={{ mr: 1 }} />
+                    ))}
+                  {all ? 'Hide' : 'Show'} {label}
+                  {mixed ? ' (Mixed)' : ''}
+                </MenuItem>
+              )
+            })
+          })()}
+        {menu?.item?.permissions.can_edit && (
+          <MenuItem
+            onClick={() => {
+              onEdit(menu.item!)
+              setMenu(null)
+            }}
+          >
+            <Edit fontSize="small" sx={{ mr: 1 }} />
+            Edit
+          </MenuItem>
+        )}
+        {menu?.item?.permissions.can_delete && (
+          <MenuItem
+            onClick={() => {
+              ;(onDelete ?? onEdit)(menu.item!)
+              setMenu(null)
+            }}
+          >
+            <Delete fontSize="small" sx={{ mr: 1 }} />
+            Delete
+          </MenuItem>
+        )}
+      </Menu>
+    </Paper>
+  )
+  return embedded ? (
+    content
+  ) : (
+    <Slide
+      direction="right"
+      in={open}
+      mountOnEnter
+      unmountOnExit
+      onEntered={() => closeRef.current?.focus()}
+    >
+      {content}
     </Slide>
+  )
+}
+
+export function ImageInuksuksList(props: ImageInuksuksListProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  return (
+    <ImageInuksuksDrawer
+      {...props}
+      embedded
+      open
+      pinned
+      onPinnedChange={() => {}}
+      onOpenChange={() => {}}
+      triggerRef={triggerRef}
+    />
   )
 }
