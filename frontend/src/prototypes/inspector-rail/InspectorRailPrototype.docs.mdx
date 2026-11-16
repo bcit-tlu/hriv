@@ -1,0 +1,89 @@
+import { Meta, Canvas } from '@storybook/addon-docs/blocks'
+import * as Stories from './InspectorRailPrototype.stories'
+
+<Meta of={Stories} />
+
+# Inspector rail — design prototype, not app behavior
+
+This isolated Storybook exploration combines the Google Workspace side panel,
+Figma inspector and VS Code activity rail models. It is not imported by the app.
+No ImageViewer, routes, production drawers, shared hooks or configuration are changed.
+The tissue image and bottom toolbar are static: pan, zoom and image navigation
+are deliberately outside this prototype. All data and mutations are mocked.
+
+## Interaction model
+
+Details and Inuksuks occupy a 48px icon rail at the top-right. Both triggers are
+the real viewer buttons, retaining their existing icons and rest/hover/pressed
+states (including the Details SVG assets). A primary-palette inset outline marks
+the open tool without replacing its existing button treatment. More tools
+can extend the column. One shared panel opens to its left, anchored on the right.
+Switching tools preserves the panel DOM and the single pin; pressing the active
+tool closes it, including when pinned. Close and Escape also dismiss the panel.
+
+Unpinned panels overlay the image and retract on an outside pointer press,
+including mouse and touch. Inside-menu and Board-picker interactions do not count
+as outside presses. Pinned panels reserve viewport width on desktop. At xs
+(below 600px), the same panel becomes a bottom sheet; pinning reserves height
+instead. The rail stays top-right in both layouts.
+
+The shared pin uses `usePinnedDrawerState('storybook',
+'prototype-inspector-rail', false)`: storage synchronization is disabled, so it
+neither reads nor changes a user's real drawer preference. Visibility toggles
+also use prototype-local memory, not app localStorage.
+
+## Real components, prototype-only layout
+
+- Details embeds the real `ImageDetailsDrawer` metadata and viewer instructions.
+- Inuksuks embeds the real `ImageInuksuksDrawer` list, group controls and menus.
+- Placement uses `InuksukFormDialog` with mock services; Title, Board and collapsed
+  More options remain real controls. The form moves inline above the list when
+  Inuksuks is open; otherwise it floats top-right. Draft values survive the move.
+- Marker information uses the real `InuksukInfoCard`, positioned beside the marker
+  instead of in the inspector. Its Board-name request is mocked in story setup.
+
+Prototype-only wrappers neutralize the drawers' original positioning and hide
+their individual headers; the shared panel supplies the one title, pin and Close.
+The real components are deliberately untouched. These CSS adapters are not a
+proposed production extraction. Save/Edit/Delete show a prototype-only message;
+they never write to the backend. The popover uses a fixed illustrative anchor,
+not production collision detection or an OpenSeadragon projection.
+
+## Story map
+
+| Story                          | Evaluation surface / interaction coverage                                    |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| Closed rail / switch and close | Switch in place, one active icon, active-icon dismissal                      |
+| Details                        | Real metadata and viewer-controls content                                    |
+| Inuksuks                       | Real list/menu; portal-safe clicks; hide/show marker                         |
+| Pinned                         | Width reservation, shared pin through switching, unpin, immediate click-away |
+| Placement inline               | Inline form, retained draft across close/reopen, collapsed More options      |
+| Placement floating             | Existing top-right placement model with closed inspector                     |
+| Info card popover              | Marker-adjacent card versus today's top-right card                           |
+| Mobile                         | 390px viewport; bottom sheet and persistent top-right rail                   |
+
+Theme variants use Chromatic light/dark modes and the Storybook theme toolbar,
+not duplicate stories. The play functions also run accessibility checks.
+
+<Canvas of={Stories.Basic} />
+<Canvas of={Stories.Pinned} />
+<Canvas of={Stories.PlacementInline} />
+<Canvas of={Stories.InfoCardPopover} />
+<Canvas of={Stories.Mobile} />
+
+## Open product questions
+
+1. **Left/right role split:** should the left side remain navigation (Boards,
+   collections, sequence filmstrip) while the right is exclusively inspection and
+   editing? Would moving Inuksuks to the right disrupt established navigation?
+   This prototype does not remove or redesign any left-side app controls.
+2. **Where should marker information live?** A marker-adjacent popover provides
+   spatial context, but can obscure the detail and needs edge/collision handling.
+   The inspector is predictable and scrollable but separates the card from its
+   point. Should mobile always use the bottom sheet instead of a popover?
+3. Should a pinned inspector be closable by its active icon, and should its tool
+   selection/pin survive navigation? This prototype chooses closable, in-memory
+   state only; it does not prescribe an app persistence contract.
+4. How should an unsaved placement coexist with Details? Here it floats when the
+   Inuksuks content is not visible, retaining the draft; evaluate whether forcing
+   the Inuksuks tab or keeping the form always docked would be clearer.
