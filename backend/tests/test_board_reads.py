@@ -16,7 +16,7 @@ from app import auth, board_views
 from app.database import get_db, settings
 from app.middleware import InuksuksFeatureMiddleware
 from app.models import (
-    Board, BoardInuksuk, BoardSection, Category, Group, Image, Inuksuk, Program, User,
+    Board, BoardInuksuk, Category, Group, Image, Inuksuk, Program, User,
 )
 from app.routers import boards, images, inuksuks
 from app.tile_tokens import TileTokenError, validate_tile_token
@@ -123,12 +123,6 @@ async def world(monkeypatch):
             }
             db.add_all([*imgs.values(), *bs.values()])
             await db.flush()
-            sections = [
-                BoardSection(board_id=bs["public"].id, name="Late", sort_order=2),
-                BoardSection(board_id=bs["public"].id, name="Early", sort_order=1),
-            ]
-            db.add_all(sections)
-            await db.flush()
             items = {}
 
             def add(key, *, owner=None, image="visible", on=("public",), favourite=False, thumb=False):
@@ -157,7 +151,6 @@ async def world(monkeypatch):
                 for index, key in enumerate(on):
                     db.add(BoardInuksuk(
                         board_id=bs[key].id, inuksuk_id=item.id,
-                        section_id=sections[1].id if key == "public" else None,
                         sort_order=item.id % 10 + index,
                     ))
             await db.flush()
@@ -166,7 +159,6 @@ async def world(monkeypatch):
             item_ids = {key: item.id for key, (item, _, _) in items.items()}
             board_ids = {key: board.id for key, board in bs.items()}
             image_ids = {key: img.id for key, img in imgs.items()}
-            section_ids = [section.id for section in sections]
             db.expunge_all()
             caller = {"role": "student"}
 
@@ -184,7 +176,7 @@ async def world(monkeypatch):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
                 yield NS(
                     client=client, db=db, engine=engine, caller=caller,
-                    boards=board_ids, items=item_ids, images=image_ids, sections=section_ids,
+                    boards=board_ids, items=item_ids, images=image_ids,
                 )
         await transaction.rollback()
     await engine.dispose()
@@ -251,10 +243,10 @@ async def test_invisible_board_404_and_visible_detail_order(world):
     result = await world.client.get(f"/api/boards/{world.boards['public']}")
     assert result.status_code == 200, result.text
     body = result.json()
-    assert [s["name"] for s in body["sections"]] == ["Early", "Late"]
+    assert "sections" not in body
     assert len(body["inuksuks"]) == 3
     assert [r["sort_order"] for r in body["inuksuks"]] == sorted(r["sort_order"] for r in body["inuksuks"])
-    assert all(r["section_id"] == world.sections[1] and r["sort_order"] != 100 for r in body["inuksuks"])
+    assert all("section_id" not in r for r in body["inuksuks"])
 
 
 async def test_drawer_source_precedence_and_visible_board_ids(world):
@@ -305,10 +297,6 @@ async def test_inuksuk_filters_and_unlabelled_items(world):
         assert filtered and all(row["source"] == scope for row in filtered.values())
     fav = by_title(await world.client.get("/api/inuksuks?favourite=true"))
     assert set(fav) == {"mine"}
-    section = by_title(await world.client.get(f"/api/inuksuks?section_id={world.sections[1]}"))
-    assert set(section) == {"mine", "public", "instructor"}
-    filtered = by_title(await world.client.get(f"/api/inuksuks?board_id={world.boards['public']}&section_id={world.sections[0]}"))
-    assert filtered == {}
     assert by_title(await world.client.get(f"/api/inuksuks?image_id={world.images['inactive']}")) == {}
     world.caller["role"] = "staff"
     rows = by_title(await world.client.get("/api/inuksuks"))
@@ -430,5 +418,5 @@ async def test_empty_reads_and_no_n_plus_one(world):
     assert " IN (" in image_selects[0]
     empty = await world.client.get(f"/api/boards/{world.boards['empty_scope']}")
     assert empty.status_code == 200
-    assert empty.json()["sections"] == empty.json()["inuksuks"] == []
+    assert empty.json()["inuksuks"] == []
     assert empty.json()["cover_thumb"] is None

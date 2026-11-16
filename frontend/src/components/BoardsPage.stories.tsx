@@ -22,9 +22,8 @@ function Example({
   state?: 'ready' | 'empty' | 'error'
   readOnlyOwned?: boolean
 }) {
-  const [selection, setSelection] = useState<{ boardId: number | null; sectionId: number | null }>({
+  const [selection, setSelection] = useState<{ boardId: number | null }>({
     boardId: initialBoardId,
-    sectionId: null,
   })
   return (
     <AuthContext.Provider value={BOARD_AUTH}>
@@ -35,7 +34,7 @@ function Example({
         programs={BOARD_PROGRAMS}
         groups={BOARD_GROUPS}
         {...selection}
-        onSelectBoard={(boardId, sectionId = null) => setSelection({ boardId, sectionId })}
+        onSelectBoard={(boardId) => setSelection({ boardId })}
         onOpenInuksuk={fn()}
       />
     </AuthContext.Provider>
@@ -83,8 +82,12 @@ export const SelectedBoard: Story = {
   args: { initialBoardId: 1 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByRole('region', { name: 'Windows' })).toBeVisible()
-    await expect(canvas.getByRole('region', { name: 'Unsectioned' })).toBeVisible()
+    await expect(
+      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
+    ).toBeVisible()
+    await expect(
+      canvas.getByRole('button', { name: 'Open Inuksuk: Light through glass' }),
+    ).toBeVisible()
   },
 }
 export const Favourites: Story = {

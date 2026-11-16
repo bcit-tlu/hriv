@@ -7,7 +7,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 
 ## Entities
 
-### Inuksuk, Board, and BoardSection _(added in `0046_inuksuks_and_boards`)_
+### Inuksuk and Board _(added in `0046_inuksuks_and_boards`)_
 
 - **Inuksuk** (`inuksuks`): a bookmark on one image, with required `title`
   (255 characters), `x`, `y`, and `zoom`; `rotation` defaults to zero.
@@ -19,10 +19,7 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `description`, `visibility` (CHECK: private/public/restricted, default
   private), `sort_order` (zero), and OCC `version` (one).
   `created_by_user_id` and optional `owner_program_id` are **SET NULL** FKs.
-- **BoardSection** (`board_sections`): one-level grouping with required
-  `name`, `board_id` (indexed, **CASCADE**), and `sort_order` (zero).
-  There is deliberately no parent-section FK. All three entities have
-  timezone-aware `created_at` / `updated_at` timestamps.
+  Both entities have timezone-aware `created_at` / `updated_at` timestamps.
 - **Ownership and scope:** `inuksuk_owners(inuksuk_id, user_id)`,
   `board_owners(board_id, user_id)`, `board_programs(board_id, program_id)`,
   and `board_groups(board_id, group_id)` use composite PKs and **CASCADE**
@@ -30,11 +27,9 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   whose entire owner set is departing, except program-owned boards. Co-owned
   objects survive. Creator audit does not grant ownership.
 - **Membership:** `board_inuksuks` has composite PK `(board_id, inuksuk_id)`
-  with **CASCADE** FKs, nullable `section_id` (**SET NULL** on section
-  deletion), and `sort_order` (zero). Indexes cover `(board_id, sort_order)`
-  and `(board_id, section_id, sort_order)`. Removing a board or section
-  never deletes an Inuksuk. Future write APIs must validate that a section
-  belongs to the membership's board.
+  with **CASCADE** FKs and `sort_order` (zero). An index covers
+  `(board_id, sort_order)`. Removing a Board never deletes a linked Inuksuk
+  that is still on another Board.
 - **Caps:** `STUDENT_MAX_BOARDS = 10`, `STUDENT_MAX_INUKSUKS = 200`.
   These constants are for subsequent creation APIs, not DB constraints.
 - **Dark launch:** `INUKSUKS_ENABLED=false` by default. See
@@ -437,12 +432,12 @@ allocates imported IDs above restored snapshot filenames to avoid collisions.
 
 ### Saved-view archive relationships (#1775)
 
-Admin JSON archives additionally preserve `boards`, `inuksuks`, `board_sections`,
+Admin JSON archives additionally preserve `boards`, `inuksuks`,
 `board_owners`, `board_programs`, `board_groups`, `inuksuk_owners` and
 `board_inuksuks` as explicit table records. IDs, timestamps, owner/scope links,
-Section membership and saved-view order round-trip independently of the feature
+Board membership and saved-view order round-trip independently of the feature
 flag. Imports delete association records before their parents and insert Boards
-and Inuksuks before their associations. Numeric sequences for Boards, Sections and
+and Inuksuks before their associations. Numeric sequences for Boards and
 Inuksuks are reset alongside Collection slots. Older archives may omit these keys.
 
 Saved-view JPEGs under `tiles/<source-id>/{inuksuks,collection_slots}/<id>.jpg`

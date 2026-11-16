@@ -1298,7 +1298,7 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
     export_path = os.path.join(tasks_dir, task.result_filename)
     with open(export_path) as f:
         dump = json.load(f)
-    assert all(name in dump for name in ("boards", "board_sections", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
+    assert all(name in dump for name in ("boards", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
     for user_entry in dump["users"]:
         assert "oidc_subject" not in user_entry, "oidc_subject is PII and must not appear in exports"
         assert "password_hash" not in user_entry, "password_hash must not appear in exports"

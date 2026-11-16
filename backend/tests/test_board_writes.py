@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app import auth, board_writes, processing
 from app.database import get_db, settings
 from app.models import (
-    Board, BoardInuksuk, BoardSection, Category, Group, Image, Inuksuk,
+    Board, BoardInuksuk, Category, Group, Image, Inuksuk,
     Program, SourceImage, User,
 )
 from app.routers import boards, images as images_router, inuksuks, users as users_router
@@ -78,15 +78,8 @@ async def world(tmp_path, monkeypatch):
             bs["shared"] = Board(name="Shared", owners=[users["student"], users["other"]], visibility="public")
             db.add_all([*images.values(), *bs.values()])
             await db.flush()
-            sections = {
-                key: BoardSection(board_id=board.id, name=f"{key} section")
-                for key, board in bs.items()
-            }
-            db.add_all(sections.values())
-            await db.flush()
             user_ids = {key: value.id for key, value in users.items()}
             board_ids = {key: value.id for key, value in bs.items()}
-            section_ids = {key: value.id for key, value in sections.items()}
             image_ids = {key: value.id for key, value in images.items()}
             program_ids = [program.id for program in programs]
             group_ids = [group.id for group in groups]
@@ -126,7 +119,7 @@ async def world(tmp_path, monkeypatch):
 
             yield NS(
                 client=client, sessions=sessions, caller=caller, users=user_ids,
-                boards=board_ids, sections=section_ids, images=image_ids,
+                boards=board_ids, images=image_ids,
                 programs=program_ids, groups=group_ids, root=tmp_path, engine=engine,
                 create=create, board=board,
             )
@@ -138,8 +131,6 @@ async def world(tmp_path, monkeypatch):
     ("POST", "/api/boards", {}), ("PATCH", "/api/boards/1", {}),
     ("DELETE", "/api/boards/1", None), ("PUT", "/api/boards/order", {}),
     ("PUT", "/api/boards/1/owners", {}), ("POST", "/api/boards/1/transfer", {}),
-    ("POST", "/api/boards/1/sections", {}), ("PATCH", "/api/boards/1/sections/1", {}),
-    ("DELETE", "/api/boards/1/sections/1", None), ("PUT", "/api/boards/1/sections/order", {}),
     ("PUT", "/api/boards/1/inuksuks/order", {}), ("DELETE", "/api/boards/1/inuksuks/1", None),
     ("POST", "/api/inuksuks", {}), ("PATCH", "/api/inuksuks/1", {}),
     ("DELETE", "/api/inuksuks/1", None), ("PUT", "/api/inuksuks/order", {}),
@@ -235,47 +226,12 @@ async def test_ownership_checks_precede_target_validation(world):
     assert result.status_code == 404
 
 
-async def test_sections_use_parent_board_occ_and_validate_membership(world):
-    board_id = world.boards["student"]
-    path = f"/api/boards/{board_id}"
-    result = await world.client.post(f"{path}/sections", json={"name": "New"})
-    assert result.status_code == 428
-    result = await world.client.post(f"{path}/sections", json={"name": "New", "version": 1})
-    assert result.status_code == 201, result.text
-    board = result.json()
-    section = next(s for s in board["sections"] if s["name"] == "New")
-    result = await world.client.patch(f"{path}/sections/{section['id']}", json={"version": 1, "name": "stale"})
-    assert result.status_code == 409 and result.json()["detail"]["version"] == 2
-    result = await world.client.patch(f"{path}/sections/{section['id']}", json={"name": "missing"})
-    assert result.status_code == 428
-    result = await world.client.patch(f"{path}/sections/{section['id']}", json={"version": 2, "name": "Renamed", "sort_order": 5})
-    assert result.status_code == 200 and result.json()["version"] == 3
-    result = await world.client.put(f"{path}/sections/order", json={"version": 3, "section_ids": [section["id"], world.sections["student"]]})
-    assert result.status_code == 200, result.text
-    assert [s["id"] for s in result.json()["sections"]] == [section["id"], world.sections["student"]]
-    result = await world.client.put(f"{path}/sections/order", json={"version": 4, "section_ids": [world.sections["other"]]})
-    assert result.status_code == 422
-    result = await world.client.patch(f"{path}/sections/{world.sections['other']}", json={"version": 4, "name": "Wrong board"})
-    assert result.status_code == 404
-    result = await world.client.delete(f"{path}/sections/{section['id']}")
-    assert result.status_code == 428
-    result = await world.client.delete(f"{path}/sections/{section['id']}", headers={"If-Match": "3"})
-    assert result.status_code == 409
-    result = await world.client.delete(f"{path}/sections/{section['id']}", headers={"If-Match": "4"})
-    assert result.status_code == 204
-
-
-@pytest.mark.parametrize("resource", ["sections", "inuksuks"])
-async def test_reorder_checks_version_before_membership_validation(world, resource):
+async def test_reorder_checks_version_before_membership_validation(world):
     before = await world.board("student")
     path = f"/api/boards/{before['id']}"
-    if resource == "sections":
-        order = {"section_ids": [section["id"] for section in before["sections"]]}
-        result = await world.client.post(f"{path}/sections", json={"name": "Added", "version": before["version"]})
-        assert result.status_code == 201, result.text
-    else:
-        order = {"items": []}
-        await world.create()
+    resource = "inuksuks"
+    order = {"items": []}
+    await world.create()
     current = await world.board("student")
     result = await world.client.put(
         f"{path}/{resource}/order", json={**order, "version": before["version"]},
@@ -335,7 +291,6 @@ async def test_assignment_validation_last_board_and_preservation(world):
     result = await world.client.post("/api/inuksuks", json={**base, "board_assignments": []})
     assert result.status_code == 422
     for assignment, status in [
-        ({"board_id": world.boards["student"], "section_id": world.sections["other"]}, 422),
         ({"board_id": world.boards["other"]}, 403),
         ({"board_id": world.boards["private"]}, 404),
     ]:
@@ -351,27 +306,27 @@ async def test_assignment_validation_last_board_and_preservation(world):
     world.caller["role"] = "admin"
     result = await world.client.patch(path, json={"version": 1, "board_assignments": [
         {"board_id": world.boards["student"]},
-        {"board_id": world.boards["private"], "section_id": world.sections["private"], "sort_order": 77},
+        {"board_id": world.boards["private"], "sort_order": 77},
     ]})
     assert result.status_code == 200, result.text
     world.caller["role"] = "student"
-    result = await world.client.patch(path, json={"version": 2, "board_assignments": [{"board_id": world.boards["student"], "section_id": world.sections["student"]}]})
+    result = await world.client.patch(path, json={"version": 2, "board_assignments": [{"board_id": world.boards["student"]}]})
     assert result.status_code == 200, result.text
     assert result.json()["board_ids"] == [world.boards["student"]]
     result = await world.client.patch(path, json={"version": 3, "board_assignments": []})
     assert result.status_code == 200 and result.json()["board_ids"] == []
     async with world.sessions() as db:
         links = (await db.execute(select(BoardInuksuk).where(BoardInuksuk.inuksuk_id == item["id"]))).scalars().all()
-        assert [(link.board_id, link.section_id, link.sort_order) for link in links] == [
-            (world.boards["private"], world.sections["private"], 77),
+        assert [(link.board_id, link.sort_order) for link in links] == [
+            (world.boards["private"], 77),
         ]
 
 
-async def test_board_editor_can_reorder_and_remove_others_items_and_section_delete(world):
-    item = await world.create(assignments=[{"board_id": world.boards["student"], "section_id": world.sections["student"]}])
+async def test_board_editor_can_reorder_and_remove_others_items(world):
+    item = await world.create(assignments=[{"board_id": world.boards["student"]}])
     world.caller["role"] = "admin"
     result = await world.client.patch(f"/api/inuksuks/{item['id']}", json={"version": 1, "board_assignments": [
-        {"board_id": world.boards["student"], "section_id": world.sections["student"]},
+        {"board_id": world.boards["student"]},
         {"board_id": world.boards["instructor"]},
     ]})
     assert result.status_code == 200, result.text
@@ -379,18 +334,10 @@ async def test_board_editor_can_reorder_and_remove_others_items_and_section_dele
     board = await world.board("instructor")
     path = f"/api/boards/{board['id']}"
     result = await world.client.put(f"{path}/inuksuks/order", json={
-        "version": board["version"], "items": [{"inuksuk_id": item["id"], "section_id": world.sections["student"]}],
-    })
-    assert result.status_code == 422
-    result = await world.client.put(f"{path}/inuksuks/order", json={
-        "version": board["version"], "items": [{"inuksuk_id": item["id"], "section_id": world.sections["instructor"]}],
+        "version": board["version"], "items": [{"inuksuk_id": item["id"]}],
     })
     assert result.status_code == 200, result.text
-    assert result.json()["inuksuks"][0]["section_id"] == world.sections["instructor"]
-    result = await world.client.delete(f"{path}/sections/{world.sections['instructor']}", headers={"If-Match": str(result.json()["version"])})
-    assert result.status_code == 204
-    board = await world.board("instructor")
-    assert board["inuksuks"][0]["section_id"] is None
+    board = result.json()
     result = await world.client.delete(f"{path}/inuksuks/{item['id']}", headers={"If-Match": str(board["version"])})
     assert result.status_code == 200 and result.json()["inuksuks"] == []
     async with world.sessions() as db:
@@ -538,7 +485,6 @@ async def test_board_delete_orphan_cleanup_preserves_other_boards_and_files(worl
     async with world.sessions() as db:
         assert await db.get(Inuksuk, orphan["id"]) is None
         assert await db.get(Inuksuk, shared["id"]) is not None
-        assert await db.scalar(select(func.count()).select_from(BoardSection).where(BoardSection.board_id == board["id"])) == 0
         assert (await db.execute(select(BoardInuksuk.board_id).where(BoardInuksuk.inuksuk_id == shared["id"]))).scalars().all() == [world.boards["shared"]]
     assert not (root / "inuksuks" / f"{orphan['id']}.jpg").exists()
     assert (root / "inuksuks" / f"{shared['id']}.jpg").exists()

@@ -22,10 +22,10 @@ from ..board_writes import (
     lock_boards, lock_inuksuks, owner_targets, touch_inuksuks,
 )
 from ..inuksuks import require_inuksuks_enabled
-from ..models import Board, BoardSection, Program, User
+from ..models import Board, Program, User
 from ..schemas import (
     BoardCreate, BoardInuksuksOrder, BoardOrderUpdate, BoardOut,
-    BoardOwnersUpdate, BoardSectionCreate, BoardSectionUpdate, BoardSectionsOrder,
+    BoardOwnersUpdate,
     BoardSummaryOut, BoardTransfer, BoardUpdate,
 )
 from .collections import _require_restricted_authority, _resolve_groups, _resolve_programs
@@ -248,85 +248,6 @@ async def transfer_board(
     return result
 
 
-@router.post("/{board_id}/sections", response_model=BoardOut, status_code=201)
-async def create_section(
-    board_id: int, body: BoardSectionCreate, request: Request, response: Response,
-    user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-) -> BoardOut:
-    ctx = await BoardViewerContext.build(db, user)
-    board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
-    await bump_board(db, ctx, board, expected_version(request, body.version))
-    db.add(BoardSection(board_id=board_id, name=body.name, sort_order=body.sort_order))
-    await commit_write(db, user, "board.section_created", board_id)
-    result = await board_projection(db, ctx, board_id)
-    response.headers["ETag"] = f'"{result.version}"'
-    return result
-
-
-@router.put("/{board_id}/sections/order", response_model=BoardOut)
-async def reorder_sections(
-    board_id: int, body: BoardSectionsOrder, request: Request, response: Response,
-    user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-) -> BoardOut:
-    ctx = await BoardViewerContext.build(db, user)
-    board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
-    await bump_board(db, ctx, board, expected_version(request, body.version))
-    by_id = {section.id: section for section in board.sections}
-    if set(body.section_ids) != set(by_id):
-        raise HTTPException(422, "section_ids must contain every section of this Board exactly once")
-    for position, section_id in enumerate(body.section_ids):
-        by_id[section_id].sort_order = position
-    await commit_write(db, user, "board.sections_reordered", board_id)
-    result = await board_projection(db, ctx, board_id)
-    response.headers["ETag"] = f'"{result.version}"'
-    return result
-
-
-@router.patch("/{board_id}/sections/{section_id}", response_model=BoardOut)
-async def update_section(
-    board_id: int, section_id: int, body: BoardSectionUpdate,
-    request: Request, response: Response,
-    user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-) -> BoardOut:
-    ctx = await BoardViewerContext.build(db, user)
-    board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
-    section = next((section for section in board.sections if section.id == section_id), None)
-    if section is None:
-        raise HTTPException(404, "Section not found")
-    await bump_board(db, ctx, board, expected_version(request, body.version))
-    if body.name is not None:
-        section.name = body.name
-    if body.sort_order is not None:
-        section.sort_order = body.sort_order
-    await commit_write(db, user, "board.section_updated", board_id)
-    result = await board_projection(db, ctx, board_id)
-    response.headers["ETag"] = f'"{result.version}"'
-    return result
-
-
-@router.delete("/{board_id}/sections/{section_id}", status_code=204)
-async def delete_section(
-    board_id: int, section_id: int, request: Request,
-    user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    ctx = await BoardViewerContext.build(db, user)
-    board = editable_board(ctx, await lock_boards(db, [board_id]), board_id)
-    if not any(section.id == section_id for section in board.sections):
-        raise HTTPException(404, "Section not found")
-    await bump_board(db, ctx, board, expected_version(request))
-    item_ids = [link.inuksuk_id for link in board.inuksuk_links if link.section_id == section_id]
-    await lock_inuksuks(db, item_ids)
-    await touch_inuksuks(db, item_ids)
-    await db.execute(delete(BoardSection).where(BoardSection.id == section_id))
-    version = board.version
-    await commit_write(db, user, "board.section_deleted", board_id)
-    return Response(status_code=204, headers={"ETag": f'"{version}"'})
-
-
 @router.put("/{board_id}/inuksuks/order", response_model=BoardOut)
 async def reorder_board_inuksuks(
     board_id: int, body: BoardInuksuksOrder, request: Request, response: Response,
@@ -339,13 +260,9 @@ async def reorder_board_inuksuks(
     visible = {link.inuksuk_id: link for link in board.inuksuk_links if ctx.can_view_image(link.inuksuk.image)}
     if {item.inuksuk_id for item in body.items} != set(visible):
         raise HTTPException(422, "items must contain every visible Board member exactly once")
-    section_ids = {section.id for section in board.sections}
-    if any(item.section_id is not None and item.section_id not in section_ids for item in body.items):
-        raise HTTPException(422, "section_id must belong to this Board")
     await lock_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
     await touch_inuksuks(db, (link.inuksuk_id for link in board.inuksuk_links))
     for position, item in enumerate(body.items):
-        visible[item.inuksuk_id].section_id = item.section_id
         visible[item.inuksuk_id].sort_order = position
     hidden = [link for link in board.inuksuk_links if link.inuksuk_id not in visible]
     for position, link in enumerate(hidden, start=len(visible)):

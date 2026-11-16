@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  boardMemberOrder,
-  groupBoardMembers,
   inuksukViewParams,
   moveBoardMember,
   ownsBoard,
@@ -10,35 +8,12 @@ import {
 import { BOARDS_FIXTURES, BOARD_ITEMS, BOARD_USER } from '../src/components/boardsFixtures'
 
 describe('Board navigation and membership order', () => {
-  it('groups by displayed Section order, retaining member order and placing Unsectioned last', () => {
-    const board = BOARDS_FIXTURES[0]
-    const groups = groupBoardMembers({
-      ...board,
-      sections: [...board.sections].reverse(),
-      inuksuks: [...board.inuksuks].reverse(),
-    })
-    expect(groups.map((section) => [section.id, section.inuksuks.map((item) => item.id)])).toEqual([
-      [12, [11, 10]],
-      [11, [9, 8, 7]],
-      [null, [12]],
-    ])
+  it('reorders the flat membership list without losing or duplicating members', () => {
+    const result = moveBoardMember(BOARDS_FIXTURES[0], 7, 2)
+    expect(result.map((row) => row.inuksuk_id)).toEqual([8, 9, 7, 10, 11, 12])
+    expect(new Set(result.map((row) => row.inuksuk_id)).size).toBe(6)
   })
-  it('retains empty Sections and the empty Unsectioned group', () => {
-    const board = BOARDS_FIXTURES[0]
-    expect(
-      groupBoardMembers({ ...board, inuksuks: [] }).map((section) => [
-        section.id,
-        section.inuksuks,
-      ]),
-    ).toEqual([
-      [11, []],
-      [12, []],
-      [null, []],
-    ])
-    expect(groupBoardMembers({ ...board, sections: [], inuksuks: [] })).toEqual([
-      { id: null, name: 'Unsectioned', inuksuks: [] },
-    ])
-  })
+
   it.each([
     '',
     '?page=boards',
@@ -47,12 +22,11 @@ describe('Board navigation and membership order', () => {
     '?page=boards&board=1.5',
     '?board=1',
   ])('rejects absent and invalid Board ids: %s', (search) =>
-    expect(parseBoardLocation(search)).toEqual({ boardId: null, sectionId: null }),
+    expect(parseBoardLocation(search)).toEqual({ boardId: null }),
   )
-  it('parses Board and Section deep links', () =>
+  it('ignores obsolete grouping parameters on Board deep links', () =>
     expect(parseBoardLocation('?page=boards&board=1&section=11')).toEqual({
       boardId: 1,
-      sectionId: 11,
     }))
   it('recognizes both user and program ownership, not edit permission alone', () => {
     expect(ownsBoard(BOARDS_FIXTURES[0], BOARD_USER)).toBe(true)
@@ -70,24 +44,4 @@ describe('Board navigation and membership order', () => {
       zoom: '2.5',
       rotation: '90',
     }))
-  it('moves between Sections, preserving every visible member exactly once', () => {
-    const board = BOARDS_FIXTURES[0]
-    const moved = boardMemberOrder(board, [7], null)
-    expect(moved.at(-1)).toEqual({ inuksuk_id: 7, section_id: null })
-    expect(new Set(moved.map((row) => row.inuksuk_id)).size).toBe(board.inuksuks.length)
-    expect(moved.find((row) => row.inuksuk_id === 8)?.section_id).toBe(11)
-  })
-  it('reorders inside a Section and inserts into another Section at the projected position', () => {
-    const board = BOARDS_FIXTURES[0]
-    expect(
-      moveBoardMember(board, 7, 11, 2)
-        .filter((row) => row.section_id === 11)
-        .map((row) => row.inuksuk_id),
-    ).toEqual([8, 9, 7])
-    expect(
-      moveBoardMember(board, 7, 12, 0)
-        .filter((row) => row.section_id === 12)
-        .map((row) => row.inuksuk_id),
-    ).toEqual([7, 10, 11])
-  })
 })

@@ -120,8 +120,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 - Cover owned/shared lists, restricted attach authority, OCC reload, Sections,
   full membership order, failed membership-read safety, last-Board removal,
   orphan-deletion warning, thumbnail renewal and exact saved-view/back navigation.
-- The new DnD provider is separate from Browse. Verify handle-based Board,
-  Section and member reorder, empty Section drops and cross-Board save; retain
+- The new DnD provider is separate from Browse. Verify handle-based Board
+  and member reorder and cross-Board save; retain
   Browse's [feel-test contract](drag-and-drop.md).
 
 ### Changed image metadata / versioning (annotations, overlays, measurement)

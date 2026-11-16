@@ -40,7 +40,7 @@ _SORTS = {
 async def visible_inuksuks(
     db: AsyncSession, ctx: BoardViewerContext, *, image_id: int | None = None,
     favourite: bool | None = None, board_id: int | None = None,
-    section_id: int | None = None, scope: str | None = None,
+    scope: str | None = None,
     drawer: bool = False,
 ) -> list[InuksukOut]:
     stmt = select(Inuksuk).options(*inuksuk_load_options())
@@ -56,10 +56,9 @@ async def visible_inuksuks(
         boards = ctx.visible_boards(links)
         if not ctx.can_view_inuksuk(item, boards):
             continue
-        if (board_id is not None or section_id is not None) and not any(
+        if board_id is not None and not any(
             ctx.can_view_board(link.board)
             and (board_id is None or link.board_id == board_id)
-            and (section_id is None or link.section_id == section_id)
             for link in links
         ):
             continue
@@ -74,7 +73,7 @@ async def visible_inuksuks(
 async def list_inuksuks(
     request: Request, response: Response,
     user: Annotated[User, Depends(get_current_user)],
-    board_id: int | None = None, section_id: int | None = None,
+    board_id: int | None = None,
     image_id: int | None = None, favourite: bool | None = None,
     scope: Literal["mine", "instructor", "public"] | None = None,
     q: str | None = None, sort: str = "updated_at",
@@ -89,7 +88,7 @@ async def list_inuksuks(
         await get_visible_board(db, ctx, board_id)
     rows = await visible_inuksuks(
         db, ctx, image_id=image_id, favourite=favourite, board_id=board_id,
-        section_id=section_id, scope=scope,
+        scope=scope,
     )
     needle = (q or "").strip().casefold()
     if needle:

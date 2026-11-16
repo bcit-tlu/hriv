@@ -319,7 +319,7 @@ export default function App() {
     if (features == null || features.inuksuks || page !== 'boards') return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- flags arrive after the deep link is parsed
     setPage('browse')
-    setBoardLocation({ boardId: null, sectionId: null })
+    setBoardLocation({ boardId: null })
   }, [features, page])
 
   // A collections deep link on a deployment with the flag off falls back to
@@ -954,7 +954,6 @@ export default function App() {
     collectionTypeFilter:
       collectionsData.filters.type === 'all' ? undefined : collectionsData.filters.type,
     boardId: boardLocation.boardId,
-    sectionId: boardLocation.sectionId,
     setPath,
     setSelectedImage,
   })
@@ -1065,9 +1064,7 @@ export default function App() {
       ) as Page
       setPage(validPage)
       setBoardLocation(
-        validPage === 'boards'
-          ? parseBoardLocation(window.location.search)
-          : { boardId: null, sectionId: null },
+        validPage === 'boards' ? parseBoardLocation(window.location.search) : { boardId: null },
       )
       if (popPage === LEGACY_MANAGE_COLLECTIONS_PAGE) setCollectionsInitialView('table')
       // The collection id lives in the URL (`?collection=`), which the browser
@@ -1965,7 +1962,7 @@ export default function App() {
       runCanvasNavigation(() => {
         if (v === 'collections') setCollectionsRefreshToken((n) => n + 1)
         setPage(v)
-        setBoardLocation({ boardId: null, sectionId: null })
+        setBoardLocation({ boardId: null })
         setSelectedCollectionId(null)
         setCollectionFromBrowse(false)
         clearImage()
@@ -2451,14 +2448,7 @@ export default function App() {
   // overwritten by the stale result (#1638 review).
   useEffect(() => {
     graphImageEpoch.current += 1
-  }, [
-    page,
-    selectedCollectionId,
-    boardLocation.boardId,
-    boardLocation.sectionId,
-    currentUser?.id,
-    features?.inuksuks,
-  ])
+  }, [page, selectedCollectionId, boardLocation.boardId, currentUser?.id, features?.inuksuks])
   const handleOpenGraphImage = useCallback(
     (imageId: number) => {
       const epoch = ++graphImageEpoch.current
@@ -2654,17 +2644,15 @@ export default function App() {
               programs={programs}
               groups={groups}
               boardId={boardLocation.boardId}
-              sectionId={boardLocation.sectionId}
               onOpenInuksuk={handleOpenBoardInuksuk}
               collectionsEnabled={collectionsEnabled}
               categories={categories}
               onOpenCollection={handleOpenCollection}
-              onSelectBoard={(boardId, sectionId = null) => {
+              onSelectBoard={(boardId) => {
                 graphImageEpoch.current++
-                setBoardLocation({ boardId, sectionId })
+                setBoardLocation({ boardId })
                 const params: Record<string, string> = {}
                 if (boardId != null) params.board = String(boardId)
-                if (boardId != null && sectionId != null) params.section = String(sectionId)
                 pushNavState('boards', [], null, params)
               }}
             />
@@ -3965,7 +3953,7 @@ export default function App() {
         onSelectBoard={(boardId) =>
           runCanvasNavigation(() => {
             graphImageEpoch.current++
-            setBoardLocation({ boardId, sectionId: null })
+            setBoardLocation({ boardId })
             setPage('boards')
             pushNavState('boards', [], null, { board: String(boardId) })
           })

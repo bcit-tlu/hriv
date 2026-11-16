@@ -145,7 +145,7 @@ See [the drawer contract](inuksuks-and-boards.md#inuksuks-drawer-1773).
 ### Boards page (#1771)
 
 `components/BoardsPage.tsx` owns the Boards row, recent/favourite collage,
-Sections, isolated DnD surfaces and Move/Save links. `useBoardsData.ts` loads
+ordered cards, isolated DnD surfaces and Move/Save links. `useBoardsData.ts` loads
 complete Board lists and selected projections; `boardUtils.ts` owns location,
 ownership and membership-order helpers. `BoardEditDialog.tsx` handles metadata
 and restricted scope; `BoardOwnersDialog.tsx` adapts the Collections picker.
@@ -178,7 +178,7 @@ thumbnail/token and admin operation tests, plus Helm regression checks.
   types and API source fields: `types.ts`, `api.ts`.
 - Snapshot conversion, renewal and serialized writes:
   `collectionUtils.ts`, `useCollectionsData.ts`, `useAddToCollection.ts`.
-- Board selection/create/add: `components/BoardsPage.tsx`; staged Board/Section
+- Board selection/create/add: `components/BoardsPage.tsx`; staged Board
   additions: `components/CollectionManageDialog.tsx`.
 - Sequence slot URL state: `App.tsx`, `useShareableImageState.ts`,
   `components/SequenceCollectionViewer.tsx`. Synchronized per-slot registration

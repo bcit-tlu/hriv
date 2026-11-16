@@ -6,16 +6,16 @@ from sqlalchemy import DateTime, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
-    Board, BoardInuksuk, BoardSection, Inuksuk,
+    Board, BoardInuksuk, Inuksuk,
     board_groups, board_owners, board_programs, inuksuk_owners,
 )
 
 SAVED_VIEW_TABLES = (
-    Board.__table__, Inuksuk.__table__, BoardSection.__table__,
+    Board.__table__, Inuksuk.__table__,
     board_owners, board_programs, board_groups, inuksuk_owners,
     BoardInuksuk.__table__,
 )
-SAVED_VIEW_ID_TABLES = ("boards", "inuksuks", "board_sections")
+SAVED_VIEW_ID_TABLES = ("boards", "inuksuks")
 
 
 async def export_saved_views(db: AsyncSession, image_ids: set[int]) -> dict[str, list[dict]]:

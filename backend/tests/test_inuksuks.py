@@ -9,7 +9,7 @@ from app.database import Settings, settings
 from app.inuksuks import require_inuksuks_enabled
 from app.middleware import InuksuksFeatureMiddleware
 from app.models import (
-    Board, BoardInuksuk, BoardSection, Inuksuk,
+    Board, BoardInuksuk, Inuksuk,
     STUDENT_MAX_BOARDS, STUDENT_MAX_INUKSUKS,
     board_groups, board_owners, board_programs, inuksuk_owners,
 )
@@ -28,11 +28,9 @@ def test_schema_contract() -> None:
         assert len(table.primary_key.columns) == 2
         assert all(fk.ondelete == "CASCADE" for fk in table.foreign_keys)
     assert {c.name for c in BoardInuksuk.__table__.primary_key} == {"board_id", "inuksuk_id"}
-    assert next(iter(BoardInuksuk.__table__.c.section_id.foreign_keys)).ondelete == "SET NULL"
-    assert next(iter(BoardSection.__table__.c.board_id.foreign_keys)).ondelete == "CASCADE"
     assert next(iter(Inuksuk.__table__.c.image_id.foreign_keys)).ondelete == "CASCADE"
     assert {i.name for i in BoardInuksuk.__table__.indexes} == {
-        "idx_board_inuksuks_order", "idx_board_inuksuks_section_order",
+        "idx_board_inuksuks_order",
     }
 
 

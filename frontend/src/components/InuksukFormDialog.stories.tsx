@@ -11,7 +11,7 @@ const services = {
     ...BOARD_FIXTURE,
     id: 2,
     name: 'My new Board',
-    sections: [],
+
     inuksuks: [],
   }),
   createInuksuk: async () => INUKSUK_FIXTURE,
@@ -33,11 +33,11 @@ export const Basic: Story = {
     await expect(page.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
   },
 }
-export const EditWithSection: Story = {
+export const Edit: Story = {
   args: { item: INUKSUK_FIXTURE },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await expect(await page.findByText('Windows')).toBeInTheDocument()
+    await expect(await page.findByText(BOARD_FIXTURE.name)).toBeInTheDocument()
   },
 }
 export const CreatePrivateBoard: Story = {

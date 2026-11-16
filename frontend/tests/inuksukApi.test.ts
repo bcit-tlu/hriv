@@ -64,40 +64,11 @@ const cases: {
     body: { program_id: null, version: 5 },
   },
   {
-    name: 'create Section',
-    call: () => api.createBoardSection(1, { name: 'Section', version: 5 }),
-    method: 'POST',
-    path: '/boards/1/sections',
-    body: { name: 'Section', version: 5 },
-  },
-  {
-    name: 'update Section',
-    call: () => api.updateBoardSection(1, 11, { name: 'Section', version: 5 }),
-    method: 'PATCH',
-    path: '/boards/1/sections/11',
-    body: { name: 'Section', version: 5 },
-  },
-  {
-    name: 'delete Section',
-    call: () => api.deleteBoardSection(1, 11, 5),
-    method: 'DELETE',
-    path: '/boards/1/sections/11',
-    version: 5,
-  },
-  {
-    name: 'Section order',
-    call: () => api.reorderBoardSections(1, { section_ids: [11], version: 5 }),
-    method: 'PUT',
-    path: '/boards/1/sections/order',
-    body: { section_ids: [11], version: 5 },
-  },
-  {
     name: 'Board Inuksuk order',
-    call: () =>
-      api.reorderBoardInuksuks(1, { items: [{ inuksuk_id: 7, section_id: null }], version: 5 }),
+    call: () => api.reorderBoardInuksuks(1, { items: [{ inuksuk_id: 7 }], version: 5 }),
     method: 'PUT',
     path: '/boards/1/inuksuks/order',
-    body: { items: [{ inuksuk_id: 7, section_id: null }], version: 5 },
+    body: { items: [{ inuksuk_id: 7 }], version: 5 },
   },
   {
     name: 'remove Board Inuksuk',
@@ -166,7 +137,7 @@ const cases: {
     body: { user_ids: [9], version: 3 },
   },
 ]
-describe('Board / Section / Inuksuk API contracts', () => {
+describe('Board / Inuksuk API contracts', () => {
   it.each([
     null,
     {},
@@ -220,7 +191,7 @@ describe('Board / Section / Inuksuk API contracts', () => {
     expect(query.get('page')).toBe('2')
     await api.fetchInuksuks({
       board_id: 1,
-      section_id: 11,
+
       image_id: 42,
       favourite: false,
       scope: 'mine',
@@ -229,7 +200,7 @@ describe('Board / Section / Inuksuk API contracts', () => {
     const filtered = new URL(fetchMock.mock.calls[1][0], 'http://localhost').searchParams
     expect(Object.fromEntries(filtered)).toEqual({
       board_id: '1',
-      section_id: '11',
+
       image_id: '42',
       favourite: 'false',
       scope: 'mine',

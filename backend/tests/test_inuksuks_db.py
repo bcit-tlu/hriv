@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.models import (
-    Board, BoardInuksuk, BoardSection, Image, Inuksuk, Program, User,
+    Board, BoardInuksuk, Image, Inuksuk, Program, User,
 )
 from app.routers.users import _delete_sole_owned_inuksuks_and_boards
 
@@ -33,7 +33,7 @@ async def test_migrated_schema_and_constraint(db) -> None:
     tables = await connection.run_sync(lambda conn: inspect(conn).get_table_names())
     assert set(tables) >= {
         "inuksuks", "inuksuk_owners", "boards", "board_owners",
-        "board_programs", "board_groups", "board_sections", "board_inuksuks",
+        "board_programs", "board_groups", "board_inuksuks",
     }
     checks = await connection.run_sync(
         lambda conn: inspect(conn).get_check_constraints("boards")
@@ -44,19 +44,16 @@ async def test_migrated_schema_and_constraint(db) -> None:
             await db.execute(text("INSERT INTO boards (name, visibility) VALUES ('bad', 'invalid')"))
 
 
-async def test_image_and_section_cascades(db) -> None:
+async def test_image_cascades(db) -> None:
     image = Image(name="inuksuk-test", thumb="", tile_sources="")
     board = Board(name="board-test")
     db.add_all([image, board])
     await db.flush()
     bookmark = Inuksuk(image_id=image.id, title="point", x=0.2, y=0.4, zoom=2)
-    section = BoardSection(board_id=board.id, name="section")
-    db.add_all([bookmark, section])
+    db.add(bookmark)
     await db.flush()
-    db.add(BoardInuksuk(board_id=board.id, inuksuk_id=bookmark.id, section_id=section.id))
+    db.add(BoardInuksuk(board_id=board.id, inuksuk_id=bookmark.id))
     await db.flush()
-    await db.execute(delete(BoardSection).where(BoardSection.id == section.id))
-    assert await db.scalar(select(BoardInuksuk.section_id)) is None
     assert await db.scalar(select(BoardInuksuk.inuksuk_id)) == bookmark.id
     assert await db.scalar(select(Inuksuk.id)) == bookmark.id
     await db.execute(delete(Image).where(Image.id == image.id))

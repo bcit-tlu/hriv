@@ -548,12 +548,14 @@ See also: [Domain model](domain-model.md), [Groups](groups.md),
 
 ## Saved-view records and snapshots (#1775)
 
-The DB archive now additionally includes `boards`, `board_sections`, `inuksuks`,
+The DB archive now additionally includes `boards`, `inuksuks`,
 `board_owners`, `board_programs`, `board_groups`, `inuksuk_owners` and
 `board_inuksuks`, preserving IDs, timestamps and relationships. These records and
 Collection slots export and import regardless of the Inuksuks runtime flag.
 Saved views on omitted rebuild-fixture images and their association rows are omitted.
 Older archives without the new table keys remain valid and restore no saved views.
+Legacy `board_sections` rows and membership `section_id` values are ignored on import;
+Board membership and order are retained.
 Restore remains one transaction, and the new numeric ID sequences are reset.
 
 **Exception to the source-only filesystem policy above:** exact positive-ID JPEGs

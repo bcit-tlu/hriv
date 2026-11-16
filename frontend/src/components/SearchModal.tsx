@@ -3,7 +3,6 @@ import Alert from '@mui/material/Alert'
 import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
 import CompassCalibration from '@mui/icons-material/CompassCalibration'
 import { fetchBoard, userMessage } from '../api'
-import { groupBoardMembers } from '../boardUtils'
 import { draftMembersFromInuksuks } from '../collectionMembers'
 import { useSavedViewSearch } from '../useSavedViewSearch'
 import Box from '@mui/material/Box'
@@ -1162,9 +1161,7 @@ export default function SearchModal({
       const items =
         payload.kind === 'inuksuk'
           ? [payload.inuksuk]
-          : groupBoardMembers(
-              await fetchBoard(payload.board.id, { signal: controller.signal }),
-            ).flatMap((section) => section.inuksuks)
+          : (await fetchBoard(payload.board.id, { signal: controller.signal })).inuksuks
       if (!items.length) {
         setStageError('This Board has no visible saved views to add.')
         return
