@@ -70,10 +70,10 @@ Use `metadata_extra_merge` when updating a single metadata field (e.g.
 `canvas_annotations`) to avoid overwriting unrelated fields (e.g.
 `measurement_scale`).
 
-The single-image edit form sends an explicit empty `note` when the user clears
-that field, allowing the stored note to be removed. Bulk edit treats a blank
-note as “no change” and omits it from the request, preserving existing notes on
-the selected images.
+The single-image edit form sends an explicit empty `description` or
+`instructor_note` when the user clears that field, allowing the stored value to
+be removed. Bulk edit treats a blank field as “no change” and omits it from the
+request, preserving existing values on the selected images.
 
 ### Description and Instructor note
 
@@ -91,6 +91,25 @@ at the four student-reachable image read paths: `GET /images/`,
 (`collection_out`). It clears the Pydantic copy only — never the ORM attribute,
 which would mark the row dirty and persist `NULL` on a later commit. Any new
 endpoint that returns `ImageOut` to students must go through `image_out`.
+
+Every write path accepts both fields (admin/instructor only; staff are
+read-only):
+
+| Endpoint                     | Encoding              | Omitted field | Explicit `""` |
+| ---------------------------- | --------------------- | ------------- | ------------- |
+| `POST /images/`              | JSON                  | `null`        | `null`        |
+| `PATCH /images/{id}`         | JSON                  | unchanged     | cleared       |
+| `PATCH /images/bulk`         | JSON                  | unchanged     | cleared       |
+| `POST /images/{id}/replace`  | multipart form fields | unchanged     | cleared       |
+| `POST /source-images/upload` | multipart form fields | `null`        | `null`        |
+| `POST /admin/bulk-import`    | multipart form fields | `null`        | `null`        |
+
+Multipart endpoints reject a value over 500 characters with `400`
+(`"Description must be…"` / `"Instructor note must be…"`); JSON endpoints
+return `422`. Uploads and bulk imports stage both fields on the
+`SourceImage`, and processing copies them onto the new `Image`. Bulk imports
+apply the same values to every file; supervisor jobs created before #1780
+stored the description under `note`, which a resumed job still reads.
 
 ### Known metadata keys
 
@@ -131,6 +150,12 @@ When a source image is replaced (`process_replace_image`):
 
 All pyramid-related keys are cleared first, then re-populated if the
 replacement file is also pyramidal. Version is bumped unconditionally.
+
+`description` and `instructor_note` are columns, not metadata keys, so
+replacement never clears them. A replace request that also sends either field
+updates it atomically with the source-image insert; both are part of the
+metadata snapshot, so a required-mode enqueue rejection restores the original
+values along with the rest of the metadata.
 
 Replacement deletes the image's `Inuksuk` rows in the same transaction as
 the geometry update; ownership rows and Board links cascade. Boards
