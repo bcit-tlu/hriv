@@ -58,7 +58,7 @@ async def visible_inuksuks(
             continue
         if board_id is not None and not any(
             ctx.can_view_board(link.board)
-            and (board_id is None or link.board_id == board_id)
+            and link.board_id == board_id
             for link in links
         ):
             continue
