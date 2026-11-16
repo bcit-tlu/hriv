@@ -563,3 +563,28 @@ and [the user guide](../frontend/guide/inuksuks-and-boards.md) for the workflow.
 
 The dark-launch flag remains in place: backend/Helm default false, existing local
 compose default true. This close-out does not remove the flag or alter its defaults.
+
+## Permanent viewer side panel
+
+With `features.inuksuks`, the image page and Sequence viewer use a single right-side
+panel instead of the earlier Details overlay and left Inuksuks drawer described
+above. Its sidebar toggle opens/closes it; the header selects Inuksuks or Details.
+MUI rounded-square action states replace the prototype's navigation-rail pills.
+There is no pin or click-away in this panel. At sm and above it reserves 320px by
+resizing OSD's actual container, so the minimap, toolbar and sequence arrows stay
+inside the image area. At xs it overlays the entire frame and closes via its toggle.
+
+Open state and selected tab persist at `hrivpref:viewer-panel:user:<id>`; new users
+start closed on Inuksuks. Anonymous viewers and unavailable storage use memory.
+Placement and information cards stay over the image, offset from the closed toggle.
+Starting placement with Details open selects Inuksuks; Escape still cancels drafts,
+disarms placement and dismisses menus, but does not close this permanent panel.
+Entering canvas annotation editing also leaves an already-open panel in place.
+The existing visibility preferences, grouped menus and stable portal container remain.
+
+Flag-off viewers retain the original Details trigger/drawer unchanged. Synchronized
+panes retain their independent Details and legacy Inuksuks drawers (including their
+pin model); the My Collections drawer also retains its shared pin hook. The side
+panel is attached inside OSD's root element so it survives full-page reparenting.
+If browser storage is blocked, the per-user fallback survives viewer remounts in
+the current session, including Sequence steps; it cannot survive a page reload.

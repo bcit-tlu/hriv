@@ -23,6 +23,7 @@ import ViewportDialog from './ViewportDialog'
 import {
   CollectionImageDetails,
   CollectionImageDetailsDrawer,
+  CollectionImageDetailsPanel,
   CollectionImageDetailsTrigger,
   type MemberInfoNames,
 } from './CollectionImageDetails'
@@ -145,6 +146,7 @@ export default function SequenceCollectionViewer({
   // pointer-events only) so keyboard focus can reveal them.
   const [navVisible, setNavVisible] = useState(false)
   const [inuksuksDrawerOpen, setInuksuksDrawerOpen] = useState(false)
+  const [viewerPanelWidth, setViewerPanelWidth] = useState(0)
   const navShown = navVisible && !inuksuksDrawerOpen
   const navHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Focus inside the nav holds it open regardless of pointer idle/leave.
@@ -575,6 +577,8 @@ export default function SequenceCollectionViewer({
           <ImageViewer
             inuksuksEnabled={inuksuksEnabled}
             onInuksuksDrawerOpenChange={setInuksuksDrawerOpen}
+            onViewerPanelWidthChange={setViewerPanelWidth}
+            sidePanelDetails={<CollectionImageDetailsPanel />}
             key={memberKey(current)}
             fullScreenHandoffKey={`sequence:${collectionId}`}
             initialViewport={initialSlotViewport}
@@ -603,10 +607,10 @@ export default function SequenceCollectionViewer({
             measurement={measurement}
             onTileSourceRenewed={onImageRenewed}
             onError={handleViewerError}
-            viewportControl={<CollectionImageDetailsTrigger />}
+            viewportControl={inuksuksEnabled ? null : <CollectionImageDetailsTrigger />}
             viewportOverlay={
               <>
-                <CollectionImageDetailsDrawer />
+                {!inuksuksEnabled && <CollectionImageDetailsDrawer />}
                 <ViewportDialog
                   open={noteDialogOpen}
                   title="Notes"
@@ -634,6 +638,7 @@ export default function SequenceCollectionViewer({
           sx={{
             position: 'absolute',
             inset: 0,
+            right: viewerPanelWidth,
             pointerEvents: 'none',
             transition: 'opacity 0.25s ease',
           }}

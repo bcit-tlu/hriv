@@ -342,3 +342,12 @@ The address bar shows `?collection=…` while a collection is open. Copy it to
 share; anyone who can see the collection lands straight on it. Your browser's
 back and forward buttons move between the library, images, and collections as
 usual.
+
+### Saved-view panel in Sequence collections
+
+With Inuksuks enabled, Sequence viewers share the image page's permanent right
+panel. The sidebar toggle opens it; compass/info buttons select saved views or
+image details. The minimap and edge arrows stay beside the panel rather than
+under it. Open state and selected content carry between steps. On phones the
+panel covers the image until closed. Synchronized panes retain their existing
+independent Details and Inuksuks controls.

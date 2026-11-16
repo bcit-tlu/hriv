@@ -76,3 +76,19 @@ Choosing a Board stages its visible views in Board order.
 Each Collection slot keeps its own label, thumbnail and viewport, even when several
 slots use the same source image. Changing a Collection's saved view does not change
 the original Inuksuk. See [Collections](collections) for the viewer controls.
+
+## Image and Sequence viewer panel
+
+When Inuksuks is enabled, use **Open viewer panel** at the image's top-right.
+Choose the compass for **Inuksuks**, or the info icon for **Image details**.
+The panel stays open until you choose **Close viewer panel**; it does not need
+pinning and canvas clicks do not retract it. Your open state and selected content
+carry across images, Sequence steps and reloads for your account.
+
+On larger screens the image and minimap make room for the panel. On phones it
+covers the image until closed. The existing row and group **⋮** menus control
+marker/label visibility, editing and deletion. Placement still floats over the
+image; starting a new view with Details open switches the panel to Inuksuks.
+Escape still cancels a draft before turning off placement, without closing the panel.
+The earlier pin instructions apply only to the legacy Synchronized-pane drawers;
+flag-off viewers keep their original Details drawer.

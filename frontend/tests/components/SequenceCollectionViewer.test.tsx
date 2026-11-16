@@ -77,6 +77,18 @@ beforeEach(() => {
 })
 
 describe('SequenceCollectionViewer', () => {
+  it('keeps sequence arrows inside the resized image area when the panel is open', () => {
+    renderViewer({ inuksuksEnabled: true })
+    const resize = lastViewerProps?.onViewerPanelWidthChange
+    if (typeof resize !== 'function') throw new Error('Missing panel width callback')
+    act(() => resize(320))
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '320px' })
+    expect(lastViewerProps?.viewportControl).toBeNull()
+    expect(lastViewerProps?.sidePanelDetails).toBeTruthy()
+    act(() => resize(0))
+    expect(screen.getByTestId('sequence-nav-overlay')).toHaveStyle({ right: '0px' })
+  })
+
   it('keeps navigation from covering an open Inuksuks drawer', () => {
     renderViewer({ inuksuksEnabled: true })
     const frame = screen.getByTestId('sequence-viewer-frame')

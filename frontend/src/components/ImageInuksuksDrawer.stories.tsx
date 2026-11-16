@@ -140,6 +140,7 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   beforeEach: ({ args }) => {
     localStorage.removeItem('hriv.inuksukVisibility.9')
+    localStorage.removeItem('hrivpref:viewer-panel:user:9')
     localStorage.removeItem('hrivpref:inuksuks-drawer:pinned:user:9')
     const original = globalThis.fetch
     globalThis.fetch = async (input, init) => {
@@ -171,7 +172,7 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const trigger = await canvas.findByRole('button', { name: 'Inuksuks (4)' })
+    const trigger = await canvas.findByRole('button', { name: 'Open viewer panel' })
     await userEvent.click(trigger)
     await expect(await canvas.findByRole('complementary')).toBeVisible()
     await userEvent.click(canvas.getByRole('button', { name: 'Public Inuksuks' }))
@@ -209,7 +210,7 @@ export const Basic: Story = {
 export const LabelOnly: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
     await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
@@ -238,7 +239,7 @@ export const LabelOnly: Story = {
 export const PublicCollapsed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     await expect(canvas.getByRole('button', { name: 'Public Inuksuks' })).toHaveAttribute(
       'aria-expanded',
       'false',
@@ -246,50 +247,33 @@ export const PublicCollapsed: Story = {
   },
 }
 export const Sequence: Story = { args: { kind: 'sequence' }, play: PublicCollapsed.play }
-export const Pinned: Story = {
+export const Persistent: Story = {
   args: { kind: 'sequence' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'Pin Inuksuks' }))
-    await expect(canvas.getByRole('button', { name: 'Unpin Inuksuks' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     await userEvent.click(canvas.getByRole('button', { name: 'Go to Architecture 43' }))
-    await expect(await canvas.findByRole('button', { name: 'Unpin Inuksuks' })).toBeVisible()
-    await expect(await canvas.findByRole('button', { name: 'Inuksuks (4)' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    )
+    await expect(await canvas.findByRole('button', { name: 'Close viewer panel' })).toBeVisible()
     await userEvent.keyboard('{Escape}')
-    await expect(canvas.getByRole('button', { name: 'Unpin Inuksuks' })).toBeVisible()
+    await expect(canvas.getByRole('button', { name: 'Close viewer panel' })).toBeVisible()
   },
 }
-export const ClickAway: Story = {
+export const Permanent: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
-    const surface = canvasElement.querySelector<HTMLElement>('.openseadragon-canvas')!
-    const bounds = surface.getBoundingClientRect()
-    await userEvent.pointer({
-      target: surface,
-      keys: '[MouseLeft>]',
-      coords: { clientX: bounds.right - 80, clientY: bounds.bottom - 100 },
-    })
-    await expect(canvas.getByRole('button', { name: 'Inuksuks (4)' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
-    await userEvent.pointer({ keys: '[/MouseLeft]' })
-    await waitFor(() => expect(canvas.queryByRole('complementary')).not.toBeInTheDocument())
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
+    await userEvent.click(canvasElement.querySelector<HTMLElement>('.openseadragon-canvas')!)
+    await userEvent.keyboard('{Escape}')
+    await expect(canvas.getByRole('button', { name: 'Close viewer panel' })).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Close viewer panel' }))
+    await expect(canvas.queryByRole('complementary')).not.toBeInTheDocument()
   },
 }
 export const Closed: Story = {}
 export const OptionsMenu: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
     await waitFor(() =>
       expect(
@@ -300,14 +284,14 @@ export const OptionsMenu: Story = {
     await expect(tool).toBeVisible()
     const drawer = canvas.getByRole('complementary', { hidden: true }).getBoundingClientRect()
     const toolbar = tool!.getBoundingClientRect()
-    await expect(drawer.bottom).toBeLessThanOrEqual(toolbar.top)
+    await expect(drawer.left).toBeGreaterThanOrEqual(toolbar.right)
   },
 }
 export const Empty: Story = {
   args: { state: 'empty' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (0)' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     await expect(await canvas.findByText(/No Inuksuks on this image/)).toBeVisible()
   },
 }
@@ -316,7 +300,7 @@ export const LoadError: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await canvas.findByRole('alert')
-    await userEvent.click(canvas.getByRole('button', { name: 'Inuksuks (0)' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Open viewer panel' }))
     await expect(within(canvas.getByRole('complementary')).getByRole('alert')).toBeVisible()
   },
 }

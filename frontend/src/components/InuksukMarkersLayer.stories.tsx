@@ -94,7 +94,7 @@ export const IndependentVisibility: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
-    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
     const drawer = within(canvas.getByRole('complementary'))
     await userEvent.click(drawer.getByRole('button', { name: 'Rose window options' }))
     await userEvent.click(canvas.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
@@ -104,7 +104,7 @@ export const IndependentVisibility: Story = {
         name: 'Stone columns labels',
       }),
     )
-    await userEvent.click(drawer.getByRole('button', { name: 'Close Inuksuks' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Close viewer panel' }))
     await waitFor(() => expect(canvas.queryByRole('complementary')).not.toBeInTheDocument())
     await expect(
       canvas.queryByRole('button', { name: 'View Inuksuk: Rose window' }),
@@ -122,28 +122,42 @@ export const Placement: Story = {
     const surface = canvasElement.querySelector<HTMLElement>('.openseadragon-canvas')
     if (!tool || !surface) throw new Error('Viewer controls are not mounted')
     await userEvent.click(tool)
-    await userEvent.click(canvas.getByRole('button', { name: 'Inuksuks (2)' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Open viewer panel' }))
+    const frame = surface.closest('[data-viewer-image-area]')!.parentElement!
+    await waitFor(() =>
+      expect(surface.getBoundingClientRect().width).toBeCloseTo(frame.clientWidth - 320, 0),
+    )
+    await waitFor(() =>
+      expect(surface.querySelector('canvas')?.width).toBeCloseTo(
+        surface.clientWidth * window.devicePixelRatio,
+        0,
+      ),
+    )
     const bounds = surface.getBoundingClientRect()
+    const placementX = bounds.x + bounds.width / 4
+    const placementY = bounds.y + 220
     await userEvent.pointer({
       target: surface,
       keys: '[MouseLeft]',
       coords: {
-        clientX: bounds.x + 430,
-        clientY: bounds.y + 220,
-        pageX: bounds.x + 430,
-        pageY: bounds.y + 220,
+        clientX: placementX,
+        clientY: placementY,
+        pageX: placementX,
+        pageY: placementY,
       },
     })
     const page = within(canvasElement.ownerDocument.body)
-    await expect(canvas.getByRole('button', { name: 'Inuksuks (2)' })).toHaveAttribute(
+    await expect(canvas.getByRole('button', { name: 'Close viewer panel' })).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'true',
     )
     await expect(await page.findByRole('heading', { name: 'Save a view' })).toBeInTheDocument()
-    await expect(canvas.getByRole('button', { name: 'View Inuksuk: New Inuksuk' })).toBeVisible()
+    await expect(
+      within(canvas.getByRole('region', { name: 'Inuksuks list' })).getByText('New Inuksuk'),
+    ).toBeVisible()
     const draft = canvasElement.querySelector('[data-inuksuk-id="-1"]')!.getBoundingClientRect()
-    await expect(draft.x).toBeCloseTo(bounds.x + 430, 0)
-    await expect(draft.y).toBeCloseTo(bounds.y + 220, 0)
+    await expect(draft.x).toBeCloseTo(placementX, 0)
+    await expect(draft.y).toBeCloseTo(placementY, 0)
     await userEvent.keyboard('A closer look')
     await expect(page.getByRole('textbox', { name: /^Title/ })).toHaveValue('A closer look')
     await expect(page.getByRole('button', { name: 'More options' })).toHaveAttribute(

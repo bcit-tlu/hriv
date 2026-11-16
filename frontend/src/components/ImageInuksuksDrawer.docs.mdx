@@ -37,3 +37,13 @@ arrows hide while this panel is open, rather than painting over its rows.
 <Primary />
 
 <Stories />
+
+## Current image and Sequence panel
+
+The pin/click-away drawer above is now the legacy Synchronized-pane interface.
+Image and Sequence viewers with Inuksuks enabled instead render the exported
+`ImageInuksuksList` inside `ViewerSidePanel`, without this drawer's header, pin,
+close button or dismissal handlers. The groups, full-width hover, dimmed titles,
+visibility preferences and stable menu portal remain shared. Persistent and
+Permanent stories cover navigation persistence and non-dismissal on outside
+presses/Escape. Synchronized continues to exercise the legacy interface.
