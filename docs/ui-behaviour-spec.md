@@ -1526,3 +1526,14 @@ selection MouseTracker ignores their presses.
   behavior are reused without per-item metadata. Placement floats beside the image
   and switches an open Details panel to Inuksuks. Closed-panel floating cards leave
   room for the toggle. Details retains its metadata and Viewer controls help text.
+
+### Viewer Inuksuk polish
+
+- Successful creation selects the returned Inuksuk, opens its info card and moves
+  keyboard focus to its list row, expanding and scrolling the group as necessary.
+  Saving opens Inuksuks if the panel was closed or on Details. Later reloads do
+  not steal focus. Failed saves preserve the draft and previous selection.
+- The card's favourite star is a named, tooltip-equipped read-only indicator
+  immediately left of Close, without a visible status sentence.
+- Dense caption-sized list, metadata and help text follow the page footer scale;
+  body2/subtitle2 titles and small form controls preserve the visual hierarchy.

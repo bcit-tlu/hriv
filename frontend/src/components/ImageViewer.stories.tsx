@@ -26,7 +26,7 @@ function ImageViewerExample({ inuksuksEnabled = false }: { inuksuksEnabled?: boo
         imageId={42}
         inuksuksEnabled={inuksuksEnabled}
         sidePanelDetails={
-          <ImageDetailsContent image={IMAGE} programNames={['Histology']} groupNames={[]} />
+          <ImageDetailsContent dense image={IMAGE} programNames={['Histology']} groupNames={[]} />
         }
         viewportControl={
           inuksuksEnabled ? null : (

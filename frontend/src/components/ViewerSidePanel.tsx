@@ -95,7 +95,14 @@ export default function ViewerSidePanel({
 }: ViewerSidePanelProps) {
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (open) ref.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus()
+    if (open) {
+      const panel = ref.current
+      const selectedRow = panel?.querySelector<HTMLButtonElement>(
+        '[data-inuksuk-row][aria-pressed="true"]',
+      )
+      const selectedTab = panel?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+      ;(selectedRow ?? selectedTab)?.focus()
+    }
   }, [open])
   return (
     <Paper
@@ -178,8 +185,8 @@ export default function ViewerSidePanel({
           </Box>
           <Typography
             component="h2"
-            variant="subtitle1"
-            sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+            variant="body2"
+            sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
           >
             {tab === 'inuksuks' ? `Inuksuks (${count})` : 'Image details'}
           </Typography>
@@ -191,21 +198,21 @@ export default function ViewerSidePanel({
               flex: 1,
               minHeight: 0,
               overflowY: 'auto',
-              ...(tab === 'details' ? { px: 2, py: 1.5 } : {}),
+              ...(tab === 'details' ? { px: 1.5, py: 1 } : {}),
             }}
           >
             {tab === 'inuksuks'
               ? inuksuks
               : (details ?? (
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="caption" component="p" color="text.secondary">
                     No details available.
                   </Typography>
                 ))}
           </Box>
           <Box
             sx={{
-              px: 2,
-              py: 1.5,
+              px: 1.5,
+              py: 1,
               borderTop: 1,
               borderColor: 'divider',
               flexShrink: 0,
@@ -216,16 +223,16 @@ export default function ViewerSidePanel({
             role="region"
             aria-label={tab === 'inuksuks' ? 'About Inuksuks' : 'Viewer controls'}
           >
-            <Typography component="h3" variant="subtitle2" sx={{ mb: 0.5 }}>
+            <Typography component="h3" variant="caption" sx={{ mb: 0.5, fontWeight: 'medium' }}>
               {tab === 'inuksuks' ? 'About Inuksuks:' : 'Viewer controls'}
             </Typography>
             {tab === 'inuksuks' ? (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="caption" component="p" color="text.secondary">
                 Inuksuks save a location and zoom level so you can return to important areas of an
                 image.
               </Typography>
             ) : (
-              <ViewerControlHints />
+              <ViewerControlHints dense />
             )}
           </Box>
         </>

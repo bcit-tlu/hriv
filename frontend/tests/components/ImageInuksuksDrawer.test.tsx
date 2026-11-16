@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { alpha, createTheme, ThemeProvider } from '@mui/material/styles'
 import Drawer, { ImageInuksuksTrigger } from '../../src/components/ImageInuksuksDrawer'
@@ -30,11 +30,15 @@ function Example({
   onSelect = vi.fn(),
   onEdit = vi.fn(),
   error,
+  focusId,
+  selectedId,
 }: {
   items?: ApiInuksuk[]
   onSelect?: (item: ApiInuksuk) => void
   onEdit?: (item: ApiInuksuk) => void
   error?: string
+  focusId?: number
+  selectedId?: number
 }) {
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
@@ -60,6 +64,8 @@ function Example({
         items={items}
         prefs={prefs}
         error={error}
+        focusId={focusId}
+        selectedId={selectedId}
         onSelect={onSelect}
         onEdit={onEdit}
       />
@@ -77,6 +83,68 @@ function toggleMarker(name: string, group = false) {
   )
 }
 describe('ImageInuksuksDrawer', () => {
+  it.each([undefined, INUKSUK_FIXTURE.id])(
+    'preserves the requested row focus after opening an unpinned drawer, focusId=%s',
+    async (focusId) => {
+      vi.useFakeTimers()
+      try {
+        const { rerender } = render(<Example />)
+        rerender(<Example focusId={focusId} selectedId={focusId} />)
+        fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+        const target = screen.getByRole('button', {
+          name: focusId == null ? 'Close Inuksuks' : 'View Inuksuk: Rose window',
+        })
+        if (focusId != null) expect(target).toHaveFocus()
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1000)
+        })
+        expect(target).toHaveFocus()
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+  it.each([undefined, 'Unable to load Inuksuks'])(
+    'keeps focus when a requested row is unavailable, error=%s',
+    (error) => {
+      const { rerender } = render(<Example items={[]} error={error} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (0)' }))
+      const close = screen.getByRole('button', { name: 'Close Inuksuks' })
+      close.focus()
+      rerender(<Example items={[]} error={error} focusId={99} />)
+      expect(close).toHaveFocus()
+    },
+  )
+  it('expands the requested group, focuses and scrolls its saved row without re-focusing on reload', async () => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const scroll = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scroll,
+    })
+    try {
+      const { rerender } = render(<Example />)
+      fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+      fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks', exact: true }))
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'View Inuksuk: Rose window' })).toBeNull(),
+      )
+      const created = { ...INUKSUK_FIXTURE, id: 99, title: 'New saved view' }
+      rerender(<Example items={[...rows, created]} focusId={99} selectedId={99} />)
+      const row = await screen.findByRole('button', { name: 'View Inuksuk: New saved view' })
+      await waitFor(() => expect(row).toHaveFocus())
+      expect(row).toHaveAttribute('aria-pressed', 'true')
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+      const group = screen.getByRole('button', { name: 'My Inuksuks', exact: true })
+      group.focus()
+      rerender(<Example items={[...rows, created]} focusId={99} selectedId={99} />)
+      expect(group).toHaveFocus()
+      expect(scroll).toHaveBeenCalledTimes(1)
+    } finally {
+      if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original)
+      else Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    }
+  })
   it.each(['pointerDown', 'mouseDown', 'touchStart', 'click'] as const)(
     'closes immediately on outside %s but ignores its menu portal',
     async (event) => {

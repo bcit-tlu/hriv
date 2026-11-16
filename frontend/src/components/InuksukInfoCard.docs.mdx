@@ -9,5 +9,10 @@ It shows the title, optional description, visible Board names and favourite stat
 Only API-authorized editors see the pencil. Close dismisses the card without
 changing the saved view. Board-loading failures leave the card and close action usable.
 
+The favourite state is a read-only star immediately before Close in the header,
+with a tooltip and accessible name but no visible status sentence. It does not
+toggle favourites; use Edit to change that value. Compact caption text matches
+the page footer, with a subtitle2 title.
+
 <Primary />
 <Stories includePrimary={false} />
