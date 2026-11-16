@@ -545,3 +545,32 @@ same cadence.
 
 See also: [Domain model](domain-model.md), [Groups](groups.md),
 [agent feature map](agent-feature-map.md).
+
+## Saved-view records and snapshots (#1775)
+
+The DB archive now additionally includes `boards`, `board_sections`, `inuksuks`,
+`board_owners`, `board_programs`, `board_groups`, `inuksuk_owners` and
+`board_inuksuks`, preserving IDs, timestamps and relationships. These records and
+Collection slots export and import regardless of the Inuksuks runtime flag.
+Saved views on omitted rebuild-fixture images and their association rows are omitted.
+Older archives without the new table keys remain valid and restore no saved views.
+Restore remains one transaction, and the new numeric ID sequences are reset.
+
+**Exception to the source-only filesystem policy above:** exact positive-ID JPEGs
+in `tiles/<source-id>/inuksuks/` and `tiles/<source-id>/collection_slots/` are saved
+snapshots, not generated tiles, and are included. Inventory visits only those
+namespaces, never the DZI pyramid. Symlinked snapshot files/directories are excluded.
+Imports merge only these JPEGs into the existing tile root using the same backed-up
+rename/rollback operation as other restored entries; generated tiles in an archive
+remain ignored. Same-source tile rebuilds copy forward both snapshot namespaces.
+Keep matching DB and filesystem archives together to preserve the thumb paths.
+
+Snapshot JPEGs are first copied to temporary directories beside their targets,
+before existing files are moved aside. Promotion and rollback therefore stay on
+the destination filesystem even when tiles use a separate volume. Temporary
+copies are removed on success and failure.
+
+The separate backup service uses full database dumps/CNPG recovery and the
+restore-validation component checks whole-database recovery against its profile;
+neither maintains an application-table export allowlist needing these table names.
+Their production source-only filesystem policy is unchanged by this admin feature.

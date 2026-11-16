@@ -35,6 +35,8 @@ API for the [password-management validation flow](docs/password-management.md).
 | --------------------------------------------------------- | ----- | ---------- | ----- | ------- |
 | Browse categories & view images                           | Yes   | Yes        | Yes   | Yes†    |
 | Count objects in a selection                              | Yes   | Yes        | Yes   | Yes†    |
+| Search visible Boards/Inuksuks (Inuksuks flag)            | Yes   | Yes        | Yes   | Yes†    |
+| Seed Collections from saved views (Inuksuks flag)         | Yes   | Yes        | Yes   | Yes¶    |
 | View Boards and Inuksuks (feature-gated API)              | Yes   | Yes        | Yes   | Yes†    |
 | Create/edit owned Boards and Inuksuks (feature-gated API) | Yes   | Yes        | Yes   | Yes     |
 | View image uploader name                                  | Yes   | Yes        | No    | No      |

@@ -2036,3 +2036,17 @@ allocates a persisted slot. Renewal only reads the source; it never edits it.
 When the feature is disabled, the new controls are absent and writes retain the
 legacy `image_ids` and image-keyed viewport payloads. Server permissions,
 visibility, capacity checks and optimistic concurrency remain authoritative.
+
+### Search saved views into the Manage draft (#1775)
+
+With the Inuksuks flag enabled, Manage Collection's search picker also offers
+Boards and Inuksuks. A saved-view result stages one Inuksuk or the Board's visible
+views (displayed Section/card order, then Unsectioned), without navigating away
+or saving the Collection. Source images are fetched through the authorized image
+endpoint, and each view becomes an independently keyed temporary slot. Empty Boards
+and failed requests leave the picker open with an error. Ordinary whole-image picks
+still deduplicate by real image ID; saved views intentionally permit repeated images.
+
+Admin DB exports keep Collection slot metadata even with the flag disabled.
+Pair the DB archive with a filesystem archive to retain the independent slot JPEGs;
+restoring and rebuilding DZI tiles does not replace those snapshots.

@@ -123,3 +123,13 @@ cd backend && poetry run pytest tests/test_admin_ops.py tests/test_router_admin.
 
 For admin UI changes, also run the relevant frontend component tests and use
 `$testing-hriv` for browser flows when behavior crosses the API/UI boundary.
+
+## Saved-view archive additions
+
+`board_archives.py` owns flag-independent export/import ordering for Boards,
+Sections, Inuksuks and their five association tables. Keep numeric sequence resets
+in `admin_ops.py` aligned. Missing keys in older dumps mean empty saved-view tables.
+`snapshot_files.py` selects only authoritative Inuksuk/slot JPEGs inside the otherwise
+excluded tile root. Restores merge these via the existing rollback-capable renames;
+same-source tile rebuild promotion must retain both namespaces. Run admin_ops,
+collection_slots, snapshot_files and processing regressions plus the full backend.

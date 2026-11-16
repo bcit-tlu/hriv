@@ -1,6 +1,27 @@
-import type { CollectionMember } from './types'
+import type { ApiInuksuk, CollectionMember } from './types'
 import type { CollectionSlotInput } from './api'
-import { fetchCollection, fetchInuksuk } from './api'
+import { fetchCollection, fetchImage, fetchInuksuk } from './api'
+import { apiImageToItem } from './collectionUtils'
+
+export async function draftMembersFromInuksuks(items: ApiInuksuk[]): Promise<CollectionMember[]> {
+  const images = new Map(
+    await Promise.all(
+      [...new Set(items.map((item) => item.image_id))].map(
+        async (id) => [id, apiImageToItem(await fetchImage(id))] as const,
+      ),
+    ),
+  )
+  return items.map((item) => ({
+    ...images.get(item.image_id)!,
+    inuksukId: item.id,
+    slot: {
+      id: -item.id,
+      label: item.title,
+      thumb: item.thumb,
+      viewport_state: { x: item.x, y: item.y, zoom: item.zoom, rotation: item.rotation },
+    },
+  }))
+}
 
 export function memberKey(image: CollectionMember): number {
   return image.draftKey ?? image.slot?.id ?? image.id

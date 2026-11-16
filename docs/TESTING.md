@@ -1214,3 +1214,25 @@ The migration regression upgrades/downgrades an isolated temporary schema,
 checking member and legacy viewport preservation and deterministic deduplication.
 Run the full backend `poetry run pytest` and
 `bash scripts/test-helm-chart-regressions.sh` after token/cache-class changes.
+
+### Inuksuks close-out search and recovery (#1775)
+
+Enable `INUKSUKS_ENABLED=true` on the API and reload the SPA's `/api/features`.
+Helm keeps `inuksuks.enabled: false`; local compose already defaults the variable
+to true. Neither default is changed by this close-out.
+
+`GET /api/boards?q=term` and `GET /api/inuksuks?q=term` require authentication
+and the feature flag. They search title/name and description only after backend
+Board/Inuksuk visibility checks. Search does not grant source-image access.
+Verify as a student that private or restricted results never appear; open a visible
+Inuksuk and check position, zoom and rotation, then check Board deep-link/back behavior.
+From Manage Collection's picker, choose each saved-view result kind and verify that
+only the draft changes until Save. Include multiple slots on one image and an empty Board.
+
+Focused regressions: `frontend/tests/components/SearchModalSavedViews.test.tsx`,
+existing SearchModal and CollectionManageDialog tests; backend
+`tests/test_collection_slots.py`, `tests/test_admin_ops.py`,
+`tests/test_snapshot_files.py` and `tests/test_processing.py`.
+Round-trip all eight saved-view tables with the flag both on and off; legacy dumps
+without them remain accepted. Filesystem exports include saved-view JPEGs but no DZI
+pyramid. Rebuilding tiles after restore must keep both snapshot namespaces.

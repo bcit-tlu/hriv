@@ -186,3 +186,19 @@ thumbnail/token and admin operation tests, plus Helm regression checks.
 - Regression coverage: `tests/collectionMembers.test.ts`,
   `tests/components/CollectionSlotViewers.test.tsx`, the existing collection
   data/manage tests, and saved-view Collection/Boards Storybook variants.
+
+### Saved-view search and archives (#1775)
+
+- Search result kinds/chips and collection staging: `components/SearchModal.tsx`,
+  `useSavedViewSearch.ts`; reuse `GET /boards?q` and `GET /inuksuks?q` and their
+  backend visibility checks. `App.tsx` reuses the saved-view viewport navigation.
+- Shared saved-view-to-draft conversion: `collectionMembers.ts`; Manage owns final
+  temporary member keys. Board expansion reuses `boardUtils.groupBoardMembers`.
+- Flag-independent table archives: `backend/app/board_archives.py`, integrated
+  into `admin_ops.py`'s snapshot export and atomic restore.
+- Selective authoritative JPEG inventory: `backend/app/snapshot_files.py`;
+  filesystem restore participates in existing rename/rollback semantics.
+  `processing.py` retains snapshots during same-source tile rebuild promotion.
+- User guide: `frontend/guide/inuksuks-and-boards.md`, registered in `guideContent.ts`.
+- Backup and restore-validation use whole-database recovery rather than an
+  application table allowlist; no saved-view table enumeration needs extending.

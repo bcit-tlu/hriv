@@ -434,3 +434,17 @@ paths use `/api/tiles/<source-id>/collection_slots/<slot-id>.jpg`; slot-scoped
 thumbnail-only JWTs are issued after member authorization. Slot identity is
 separate from Image identity. Admin import resets the new ID sequence and
 allocates imported IDs above restored snapshot filenames to avoid collisions.
+
+### Saved-view archive relationships (#1775)
+
+Admin JSON archives additionally preserve `boards`, `inuksuks`, `board_sections`,
+`board_owners`, `board_programs`, `board_groups`, `inuksuk_owners` and
+`board_inuksuks` as explicit table records. IDs, timestamps, owner/scope links,
+Section membership and saved-view order round-trip independently of the feature
+flag. Imports delete association records before their parents and insert Boards
+and Inuksuks before their associations. Numeric sequences for Boards, Sections and
+Inuksuks are reset alongside Collection slots. Older archives may omit these keys.
+
+Saved-view JPEGs under `tiles/<source-id>/{inuksuks,collection_slots}/<id>.jpg`
+are authoritative snapshots: admin filesystem archives preserve them, while DZI
+pyramids remain derived. Same-source tile rebuilds retain both namespaces.

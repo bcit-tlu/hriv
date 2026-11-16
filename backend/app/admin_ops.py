@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TextIO, TypeVar
@@ -38,6 +39,9 @@ from .backup_access import (
     restore_snapshot_file,
 )
 from .browse_state import bump_browse_revision
+from .board_archives import (
+    SAVED_VIEW_ID_TABLES, clear_saved_views, export_saved_views, import_saved_views,
+)
 from .component_versions import get_app_version
 from .database import get_async_session, settings
 from .collection_slots import export_slots, import_slots
@@ -71,6 +75,7 @@ from .rebuild_locks import (
     find_active_rebuild,
 )
 from .tile_order import INITIAL_SCOPE_REVISION
+from .snapshot_files import snapshot_files
 from .worker import TaskQueueUnavailableError, enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -495,35 +500,56 @@ def _swap_imported_entries(
             raise TaskCancelled("Task cancelled by admin")
 
     try:
-        for entry in sorted(extracted_dir.iterdir(), key=lambda p: p.name):
+        entries = [
+            (entry, data_dir / entry.name)
+            for entry in sorted(extracted_dir.iterdir(), key=lambda p: p.name)
+            if entry.name not in {tasks_basename, staging_basename, tiles_basename}
+        ]
+        archived_tiles = extracted_dir / tiles_basename
+        entries.extend(
+            (path, Path(tiles_dir) / path.relative_to(archived_tiles))
+            for path in snapshot_files(archived_tiles)
+        )
+        for entry, target in entries:
             _check_cancel()
-            if entry.name in {tasks_basename, staging_basename, tiles_basename}:
-                continue
-            target = data_dir / entry.name
-            backup = (
-                _unique_sibling_path(target, ".bak")
-                if target.exists() or target.is_symlink()
-                else None
-            )
-            if backup is not None:
-                os.rename(str(target), str(backup))
-            try:
-                os.rename(str(entry), str(target))
-            except Exception:
-                if target.exists() or target.is_symlink():
-                    _remove_path(target)
-                if backup is not None and backup.exists():
-                    try:
-                        os.rename(str(backup), str(target))
-                    except OSError:
-                        logger.debug(
-                            "Failed to restore backup path %s to %s during rollback",
-                            backup,
-                            target,
-                            exc_info=True,
-                        )
-                raise
-            moved.append((target, backup))
+            if not target.parent.resolve().is_relative_to(data_dir.resolve()):
+                raise ValueError("Restore target escapes the data directory")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with ExitStack() as staging:
+                promote = os.rename
+                if entry.is_relative_to(archived_tiles):
+                    temporary_dir = staging.enter_context(
+                        tempfile.TemporaryDirectory(dir=target.parent, prefix=".restore-")
+                    )
+                    staged_entry = Path(temporary_dir) / entry.name
+                    shutil.copyfile(entry, staged_entry)
+                    entry = staged_entry
+                    promote = os.replace
+                    _check_cancel()
+                backup = (
+                    _unique_sibling_path(target, ".bak")
+                    if target.exists() or target.is_symlink()
+                    else None
+                )
+                if backup is not None:
+                    os.rename(str(target), str(backup))
+                try:
+                    promote(str(entry), str(target))
+                except Exception:
+                    if target.exists() or target.is_symlink():
+                        _remove_path(target)
+                    if backup is not None and backup.exists():
+                        try:
+                            os.rename(str(backup), str(target))
+                        except OSError:
+                            logger.debug(
+                                "Failed to restore backup path %s to %s during rollback",
+                                backup,
+                                target,
+                                exc_info=True,
+                            )
+                    raise
+                moved.append((target, backup))
     except Exception:
         for target, backup in reversed(moved):
             try:
@@ -1295,6 +1321,7 @@ async def run_db_export(task_id: int) -> None:
                 return v.isoformat() if v else None
 
             dump = {
+                **await export_saved_views(snapshot, exported_image_ids),
                 "exported_at": datetime.now(timezone.utc).isoformat(),
                 "programs": [
                     {
@@ -1644,6 +1671,7 @@ async def run_db_import(task_id: int) -> None:
                 )
                 await status_session.commit()
 
+                await clear_saved_views(data_session)
                 await data_session.execute(text("DELETE FROM collection_images"))
                 await data_session.execute(text("DELETE FROM collection_programs"))
                 await data_session.execute(text("DELETE FROM collection_groups"))
@@ -2048,8 +2076,9 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.flush()
 
                 # Reset sequences
+                await import_saved_views(data_session, dump)
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "announcement_reactions", "content_media", "source_images", "collections", "collection_images", "measurement_findings"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "announcement_reactions", "content_media", "source_images", "collections", "collection_images", "measurement_findings", *SAVED_VIEW_ID_TABLES):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -2629,6 +2658,10 @@ def _iter_export_entries(
                 # zero-byte entry or skip it on its own.
                 size = 0
             yield arc_fpath, fpath, size, False
+
+    for path in snapshot_files(Path(settings.tiles_dir)):
+        _check_cancel()
+        yield str(Path("data") / tiles_basename / path.relative_to(settings.tiles_dir)), str(path), path.stat().st_size, False
 
 
 def _iter_export_files(data_dir: str) -> Iterator[tuple[str, int]]:

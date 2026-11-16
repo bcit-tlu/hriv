@@ -300,3 +300,18 @@ the Board selection toolbar, labeled same-image Sequence filmstrip and
 same-image Synchronized comparison. The feature-off stories and data-hook tests
 protect legacy payload compatibility; the slot stories use deterministic
 saved-coordinate snapshots.
+
+## Saved-view search and archive changes (#1775)
+
+- Run frontend SearchModal, SearchModalSavedViews, CollectionManageDialog,
+  collectionMembers and guideSearch tests. Cover feature-off requests/chips,
+  title/description search, Board/saved-view navigation, Board and individual-view
+  draft staging, empty results and request failures. Preview the SearchModal
+  SavedViews story and capture its Board/Inuksuk results.
+- Run backend admin_ops, router_admin, collection_slots, snapshot_files and
+  processing tests. Exercise all saved-view table links and timestamps with the
+  flag off/on, old archives, selective JPEG restore and swap rollback, and retention
+  of restored snapshots across same-source tile rebuilds.
+- Finish with full backend/frontend suites, frontend build/lint/format and Helm
+  lint/regressions. Backup/restore-validation suites are required if their code or
+  recovery contracts change; adding admin archive records alone does not alter them.

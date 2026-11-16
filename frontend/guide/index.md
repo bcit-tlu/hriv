@@ -25,6 +25,7 @@ publish — you decide what they see and how it's organized.
 - [Managing Images](images) — details, annotations, moving, deleting
 - [Managing Groups](groups) — control which students see which categories
 - [Collections](collections) — gather images into synchronized or sequence sets
+- [Inuksuks & Boards](inuksuks-and-boards) — save precise image views and arrange studies
 - [Announcements](announcements) — notices, events, and release notes in one stream
 - [Getting Help](help) — questions and feedback
 

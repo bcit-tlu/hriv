@@ -1,6 +1,5 @@
-import { memberKey, renewSlotThumbnail } from '../collectionMembers'
+import { draftMembersFromInuksuks, memberKey, renewSlotThumbnail } from '../collectionMembers'
 import { useBoardsData } from '../useBoardsData'
-import { apiImageToItem } from '../collectionUtils'
 import TextField from '@mui/material/TextField'
 import MenuItem from '@mui/material/MenuItem'
 import Alert from '@mui/material/Alert'
@@ -33,7 +32,7 @@ import { move } from '@dnd-kit/helpers'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
-import { fetchImage, userMessage, type ApiImage } from '../api'
+import { userMessage, type ApiImage } from '../api'
 import { AuthContext } from '../authContextValue'
 import { fitsCollectionCapacity } from '../useAddToCollection'
 import type { Collection, CollectionMember as ImageItem } from '../types'
@@ -725,9 +724,11 @@ export default function CollectionManageDialog({
           seen.add(img.id)
           return img.inuksukId != null || !alreadyPresent
         })
-        .map((img) =>
-          inuksuksEnabled && !img.slot ? { ...img, draftKey: nextDraftKey.current-- } : img,
-        )
+        .map((img) => {
+          if (!inuksuksEnabled || (img.slot && img.slot.id > 0)) return img
+          const key = nextDraftKey.current--
+          return { ...img, draftKey: key, ...(img.slot ? { slot: { ...img.slot, id: key } } : {}) }
+        })
       if (fresh.length === 0) return { status: 'already' }
       if (
         collection != null &&
@@ -1163,34 +1164,7 @@ export default function CollectionManageDialog({
                 : []
               setPickerBusy(true)
               try {
-                const imageIds = [...new Set(items.map((item) => item.image_id))]
-                const records = new Map(
-                  await Promise.all(
-                    imageIds.map(async (id) => [id, apiImageToItem(await fetchImage(id))] as const),
-                  ),
-                )
-                const result = stageAdd(
-                  items.map((item) => {
-                    const image = records.get(item.image_id)!
-                    const key = nextDraftKey.current--
-                    return {
-                      ...image,
-                      draftKey: key,
-                      inuksukId: item.id,
-                      slot: {
-                        id: key,
-                        label: item.title,
-                        thumb: item.thumb,
-                        viewport_state: {
-                          x: item.x,
-                          y: item.y,
-                          zoom: item.zoom,
-                          rotation: item.rotation,
-                        },
-                      },
-                    }
-                  }),
-                )
+                const result = stageAdd(await draftMembersFromInuksuks(items))
                 if (result.status === 'full')
                   throw new Error('These saved views exceed the collection capacity.')
                 setPickerOpen(false)
