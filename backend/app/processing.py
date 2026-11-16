@@ -797,6 +797,7 @@ async def process_source_image(source_image_id: int) -> None:
                     category_id=src.category_id,
                     copyright=src.copyright,
                     description=src.description,
+                    instructor_note=src.instructor_note,
                     active=src.active,
                     metadata_=image_metadata,
                     width=img_width,
