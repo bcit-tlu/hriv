@@ -213,6 +213,8 @@ export default function ViewerSidePanel({
               overflowY: 'auto',
             }}
             tabIndex={0}
+            role="region"
+            aria-label={tab === 'inuksuks' ? 'About Inuksuks' : 'Viewer controls'}
           >
             <Typography component="h3" variant="subtitle2" sx={{ mb: 0.5 }}>
               {tab === 'inuksuks' ? 'About Inuksuks:' : 'Viewer controls'}

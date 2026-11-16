@@ -38,6 +38,10 @@ it('toggles with accessible controls, retains a selected tab, and never closes o
   fireEvent.click(toggle)
   expect(screen.getByRole('heading', { name: 'Inuksuks (0)' })).toBeVisible()
   expect(screen.getByText('No Inuksuks on this image.')).toBeVisible()
+  expect(screen.getByRole('region', { name: 'About Inuksuks' })).toHaveAttribute('tabindex', '0')
+  expect(screen.getByRole('region', { name: 'About Inuksuks' })).toHaveTextContent(
+    'Inuksuks save a location and zoom level',
+  )
   fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
   fireEvent.click(screen.getByRole('button', { name: 'Show image details' }))
   expect(screen.getByRole('button', { name: 'Show image details' })).toHaveAttribute(
@@ -46,6 +50,10 @@ it('toggles with accessible controls, retains a selected tab, and never closes o
   )
   expect(screen.getByText('No details available.')).toBeVisible()
   expect(screen.getByRole('heading', { name: 'Viewer controls' })).toBeVisible()
+  expect(screen.getByRole('region', { name: 'Viewer controls' })).toHaveAttribute('tabindex', '0')
+  expect(screen.getByRole('region', { name: 'Viewer controls' })).toHaveTextContent(
+    'Scroll or tap to zoom',
+  )
   fireEvent.pointerDown(document.body)
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(screen.getByRole('complementary')).toBeVisible()
