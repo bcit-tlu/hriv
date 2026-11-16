@@ -9,7 +9,6 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControlLabel from '@mui/material/FormControlLabel'
-import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -91,8 +90,6 @@ export default function InuksukFormDialog({
         setAssignments(
           loaded.map((board) => ({
             board_id: board.id,
-            section_id:
-              board.inuksuks.find((member) => member.id === baseline?.id)?.section_id ?? null,
           })),
         )
         setLoading(false)
@@ -116,7 +113,6 @@ export default function InuksukFormDialog({
         (board) =>
           assignments.find((link) => link.board_id === board.id) ?? {
             board_id: board.id,
-            section_id: null,
           },
       ),
     )
@@ -136,7 +132,7 @@ export default function InuksukFormDialog({
       const board = await services.createBoard({ name: boardName.trim(), visibility: 'private' })
       setBoards((previous) => [...previous, board])
       setDetails((previous) => ({ ...previous, [board.id]: board }))
-      setAssignments((previous) => [...previous, { board_id: board.id, section_id: null }])
+      setAssignments((previous) => [...previous, { board_id: board.id }])
       setBoardName('')
       setCreatingBoard(false)
     } catch (err) {
@@ -279,40 +275,6 @@ export default function InuksukFormDialog({
                   />
                 )}
               />
-              {assignments.map((link) =>
-                details[link.board_id]?.sections.length ? (
-                  <TextField
-                    key={link.board_id}
-                    select
-                    label={`Section in ${details[link.board_id].name}`}
-                    value={link.section_id ?? 0}
-                    slotProps={{ select: { MenuProps: { container } } }}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setAssignments((previous) =>
-                        previous.map((value) =>
-                          value.board_id === link.board_id
-                            ? {
-                                ...value,
-                                section_id:
-                                  Number(event.target.value) === 0
-                                    ? null
-                                    : Number(event.target.value),
-                              }
-                            : value,
-                        ),
-                      )
-                    }
-                  >
-                    <MenuItem value={0}>No section</MenuItem>
-                    {details[link.board_id].sections.map((section) => (
-                      <MenuItem key={section.id} value={section.id}>
-                        {section.name}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                ) : null,
-              )}
               {creatingBoard ? (
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <TextField

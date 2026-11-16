@@ -36,6 +36,6 @@ export const BOARD_FIXTURE: ApiBoard = {
   permissions: { can_edit: true, can_change_scope: true, can_delete: true, can_transfer: false },
   created_at: INUKSUK_FIXTURE.created_at,
   updated_at: INUKSUK_FIXTURE.updated_at,
-  sections: [{ id: 11, board_id: 1, name: 'Windows', sort_order: 0 }],
-  inuksuks: [{ ...INUKSUK_FIXTURE, section_id: 11 }],
+
+  inuksuks: [{ ...INUKSUK_FIXTURE }],
 }

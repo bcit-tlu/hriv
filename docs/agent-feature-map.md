@@ -145,7 +145,7 @@ See [the drawer contract](inuksuks-and-boards.md#inuksuks-drawer-1773).
 ### Boards page (#1771)
 
 `components/BoardsPage.tsx` owns the Boards row, recent/favourite collage,
-Sections, isolated DnD surfaces and Move/Save links. `useBoardsData.ts` loads
+ordered cards, isolated DnD surfaces and Move/Save links. `useBoardsData.ts` loads
 complete Board lists and selected projections; `boardUtils.ts` owns location,
 ownership and membership-order helpers. `BoardEditDialog.tsx` handles metadata
 and restricted scope; `BoardOwnersDialog.tsx` adapts the Collections picker.
@@ -178,7 +178,7 @@ thumbnail/token and admin operation tests, plus Helm regression checks.
   types and API source fields: `types.ts`, `api.ts`.
 - Snapshot conversion, renewal and serialized writes:
   `collectionUtils.ts`, `useCollectionsData.ts`, `useAddToCollection.ts`.
-- Board selection/create/add: `components/BoardsPage.tsx`; staged Board/Section
+- Board selection/create/add: `components/BoardsPage.tsx`; staged Board
   additions: `components/CollectionManageDialog.tsx`.
 - Sequence slot URL state: `App.tsx`, `useShareableImageState.ts`,
   `components/SequenceCollectionViewer.tsx`. Synchronized per-slot registration
@@ -193,7 +193,7 @@ thumbnail/token and admin operation tests, plus Helm regression checks.
   `useSavedViewSearch.ts`; reuse `GET /boards?q` and `GET /inuksuks?q` and their
   backend visibility checks. `App.tsx` reuses the saved-view viewport navigation.
 - Shared saved-view-to-draft conversion: `collectionMembers.ts`; Manage owns final
-  temporary member keys. Board expansion reuses `boardUtils.groupBoardMembers`.
+  temporary member keys. Board expansion follows the ordered `ApiBoard.inuksuks` list.
 - Flag-independent table archives: `backend/app/board_archives.py`, integrated
   into `admin_ops.py`'s snapshot export and atomic restore.
 - Selective authoritative JPEG inventory: `backend/app/snapshot_files.py`;

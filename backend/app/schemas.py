@@ -1129,17 +1129,14 @@ class CollectionSlotInput(BaseModel):
 class CollectionSlotSources(BaseModel):
     slots: list[CollectionSlotInput] | None = None
     source_board_id: int | None = Field(default=None, gt=0)
-    source_section_id: int | None = Field(default=None, gt=0)
     inuksuk_ids: list[int] | None = None
 
     @model_validator(mode="after")
     def _gate_slots(self):
         from .database import settings
-        fields = {"slots", "source_board_id", "source_section_id", "inuksuk_ids"}
+        fields = {"slots", "source_board_id", "inuksuk_ids"}
         if not settings.inuksuks_enabled and self.model_fields_set & fields:
             raise ValueError("Collection slots require Inuksuks to be enabled")
-        if self.source_section_id is not None and self.source_board_id is None:
-            raise ValueError("source_section_id requires source_board_id")
         return self
 
 
@@ -1625,37 +1622,8 @@ class BoardOrderUpdate(BaseModel):
         return self
 
 
-class BoardSectionCreate(BaseModel):
-    name: str = Field(max_length=255)
-    sort_order: int = 0
-    version: int | None = Field(None, ge=1)
-
-    _name = field_validator("name", mode="before")(normalize_nonblank_value)
-
-
-class BoardSectionUpdate(BaseModel):
-    name: str | None = Field(None, max_length=255)
-    sort_order: int | None = None
-    version: int | None = Field(None, ge=1)
-
-    _name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
-
-
-class BoardSectionsOrder(BaseModel):
-    section_ids: list[int]
-    version: int | None = Field(None, ge=1)
-
-    @field_validator("section_ids")
-    @classmethod
-    def _unique(cls, value: list[int]) -> list[int]:
-        if len(value) != len(set(value)):
-            raise ValueError("Duplicate section IDs")
-        return value
-
-
 class BoardAssignment(BaseModel):
     board_id: int = Field(gt=0)
-    section_id: int | None = Field(None, gt=0)
     sort_order: int | None = None
 
 
@@ -1727,7 +1695,6 @@ class InuksukOrderUpdate(BaseModel):
 
 class BoardInuksukOrderItem(BaseModel):
     inuksuk_id: int
-    section_id: int | None = None
 
 
 class BoardInuksuksOrder(BaseModel):
@@ -1774,17 +1741,6 @@ class InuksukOut(BaseModel):
     updated_at: datetime
 
 
-class BoardInuksukOut(InuksukOut):
-    section_id: int | None = None
-
-
-class BoardSectionOut(BaseModel):
-    id: int
-    board_id: int
-    name: str
-    sort_order: int
-
-
 class BoardSummaryOut(BaseModel):
     id: int
     name: str
@@ -1804,8 +1760,7 @@ class BoardSummaryOut(BaseModel):
 
 
 class BoardOut(BoardSummaryOut):
-    sections: list[BoardSectionOut]
-    inuksuks: list[BoardInuksukOut]
+    inuksuks: list[InuksukOut]
 
 
 class FeaturesOut(BaseModel):

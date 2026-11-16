@@ -72,17 +72,16 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
     description: 'Details worth a second look — our studio inspiration board.',
     permissions: { ...BOARD_FIXTURE.permissions, can_transfer: true },
     inuksuk_count: BOARD_ITEMS.length,
-    sections: [...BOARD_FIXTURE.sections, { id: 12, board_id: 1, name: 'Facades', sort_order: 1 }],
-    inuksuks: BOARD_ITEMS.map((item, index) => ({
+
+    inuksuks: BOARD_ITEMS.map((item) => ({
       ...item,
-      section_id: index < 3 ? 11 : index < 5 ? 12 : null,
     })),
   },
   {
     ...BOARD_FIXTURE,
     id: 3,
     name: 'Next studio project',
-    sections: [],
+
     inuksuks: [],
     inuksuk_count: 0,
   },
@@ -98,7 +97,7 @@ export const BOARDS_FIXTURES: ApiBoard[] = [
       can_delete: false,
       can_transfer: false,
     },
-    sections: [],
+
     inuksuks: [],
     inuksuk_count: 0,
   },
@@ -184,7 +183,7 @@ export function installBoardsFetch(
     const existing = boards.find((board) => board.id === boardId) ?? {
       ...BOARDS_FIXTURES[0],
       id: 40,
-      sections: [],
+
       inuksuks: [],
     }
     const saved = {

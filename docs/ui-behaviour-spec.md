@@ -1434,7 +1434,7 @@ selection MouseTracker ignores their presses.
 - Choosing a Board opens `?page=boards&board=<id>`. Choosing an Inuksuk uses the
   existing source-image/saved-coordinate navigation, preserving x/y/zoom/rotation.
 - In Manage Collection's picker, these results instead stage saved-view slots.
-  Board expansion follows the displayed Section and member order, then Unsectioned.
+  Board expansion follows the displayed member order.
   Choosing a saved-view result immediately hands its draft members to Manage;
   the existing image/category checkbox footer remains for whole-image selections.
   A request failure or an empty Board keeps the picker open with a visible error.

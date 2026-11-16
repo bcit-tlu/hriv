@@ -1047,7 +1047,6 @@ export interface CollectionSources {
   slots?: CollectionSlotInput[]
   inuksuk_ids?: number[]
   source_board_id?: number
-  source_section_id?: number
 }
 
 export interface ApiCollectionMember extends ApiImage {
@@ -2697,7 +2696,6 @@ export interface BoardFilters {
 }
 export interface InuksukFilters extends Omit<BoardFilters, 'visibility' | 'sort'> {
   board_id?: number
-  section_id?: number
   image_id?: number
   favourite?: boolean
   scope?: InuksukSource
@@ -2770,37 +2768,9 @@ export function transferBoard(
 ): Promise<ApiBoard> {
   return request(`/boards/${id}/transfer`, { method: 'POST', body: JSON.stringify(body) })
 }
-export function createBoardSection(
-  id: number,
-  body: { name: string; sort_order?: number } & Versioned,
-): Promise<ApiBoard> {
-  return request(`/boards/${id}/sections`, { method: 'POST', body: JSON.stringify(body) })
-}
-export function updateBoardSection(
-  id: number,
-  sectionId: number,
-  body: { name?: string; sort_order?: number } & Versioned,
-): Promise<ApiBoard> {
-  return request(`/boards/${id}/sections/${sectionId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  })
-}
-export function deleteBoardSection(id: number, sectionId: number, version: number): Promise<void> {
-  return request(`/boards/${id}/sections/${sectionId}`, {
-    method: 'DELETE',
-    headers: { 'If-Match': `"${version}"` },
-  })
-}
-export function reorderBoardSections(
-  id: number,
-  body: { section_ids: number[] } & Versioned,
-): Promise<ApiBoard> {
-  return request(`/boards/${id}/sections/order`, { method: 'PUT', body: JSON.stringify(body) })
-}
 export function reorderBoardInuksuks(
   id: number,
-  body: { items: { inuksuk_id: number; section_id: number | null }[] } & Versioned,
+  body: { items: { inuksuk_id: number }[] } & Versioned,
 ): Promise<ApiBoard> {
   return request(`/boards/${id}/inuksuks/order`, { method: 'PUT', body: JSON.stringify(body) })
 }

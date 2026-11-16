@@ -50,24 +50,19 @@ import { PointerActivationConstraints } from '@dnd-kit/dom'
 import { CollisionPriority } from '@dnd-kit/abstract'
 import {
   ApiError,
-  createBoardSection,
   deleteBoard,
-  deleteBoardSection,
   fetchBoard,
   fetchInuksuk,
   fetchInuksuks,
   removeBoardInuksuk,
   reorderBoardInuksuks,
   reorderBoards,
-  reorderBoardSections,
-  updateBoardSection,
   updateInuksuk,
   userMessage,
 } from '../api'
-import { boardMemberOrder, groupBoardMembers, moveBoardMember, ownsBoard } from '../boardUtils'
+import { moveBoardMember, ownsBoard } from '../boardUtils'
 import type {
   ApiBoard,
-  ApiBoardSection,
   ApiBoardSummary,
   ApiInuksuk,
   BoardAssignment,
@@ -91,8 +86,7 @@ interface BoardsPageProps {
   programs?: Program[]
   groups?: Group[]
   boardId: number | null
-  sectionId?: number | null
-  onSelectBoard: (boardId: number | null, sectionId?: number | null) => void
+  onSelectBoard: (boardId: number | null) => void
   onOpenInuksuk: (item: ApiInuksuk) => void
 }
 
@@ -255,12 +249,7 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   )
 }
 
-async function saveToBoard(
-  item: ApiInuksuk,
-  targetId: number,
-  sectionId: number | null,
-  sourceId: number | null,
-) {
+async function saveToBoard(item: ApiInuksuk, targetId: number, sourceId: number | null) {
   const fresh = await fetchInuksuk(item.id)
   const boards = await Promise.all(fresh.board_ids.map((fetchBoardId) => fetchBoard(fetchBoardId)))
   const assignments: BoardAssignment[] = []
@@ -270,11 +259,10 @@ async function saveToBoard(
     if (!link) throw new Error('Board membership changed. Reload before saving.')
     assignments.push({
       board_id: board.id,
-      section_id: link.section_id,
       sort_order: link.sort_order,
     })
   }
-  assignments.push({ board_id: targetId, section_id: sectionId })
+  assignments.push({ board_id: targetId })
   await updateInuksuk(fresh.id, { version: fresh.version, board_assignments: assignments })
 }
 
@@ -293,7 +281,7 @@ function SaveToDialog({
   boards: ApiBoardSummary[]
   source: ApiBoard | null
   onClose: () => void
-  onSave: (targetId: number, sectionId: number | null, move: boolean) => void
+  onSave: (targetId: number, move: boolean) => void
   error: string | null
   busy: boolean
   conflict: boolean
@@ -304,7 +292,6 @@ function SaveToDialog({
   )
   const [targetId, setTargetId] = useState(options[0]?.id ?? 0)
   const [target, setTarget] = useState<ApiBoard | null>(null)
-  const [sectionId, setSectionId] = useState<number | null>(null)
   const [move, setMove] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
@@ -356,7 +343,6 @@ function SaveToDialog({
                 value={targetId}
                 onChange={(e) => {
                   setTargetId(Number(e.target.value))
-                  setSectionId(null)
                 }}
                 disabled={busy}
               >
@@ -366,24 +352,6 @@ function SaveToDialog({
                   </MenuItem>
                 ))}
               </TextField>
-              {ready && (
-                <TextField
-                  select
-                  label="Destination Section"
-                  value={sectionId ?? ''}
-                  onChange={(e) =>
-                    setSectionId(e.target.value === '' ? null : Number(e.target.value))
-                  }
-                  disabled={busy}
-                >
-                  <MenuItem value="">Unsectioned</MenuItem>
-                  {target.sections.map((section) => (
-                    <MenuItem key={section.id} value={section.id}>
-                      {section.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              )}
               {source?.permissions.can_edit && (
                 <FormControlLabel
                   control={
@@ -407,7 +375,7 @@ function SaveToDialog({
         <Button
           variant="contained"
           disabled={busy || conflict || !ready || !options.length}
-          onClick={() => onSave(targetId, sectionId, move)}
+          onClick={() => onSave(targetId, move)}
         >
           Save
         </Button>
@@ -425,7 +393,6 @@ export default function BoardsPage({
   programs = [],
   groups = [],
   boardId,
-  sectionId = null,
   onSelectBoard,
   onOpenInuksuk,
 }: BoardsPageProps) {
@@ -468,15 +435,9 @@ export default function BoardsPage({
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
   const board = data.board
-  const sections = useMemo(() => (board ? groupBoardMembers(board) : []), [board])
   const [edit, setEdit] = useState<'new' | 'edit' | null>(null)
   const [owners, setOwners] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [sectionAction, setSectionAction] = useState<{
-    kind: 'create' | 'rename' | 'delete'
-    section?: ApiBoardSection
-  } | null>(null)
-  const [sectionName, setSectionName] = useState('')
   const [menu, setMenu] = useState<{ anchor: HTMLElement; item: ApiInuksuk } | null>(null)
   const [savingItem, setSavingItem] = useState<ApiInuksuk | null>(null)
   const [removingItem, setRemovingItem] = useState<ApiInuksuk | null>(null)
@@ -548,53 +509,32 @@ export default function BoardsPage({
             }),
           ),
         )
-    } else if (source.type === 'board-section' && board && canEdit) {
-      const ids = resolveReorderedKeys(
-        board.sections.map((row) => `section:${row.id}`),
-        event,
-      )
-      if (ids)
-        void run(() =>
-          reorderBoardSections(board.id, {
-            version: board.version,
-            section_ids: ids.map((id) => Number(id.split(':')[1])),
-          }),
-        )
     } else if (source.type === 'board-member' && target && board && canEdit) {
       const item = board.inuksuks.find((row) => `item:${row.id}` === source.id)
       if (!item) return
       const targetKey = String(target.id)
       if (targetKey.startsWith('save:') && item.permissions.can_edit) {
-        void run(() => saveToBoard(item, Number(targetKey.split(':')[1]), null, null))
+        void run(() => saveToBoard(item, Number(targetKey.split(':')[1]), null))
       } else {
         const targetItem = board.inuksuks.find((row) => `item:${row.id}` === target.id)
-        const destination = targetKey.startsWith('bin:')
-          ? targetKey === 'bin:none'
-            ? null
-            : Number(targetKey.split(':')[1])
-          : targetItem?.section_id
-        if (destination === undefined) return
-        const index = isSortable(source)
-          ? source.index
-          : board.inuksuks.filter((row) => row.section_id === destination).length
+        if (!targetItem) return
+        const index = isSortable(source) ? source.index : board.inuksuks.indexOf(targetItem)
         void run(() =>
           reorderBoardInuksuks(board.id, {
             version: board.version,
-            items: targetKey.startsWith('bin:')
-              ? boardMemberOrder(board, [item.id], destination)
-              : moveBoardMember(board, item.id, destination, index),
+            items: moveBoardMember(board, item.id, index),
           }),
         )
       }
     }
   }
-  const memberCard = (item: ApiInuksuk, index: number, section: string) => (
+  const memberCard = (item: ApiInuksuk, index: number) => (
     <SortableFrame
       key={item.id}
       id={`item:${item.id}`}
       index={index}
       type="board-member"
-      group={section}
+      group="members"
       disabled={selecting || !canEdit || !board}
       label={item.title}
     >
@@ -720,9 +660,9 @@ export default function BoardsPage({
             >
               <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
               {(['sequence', 'synchronized'] as const).map((type) => {
-                const items = (
-                  board ? sections.flatMap((section) => section.inuksuks) : data.recent
-                ).filter((item) => selectedIds.includes(item.id))
+                const items = (board ? board.inuksuks : data.recent).filter((item) =>
+                  selectedIds.includes(item.id),
+                )
                 const valid =
                   items.length > 0 &&
                   (type === 'sequence' || (items.length >= 2 && items.length <= 4))
@@ -957,151 +897,26 @@ export default function BoardsPage({
                   Delete Board
                 </Button>
               )}
-              {board.permissions.can_edit && (
-                <Button
-                  startIcon={<Add />}
-                  disabled={busy || conflict}
-                  onClick={() => {
-                    setSectionName('')
-                    setSectionAction({ kind: 'create' })
-                  }}
-                >
-                  New Section
-                </Button>
-              )}
             </Stack>
             {board.description && (
               <Typography color="text.secondary" sx={{ mb: 2 }}>
                 {board.description}
               </Typography>
             )}
-            <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
-              <Chip
-                label="All Sections"
-                color={sectionId == null ? 'primary' : 'default'}
-                onClick={() => onSelectBoard(board.id)}
-              />
-              {board.sections.map((section) => (
-                <Chip
-                  key={section.id}
-                  label={section.name}
-                  color={sectionId === section.id ? 'primary' : 'default'}
-                  onClick={() => onSelectBoard(board.id, section.id)}
-                />
-              ))}
-            </Stack>
-            {sectionId != null && !board.sections.some((section) => section.id === sectionId) && (
-              <Alert severity="info">This Section no longer exists. Choose All Sections.</Alert>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
+                gap: 2,
+              }}
+            >
+              {board.inuksuks.map((item, index) => memberCard(item, index))}
+            </Box>
+            {board.inuksuks.length === 0 && (
+              <Typography color="text.secondary" sx={{ py: 2 }}>
+                No Inuksuks yet. Save a view from an image.
+              </Typography>
             )}
-            {sections
-              .filter((section) => sectionId == null || section.id === sectionId)
-              .map((section, index) => (
-                <SortableFrame
-                  key={section.id ?? 'none'}
-                  id={`section:${section.id}`}
-                  index={index}
-                  type="board-section"
-                  group="sections"
-                  disabled={!canEdit || section.id == null || sectionId != null}
-                  label={section.name}
-                >
-                  <Box
-                    component="section"
-                    aria-label={section.name}
-                    sx={{
-                      mb: 3,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 3,
-                      p: 2,
-                    }}
-                  >
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      spacing={1}
-                      sx={{ mb: 1, pl: canEdit && section.id != null ? 3 : 0 }}
-                    >
-                      <Typography variant="h6" component="h3">
-                        {section.name}
-                      </Typography>
-                      {collectionsEnabled && section.id != null && (
-                        <Button
-                          size="small"
-                          disabled={!board.inuksuks.some((item) => item.section_id === section.id)}
-                          onClick={() =>
-                            beginCollection(
-                              board.inuksuks.filter((item) => item.section_id === section.id),
-                              'sequence',
-                              false,
-                              {
-                                source_board_id: board.id,
-                                source_section_id: section.id ?? undefined,
-                              },
-                            )
-                          }
-                        >
-                          Create Sequence Collection
-                        </Button>
-                      )}
-                      {canEdit && section.id != null && (
-                        <>
-                          <Button
-                            size="small"
-                            onClick={() => {
-                              const found = board.sections.find((value) => value.id === section.id)
-                              setSectionName(section.name)
-                              setSectionAction({ kind: 'rename', section: found })
-                            }}
-                          >
-                            Rename
-                          </Button>
-                          <Button
-                            size="small"
-                            color="error"
-                            sx={{
-                              color: (theme) =>
-                                theme.palette.mode === 'dark'
-                                  ? theme.palette.error.light
-                                  : theme.palette.error.dark,
-                            }}
-                            onClick={() =>
-                              setSectionAction({
-                                kind: 'delete',
-                                section: board.sections.find((value) => value.id === section.id),
-                              })
-                            }
-                          >
-                            Delete Section
-                          </Button>
-                        </>
-                      )}
-                    </Stack>
-                    <DropArea
-                      id={`bin:${section.id ?? 'none'}`}
-                      label={`Move to section ${section.name}`}
-                      enabled={canEdit}
-                    >
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
-                          gap: 2,
-                        }}
-                      >
-                        {section.inuksuks.map((item, memberIndex) =>
-                          memberCard(item, memberIndex, `members:${section.id}`),
-                        )}
-                      </Box>
-                      {section.inuksuks.length === 0 && (
-                        <Typography color="text.secondary" sx={{ py: 2 }}>
-                          No Inuksuks yet. Drop one here or save a view from an image.
-                        </Typography>
-                      )}
-                    </DropArea>
-                  </Box>
-                </SortableFrame>
-              ))}
           </>
         ) : (
           !data.loading &&
@@ -1127,7 +942,7 @@ export default function BoardsPage({
                 />
               </Stack>
               <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
-                {data.recent.map((item, index) => memberCard(item, index, 'recent'))}
+                {data.recent.map((item, index) => memberCard(item, index))}
               </Box>
               {!data.recent.length && (
                 <Typography color="text.secondary">
@@ -1209,25 +1024,6 @@ export default function BoardsPage({
             Remove from this Board
           </MenuItem>
         )}
-        {menu &&
-          canEdit &&
-          [{ id: null, name: 'Unsectioned' }, ...board.sections].map((section) => (
-            <MenuItem
-              key={section.id ?? 'none'}
-              onClick={() => {
-                const item = menu.item
-                setMenu(null)
-                void run(() =>
-                  reorderBoardInuksuks(board.id, {
-                    version: board.version,
-                    items: boardMemberOrder(board, [item.id], section.id),
-                  }),
-                )
-              }}
-            >
-              Move to {section.name}
-            </MenuItem>
-          ))}
       </Menu>
       {savingItem && (
         <SaveToDialog
@@ -1239,12 +1035,10 @@ export default function BoardsPage({
           onReload={() => void reload()}
           error={error}
           onClose={() => setSavingItem(null)}
-          onSave={(targetId, section, move) => {
-            void run(() => saveToBoard(savingItem, targetId, section, move ? boardId : null)).then(
-              (ok) => {
-                if (ok) setSavingItem(null)
-              },
-            )
+          onSave={(targetId, move) => {
+            void run(() => saveToBoard(savingItem, targetId, move ? boardId : null)).then((ok) => {
+              if (ok) setSavingItem(null)
+            })
           }}
         />
       )}
@@ -1252,8 +1046,8 @@ export default function BoardsPage({
         <Dialog open onClose={busy ? undefined : () => setDeleting(false)}>
           <DialogTitle>Delete Board?</DialogTitle>
           <DialogContent>
-            {error && <Alert severity="error">{error}</Alert>}Delete “{board.name}”? Its Sections
-            and links will be removed. Inuksuks only on this Board will be permanently deleted.
+            {error && <Alert severity="error">{error}</Alert>}Delete “{board.name}”? Its links will
+            be removed. Inuksuks only on this Board will be permanently deleted.
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleting(false)} disabled={busy}>
@@ -1298,71 +1092,6 @@ export default function BoardsPage({
               }}
             >
               Remove
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
-      {sectionAction && board && (
-        <Dialog
-          open
-          onClose={busy ? undefined : () => setSectionAction(null)}
-          fullWidth
-          maxWidth="xs"
-        >
-          <DialogTitle>
-            {sectionAction.kind === 'delete'
-              ? 'Delete Section?'
-              : sectionAction.kind === 'create'
-                ? 'New Section'
-                : 'Rename Section'}
-          </DialogTitle>
-          <DialogContent sx={{ pt: '12px !important' }}>
-            {error && <Alert severity="error">{error}</Alert>}
-            {sectionAction.kind === 'delete' ? (
-              'Inuksuks in this Section will become Unsectioned; they will not be deleted.'
-            ) : (
-              <TextField
-                label="Section name"
-                autoFocus
-                fullWidth
-                required
-                value={sectionName}
-                onChange={(e) => setSectionName(e.target.value)}
-              />
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button disabled={busy} onClick={() => setSectionAction(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={
-                busy || conflict || (sectionAction.kind !== 'delete' && !sectionName.trim())
-              }
-              onClick={() => {
-                void run(async () => {
-                  if (sectionAction.kind === 'create')
-                    await createBoardSection(board.id, {
-                      name: sectionName.trim(),
-                      version: board.version,
-                    })
-                  else if (sectionAction.section && sectionAction.kind === 'rename')
-                    await updateBoardSection(board.id, sectionAction.section.id, {
-                      name: sectionName.trim(),
-                      version: board.version,
-                    })
-                  else if (sectionAction.section)
-                    await deleteBoardSection(board.id, sectionAction.section.id, board.version)
-                }).then((ok) => {
-                  if (ok) {
-                    if (sectionAction.kind === 'delete' && sectionAction.section?.id === sectionId)
-                      onSelectBoard(board.id)
-                    setSectionAction(null)
-                  }
-                })
-              }}
-            >
-              Confirm
             </Button>
           </DialogActions>
         </Dialog>

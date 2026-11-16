@@ -117,11 +117,11 @@ TEST_DATABASE_URL=postgresql+asyncpg://hriv:hriv@localhost:5432/hriv`),
 
 - Frontend: `npm test -- boardUtils useBoardsData BoardsPage BoardEditDialog BoardOwnersDialog CollectionOwnersDialog inuksukApi useShareableImageState useNavigationHistory App.test AppShell`
 - Browser stories: `npm run test:storybook -- --run src/components/BoardsPage.stories.tsx src/components/BoardEditDialog.stories.tsx src/components/BoardOwnersDialog.stories.tsx`
-- Cover owned/shared lists, restricted attach authority, OCC reload, Sections,
+- Cover owned/shared lists, restricted attach authority, OCC reload,
   full membership order, failed membership-read safety, last-Board removal,
   orphan-deletion warning, thumbnail renewal and exact saved-view/back navigation.
-- The new DnD provider is separate from Browse. Verify handle-based Board,
-  Section and member reorder, empty Section drops and cross-Board save; retain
+- The new DnD provider is separate from Browse. Verify handle-based Board
+  and member reorder and cross-Board save; retain
   Browse's [feel-test contract](drag-and-drop.md).
 
 ### Changed image metadata / versioning (annotations, overlays, measurement)

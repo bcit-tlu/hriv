@@ -298,26 +298,21 @@ Notes: <…>
 
 `components/BoardsPage.tsx` owns a separate `DragDropProvider`. Browse's
 `SortableTileGrid` detectors, zones, priorities and activation logic are untouched.
-The Boards provider has three typed surfaces, all using drag handles:
+The Boards provider has two typed surfaces, all using drag handles:
 
 - `board-card` / `board:{id}`: owned Board cards reorder within the Boards row;
   Shared/Public cards have no handles. The complete owned order and per-Board
   versions go to `PUT /boards/order`.
-- `board-section` / `section:{id}`: named Sections reorder with the parent Board
-  version. Unsectioned is fixed last, never a sortable target.
-- `board-member` / `item:{id}`: members sort within Section groups and move
-  between them. `bin:{sectionId}` / `bin:none` are lower-priority section bins
-  that append the item, including empty Sections. Normal member sortables win
-  over a surrounding bin. Every committed order includes every visible member
-  exactly once, leaving hidden members to the backend.
+- `board-member` / `item:{id}`: members sort in one flat Board group. The
+  request contains every visible member exactly once, leaving hidden members to
+  the backend.
 
 `save:{boardId}` bins on other editable Board cards accept owned/editable
 Inuksuks and add a link without removing the source. Non-owner Board editors
 can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
-accessible alternative; per-item menu actions move to every Section or Unsectioned.
-Drop regions expose accessible names: `Save to {Board}` and
-`Move to section {Section}`, including Unsectioned.
+accessible alternative.
+Drop regions expose accessible names: `Save to {Board}`.
 Read-only owned Boards appear in a separate row outside the editable sorting
 list, so their unchanged global positions cannot interleave after reload.
 
@@ -328,6 +323,6 @@ drags make no request. Same-surface ordering reuses `resolveReorderedKeys` and
 the dnd-kit projected source index. No Browse near/far-half split applies here.
 Failures retain the server-rendered order and 409s require explicit reload.
 
-Verify Board/Section reorder, cross-Section moves (including empty bins),
+Verify Board/member reorder,
 cross-Board save, keyboard handles, and touch scroll on the new surface before
 merge. The Browse feel-test contract above remains unchanged.

@@ -820,13 +820,6 @@ class Board(Base):
         secondary=board_groups,
         lazy="selectin",
     )
-    sections: Mapped[list["BoardSection"]] = relationship(
-        "BoardSection",
-        back_populates="board",
-        cascade="all, delete-orphan",
-        order_by="BoardSection.sort_order",
-        lazy="selectin",
-    )
     inuksuk_links: Mapped[list["BoardInuksuk"]] = relationship(
         "BoardInuksuk",
         back_populates="board",
@@ -836,40 +829,10 @@ class Board(Base):
     )
 
 
-class BoardSection(Base):
-    __tablename__ = "board_sections"
-    __table_args__ = (Index("idx_board_sections_board", "board_id"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    board_id: Mapped[int] = mapped_column(
-        ForeignKey("boards.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sort_order: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default="0",
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-    board: Mapped["Board"] = relationship("Board", back_populates="sections")
-
-
 class BoardInuksuk(Base):
     __tablename__ = "board_inuksuks"
     __table_args__ = (
         Index("idx_board_inuksuks_order", "board_id", "sort_order"),
-        Index("idx_board_inuksuks_section_order", "board_id", "section_id", "sort_order"),
     )
 
     board_id: Mapped[int] = mapped_column(
@@ -880,10 +843,6 @@ class BoardInuksuk(Base):
         ForeignKey("inuksuks.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    section_id: Mapped[int | None] = mapped_column(
-        ForeignKey("board_sections.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     sort_order: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -893,7 +852,6 @@ class BoardInuksuk(Base):
 
     board: Mapped["Board"] = relationship("Board", back_populates="inuksuk_links")
     inuksuk: Mapped["Inuksuk"] = relationship("Inuksuk", lazy="selectin")
-    section: Mapped["BoardSection | None"] = relationship("BoardSection")
 
 
 class Collection(Base):

@@ -138,7 +138,7 @@ reload the SPA so `/api/features` refreshes. Local compose already defaults it t
 true; Helm's `inuksuks.enabled` and the backend default remain false. Do not remove
 the flag or change defaults as part of close-out work.
 
-Create a Board with Sections and two saved views on one image. Search by title and
+Create a Board with two saved views on one image. Search by title and
 description, use both new chips, open the Board and reopen an Inuksuk's coordinates.
 As a student, check that private/restricted results stay absent. From Collection
 Manage's search picker, stage a Board and an individual Inuksuk, then save and check

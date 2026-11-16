@@ -1150,7 +1150,6 @@ async def create_collection(
             user, body.type, plans, [],
             seeded_create=(
                 body.inuksuk_ids is not None or body.source_board_id is not None
-                or body.source_section_id is not None
             ),
         )
     images = (

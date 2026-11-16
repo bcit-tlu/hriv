@@ -590,7 +590,6 @@ export default function CollectionManageDialog({
   const nextDraftKey = useRef(-1)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerBoardId, setPickerBoardId] = useState<number | null>(null)
-  const [pickerSectionId, setPickerSectionId] = useState<number | null>(null)
   const [pickerBusy, setPickerBusy] = useState(false)
   const pickerData = useBoardsData(pickerBoardId, false, pickerOpen && inuksuksEnabled)
   const draftRef = useRef<ImageItem[]>(draft)
@@ -1114,7 +1113,6 @@ export default function CollectionManageDialog({
             value={pickerBoardId ?? ''}
             onChange={(e) => {
               setPickerBoardId(Number(e.target.value))
-              setPickerSectionId(null)
             }}
           >
             {pickerData.boards.map((board) => (
@@ -1123,26 +1121,6 @@ export default function CollectionManageDialog({
               </MenuItem>
             ))}
           </TextField>
-          {pickerData.board && (
-            <TextField
-              select
-              fullWidth
-              margin="normal"
-              label="Section"
-              disabled={pickerBusy}
-              value={pickerSectionId ?? ''}
-              onChange={(e) =>
-                setPickerSectionId(e.target.value === '' ? null : Number(e.target.value))
-              }
-            >
-              <MenuItem value="">All Sections</MenuItem>
-              {pickerData.board.sections.map((section) => (
-                <MenuItem key={section.id} value={section.id}>
-                  {section.name}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
           {!pickerData.loading && !pickerData.boards.length && (
             <Typography>No visible Boards.</Typography>
           )}
@@ -1154,14 +1132,7 @@ export default function CollectionManageDialog({
           <Button
             disabled={pickerBusy || pickerData.loading || !pickerData.board?.inuksuks.length}
             onClick={async () => {
-              const items = pickerData.board
-                ? pickerSectionId == null
-                  ? [...pickerData.board.sections.map((section) => section.id), null].flatMap(
-                      (sectionId) =>
-                        pickerData.board!.inuksuks.filter((item) => item.section_id === sectionId),
-                    )
-                  : pickerData.board.inuksuks.filter((item) => item.section_id === pickerSectionId)
-                : []
+              const items = pickerData.board?.inuksuks ?? []
               setPickerBusy(true)
               try {
                 const result = stageAdd(await draftMembersFromInuksuks(items))

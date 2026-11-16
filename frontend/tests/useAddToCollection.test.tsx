@@ -496,10 +496,10 @@ describe('saved-view collection sources', () => {
         groupIds: [],
         hidden: false,
       },
-      { source_board_id: 7, source_section_id: 8 },
+      { source_board_id: 7 },
     )
     expect(apiMocks.createCollection).toHaveBeenCalledWith(
-      expect.objectContaining({ source_board_id: 7, source_section_id: 8 }),
+      expect.objectContaining({ source_board_id: 7 }),
     )
     expect(result.images.map((image) => image.id)).toEqual([9, 9, 9])
     expect(result.images.map((image) => image.slot?.id)).toEqual([1, 2, 3])

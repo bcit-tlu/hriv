@@ -10,7 +10,6 @@ import { parseBoardLocation } from './boardUtils'
 
 interface ParsedShareableUrl {
   boardId?: number | null
-  sectionId?: number | null
   imageId: number | null
   viewport: ViewportState | undefined
   overlays: OverlayRect[] | undefined
@@ -133,9 +132,8 @@ export interface UseShareableImageStateDeps {
   uncategorizedLoaded: React.RefObject<boolean>
   /** Active page — changes trigger URL sync (non-browse pages write `?page=`). */
   page: string
-  /** Written as `?board=` / `?section=` only while `page === 'boards'`. */
+  /** Written as `?board=` only while `page === 'boards'`. */
   boardId?: number | null
-  sectionId?: number | null
   /** Current category path — changes trigger URL sync (`?cat=`). */
   path: Category[]
   /**
@@ -217,7 +215,6 @@ export function useShareableImageState(
     uncategorizedLoaded,
     page,
     boardId = null,
-    sectionId = null,
     path,
     collectionId = null,
     collectionItemId = null,
@@ -337,7 +334,6 @@ export function useShareableImageState(
       params.set('page', page)
       if (page === 'boards' && boardId != null) {
         params.set('board', String(boardId))
-        if (sectionId != null) params.set('section', String(sectionId))
       }
       if (page === 'collections' && collectionTypeFilter != null) {
         params.set('type', collectionTypeFilter)
@@ -379,7 +375,7 @@ export function useShareableImageState(
         // root-scope origin `?cat=` is absent, so history.state is the only
         // carrier left after this replaceState (#1529).
         page === 'collections' && collectionId != null ? collectionFromBrowse : undefined,
-        page === 'boards' ? { boardId, sectionId } : undefined,
+        page === 'boards' ? { boardId } : undefined,
       ),
       '',
       newUrl,
@@ -397,7 +393,6 @@ export function useShareableImageState(
     collectionFromBrowse,
     collectionTypeFilter,
     boardId,
-    sectionId,
   ])
 
   const handleViewportChange = useCallback((state: ViewportState) => {

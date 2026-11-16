@@ -22,9 +22,6 @@ vi.mock('../../src/api', async (importOriginal) => ({
   fetchInuksuk: vi.fn(),
   updateInuksuk: vi.fn(),
   deleteBoard: vi.fn(),
-  createBoardSection: vi.fn(),
-  updateBoardSection: vi.fn(),
-  deleteBoardSection: vi.fn(),
   reorderBoardInuksuks: vi.fn(),
   removeBoardInuksuk: vi.fn(),
 }))
@@ -39,9 +36,6 @@ beforeEach(() => {
   vi.mocked(api.fetchInuksuk).mockResolvedValue(BOARD_ITEMS[0])
   vi.mocked(api.updateInuksuk).mockResolvedValue(BOARD_ITEMS[0])
   vi.mocked(api.deleteBoard).mockResolvedValue()
-  vi.mocked(api.createBoardSection).mockResolvedValue(BOARDS_FIXTURES[0])
-  vi.mocked(api.updateBoardSection).mockResolvedValue(BOARDS_FIXTURES[0])
-  vi.mocked(api.deleteBoardSection).mockResolvedValue()
   vi.mocked(api.reorderBoardInuksuks).mockResolvedValue(BOARDS_FIXTURES[0])
   vi.mocked(api.removeBoardInuksuk).mockResolvedValue(BOARDS_FIXTURES[0])
 })
@@ -111,12 +105,7 @@ describe('BoardsPage', () => {
       within(reloadedFixed).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
     ).toBeVisible()
   })
-  it('names Board save targets and Section move targets', async () => {
-    await setup(1)
-    expect(screen.getByRole('region', { name: 'Save to Architecture inspiration' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Move to section Windows' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Move to section Unsectioned' })).toBeVisible()
-  })
+
   it.each(['student', 'staff'] as const)(
     'keeps read-only program-owned Boards visible but not draggable for %s',
     async (role) => {
@@ -188,78 +177,20 @@ describe('BoardsPage', () => {
       expect(api.updateInuksuk).toHaveBeenCalledWith(7, { version: 3, favourite: false }),
     )
   })
-  it('groups a selected Board into named Sections and Unsectioned', async () => {
-    const view = await setup(1)
-    expect(
-      within(screen.getByRole('region', { name: 'Windows' })).getByText('Rose window'),
-    ).toBeVisible()
-    expect(
-      within(screen.getByRole('region', { name: 'Unsectioned' })).getByText('Light through glass'),
-    ).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Windows' }))
-    expect(view.onSelectBoard).toHaveBeenCalledWith(1, 11)
-  })
-  it('honours the Section URL selection and can clear a stale selection', async () => {
-    const view = await setup(1, { sectionId: 99 })
-    expect(screen.getByText(/Section no longer exists/)).toBeVisible()
-    expect(screen.queryByRole('region', { name: 'Windows' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'All Sections' }))
-    expect(view.onSelectBoard).toHaveBeenCalledWith(1)
-  })
+
   it('hides management actions without permissions', async () => {
     vi.mocked(api.fetchBoard).mockResolvedValue(BOARDS_FIXTURES[2])
     await setup(2)
     expect(screen.queryByRole('button', { name: 'Edit Board' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Owners' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'New Section' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete Board' })).not.toBeInTheDocument()
   })
-  it('creates and renames Sections using Board OCC', async () => {
-    await setup(1)
-    fireEvent.click(screen.getByRole('button', { name: 'New Section' }))
-    fireEvent.change(screen.getByLabelText(/Section name/), { target: { value: 'New details' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    await waitFor(() =>
-      expect(api.createBoardSection).toHaveBeenCalledWith(1, { name: 'New details', version: 5 }),
-    )
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    fireEvent.click(
-      within(screen.getByRole('region', { name: 'Windows' })).getByRole('button', {
-        name: 'Rename',
-      }),
-    )
-    fireEvent.change(screen.getByLabelText(/Section name/), { target: { value: 'Glazing' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    await waitFor(() =>
-      expect(api.updateBoardSection).toHaveBeenCalledWith(1, 11, { name: 'Glazing', version: 5 }),
-    )
-  })
-  it('warns before deleting a Section and returns its items to Unsectioned', async () => {
-    await setup(1)
-    fireEvent.click(
-      within(screen.getByRole('region', { name: 'Windows' })).getByRole('button', {
-        name: 'Delete Section',
-      }),
-    )
-    expect(screen.getByRole('dialog')).toHaveTextContent('will become Unsectioned')
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-    await waitFor(() => expect(api.deleteBoardSection).toHaveBeenCalledWith(1, 11, 5))
-  })
-  it('offers a keyboard-accessible move between Sections with the full membership list', async () => {
-    await setup(1)
-    await actions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Unsectioned' }))
-    await waitFor(() => expect(api.reorderBoardInuksuks).toHaveBeenCalled())
-    const body = vi.mocked(api.reorderBoardInuksuks).mock.calls[0][1]
-    expect(body.version).toBe(5)
-    expect(body.items).toHaveLength(6)
-    expect(body.items.at(-1)).toEqual({ inuksuk_id: 7, section_id: null })
-  })
-  it('preserves editable links, Sections and positions when saving to another Board', async () => {
+
+  it('preserves editable links and positions when saving to another Board', async () => {
     const extra = {
       ...BOARDS_FIXTURES[0],
       id: 4,
-      inuksuks: [{ ...BOARDS_FIXTURES[0].inuksuks[0], section_id: 99, sort_order: 17 }],
+      inuksuks: [{ ...BOARDS_FIXTURES[0].inuksuks[0], sort_order: 17 }],
     }
     vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...BOARD_ITEMS[0], board_ids: [1, 4, 2] })
     vi.mocked(api.fetchBoard).mockImplementation(async (id) =>
@@ -274,9 +205,9 @@ describe('BoardsPage', () => {
       expect(api.updateInuksuk).toHaveBeenCalledWith(7, {
         version: 3,
         board_assignments: [
-          { board_id: 1, section_id: 11, sort_order: 0 },
-          { board_id: 4, section_id: 99, sort_order: 17 },
-          { board_id: 3, section_id: null },
+          { board_id: 1, sort_order: 0 },
+          { board_id: 4, sort_order: 17 },
+          { board_id: 3 },
         ],
       }),
     )
@@ -291,7 +222,7 @@ describe('BoardsPage', () => {
     await waitFor(() =>
       expect(api.updateInuksuk).toHaveBeenCalledWith(7, {
         version: 3,
-        board_assignments: [{ board_id: 3, section_id: null }],
+        board_assignments: [{ board_id: 3 }],
       }),
     )
   })
@@ -408,11 +339,11 @@ it('creates a Sequence from the Board source and navigates to it', async () => {
   expect(vi.mocked(api.createCollection).mock.calls[0][0]).not.toHaveProperty('image_ids')
 })
 
-it('seeds selected views in displayed Section and member order, then Unsectioned', async () => {
+it('seeds selected views in displayed Board member order', async () => {
   const board = BOARDS_FIXTURES[0]
   vi.mocked(api.fetchBoard).mockResolvedValue({
     ...board,
-    sections: [...board.sections].reverse(),
+
     inuksuks: [...board.inuksuks].reverse(),
   })
   vi.mocked(api.createCollection).mockResolvedValue(makeApiCollection({ id: 77, type: 'sequence' }))
@@ -434,7 +365,7 @@ it('seeds selected views in displayed Section and member order, then Unsectioned
   fireEvent.click(screen.getByRole('button', { name: 'Create' }))
   await waitFor(() =>
     expect(api.createCollection).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'sequence', inuksuk_ids: [11, 10, 9, 8, 7, 12] }),
+      expect.objectContaining({ type: 'sequence', inuksuk_ids: [12, 11, 10, 9, 8, 7] }),
     ),
   )
 })
