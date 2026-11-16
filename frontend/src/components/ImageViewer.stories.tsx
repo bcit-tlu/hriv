@@ -84,6 +84,15 @@ export const PanelClosed: Story = {
 }
 export const PanelInuksuks: Story = {
   args: { inuksuksEnabled: true },
+  parameters: {
+    chromatic: {
+      modes: {
+        light: { theme: 'light' },
+        dark: { theme: 'dark' },
+        mobile: { theme: 'light', viewport: { width: 390, height: 844 } },
+      },
+    },
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Open viewer panel' }))
@@ -98,9 +107,4 @@ export const PanelDetails: Story = {
       within(context.canvasElement).getByRole('button', { name: 'Show image details' }),
     )
   },
-}
-export const PanelDark: Story = { ...PanelInuksuks, globals: { theme: 'dark' } }
-export const PanelMobile: Story = {
-  ...PanelInuksuks,
-  globals: { viewport: { value: 'mobile1', isRotated: false } },
 }

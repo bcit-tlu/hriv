@@ -83,6 +83,15 @@ export const Basic: Story = {
 }
 export const Inuksuks: Story = {
   args: { initialOpen: true },
+  parameters: {
+    chromatic: {
+      modes: {
+        light: { theme: 'light' },
+        dark: { theme: 'dark' },
+        mobile: { theme: 'light', viewport: { width: 390, height: 844 } },
+      },
+    },
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
@@ -102,9 +111,4 @@ export const Details: Story = {
       'true',
     )
   },
-}
-export const Dark: Story = { args: { initialOpen: true }, globals: { theme: 'dark' } }
-export const Mobile: Story = {
-  args: { initialOpen: true },
-  globals: { viewport: { value: 'mobile1', isRotated: false } },
 }
