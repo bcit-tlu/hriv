@@ -267,7 +267,14 @@ def collection_summary_out(
 
 def collection_out(ctx: _ViewerContext, collection: Collection) -> CollectionOut:
     images = ctx.visible_images(collection)
-    members = [CollectionMemberOut.model_validate(img) for img in images]
+    members = [
+        image_out(
+            img,
+            scrub_instructor_note=ctx.user.role == "student",
+            model=CollectionMemberOut,
+        )
+        for img in images
+    ]
     if settings.inuksuks_enabled:
         links = [
             link for link in collection.image_links

@@ -3919,3 +3919,21 @@ async def test_list_collections_304_on_strong_if_none_match(
 
     assert result.status_code == 304
     db.execute.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("student", None), ("staff", "staff only"), ("instructor", "staff only"), ("admin", "staff only")],
+)
+def test_collection_out_scrubs_instructor_note_for_students(role, expected) -> None:
+    from app.collection_views import collection_out
+
+    img = _image(1)
+    img.description = "public"
+    img.instructor_note = "staff only"
+    col = _collection(1, "public", user_id=10, images=[img])
+    ctx = _ViewerContext(_user(role, id=2), set() if role == "student" else None)
+
+    out = collection_out(ctx, col)
+
+    assert [(m.description, m.instructor_note) for m in out.images] == [("public", expected)]
