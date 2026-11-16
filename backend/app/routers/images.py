@@ -222,6 +222,7 @@ async def create_image(
                 category_id=body.category_id,
                 copyright=body.copyright,
                 description=body.description,
+                instructor_note=body.instructor_note,
                 active=body.active,
                 sort_order=body.sort_order,
                 metadata_=body.metadata_extra or {},

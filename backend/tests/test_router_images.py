@@ -739,6 +739,21 @@ async def test_create_image_success() -> None:
     db.add.assert_called_once()
 
 
+async def test_create_image_persists_description_and_instructor_note() -> None:
+    db = AsyncMock()
+    db.add = MagicMock()
+    body = ImageCreate(
+        name="new-img",
+        thumb="/thumb.jpg",
+        tile_sources="/tiles/new",
+        description="public",
+        instructor_note="staff only",
+    )
+    await create_image(body, _make_user(), db)
+    img = db.add.call_args.args[0]
+    assert (img.description, img.instructor_note) == ("public", "staff only")
+
+
 async def test_update_image_success() -> None:
     img = _make_image()
     db = AsyncMock()
