@@ -780,6 +780,25 @@ async def test_update_image_normalizes_empty_note() -> None:
     assert img.description is None
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"instructor_note": "new staff note"}, "new staff note"),
+        ({"instructor_note": ""}, None),  # explicit empty clears
+        ({"name": "renamed"}, "existing staff note"),  # omitted = unchanged
+    ],
+)
+async def test_update_image_instructor_note(payload, expected) -> None:
+    img = _make_image()
+    img.instructor_note = "existing staff note"
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    await update_image(1, ImageUpdate(**payload), _mock_request(), _make_user(), db)
+
+    assert img.instructor_note == expected
+
+
 async def test_update_image_not_found() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=None)
@@ -984,6 +1003,27 @@ async def test_bulk_update_images_success() -> None:
 
     for img in imgs:
         assert img.copyright == "CC"
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"instructor_note": "shared staff note"}, "shared staff note"),
+        ({"copyright": "CC"}, "existing staff note"),  # omitted = no change
+    ],
+)
+async def test_bulk_update_images_instructor_note(payload, expected) -> None:
+    imgs = [_make_image(id=1), _make_image(id=2)]
+    for img in imgs:
+        img.instructor_note = "existing staff note"
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = imgs
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    await bulk_update_images(ImageBulkUpdate(image_ids=[1, 2], **payload), _make_user(), db)
+
+    assert [img.instructor_note for img in imgs] == [expected, expected]
 
 
 async def test_bulk_update_images_category_move_bumps_scopes() -> None:
