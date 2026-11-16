@@ -9,6 +9,7 @@ import type { ApiInuksuk, InuksukView } from '../types'
 import { useImageInuksuks } from '../useImageInuksuks'
 import { adjustInuksukPixelForFlip, navigateToInuksuk } from '../inuksukViewport'
 import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
+import { usePinnedDrawerState } from '../usePinnedDrawerState'
 import ImageInuksuksDrawer, { ImageInuksuksTrigger } from './ImageInuksuksDrawer'
 import InuksukFormDialog from './InuksukFormDialog'
 import InuksukMarkersLayer from './InuksukMarkersLayer'
@@ -185,7 +186,15 @@ export default function ImageViewer({
   const visibilityPrefs = useInuksukVisibilityPrefs(auth?.currentUser?.id, inuksuksEnabled)
   const drawerId = useId()
   const drawerIdentity = `${auth?.currentUser?.id ?? 'session'}:${imageId}`
+  const drawerState = usePinnedDrawerState(
+    auth?.currentUser?.id != null ? String(auth.currentUser.id) : 'anonymous',
+    'inuksuks-drawer',
+  )
   const [drawerFor, setDrawerFor] = useState<string | null>(null)
+  const setInuksuksDrawerOpen = (open: boolean) => {
+    drawerState.setOpen(open)
+    setDrawerFor(open ? drawerIdentity : null)
+  }
   const inuksuksTriggerRef = useRef<HTMLButtonElement>(null)
   const [leftControlWrapper, setLeftControlWrapper] = useState<HTMLDivElement | null>(null)
   const [inuksukDraft, setInuksukDraft] = useState<{ imageId: number; view: InuksukView } | null>(
@@ -215,7 +224,11 @@ export default function ImageViewer({
   const theme = useTheme()
   const [canvasEditMode, setCanvasEditMode] = useState(false)
   const inuksuksDrawerOpen =
-    inuksuksEnabled && imageId != null && drawerFor === drawerIdentity && !canvasEditMode
+    inuksuksEnabled &&
+    imageId != null &&
+    drawerState.open &&
+    (drawerState.pinned || drawerFor === drawerIdentity) &&
+    !canvasEditMode
   useEffect(() => {
     onInuksuksDrawerOpenChange?.(inuksuksDrawerOpen)
     return () => onInuksuksDrawerOpenChange?.(false)
@@ -1941,7 +1954,8 @@ export default function ImageViewer({
                 disabled={canvasEditMode}
                 drawerId={drawerId}
                 triggerRef={inuksuksTriggerRef}
-                onOpenChange={(open) => setDrawerFor(open ? drawerIdentity : null)}
+                pinned={drawerState.pinned}
+                onOpenChange={setInuksuksDrawerOpen}
               />,
               leftControlWrapper,
             )}
@@ -1951,7 +1965,12 @@ export default function ImageViewer({
               items={inuksuks.items}
               draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
               open={inuksuksDrawerOpen}
-              onOpenChange={(open) => setDrawerFor(open ? drawerIdentity : null)}
+              pinned={drawerState.pinned}
+              onPinnedChange={(pinned) => {
+                drawerState.setPinned(pinned)
+                setDrawerFor(drawerIdentity)
+              }}
+              onOpenChange={setInuksuksDrawerOpen}
               triggerRef={inuksuksTriggerRef}
               drawerId={drawerId}
               prefs={visibilityPrefs}

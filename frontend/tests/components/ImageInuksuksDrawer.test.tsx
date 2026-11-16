@@ -37,12 +37,14 @@ function Example({
   error?: string
 }) {
   const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const prefs = useInuksukVisibilityPrefs(9)
   return (
     <div style={{ position: 'relative', width: 600, height: 600 }}>
       <ImageInuksuksTrigger
         open={open}
+        pinned={pinned}
         count={items.length}
         onOpenChange={setOpen}
         triggerRef={triggerRef}
@@ -51,6 +53,8 @@ function Example({
       <Drawer
         drawerId="drawer"
         open={open}
+        pinned={pinned}
+        onPinnedChange={setPinned}
         onOpenChange={setOpen}
         triggerRef={triggerRef}
         items={items}
@@ -63,7 +67,53 @@ function Example({
   )
 }
 beforeEach(() => localStorage.clear())
+function openOptions(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: `${name} options` }))
+}
+function toggleMarker(name: string, group = false) {
+  openOptions(name)
+  fireEvent.click(
+    screen.getByRole('menuitemcheckbox', { name: `${name} ${group ? 'markers' : 'marker'}` }),
+  )
+}
 describe('ImageInuksuksDrawer', () => {
+  it.each(['pointerDown', 'mouseDown', 'touchStart', 'click'] as const)(
+    'closes immediately on outside %s but ignores its menu portal',
+    async (event) => {
+      render(<Example />)
+      const trigger = screen.getByRole('button', { name: 'Inuksuks (4)' })
+      fireEvent.click(trigger)
+      openOptions('Rose window')
+      fireEvent[event](screen.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      fireEvent[event](document.body)
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      await waitFor(() => expect(document.querySelector('.MuiModal-root')).toBeNull())
+    },
+  )
+  it('pins as page furniture, ignores outside presses and Escape, and stays open when unpinned', () => {
+    render(<Example />)
+    const trigger = screen.getByRole('button', { name: 'Inuksuks (4)' })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Inuksuks' }))
+    expect(screen.getByRole('button', { name: 'Unpin Inuksuks' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.queryByRole('button', { name: 'Close Inuksuks' })).toBeNull()
+    fireEvent.pointerDown(document.body)
+    fireEvent.click(document.body)
+    fireEvent.keyDown(screen.getByRole('complementary'), { key: 'Escape' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveAttribute('aria-disabled', 'true')
+    openOptions('Rose window')
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window marker' }))
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin Inuksuks' }))
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.pointerDown(document.body)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
   it.each(['My Inuksuks', 'Rose window'])(
     'removes the modal backdrop after changing %s labels',
     async (name) => {
@@ -73,9 +123,10 @@ describe('ImageInuksuksDrawer', () => {
       await waitFor(() => expect(screen.getByRole('menu')).toBeVisible())
       fireEvent.click(screen.getByRole('menuitemcheckbox', { name: `${name} labels` }))
       await waitFor(() => expect(document.querySelector('.MuiModal-root')).toBeNull())
-      fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks markers' }))
-      expect(screen.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-        'aria-pressed',
+      toggleMarker('My Inuksuks', true)
+      openOptions('My Inuksuks')
+      expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' })).toHaveAttribute(
+        'aria-checked',
         'false',
       )
     },
@@ -125,60 +176,76 @@ describe('ImageInuksuksDrawer', () => {
   it('keeps labels independent, exposes mixed groups and group operations replace row overrides', () => {
     render(<Example />)
     fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks markers' }))
-    expect(screen.getByRole('button', { name: 'Rose window marker' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Rose window marker' }))
-    expect(screen.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
-      'aria-pressed',
+    toggleMarker('My Inuksuks', true)
+    const hidden = screen.getByRole('button', { name: 'View Inuksuk: Rose window (marker hidden)' })
+    expect(within(hidden).getByText('Rose window')).toHaveStyle({
+      color: createTheme().palette.text.secondary,
+    })
+    toggleMarker('Rose window')
+    openOptions('My Inuksuks')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' })).toHaveAttribute(
+      'aria-checked',
       'mixed',
     )
+    expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks markers' })).toHaveTextContent(
+      'Show markers (Mixed)',
+    )
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: 'Rose window options' }))
     expect(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).toHaveAttribute(
       'aria-checked',
       'true',
     )
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
-    expect(screen.getByRole('button', { name: 'My Inuksuks options' })).toHaveAttribute(
-      'aria-pressed',
-      'mixed',
-    )
     fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks options' }))
     expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(
       'aria-checked',
       'mixed',
     )
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
-    expect(screen.getByRole('button', { name: 'My Inuksuks options' })).toHaveAttribute(
-      'aria-pressed',
+    openOptions('My Inuksuks')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
-    expect(screen.getByRole('button', { name: 'My second marker' })).toHaveAttribute(
-      'aria-pressed',
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    openOptions('My second')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'My second marker' })).toHaveAttribute(
+      'aria-checked',
       'false',
     )
-    fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks markers' }))
-    expect(screen.getByRole('button', { name: 'My second marker' })).toHaveAttribute(
-      'aria-pressed',
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    toggleMarker('My Inuksuks', true)
+    openOptions('My second')
+    expect(screen.getByRole('menuitemcheckbox', { name: 'My second marker' })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
   })
   it('restores focus on Escape and persists label-only state through remount', async () => {
     const first = render(<Example />)
     fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Rose window marker' }))
+    toggleMarker('Rose window')
     fireEvent.keyDown(screen.getByRole('complementary'), { key: 'Escape' })
     expect(screen.getByRole('button', { name: 'Inuksuks (4)' })).toHaveFocus()
     first.unmount()
     render(<Example />)
     fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
-    expect(screen.getByRole('button', { name: 'Rose window marker' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
     fireEvent.click(screen.getByRole('button', { name: 'Rose window options' }))
+    const menu = screen.getByRole('menu')
+    expect(
+      within(menu)
+        .getAllByRole('menuitemcheckbox')
+        .map((item) => item.textContent),
+    ).toEqual(['Show marker', 'Hide label'])
+    expect(
+      within(menu).getByRole('menuitemcheckbox', { name: 'Rose window marker' }),
+    ).toHaveAttribute('aria-checked', 'false')
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Edit', 'Delete'])
     expect(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -197,7 +264,7 @@ describe('ImageInuksuksDrawer', () => {
   it('hides empty source groups while keeping populated groups usable', () => {
     render(<Example items={[rows[0]]} />)
     fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (1)' }))
-    expect(screen.getByRole('button', { name: 'My Inuksuks markers' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'My Inuksuks options' })).toBeEnabled()
     expect(screen.queryByRole('region', { name: 'Instructor Inuksuks' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Public Inuksuks' })).not.toBeInTheDocument()
   })

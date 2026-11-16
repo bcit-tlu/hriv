@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import OpenSeadragon from 'openseadragon'
-import CompassCalibration from '@mui/icons-material/CompassCalibration'
 import type { InuksukView } from '../types'
 import { adjustInuksukPixelForFlip, navigateToInuksuk } from '../inuksukViewport'
 
@@ -81,10 +80,18 @@ export default function InuksukMarkersLayer({
                 cursor: 'pointer',
                 color: '#1565c0',
                 border: 0,
+                borderRadius: '50%',
+                boxShadow: '0 1px 4px #0005',
                 background: 'transparent',
               }}
             >
-              <CompassCalibration sx={{ fontSize: 27 }} />
+              <img
+                src={`${import.meta.env.BASE_URL}inuksuk-marker.svg`}
+                width={27}
+                height={27}
+                alt=""
+                draggable={false}
+              />
             </button>
           )}
           {item.labelVisible !== false && (
