@@ -200,7 +200,11 @@ export function isAuthFailure(err: unknown): err is ApiError {
 // Converts an API-layer error into a user-facing string. When the caller is
 // about to surface the message to the user, this helper also notifies the
 // optional observability hook so we can record user-visible API failures.
-export function userMessage(err: unknown, fallback: string): string {
+export function userMessage(
+  err: unknown,
+  fallback: string,
+  options: { includeServerDetail?: boolean } = {},
+): string {
   if (err instanceof ApiError) {
     notifyVisibleApiFailure(err, {
       method: err.method ?? 'GET',
@@ -233,7 +237,7 @@ export function userMessage(err: unknown, fallback: string): string {
       }
       return 'Not enough free space is available to upload this file.'
     }
-    if (err.status >= 400 && err.status < 500) {
+    if (err.status >= 400 && (err.status < 500 || options.includeServerDetail)) {
       if (usable) {
         return detail
       }

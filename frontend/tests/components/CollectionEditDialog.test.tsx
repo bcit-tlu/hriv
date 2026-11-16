@@ -642,7 +642,21 @@ describe('CollectionEditDialog', () => {
       renderDialog({ onSave }, makeAuth('student'))
       await user.type(screen.getByLabelText('Collection name'), 'Skulls')
       await user.click(screen.getByRole('button', { name: 'Create' }))
-      expect(await screen.findByText('Failed to create collection.')).toBeInTheDocument()
+      expect(
+        await screen.findByText("Couldn't create the collection. Please try again."),
+      ).toBeInTheDocument()
+    })
+
+    it('shows backend server detail when creating a collection fails', async () => {
+      const user = userEvent.setup()
+      const onSave = vi
+        .fn()
+        .mockRejectedValue(new ApiError(500, 'Unable to store collection slots'))
+      const { onClose } = renderDialog({ onSave }, makeAuth('student'))
+      await user.type(screen.getByLabelText('Collection name'), 'Skulls')
+      await user.click(screen.getByRole('button', { name: 'Create' }))
+      expect(await screen.findByText('Unable to store collection slots')).toBeInTheDocument()
+      expect(onClose).not.toHaveBeenCalled()
     })
 
     it('offers to reload the current values after a stale-version 409', async () => {

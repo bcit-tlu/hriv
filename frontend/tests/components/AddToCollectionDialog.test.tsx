@@ -8,6 +8,7 @@ import AddToCollectionDialog, {
   type AddToCollectionDialogProps,
 } from '../../src/components/AddToCollectionDialog'
 import type { Role } from '../../src/types'
+import { ApiError } from '../../src/api'
 import { makeCollectionSummary } from '../helpers/fixtures'
 
 function makeAuth(role: Role, id = 7) {
@@ -297,18 +298,24 @@ describe('AddToCollectionDialog', () => {
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1))
   })
 
-  it('keeps the create form open with the message when onCreate rejects', async () => {
-    const user = userEvent.setup()
-    const { props } = renderDialog(
-      { onCreate: vi.fn(async () => Promise.reject(new Error('x'))) },
-      makeAuth('student'),
-    )
-    await user.click(screen.getByRole('button', { name: 'New collection…' }))
-    await user.type(await screen.findByLabelText('Collection name'), 'Fresh set')
-    await user.click(screen.getByRole('button', { name: 'Create' }))
-    expect(await screen.findByText('Failed to create collection.')).toBeInTheDocument()
-    expect(props.onClose).not.toHaveBeenCalled()
-  })
+  it.each([
+    [new Error('x'), "Couldn't create the collection. Please try again."],
+    [new ApiError(500, 'Unable to store collection slots'), 'Unable to store collection slots'],
+  ])(
+    'keeps the create form open with the message when onCreate rejects: %s',
+    async (error, message) => {
+      const user = userEvent.setup()
+      const { props } = renderDialog(
+        { onCreate: vi.fn(async () => Promise.reject(error)) },
+        makeAuth('student'),
+      )
+      await user.click(screen.getByRole('button', { name: 'New collection…' }))
+      await user.type(await screen.findByLabelText('Collection name'), 'Fresh set')
+      await user.click(screen.getByRole('button', { name: 'Create' }))
+      expect(await screen.findByText(message as string)).toBeInTheDocument()
+      expect(props.onClose).not.toHaveBeenCalled()
+    },
+  )
 
   it('resets the filter when reopened', async () => {
     const { rerender, props } = renderDialog()

@@ -723,7 +723,11 @@ export default function BoardsPage({
             setCollectionSource(null)
             return true
           } catch (err) {
-            setError(userMessage(err, 'Unable to add saved views.'))
+            setError(
+              userMessage(err, "Couldn't add to the collection. Please try again.", {
+                includeServerDetail: true,
+              }),
+            )
             return false
           }
         }}

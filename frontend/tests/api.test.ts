@@ -399,6 +399,20 @@ describe('userMessage', () => {
     expect(userMessage(err, 'fallback')).toBe('fallback')
   })
 
+  it('can surface a usable server detail without changing the default policy', () => {
+    const err = new ApiError(500, 'Unable to store the collection snapshot')
+    expect(userMessage(err, 'fallback', { includeServerDetail: true })).toBe(err.detail)
+  })
+
+  it.each(['', '   ', '<html>Internal Server Error</html>', 'x'.repeat(201)])(
+    'keeps the fallback for unusable server detail %j',
+    (detail) => {
+      expect(
+        userMessage(new ApiError(500, detail), 'fallback', { includeServerDetail: true }),
+      ).toBe('fallback')
+    },
+  )
+
   it('returns network message for TypeError', () => {
     expect(userMessage(new TypeError('Failed to fetch'), 'fallback')).toBe(
       'Network error \u2014 check your connection and try again.',

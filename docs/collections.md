@@ -2049,3 +2049,12 @@ still deduplicate by real image ID; saved views intentionally permit repeated im
 Admin DB exports keep Collection slot metadata even with the flag disabled.
 Pair the DB archive with a filesystem archive to retain the independent slot JPEGs;
 restoring and rebuilding DZI tiles does not replace those snapshots.
+
+### Membership write responses
+
+Creation and membership replacement reload the complete member/image graph after
+committing slot snapshots. Responses must not rely on images retained in an async
+session's identity map. Fresh-request-session regressions cover Board/Inuksuk
+seeding, direct slots and image IDs, including replacement and append flows.
+Create and add dialogs surface short, non-HTML backend error details when present;
+otherwise they show a retry-oriented fallback, without closing the failed draft.

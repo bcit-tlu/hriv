@@ -205,16 +205,20 @@ def _write_db(
 
     ``execute`` answers ``SELECT`` by entity (Image / Program / Group / User)
     with the supplied rows and answers the optimistic-concurrency ``UPDATE``
-    with ``cas_rowcount``. ``refresh`` fills server-generated columns on
+    with ``cas_rowcount``. ``refresh`` and eager ``get`` fill server-generated columns on
     freshly created ORM instances so ``collection_out`` can serialize them.
     """
     db = AsyncMock()
     db.add = MagicMock()
     category_by_id = {category.id: category for category in categories or []}
 
-    async def _get(entity, entity_id):
+    async def _get(entity, entity_id, **kwargs):
         if entity is Category:
             return category_by_id.get(entity_id)
+        if entity is Collection and kwargs.get("populate_existing") and db.add.called:
+            created = db.add.call_args.args[0]
+            await _refresh(created)
+            return created
         return get
 
     db.get = AsyncMock(side_effect=_get)
