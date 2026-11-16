@@ -2162,3 +2162,44 @@ async def test_bulk_delete_images_member_of_collection_bumps() -> None:
     body = ImageBulkDelete(image_ids=[1, 2])
     await bulk_delete_images(body, _make_user(), db=db)
     images_router.bump_browse_revision.assert_awaited_once()
+
+
+# ── instructor_note scrubbing (#1779) ─────────────────────
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("student", None), ("staff", "staff only"), ("instructor", "staff only"), ("admin", "staff only")],
+)
+async def test_get_image_scrubs_instructor_note_for_students(role, expected) -> None:
+    img = _make_image()
+    img.description = "public"
+    img.instructor_note = "staff only"
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    with patch(
+        "app.routers.images.is_category_visible_to_student",
+        new=AsyncMock(return_value=True),
+    ):
+        out = await get_image(1, _make_user(role), db=db)
+    assert (out.description, out.instructor_note) == ("public", expected)
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [("student", None), ("staff", "staff only"), ("instructor", "staff only"), ("admin", "staff only")],
+)
+async def test_list_images_scrubs_instructor_note_for_students(role, expected) -> None:
+    img = _make_image(active=True)
+    img.description = "public"
+    img.instructor_note = "staff only"
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [img]
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch(
+        "app.routers.images.get_student_excluded_category_ids",
+        new=AsyncMock(return_value=set()),
+    ):
+        result = await list_images(_make_user(role), db=db)
+    assert [(o.description, o.instructor_note) for o in result] == [("public", expected)]

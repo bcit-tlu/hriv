@@ -21,6 +21,7 @@ from ..collection_views import (
     collection_summary_out,
     collections_accessible_to,
     image_ids_in_collections,
+    image_out,
 )
 from ..collection_slots import cleanup_slot_thumbs, image_slot_thumbs
 from ..database import async_session, get_db, settings
@@ -94,7 +95,8 @@ async def list_images(
             )
     stmt = stmt.order_by(Image.sort_order, Image.name)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    scrub = _user.role == "student"
+    return [image_out(img, scrub_instructor_note=scrub) for img in result.scalars().all()]
 
 
 # Literal routes must register before `/{image_id}` — FastAPI matches in
@@ -144,7 +146,8 @@ async def get_image(
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_visible_image(db, _user, image_id)
+    img = await _get_visible_image(db, _user, image_id)
+    return image_out(img, scrub_instructor_note=_user.role == "student")
 
 
 async def _get_visible_image(db: AsyncSession, user: User, image_id: int) -> Image:
