@@ -308,18 +308,28 @@ and the source-group drawer remain separate follow-ups (#1771 and #1773).
 The bottom-left **Add Inuksuk** compass arms single-click placement. It
 disarms selection and presentation tools, exits canvas editing through its
 existing dirty-draft/discard flow, and captures OSD viewport x/y, zoom and
-rotation without converting to image pixels. Escape cancels placement.
-Clicking opens **Save a view** immediately with a preview marker.
+rotation without converting to image pixels. Placement stays armed after saving;
+toggle the compass or press Escape without a draft to disarm it. Normal drag,
+scroll and pinch navigation remain available. Only OSD quick clicks/taps place.
+A preview marker and non-modal **Save a view** panel appear immediately at the
+top-right. Title is selected for typing; choose a required Board (the last used
+editable Board is remembered), or create one inline. Description and Favourite
+are under collapsed **More options**. Save keeps placement armed; Cancel or
+Escape removes the draft first. Only one unsaved placement is open at a time.
+If a new point would sit beneath the panel, the viewer pans it clear of the panel.
 
 `InuksukMarkersLayer` portals into `viewer.container` under
-`data-hriv-canvas-ui`, independently of Fabric. Compass icons are 32 CSS
+`data-hriv-canvas-ui`, independently of Fabric. Unbounded blue compass icons are 27 CSS
 pixels and titles use 13-pixel text; neither scales nor rotates with the image.
 The layer reprojects anchors on animation, animation-finish, open, resize,
 rotate and flip. Each marker accepts independent `markerVisible` and
 `labelVisible` props, both true by default: labels may remain visible when
 markers are hidden. The drawer's shared visibility preferences drive the
 viewer layer directly, without separate viewer-level overrides. Clicking a marker smoothly restores its
-saved pan/zoom/rotation, highlights it and opens its details.
+saved pan/zoom/rotation, highlights it and opens a non-modal information card.
+The card shows title, optional description, visible Board names and favourite
+state. Only authorized editors see the pencil, which opens the full existing
+OCC-protected edit form. Its close X dismisses the card without editing.
 
 Flip remains a presentation setting, not a saved coordinate transform.
 Placement unmirrors screen x before converting to viewport coordinates;
@@ -364,8 +374,8 @@ the marker stories exercise the real viewer with fixture API responses.
 ### Inuksuks drawer (#1773)
 
 The feature-gated CompassCalibration trigger lives in an OSD **TOP_LEFT** control,
-participates in auto-fade, and keeps keyboard-focused controls visible. Its badge
-counts authorized image Inuksuks, including ones whose markers are hidden. The
+participates in auto-fade, and keeps keyboard-focused controls visible. Its white
+glyph and dark translucent background match adjacent OSD controls, without a badge. The
 left-anchored panel and its dialogs are portaled into the viewer, including in
 OSD full-page mode. It reuses `useImageInuksuks`; opening the drawer does not
 issue another image request.
@@ -377,14 +387,18 @@ collapsed. Row selection smoothly restores saved pan, zoom and rotation and
 highlights the marker without opening the form. The separate edit action uses
 API `permissions.can_edit` and opens the existing OCC-protected form.
 
-Marker switches and label eyes are independent at both row and group levels;
+Marker eyes and label menu actions are independent at both row and group levels;
 both default to shown. Group actions set the default for the entire source and
 clear all row overrides for that dimension, including cached rows on other
-images. A subsequent row action overrides that default. Mixed groups show
-counts and **Mixed**; toggling a mixed group shows all. Changing markers never
+images. A subsequent row action overrides that default. Mixed states remain
+accessible on group controls and in label menus; toggling a mixed group shows all. Changing markers never
 changes labels, or vice versa. Shared preferences are the viewer's single source
 of visibility state, so drawer controls always reflect the rendered markers and
 labels. Collection embeds use the same preferences rather than external overrides.
+Rows show titles only. Their **⋮** menus contain Show/Hide label and permitted
+Edit/Delete actions; group menus contain label actions. The drawer stops above
+the bottom toolbar so tools remain usable. Unsaved placements also appear under
+My Inuksuks with an **Unsaved** status while the draft is open.
 
 Preferences use `hriv.inuksukVisibility.<userId>`. Parsing validates the shape
 and defaults corrupt values safely; at most 500 recently changed row overrides

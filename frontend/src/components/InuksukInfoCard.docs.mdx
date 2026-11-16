@@ -1,0 +1,13 @@
+import { Meta, Primary, Stories, Title } from '@storybook/addon-docs/blocks'
+import * as CardStories from './InuksukInfoCard.stories'
+
+<Meta of={CardStories} />
+<Title />
+
+Marker clicks open a non-modal place card at the viewer's top-right, not an editor.
+It shows the title, optional description, visible Board names and favourite state.
+Only API-authorized editors see the pencil. Close dismisses the card without
+changing the saved view. Board-loading failures leave the card and close action usable.
+
+<Primary />
+<Stories includePrimary={false} />

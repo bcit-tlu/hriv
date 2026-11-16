@@ -1427,6 +1427,26 @@ selection MouseTracker ignores their presses.
 
 ## Board and Inuksuk search (#1775)
 
+### Viewer saved-view interactions
+
+- Add Inuksuk is a persistent mode, with normal drag/scroll/pinch navigation;
+  only quick clicks/taps place. Save does not disarm it. Escape cancels an open
+  draft first, then disarms placement on the next press; the toolbar also disarms it.
+- Placement uses a compact non-modal top-right panel: selected Title, required
+  remembered Board picker and inline private-Board creation. Description and
+  Favourite start under collapsed More options. Cancel removes the draft marker;
+  the draft also appears as Unsaved in My Inuksuks. One draft is edited at a time.
+- Marker clicks open a top-right information card showing title, optional description,
+  visible Board names, favourite state and a close X. The authorized-only pencil
+  opens the full edit form; marker clicks never directly open the editor.
+- The title-only drawer leaves the bottom toolbar visible. Row/group eyes change
+  marker visibility; their context menus change labels independently. Row menus
+  expose Edit/Delete only when permitted. Default/override/Mixed and localStorage
+  semantics remain unchanged.
+- Markers are upright constant-size 27px blue glyphs without a disc. Labels retain
+  their existing styling. The top-left compass has no badge and matches the adjacent
+  white-on-dark OSD controls; the placement tool shares all normal toolbar states.
+
 - With `features.inuksuks`, Search adds Boards (dashboard icon) and Inuksuks
   (compass icon) chips and title/description matches. Saved-view requests are
   debounced, cancellable and visibility-filtered by the API; an older query's

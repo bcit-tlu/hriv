@@ -132,6 +132,7 @@ const observabilityMocks = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   fetchImageInuksuks: vi.fn(),
+  fetchBoards: vi.fn().mockResolvedValue([]),
   fetchImage: vi.fn(),
   userMessage: vi.fn((_err: unknown, fallback: string) => fallback),
   startCount: vi.fn(),
@@ -146,6 +147,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   return {
     ...actual,
     fetchImageInuksuks: apiMocks.fetchImageInuksuks,
+    fetchBoards: apiMocks.fetchBoards,
     fetchImage: apiMocks.fetchImage,
     userMessage: apiMocks.userMessage,
     startCount: apiMocks.startCount,
@@ -472,6 +474,25 @@ afterEach(() => {
 })
 
 describe('Inuksuk viewer tool', () => {
+  it('keeps the mode armed after save, lists the draft and cancels it before Escape disarms the tool', async () => {
+    render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
+    act(() => buttonByTooltip('Add Inuksuk').options.onClick())
+    const event = { quick: true, position: { x: 30, y: 40 }, preventDefaultAction: false }
+    act(() => viewer().fire('canvas-click', event))
+    expect(event.preventDefaultAction).toBe(true)
+    fireEvent.click(await within(viewer().container).findByRole('button', { name: 'Inuksuks (0)' }))
+    expect(viewer().container).toContainElement(within(viewer().container).getByText('Unsaved'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(within(viewer().container).queryByText('Unsaved')).not.toBeInTheDocument()
+    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
+    act(() => viewer().fire('canvas-click', event))
+    fireEvent.click(screen.getByRole('button', { name: 'Create Inuksuk' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(buttonByTooltip('Add Inuksuk').element).toHaveAttribute('aria-pressed', 'false')
+  })
   it('shares one image request with the TOP_LEFT drawer, navigates, highlights and independently hides markers', async () => {
     apiMocks.fetchImageInuksuks.mockResolvedValue([INUKSUK_FIXTURE])
     const onOpenChange = vi.fn()
@@ -503,17 +524,24 @@ describe('Inuksuk viewer tool', () => {
         .getAllByRole('button', { name: 'View Inuksuk: Rose window' })
         .some((button) => button.getAttribute('aria-pressed') === 'true'),
     ).toBe(true)
-    fireEvent.click(within(drawer).getByRole('switch', { name: 'Rose window marker' }))
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
-    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window label' }))
-    expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(1)
-    expect(within(drawer).getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window marker' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    fireEvent.click(
+      within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
     )
-    fireEvent.click(within(drawer).getByRole('switch', { name: 'Rose window marker' }))
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Edit Rose window' }))
+    expect(viewer().container.querySelector('[data-inuksuk-id="7"]')).toBeEmptyDOMElement()
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    fireEvent.click(
+      within(viewer().container).getByRole('menuitemcheckbox', { name: 'Rose window labels' }),
+    )
+    expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(1)
+    expect(within(drawer).getByRole('button', { name: 'Rose window marker' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window marker' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Rose window options' }))
+    fireEvent.click(within(viewer().container).getByRole('menuitem', { name: 'Edit' }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(1)
     fireEvent.click(within(drawer).getByRole('button', { name: 'Close Inuksuks' }))
@@ -533,9 +561,9 @@ describe('Inuksuk viewer tool', () => {
       viewer().viewport.getZoom.mockReturnValue(4)
       viewer().viewport.getRotation.mockReturnValue(35)
       act(() => buttonByTooltip('Add Inuksuk').options.onClick())
-      expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(false)
+      expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
       act(() =>
-        tracker().options.clickHandler({ quick: true, position: { x: flip ? 170 : 30, y: 40 } }),
+        viewer().fire('canvas-click', { quick: true, position: { x: flip ? 170 : 30, y: 40 } }),
       )
       expect(await screen.findByRole('dialog')).toHaveTextContent(
         JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
@@ -549,10 +577,10 @@ describe('Inuksuk viewer tool', () => {
   it('Escape cancels placement and a drag is never treated as a click', () => {
     render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
     act(() => buttonByTooltip('Add Inuksuk').options.onClick())
-    act(() => tracker().options.clickHandler({ quick: false, position: { x: 30, y: 40 } }))
+    act(() => viewer().fire('canvas-click', { quick: false, position: { x: 30, y: 40 } }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
-    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
+    act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
   })
@@ -566,12 +594,12 @@ describe('Inuksuk viewer tool', () => {
     expect(screen.getByText('canvas edit: true')).toBeInTheDocument()
     canvasOverlayMockState.cancelKeepsEditing = true
     await act(async () => buttonByTooltip('Add Inuksuk').options.onClick())
-    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
+    act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     canvasOverlayMockState.cancelKeepsEditing = false
     await act(async () => buttonByTooltip('Add Inuksuk').options.onClick())
     expect(screen.getByText('canvas edit: false')).toBeInTheDocument()
-    act(() => tracker().options.clickHandler({ quick: true, position: { x: 30, y: 40 } }))
+    act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
   it.each(['Create', 'Edit', 'Delete'])(
@@ -583,6 +611,11 @@ describe('Inuksuk viewer tool', () => {
         name: 'View Inuksuk: Rose window',
       })
       fireEvent.click(marker)
+      expect(viewer().container).toContainElement(
+        within(viewer().container).getByRole('region', { name: 'Inuksuk information' }),
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      fireEvent.click(within(viewer().container).getByRole('button', { name: 'Edit Rose window' }))
       expect(screen.getByText('Editing Inuksuk 7')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: action + ' Inuksuk' }))
       await waitFor(() => expect(apiMocks.fetchImageInuksuks).toHaveBeenCalledTimes(2))

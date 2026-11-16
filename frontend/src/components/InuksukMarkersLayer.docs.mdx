@@ -13,7 +13,10 @@ and icons remain upright.
 visibility** leaves one label without its marker and another marker without its
 label. Both default to visible. Clicking a marker restores its saved position,
 zoom and rotation, highlights it, and opens its details. The toolbar's compass
-button arms one-click placement; Escape cancels it.
+button arms persistent quick-click placement while pan/zoom stay available.
+Escape cancels the draft first, then disarms the tool. Markers are 27px blue
+glyphs without a disc; their existing title labels are unchanged. Marker clicks
+open the information card, with an explicit pencil for editing.
 
 <Primary />
 <Stories includePrimary={false} />

@@ -53,6 +53,29 @@ async function setup(props: Partial<React.ComponentProps<typeof InuksukFormDialo
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
 describe('InuksukFormDialog', () => {
+  it('places in a non-modal panel with a selected title, remembered Board and collapsed optional fields', async () => {
+    localStorage.setItem(LAST_BOARD, '1')
+    const { user, api } = await setup({ placement: true })
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'false')
+    const title = screen.getByRole('textbox', { name: /^Title/ }) as HTMLInputElement
+    expect(title).toHaveFocus()
+    expect(title.selectionStart).toBe(0)
+    expect(title.selectionEnd).toBe(title.value.length)
+    expect(screen.queryByLabelText('Description')).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Favourite' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More options' }))
+    await user.type(screen.getByLabelText('Description'), 'A saved detail')
+    await user.click(screen.getByRole('checkbox', { name: 'Favourite' }))
+    await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
+    expect(api.createInuksuk).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'New Inuksuk',
+        description: 'A saved detail',
+        favourite: true,
+        board_assignments: [{ board_id: 1 }],
+      }),
+    )
+  })
   it.each(['list', 'details'])(
     'blocks edits after Board %s loading fails, even after creating a Board inline',
     async (failure) => {

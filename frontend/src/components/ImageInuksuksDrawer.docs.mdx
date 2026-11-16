@@ -6,16 +6,18 @@ import * as DrawerStories from './ImageInuksuksDrawer.stories'
 <Title />
 
 The CompassCalibration trigger is an auto-fading TOP_LEFT OpenSeadragon control.
-Its count is the number of authorized Inuksuks on the current image, not the
-number of enabled markers. The left-anchored panel stays inside the viewer in
+It has no number badge, matching adjacent white-on-dark viewer controls.
+The left-anchored panel stops above the toolbar and stays inside the viewer in
 full-page mode and shares its existing image-data request with the markers.
 
 My and Instructor start expanded; Public starts collapsed. Each row has an
-independent marker switch and label eye. Group actions replace all row overrides
+independent marker eye and a ⋮ menu for Show/Hide label and permitted Edit/Delete.
+Group eyes control markers; group menus control labels. Group actions replace all row overrides
 for that dimension; a later row action overrides the group. Mixed groups show
-counts and “Mixed”; clicking a mixed group shows all. Neither dimension hides
+accessible “Mixed” states; clicking a mixed group shows all. Neither dimension hides
 the other. A row navigates without opening an editor; the explicit owner edit
-action opens the existing dialog. Escape restores focus to the trigger.
+action opens the existing dialog. Rows have titles only; drafts appear as Unsaved
+under My Inuksuks. Escape restores focus to the trigger when no draft needs cancelling.
 
 Preferences are scoped to the signed-in user, bounded to 500 recent overrides,
 and shared across synchronized panes and browser tabs. Sequence navigation
