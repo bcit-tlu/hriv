@@ -239,6 +239,14 @@ export const EmptySequenceReadOnly: Story = {
 }
 
 export const SameImageSlots: Story = {
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Two saved views of one image. The filmstrip is image-only; each button keeps its slot label as an accessible name, and the active view caption remains below the viewport.',
+      },
+    },
+  },
   decorators: [
     (Story) => (
       <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -278,6 +286,7 @@ export const SameImageSlots: Story = {
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement)
+    await expect(canvas.getByTestId('sequence-thumbnail-strip').textContent).toBe('')
     await userEvent.click(canvas.getByRole('button', { name: 'Go to Right study' }))
     await expect(canvas.getByRole('button', { name: 'Go to Right study' })).toHaveAttribute(
       'aria-current',
@@ -285,5 +294,6 @@ export const SameImageSlots: Story = {
     )
     await expect(canvas.getByTestId('sequence-position')).toHaveTextContent('2 of 2')
     await expect(args.onSelectItem).toHaveBeenCalledWith(101, 502)
+    await expect(canvas.getByRole('heading', { name: 'Right study' })).toBeVisible()
   },
 }

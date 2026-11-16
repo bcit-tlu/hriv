@@ -296,7 +296,7 @@ npm run test:storybook -- --run src/components/BoardsPage.stories.tsx src/compon
 ```
 
 Then run the full frontend suite, build, lint and format checks. Visually verify
-the Board selection toolbar, labeled same-image Sequence filmstrip and
+the Board selection toolbar, image-only same-image Sequence filmstrip with accessible labels and
 same-image Synchronized comparison. The feature-off stories and data-hook tests
 protect legacy payload compatibility; the slot stories use deterministic
 saved-coordinate snapshots.

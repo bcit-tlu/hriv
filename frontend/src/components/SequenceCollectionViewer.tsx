@@ -540,14 +540,6 @@ export default function SequenceCollectionViewer({
                 draggable={false}
                 sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1 }}
               />
-              {inuksuksEnabled && img.slot?.label && (
-                <Typography
-                  variant="caption"
-                  sx={{ display: 'block', maxWidth: 100, lineHeight: 1.5 }}
-                >
-                  {img.slot.label}
-                </Typography>
-              )}
             </Box>
           )
         })}
