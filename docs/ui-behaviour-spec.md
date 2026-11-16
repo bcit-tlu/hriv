@@ -1424,3 +1424,18 @@ selection MouseTracker ignores their presses.
   account-exists paragraph or dialog mint-retry action. Failed automatic minting
   after create directs the admin back to Edit Person. Credentials remain local
   to the mounted dialog and same-user mint serialization is retained.
+
+## Board and Inuksuk search (#1775)
+
+- With `features.inuksuks`, Search adds Boards (dashboard icon) and Inuksuks
+  (compass icon) chips and title/description matches. Saved-view requests are
+  debounced, cancellable and visibility-filtered by the API; an older query's
+  results must not replace a newer query. Other search kinds remain local.
+- Choosing a Board opens `?page=boards&board=<id>`. Choosing an Inuksuk uses the
+  existing source-image/saved-coordinate navigation, preserving x/y/zoom/rotation.
+- In Manage Collection's picker, these results instead stage saved-view slots.
+  Board expansion follows the displayed Section and member order, then Unsectioned.
+  Choosing a saved-view result immediately hands its draft members to Manage;
+  the existing image/category checkbox footer remains for whole-image selections.
+  A request failure or an empty Board keeps the picker open with a visible error.
+- The flag-off search UI and collection write payloads remain unchanged.

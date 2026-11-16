@@ -2,7 +2,10 @@
 
 import asyncio
 import errno
+import os
 import sys
+from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1807,6 +1810,24 @@ async def test_promote_source_image_tile_rebuild_restores_on_update_failure() ->
     mock_rmtree.assert_called_once_with(
         "/data/tiles/5", ignore_errors=True,
     )
+
+
+async def test_promote_rebuild_preserves_saved_view_snapshots(tmp_path) -> None:
+    prepared = replace(_prepared_tile_rebuild(), output_dir=str(tmp_path / "5"), temporary_dir=str(tmp_path / "prepared"))
+    os.makedirs(prepared.temporary_dir)
+    for namespace in ("inuksuks", "collection_slots"):
+        directory = Path(prepared.output_dir) / namespace
+        directory.mkdir(parents=True)
+        (directory / "7.jpg").write_bytes(b"snapshot")
+    src = SimpleNamespace(id=5, image_id=10, stored_path=prepared.source.stored_path, file_size=10)
+    img = SimpleNamespace(id=10, tile_sources="/api/tiles/5/image.dzi", version=1, category_id=42, file_size=10)
+    session = AsyncMock()
+    session.get.return_value = img
+    with patch("app.processing.bump_browse_revision", new_callable=AsyncMock):
+        promoted = await promote_source_image_tile_rebuild(session, src, prepared)
+    for namespace in ("inuksuks", "collection_slots"):
+        assert (Path(prepared.output_dir) / namespace / "7.jpg").read_bytes() == b"snapshot"
+    await finish_promoted_tile_rebuild(promoted)
 
 
 async def test_finish_promoted_tile_rebuild_removes_retained_tree() -> None:

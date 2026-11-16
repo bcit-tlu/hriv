@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import GuidePage from '../../src/components/GuidePage'
@@ -187,6 +187,19 @@ describe('GuidePage', () => {
     )
     expect(screen.getByRole('heading', { name: 'Getting Help' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Managing Images' })).not.toBeInTheDocument()
+  })
+
+  it('opens the indexed Inuksuks guide and follows its Collections link', async () => {
+    window.history.replaceState(null, '', '?page=guide&doc=inuksuks-and-boards')
+    renderWithTheme(<GuidePage />)
+    expect(screen.getByRole('heading', { name: 'Inuksuks & Boards' })).toBeVisible()
+    await userEvent.click(
+      within(screen.getByText(/Each Collection slot/).closest('p')!).getByRole('button', {
+        name: 'Collections',
+      }),
+    )
+    expect(window.location.search).toContain('doc=collections')
+    expect(screen.getByRole('heading', { name: 'Collections', exact: true })).toBeVisible()
   })
 
   it('emits a page-hit telemetry event per shown doc', async () => {

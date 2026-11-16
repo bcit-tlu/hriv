@@ -35,6 +35,7 @@ from .database import async_session, settings
 from .measurement.service import scan_after_processing
 from .inuksuk_thumbs import remove_image_inuksuk_thumbnails
 from .collection_slots import cleanup_slot_thumbs, image_slot_thumbs
+from .snapshot_files import SNAPSHOT_NAMESPACES
 from .auth_events import actor_log_fields
 from .models import Image, Inuksuk, MeasurementFinding, SourceImage, User
 from .queue_metrics import collect_queue_state
@@ -1618,6 +1619,10 @@ async def promote_source_image_tile_rebuild(
 
     def _swap() -> str | None:
         had_existing = os.path.isdir(prepared.output_dir)
+        for namespace in SNAPSHOT_NAMESPACES:
+            snapshots = os.path.join(prepared.output_dir, namespace)
+            if Path(snapshots).exists() and Path(snapshots).is_dir() and not Path(snapshots).is_symlink():
+                shutil.copytree(snapshots, os.path.join(prepared.temporary_dir, namespace), dirs_exist_ok=True)
         if had_existing:
             os.replace(prepared.output_dir, backup_dir)
         try:

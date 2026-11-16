@@ -3960,6 +3960,16 @@ export default function App() {
         collections={searchableCollections.collections}
         collectionsEnabled={collectionsEnabled}
         onSelectCollection={handleOpenCollection}
+        inuksuksEnabled={features?.inuksuks === true}
+        onSelectInuksuk={handleOpenBoardInuksuk}
+        onSelectBoard={(boardId) =>
+          runCanvasNavigation(() => {
+            graphImageEpoch.current++
+            setBoardLocation({ boardId, sectionId: null })
+            setPage('boards')
+            pushNavState('boards', [], null, { board: String(boardId) })
+          })
+        }
         onAddImagesToCollection={handleSearchAddToCollection}
         excludeHidden={isStudent}
         suppressExtendedResults={isStudent || currentUser?.role === 'staff'}

@@ -508,3 +508,19 @@ coordinates survive independently of the original saved view; changing the
 Collection view does not edit the Inuksuk. Multiple slots on one slide are
 separate Sequence steps or side-by-side Synchronized panes. These controls and
 slot writes require the Inuksuks feature flag.
+
+## Search and recovery close-out (#1775)
+
+Search now includes visible Boards and Inuksuks by title and description, using
+the existing backend `q` endpoints and Board/Inuksuk visibility rules. Board results
+deep-link to Boards; Inuksuk results reuse saved-view image navigation. In the
+Manage Collection picker, choosing a Board or Inuksuk stages its views instead.
+
+Admin DB archives include all saved-view tables and association records, independent
+of `INUKSUKS_ENABLED`. Filesystem archives retain exact Inuksuk and Collection slot
+JPEGs while continuing to omit derived DZI tiles. Same-source rebuilds preserve
+these snapshots. See [Admin import/export](admin-import-export.md) for restore order
+and [the user guide](../frontend/guide/inuksuks-and-boards.md) for the workflow.
+
+The dark-launch flag remains in place: backend/Helm default false, existing local
+compose default true. This close-out does not remove the flag or alter its defaults.

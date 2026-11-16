@@ -1250,7 +1250,8 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
             5: users, 6: source_images, 7: collections, 8: announcements,
             9: measurement_findings, 10: announcement_reactions, 11: content_media,
         }
-        result.scalars.return_value.all.return_value = data_map[call_count]
+        result.scalars.return_value.all.return_value = data_map.get(call_count, [])
+        result.mappings.return_value.all.return_value = []
         return result
 
     # Status/progress and table reads use separate sessions; keep them apart so
@@ -1297,6 +1298,7 @@ async def test_run_db_export_success(tmp_path, monkeypatch, slots_enabled) -> No
     export_path = os.path.join(tasks_dir, task.result_filename)
     with open(export_path) as f:
         dump = json.load(f)
+    assert all(name in dump for name in ("boards", "board_sections", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
     for user_entry in dump["users"]:
         assert "oidc_subject" not in user_entry, "oidc_subject is PII and must not appear in exports"
         assert "password_hash" not in user_entry, "password_hash must not appear in exports"
@@ -3405,8 +3407,9 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         call_count += 1
         result = MagicMock()
         data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [release], 9: [], 10: [], 11: []}
-        rows = data_map[call_count]
+        rows = data_map.get(call_count, [])
         result.scalars.return_value.all.return_value = rows
+        result.mappings.return_value.all.return_value = []
         result.scalars.return_value.unique.return_value.all.return_value = rows
         return result
 

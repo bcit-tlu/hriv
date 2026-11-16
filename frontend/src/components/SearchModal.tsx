@@ -1,4 +1,11 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import Alert from '@mui/material/Alert'
+import SpaceDashboardOutlined from '@mui/icons-material/SpaceDashboardOutlined'
+import CompassCalibration from '@mui/icons-material/CompassCalibration'
+import { fetchBoard, userMessage } from '../api'
+import { groupBoardMembers } from '../boardUtils'
+import { draftMembersFromInuksuks } from '../collectionMembers'
+import { useSavedViewSearch } from '../useSavedViewSearch'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
@@ -24,7 +31,14 @@ import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
-import type { Category, CollectionSummary, ImageItem, Program } from '../types'
+import type {
+  ApiBoardSummary,
+  ApiInuksuk,
+  Category,
+  CollectionSummary,
+  ImageItem,
+  Program,
+} from '../types'
 import type { ApiImage, ApiUser } from '../api'
 import { describeCollectionOwners } from '../collectionUtils'
 import { buildGuideIndex, type GuideSearchSection } from '../guideSearch'
@@ -33,7 +47,8 @@ import RenewingThumbnail from './RenewingThumbnail'
 
 // ── Result types ───────────────────────────────────────
 
-type ResultKind = 'category' | 'image' | 'program' | 'user' | 'guide' | 'collection'
+type ResultKind =
+  'category' | 'image' | 'program' | 'user' | 'guide' | 'collection' | 'board' | 'inuksuk'
 
 interface FieldMatch {
   field: string
@@ -59,7 +74,13 @@ interface SearchResult {
   matchLength: number
   /** Extra payload needed for navigation */
   payload:
-    CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload | CollectionPayload
+    | CategoryPayload
+    | ImagePayload
+    | ProgramPayload
+    | UserPayload
+    | GuidePayload
+    | CollectionPayload
+    | SavedViewPayload
 }
 
 interface GroupedResult {
@@ -68,8 +89,17 @@ interface GroupedResult {
   label: string
   matches: FieldMatch[]
   payload:
-    CategoryPayload | ImagePayload | ProgramPayload | UserPayload | GuidePayload | CollectionPayload
+    | CategoryPayload
+    | ImagePayload
+    | ProgramPayload
+    | UserPayload
+    | GuidePayload
+    | CollectionPayload
+    | SavedViewPayload
 }
+
+type SavedViewPayload =
+  { kind: 'board'; board: ApiBoardSummary } | { kind: 'inuksuk'; inuksuk: ApiInuksuk }
 
 interface CategoryPayload {
   kind: 'category'
@@ -118,6 +148,18 @@ interface FilterDef<T extends string> {
 
 const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
   {
+    key: 'board',
+    label: 'Boards',
+    icon: <SpaceDashboardOutlined fontSize="small" />,
+    tooltip: 'Search Board titles and descriptions',
+  },
+  {
+    key: 'inuksuk',
+    label: 'Inuksuks',
+    icon: <CompassCalibration fontSize="small" />,
+    tooltip: 'Search Inuksuk titles and descriptions',
+  },
+  {
     key: 'category',
     label: 'Categories',
     icon: <CategoryIcon fontSize="small" />,
@@ -159,6 +201,8 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
  *  each type searches only the fields most closely associated with it
  *  (e.g. Images searches image titles, Collections searches name + description). */
 const PRIMARY_FIELDS_BY_KIND: Record<ResultKind, readonly string[]> = {
+  board: ['Title', 'Description'],
+  inuksuk: ['Title', 'Description'],
   category: ['Name'],
   image: ['Name'],
   program: ['Name'],
@@ -238,6 +282,10 @@ function contextSnippet(
 
 function iconForKind(kind: ResultKind) {
   switch (kind) {
+    case 'board':
+      return <SpaceDashboardOutlined color="primary" />
+    case 'inuksuk':
+      return <CompassCalibration color="secondary" />
     case 'category':
       return <CategoryIcon color="primary" />
     case 'image':
@@ -255,6 +303,10 @@ function iconForKind(kind: ResultKind) {
 
 function labelForKind(kind: ResultKind): string {
   switch (kind) {
+    case 'board':
+      return 'Board'
+    case 'inuksuk':
+      return 'Inuksuk'
     case 'category':
       return 'Category'
     case 'image':
@@ -511,6 +563,9 @@ interface SearchModalProps {
   /** Whether the collections feature is enabled — gates the Collections
    *  chip, collection results, and the placeholder copy. */
   collectionsEnabled?: boolean
+  inuksuksEnabled?: boolean
+  onSelectBoard?: (boardId: number) => void
+  onSelectInuksuk?: (item: ApiInuksuk) => void
   /** Hide categories/images with a non-published status (students only). */
   excludeHidden: boolean
   /** Restrict results to categories/images — no program, user, or guide
@@ -552,6 +607,9 @@ export default function SearchModal({
   users,
   collections = [],
   collectionsEnabled = false,
+  inuksuksEnabled = false,
+  onSelectBoard,
+  onSelectInuksuk,
   excludeHidden,
   suppressExtendedResults,
   onSelectCategory,
@@ -573,10 +631,20 @@ export default function SearchModal({
   // the select layer.
   const selectMode = initialSelectMode && onAddImagesToCollection != null
   const [query, setQuery] = useState('')
+  const savedViews = useSavedViewSearch(open && inuksuksEnabled, query)
+  const [stageError, setStageError] = useState<string | null>(null)
+  const [staging, setStaging] = useState(false)
+  const stageAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => stageAbort.current?.abort(), [open])
   // The picker pre-applies the Categories + Images type chips (#1567) —
   // only addable kinds list by default; the chips stay toggleable.
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(
-    () => new Set(selectMode ? ['category', 'image'] : []),
+    () =>
+      new Set(
+        selectMode
+          ? ['category', 'image', ...(inuksuksEnabled ? (['board', 'inuksuk'] as const) : [])]
+          : [],
+      ),
   )
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
   // The image rides along in each entry so picks survive a query change —
@@ -601,7 +669,14 @@ export default function SearchModal({
   if (open && !prevSearchOpen) {
     if (initialQuery != null || initialTypeFilter != null || initialSelectMode) {
       if (initialQuery != null) setQuery(initialQuery)
-      if (selectMode) setTypeFilters(new Set<TypeFilter>(['category', 'image']))
+      if (selectMode)
+        setTypeFilters(
+          new Set<TypeFilter>([
+            'category',
+            'image',
+            ...(inuksuksEnabled ? (['board', 'inuksuk'] as const) : []),
+          ]),
+        )
       else if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
       setFieldFilters(new Set())
       setWasSeeded(true)
@@ -617,6 +692,7 @@ export default function SearchModal({
   // multi-selection — the ids are captured by the callback before reset.
   if (!open && prevSearchOpen) {
     if (selectedImages.size > 0) setSelectedImages(new Map())
+    if (stageError != null) setStageError(null)
   }
   if (open !== prevSearchOpen) setPrevSearchOpen(open)
 
@@ -651,6 +727,47 @@ export default function SearchModal({
       const terms = parseSearchQuery(q)
       if (terms.length === 0) return []
       const results: SearchResult[] = []
+      if (inuksuksEnabled) {
+        const entries: {
+          payload: SavedViewPayload
+          label: string
+          id: number
+          description: string | null
+        }[] = [
+          ...savedViews.boards.map((board) => ({
+            payload: { kind: 'board' as const, board },
+            label: board.name,
+            id: board.id,
+            description: board.description,
+          })),
+          ...savedViews.inuksuks.map((inuksuk) => ({
+            payload: { kind: 'inuksuk' as const, inuksuk },
+            label: inuksuk.title,
+            id: inuksuk.id,
+            description: inuksuk.description,
+          })),
+        ]
+        for (const entry of entries) {
+          for (const [field, value] of [
+            ['Title', entry.label],
+            ['Description', entry.description],
+          ] as const) {
+            if (!value) continue
+            const match = findFirstTermMatch(value, terms)
+            if (match)
+              results.push({
+                kind: entry.payload.kind,
+                entityId: entry.id,
+                label: entry.label,
+                field,
+                fieldValue: value,
+                matchIndex: match.index,
+                matchLength: match.length,
+                payload: entry.payload,
+              })
+          }
+        }
+      }
 
       // 1. Categories
       collectCategoryResults(categories, terms, [], results, excludeHidden, programMap)
@@ -734,6 +851,9 @@ export default function SearchModal({
       excludeHidden,
       suppressExtendedResults,
       programMap,
+      inuksuksEnabled,
+      savedViews.boards,
+      savedViews.inuksuks,
     ],
   )
 
@@ -1005,6 +1125,12 @@ export default function SearchModal({
   const handleSelect = (result: GroupedResult) => {
     onClose()
     switch (result.payload.kind) {
+      case 'board':
+        onSelectBoard?.(result.payload.board.id)
+        break
+      case 'inuksuk':
+        onSelectInuksuk?.(result.payload.inuksuk)
+        break
       case 'category':
         onSelectCategory(result.payload.categoryPath)
         break
@@ -1026,6 +1152,35 @@ export default function SearchModal({
     }
   }
 
+  const stageSavedViews = async (payload: SavedViewPayload) => {
+    if (staging) return
+    const controller = new AbortController()
+    stageAbort.current = controller
+    setStaging(true)
+    setStageError(null)
+    try {
+      const items =
+        payload.kind === 'inuksuk'
+          ? [payload.inuksuk]
+          : groupBoardMembers(
+              await fetchBoard(payload.board.id, { signal: controller.signal }),
+            ).flatMap((section) => section.inuksuks)
+      if (!items.length) {
+        setStageError('This Board has no visible saved views to add.')
+        return
+      }
+      const members = await draftMembersFromInuksuks(items)
+      if (controller.signal.aborted) return
+      onClose()
+      onAddImagesToCollection?.(members)
+    } catch (err) {
+      if (!controller.signal.aborted)
+        setStageError(userMessage(err, 'Unable to stage saved views.'))
+    } finally {
+      setStaging(false)
+    }
+  }
+
   return (
     <Dialog
       open={open}
@@ -1044,6 +1199,14 @@ export default function SearchModal({
       }}
     >
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', p: 3, gap: 2 }}>
+        {(savedViews.error || stageError) && (
+          <Alert severity="error">{stageError || savedViews.error}</Alert>
+        )}
+        {selectMode && inuksuksEnabled && (
+          <Typography variant="body2">
+            Click a Board or Inuksuk result to add its saved views to the draft.
+          </Typography>
+        )}
         <TextField
           autoFocus
           fullWidth
@@ -1078,13 +1241,15 @@ export default function SearchModal({
             {/* The picker offers only the two addable kinds — Categories and
                 Images, pre-applied — no other type or field chips (#1567). */}
             {TYPE_FILTERS.filter((f) =>
-              selectMode
-                ? f.key === 'category' || f.key === 'image'
-                : (f.key !== 'collection' || collectionsEnabled) &&
-                  !(
-                    suppressExtendedResults &&
-                    (f.key === 'program' || f.key === 'user' || f.key === 'guide')
-                  ),
+              f.key === 'board' || f.key === 'inuksuk'
+                ? inuksuksEnabled
+                : selectMode
+                  ? f.key === 'category' || f.key === 'image'
+                  : (f.key !== 'collection' || collectionsEnabled) &&
+                    !(
+                      suppressExtendedResults &&
+                      (f.key === 'program' || f.key === 'user' || f.key === 'guide')
+                    ),
             ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
@@ -1434,7 +1599,13 @@ export default function SearchModal({
                       ) : (
                         <CardActionArea
                           data-testid="search-result-action-area"
-                          onClick={() => handleSelect(result)}
+                          disabled={staging}
+                          onClick={() =>
+                            selectMode &&
+                            (result.payload.kind === 'board' || result.payload.kind === 'inuksuk')
+                              ? void stageSavedViews(result.payload)
+                              : handleSelect(result)
+                          }
                           sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}
                         >
                           {rowInner}

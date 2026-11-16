@@ -17,18 +17,51 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import auth
+from app.board_archives import clear_saved_views, export_saved_views, import_saved_views
 from app.collection_slots import (
     cleanup_slot_thumbs, export_slots, image_slot_thumbs, import_slots,
     SlotPlan, finish_slot_changes, slot_thumb_file, snapshot_thumbnail,
 )
 from app.database import get_db, settings
 from app.models import Board, BoardInuksuk, BoardSection, Category, Collection, CollectionImage, Image, Inuksuk, TileOrderRevision, User
+from app.models import Group, Program, board_groups, board_owners, board_programs
 from app.routers import collections, images, tile_order
 from app.schemas import CollectionCreate, CollectionImagesUpdate, CollectionViewportUpdate, SlotViewport
 from app.tile_tokens import TileTokenError, append_slot_thumb_token, issue_slot_thumb_token, validate_tile_token
 
 DB_URL = os.environ.get("TEST_DATABASE_URL", "")
 VIEW = {"x": .5, "y": .375, "zoom": 2.0}
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_saved_view_archive_round_trip(world, monkeypatch, enabled):
+    monkeypatch.setattr(settings, "inuksuks_enabled", enabled)
+    program = Program(name=f"archive-{uuid4().hex}")
+    group = Group(name=f"archive-{uuid4().hex}")
+    world.db.add_all([program, group])
+    world.items[0].description = "Keep this description"
+    world.items[0].favourite = True
+    await world.db.flush()
+    await world.db.execute(board_owners.insert().values(board_id=world.board.id, user_id=world.users["admin"].id))
+    await world.db.execute(board_programs.insert().values(board_id=world.board.id, program_id=program.id))
+    await world.db.execute(board_groups.insert().values(board_id=world.board.id, group_id=group.id))
+    image_ids = {world.image.id, world.secret.id}
+    original = await export_saved_views(world.db, image_ids)
+    assert all(original[name] for name in ("boards", "board_sections", "inuksuks", "board_owners", "board_programs", "board_groups", "inuksuk_owners", "board_inuksuks"))
+    await clear_saved_views(world.db)
+    assert all(not rows for rows in (await export_saved_views(world.db, image_ids)).values())
+    await import_saved_views(world.db, original)
+    assert await export_saved_views(world.db, image_ids) == original
+    filtered = await export_saved_views(world.db, {world.image.id})
+    assert world.hidden.id not in {row["id"] for row in filtered["inuksuks"]}
+    assert world.hidden.id not in {row["inuksuk_id"] for row in filtered["board_inuksuks"]}
+    assert world.hidden.id not in {row["inuksuk_id"] for row in filtered["inuksuk_owners"]}
+
+
+async def test_legacy_archive_without_saved_views(world):
+    await clear_saved_views(world.db)
+    await import_saved_views(world.db, {"images": [], "users": [], "categories": []})
+    assert all(not rows for rows in (await export_saved_views(world.db, {world.image.id})).values())
 
 
 @pytest.mark.parametrize("field,value", [("x", float("nan")), ("y", float("inf")), ("zoom", 0), ("rotation", float("inf")), ("x", True), ("zoom", "2")])
