@@ -1,5 +1,6 @@
 import { act, fireEvent, render, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { alpha, createTheme, ThemeProvider } from '@mui/material/styles'
 import type OpenSeadragon from 'openseadragon'
 import InuksukMarkersLayer from '../../src/components/InuksukMarkersLayer'
 import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
@@ -24,6 +25,18 @@ function fakeViewer() {
   return { instance: instance as unknown as OpenSeadragon.Viewer, viewport, container, handlers }
 }
 describe('InuksukMarkersLayer', () => {
+  it.each(['light', 'dark'] as const)('derives its shadow from the %s theme palette', (mode) => {
+    const v = fakeViewer()
+    const theme = createTheme({ palette: { mode, common: { black: '#123456' } } })
+    render(
+      <ThemeProvider theme={theme}>
+        <InuksukMarkersLayer viewer={v.instance} items={[INUKSUK_FIXTURE]} />
+      </ThemeProvider>,
+    )
+    expect(within(v.container).getByRole('button')).toHaveStyle({
+      boxShadow: `0 1px 4px ${alpha(theme.palette.common.black, 1 / 3)}`,
+    })
+  })
   it('mirrors marker and title anchors on flip, resize, and back without mirroring their contents', () => {
     const v = fakeViewer()
     Object.defineProperty(v.container, 'clientWidth', { value: 1000, configurable: true })
@@ -56,7 +69,10 @@ describe('InuksukMarkersLayer', () => {
     const label = within(v.container).getByText('Rose window')
     expect(anchor).toHaveStyle({ left: '120px', top: '90px', width: '0px' })
     expect(button).toHaveStyle({ width: '27px', height: '27px' })
-    expect(button).toHaveStyle({ borderRadius: '50%', boxShadow: '0 1px 4px #0005' })
+    expect(button).toHaveStyle({
+      borderRadius: '50%',
+      boxShadow: `0 1px 4px ${alpha(createTheme().palette.common.black, 1 / 3)}`,
+    })
     expect(button.querySelector('img')).toHaveAttribute('src', '/inuksuk-marker.svg')
     expect(button.querySelector('img')).toHaveAttribute('width', '27')
     expect(button.querySelector('img')).toHaveAttribute('alt', '')
