@@ -736,6 +736,10 @@ always read-only (`canEditContent={false}`).
   pane pattern), the edge-overlay
   **Previous** button disabled, and the member's canvas annotations /
   locked overlays / measurement shown read-only.
+- **Given** a sequence filmstrip, **Then** thumbnails show images only, with no
+  visible per-thumbnail captions. Each button retains its `Go to {slot label or
+image name}` accessible name, including for multiple saved views of one image;
+  the caption below the main viewport is unchanged.
 - **Given** `?collection={id}&item={image_id}`, **Then** the viewer opens on
   that image; a non-member `item` id falls back to the first image and
   `?item=` without `?collection=` is ignored.
