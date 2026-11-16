@@ -120,6 +120,7 @@ export interface InuksukView {
 export interface ApiInuksuk extends InuksukView {
   id: number
   image_id: number
+  category_name?: string | null
   title: string
   description: string | null
   thumb: string | null

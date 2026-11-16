@@ -2642,7 +2642,7 @@ export default function App() {
         >
           {page === 'boards' ? (
             <BoardsPage
-              key={`${currentUser.id}:${boardLocation.boardId}`}
+              key={currentUser.id}
               enabled={features?.inuksuks === true}
               currentUser={currentUser}
               programs={programs}

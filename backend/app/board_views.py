@@ -92,14 +92,17 @@ def board_load_options() -> tuple:
         selectinload(Board.programs),
         selectinload(Board.groups),
         selectinload(Board.inuksuk_links).selectinload(BoardInuksuk.inuksuk)
-        .selectinload(Inuksuk.image),
+        .selectinload(Inuksuk.image).selectinload(Image.category),
         selectinload(Board.inuksuk_links).selectinload(BoardInuksuk.inuksuk)
         .selectinload(Inuksuk.owners),
     )
 
 
 def inuksuk_load_options() -> tuple:
-    return (lazyload("*"), selectinload(Inuksuk.image), selectinload(Inuksuk.owners))
+    return (
+        lazyload("*"), selectinload(Inuksuk.image).selectinload(Image.category),
+        selectinload(Inuksuk.owners),
+    )
 
 
 async def load_memberships(
@@ -143,6 +146,10 @@ def inuksuk_out(
 ) -> InuksukOut:
     return InuksukOut(
         id=inuksuk.id, image_id=inuksuk.image_id, title=inuksuk.title,
+        category_name=(
+            inuksuk.image.category.label
+            if ctx.can_view_image(inuksuk.image) and inuksuk.image.category else None
+        ),
         description=inuksuk.description, x=inuksuk.x, y=inuksuk.y,
         zoom=inuksuk.zoom, rotation=inuksuk.rotation, thumb=inuksuk_thumb(inuksuk),
         favourite=inuksuk.favourite, sort_order=inuksuk.sort_order,

@@ -27,7 +27,7 @@ describe('useBoardsData', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.recent).toHaveLength(6)
     expect(api.fetchInuksuks).toHaveBeenCalledWith(
-      expect.objectContaining({ favourite: true, limit: 60 }),
+      expect.objectContaining({ favourite: true, page: 1, page_size: 200 }),
     )
   })
   it('paginates all Boards, avoiding truncated owner order', async () => {
@@ -42,10 +42,20 @@ describe('useBoardsData', () => {
       expect.objectContaining({ page: 2, page_size: 200 }),
     )
   })
-  it('loads a selected Board without a second recent request', async () => {
+  it('paginates all visible Inuksuks beyond the former recent limit', async () => {
+    vi.mocked(api.fetchInuksuks)
+      .mockResolvedValueOnce(Array.from({ length: 200 }, (_, id) => ({ ...BOARD_ITEMS[0], id })))
+      .mockResolvedValueOnce([{ ...BOARD_ITEMS[0], id: 201 }])
+    const { result } = renderHook(() => useBoardsData(null, false))
+    await waitFor(() => expect(result.current.recent).toHaveLength(201))
+    expect(api.fetchInuksuks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2, page_size: 200 }),
+    )
+  })
+  it('loads the selected Board and overview for the dialog backdrop', async () => {
     const { result } = renderHook(() => useBoardsData(1, false))
     await waitFor(() => expect(result.current.board?.id).toBe(1))
-    expect(api.fetchInuksuks).not.toHaveBeenCalled()
+    expect(api.fetchInuksuks).toHaveBeenCalled()
   })
   it('handles empty and error results and recovers on reload', async () => {
     vi.mocked(api.fetchBoards).mockRejectedValueOnce(new Error('offline'))

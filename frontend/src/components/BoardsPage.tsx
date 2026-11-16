@@ -10,7 +10,7 @@ import {
 import { studentTypesAtCap } from '../collectionUtils'
 import type { Category, CollectionType } from '../types'
 import type { CollectionSources } from '../api'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Alert,
@@ -31,8 +31,8 @@ import {
   MenuItem,
   Stack,
   Switch,
-  Tab,
-  Tabs,
+  Snackbar,
+  useMediaQuery,
   TextField,
   Typography,
 } from '@mui/material'
@@ -43,7 +43,20 @@ import Favorite from '@mui/icons-material/Favorite'
 import FavoriteBorder from '@mui/icons-material/FavoriteBorder'
 import MoreVert from '@mui/icons-material/MoreVert'
 import Add from '@mui/icons-material/Add'
-import { DragDropProvider, KeyboardSensor, PointerSensor, useDroppable } from '@dnd-kit/react'
+import Edit from '@mui/icons-material/Edit'
+import Close from '@mui/icons-material/Close'
+import { useTheme } from '@mui/material/styles'
+import FilterBar from './FilterBar'
+import FilterPopoverButton from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
+import FilterOptionPanel from './FilterOptionPanel'
+import {
+  DragDropProvider,
+  KeyboardSensor,
+  PointerSensor,
+  useDroppable,
+  useDraggable,
+} from '@dnd-kit/react'
 import type { DragEndEvent } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
@@ -98,13 +111,41 @@ type SortableFrameProps = {
   disabled: boolean
   label: string
   children: ReactNode
+  sortable?: boolean
 }
 
 function SortableFrame(props: SortableFrameProps) {
   return props.disabled ? (
     <Box sx={{ position: 'relative', minWidth: 0 }}>{props.children}</Box>
+  ) : props.sortable === false ? (
+    <DraggableFrame {...props} />
   ) : (
     <ActiveSortableFrame {...props} />
+  )
+}
+
+function DraggableFrame({ id, label, children }: SortableFrameProps) {
+  const { ref, handleRef, isDragSource } = useDraggable({ id, type: 'board-member' })
+  return (
+    <Box ref={ref} sx={{ position: 'relative', minWidth: 0, opacity: isDragSource ? 0.5 : 1 }}>
+      <IconButton
+        ref={handleRef}
+        aria-label={`Drag ${label}`}
+        size="small"
+        sx={{
+          position: 'absolute',
+          top: 5,
+          left: 5,
+          zIndex: 2,
+          touchAction: 'none',
+          cursor: 'grab',
+          bgcolor: 'background.paper',
+        }}
+      >
+        <DragIndicator fontSize="small" />
+      </IconButton>
+      {children}
+    </Box>
   )
 }
 
@@ -214,7 +255,7 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
   return (
     <Box
       sx={{
-        height: 144,
+        height: 68,
         bgcolor: 'action.hover',
         display: 'grid',
         gridTemplateColumns: items.length > 1 ? '1fr 1fr' : '1fr',
@@ -431,7 +472,13 @@ export default function BoardsPage({
       const ids = prev.boardId === boardId ? prev.ids : []
       return { boardId, ids: ids.includes(id) ? ids.filter((key) => key !== id) : [...ids, id] }
     })
-  const [shared, setShared] = useState(false)
+  const theme = useTheme()
+  const mobile = useMediaQuery(theme.breakpoints.down('sm'))
+  const [query, setQuery] = useState('')
+  const [scopes, setScopes] = useState<string[]>([])
+  const [owner, setOwner] = useState('any')
+  const [notice, setNotice] = useState<string | null>(null)
+  const [boardMenu, setBoardMenu] = useState<HTMLElement | null>(null)
   const [favourites, setFavourites] = useState(false)
   const data = useBoardsData(boardId, favourites, enabled)
   const board = data.board
@@ -446,12 +493,75 @@ export default function BoardsPage({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
+  const activeBoardId = useRef(boardId)
+  useLayoutEffect(() => {
+    activeBoardId.current = boardId
+  }, [boardId])
+  const [appliedBoardId, setAppliedBoardId] = useState(boardId)
+  if (appliedBoardId !== boardId) {
+    setAppliedBoardId(boardId)
+    setEdit(null)
+    setOwners(false)
+    setDeleting(false)
+    setMenu(null)
+    setSavingItem(null)
+    setRemovingItem(null)
+    setEditingItem(null)
+    setBoardMenu(null)
+    setBusy(false)
+    setError(null)
+    setConflict(false)
+  }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
-  const readOnlyBoards = own.filter((row) => !row.permissions.can_edit)
-  const rows = shared
-    ? data.boards.filter((row) => !ownsBoard(row, currentUser))
-    : reorderableBoards
+  const needle = query.trim().toLocaleLowerCase()
+  const ownerMatches = (item: ApiBoardSummary | ApiInuksuk) =>
+    owner === 'any' ||
+    (owner === 'mine'
+      ? 'owner_program_id' in item
+        ? ownsBoard(item, currentUser)
+        : item.owners.some((o) => o.user_id === currentUser?.id)
+      : item.owners.some(
+          (o) => `user:${o.user_id}` === owner || `program:${o.program_id}` === owner,
+        ))
+  const scopeIds = new Set(
+    data.boards
+      .filter((row) => !scopes.length || scopes.includes(row.visibility))
+      .map((row) => row.id),
+  )
+  const filteredItems = data.recent.filter(
+    (item) =>
+      (!needle || `${item.title} ${item.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
+      (!scopes.length || item.board_ids.some((id) => scopeIds.has(id))) &&
+      ownerMatches(item) &&
+      (!favourites || item.favourite),
+  )
+  const rows = [
+    ...reorderableBoards,
+    ...data.boards.filter((row) => !reorderableBoards.some((owned) => owned.id === row.id)),
+  ].filter(
+    (row) =>
+      (!needle || `${row.name} ${row.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
+      scopeIds.has(row.id) &&
+      ownerMatches(row) &&
+      (!favourites ||
+        data.recent.some((item) => item.favourite && item.board_ids.includes(row.id))),
+  )
+  const ownerOptions = Array.from(
+    new Map(
+      data.boards
+        .flatMap((row) => row.owners)
+        .map((o) => [o.user_id != null ? `user:${o.user_id}` : `program:${o.program_id}`, o.name]),
+    ).entries(),
+  ).map(([value, label]) => ({ value, label }))
+  const filtered = !!needle || scopes.length > 0 || owner !== 'any' || favourites
+  const selectionScope = `${boardId}:${query}:${scopes.join(',')}:${owner}:${favourites}`
+  const [appliedSelectionScope, setAppliedSelectionScope] = useState(selectionScope)
+  if (selectionScope !== appliedSelectionScope) {
+    setAppliedSelectionScope(selectionScope)
+    setSelecting(false)
+    setSelection({ boardId, ids: [] })
+  }
   const canEdit = !!board?.permissions.can_edit
   const sensors = useMemo(
     () => [
@@ -476,9 +586,11 @@ export default function BoardsPage({
     setError(null)
     try {
       await job()
+      if (activeBoardId.current !== boardId) return false
       await data.reload()
       return true
     } catch (err) {
+      if (activeBoardId.current !== boardId) return false
       const stale = err instanceof ApiError && err.status === 409
       setConflict(stale)
       setError(
@@ -488,14 +600,14 @@ export default function BoardsPage({
       )
       return false
     } finally {
-      setBusy(false)
+      if (activeBoardId.current === boardId) setBusy(false)
     }
   }
   const dragEnd = (event: DragEndEvent) => {
     const { source, target } = event.operation
     setActiveItem(null)
     if (event.canceled || !source || busy || conflict) return
-    if (source.type === 'board-card' && !shared) {
+    if (source.type === 'board-card' && !filtered) {
       const ids = resolveReorderedKeys(
         reorderableBoards.map((row) => `board:${row.id}`),
         event,
@@ -509,13 +621,17 @@ export default function BoardsPage({
             }),
           ),
         )
-    } else if (source.type === 'board-member' && target && board && canEdit) {
-      const item = board.inuksuks.find((row) => `item:${row.id}` === source.id)
+    } else if (source.type === 'board-member' && target) {
+      const item = (board?.inuksuks ?? data.recent).find((row) => `item:${row.id}` === source.id)
       if (!item) return
-      const targetKey = String(target.id)
-      if (targetKey.startsWith('save:') && item.permissions.can_edit) {
-        void run(() => saveToBoard(item, Number(targetKey.split(':')[1]), null))
-      } else {
+      const key = String(target.id)
+      if (key.startsWith('save:') && item.permissions.can_edit) {
+        const destination = data.boards.find((row) => row.id === Number(key.split(':')[1]))
+        if (!destination?.permissions.can_edit || item.board_ids.includes(destination.id)) return
+        void run(() => saveToBoard(item, destination.id, null)).then((ok) => {
+          if (ok) setNotice(`Saved to ${destination.name}`)
+        })
+      } else if (board && canEdit) {
         const targetItem = board.inuksuks.find((row) => `item:${row.id}` === target.id)
         if (!targetItem) return
         const index = isSortable(source) ? source.index : board.inuksuks.indexOf(targetItem)
@@ -535,7 +651,8 @@ export default function BoardsPage({
       index={index}
       type="board-member"
       group="members"
-      disabled={selecting || !canEdit || !board}
+      disabled={selecting || busy || conflict || (board ? !canEdit : !item.permissions.can_edit)}
+      sortable={!!board}
       label={item.title}
     >
       <Card sx={{ mb: 2, breakInside: 'avoid', borderRadius: 3 }}>
@@ -548,7 +665,11 @@ export default function BoardsPage({
               image={{ id: item.id, thumb: item.thumb }}
               renewThumb={fetchInuksuk}
               alt=""
-              sx={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block' }}
+              sx={{
+                width: '100%',
+                height: 'auto',
+                display: 'block',
+              }}
             />
           ) : (
             <Box
@@ -569,6 +690,9 @@ export default function BoardsPage({
                 {item.title}
               </Typography>
             </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {item.category_name ?? 'Uncategorized'}
+            </Typography>
             {item.description && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 {item.description}
@@ -616,6 +740,65 @@ export default function BoardsPage({
       </Card>
     </SortableFrame>
   )
+
+  const collageToolbar = (title: string) => (
+    <Box sx={{ mb: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+        <Typography variant="h5" component="h2">
+          {title}
+        </Typography>
+        {collectionsEnabled && (
+          <Button
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting(!selecting)
+              setSelection({ boardId, ids: [] })
+            }}
+          >
+            {selecting ? 'Cancel selection' : 'Select'}
+          </Button>
+        )}
+      </Stack>
+      {collectionsEnabled && selecting && (
+        <Stack
+          role="toolbar"
+          aria-label="Selected Inuksuks"
+          direction="row"
+          spacing={1}
+          flexWrap="wrap"
+          useFlexGap
+        >
+          <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
+          {(['sequence', 'synchronized'] as const).map((type) => {
+            const items = (board ? board.inuksuks : filteredItems).filter((item) =>
+              selectedIds.includes(item.id),
+            )
+            const valid =
+              items.length > 0 && (type === 'sequence' || (items.length >= 2 && items.length <= 4))
+            const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
+            return (
+              <Box key={type} sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="contained"
+                  disabled={!valid}
+                  onClick={() => beginCollection(items, type)}
+                >
+                  Create {label} Collection
+                </Button>
+                <Button
+                  variant="outlined"
+                  disabled={!valid}
+                  onClick={() => beginCollection(items, type, true)}
+                >
+                  Add to {label} Collection
+                </Button>
+              </Box>
+            )
+          })}
+        </Stack>
+      )}
+    </Box>
+  )
   if (!enabled) return null
   return (
     <Box sx={{ p: { xs: 1, sm: 3 }, maxWidth: 1500, mx: 'auto' }}>
@@ -637,58 +820,6 @@ export default function BoardsPage({
         >
           {error || data.error}
         </Alert>
-      )}
-      {collectionsEnabled && (
-        <Stack spacing={1} sx={{ mb: 2 }}>
-          <Button
-            aria-pressed={selecting}
-            onClick={() => {
-              setSelecting(!selecting)
-              setSelection({ boardId, ids: [] })
-            }}
-          >
-            {selecting ? 'Cancel selection' : 'Select'}
-          </Button>
-          {selecting && (
-            <Stack
-              role="toolbar"
-              aria-label="Selected Inuksuks"
-              direction="row"
-              spacing={1}
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <Typography sx={{ alignSelf: 'center' }}>{selectedIds.length} selected</Typography>
-              {(['sequence', 'synchronized'] as const).map((type) => {
-                const items = (board ? board.inuksuks : data.recent).filter((item) =>
-                  selectedIds.includes(item.id),
-                )
-                const valid =
-                  items.length > 0 &&
-                  (type === 'sequence' || (items.length >= 2 && items.length <= 4))
-                const label = type === 'sequence' ? 'Sequence' : 'Synchronized'
-                return (
-                  <Box key={type} sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      variant="contained"
-                      disabled={!valid}
-                      onClick={() => beginCollection(items, type)}
-                    >
-                      Create {label} Collection
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      disabled={!valid}
-                      onClick={() => beginCollection(items, type, true)}
-                    >
-                      Add to {label} Collection
-                    </Button>
-                  </Box>
-                )
-              })}
-            </Stack>
-          )}
-        </Stack>
       )}
       <CollectionEditDialog
         open={!!collectionSource && !collectionSource.add}
@@ -736,235 +867,358 @@ export default function BoardsPage({
         sensors={sensors}
         onDragStart={(event) => {
           const id = event.operation.source?.id
-          setActiveItem(board?.inuksuks.find((item) => `item:${item.id}` === id) ?? null)
+          setActiveItem(
+            (board?.inuksuks ?? data.recent).find((item) => `item:${item.id}` === id) ?? null,
+          )
         }}
         onDragEnd={dragEnd}
       >
-        <Tabs
-          value={shared ? 'shared' : 'own'}
-          onChange={(_, value) => setShared(value === 'shared')}
-          aria-label="Board ownership"
-        >
-          <Tab label="Your Boards" value="own" />
-          <Tab label="Shared with me / Public" value="shared" />
-        </Tabs>
-        {[
-          { id: 'main', boards: rows, readOnly: false },
-          ...(!shared && readOnlyBoards.length
-            ? [{ id: 'read-only', boards: readOnlyBoards, readOnly: true }]
-            : []),
-        ].map((group) => (
-          <Box
-            key={group.id}
-            role="region"
-            aria-label={
-              group.readOnly
-                ? 'Read-only owned Boards'
-                : shared
-                  ? 'Shared Boards'
-                  : 'Editable owned Boards'
-            }
-          >
-            {group.readOnly && (
-              <Typography variant="h6" component="h2">
-                Read-only Boards
-              </Typography>
-            )}
-            <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', py: 2, mb: 2 }}>
-              {group.boards.map((row) => (
-                <Box key={row.id} sx={{ flex: '0 0 220px' }}>
-                  <SortableFrame
-                    id={`board:${row.id}`}
-                    index={reorderableBoards.findIndex((candidate) => candidate.id === row.id)}
-                    type="board-card"
-                    group="boards"
-                    disabled={shared || !row.permissions.can_edit}
-                    label={row.name}
-                  >
-                    <DropArea
-                      id={`save:${row.id}`}
-                      label={`Save to ${row.name}`}
-                      enabled={
-                        !!activeItem?.permissions.can_edit &&
-                        row.permissions.can_edit &&
-                        !activeItem.board_ids.includes(row.id)
-                      }
-                    >
-                      <Card
-                        variant="outlined"
-                        sx={{
-                          borderRadius: 3,
-                          borderColor: row.id === boardId ? 'primary.main' : 'divider',
-                          borderWidth: row.id === boardId ? 2 : 1,
-                        }}
-                      >
-                        <CardActionArea
-                          onClick={() => onSelectBoard(row.id)}
-                          aria-label={`Open Board: ${row.name}`}
-                        >
-                          <BoardCover board={row} />
-                          <CardContent>
-                            <Typography variant="subtitle1" component="p" noWrap fontWeight={600}>
-                              {row.name}
-                            </Typography>
-                            <Stack
-                              direction="row"
-                              alignItems="center"
-                              justifyContent="space-between"
-                              sx={{ mt: 1 }}
-                            >
-                              <Chip label={row.visibility} size="small" variant="outlined" />
-                              <Typography variant="caption">
-                                {row.inuksuk_count} Inuksuks
-                              </Typography>
-                            </Stack>
-                          </CardContent>
-                        </CardActionArea>
-                      </Card>
-                    </DropArea>
-                  </SortableFrame>
-                </Box>
+        <FilterBar
+          ariaLabel="Filter Boards and Inuksuks"
+          clearAction={
+            !mobile && filtered ? (
+              <Button
+                size="small"
+                onClick={() => {
+                  setQuery('')
+                  setScopes([])
+                  setOwner('any')
+                  setFavourites(false)
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+          summaryActions={
+            mobile && filtered ? (
+              <Button
+                size="small"
+                sx={{ whiteSpace: 'nowrap' }}
+                onClick={() => {
+                  setQuery('')
+                  setScopes([])
+                  setOwner('any')
+                  setFavourites(false)
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+          summary={
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              {query && (
+                <Chip size="small" label={`Title: ${query}`} onDelete={() => setQuery('')} />
+              )}
+              {scopes.map((scope) => (
+                <Chip
+                  key={scope}
+                  size="small"
+                  label={scope[0].toUpperCase() + scope.slice(1)}
+                  onDelete={() => setScopes(scopes.filter((s) => s !== scope))}
+                />
               ))}
-              {!group.readOnly && (
-                <Card
-                  variant="outlined"
-                  sx={{ flex: '0 0 160px', minHeight: 230, borderStyle: 'dashed', borderRadius: 3 }}
-                >
-                  <CardActionArea
-                    onClick={() => {
-                      setError(null)
-                      setEdit('new')
-                    }}
-                    sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}
-                  >
-                    <Add fontSize="large" />
-                    <Typography>New Board</Typography>
-                  </CardActionArea>
-                </Card>
-              )}
-            </Box>
-          </Box>
-        ))}
-        {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
-        {board ? (
-          <>
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              flexWrap="wrap"
-              useFlexGap
-              sx={{ mb: 2 }}
-            >
-              <Button onClick={() => onSelectBoard(null)}>All Inuksuks</Button>
-              <Typography variant="h5" component="h2">
-                {board.name}
-              </Typography>
-              <Chip label={board.visibility} size="small" />
-              {board.permissions.can_edit && (
-                <Button disabled={busy || conflict} onClick={() => setEdit('edit')}>
-                  Edit Board
-                </Button>
-              )}
-              {collectionsEnabled && (
-                <Button
-                  disabled={!board.inuksuks.length}
-                  onClick={() =>
-                    beginCollection(board.inuksuks, 'sequence', false, {
-                      source_board_id: board.id,
-                    })
+              {owner !== 'any' && (
+                <Chip
+                  size="small"
+                  label={
+                    owner === 'mine' ? 'Mine' : ownerOptions.find((o) => o.value === owner)?.label
                   }
-                >
-                  Create Sequence Collection
-                </Button>
+                  onDelete={() => setOwner('any')}
+                />
               )}
-              {board.permissions.can_transfer && (
-                <Button disabled={busy || conflict} onClick={() => setOwners(true)}>
-                  Owners
-                </Button>
-              )}
-              {board.permissions.can_delete && (
-                <Button
-                  color="error"
-                  sx={{
-                    color: (theme) =>
-                      theme.palette.mode === 'dark'
-                        ? theme.palette.error.light
-                        : theme.palette.error.dark,
-                  }}
-                  disabled={busy || conflict}
-                  onClick={() => {
-                    setError(null)
-                    setDeleting(true)
-                  }}
-                >
-                  Delete Board
-                </Button>
+              {favourites && (
+                <Chip size="small" label="Favourites" onDelete={() => setFavourites(false)} />
               )}
             </Stack>
-            {board.description && (
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                {board.description}
-              </Typography>
-            )}
-            <Box
+          }
+        >
+          <FilterPopoverButton
+            label="Title"
+            activeCount={query ? 1 : 0}
+            sx={{ color: 'text.primary' }}
+          >
+            <FilterTextPanel
+              value={query}
+              onChange={setQuery}
+              placeholder="Filter by title or description"
+              ariaLabel="Filter Boards and Inuksuks by title"
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton
+            label="Scope"
+            activeCount={scopes.length}
+            sx={{ color: 'text.primary' }}
+          >
+            <FilterOptionPanel
+              options={['private', 'restricted', 'public'].map((value) => ({
+                value,
+                label: value[0].toUpperCase() + value.slice(1),
+              }))}
+              selectedValues={scopes}
+              onChange={setScopes}
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton
+            label="Owner"
+            activeCount={owner === 'any' ? 0 : 1}
+            sx={{ color: 'text.primary' }}
+          >
+            <FilterOptionPanel
+              multiple={false}
+              options={[
+                { value: 'any', label: 'Anyone' },
+                { value: 'mine', label: 'Mine' },
+                ...ownerOptions,
+              ]}
+              selectedValues={[owner]}
+              onChange={(values) => setOwner(values[0] ?? 'any')}
+            />
+          </FilterPopoverButton>
+          <FilterPopoverButton
+            label="Favourite"
+            activeCount={favourites ? 1 : 0}
+            sx={{ color: 'text.primary' }}
+          >
+            <FilterOptionPanel
+              multiple={false}
+              options={[{ value: 'favourite', label: 'Favourites only' }]}
+              selectedValues={favourites ? ['favourite'] : []}
+              onChange={(values) => setFavourites(values.length > 0)}
+            />
+          </FilterPopoverButton>
+        </FilterBar>
+        <Box
+          role="region"
+          aria-label="Boards"
+          sx={{ display: 'flex', gap: 1.5, overflowX: 'auto', py: 2, mb: 2 }}
+        >
+          <Card
+            variant="outlined"
+            sx={{ flex: '0 0 120px', borderStyle: 'dashed', borderRadius: 2 }}
+          >
+            <CardActionArea
+              onClick={() => {
+                setError(null)
+                setEdit('new')
+              }}
               sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
-                gap: 2,
+                height: '100%',
+                minHeight: 104,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
               }}
             >
-              {board.inuksuks.map((item, index) => memberCard(item, index))}
+              <Add />
+              <Typography variant="body2">New Board</Typography>
+            </CardActionArea>
+          </Card>
+          {rows.map((row) => (
+            <Box key={row.id} sx={{ flex: '0 0 156px', minWidth: 0 }}>
+              <SortableFrame
+                id={`board:${row.id}`}
+                index={reorderableBoards.findIndex((b) => b.id === row.id)}
+                type="board-card"
+                group="boards"
+                disabled={filtered || !reorderableBoards.some((b) => b.id === row.id)}
+                label={row.name}
+              >
+                <DropArea
+                  id={`save:${row.id}`}
+                  label={`Save to ${row.name}`}
+                  enabled={
+                    !!activeItem?.permissions.can_edit &&
+                    row.permissions.can_edit &&
+                    !activeItem.board_ids.includes(row.id)
+                  }
+                >
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 2,
+                      borderColor: row.id === boardId ? 'primary.main' : 'divider',
+                    }}
+                  >
+                    <CardActionArea
+                      onClick={() => onSelectBoard(row.id)}
+                      aria-label={`Open Board: ${row.name}`}
+                    >
+                      <Typography
+                        variant="body2"
+                        component="p"
+                        noWrap
+                        fontWeight={600}
+                        sx={{
+                          px: 1,
+                          py: 0.75,
+                          pl: reorderableBoards.some((b) => b.id === row.id) && !filtered ? 4 : 1,
+                        }}
+                        title={row.name}
+                      >
+                        {row.name}
+                      </Typography>
+                      <BoardCover board={row} />
+                    </CardActionArea>
+                  </Card>
+                </DropArea>
+              </SortableFrame>
             </Box>
-            {board.inuksuks.length === 0 && (
-              <Typography color="text.secondary" sx={{ py: 2 }}>
-                No Inuksuks yet. Save a view from an image.
+          ))}
+        </Box>
+        {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
+        {!boardId && !data.loading && !data.error && (
+          <>
+            {collageToolbar('Inuksuks')}
+            <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
+              {filteredItems.map((item, index) => memberCard(item, index))}
+            </Box>
+            {!filteredItems.length && (
+              <Typography color="text.secondary">
+                {filtered
+                  ? 'No matching Inuksuks.'
+                  : 'No Inuksuks yet. Save a view from an image to start your collection.'}
               </Typography>
             )}
           </>
-        ) : (
-          !data.loading &&
-          !data.error && (
-            <>
-              <Stack
-                direction="row"
-                alignItems="center"
-                justifyContent="space-between"
-                sx={{ mb: 2 }}
-              >
-                <Typography variant="h5" component="h2">
-                  {favourites ? 'Favourite Inuksuks' : 'Recent Inuksuks'}
-                </Typography>
-                <FormControlLabel
-                  label="Favourites only"
-                  control={
-                    <Switch
-                      checked={favourites}
-                      onChange={(e) => setFavourites(e.target.checked)}
-                    />
-                  }
-                />
-              </Stack>
-              <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
-                {data.recent.map((item, index) => memberCard(item, index))}
-              </Box>
-              {!data.recent.length && (
-                <Typography color="text.secondary">
-                  {favourites
-                    ? 'No favourites yet.'
-                    : 'No Inuksuks yet. Save a view from an image to start your collection.'}
-                </Typography>
-              )}
-              {data.recent.length === 60 && (
-                <Typography variant="caption">
-                  Showing the 60 most recently updated Inuksuks. Open a Board to see all its saved
-                  views.
-                </Typography>
-              )}
-            </>
-          )
         )}
+        <Dialog
+          open={boardId != null}
+          onClose={() => onSelectBoard(null)}
+          fullScreen={mobile}
+          fullWidth
+          maxWidth="lg"
+          aria-labelledby="board-dialog-title"
+          slotProps={{ paper: { sx: { height: { xs: '100%', sm: '85vh' } } } }}
+        >
+          <DialogTitle
+            id="board-heading"
+            component="div"
+            sx={{ borderBottom: 1, borderColor: 'divider' }}
+          >
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
+                <Typography
+                  id="board-dialog-title"
+                  component="h2"
+                  variant="h5"
+                  sx={{ minWidth: 0, overflowWrap: 'anywhere' }}
+                >
+                  {board?.name ?? 'Board'}
+                </Typography>
+                {board?.permissions.can_edit && (
+                  <IconButton
+                    aria-label="Edit Board"
+                    disabled={busy || conflict}
+                    onClick={() => setEdit('edit')}
+                  >
+                    <Edit />
+                  </IconButton>
+                )}
+              </Box>
+              <IconButton
+                aria-label="Board options"
+                onClick={(event) => setBoardMenu(event.currentTarget)}
+              >
+                <MoreVert />
+              </IconButton>
+              <IconButton aria-label="Close Board" onClick={() => onSelectBoard(null)}>
+                <Close />
+              </IconButton>
+            </Stack>
+            {board && (
+              <>
+                <Stack direction="row" alignItems="center" gap={1} sx={{ my: 1 }}>
+                  <Chip
+                    label={board.visibility[0].toUpperCase() + board.visibility.slice(1)}
+                    size="small"
+                    variant="outlined"
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    {board.inuksuk_count} Inuksuks
+                  </Typography>
+                </Stack>
+                {board.description && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1, maxHeight: 72, overflowY: 'auto' }}
+                  >
+                    {board.description}
+                  </Typography>
+                )}
+                {collageToolbar('Saved views')}
+              </>
+            )}
+          </DialogTitle>
+          <DialogContent sx={{ pt: '16px !important' }}>
+            {(error || data.error) && (
+              <Alert
+                severity="error"
+                action={<Button onClick={() => void reload()}>Reload latest</Button>}
+              >
+                {error || data.error}
+              </Alert>
+            )}
+            {data.loading && <CircularProgress aria-label="Loading Board" size={24} />}
+            {board && (
+              <>
+                <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
+                  {board.inuksuks.map((item, index) => memberCard(item, index))}
+                </Box>
+                {!board.inuksuks.length && (
+                  <Typography color="text.secondary">
+                    No Inuksuks yet. Save a view from an image.
+                  </Typography>
+                )}
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+        <Menu anchorEl={boardMenu} open={!!boardMenu} onClose={() => setBoardMenu(null)}>
+          {board?.permissions.can_transfer && (
+            <MenuItem
+              disabled={busy || conflict}
+              onClick={() => {
+                setBoardMenu(null)
+                setOwners(true)
+              }}
+            >
+              Owners
+            </MenuItem>
+          )}
+          {collectionsEnabled && board && (
+            <MenuItem
+              disabled={!board.inuksuks.length}
+              onClick={() => {
+                setBoardMenu(null)
+                beginCollection(board.inuksuks, 'sequence', false, { source_board_id: board.id })
+              }}
+            >
+              Create Sequence Collection
+            </MenuItem>
+          )}
+          {board?.permissions.can_delete && (
+            <MenuItem
+              disabled={busy || conflict}
+              onClick={() => {
+                setBoardMenu(null)
+                setError(null)
+                setDeleting(true)
+              }}
+            >
+              Delete Board
+            </MenuItem>
+          )}
+        </Menu>
       </DragDropProvider>
+      <Snackbar
+        open={!!notice}
+        autoHideDuration={5000}
+        onClose={() => setNotice(null)}
+        message={notice}
+      />
       {edit && (edit === 'new' || board) && (
         <BoardEditDialog
           board={edit === 'edit' ? board : null}

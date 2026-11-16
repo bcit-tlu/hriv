@@ -5,15 +5,24 @@ import * as BoardStories from './BoardsPage.stories'
 
 <Title />
 
-The feature-gated Boards utility opens `?page=boards`. Your Boards come first;
-Shared with me / Public lists visible Boards you do not own. Covers contain up
-to four authorized, renewing Inuksuk thumbnails. Recent Inuksuks use a responsive
-column collage, with a server-side favourites filter and independent owner actions.
+The feature-gated Boards utility opens `?page=boards`. A short, horizontally
+scrollable Board row starts with New Board; compact covers contain up to four
+authorized, renewing Inuksuk thumbnails. All visible Inuksuks appear below in a
+responsive column collage, with their image's parent category under the title.
+The hook fetches every page in batches of 200 rather than truncating at 60.
+Collections' filter components provide title/description, scope, owner/Mine and
+Favourite controls for both surfaces. A Board matches Favourite when it contains
+a favourite view. Scope matches any visible Board membership of an Inuksuk.
 
-Selecting a Board shows its ordered Inuksuks. The
+Selecting a Board opens a large dialog (full-screen on mobile). Its fixed heading
+retains the title, authorized edit pencil, scope, count, Select and an overflow
+menu for owners, deletion and Create Sequence Collection. The collage scrolls
+below it. Overview filters do not hide members inside the opened Board. The
 page has its own handle-only dnd-kit provider, separate from Browse: reorder
-owned Boards or members, or save an owned
-Inuksuk to another editable Board. Move/Save to… is the explicit copy/move flow;
+owned Boards or members, or drag an editable overview Inuksuk onto an editable
+Board tab to add a membership without removing the others. A highlighted target
+and success snackbar acknowledge the save; read-only Boards never accept drops.
+Move/Save to… is the explicit copy/move flow;
 failed reads never result in
 partial assignment replacement. Conflicts require reloading the current data.
 

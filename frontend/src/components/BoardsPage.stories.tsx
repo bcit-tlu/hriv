@@ -28,7 +28,7 @@ function Example({
   return (
     <AuthContext.Provider value={BOARD_AUTH}>
       <BoardsPage
-        key={`${selection.boardId}:${state}`}
+        key={state}
         enabled
         currentUser={readOnlyOwned ? { ...BOARD_USER, role: 'student' } : BOARD_USER}
         programs={BOARD_PROGRAMS}
@@ -43,7 +43,10 @@ function Example({
 const meta = {
   title: 'Components/BoardsPage',
   component: Example,
-  parameters: { layout: 'fullscreen' },
+  parameters: {
+    layout: 'fullscreen',
+    chromatic: { modes: { light: { theme: 'light' }, dark: { theme: 'dark' } } },
+  },
   beforeEach: ({ args }) => {
     writes.mockClear()
     return installBoardsFetch(
@@ -81,7 +84,7 @@ export const Basic: Story = {
 export const SelectedBoard: Story = {
   args: { initialBoardId: 1 },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
+    const canvas = within(canvasElement.ownerDocument.body)
     await expect(
       await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
     ).toBeVisible()
@@ -94,18 +97,34 @@ export const Favourites: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
-    await userEvent.click(canvas.getByRole('switch', { name: 'Favourites only' }))
-    await expect(await canvas.findByRole('heading', { name: 'Favourite Inuksuks' })).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Favourite' }))
+    await userEvent.click(
+      within(canvasElement.ownerDocument.body).getByRole('menuitemradio', {
+        name: 'Favourites only',
+      }),
+    )
+    await userEvent.click(canvas.getByRole('heading', { name: 'Boards & Inuksuks' }))
+    await expect(canvas.getByText('Favourites', { exact: true })).toBeVisible()
+    await expect(
+      canvas.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+    ).not.toBeInTheDocument()
   },
 }
-export const Shared: Story = {
+export const ScopeFilter: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await canvas.findByRole('button', { name: 'Open Board: Architecture inspiration' })
-    await userEvent.click(canvas.getByRole('tab', { name: 'Shared with me / Public' }))
+    await canvas.findByRole('button', { name: 'Open Board: Shared discoveries' })
+    await userEvent.click(canvas.getByRole('button', { name: 'Scope' }))
+    await userEvent.click(
+      within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
+        name: 'Private',
+      }),
+    )
+    await userEvent.click(canvas.getByRole('heading', { name: 'Boards & Inuksuks' }))
     await expect(
-      await canvas.findByRole('button', { name: 'Open Board: Shared discoveries' }),
-    ).toBeVisible()
+      canvas.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
+    ).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
   },
 }
 export const Empty: Story = { args: { state: 'empty' } }
@@ -137,7 +156,7 @@ export const ReadOnlyOwnedBoard: Story = {
     await expect(
       canvas.queryByRole('button', { name: 'Reorder Next studio project' }),
     ).not.toBeInTheDocument()
-    const readOnly = canvas.getByRole('region', { name: 'Read-only owned Boards' })
+    const readOnly = canvas.getByRole('region', { name: 'Boards' })
     await expect(
       within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
     ).toBeVisible()
@@ -153,13 +172,12 @@ export const ReadOnlyOwnedBoard: Story = {
     )
     await waitFor(() =>
       expect(
-        within(canvas.getByRole('region', { name: 'Editable owned Boards' })).getAllByRole(
-          'button',
-          { name: /^Open Board:/ },
-        )[0],
+        within(canvas.getByRole('region', { name: 'Boards' })).getAllByRole('button', {
+          name: /^Open Board:/,
+        })[0],
       ).toHaveAccessibleName('Open Board: Another editable Board'),
     )
-    await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
+    await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(3)
     await expect(
       within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
     ).toBeVisible()
@@ -169,7 +187,7 @@ export const ReadOnlyOwnedBoard: Story = {
 export const CollectionSelection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Select' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'Select' }))
     const checkboxes = await canvas.findAllByRole('checkbox', { name: /^Select / })
     await userEvent.click(checkboxes[0])
     await userEvent.click(checkboxes[1])
@@ -180,5 +198,46 @@ export const CollectionSelection: Story = {
     await expect(
       within(toolbar).getByRole('button', { name: 'Create Synchronized Collection' }),
     ).toBeEnabled()
+  },
+}
+
+export const SaveToBoard: Story = {
+  play: async ({ canvasElement }) => {
+    const user = userEvent.setup()
+    const canvas = within(canvasElement)
+    const handle = await canvas.findByRole('button', { name: 'Drag Rose window' })
+    const target = canvas.getByRole('region', { name: 'Save to Next studio project' })
+    const sourceRect = handle.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const sourcePoint = {
+      clientX: sourceRect.x + sourceRect.width / 2,
+      clientY: sourceRect.y + sourceRect.height / 2,
+    }
+    const targetPoint = {
+      clientX: targetRect.x + targetRect.width / 2,
+      clientY: targetRect.y + targetRect.height / 2,
+    }
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: sourcePoint })
+    await user.pointer({
+      target: handle,
+      coords: { ...sourcePoint, clientX: sourcePoint.clientX + 12 },
+    })
+    await waitFor(() => expect(handle.parentElement).toHaveStyle({ opacity: '0.5' }))
+    await user.pointer({ target, coords: targetPoint })
+    await waitFor(() => expect(target).toHaveStyle({ outlineWidth: '3px' }))
+    await user.pointer({ keys: '[/MouseLeft]', target, coords: targetPoint })
+    await waitFor(() =>
+      expect(
+        writes,
+        within(canvasElement.ownerDocument.body).queryByRole('alert')?.textContent ??
+          'No page error',
+      ).toHaveBeenCalledWith('/api/inuksuks/7', {
+        version: 3,
+        board_assignments: [{ board_id: 1, sort_order: 0 }, { board_id: 3 }],
+      }),
+    )
+    await expect(
+      await within(canvasElement.ownerDocument.body).findByText('Saved to Next studio project'),
+    ).toBeVisible()
   },
 }

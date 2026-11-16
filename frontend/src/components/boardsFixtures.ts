@@ -59,6 +59,7 @@ export const BOARD_ITEMS: ApiInuksuk[] = [
   ...INUKSUK_FIXTURE,
   id: index + 7,
   title,
+  category_name: 'Architectural details',
   thumb: '/hriv-splash2.jpg',
   description:
     index % 2
@@ -133,7 +134,11 @@ export function installBoardsFetch(
       const boardId = Number(url.searchParams.get('board_id'))
       if (boardId) rows = boards.find((board) => board.id === boardId)?.inuksuks ?? []
       if (url.searchParams.get('favourite') === 'true') rows = rows.filter((item) => item.favourite)
-      return Response.json(rows.slice(0, Number(url.searchParams.get('limit') ?? 60)))
+      const pageSize = Number(
+        url.searchParams.get('page_size') ?? url.searchParams.get('limit') ?? rows.length,
+      )
+      const start = (Number(url.searchParams.get('page') ?? 1) - 1) * pageSize
+      return Response.json(rows.slice(start, start + pageSize))
     }
     const itemId = Number(path.match(/^\/api\/inuksuks\/(\d+)$/)?.[1])
     if (itemId && method === 'GET') return Response.json(items.find((item) => item.id === itemId))
@@ -165,6 +170,54 @@ export function installBoardsFetch(
       })
       boards.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
       return Response.json(boards)
+    }
+    if (
+      itemId &&
+      body &&
+      typeof body === 'object' &&
+      'board_assignments' in body &&
+      Array.isArray(body.board_assignments)
+    ) {
+      const assignments = body.board_assignments.flatMap(
+        (entry): { board_id: number; sort_order?: number }[] =>
+          entry &&
+          typeof entry === 'object' &&
+          'board_id' in entry &&
+          typeof entry.board_id === 'number'
+            ? [
+                {
+                  board_id: entry.board_id,
+                  ...('sort_order' in entry && typeof entry.sort_order === 'number'
+                    ? { sort_order: entry.sort_order }
+                    : {}),
+                },
+              ]
+            : [],
+      )
+      const item = items.find((row) => row.id === itemId)
+      if (!item) return Response.json({ detail: 'Inuksuk not found' }, { status: 404 })
+      const boardIds = [
+        ...new Set([
+          ...item.board_ids.filter(
+            (id) => !boards.find((board) => board.id === id)?.permissions.can_edit,
+          ),
+          ...assignments.map((assignment) => assignment.board_id),
+        ]),
+      ]
+      const saved = { ...item, board_ids: boardIds, version: item.version + 1 }
+      items = items.map((row) => (row.id === itemId ? saved : row))
+      boards = boards.map((board) => {
+        const members = board.inuksuks.filter((row) => row.id !== itemId)
+        if (boardIds.includes(board.id))
+          members.push({
+            ...saved,
+            sort_order:
+              assignments.find((assignment) => assignment.board_id === board.id)?.sort_order ??
+              members.length,
+          })
+        return { ...board, inuksuks: members, inuksuk_count: members.length }
+      })
+      return Response.json(saved)
     }
     if (
       itemId &&

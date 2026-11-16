@@ -1723,6 +1723,7 @@ class InuksukPermissionsOut(BaseModel):
 class InuksukOut(BaseModel):
     id: int
     image_id: int
+    category_name: str | None = None
     title: str
     description: str | None = None
     x: float

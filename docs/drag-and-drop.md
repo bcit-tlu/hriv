@@ -300,21 +300,25 @@ Notes: <…>
 `SortableTileGrid` detectors, zones, priorities and activation logic are untouched.
 The Boards provider has two typed surfaces, all using drag handles:
 
-- `board-card` / `board:{id}`: owned Board cards reorder within the Boards row;
-  Shared/Public cards have no handles. The complete owned order and per-Board
+- `board-card` / `board:{id}`: editable owned Board tabs reorder within the row;
+  non-owned/read-only tabs have no handles. Filters hide Board handles so a
+  subset cannot replace the complete owned order. That order and per-Board
   versions go to `PUT /boards/order`.
 - `board-member` / `item:{id}`: members sort in one flat Board group. The
   request contains every visible member exactly once, leaving hidden members to
   the backend.
 
-`save:{boardId}` bins on other editable Board cards accept owned/editable
-Inuksuks and add a link without removing the source. Non-owner Board editors
+Overview cards use separate `useDraggable` handles, not sortable targets.
+`save:{boardId}` bins on editable Board tabs accept owned/editable
+overview Inuksuks and add a link without removing the source, with target outline
+feedback and a success snackbar. Non-owner Board editors
 can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
 accessible alternative.
 Drop regions expose accessible names: `Save to {Board}`.
-Read-only owned Boards appear in a separate row outside the editable sorting
-list, so their unchanged global positions cannot interleave after reload.
+Read-only owned Boards share the row but are omitted from reorder writes and
+cannot be drop targets. The Board dialog retains sortable member handles in its
+independently scrolling collage, without involving Browse's collision machinery.
 
 Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
 5px tolerance, plus KeyboardSensor. Only the drag handle activates sorting, so
