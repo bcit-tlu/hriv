@@ -2016,8 +2016,10 @@ Whole-image search picks deduplicate by their source image id, including picks
 already staged in the draft. Board/Inuksuk picks may intentionally add further
 slots for that same image.
 
-Sequence filmstrips display slot crops and labels and open the copied viewport,
-even when consecutive steps use the same slide. Share links include
+Sequence filmstrips display slot crops without visible text underneath and open
+the copied viewport, even when consecutive steps use the same slide. Thumbnail
+buttons keep `Go to {slot label or image name}` accessible names; the active slot
+label still appears in the caption below the main viewport. Share links include
 `?collection=7&item=100&slot=11`: `slot` selects the saved view and `item`
 remains the real-image fallback. Image APIs always receive the real image id.
 

@@ -50,6 +50,8 @@ browser history.
   viewport — the same pattern the synchronized panes use. When the image has a note it renders
   between the name and the readout via `ClampedContent` (one line, "…more" popover); the name is
   capped at min(468px, 40%) when a note is present.
+  Thumbnails are image-only, with no visible text underneath. Their `Go to {slot label or image name}`
+  accessible button names identify saved views, including multiple slots on one slide.
 - **Navigation.** Lightbox-style Previous/Next chevrons overlay the viewport's left/right
   edges (#1561), fading in on pointer activity over the frame and back out after ~2 s idle
   or on leave — like the OSD toolbar's `autoHideControls`; keyboard focus reveals them too

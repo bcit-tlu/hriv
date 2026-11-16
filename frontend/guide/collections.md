@@ -70,6 +70,9 @@ visible but can't be changed here.
   (`n of N` — part of the page link, so copying the URL shares the exact
   image you're looking at), and **Open image**, which jumps to the normal
   image view where you can edit annotations with the usual permissions.
+- Thumbnails above the viewer are image-only, without captions. Screen readers
+  identify each thumbnail by its saved-view label or image name; the active
+  view's caption remains below the main viewer.
 - If you can edit the collection, a **Manage Images** button in the
   top-right header opens the **Manage Collection Images** dialog — a
   miniature
