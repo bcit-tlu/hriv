@@ -25,6 +25,9 @@ and success snackbar acknowledge the save; read-only Boards never accept drops.
 Move/Save to… is the explicit copy/move flow;
 failed reads never result in
 partial assignment replacement. Conflicts require reloading the current data.
+Successful mutations refresh silently with the collage and covers kept mounted.
+Board dialog navigation fetches detail without reloading the overview. Opening
+an Inuksuk editor loads its Board picker without reloading the page.
 
 Cards open the existing shareable image viewer with the exact saved viewport;
 browser Back restores the Board URL. Board deletion warns that

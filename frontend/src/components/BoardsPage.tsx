@@ -115,23 +115,22 @@ type SortableFrameProps = {
 }
 
 function SortableFrame(props: SortableFrameProps) {
-  return props.disabled ? (
-    <Box sx={{ position: 'relative', minWidth: 0 }}>{props.children}</Box>
-  ) : props.sortable === false ? (
+  return props.sortable === false ? (
     <DraggableFrame {...props} />
   ) : (
     <ActiveSortableFrame {...props} />
   )
 }
 
-function DraggableFrame({ id, label, children }: SortableFrameProps) {
-  const { ref, handleRef, isDragSource } = useDraggable({ id, type: 'board-member' })
+function DraggableFrame({ id, label, children, disabled }: SortableFrameProps) {
+  const { ref, handleRef, isDragSource } = useDraggable({ id, type: 'board-member', disabled })
   return (
     <Box ref={ref} sx={{ position: 'relative', minWidth: 0, opacity: isDragSource ? 0.5 : 1 }}>
       <IconButton
         ref={handleRef}
         aria-label={`Drag ${label}`}
         size="small"
+        disabled={disabled}
         sx={{
           position: 'absolute',
           top: 5,
@@ -139,6 +138,7 @@ function DraggableFrame({ id, label, children }: SortableFrameProps) {
           zIndex: 2,
           touchAction: 'none',
           cursor: 'grab',
+          display: disabled ? 'none' : undefined,
           bgcolor: 'background.paper',
         }}
       >
@@ -176,23 +176,23 @@ function ActiveSortableFrame({
         minWidth: 0,
       }}
     >
-      {!disabled && (
-        <IconButton
-          ref={handleRef}
-          aria-label={`Reorder ${label}`}
-          size="small"
-          sx={{
-            position: 'absolute',
-            top: 5,
-            left: 5,
-            zIndex: 2,
-            touchAction: 'none',
-            cursor: 'grab',
-          }}
-        >
-          <DragIndicator fontSize="small" />
-        </IconButton>
-      )}
+      <IconButton
+        ref={handleRef}
+        aria-label={`Reorder ${label}`}
+        size="small"
+        disabled={disabled}
+        sx={{
+          position: 'absolute',
+          top: 5,
+          left: 5,
+          zIndex: 2,
+          touchAction: 'none',
+          cursor: 'grab',
+          display: disabled ? 'none' : undefined,
+        }}
+      >
+        <DragIndicator fontSize="small" />
+      </IconButton>
       {children}
     </Box>
   )
@@ -234,16 +234,19 @@ function DropArea({
 }
 
 function BoardCover({ board }: { board: ApiBoardSummary }) {
-  const [state, setState] = useState<{ key: string; items: ApiInuksuk[] } | null>(null)
+  const [state, setState] = useState<{ id: number; items: ApiInuksuk[] } | null>(null)
   const key = `${board.id}:${board.version}`
   useEffect(() => {
     let active = true
     void fetchInuksuks({ board_id: board.id, limit: 4 }).then(
       (items) => {
-        if (active) setState({ key, items })
+        if (active) setState({ id: board.id, items })
       },
       () => {
-        if (active) setState({ key, items: [] })
+        if (active)
+          setState((previous) =>
+            previous?.id === board.id ? previous : { id: board.id, items: [] },
+          )
       },
     )
     return () => {
@@ -251,7 +254,7 @@ function BoardCover({ board }: { board: ApiBoardSummary }) {
     }
   }, [board.id, key])
   const items =
-    state?.key === key ? state.items.filter((item) => item.thumb != null).slice(0, 4) : []
+    state?.id === board.id ? state.items.filter((item) => item.thumb != null).slice(0, 4) : []
   return (
     <Box
       sx={{
@@ -644,15 +647,15 @@ export default function BoardsPage({
       }
     }
   }
-  const memberCard = (item: ApiInuksuk, index: number) => (
+  const memberCard = (item: ApiInuksuk, index: number, inBoard = false) => (
     <SortableFrame
       key={item.id}
-      id={`item:${item.id}`}
+      id={`${!inBoard && boardId != null ? 'backdrop' : 'item'}:${item.id}`}
       index={index}
       type="board-member"
       group="members"
-      disabled={selecting || busy || conflict || (board ? !canEdit : !item.permissions.can_edit)}
-      sortable={!!board}
+      disabled={selecting || busy || conflict || (inBoard ? !canEdit : !item.permissions.can_edit)}
+      sortable={inBoard}
       label={item.title}
     >
       <Card sx={{ mb: 2, breakInside: 'avoid', borderRadius: 3 }}>
@@ -1068,9 +1071,9 @@ export default function BoardsPage({
           ))}
         </Box>
         {data.loading && <CircularProgress aria-label="Loading Boards" size={24} />}
-        {!boardId && !data.loading && !data.error && (
+        {!data.loading && (!data.error || data.boards.length > 0 || data.recent.length > 0) && (
           <>
-            {collageToolbar('Inuksuks')}
+            {!boardId && collageToolbar('Inuksuks')}
             <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
               {filteredItems.map((item, index) => memberCard(item, index))}
             </Box>
@@ -1161,11 +1164,11 @@ export default function BoardsPage({
                 {error || data.error}
               </Alert>
             )}
-            {data.loading && <CircularProgress aria-label="Loading Board" size={24} />}
+            {data.boardLoading && <CircularProgress aria-label="Loading Board" size={24} />}
             {board && (
               <>
                 <Box sx={{ columns: { xs: '1', sm: '2', md: '3', lg: '4' }, columnGap: 2 }}>
-                  {board.inuksuks.map((item, index) => memberCard(item, index))}
+                  {board.inuksuks.map((item, index) => memberCard(item, index, true))}
                 </Box>
                 {!board.inuksuks.length && (
                   <Typography color="text.secondary">
@@ -1226,6 +1229,7 @@ export default function BoardsPage({
           groups={groups}
           onClose={() => setEdit(null)}
           onSaved={(saved) => {
+            data.upsertBoard(saved)
             if (edit === 'new') onSelectBoard(saved.id)
             else void data.reload()
           }}

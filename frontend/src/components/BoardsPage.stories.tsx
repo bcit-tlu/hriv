@@ -241,5 +241,6 @@ export const SaveToBoard: Story = {
         within(canvasElement.ownerDocument.body).getByText('Saved to Next studio project'),
       ).toBeVisible(),
     )
+    await waitFor(() => expect(handle.parentElement).toHaveStyle({ opacity: '1' }))
   },
 }

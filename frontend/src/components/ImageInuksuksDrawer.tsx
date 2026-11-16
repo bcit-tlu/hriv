@@ -275,12 +275,25 @@ export default function ImageInuksuksDrawer({
                     {rows.map((item) => {
                       const visible = prefs.visibilityFor(item)
                       return (
-                        <ListItem key={item.id} disablePadding sx={{ pr: 1 }}>
+                        <ListItem
+                          key={item.id}
+                          disablePadding
+                          sx={{
+                            '&:hover': { bgcolor: 'action.hover' },
+                            ...(item.id === selectedId && { bgcolor: 'action.selected' }),
+                          }}
+                        >
                           <ListItemButton
-                            selected={item.id === selectedId}
                             onClick={() => onSelect(item)}
                             aria-label={`View Inuksuk: ${item.title}`}
-                            sx={{ minWidth: 0, pl: 2, pr: 0.5 }}
+                            aria-pressed={item.id === selectedId}
+                            sx={{
+                              minWidth: 0,
+                              width: '100%',
+                              pl: 2,
+                              pr: 9,
+                              '&:hover': { bgcolor: 'transparent' },
+                            }}
                           >
                             <ListItemText
                               primary={item.title}
@@ -289,30 +302,32 @@ export default function ImageInuksuksDrawer({
                               }}
                             />
                           </ListItemButton>
-                          <IconButton
-                            size="small"
-                            aria-label={`${item.title} marker`}
-                            aria-pressed={visible.markerVisible}
-                            onClick={() =>
-                              prefs.setItem(item, 'markerVisible', !visible.markerVisible)
-                            }
-                          >
-                            {visible.markerVisible ? (
-                              <Visibility fontSize="small" />
-                            ) : (
-                              <VisibilityOff fontSize="small" />
-                            )}
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            aria-label={`${item.title} options`}
-                            aria-haspopup="menu"
-                            onClick={(event) =>
-                              setMenu({ anchor: event.currentTarget, item, title: item.title })
-                            }
-                          >
-                            <MoreVert fontSize="small" />
-                          </IconButton>
+                          <Box sx={{ position: 'absolute', right: 8, display: 'flex' }}>
+                            <IconButton
+                              size="small"
+                              aria-label={`${item.title} marker`}
+                              aria-pressed={visible.markerVisible}
+                              onClick={() =>
+                                prefs.setItem(item, 'markerVisible', !visible.markerVisible)
+                              }
+                            >
+                              {visible.markerVisible ? (
+                                <Visibility fontSize="small" />
+                              ) : (
+                                <VisibilityOff fontSize="small" />
+                              )}
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              aria-label={`${item.title} options`}
+                              aria-haspopup="menu"
+                              onClick={(event) =>
+                                setMenu({ anchor: event.currentTarget, item, title: item.title })
+                              }
+                            >
+                              <MoreVert fontSize="small" />
+                            </IconButton>
+                          </Box>
                         </ListItem>
                       )
                     })}
@@ -329,7 +344,7 @@ export default function ImageInuksuksDrawer({
           open={!!menu}
           anchorEl={menu?.anchor}
           onClose={() => setMenu(null)}
-          container={menu?.anchor.closest('aside')?.parentElement}
+          container={() => closeRef.current?.closest('aside')?.parentElement ?? null}
         >
           {menu &&
             (() => {

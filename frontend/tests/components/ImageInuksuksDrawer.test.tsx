@@ -64,6 +64,22 @@ function Example({
 }
 beforeEach(() => localStorage.clear())
 describe('ImageInuksuksDrawer', () => {
+  it.each(['My Inuksuks', 'Rose window'])(
+    'removes the modal backdrop after changing %s labels',
+    async (name) => {
+      render(<Example />)
+      fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+      fireEvent.click(screen.getByRole('button', { name: `${name} options` }))
+      await waitFor(() => expect(screen.getByRole('menu')).toBeVisible())
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: `${name} labels` }))
+      await waitFor(() => expect(document.querySelector('.MuiModal-root')).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks markers' }))
+      expect(screen.getByRole('button', { name: 'My Inuksuks markers' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    },
+  )
   it.each(['light', 'dark'] as const)('uses %s theme colors for the trigger', (mode) => {
     const theme = createTheme({ palette: { mode, common: { black: '#102030', white: '#f0e0d0' } } })
     render(

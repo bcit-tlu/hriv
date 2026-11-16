@@ -17,6 +17,55 @@ beforeEach(() => {
   vi.mocked(api.fetchInuksuks).mockResolvedValue(BOARD_ITEMS)
 })
 describe('useBoardsData', () => {
+  it('refreshes silently and retains the overview while opening and closing a Board', async () => {
+    const { result, rerender } = renderHook(
+      ({ id }: { id: number | null }) => useBoardsData(id, false),
+      {
+        initialProps: { id: null },
+      },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const items = result.current.recent
+    let finish = () => {}
+    vi.mocked(api.fetchBoards).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = () => resolve(BOARDS_FIXTURES)
+      }),
+    )
+    let refresh: Promise<void>
+    act(() => {
+      refresh = result.current.reload()
+    })
+    await waitFor(() => expect(api.fetchBoards).toHaveBeenCalledTimes(2))
+    expect(result.current.loading).toBe(false)
+    expect(result.current.recent).toBe(items)
+    await act(async () => {
+      finish()
+      await refresh
+    })
+    const refreshed = result.current.recent
+    vi.clearAllMocks()
+    rerender({ id: 1 })
+    await waitFor(() => expect(result.current.board?.id).toBe(1))
+    expect(result.current.recent).toBe(refreshed)
+    expect(api.fetchBoards).not.toHaveBeenCalled()
+    expect(api.fetchInuksuks).not.toHaveBeenCalled()
+    rerender({ id: null })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.recent).toBe(refreshed)
+  })
+  it('retains loaded data and reports a silent refresh error', async () => {
+    const { result } = renderHook(() => useBoardsData(null, false))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const items = result.current.recent
+    const boards = result.current.boards
+    vi.mocked(api.fetchBoards).mockRejectedValueOnce(new Error('offline'))
+    await act(() => result.current.reload())
+    expect(result.current.recent).toBe(items)
+    expect(result.current.boards).toBe(boards)
+    expect(result.current.error).toBeTruthy()
+    expect(result.current.loading).toBe(false)
+  })
   it('is dark when disabled', () => {
     renderHook(() => useBoardsData(1, false, false))
     expect(api.fetchBoards).not.toHaveBeenCalled()

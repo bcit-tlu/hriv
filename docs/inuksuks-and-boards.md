@@ -399,6 +399,8 @@ Rows show titles only. Their **⋮** menus contain Show/Hide label and permitted
 Edit/Delete actions; group menus contain label actions. The drawer stops above
 the bottom toolbar so tools remain usable. Unsaved placements also appear under
 My Inuksuks with an **Unsaved** status while the draft is open.
+Row hover backgrounds extend across the drawer, including the independent eye
+and options controls, without nesting interactive elements.
 
 Preferences use `hriv.inuksukVisibility.<userId>`. Parsing validates the shape
 and defaults corrupt values safely; at most 500 recently changed row overrides
@@ -481,7 +483,11 @@ Inuksuk editors may save to another Board or edit/favourite the Inuksuk.
 
 Board deletion confirms that otherwise orphaned Inuksuks will be deleted.
 Removing one link instead surfaces the backend's last-Board 422 without deleting
-the Inuksuk. Mutations reload projections; no optimistic write survives failure.
+the Inuksuk. Mutations refresh projections silently, keeping loaded cards and
+Board covers mounted; refresh errors retain the last loaded data and show an error.
+Creating a Board adds the returned Board locally before opening it. Opening or
+closing a Board dialog fetches only its detail, not the overview; opening an
+Inuksuk editor loads its Board picker without reloading the page.
 Opening a card fetches the authorized image record and reuses the existing
 `?image=&x=&y=&zoom=&rotation=` viewer/share mechanism, with an epoch guard
 against late navigation. Browser Back returns to the Board entry.

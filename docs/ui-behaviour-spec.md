@@ -1450,6 +1450,9 @@ selection MouseTracker ignores their presses.
 - Board URL/history state is retained: Back closes the Board dialog; opening an
   image at its saved view and returning restores that dialog. Flag-off behavior
   makes no Board/Inuksuk requests.
+- Mutations refresh silently without unmounting the collage or flashing a page
+  loader. Refresh failures retain loaded cards. Board dialog navigation preserves
+  the overview and fetches only Board detail; opening editors does not reload it.
 
 ### Viewer saved-view interactions
 
@@ -1467,6 +1470,8 @@ selection MouseTracker ignores their presses.
   marker visibility; their context menus change labels independently. Row menus
   expose Edit/Delete only when permitted. Default/override/Mixed and localStorage
   semantics remain unchanged.
+- Drawer row hover backgrounds span the full width, including the separate eye
+  and options buttons; these buttons do not nest inside the row action.
 - Markers are upright constant-size 27px blue glyphs without a disc. Labels retain
   their existing styling. The top-left compass has no badge and matches the adjacent
   white-on-dark OSD controls; the placement tool shares all normal toolbar states.

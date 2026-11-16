@@ -30,6 +30,7 @@ vi.mock('../../src/api', async (importOriginal) => ({
   fetchBoards: vi.fn(),
   fetchCollections: vi.fn(),
   createCollection: vi.fn(),
+  createBoard: vi.fn(),
   fetchBoard: vi.fn(),
   fetchInuksuks: vi.fn(),
   fetchInuksuk: vi.fn(),
@@ -87,6 +88,93 @@ function dropOnBoard(boardId: number) {
   } as unknown as DragEndEvent)
 }
 describe('BoardsPage', () => {
+  it.each(['Boards', 'Inuksuks'])(
+    'shows an initial %s load error instead of the empty state and allows retry',
+    async (source) => {
+      const fetch = source === 'Boards' ? vi.mocked(api.fetchBoards) : vi.mocked(api.fetchInuksuks)
+      fetch.mockRejectedValueOnce(new api.ApiError(422, 'Overview unavailable'))
+      await setup()
+      expect(screen.getByRole('alert')).toHaveTextContent('Overview unavailable')
+      expect(screen.queryByText(/No Inuksuks yet/)).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+      await screen.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    },
+  )
+  it('retains the loaded collage and covers when a silent refresh fails and allows retry', async () => {
+    await setup()
+    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    const cover = screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
+    vi.mocked(api.fetchBoards).mockRejectedValueOnce(new api.ApiError(422, 'Overview unavailable'))
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Overview unavailable')
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+    expect(screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })).toBe(cover)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByText(/No Inuksuks yet/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reload latest' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+  })
+  it('keeps collage nodes mounted throughout a drag-save and silent refresh', async () => {
+    const { container } = await setup()
+    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    let removed = false
+    let loading = false
+    const observer = new MutationObserver((records) => {
+      removed ||= records.some((record) =>
+        [...record.removedNodes].some((node) => node.contains(card)),
+      )
+      loading ||= !!container.querySelector('[role="progressbar"]')
+    })
+    observer.observe(container, { childList: true, subtree: true })
+    dropOnBoard(3)
+    await screen.findByText('Saved to Next studio project')
+    observer.disconnect()
+    expect(removed).toBe(false)
+    expect(loading).toBe(false)
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBe(card)
+    expect(api.fetchBoards).toHaveBeenCalledTimes(2)
+    expect(api.fetchInuksuks).toHaveBeenCalledTimes(5)
+  })
+  it('does not reload or remount the collage for Inuksuk editing, Board creation or Board navigation', async () => {
+    const view = await setup()
+    const card = screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })
+    const cover = screen.getByRole('button', { name: 'Open Board: Architecture inspiration' })
+    await actions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Inuksuk' }))
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
+    expect(card.isConnected).toBe(true)
+    expect(cover.isConnected).toBe(true)
+    expect(api.fetchBoards).toHaveBeenCalledTimes(2) // overview and the form's Board picker
+    expect(api.fetchInuksuks).toHaveBeenCalledTimes(4) // overview and three Board covers
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
+    expect(card.isConnected).toBe(true)
+    vi.mocked(api.createBoard).mockResolvedValue(BOARDS_FIXTURES.find((board) => board.id === 3)!)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'New Board' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Board' }))
+    await waitFor(() => expect(view.onSelectBoard).toHaveBeenCalledWith(3))
+    view.rerender(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <BoardsPage
+          enabled
+          currentUser={BOARD_USER}
+          boardId={3}
+          onSelectBoard={view.onSelectBoard}
+          onOpenInuksuk={view.onOpenInuksuk}
+        />
+      </AuthContext.Provider>,
+    )
+    await screen.findByRole('dialog', { name: 'Next studio project' })
+    expect(card.isConnected).toBe(true)
+    expect(cover.isConnected).toBe(true)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(api.fetchBoards).toHaveBeenCalledTimes(2)
+    expect(api.fetchInuksuks).toHaveBeenCalledTimes(4)
+  })
   it('filters both surfaces by title and restores them with Clear filters', async () => {
     vi.mocked(api.fetchBoards).mockResolvedValue([
       { ...BOARDS_FIXTURES[0], name: 'Rose studies' },
