@@ -471,7 +471,8 @@ async def replace_image(
     name: Annotated[str | None, Form()] = None,
     category_id: Annotated[str | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
-    note: Annotated[str | None, Form()] = None,
+    description: Annotated[str | None, Form()] = None,
+    instructor_note: Annotated[str | None, Form()] = None,
     active: Annotated[str | None, Form()] = None,
     metadata_extra: Annotated[str | None, Form()] = None,
 ) -> SourceImage:
@@ -506,13 +507,17 @@ async def replace_image(
             # ── Apply optional metadata updates atomically ──────────
             has_metadata = any(
                 v is not None
-                for v in (name, category_id, copyright, note, active, metadata_extra)
+                for v in (
+                    name, category_id, copyright, description, instructor_note,
+                    active, metadata_extra,
+                )
             )
             # Parse and validate all metadata fields up front so 400s fire
             # before any disk or database work, and so no lock is held
             # while the client streams the file.
             parsed_cat: int | None = None
-            parsed_note: str | None = None
+            parsed_description: str | None = None
+            parsed_instructor_note: str | None = None
             parsed_metadata: dict | list | None = None
             span.set_attribute("image.metadata_update", has_metadata)
             if has_metadata:
@@ -521,14 +526,20 @@ async def replace_image(
                         parsed_cat = int(category_id) if category_id != "" else None
                     except (ValueError, TypeError):
                         raise HTTPException(status_code=400, detail="Invalid category_id")
-                if note is not None:
-                    try:
-                        parsed_note = normalize_note_value(note)
-                    except ValueError:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
-                        )
+                try:
+                    parsed_description = normalize_note_value(description)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Description must be {MAX_NOTE_LENGTH} characters or fewer",
+                    )
+                try:
+                    parsed_instructor_note = normalize_note_value(instructor_note)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Instructor note must be {MAX_NOTE_LENGTH} characters or fewer",
+                    )
                 if metadata_extra is not None:
                     try:
                         parsed_metadata = json.loads(metadata_extra) if metadata_extra else None
@@ -580,6 +591,7 @@ async def replace_image(
                 "category_id": img.category_id,
                 "copyright": img.copyright,
                 "description": img.description,
+                "instructor_note": img.instructor_note,
                 "active": img.active,
                 "metadata_": deepcopy(img.metadata_),
                 "version": img.version,
@@ -610,8 +622,10 @@ async def replace_image(
                         img.name = name
                     if copyright is not None:
                         img.copyright = copyright if copyright != "" else None
-                    if note is not None:
-                        img.description = parsed_note
+                    if description is not None:
+                        img.description = parsed_description
+                    if instructor_note is not None:
+                        img.instructor_note = parsed_instructor_note
                     if active is not None:
                         img.active = active.lower() in ("true", "1")
                     if metadata_extra is not None:
@@ -626,6 +640,7 @@ async def replace_image(
                     category_id=img.category_id,
                     copyright=img.copyright,
                     description=img.description,
+                    instructor_note=img.instructor_note,
                     active=img.active,
                     file_size=file_size,
                     uploaded_by=_user.id,
@@ -741,6 +756,7 @@ async def replace_image(
                                 category_id=metadata_snapshot["category_id"],
                                 copyright=metadata_snapshot["copyright"],
                                 description=metadata_snapshot["description"],
+                                instructor_note=metadata_snapshot["instructor_note"],
                                 active=metadata_snapshot["active"],
                                 metadata_=metadata_snapshot["metadata_"],
                                 version=metadata_snapshot["version"],
@@ -748,7 +764,7 @@ async def replace_image(
                         )
                         if restore_result.rowcount == 1:
                             # The restore reverts any browse-visible fields (name,
-                            # copyright, description, active, metadata) on a categorized image
+                            # copyright, description, instructor_note, active, metadata) on a categorized image
                             # or a collection member, so the tree/list content can
                             # change. Bump the browse revision whenever the image was
                             # or becomes categorized or is a member, matching the

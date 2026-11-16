@@ -64,6 +64,7 @@ def _make_image(
         category_id=category_id,
         copyright=None,
         description=None,
+        instructor_note=None,
         active=active,
         sort_order=sort_order,
         metadata_=None,
@@ -1377,6 +1378,7 @@ def _make_source_image(id: int = 10, image_id: int = 1) -> SimpleNamespace:
         category_id=None,
         copyright=None,
         description=None,
+        instructor_note=None,
         active=True,
         image_id=image_id,
         file_size=1024,
@@ -1593,7 +1595,8 @@ async def test_replace_image_applies_metadata_updates(
             name="renamed",
             category_id="",
             copyright="",
-            note="updated note",
+            description="updated note",
+            instructor_note="updated staff note",
             active="0",
             metadata_extra='{"source":"upload"}',
         )
@@ -1602,6 +1605,7 @@ async def test_replace_image_applies_metadata_updates(
     assert img.category_id is None
     assert img.copyright is None
     assert img.description == "updated note"
+    assert img.instructor_note == "updated staff note"
     assert img.active is False
     assert img.metadata_ == {"source": "upload"}
     assert img.version == 2
@@ -1632,6 +1636,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     img = _make_image(name="original", category_id=7, active=True)
     img.copyright = "Original copyright"
     img.description = "Original note"
+    img.instructor_note = "Original staff note"
     img.metadata_ = {
         "keep": "this",
         "canvas_annotations": [{"type": "rect"}],
@@ -1643,6 +1648,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
             "category_id",
             "copyright",
             "description",
+            "instructor_note",
             "active",
             "metadata_",
             "version",
@@ -1674,7 +1680,8 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
                 name="new-name",
                 category_id="9",
                 copyright="New copyright",
-                note="New note",
+                description="New note",
+                instructor_note="New staff note",
                 active="0",
                 metadata_extra='{"replace": "me"}',
             )
@@ -1686,6 +1693,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     assert restore_values["category_id"] == original["category_id"]
     assert restore_values["copyright"] == original["copyright"]
     assert restore_values["description"] == original["description"]
+    assert restore_values["instructor_note"] == original["instructor_note"]
     assert restore_values["active"] == original["active"]
     assert restore_values["metadata"] == original["metadata_"]
     assert restore_values["version"] == original["version"]
@@ -1804,16 +1812,17 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
 @patch("os.replace")
 @patch("os.makedirs")
 @patch("builtins.open", new_callable=MagicMock)
-async def test_replace_image_empty_note_clears_note(
+async def test_replace_image_empty_values_clear_both_notes(
     mock_open: MagicMock,
     mock_makedirs: MagicMock,
     mock_replace: MagicMock,
     mock_getsize: MagicMock,
 ) -> None:
-    """An explicit note="" on replace must erase the stored note."""
+    """Explicit empty description/instructor_note on replace erase both."""
     mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image()
     img.description = "existing note"
+    img.instructor_note = "existing staff note"
 
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
@@ -1833,10 +1842,12 @@ async def test_replace_image_empty_note_clears_note(
             background_tasks=background_tasks,
             _user=_make_user(),
             db=db,
-            note="",
+            description="",
+            instructor_note="",
         )
 
     assert img.description is None
+    assert img.instructor_note is None
 
 
 async def test_replace_image_not_found() -> None:
@@ -1897,6 +1908,29 @@ async def test_replace_image_invalid_metadata_extra() -> None:
 
     assert exc.value.status_code == 400
     assert "metadata_extra" in exc.value.detail
+
+
+@pytest.mark.parametrize(
+    ("field", "label"),
+    [("description", "Description"), ("instructor_note", "Instructor note")],
+)
+async def test_replace_image_rejects_overlong_notes(field, label) -> None:
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    with pytest.raises(HTTPException) as exc:
+        await replace_image(
+            image_id=1,
+            file=_make_upload_file(),
+            background_tasks=MagicMock(),
+            _user=_make_user(),
+            db=db,
+            **{field: "x" * 501},
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == f"{label} must be 500 characters or fewer"
 
 
 async def test_replace_image_no_filename() -> None:
