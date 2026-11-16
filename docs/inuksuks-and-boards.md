@@ -434,13 +434,24 @@ Boards uses `Tabs value={false}`. Selecting a Board writes
 The same flag gates direct links and all page requests.
 Frontend telemetry preserves `boards` in both page and from-page dimensions.
 
-**Your Boards** includes user-owned and program-owned Boards for the caller;
-**Shared with me / Public** shows other server-authorized Boards. Boards have
-up to four renewing coordinate thumbnails, a themed placeholder, visibility
-and count. The hook pages through the complete Board list, so ordering is not
-truncated by the API default page size. The overview shows the 60 most recently
-updated visible Inuksuks in a responsive column collage, with server-side
-favourites filtering. Opening a Board shows all its authorized members.
+The overview has one short, horizontally scrolling row of compact Board tabs,
+starting with **New Board**. All server-authorized Boards share that row, with
+up to four renewing coordinate thumbnails and a themed placeholder. Below it,
+every visible Inuksuk appears in a responsive column collage; both lists are
+fetched in pages of 200 without the former recent-60 cap. Each card shows the
+image's parent category below its title (`category_name`, null if unfiled).
+The field uses the existing image visibility gate and eagerly loaded category.
+Collections' filter components provide title/description search, Private /
+Restricted / Public scope, owner/Mine, and Favourite filters on both surfaces.
+An Inuksuk matches any visible Board membership of the selected scopes. A Board
+matches Favourite if it holds a favourite Inuksuk. Active filters have removable
+chips and a Clear filters action. Select sits at the right of the collage toolbar.
+Opening a Board shows all authorized members, independent of overview filters,
+in a large dialog, full-screen on mobile. Its fixed heading keeps the title,
+editable-only pencil, scope pill, count and Select visible while members scroll.
+The overflow holds permitted Owners/Delete actions and Create Sequence Collection.
+The URL retains `?board=`; Back closes the dialog, and Back from a saved-view
+image returns to that Board dialog.
 
 Board metadata defaults to private. Restricted scope reuses Collections'
 attach rules: admins may attach any Program/Group, instructors only their own
@@ -450,17 +461,19 @@ Owners/transfer reuse the Collections picker via a Board adapter, and require
 `can_transfer`. Both dialogs carry Board OCC versions and require explicit
 reload on 409; reload replaces the staged draft with current server values.
 
-The selected Board displays a flat, ordered list of saved views.
+The selected Board displays a flat, ordered collage of saved views.
 Handle-based DnD reorders members within the Board;
 Board reorder applies only to editable owned Boards. Read-only program-owned
 Boards remain listed but have no drag handle and are omitted from reorder writes.
-They appear in a separate read-only row under Your Boards. Board positions are
-stored globally on each Board, not per user; separating the rows prevents
-read-only cards from moving among editable cards after a reorder and reload.
+They appear in the same compact row as other authorized Boards. Board positions
+are stored globally, not per user; only the complete editable-owned subset is
+submitted on reorder. Board handles are hidden while filters are active so a
+filtered subset can never replace that complete order.
 These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
-Dropping an editable Inuksuk on another editable Board **saves a copy of the
-link**. **Move/Save to…** also offers an explicit atomic move that removes the
+Dragging an editable overview Inuksuk by its handle onto another editable Board
+tab highlights the target and **saves a copy of the link**, with a success snackbar.
+Read-only Boards are not drop targets. **Move/Save to…** also offers an explicit atomic move that removes the
 source link in the same PATCH. Other editable Board links retain their positions; non-editable links remain server-preserved. If any membership or
 destination read fails, saving is blocked rather than sending a partial list.
 Board editors can remove other owners' Inuksuks from their Board, but only

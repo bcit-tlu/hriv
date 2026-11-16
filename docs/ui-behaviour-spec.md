@@ -1427,6 +1427,30 @@ selection MouseTracker ignores their presses.
 
 ## Board and Inuksuk search (#1775)
 
+### Boards & Inuksuks overview and Board dialog
+
+- One short horizontally scrolling Board row begins with New Board. Compact
+  thumbnails and names replace ownership-tab-separated card grids. Read-only
+  Boards stay visible, without drag handles or drop targets.
+- A column collage shows every visible Inuksuk, fetched in pages of 200. Cards
+  show the image's parent category below the title, or Uncategorized when absent.
+- The Collections filter bar components provide title/description search,
+  Private/Restricted/Public scope, owner/Mine and Favourite facets on both the
+  Board row and overview collage. Scope uses any visible Board membership;
+  Favourite Boards are those holding a favourite Inuksuk. Active chips can be
+  removed, and Clear filters resets all facets.
+- Separate drag handles save editable overview Inuksuks onto editable Board tabs,
+  preserving existing memberships. Targets highlight and success shows a snackbar;
+  failures retain data and show the error. Browse collision logic is unchanged.
+- A Board opens in a large dialog, full-screen below the small breakpoint. Its
+  fixed heading holds title, authorized edit pencil, scope, count, Select and an
+  overflow for Owners/Delete/Create Sequence Collection. Its ordered collage
+  scrolls independently and does not inherit overview filters. Editable Boards
+  retain member reorder. Select sits at the right of each collage toolbar.
+- Board URL/history state is retained: Back closes the Board dialog; opening an
+  image at its saved view and returning restores that dialog. Flag-off behavior
+  makes no Board/Inuksuk requests.
+
 ### Viewer saved-view interactions
 
 - Add Inuksuk is a persistent mode, with normal drag/scroll/pinch navigation;

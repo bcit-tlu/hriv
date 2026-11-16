@@ -33,17 +33,24 @@ export function useBoardsData(boardId: number | null, favourites: boolean, enabl
           if (batch.length < 200 || token !== generation.current.value) return rows
         }
       }
+      const allInuksuks = async () => {
+        const rows: ApiInuksuk[] = []
+        for (let page = 1; ; page++) {
+          const batch = await fetchInuksuks({
+            sort: 'updated_at',
+            order: 'desc',
+            favourite: favourites || undefined,
+            page,
+            page_size: 200,
+          })
+          rows.push(...batch)
+          if (batch.length < 200 || token !== generation.current.value) return rows
+        }
+      }
       const [boards, board, recent] = await Promise.all([
         allBoards(),
         boardId == null ? Promise.resolve(null) : fetchBoard(boardId),
-        boardId == null
-          ? fetchInuksuks({
-              sort: 'updated_at',
-              order: 'desc',
-              favourite: favourites || undefined,
-              limit: 60,
-            })
-          : Promise.resolve([]),
+        allInuksuks(),
       ])
       if (token === generation.current.value) setState({ key, boards, board, recent, error: null })
     } catch (error) {

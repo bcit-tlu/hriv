@@ -25,8 +25,25 @@ group action shows all. These display preferences are remembered for your accoun
 
 ## Organize a Board
 
-Open **Boards**, create a Board, and add saved views. Reorder cards to arrange the study. Board owners can edit
-their Boards; visibility and program/group restrictions determine who can view them.
+Open **Boards** to see compact Board tabs across the top and all your visible
+saved views in a collage below. **New Board** is the first tab. Use Title, Scope
+(Private / Restricted / Public), Owner/Mine or Favourite to narrow both lists;
+remove filter chips or use Clear filters to reset. Each saved view shows its
+image's parent category under the title.
+
+Drag a saved view by its handle onto an editable Board tab to save it there too;
+the other Board memberships stay intact. A highlighted target and confirmation
+message show the result. Read-only Boards do not accept drops. **Move/Save to…**
+in a card's menu is the explicit alternative, including moving between Boards.
+
+Click a Board tab to open its large dialog (full-screen on a phone). The heading
+keeps its title, scope, count and controls visible while the saved views scroll.
+The pencil edits the Board when permitted; **⋮** contains Owners, Delete and
+Create Sequence Collection as allowed. Reorder cards by their handles to arrange
+the study. **Select**, at the right of the collage toolbar, enables Collection
+actions. Click a saved view to open its image; Back returns to the Board dialog,
+and Back again returns to the overview. Board owners can edit their Boards;
+visibility and program/group restrictions determine who can view them.
 Sharing a Board does not grant access to a restricted source image.
 
 ## Find saved views

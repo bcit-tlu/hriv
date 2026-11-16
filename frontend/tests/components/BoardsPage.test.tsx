@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeApiCollection, makeCategory } from '../helpers/fixtures'
+import type { DragEndEvent, DragDropProvider } from '@dnd-kit/react'
 import * as api from '../../src/api'
 import { AuthContext } from '../../src/authContextValue'
 import BoardsPage from '../../src/components/BoardsPage'
@@ -11,6 +12,18 @@ import {
   BOARD_ITEMS,
   BOARD_USER,
 } from '../../src/components/boardsFixtures'
+
+const drag = vi.hoisted(() => ({ end: null as ((event: DragEndEvent) => void) | null }))
+vi.mock('@dnd-kit/react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@dnd-kit/react')>()
+  return {
+    ...actual,
+    DragDropProvider: (props: React.ComponentProps<typeof DragDropProvider>) => {
+      drag.end = props.onDragEnd as (event: DragEndEvent) => void
+      return <actual.DragDropProvider {...props} />
+    },
+  }
+})
 
 vi.mock('../../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
@@ -64,46 +77,164 @@ async function setup(
 async function actions() {
   fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rose window' }))
 }
+function dropOnBoard(boardId: number) {
+  drag.end?.({
+    canceled: false,
+    operation: {
+      source: { id: 'item:7', type: 'board-member' },
+      target: { id: `save:${boardId}` },
+    },
+  } as unknown as DragEndEvent)
+}
 describe('BoardsPage', () => {
-  it('keeps read-only Boards separate when a reload returns colliding global positions', async () => {
-    const first = { ...BOARDS_FIXTURES[0], sort_order: 0 }
+  it('filters both surfaces by title and restores them with Clear filters', async () => {
+    vi.mocked(api.fetchBoards).mockResolvedValue([
+      { ...BOARDS_FIXTURES[0], name: 'Rose studies' },
+      BOARDS_FIXTURES[1],
+    ])
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Filter Boards and Inuksuks by title' }), {
+      target: { value: 'Rose' },
+    })
+    expect(screen.getByRole('button', { name: 'Open Board: Rose studies' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Board: Next studio project' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+    ).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Stone columns' })).toBeVisible()
+  })
+  it('offers deduplicated Board and Inuksuk owners, including owners with no visible Board', async () => {
+    const guestOwner = { user_id: 88, program_id: null, name: 'Taylor', role: 'student' as const }
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+      { ...BOARD_ITEMS[0], owners: [guestOwner], board_ids: [2] },
+      BOARD_ITEMS[1],
+      { ...BOARD_ITEMS[2], owners: [guestOwner], board_ids: [2] },
+    ])
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Owner' }))
+    expect(screen.getAllByRole('menuitemradio').map((option) => option.textContent)).toEqual([
+      'Anyone',
+      'Mine',
+      'Alex',
+      'Morgan',
+      'Taylor',
+    ])
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Taylor' }))
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Open Board:/ })).not.toBeInTheDocument()
+  })
+  it('uses visible Board memberships for scope, including multiple scopes on one Inuksuk', async () => {
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+      { ...BOARD_ITEMS[0], board_ids: [1, 2] },
+      { ...BOARD_ITEMS[1], board_ids: [1] },
+    ])
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Scope' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Public' }))
+    expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Board: Architecture inspiration' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' })).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
+    ).not.toBeInTheDocument()
+  })
+  it('shows the image category below the title, with a fallback for uncategorized images', async () => {
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+      { ...BOARD_ITEMS[0], category_name: 'Architecture' },
+      { ...BOARD_ITEMS[1], category_name: null },
+    ])
+    await setup()
+    expect(screen.getByText('Architecture', { exact: true })).toBeVisible()
+    expect(screen.getByText('Uncategorized')).toBeVisible()
+  })
+  it('opens Board details in a dialog with fixed heading controls and a close action', async () => {
+    const view = await setup(1)
+    const dialog = screen.getByRole('dialog', { name: 'Architecture inspiration' })
+    expect(within(dialog).getByText('Private', { exact: true })).toBeVisible()
+    expect(within(dialog).getByText('6 Inuksuks')).toBeVisible()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close Board' }))
+    expect(view.onSelectBoard).toHaveBeenCalledWith(null)
+  })
+  it('saves an overview drag to a Board without removing existing memberships and reports success', async () => {
+    await setup()
+    dropOnBoard(3)
+    await waitFor(() =>
+      expect(api.updateInuksuk).toHaveBeenCalledWith(7, {
+        version: 3,
+        board_assignments: [
+          { board_id: 1, sort_order: BOARD_ITEMS[0].sort_order },
+          { board_id: 3 },
+        ],
+      }),
+    )
+    expect(await screen.findByText('Saved to Next studio project')).toBeVisible()
+  })
+  it('ignores read-only targets and already-linked targets', async () => {
+    await setup()
+    dropOnBoard(2)
+    dropOnBoard(1)
+    expect(api.updateInuksuk).not.toHaveBeenCalled()
+  })
+  it('reports a failed drag-save without a success snackbar', async () => {
+    vi.mocked(api.updateInuksuk).mockRejectedValue(new api.ApiError(422, 'Cannot save this view'))
+    await setup()
+    dropOnBoard(3)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cannot save this view')
+    expect(screen.queryByText('Saved to Next studio project')).not.toBeInTheDocument()
+  })
+  it('discards Board-local dialogs and late mutation reloads after navigating to another Board', async () => {
+    let finish: (item: (typeof BOARD_ITEMS)[0]) => void = () => {}
+    vi.mocked(api.updateInuksuk).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    )
+    const view = await setup(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    await waitFor(() => expect(api.updateInuksuk).toHaveBeenCalled())
+    view.rerender(
+      <AuthContext.Provider value={BOARD_AUTH}>
+        <BoardsPage
+          enabled
+          currentUser={BOARD_USER}
+          boardId={3}
+          onSelectBoard={view.onSelectBoard}
+          onOpenInuksuk={view.onOpenInuksuk}
+        />
+      </AuthContext.Provider>,
+    )
+    await screen.findByRole('dialog', { name: 'Next studio project' })
+    finish(BOARD_ITEMS[0])
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog', { name: 'Next studio project' })).toBeVisible()
+    expect(api.fetchBoard).toHaveBeenLastCalledWith(3)
+  })
+  it('includes read-only and shared Boards in one compact row with New Board first', async () => {
     const readOnly = {
       ...BOARDS_FIXTURES[1],
       owners: [],
       owner_program_id: 1,
-      sort_order: 1,
       permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
     }
-    const last = { ...first, id: 4, name: 'Another editable Board', sort_order: 2 }
-    vi.mocked(api.fetchBoards).mockResolvedValue([first, readOnly, last])
+    vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0], readOnly, BOARDS_FIXTURES[2]])
     await setup(null, { currentUser: { ...BOARD_USER, role: 'student' } })
-    const editable = screen.getByRole('region', { name: 'Editable owned Boards' })
-    const fixed = screen.getByRole('region', { name: 'Read-only owned Boards' })
+    const row = screen.getByRole('region', { name: 'Boards' })
+    expect(within(row).getAllByRole('button')[0]).toHaveAccessibleName('New Board')
+    expect(within(row).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(3)
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(
-      within(editable)
-        .getAllByRole('button', { name: /^Open Board:/ })
-        .map((row) => row.textContent),
-    ).toEqual([expect.stringContaining(first.name), expect.stringContaining(last.name)])
-    expect(within(fixed).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
-    expect(
-      within(fixed).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
-    ).toBeVisible()
-    vi.mocked(api.fetchBoards).mockResolvedValue([
-      { ...last, sort_order: 0 },
-      { ...first, sort_order: 1 },
-      readOnly,
-    ])
-    fireEvent.click(screen.getByRole('switch', { name: 'Favourites only' }))
-    await waitFor(() =>
-      expect(
-        within(editable).getAllByRole('button', { name: /^Open Board:/ })[0],
-      ).toHaveAccessibleName(`Open Board: ${last.name}`),
-    )
-    const reloadedFixed = screen.getByRole('region', { name: 'Read-only owned Boards' })
-    expect(within(reloadedFixed).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
-    expect(
-      within(reloadedFixed).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
-    ).toBeVisible()
+      screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
+    ).not.toBeInTheDocument()
   })
 
   it.each(['student', 'staff'] as const)(
@@ -143,24 +274,21 @@ describe('BoardsPage', () => {
     expect(view.container).toBeEmptyDOMElement()
     expect(api.fetchBoards).not.toHaveBeenCalled()
   })
-  it('shows owned Boards first, a New Board card and recent Inuksuks', async () => {
+  it('shows all visible Boards, a New Board tab and saved views', async () => {
     const view = await setup()
     expect(
       screen.getByRole('button', { name: 'Open Board: Architecture inspiration' }),
     ).toBeVisible()
-    expect(
-      screen.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
-    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Open Inuksuk: Rose window' }))
     expect(view.onOpenInuksuk).toHaveBeenCalledWith(BOARD_ITEMS[0])
     fireEvent.click(screen.getByRole('button', { name: 'New Board' }))
     expect(screen.getByRole('dialog')).toHaveTextContent('New Board')
   })
-  it('opens a Board and switches to Shared/Public without drag handles', async () => {
+  it('opens a Board without hiding shared Boards or granting them drag handles', async () => {
     const view = await setup()
     fireEvent.click(screen.getByRole('button', { name: 'Open Board: Architecture inspiration' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(1)
-    fireEvent.click(screen.getByRole('tab', { name: 'Shared with me / Public' }))
     expect(screen.getByRole('button', { name: 'Open Board: Shared discoveries' })).toBeVisible()
     expect(
       screen.queryByRole('button', { name: 'Reorder Shared discoveries' }),
@@ -168,7 +296,11 @@ describe('BoardsPage', () => {
   })
   it('filters favourites on the server and toggles them with the Inuksuk version', async () => {
     await setup()
-    fireEvent.click(screen.getByRole('switch', { name: 'Favourites only' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Favourites only' }))
+    fireEvent.keyDown(screen.getByRole('menuitemradio', { name: 'Favourites only' }), {
+      key: 'Escape',
+    })
     await waitFor(() =>
       expect(api.fetchInuksuks).toHaveBeenCalledWith(expect.objectContaining({ favourite: true })),
     )
@@ -259,7 +391,8 @@ describe('BoardsPage', () => {
   })
   it('warns about orphan deletion before deleting a Board', async () => {
     const view = await setup(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Board' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Board options' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Board' }))
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveTextContent('Inuksuks only on this Board will be permanently deleted')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Board' }))
@@ -288,7 +421,7 @@ describe('BoardsPage', () => {
     vi.mocked(api.fetchBoard).mockRejectedValue(new api.ApiError(404, 'Board not found'))
     const view = await setup(999)
     expect(screen.getByRole('alert')).toHaveTextContent('Board not found')
-    fireEvent.click(screen.getByRole('button', { name: 'All Inuksuks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close Board' }))
     expect(view.onSelectBoard).toHaveBeenCalledWith(null)
   })
 })
@@ -325,7 +458,8 @@ it('creates a Sequence from the Board source and navigates to it', async () => {
     onOpenCollection: open,
     categories: [makeCategory({ id: 10, label: 'Studies' })],
   })
-  fireEvent.click(screen.getAllByRole('button', { name: 'Create Sequence Collection' })[0])
+  fireEvent.click(screen.getByRole('button', { name: 'Board options' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Create Sequence Collection' }))
   fireEvent.change(screen.getByRole('textbox', { name: 'Collection name' }), {
     target: { value: 'Board sequence' },
   })

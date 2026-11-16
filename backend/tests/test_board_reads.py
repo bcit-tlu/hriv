@@ -194,6 +194,7 @@ async def test_inuksuk_detail_projection_and_conditional_get(world):
     assert response.status_code == 200, response.text
     row = response.json()
     assert row["id"] == item_id
+    assert row["category_name"] is None
     assert row["board_ids"] == sorted([world.boards["public"], world.boards["instructor"]])
     assert row["permissions"]["can_edit"] is True
     token = parse_qs(urlsplit(row["thumb"]).query)["tile_token"][0]
@@ -203,6 +204,32 @@ async def test_inuksuk_detail_projection_and_conditional_get(world):
     cached = await world.client.get(url, headers={"If-None-Match": response.headers["etag"]})
     assert cached.status_code == 304
     assert cached.content == b""
+
+
+@pytest.mark.parametrize("role", ["student", "staff"])
+async def test_inuksuk_category_name_uses_eager_visible_image(world, role):
+    world.caller["role"] = role
+    category = Category(label="Architectural details", programs=[], groups=[])
+    world.db.add(category)
+    await world.db.flush()
+    image = await world.db.get(Image, world.images["visible"])
+    image.category_id = category.id
+    await world.db.flush()
+    world.db.expunge_all()
+    endpoints = [
+        f"/api/inuksuks/{world.items['mine']}",
+        "/api/inuksuks",
+        f"/api/images/{world.images['visible']}/inuksuks",
+        f"/api/boards/{world.boards['public']}",
+    ]
+    for endpoint in endpoints:
+        world.db.expunge_all()
+        response = await world.client.get(endpoint)
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        rows = payload if isinstance(payload, list) else payload.get("inuksuks", [payload])
+        row = next(row for row in rows if row["id"] == world.items["mine"])
+        assert row["category_name"] == "Architectural details"
 
 
 @pytest.mark.parametrize("key", ["image_hidden", "image_inactive", "image_program", "image_group", "private", "missing"])

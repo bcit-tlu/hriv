@@ -3668,6 +3668,26 @@ describe('Boards navigation', () => {
     )
     expect(window.location.search).toBe('?page=boards')
   })
+  it('Back closes a Board opened from the overview', async () => {
+    window.history.replaceState(null, '', '/?page=boards')
+    render(<App />)
+    expect(await screen.findByTestId('boards-page')).toHaveAttribute('data-board', 'null')
+    fireEvent.click(screen.getByRole('button', { name: 'Select Board' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', '5'),
+    )
+    await act(async () => {
+      const popped = new Promise<void>((resolve) =>
+        window.addEventListener('popstate', () => resolve(), { once: true }),
+      )
+      window.history.back()
+      await popped
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('boards-page')).toHaveAttribute('data-board', 'null'),
+    )
+    expect(window.location.search).toBe('?page=boards')
+  })
   it('keeps the saved viewport and browser Back returns to the Board', async () => {
     const goBack = async () => {
       await act(async () => {
