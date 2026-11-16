@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import { alpha } from '@mui/material/styles'
 import type { PopoverActions } from '@mui/material/Popover'
 import {
   Alert,
@@ -62,9 +63,9 @@ export function ImageInuksuksTrigger({
             width: 48,
             height: 48,
             borderRadius: 0,
-            bgcolor: '#0005',
-            color: '#fff',
-            '&:hover': { bgcolor: '#0005' },
+            bgcolor: (theme) => alpha(theme.palette.common.black, 1 / 3),
+            color: 'common.white',
+            '&:hover': { bgcolor: (theme) => alpha(theme.palette.common.black, 7 / 15) },
           }}
         >
           <CompassCalibration />

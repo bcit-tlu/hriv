@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTheme, ThemeProvider } from '@mui/material/styles'
+import { alpha, createTheme, ThemeProvider } from '@mui/material/styles'
 import Drawer, { ImageInuksuksTrigger } from '../../src/components/ImageInuksuksDrawer'
 import { useInuksukVisibilityPrefs } from '../../src/useInuksukVisibilityPrefs'
 import { INUKSUK_FIXTURE } from '../../src/components/inuksukFixtures'
@@ -65,15 +65,15 @@ function Example({
 beforeEach(() => localStorage.clear())
 describe('ImageInuksuksDrawer', () => {
   it.each(['light', 'dark'] as const)('uses %s theme colors for the trigger', (mode) => {
-    const theme = createTheme({ palette: { mode } })
+    const theme = createTheme({ palette: { mode, common: { black: '#102030', white: '#f0e0d0' } } })
     render(
       <ThemeProvider theme={theme}>
         <Example />
       </ThemeProvider>,
     )
     expect(screen.getByRole('button', { name: 'Inuksuks (4)' })).toHaveStyle({
-      backgroundColor: 'rgba(0, 0, 0, 0.333)',
-      color: '#fff',
+      backgroundColor: alpha(theme.palette.common.black, 1 / 3),
+      color: theme.palette.common.white,
     })
   })
   it('groups by source, defaults public collapsed, navigates only on the row and restricts editing', () => {
