@@ -422,6 +422,23 @@ async def test_bulk_import_images_rejects_missing_category() -> None:
     assert "category" in exc.value.detail.lower()
 
 
+@pytest.mark.parametrize(
+    ("field", "label"),
+    [("description", "Description"), ("instructor_note", "Instructor note")],
+)
+async def test_bulk_import_images_rejects_overlong_notes(field, label) -> None:
+    with pytest.raises(HTTPException) as exc:
+        await bulk_import_images(
+            files=[_make_upload("one.png")],
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            db=AsyncMock(),
+            **{field: "x" * 501},
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail == f"{label} must be 500 characters or fewer"
+
+
 async def test_bulk_import_images_rejects_when_no_valid_images(tmp_path) -> None:
     """Non-image files in the upload are silently skipped, so a payload
     consisting entirely of non-images results in a 400."""
@@ -1097,7 +1114,8 @@ def _durable_ctx(*, bulk_status="pending", sup_status="running", metadata=None):
             "max_item_attempts": 3,
             "coordinator_claims": 0,
             "copyright": "CC0",
-            "note": None,
+            "description": None,
+            "instructor_note": None,
             "active": True,
         },
     )
@@ -1122,9 +1140,24 @@ def _impl_db(bulk_status="processing", sup_status="running"):
     return db
 
 
-async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
+@pytest.mark.parametrize(
+    ("note_fields", "expected"),
+    [
+        ({"description": "D", "instructor_note": "S"}, ("D", "S")),
+        # Supervisor rows written before #1780 carry the description as "note".
+        ({"note": "legacy"}, ("legacy", None)),
+    ],
+)
+async def test_process_bulk_import_completes_successful_job(
+    tmp_path, note_fields, expected
+) -> None:
     """Happy path: claim the lease, track one item, finalize the import."""
     bulk, sup = _durable_ctx()
+    sup.metadata_ = {
+        k: v
+        for k, v in sup.metadata_.items()
+        if k not in ("description", "instructor_note")
+    } | note_fields
     db = _impl_db()
     item = SimpleNamespace(
         id=5,
@@ -1204,6 +1237,7 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
     assert track_kwargs["item_id"] == 5
     assert track_kwargs["claim_token"] == "tok-5"
     assert track_kwargs["original_filename"] == "a.png"
+    assert (track_kwargs["description"], track_kwargs["instructor_note"]) == expected
     finalize_sup.assert_awaited_once_with(job_id=55, bulk_import_job_id=1)
     release_mock.assert_awaited_once()
 
@@ -1842,7 +1876,8 @@ def _track_kwargs(tmp_path, filename="a.png") -> dict:
         "stored_path": str(stored),
         "category_id": 1,
         "copyright": "CC0",
-        "note": None,
+        "description": None,
+        "instructor_note": None,
         "active": True,
         "requested_by": 1,
         "batch_progress": _BulkImportProgress(last_child_advanced_at=time.monotonic()),
@@ -1864,7 +1899,8 @@ async def test_get_or_create_bulk_source_image_returns_existing(tmp_path) -> Non
         stored_path=str(tmp_path / "a.png"),
         category_id=1,
         copyright="CC0",
-        note=None,
+        description=None,
+        instructor_note=None,
         active=True,
         requested_by=1,
     )
@@ -1888,7 +1924,8 @@ async def test_get_or_create_bulk_source_image_creates_row(tmp_path) -> None:
         stored_path=str(tmp_path / "a.png"),
         category_id=1,
         copyright="",
-        note=None,
+        description="Shared description",
+        instructor_note="Shared staff note",
         active=True,
         requested_by=1,
     )
@@ -1896,6 +1933,8 @@ async def test_get_or_create_bulk_source_image_creates_row(tmp_path) -> None:
     assert src.status == "pending"
     assert src.bulk_import_job_id == 1
     assert src.copyright == "Public Domain"  # empty string falls back
+    assert src.description == "Shared description"
+    assert src.instructor_note == "Shared staff note"
     db.add.assert_called_once_with(src)
     db.flush.assert_awaited_once()
 

@@ -185,7 +185,8 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
             stored_path=str(staged),
             category_id=None,
             copyright=None,
-            note=None,
+            description=None,
+            instructor_note=None,
             active=True,
             requested_by=1,
             batch_progress=bulk_import._BulkImportProgress(
