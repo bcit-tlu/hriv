@@ -116,6 +116,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
                 _upload_file("replacement.jpg"),
                 replace_bg,
                 MagicMock(),
+                request=MagicMock(form=AsyncMock(return_value={})),
                 db=replace_db,
             )
         except TaskQueueUnavailableError:

@@ -467,6 +467,7 @@ async def replace_image(
     file: Annotated[UploadFile, File()],
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    request: Request,
     db: AsyncSession = Depends(get_db),
     name: Annotated[str | None, Form()] = None,
     category_id: Annotated[str | None, Form()] = None,
@@ -503,6 +504,19 @@ async def replace_image(
                 raise HTTPException(status_code=400, detail="File must be an image")
 
             original_filename = sanitize_upload_filename(file.filename)
+
+            # FastAPI turns an empty multipart field into None, same as an
+            # omitted one; recover an explicit "" so it clears the value.
+            form = await request.form()
+            category_id, copyright, description, instructor_note = (
+                "" if value is None and key in form else value
+                for key, value in (
+                    ("category_id", category_id),
+                    ("copyright", copyright),
+                    ("description", description),
+                    ("instructor_note", instructor_note),
+                )
+            )
 
             # ── Apply optional metadata updates atomically ──────────
             has_metadata = any(

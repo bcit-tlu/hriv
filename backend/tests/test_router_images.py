@@ -102,6 +102,13 @@ def _mock_request(if_match: str | None = None) -> MagicMock:
     return req
 
 
+def _form_request(form: dict | None = None) -> MagicMock:
+    """Mock Request whose parsed multipart form holds *form*."""
+    req = MagicMock()
+    req.form = AsyncMock(return_value=form or {})
+    return req
+
+
 def _images_test_app(user_role: str, db: AsyncMock) -> FastAPI:
     app = FastAPI()
     app.include_router(images_router.router, prefix="/api")
@@ -1470,6 +1477,7 @@ async def test_replace_image_success(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1511,6 +1519,7 @@ async def test_replace_image_normalizes_original_filename(
             image_id=1,
             file=file,
             background_tasks=MagicMock(),
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1543,6 +1552,7 @@ async def test_replace_image_rejects_oversized_file(tmp_path) -> None:
                 image_id=1,
                 file=file,
                 background_tasks=MagicMock(),
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -1582,6 +1592,7 @@ async def test_replace_image_fallback_to_background_tasks(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1630,6 +1641,7 @@ async def test_replace_image_applies_metadata_updates(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             name="renamed",
@@ -1715,6 +1727,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
                 image_id=1,
                 file=_make_upload_file(filename="rejected.png", content_type="image/png"),
                 background_tasks=background_tasks,
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
                 name="new-name",
@@ -1797,6 +1810,7 @@ async def test_replace_image_rejection_uses_fresh_session_when_bookkeeping_fails
                 image_id=1,
                 file=_make_upload_file(filename="rejected.png", content_type="image/png"),
                 background_tasks=background_tasks,
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -1839,6 +1853,7 @@ async def test_replace_image_unchanged_category_does_not_bump_scopes(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             category_id="7",
@@ -1880,6 +1895,7 @@ async def test_replace_image_empty_values_clear_both_notes(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             description="",
@@ -1888,6 +1904,64 @@ async def test_replace_image_empty_values_clear_both_notes(
 
     assert img.description is None
     assert img.instructor_note is None
+
+
+@pytest.mark.parametrize(
+    ("form", "expected"),
+    [
+        # Explicit empty fields clear the stored values.
+        (
+            {"description": "", "instructor_note": "", "copyright": "", "category_id": ""},
+            (None, None, None, None),
+        ),
+        # Omitted fields leave them untouched.
+        ({"name": "renamed"}, ("old description", "old staff note", "old copyright", 7)),
+    ],
+)
+@patch("os.path.getsize", return_value=1024)
+@patch("os.replace")
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_http_empty_vs_omitted_fields(
+    mock_open, mock_makedirs, mock_replace, mock_getsize, form, expected
+) -> None:
+    """Over real multipart parsing, "" clears and an omitted field is kept.
+
+    FastAPI coerces an empty form value to the parameter default (``None``),
+    so this guards the endpoint's recovery of explicit empty fields.
+    """
+    img = _make_image(category_id=7)
+    img.description = "old description"
+    img.instructor_note = "old staff note"
+    img.copyright = "old copyright"
+
+    def _refresh(obj, *_args, **_kwargs):
+        obj.id = 10
+        obj.progress = 0
+        obj.created_at = obj.updated_at = datetime.now(timezone.utc)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock(side_effect=_refresh)
+    mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
+
+    transport = httpx.ASGITransport(app=_images_test_app("admin", db))
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }), patch("app.routers.images.bump_scopes", new=AsyncMock()):
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/images/1/replace",
+                files={"file": ("new.png", b"png-bytes", "image/png")},
+                data=form,
+            )
+
+    assert resp.status_code == 201, resp.text
+    assert (
+        img.description, img.instructor_note, img.copyright, img.category_id
+    ) == expected
 
 
 async def test_replace_image_not_found() -> None:
@@ -1902,6 +1976,7 @@ async def test_replace_image_not_found() -> None:
             image_id=999,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1921,6 +1996,7 @@ async def test_replace_image_invalid_file() -> None:
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -1941,6 +2017,7 @@ async def test_replace_image_invalid_metadata_extra() -> None:
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             metadata_extra="{invalid-json}",
@@ -1964,6 +2041,7 @@ async def test_replace_image_rejects_overlong_notes(field, label) -> None:
             image_id=1,
             file=_make_upload_file(),
             background_tasks=MagicMock(),
+            request=_form_request(),
             _user=_make_user(),
             db=db,
             **{field: "x" * 501},
@@ -1986,6 +2064,7 @@ async def test_replace_image_no_filename() -> None:
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -2021,6 +2100,7 @@ async def test_replace_image_enospc(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -2059,6 +2139,7 @@ async def test_replace_image_reraises_non_enospc_oserror(
             image_id=1,
             file=file,
             background_tasks=background_tasks,
+            request=_form_request(),
             _user=_make_user(),
             db=db,
         )
@@ -2099,6 +2180,7 @@ async def test_replace_image_commit_failure_retains_file_unconditionally(
                 image_id=1,
                 file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
                 background_tasks=MagicMock(),
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
@@ -2138,6 +2220,7 @@ async def test_replace_image_pre_commit_failure_routes_through_ownership_cleanup
                 image_id=1,
                 file=_make_upload_file(filename="commitfail.png", content_type="image/png"),
                 background_tasks=MagicMock(),
+                request=_form_request(),
                 _user=_make_user(),
                 db=db,
             )
