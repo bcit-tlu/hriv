@@ -41,7 +41,7 @@ describe('InuksukMarkersLayer', () => {
     expect(anchor.style.left).toBe('1080px')
     expect(anchor.style.top).toBe('90px')
     expect(anchor.style.transform).toBe('')
-    expect(button.style.width).toBe('32px')
+    expect(button.style.width).toBe('27px')
     v.viewport.getFlip.mockReturnValue(false)
     act(() => v.handlers.get('flip')?.())
     expect(anchor.style.left).toBe('120px')
@@ -55,7 +55,7 @@ describe('InuksukMarkersLayer', () => {
     const anchor = button.parentElement!
     const label = within(v.container).getByText('Rose window')
     expect(anchor).toHaveStyle({ left: '120px', top: '90px', width: '0px' })
-    expect(button).toHaveStyle({ width: '32px', height: '32px' })
+    expect(button).toHaveStyle({ width: '27px', height: '27px' })
     expect(label.style.font).toContain('13px')
     expect(anchor.style.transform).toBe('')
     v.viewport.pixelFromPoint.mockReturnValue({ x: 300, y: 210 })
@@ -68,7 +68,7 @@ describe('InuksukMarkersLayer', () => {
       expect(v.viewport.pixelFromPoint).toHaveReturnedWith({ x: 300, y: 210 })
       expect(anchor.style.left).toBe('300px')
       expect(anchor.style.top).toBe('210px')
-      expect(button).toHaveStyle({ width: '32px', height: '32px' })
+      expect(button).toHaveStyle({ width: '27px', height: '27px' })
     }
     expect(v.viewport.pixelFromPoint).toHaveBeenCalledWith(
       expect.objectContaining({ x: 0.46, y: 0.29 }),

@@ -50,6 +50,30 @@ export const CreatePrivateBoard: Story = {
 export const ReadOnly: Story = {
   args: { item: { ...INUKSUK_FIXTURE, permissions: { can_edit: false, can_delete: false } } },
 }
+export const Placement: Story = {
+  args: { placement: true },
+  decorators: [
+    (Story) => (
+      <div
+        style={{
+          position: 'relative',
+          height: 560,
+          background: 'url(/hriv-splash2.jpg) center/cover',
+        }}
+      >
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await expect(page.getByRole('button', { name: 'More options' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    await expect(page.queryByLabelText('Description')).not.toBeInTheDocument()
+  },
+}
 export const StaleVersion: Story = {
   args: {
     item: INUKSUK_FIXTURE,

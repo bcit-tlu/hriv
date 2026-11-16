@@ -12,6 +12,7 @@ import { useInuksukVisibilityPrefs } from '../useInuksukVisibilityPrefs'
 import ImageInuksuksDrawer, { ImageInuksuksTrigger } from './ImageInuksuksDrawer'
 import InuksukFormDialog from './InuksukFormDialog'
 import InuksukMarkersLayer from './InuksukMarkersLayer'
+import InuksukInfoCard from './InuksukInfoCard'
 import { useTheme } from '@mui/material/styles'
 import type { ResponsiveStyleValue } from '@mui/system'
 import {
@@ -192,10 +193,22 @@ export default function ImageViewer({
   )
   const [editingInuksuk, setEditingInuksuk] = useState<ApiInuksuk | null>(null)
   const [selectedInuksukId, setSelectedInuksukId] = useState<number | null>(null)
+  const [infoInuksukId, setInfoInuksukId] = useState<number | null>(null)
+  const [draftTitle, setDraftTitle] = useState('New Inuksuk')
+  const [deletingInuksuk, setDeletingInuksuk] = useState(false)
+  const cancelInuksukDraft = useEffectEvent(() => {
+    if (!inuksukDraft || inuksukDraft.imageId !== imageId) return false
+    setInuksukDraft(null)
+    return true
+  })
   const placeInuksuk = useEffectEvent((view: InuksukView) => {
     if (imageId == null || !inuksuksEnabled) return
+    if (inuksukDraft?.imageId === imageId) return
     setEditingInuksuk(null)
+    setInfoInuksukId(null)
+    setDraftTitle('New Inuksuk')
     setInuksukDraft({ imageId, view })
+    return true
   })
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -809,10 +822,7 @@ export default function ImageViewer({
       viewer.canvas.style.cursor = active ? 'crosshair' : ''
       if (inuksukButton) {
         inuksukButton.element.setAttribute('aria-pressed', String(active))
-        if (active)
-          inuksukButton.element.querySelectorAll('img').forEach((img) => {
-            img.src = prefix + 'inuksuk_active.svg'
-          })
+        if (active) setButtonIcons(inuksukButton, 'inuksuk_active')
         else setButtonIcons(inuksukButton, 'inuksuk')
       }
       syncMouseNav()
@@ -827,28 +837,49 @@ export default function ImageViewer({
         onClick: () => setInuksukMode(!inuksukMode),
       })
       inuksukButton.element.style.lineHeight = '0'
+      inuksukButton.element.setAttribute('role', 'button')
+      inuksukButton.element.setAttribute('aria-label', 'Add Inuksuk')
+      inuksukButton.element.setAttribute('aria-pressed', 'false')
+      inuksukButton.element.tabIndex = 0
+      inuksukButton.element.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          setInuksukMode(!inuksukMode)
+        }
+      })
       viewer.addControl(inuksukButton.element, { anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT })
     }
-    const handleInuksukClick = (event: OpenSeadragon.ClickMouseTrackerEvent) => {
+    const handleInuksukClick = (event: OpenSeadragon.CanvasClickEvent) => {
       if (!inuksukMode || !event.quick || !event.position) return
       const target = event.originalEvent?.target
       if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) return
-      const point = viewer.viewport.pointFromPixel(
-        adjustInuksukPixelForFlip(viewer, event.position),
-      )
+      event.preventDefaultAction = true
+      const point = viewer.viewport.pointFromPixel(event.position)
       const view = {
         x: point.x,
         y: point.y,
         zoom: viewer.viewport.getZoom(),
         rotation: viewer.viewport.getRotation(),
       }
-      setInuksukMode(false)
-      placeInuksuk(view)
+      if (placeInuksuk(view)) {
+        const pixel = adjustInuksukPixelForFlip(viewer, event.position)
+        const width = viewer.container.clientWidth
+        if (width > 0 && pixel.x > width - Math.min(320, width / 2 - 16) - 24 && pixel.y < 400) {
+          viewer.viewport.panTo(new OpenSeadragon.Point(view.x, view.y))
+        }
+      }
     }
+    viewer.addHandler('canvas-click', handleInuksukClick)
     const cancelInuksukPlacement = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && (inuksukMode || pendingInuksukPlacement)) setInuksukMode(false)
+      if (event.key !== 'Escape') return
+      if (cancelInuksukDraft()) {
+        event.stopPropagation()
+        event.preventDefault()
+        return
+      }
+      if (inuksukMode || pendingInuksukPlacement) setInuksukMode(false)
     }
-    document.addEventListener('keydown', cancelInuksukPlacement)
+    document.addEventListener('keydown', cancelInuksukPlacement, true)
 
     // --- Presentation pointer tools (epic #1876): laser pointer + ephemeral
     // ink, armed only in OSD full-page mode. Ink is never persisted.
@@ -870,12 +901,7 @@ export default function ImageViewer({
 
     const syncMouseNav = () => {
       viewer.setMouseNavEnabled(
-        !(
-          selectionModeRef.current ||
-          inuksukMode ||
-          canvasEditModeRef.current ||
-          presentationTool === 'ink'
-        ),
+        !(selectionModeRef.current || canvasEditModeRef.current || presentationTool === 'ink'),
       )
     }
     syncMouseNavRef.current = syncMouseNav
@@ -1188,7 +1214,6 @@ export default function ImageViewer({
 
     const selectionTracker = new OpenSeadragon.MouseTracker({
       element: viewer.element,
-      clickHandler: handleInuksukClick,
       // CanvasOverlay portals its UI (edit toolbar, link annotations, fabric
       // canvas) into viewer.container, inside this tracker's element. Without
       // this guard the tracker would capture every such press to
@@ -1196,6 +1221,11 @@ export default function ImageViewer({
       // — and preventDefault the pointerdown, which suppresses focus and
       // breaks the toolbar's arrow-key nudge. preventGesture skips both.
       preProcessEventHandler: (event: OpenSeadragon.PreProcessMouseTrackerEvent) => {
+        if (inuksukMode) {
+          event.preventGesture = true
+          event.preventDefault = false
+          return
+        }
         if (event.eventType === 'click' && !inuksukMode) event.preventDefault = false
         const target = event.originalEvent?.target
         if (target instanceof Element && target.closest('[data-hriv-canvas-ui]')) {
@@ -1780,7 +1810,7 @@ export default function ImageViewer({
       }
       selectionTracker.destroy()
       document.removeEventListener('keydown', handleToolbarKey)
-      document.removeEventListener('keydown', cancelInuksukPlacement)
+      document.removeEventListener('keydown', cancelInuksukPlacement, true)
       mountedViewerElements.delete(viewer.element)
       topRightControl.removeEventListener('focusin', keepControlsEnabled)
       topRightControl.removeEventListener('focusout', releaseControls)
@@ -1919,6 +1949,7 @@ export default function ImageViewer({
             <ImageInuksuksDrawer
               key={drawerIdentity}
               items={inuksuks.items}
+              draftTitle={inuksukDraft?.imageId === imageId ? draftTitle : undefined}
               open={inuksuksDrawerOpen}
               onOpenChange={(open) => setDrawerFor(open ? drawerIdentity : null)}
               triggerRef={inuksuksTriggerRef}
@@ -1932,6 +1963,14 @@ export default function ImageViewer({
               }}
               onEdit={(item) => {
                 setInuksukDraft(null)
+                setInfoInuksukId(null)
+                setDeletingInuksuk(false)
+                setEditingInuksuk(item)
+              }}
+              onDelete={(item) => {
+                setInuksukDraft(null)
+                setInfoInuksukId(null)
+                setDeletingInuksuk(true)
                 setEditingInuksuk(item)
               }}
             />,
@@ -1945,7 +1984,7 @@ export default function ImageViewer({
                 ...visibilityPrefs.visibilityFor(item),
               })),
               ...(inuksukDraft?.imageId === imageId
-                ? [{ ...inuksukDraft.view, id: -1, title: 'New Inuksuk' }]
+                ? [{ ...inuksukDraft.view, id: -1, title: draftTitle || 'New Inuksuk' }]
                 : []),
             ]}
             selectedId={selectedInuksukId}
@@ -1954,9 +1993,27 @@ export default function ImageViewer({
               if (!item) return
               setSelectedInuksukId(item.id)
               setInuksukDraft(null)
-              setEditingInuksuk(item)
+              setEditingInuksuk(null)
+              setInfoInuksukId(item.id)
             }}
           />
+          {infoInuksukId != null &&
+            !editingInuksuk &&
+            inuksuks.items
+              .filter((item) => item.id === infoInuksukId)
+              .map((item) => (
+                <InuksukInfoCard
+                  key={item.id}
+                  item={item}
+                  container={viewerInstance.container}
+                  onClose={() => setInfoInuksukId(null)}
+                  onEdit={() => {
+                    setDeletingInuksuk(false)
+                    setEditingInuksuk(item)
+                    setInfoInuksukId(null)
+                  }}
+                />
+              ))}
           {(inuksukDraft?.imageId === imageId || editingInuksuk?.image_id === imageId) && (
             <InuksukFormDialog
               key={editingInuksuk?.id ?? 'new'}
@@ -1964,6 +2021,9 @@ export default function ImageViewer({
               view={editingInuksuk ?? inuksukDraft!.view}
               item={editingInuksuk?.image_id === imageId ? editingInuksuk : null}
               userId={auth?.currentUser?.id}
+              placement={!editingInuksuk}
+              initialDelete={!!editingInuksuk && deletingInuksuk}
+              onTitleChange={setDraftTitle}
               container={viewerInstance.container}
               onChanged={inuksuks.reload}
               onClose={() => {

@@ -6,9 +6,22 @@ These controls appear only when your deployment enables Inuksuks and Boards.
 
 ## Save and revisit a view
 
-Open an image, move to the detail you want to keep, and use **Add Inuksuk**.
-Give the Inuksuk a title and optional description. Reopening it restores that exact
-view rather than the whole image. Saving an Inuksuk does not modify the source image.
+Open an image and toggle **Add Inuksuk**. You can still drag, scroll or pinch to
+pan and zoom. A quick click or tap places a blue marker and opens a small panel at
+the top-right. Type a title and choose a Board; your last-used Board is selected
+when available. **+ Create new board** makes a private Board inline. Expand
+**More options** for a description or Favourite. **Save** keeps the tool on for
+another placement. **Cancel** or Escape removes the unsaved marker; Escape again,
+or the toolbar compass, turns placement off. An unsaved view also appears in the drawer.
+
+Click a saved marker to restore its view and open its information card. The card
+shows its title, description, visible Boards and favourite state. Use the pencil
+to edit if permitted, or X to close. Saving an Inuksuk does not modify the source image.
+
+The top-left compass opens the Inuksuks drawer without hiding the image toolbar.
+Each eye controls only its marker. Use **⋮** for Show/Hide label and, when allowed,
+Edit or Delete. Group eyes and menus apply to all views in that group; a Mixed
+group action shows all. These display preferences are remembered for your account.
 
 ## Organize a Board
 

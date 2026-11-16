@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
+import Collapse from '@mui/material/Collapse'
+import Paper from '@mui/material/Paper'
+import { inuksukPanelSx } from './inuksukPanelStyles'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -33,6 +37,9 @@ export interface InuksukFormDialogProps {
   onClose: () => void
   onChanged: () => Promise<void> | void
   services?: typeof defaultServices
+  placement?: boolean
+  onTitleChange?: (title: string) => void
+  initialDelete?: boolean
 }
 function storageKey(userId: number) {
   return `hrivpref:inuksuk:lastBoard:${userId}`
@@ -56,9 +63,13 @@ export default function InuksukFormDialog({
   onClose,
   onChanged,
   services = defaultServices,
+  placement = false,
+  onTitleChange,
+  initialDelete = false,
 }: InuksukFormDialogProps) {
   const [baseline, setBaseline] = useState<api.InuksukConflict | null>(item)
-  const [title, setTitle] = useState(item?.title ?? '')
+  const [title, setTitle] = useState(item?.title ?? (placement ? 'New Inuksuk' : ''))
+  const [moreOptions, setMoreOptions] = useState(!placement)
   const [description, setDescription] = useState(item?.description ?? '')
   const [favourite, setFavourite] = useState(item?.favourite ?? false)
   const [boards, setBoards] = useState<ApiBoardSummary[]>([])
@@ -71,7 +82,7 @@ export default function InuksukFormDialog({
   const [conflict, setConflict] = useState<api.InuksukConflict | null>(null)
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [boardName, setBoardName] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(initialDelete)
   const editable = !baseline || baseline.permissions.can_edit
 
   useEffect(() => {
@@ -195,15 +206,8 @@ export default function InuksukFormDialog({
   }
   const selected = boards.filter((board) => assignments.some((link) => link.board_id === board.id))
   const missingDetails = assignments.some((link) => !details[link.board_id])
-  return (
-    <Dialog
-      open
-      data-hriv-canvas-ui
-      onClose={busy ? undefined : onClose}
-      container={container}
-      fullWidth
-      maxWidth="sm"
-    >
+  const content = (
+    <>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <CompassCalibration color="primary" />
         {baseline ? (editable ? 'Edit Inuksuk' : 'Inuksuk details') : 'Save a view'}
@@ -215,10 +219,12 @@ export default function InuksukFormDialog({
             saving changes.
           </Alert>
         )}
-        <Stack spacing={2} sx={{ pt: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            Keep this exact position, zoom and rotation on your Boards.
-          </Typography>
+        <Stack spacing={placement ? 1.5 : 2} sx={{ pt: 1 }}>
+          {!placement && (
+            <Typography variant="body2" color="text.secondary">
+              Keep this exact position, zoom and rotation on your Boards.
+            </Typography>
+          )}
           {error && (
             <Alert
               severity="error"
@@ -237,22 +243,22 @@ export default function InuksukFormDialog({
             label="Title"
             required
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              setTitle(event.target.value)
+              onTitleChange?.(event.target.value)
+            }}
+            onFocus={(event) => {
+              if (placement) event.target.select()
+            }}
+            size={placement ? 'small' : 'medium'}
             disabled={busy || !editable}
             slotProps={{ htmlInput: { maxLength: 255 } }}
             autoFocus
           />
-          <TextField
-            label="Description"
-            multiline
-            minRows={2}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            disabled={busy || !editable}
-          />
           {editable ? (
             <>
               <Autocomplete
+                size={placement ? 'small' : 'medium'}
                 slotProps={{ popper: { container } }}
                 multiple
                 options={boards}
@@ -270,7 +276,9 @@ export default function InuksukFormDialog({
                     helperText={
                       loading
                         ? 'Loading Boards…'
-                        : 'Choose at least one Board. Only Boards you can edit are listed.'
+                        : placement
+                          ? undefined
+                          : 'Choose at least one Board. Only Boards you can edit are listed.'
                     }
                   />
                 )}
@@ -304,16 +312,36 @@ export default function InuksukFormDialog({
               Saved on {baseline?.board_ids.length} Board(s). Only its owners can edit this Inuksuk.
             </Typography>
           )}
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={favourite}
-                disabled={busy || !editable}
-                onChange={(event) => setFavourite(event.target.checked)}
-              />
-            }
-            label="Favourite"
-          />
+          {placement && (
+            <Button
+              aria-expanded={moreOptions}
+              onClick={() => setMoreOptions(!moreOptions)}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              More options
+            </Button>
+          )}
+          <Collapse in={moreOptions} unmountOnExit>
+            <TextField
+              label="Description"
+              fullWidth
+              multiline
+              minRows={2}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              disabled={busy || !editable}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={favourite}
+                  disabled={busy || !editable}
+                  onChange={(event) => setFavourite(event.target.checked)}
+                />
+              }
+              label="Favourite"
+            />
+          </Collapse>
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -344,10 +372,42 @@ export default function InuksukFormDialog({
             }
             onClick={() => void persist()}
           >
-            {busy ? 'Saving…' : baseline ? 'Save changes' : 'Save to Board'}
+            {busy ? 'Saving…' : baseline ? 'Save changes' : placement ? 'Save' : 'Save to Board'}
           </Button>
         )}
       </DialogActions>
+    </>
+  )
+  return placement ? (
+    createPortal(
+      <Paper
+        role="dialog"
+        aria-label="Save a view"
+        aria-modal={false}
+        data-hriv-canvas-ui
+        elevation={8}
+        sx={inuksukPanelSx}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !busy) {
+            event.stopPropagation()
+            onClose()
+          }
+        }}
+      >
+        {content}
+      </Paper>,
+      container ?? document.body,
+    )
+  ) : (
+    <Dialog
+      open
+      data-hriv-canvas-ui
+      onClose={busy ? undefined : onClose}
+      container={container}
+      fullWidth
+      maxWidth="sm"
+    >
+      {content}
     </Dialog>
   )
 }

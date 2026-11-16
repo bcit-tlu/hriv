@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { alpha } from '@mui/material/styles'
+import type { PopoverActions } from '@mui/material/Popover'
 import {
   Alert,
-  Badge,
   Box,
   Collapse,
   IconButton,
@@ -13,7 +13,8 @@ import {
   ListItemText,
   Paper,
   Slide,
-  Switch,
+  Menu,
+  MenuItem,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -21,6 +22,8 @@ import {
   Close,
   CompassCalibration,
   Edit,
+  Delete,
+  MoreVert,
   ExpandLess,
   ExpandMore,
   Visibility,
@@ -60,14 +63,12 @@ export function ImageInuksuksTrigger({
             width: 48,
             height: 48,
             borderRadius: 0,
-            bgcolor: (theme) => alpha(theme.palette.background.paper, 0.85),
-            color: 'text.primary',
-            '&:hover': { bgcolor: (theme) => alpha(theme.palette.background.paper, 0.95) },
+            bgcolor: (theme) => alpha(theme.palette.common.black, 1 / 3),
+            color: 'common.white',
+            '&:hover': { bgcolor: (theme) => alpha(theme.palette.common.black, 7 / 15) },
           }}
         >
-          <Badge badgeContent={count} color="primary" max={999}>
-            <CompassCalibration />
-          </Badge>
+          <CompassCalibration />
         </IconButton>
       </span>
     </Tooltip>
@@ -84,6 +85,8 @@ interface Props {
   error?: string | null
   onSelect: (item: ApiInuksuk) => void
   onEdit: (item: ApiInuksuk) => void
+  onDelete?: (item: ApiInuksuk) => void
+  draftTitle?: string
 }
 const groups: { source: InuksukSource; title: string }[] = [
   { source: 'mine', title: 'My Inuksuks' },
@@ -101,9 +104,19 @@ export default function ImageInuksuksDrawer({
   error,
   onSelect,
   onEdit,
+  onDelete,
+  draftTitle,
 }: Props) {
+  const [menu, setMenu] = useState<{
+    anchor: HTMLElement
+    item?: ApiInuksuk
+    source?: InuksukSource
+    title: string
+  } | null>(null)
   const [expanded, setExpanded] = useState({ mine: true, instructor: true, public: false })
+  const hasDraft = draftTitle !== undefined
   const closeRef = useRef<HTMLButtonElement>(null)
+  const menuActions = useRef<PopoverActions>(null)
   const close = () => {
     onOpenChange(false)
     triggerRef.current?.focus()
@@ -133,9 +146,9 @@ export default function ImageInuksuksDrawer({
           position: 'absolute',
           top: 0,
           left: 0,
-          bottom: 0,
+          bottom: 56,
           zIndex: 30,
-          width: 380,
+          width: 320,
           maxWidth: 'calc(100% - 48px)',
           display: 'flex',
           flexDirection: 'column',
@@ -162,14 +175,15 @@ export default function ImageInuksuksDrawer({
         </Box>
         <Box sx={{ overflowY: 'auto', minHeight: 0, flex: 1 }} tabIndex={0}>
           {error && <Alert severity="error">{error}</Alert>}
-          {!error && items.length === 0 && (
+          {!error && items.length === 0 && draftTitle === undefined && (
             <Typography sx={{ p: 2 }} color="text.secondary">
               No Inuksuks on this image yet. Use Add Inuksuk to save a view.
             </Typography>
           )}
           {groups.map(({ source, title }) => {
             const rows = items.filter((item) => item.source === source)
-            if (rows.length === 0) return null
+            const groupExpanded = expanded[source] || (source === 'mine' && hasDraft)
+            if (rows.length === 0 && !(source === 'mine' && draftTitle !== undefined)) return null
             const markerCount = rows.filter(
               (item) => prefs.visibilityFor(item).markerVisible,
             ).length
@@ -197,35 +211,36 @@ export default function ImageInuksuksDrawer({
                 >
                   <ListItemButton
                     onClick={() => setExpanded((value) => ({ ...value, [source]: !value[source] }))}
-                    aria-expanded={expanded[source]}
+                    aria-expanded={groupExpanded}
                     aria-controls={`${drawerId}-${source}`}
                     aria-label={title}
                     sx={{ px: 0.5, flex: 1, minWidth: 120 }}
                   >
-                    {expanded[source] ? (
+                    {groupExpanded ? (
                       <ExpandLess fontSize="small" />
                     ) : (
                       <ExpandMore fontSize="small" />
                     )}
                     <Typography component="h3" variant="subtitle2">
-                      {title} ({rows.length})
+                      {title}
                     </Typography>
                   </ListItemButton>
                   <Tooltip
                     title={mixedMarkers ? 'Some markers shown; show all' : 'Toggle all markers'}
                   >
                     <span>
-                      <Switch
+                      <IconButton
                         size="small"
-                        checked={allMarkers}
-                        onChange={() => prefs.setGroup(source, 'markerVisible', !allMarkers)}
-                        slotProps={{
-                          input: {
-                            'aria-label': `${title} markers`,
-                            'aria-describedby': `${drawerId}-${source}-status`,
-                          },
-                        }}
-                      />
+                        aria-label={`${title} markers`}
+                        aria-pressed={mixedMarkers ? 'mixed' : allMarkers}
+                        onClick={() => prefs.setGroup(source, 'markerVisible', !allMarkers)}
+                      >
+                        {allMarkers || mixedMarkers ? (
+                          <Visibility fontSize="small" />
+                        ) : (
+                          <VisibilityOff fontSize="small" />
+                        )}
+                      </IconButton>
                     </span>
                   </Tooltip>
                   <Tooltip
@@ -234,30 +249,29 @@ export default function ImageInuksuksDrawer({
                     <span>
                       <IconButton
                         size="small"
-                        aria-label={`${title} labels`}
+                        aria-label={`${title} options`}
                         aria-pressed={mixedLabels ? 'mixed' : allLabels}
-                        onClick={() => prefs.setGroup(source, 'labelVisible', !allLabels)}
+                        aria-haspopup="menu"
+                        onClick={(event) => setMenu({ anchor: event.currentTarget, source, title })}
                       >
-                        {allLabels || mixedLabels ? (
-                          <Visibility fontSize="small" />
-                        ) : (
-                          <VisibilityOff fontSize="small" />
-                        )}
+                        <MoreVert fontSize="small" />
                       </IconButton>
                     </span>
                   </Tooltip>
-                  <Typography
-                    id={`${drawerId}-${source}-status`}
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ width: '100%', pl: 1 }}
-                  >
-                    {markerCount}/{rows.length} markers · {labelCount}/{rows.length} labels
-                    {mixedMarkers || mixedLabels ? ' · Mixed' : ''}
-                  </Typography>
                 </Box>
-                <Collapse in={expanded[source]} unmountOnExit id={`${drawerId}-${source}`}>
+                <Collapse in={groupExpanded} unmountOnExit id={`${drawerId}-${source}`}>
                   <List disablePadding>
+                    {source === 'mine' && draftTitle !== undefined && (
+                      <ListItem>
+                        <ListItemText
+                          primary={draftTitle || 'New Inuksuk'}
+                          slotProps={{ primary: { noWrap: true } }}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                          Unsaved
+                        </Typography>
+                      </ListItem>
+                    )}
                     {rows.map((item) => {
                       const visible = prefs.visibilityFor(item)
                       return (
@@ -270,46 +284,34 @@ export default function ImageInuksuksDrawer({
                           >
                             <ListItemText
                               primary={item.title}
-                              secondary={[
-                                item.description,
-                                `${item.board_ids.length} Board${item.board_ids.length === 1 ? '' : 's'}`,
-                              ]
-                                .filter(Boolean)
-                                .join(' · ')}
                               slotProps={{
                                 primary: { noWrap: true, title: item.title },
-                                secondary: { noWrap: true, title: item.description ?? undefined },
                               }}
                             />
                           </ListItemButton>
-                          {item.permissions.can_edit && (
-                            <IconButton
-                              size="small"
-                              aria-label={`Edit ${item.title}`}
-                              onClick={() => onEdit(item)}
-                            >
-                              <Edit fontSize="small" />
-                            </IconButton>
-                          )}
-                          <Switch
-                            size="small"
-                            checked={visible.markerVisible}
-                            onChange={(_, checked) => prefs.setItem(item, 'markerVisible', checked)}
-                            slotProps={{ input: { 'aria-label': `${item.title} marker` } }}
-                          />
                           <IconButton
                             size="small"
-                            aria-label={`${item.title} label`}
-                            aria-pressed={visible.labelVisible}
+                            aria-label={`${item.title} marker`}
+                            aria-pressed={visible.markerVisible}
                             onClick={() =>
-                              prefs.setItem(item, 'labelVisible', !visible.labelVisible)
+                              prefs.setItem(item, 'markerVisible', !visible.markerVisible)
                             }
                           >
-                            {visible.labelVisible ? (
+                            {visible.markerVisible ? (
                               <Visibility fontSize="small" />
                             ) : (
                               <VisibilityOff fontSize="small" />
                             )}
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            aria-label={`${item.title} options`}
+                            aria-haspopup="menu"
+                            onClick={(event) =>
+                              setMenu({ anchor: event.currentTarget, item, title: item.title })
+                            }
+                          >
+                            <MoreVert fontSize="small" />
                           </IconButton>
                         </ListItem>
                       )
@@ -320,6 +322,62 @@ export default function ImageInuksuksDrawer({
             )
           })}
         </Box>
+        <Menu
+          action={menuActions}
+          slotProps={{ transition: { onEntered: () => menuActions.current?.updatePosition() } }}
+          data-hriv-canvas-ui
+          open={!!menu}
+          anchorEl={menu?.anchor}
+          onClose={() => setMenu(null)}
+          container={menu?.anchor.closest('aside')?.parentElement}
+        >
+          {menu &&
+            (() => {
+              const rows = items.filter((item) => item.source === menu.source)
+              const all = menu.item
+                ? prefs.visibilityFor(menu.item).labelVisible
+                : rows.every((item) => prefs.visibilityFor(item).labelVisible)
+              const mixed =
+                !menu.item && !all && rows.some((item) => prefs.visibilityFor(item).labelVisible)
+              return (
+                <MenuItem
+                  aria-label={`${menu.title} labels`}
+                  role="menuitemcheckbox"
+                  aria-checked={mixed ? 'mixed' : all}
+                  onClick={() => {
+                    if (menu.item) prefs.setItem(menu.item, 'labelVisible', !all)
+                    else if (menu.source) prefs.setGroup(menu.source, 'labelVisible', !all)
+                    setMenu(null)
+                  }}
+                >
+                  {all ? 'Hide label' : 'Show label'}
+                  {mixed ? ' (Mixed)' : ''}
+                </MenuItem>
+              )
+            })()}
+          {menu?.item?.permissions.can_edit && (
+            <MenuItem
+              onClick={() => {
+                onEdit(menu.item!)
+                setMenu(null)
+              }}
+            >
+              <Edit fontSize="small" sx={{ mr: 1 }} />
+              Edit
+            </MenuItem>
+          )}
+          {menu?.item?.permissions.can_delete && (
+            <MenuItem
+              onClick={() => {
+                ;(onDelete ?? onEdit)(menu.item!)
+                setMenu(null)
+              }}
+            >
+              <Delete fontSize="small" sx={{ mr: 1 }} />
+              Delete
+            </MenuItem>
+          )}
+        </Menu>
       </Paper>
     </Slide>
   )

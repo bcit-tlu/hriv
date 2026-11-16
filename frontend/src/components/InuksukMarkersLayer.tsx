@@ -69,24 +69,22 @@ export default function InuksukMarkersLayer({
               }}
               style={{
                 position: 'absolute',
-                left: -16,
-                top: -16,
-                width: 32,
-                height: 32,
-                padding: 3,
+                left: -13.5,
+                top: -13.5,
+                width: 27,
+                height: 27,
+                padding: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 pointerEvents: 'auto',
                 cursor: 'pointer',
-                borderRadius: '50%',
-                color: '#fff',
-                border: selectedId === item.id ? '2px solid #fff' : '2px solid #212121',
-                background: selectedId === item.id ? '#1565c0' : '#212121',
-                boxShadow: '0 1px 4px #0008',
+                color: '#1565c0',
+                border: 0,
+                background: 'transparent',
               }}
             >
-              <CompassCalibration sx={{ fontSize: 22 }} />
+              <CompassCalibration sx={{ fontSize: 27 }} />
             </button>
           )}
           {item.labelVisible !== false && (

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, within, waitFor } from 'storybook/test'
 import Box from '@mui/material/Box'
 import { AuthContext, type AuthContextValue } from '../authContextValue'
 import type { ApiInuksuk, Collection, ImageItem } from '../types'
@@ -184,11 +184,14 @@ export const LabelOnly: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
-    await userEvent.click(canvas.getByRole('switch', { name: 'Rose window marker' }))
-    await expect(canvas.getByRole('button', { name: 'Rose window label' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    await userEvent.click(canvas.getByRole('button', { name: 'Rose window marker' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
+    await expect(
+      within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
+        name: 'Rose window labels',
+      }),
+    ).toHaveAttribute('aria-checked', 'true')
+    await userEvent.keyboard('{Escape}')
     await expect(canvas.getAllByRole('button', { name: 'View Inuksuk: Rose window' })).toHaveLength(
       1,
     )
@@ -206,6 +209,23 @@ export const PublicCollapsed: Story = {
 }
 export const Sequence: Story = { args: { kind: 'sequence' }, play: PublicCollapsed.play }
 export const Closed: Story = {}
+export const OptionsMenu: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (4)' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Rose window options' }))
+    await waitFor(() =>
+      expect(
+        within(canvasElement.ownerDocument.body).getByRole('menuitem', { name: 'Edit' }),
+      ).toBeVisible(),
+    )
+    const tool = canvasElement.querySelector<HTMLElement>('[title="Add Inuksuk"]')
+    await expect(tool).toBeVisible()
+    const drawer = canvas.getByRole('complementary', { hidden: true }).getBoundingClientRect()
+    const toolbar = tool!.getBoundingClientRect()
+    await expect(drawer.bottom).toBeLessThanOrEqual(toolbar.top)
+  },
+}
 export const Empty: Story = {
   args: { state: 'empty' },
   play: async ({ canvasElement }) => {

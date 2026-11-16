@@ -95,8 +95,13 @@ export const IndependentVisibility: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
     await userEvent.click(await canvas.findByRole('button', { name: 'Inuksuks (2)' }))
     const drawer = within(canvas.getByRole('complementary'))
-    await userEvent.click(drawer.getByRole('switch', { name: 'Rose window marker' }))
-    await userEvent.click(drawer.getByRole('button', { name: 'Stone columns label' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Rose window marker' }))
+    await userEvent.click(drawer.getByRole('button', { name: 'Stone columns options' }))
+    await userEvent.click(
+      within(canvasElement.ownerDocument.body).getByRole('menuitemcheckbox', {
+        name: 'Stone columns labels',
+      }),
+    )
     await userEvent.click(drawer.getByRole('button', { name: 'Close Inuksuks' }))
     await waitFor(() => expect(canvas.queryByRole('complementary')).not.toBeInTheDocument())
     await expect(
@@ -119,12 +124,34 @@ export const Placement: Story = {
     await userEvent.pointer({
       target: surface,
       keys: '[MouseLeft]',
-      coords: { clientX: bounds.x + 260, clientY: bounds.y + 220 },
+      coords: {
+        clientX: bounds.x + 260,
+        clientY: bounds.y + 220,
+        pageX: bounds.x + 260,
+        pageY: bounds.y + 220,
+      },
     })
     const page = within(canvasElement.ownerDocument.body)
     await expect(await page.findByRole('heading', { name: 'Save a view' })).toBeInTheDocument()
-    await userEvent.type(page.getByRole('textbox', { name: /^Title/ }), 'A closer look')
-    await userEvent.click(page.getByRole('checkbox', { name: 'Favourite' }))
-    await expect(page.getByRole('checkbox', { name: 'Favourite' })).toBeChecked()
+    await expect(canvas.getByRole('button', { name: 'View Inuksuk: New Inuksuk' })).toBeVisible()
+    const draft = canvasElement.querySelector('[data-inuksuk-id="-1"]')!.getBoundingClientRect()
+    await expect(draft.x).toBeCloseTo(bounds.x + 260, 0)
+    await expect(draft.y).toBeCloseTo(bounds.y + 220, 0)
+    await userEvent.keyboard('A closer look')
+    await expect(page.getByRole('textbox', { name: /^Title/ })).toHaveValue('A closer look')
+    await expect(page.getByRole('button', { name: 'More options' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  },
+}
+export const InfoCard: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Reset visibility' }))
+    await userEvent.click(await canvas.findByRole('button', { name: 'View Inuksuk: Rose window' }))
+    await expect(await canvas.findByRole('region', { name: 'Inuksuk information' })).toBeVisible()
+    await expect(await canvas.findByText(BOARD_FIXTURE.name)).toBeVisible()
+    await expect(canvas.queryByRole('dialog')).not.toBeInTheDocument()
   },
 }
