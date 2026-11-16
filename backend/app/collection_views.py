@@ -15,6 +15,7 @@ passes the student's category subtree exclusion as well.
 """
 
 from collections.abc import Iterable
+from typing import TypeVar
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -38,8 +39,29 @@ from .schemas import (
     CollectionPermissionsOut,
     CollectionSlotOut,
     CollectionSummaryOut,
+    ImageOut,
 )
 from .visibility import get_student_excluded_category_ids
+
+
+_ImageOutT = TypeVar("_ImageOutT", bound=ImageOut)
+
+
+def image_out(
+    img: Image,
+    *,
+    scrub_instructor_note: bool,
+    model: type[_ImageOutT] = ImageOut,
+) -> _ImageOutT:
+    """Serialize an image, clearing ``instructor_note`` for student viewers.
+
+    Clears the Pydantic copy only: nulling the ORM attribute would mark the
+    row dirty and a later commit in the session would persist ``NULL``.
+    """
+    out = model.model_validate(img)
+    if scrub_instructor_note:
+        out.instructor_note = None
+    return out
 
 
 def collections_accessible_to(user: User) -> bool:

@@ -198,3 +198,22 @@ def test_image_out_defaults_version_to_one() -> None:
         updated_at=datetime.now(timezone.utc),
     )
     assert out.version == 1
+
+
+@pytest.mark.parametrize(("scrub", "expected"), [(True, None), (False, "staff only")])
+def test_image_out_scrubs_instructor_note_without_touching_orm(scrub, expected) -> None:
+    from app.collection_views import image_out
+    from app.schemas import CollectionMemberOut
+
+    img = _make_image()
+    img.description = "public"
+    img.instructor_note = "staff only"
+
+    out = image_out(img, scrub_instructor_note=scrub)
+    member = image_out(img, scrub_instructor_note=scrub, model=CollectionMemberOut)
+
+    assert (out.description, out.instructor_note) == ("public", expected)
+    assert isinstance(member, CollectionMemberOut)
+    assert member.instructor_note == expected
+    # Mutating the ORM row would persist NULL on a later commit.
+    assert img.instructor_note == "staff only"
