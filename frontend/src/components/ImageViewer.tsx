@@ -197,7 +197,7 @@ export default function ImageViewer({
   const [draftTitle, setDraftTitle] = useState('New Inuksuk')
   const [deletingInuksuk, setDeletingInuksuk] = useState(false)
   const cancelInuksukDraft = useEffectEvent(() => {
-    if (inuksukDraft?.imageId !== imageId) return false
+    if (!inuksukDraft || inuksukDraft.imageId !== imageId) return false
     setInuksukDraft(null)
     return true
   })

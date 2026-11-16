@@ -474,6 +474,21 @@ afterEach(() => {
 })
 
 describe('Inuksuk viewer tool', () => {
+  it.each([false, true])(
+    'does not consume Escape without an image or draft, flag=%s',
+    (inuksuksEnabled) => {
+      render(<ImageViewer tileSources="/test.dzi" inuksuksEnabled={inuksuksEnabled} />)
+      const onEscape = vi.fn()
+      const target = document.createElement('button')
+      document.body.appendChild(target)
+      target.addEventListener('keydown', onEscape)
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      target.dispatchEvent(event)
+      expect(onEscape).toHaveBeenCalledOnce()
+      expect(event.defaultPrevented).toBe(false)
+      target.remove()
+    },
+  )
   it('keeps the mode armed after save, lists the draft and cancels it before Escape disarms the tool', async () => {
     render(<ImageViewer tileSources="/test.dzi" imageId={42} inuksuksEnabled />)
     act(() => buttonByTooltip('Add Inuksuk').options.onClick())
@@ -562,9 +577,7 @@ describe('Inuksuk viewer tool', () => {
       viewer().viewport.getRotation.mockReturnValue(35)
       act(() => buttonByTooltip('Add Inuksuk').options.onClick())
       expect(viewer().setMouseNavEnabled).toHaveBeenLastCalledWith(true)
-      act(() =>
-        viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }),
-      )
+      act(() => viewer().fire('canvas-click', { quick: true, position: { x: 30, y: 40 } }))
       expect(await screen.findByRole('dialog')).toHaveTextContent(
         JSON.stringify({ x: 0.3, y: 0.4, zoom: 4, rotation: 35 }),
       )
