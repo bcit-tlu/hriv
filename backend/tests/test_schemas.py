@@ -44,7 +44,7 @@ def test_image_out_from_orm() -> None:
         tile_sources="/tiles/1",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
         active=True,
         sort_order=0,
         metadata_={"key": "val"},
@@ -72,7 +72,7 @@ def test_image_out_from_dict() -> None:
         "tile_sources": "/tiles/3",
         "category_id": None,
         "copyright": None,
-        "note": None,
+        "description": None,
         "active": True,
         "sort_order": 0,
         "metadata_": None,
@@ -96,7 +96,7 @@ def test_source_image_out_from_orm() -> None:
         name="test",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
         active=True,
         image_id=5,
         file_size=1048576,
@@ -125,7 +125,7 @@ def test_source_image_out_from_dict() -> None:
         "name": None,
         "category_id": None,
         "copyright": None,
-        "note": None,
+        "description": None,
         "active": True,
         "image_id": None,
         "tile_cache_status": "missing",
@@ -304,16 +304,16 @@ def _image_create_with_note(note: str | None) -> ImageCreate:
         name="test-img",
         thumb="/thumb.jpg",
         tile_sources="/tiles/1",
-        note=note,
+        description=note,
     )
 
 
 def _image_update_with_note(note: str | None) -> ImageUpdate:
-    return ImageUpdate(note=note)
+    return ImageUpdate(description=note)
 
 
 def _image_bulk_update_with_note(note: str | None) -> ImageBulkUpdate:
-    return ImageBulkUpdate(image_ids=[1], note=note)
+    return ImageBulkUpdate(image_ids=[1], description=note)
 
 
 @pytest.mark.parametrize(
@@ -335,7 +335,7 @@ def _image_bulk_update_with_note(note: str | None) -> ImageBulkUpdate:
 )
 def test_image_write_schemas_accept_valid_note_values(factory, note, expected) -> None:
     schema = factory(note)
-    assert schema.note == expected
+    assert schema.description == expected
 
 
 @pytest.mark.parametrize(

@@ -550,7 +550,7 @@ class ImageBase(BaseModel):
     tile_sources: str
     category_id: int | None = None
     copyright: str | None = None
-    note: str | None = None
+    description: str | None = None
     active: bool = True
     sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
@@ -560,7 +560,7 @@ class ImageBase(BaseModel):
 
 
 class ImageCreate(ImageBase):
-    _validate_note = field_validator("note", mode="before")(normalize_note_value)
+    _validate_note = field_validator("description", mode="before")(normalize_note_value)
 
 
 class ImageUpdate(BaseModel):
@@ -569,13 +569,13 @@ class ImageUpdate(BaseModel):
     tile_sources: str | None = None
     category_id: int | None = None
     copyright: str | None = None
-    note: str | None = None
+    description: str | None = None
     active: bool | None = None
     sort_order: int | None = None
     metadata_extra: dict | None = None
     metadata_extra_merge: dict | None = None
 
-    _validate_note = field_validator("note", mode="before")(normalize_note_value)
+    _validate_note = field_validator("description", mode="before")(normalize_note_value)
 
     @model_validator(mode="after")
     def validate_overlay_shapes(self) -> "ImageUpdate":
@@ -633,7 +633,7 @@ class SourceImageOut(BaseModel):
     name: str | None = None
     category_id: int | None = None
     copyright: str | None = None
-    note: str | None = None
+    description: str | None = None
     active: bool = True
     image_id: int | None = None
     file_size: int | None = None
@@ -829,10 +829,10 @@ class ImageBulkUpdate(BaseModel):
     image_ids: list[int]
     category_id: int | None = None
     copyright: str | None = None
-    note: str | None = None
+    description: str | None = None
     active: bool | None = None
 
-    _validate_note = field_validator("note", mode="before")(normalize_note_value)
+    _validate_note = field_validator("description", mode="before")(normalize_note_value)
 
 
 class ImageBulkDelete(BaseModel):

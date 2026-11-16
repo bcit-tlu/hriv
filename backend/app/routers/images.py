@@ -221,7 +221,7 @@ async def create_image(
                 tile_sources=body.tile_sources,
                 category_id=body.category_id,
                 copyright=body.copyright,
-                note=body.note,
+                description=body.description,
                 active=body.active,
                 sort_order=body.sort_order,
                 metadata_=body.metadata_extra or {},
@@ -575,7 +575,7 @@ async def replace_image(
                 "name": img.name,
                 "category_id": img.category_id,
                 "copyright": img.copyright,
-                "note": img.note,
+                "description": img.description,
                 "active": img.active,
                 "metadata_": deepcopy(img.metadata_),
                 "version": img.version,
@@ -607,7 +607,7 @@ async def replace_image(
                     if copyright is not None:
                         img.copyright = copyright if copyright != "" else None
                     if note is not None:
-                        img.note = parsed_note
+                        img.description = parsed_note
                     if active is not None:
                         img.active = active.lower() in ("true", "1")
                     if metadata_extra is not None:
@@ -621,7 +621,7 @@ async def replace_image(
                     name=img.name,
                     category_id=img.category_id,
                     copyright=img.copyright,
-                    note=img.note,
+                    description=img.description,
                     active=img.active,
                     file_size=file_size,
                     uploaded_by=_user.id,
@@ -736,7 +736,7 @@ async def replace_image(
                                 name=metadata_snapshot["name"],
                                 category_id=metadata_snapshot["category_id"],
                                 copyright=metadata_snapshot["copyright"],
-                                note=metadata_snapshot["note"],
+                                description=metadata_snapshot["description"],
                                 active=metadata_snapshot["active"],
                                 metadata_=metadata_snapshot["metadata_"],
                                 version=metadata_snapshot["version"],
@@ -744,7 +744,7 @@ async def replace_image(
                         )
                         if restore_result.rowcount == 1:
                             # The restore reverts any browse-visible fields (name,
-                            # copyright, note, active, metadata) on a categorized image
+                            # copyright, description, active, metadata) on a categorized image
                             # or a collection member, so the tree/list content can
                             # change. Bump the browse revision whenever the image was
                             # or becomes categorized or is a member, matching the

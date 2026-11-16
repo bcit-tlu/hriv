@@ -89,7 +89,7 @@ async def test_required_mode_call_site_matrix_rejects_without_runners(tmp_path) 
         name="image",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
         active=True,
         metadata_=None,
         version=1,

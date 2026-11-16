@@ -1239,7 +1239,7 @@ async def _get_or_create_bulk_source_image(
         name=Path(original_filename).stem,
         category_id=category_id,
         copyright=copyright or "Public Domain",
-        note=note,
+        description=note,
         active=active,
         uploaded_by=requested_by,
         bulk_import_job_id=bulk_import_job_id,

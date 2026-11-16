@@ -101,7 +101,7 @@ ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
 
-INSERT INTO images (id, name, thumb, tile_sources, category_id, copyright, note, active, metadata)
+INSERT INTO images (id, name, thumb, tile_sources, category_id, copyright, description, active, metadata)
 VALUES
   (1,
    'Duomo di Milano',

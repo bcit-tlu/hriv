@@ -205,7 +205,7 @@ async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
         )
 
     src = db.add.call_args.args[0]
-    assert src.note is None
+    assert src.description is None
 
 
 async def test_upload_source_image_rejects_oversized_file(tmp_path) -> None:

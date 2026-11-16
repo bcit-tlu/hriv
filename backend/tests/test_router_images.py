@@ -63,7 +63,7 @@ def _make_image(
         tile_sources="/tiles/1",
         category_id=category_id,
         copyright=None,
-        note=None,
+        description=None,
         active=active,
         sort_order=sort_order,
         metadata_=None,
@@ -753,15 +753,15 @@ async def test_update_image_success() -> None:
 
 async def test_update_image_normalizes_empty_note() -> None:
     img = _make_image()
-    img.note = "existing note"
+    img.description = "existing note"
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
-    body = ImageUpdate(note="")
+    body = ImageUpdate(description="")
     await update_image(1, body, _mock_request(), _make_user(), db)
-    assert img.note is None
+    assert img.description is None
 
 
 async def test_update_image_not_found() -> None:
@@ -929,7 +929,7 @@ async def test_update_image_dirty_if_match_still_bumps() -> None:
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
-    body = ImageUpdate(note="new note")
+    body = ImageUpdate(description="new note")
     await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
     db.execute.assert_awaited_once()
     assert img.version == 4
@@ -1361,7 +1361,7 @@ def _make_source_image(id: int = 10, image_id: int = 1) -> SimpleNamespace:
         name="test-img",
         category_id=None,
         copyright=None,
-        note=None,
+        description=None,
         active=True,
         image_id=image_id,
         file_size=1024,
@@ -1586,7 +1586,7 @@ async def test_replace_image_applies_metadata_updates(
     assert img.name == "renamed"
     assert img.category_id is None
     assert img.copyright is None
-    assert img.note == "updated note"
+    assert img.description == "updated note"
     assert img.active is False
     assert img.metadata_ == {"source": "upload"}
     assert img.version == 2
@@ -1616,7 +1616,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     )
     img = _make_image(name="original", category_id=7, active=True)
     img.copyright = "Original copyright"
-    img.note = "Original note"
+    img.description = "Original note"
     img.metadata_ = {
         "keep": "this",
         "canvas_annotations": [{"type": "rect"}],
@@ -1627,7 +1627,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
             "name",
             "category_id",
             "copyright",
-            "note",
+            "description",
             "active",
             "metadata_",
             "version",
@@ -1670,7 +1670,7 @@ async def test_replace_image_rejection_preserves_metadata_and_version(
     assert restore_values["name"] == original["name"]
     assert restore_values["category_id"] == original["category_id"]
     assert restore_values["copyright"] == original["copyright"]
-    assert restore_values["note"] == original["note"]
+    assert restore_values["description"] == original["description"]
     assert restore_values["active"] == original["active"]
     assert restore_values["metadata"] == original["metadata_"]
     assert restore_values["version"] == original["version"]
@@ -1798,7 +1798,7 @@ async def test_replace_image_empty_note_clears_note(
     """An explicit note="" on replace must erase the stored note."""
     mock_enqueue = AsyncMock(return_value=EnqueueResult("queued", "submitted"))
     img = _make_image()
-    img.note = "existing note"
+    img.description = "existing note"
 
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
@@ -1821,7 +1821,7 @@ async def test_replace_image_empty_note_clears_note(
             note="",
         )
 
-    assert img.note is None
+    assert img.description is None
 
 
 async def test_replace_image_not_found() -> None:

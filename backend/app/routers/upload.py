@@ -125,7 +125,7 @@ async def upload_source_image(
                 name=name,
                 category_id=category_id,
                 copyright=copyright,
-                note=note,
+                description=note,
                 active=active,
                 file_size=file_size,
                 uploaded_by=user.id,

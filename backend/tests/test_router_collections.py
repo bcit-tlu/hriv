@@ -75,7 +75,7 @@ def _image(id: int, category_id: int | None = None, active: bool = True) -> Simp
         tile_sources=f"/tiles/{id}.dzi",
         category_id=category_id,
         copyright=None,
-        note=None,
+        description=None,
         active=active,
         sort_order=0,
         metadata_=None,

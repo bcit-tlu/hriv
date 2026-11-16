@@ -168,7 +168,7 @@ def _make_image(
         tile_sources="/tiles/img",
         category_id=category_id,
         copyright=None,
-        note=None,
+        description=None,
         active=active,
         sort_order=sort_order,
         metadata_=None,
