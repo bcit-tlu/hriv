@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { alpha, createTheme, ThemeProvider } from '@mui/material/styles'
 import Drawer, { ImageInuksuksTrigger } from '../../src/components/ImageInuksuksDrawer'
@@ -83,6 +83,27 @@ function toggleMarker(name: string, group = false) {
   )
 }
 describe('ImageInuksuksDrawer', () => {
+  it.each([undefined, INUKSUK_FIXTURE.id])(
+    'preserves the requested row focus after opening an unpinned drawer, focusId=%s',
+    async (focusId) => {
+      vi.useFakeTimers()
+      try {
+        const { rerender } = render(<Example />)
+        rerender(<Example focusId={focusId} selectedId={focusId} />)
+        fireEvent.click(screen.getByRole('button', { name: 'Inuksuks (4)' }))
+        const target = screen.getByRole('button', {
+          name: focusId == null ? 'Close Inuksuks' : 'View Inuksuk: Rose window',
+        })
+        if (focusId != null) expect(target).toHaveFocus()
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1000)
+        })
+        expect(target).toHaveFocus()
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
   it.each([undefined, 'Unable to load Inuksuks'])(
     'keeps focus when a requested row is unavailable, error=%s',
     (error) => {

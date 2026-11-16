@@ -485,7 +485,11 @@ export default function ImageInuksuksDrawer({
       in={open}
       mountOnEnter
       unmountOnExit
-      onEntered={() => closeRef.current?.focus()}
+      onEntered={() => {
+        const row = drawerRef.current?.querySelector<HTMLElement>(`[data-inuksuk-row="${focusId}"]`)
+        if (row && row === row.ownerDocument.activeElement) return
+        closeRef.current?.focus()
+      }}
     >
       {content}
     </Slide>
