@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterator
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TextIO, TypeVar
@@ -514,30 +515,41 @@ def _swap_imported_entries(
             if not target.parent.resolve().is_relative_to(data_dir.resolve()):
                 raise ValueError("Restore target escapes the data directory")
             target.parent.mkdir(parents=True, exist_ok=True)
-            backup = (
-                _unique_sibling_path(target, ".bak")
-                if target.exists() or target.is_symlink()
-                else None
-            )
-            if backup is not None:
-                os.rename(str(target), str(backup))
-            try:
-                os.rename(str(entry), str(target))
-            except Exception:
-                if target.exists() or target.is_symlink():
-                    _remove_path(target)
-                if backup is not None and backup.exists():
-                    try:
-                        os.rename(str(backup), str(target))
-                    except OSError:
-                        logger.debug(
-                            "Failed to restore backup path %s to %s during rollback",
-                            backup,
-                            target,
-                            exc_info=True,
-                        )
-                raise
-            moved.append((target, backup))
+            with ExitStack() as staging:
+                promote = os.rename
+                if entry.is_relative_to(archived_tiles):
+                    temporary_dir = staging.enter_context(
+                        tempfile.TemporaryDirectory(dir=target.parent, prefix=".restore-")
+                    )
+                    staged_entry = Path(temporary_dir) / entry.name
+                    shutil.copyfile(entry, staged_entry)
+                    entry = staged_entry
+                    promote = os.replace
+                    _check_cancel()
+                backup = (
+                    _unique_sibling_path(target, ".bak")
+                    if target.exists() or target.is_symlink()
+                    else None
+                )
+                if backup is not None:
+                    os.rename(str(target), str(backup))
+                try:
+                    promote(str(entry), str(target))
+                except Exception:
+                    if target.exists() or target.is_symlink():
+                        _remove_path(target)
+                    if backup is not None and backup.exists():
+                        try:
+                            os.rename(str(backup), str(target))
+                        except OSError:
+                            logger.debug(
+                                "Failed to restore backup path %s to %s during rollback",
+                                backup,
+                                target,
+                                exc_info=True,
+                            )
+                    raise
+                moved.append((target, backup))
     except Exception:
         for target, backup in reversed(moved):
             try:

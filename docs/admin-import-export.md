@@ -565,6 +565,11 @@ rename/rollback operation as other restored entries; generated tiles in an archi
 remain ignored. Same-source tile rebuilds copy forward both snapshot namespaces.
 Keep matching DB and filesystem archives together to preserve the thumb paths.
 
+Snapshot JPEGs are first copied to temporary directories beside their targets,
+before existing files are moved aside. Promotion and rollback therefore stay on
+the destination filesystem even when tiles use a separate volume. Temporary
+copies are removed on success and failure.
+
 The separate backup service uses full database dumps/CNPG recovery and the
 restore-validation component checks whole-database recovery against its profile;
 neither maintains an application-table export allowlist needing these table names.
