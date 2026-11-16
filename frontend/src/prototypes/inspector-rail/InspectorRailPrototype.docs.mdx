@@ -5,34 +5,60 @@ import * as Stories from './InspectorRailPrototype.stories'
 
 # Inspector rail — design prototype, not app behavior
 
-This isolated Storybook exploration uses a standard, docked
-[Material 3 navigation rail](https://m3.material.io/components/navigation-rail/specs)
-to reduce image encroachment, rather than floating viewer buttons. It is not imported by the app.
+This isolated Storybook exploration combines the
+[MUI mini-variant drawer](https://mui.com/material-ui/react-drawer/#mini-variant-drawer)
+with selected [Material 3 navigation rail improvements](https://m3.material.io/components/navigation-rail/overview).
+It retains the M2/MUI visual language rather than introducing a separate M3 surface.
+It is not imported by the app.
 No ImageViewer, routes, production drawers, shared hooks or configuration are changed.
 The tissue image and bottom toolbar are static: pan, zoom and image navigation
 are deliberately outside this prototype. All data and mutations are mocked.
 
 ## Interaction model
 
-Details and Inuksuks occupy a 76px full-height rail docked flush to the right edge.
-Each destination has a 56 × 32px pill indicator and a short label underneath.
-MUI primitives, theme surface/text tokens and `alpha(primary.main, …)` supply
-the active, hover and pressed states in both themes; keyboard focus has an outline.
-More tools can extend the column. The shared 288px panel docks directly against
-the rail with no inset, gap, corner rounding or drop shadow. Panel and rail share
-`background.paper`, separated only by a divider. Long row titles ellipsize while
-their full accessible names, title tooltips and separate ⋮ controls remain intact.
-Switching tools preserves the panel DOM and the single pin; pressing the active
-tool closes it, including when pinned. Close and Escape also dismiss the panel.
+One right-anchored MUI `Drawer variant="permanent"` contains both navigation and
+content. Its paper stays mounted and animates from `spacing(8) + 1px` (65px with
+the current theme) to **300px total**, not 300px plus a separate rail. As in the
+MUI demo, width uses `theme.transitions`, sharp easing, and the enteringScreen /
+leavingScreen durations. The standard MUI surface, inner-edge divider and
+List/ListItemButton/ListItemIcon structure remain; there is no second panel paper.
 
-Unpinned panels overlay the image and retract on an outside pointer press,
+The top menu/chevron expands or collapses the drawer. A collapsed destination
+expands to its content; an expanded active destination collapses it. The menu
+button returns to the last-used destination. Icons stay at the outer/right edge
+throughout the animation, while labels appear beside them when expanded. Tooltips
+name collapsed destinations. The remembered destination retains its pill indicator;
+when expanded that indicator spans both icon and label. Theme tokens and `alpha()`
+supply interaction states in light and dark, with a keyboard-focus outline.
+
+Selected content renders below the destinations inside that same paper. Long
+Inuksuk titles ellipsize; accessible names, title tooltips and ⋮ controls remain.
+Switching preserves the content container and shared pin. Active-destination,
+chevron and Escape dismissal work even when pinned; menu Escape only closes the menu.
+
+Unpinned expanded drawers overlay the image and retract on an outside pointer press,
 including mouse and touch. Inside-menu and Board-picker interactions do not count
-as outside presses. The desktop rail always reserves 76px, even when closed.
-Pinning reserves another 288px; unpinned panels overlay only that adjacent portion
-of the image. At xs (below 600px), the panel remains a bottom sheet; pinning reserves
-height instead of width. The rail becomes a 48px full-height strip with compact
-icons and accessible names (no visible labels), leaving more room for the image
-and sheet while retaining 48px touch targets and the same destination positions.
+as outside presses. The mini strip always reserves its own width. Pinning grows
+that reservation to the full 300px, so expansion takes only another 235px from the
+image. Unpinning restores the mini reservation without closing the drawer.
+At xs (below 600px), the strip is `spacing(7) + 1px` (57px), with icon-only 48px
+destination targets. Content remains a bottom sheet, occupying the lower 60% next
+to the strip; pinning reserves height instead of width. Both are regions of the
+same drawer paper, with pointer-transparent space above the sheet so image presses
+still reach the canvas and collapse an unpinned inspector.
+
+### M3 differences adopted, and deliberately not adopted
+
+The overview's **Differences from M2** lists predictive back, new color mappings /
+dynamic color compatibility, and a contrasting pill-shaped active indicator.
+This hybrid adopts the **pill indicator**, using MUI theme palette tokens and
+`alpha()` rather than replacing the app palette with M3 color roles. It does **not**
+implement OS predictive back or dynamic/wallpaper-derived color. The MUI surface,
+typography, divider, spacing and controls remain; this is not an M3 theme migration.
+The current M3 rail also supports a menu-controlled collapsed/expanded form with
+labels beside icons when expanded; those behaviors are adopted instead of a
+separate rail-plus-drawer. No FAB, additional destinations, modal backdrop or
+mobile navigation-bar conversion is introduced for this two-tool inspection task.
 
 The shared pin uses `usePinnedDrawerState('storybook',
 'prototype-inspector-rail', false)`: storage synchronization is disabled, so it
@@ -61,7 +87,7 @@ heart/Favorite search found no other Inuksuk favourite icon sites. Production
 inconsistencies are reported for follow-up, not changed by this prototype.
 
 Prototype-only wrappers neutralize the drawers' original positioning and hide
-their individual headers; the shared panel supplies the one title, pin and Close.
+their individual headers; the shared drawer supplies the title, pin and top chevron.
 The real components are deliberately untouched. These CSS adapters are not a
 proposed production extraction. Save/Edit/Delete show a prototype-only message;
 they never write to the backend. The popover uses a fixed illustrative anchor,
@@ -69,16 +95,16 @@ not production collision detection or an OpenSeadragon projection.
 
 ## Story map
 
-| Story                          | Evaluation surface / interaction coverage                                    |
-| ------------------------------ | ---------------------------------------------------------------------------- |
-| Closed rail / switch and close | Switch in place, one active icon, active-icon dismissal                      |
-| Details                        | Real metadata and viewer-controls content                                    |
-| Inuksuks                       | Real list/menu; portal-safe clicks; hide/show marker                         |
-| Pinned                         | Width reservation, shared pin through switching, unpin, immediate click-away |
-| Placement inline               | Inline form, retained draft across close/reopen, collapsed More options      |
-| Placement floating             | Existing top-right placement model with closed inspector                     |
-| Info card popover              | Marker-adjacent card versus today's top-right card                           |
-| Mobile                         | 390px viewport; bottom sheet and compact 48px docked rail                    |
+| Story                          | Evaluation surface / interaction coverage                                                          |
+| ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Closed rail / switch and close | Same paper while widening, fixed icon position, switch, active dismissal, toggle memory and Escape |
+| Details                        | Real metadata and viewer-controls content                                                          |
+| Inuksuks                       | Real list/menu; portal-safe clicks; hide/show marker                                               |
+| Pinned                         | Width reservation, shared pin through switching, unpin, immediate click-away                       |
+| Placement inline               | Inline form, retained draft across close/reopen, collapsed More options                            |
+| Placement floating             | Existing top-right placement model with closed inspector                                           |
+| Info card popover              | Marker-adjacent card versus today's top-right card                                                 |
+| Mobile                         | 390px viewport; bottom sheet and 57px strip, pin, click-away and remembered tool                   |
 
 Theme variants use Chromatic light/dark modes and the Storybook theme toolbar,
 not duplicate stories. The play functions also run accessibility checks.

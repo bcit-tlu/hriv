@@ -3,17 +3,23 @@ import { alpha, createTheme, ThemeProvider, useTheme } from '@mui/material/style
 import {
   Alert,
   Box,
-  ButtonBase,
+  Divider,
+  Drawer,
   IconButton,
-  Paper,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material'
 import {
-  Close,
+  ChevronRight,
   CompassCalibration,
   InfoOutlined,
+  Menu,
   PushPin,
   PushPinOutlined,
   Star,
@@ -118,8 +124,7 @@ export default function InspectorRailPrototype({
   const [visibility, setVisibility] = useState<Record<number, Visibility>>({})
   const [formHost, setFormHost] = useState<HTMLDivElement | null>(null)
   const [cardHost, setCardHost] = useState<HTMLDivElement | null>(null)
-  const panelRef = useRef<HTMLElement>(null)
-  const railRef = useRef<HTMLDivElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
   const detailsTriggerRef = useRef<HTMLButtonElement>(null)
   const inuksuksTriggerRef = useRef<HTMLButtonElement>(null)
   const prefs: InuksukVisibilityPrefs = {
@@ -144,8 +149,7 @@ export default function InspectorRailPrototype({
       const target = event.target
       if (
         !(target instanceof Element) ||
-        panelRef.current?.contains(target) ||
-        railRef.current?.contains(target) ||
+        drawerRef.current?.contains(target) ||
         target.closest('.MuiAutocomplete-popper')
       )
         return
@@ -159,6 +163,16 @@ export default function InspectorRailPrototype({
     setTab(next)
   }
   const prototypeAction = () => setMessage('Prototype only — no changes are sent to the app.')
+  const miniWidth = {
+    xs: `calc(${theme.spacing(7)} + 1px)`,
+    sm: `calc(${theme.spacing(8)} + 1px)`,
+  }
+  const drawerTransition = theme.transitions.create('width', {
+    easing: theme.transitions.easing.sharp,
+    duration: open
+      ? theme.transitions.duration.enteringScreen
+      : theme.transitions.duration.leavingScreen,
+  })
   return (
     <Stack spacing={1.5} sx={{ p: { xs: 1, sm: 2 }, height: '100vh', boxSizing: 'border-box' }}>
       <Box>
@@ -174,7 +188,7 @@ export default function InspectorRailPrototype({
         sx={{
           position: 'relative',
           display: 'grid',
-          gridTemplateColumns: { xs: 'minmax(0, 1fr) auto 48px', sm: 'minmax(0, 1fr) auto 76px' },
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
           gridTemplateRows: {
             xs: open && pinned ? 'minmax(0, 2fr) minmax(0, 3fr)' : '1fr',
             sm: '1fr',
@@ -262,198 +276,274 @@ export default function InspectorRailPrototype({
             </Box>
           )}
         </Box>
-        {open && (
-          <Paper
-            component="aside"
-            aria-label={`${tab} inspector`}
-            id="prototype-inspector-panel"
-            ref={panelRef}
-            data-testid="inspector-panel"
-            square
-            elevation={0}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setOpen(false)
-            }}
+        <Drawer
+          variant="permanent"
+          anchor="right"
+          data-testid="inspector-shell"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && !event.defaultPrevented) setOpen(false)
+          }}
+          sx={{
+            gridColumn: 2,
+            gridRow: '1 / -1',
+            width: { xs: miniWidth.xs, sm: open && pinned ? 300 : miniWidth.sm },
+            flexShrink: 0,
+            transition: theme.transitions.create('width', {
+              easing: theme.transitions.easing.sharp,
+              duration:
+                open && pinned
+                  ? theme.transitions.duration.enteringScreen
+                  : theme.transitions.duration.leavingScreen,
+            }),
+          }}
+          slotProps={{
+            paper: {
+              ref: drawerRef,
+              role: 'complementary',
+              'aria-label': 'Image inspector',
+              sx: {
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                height: '100%',
+                width: { xs: open ? '100%' : miniWidth.xs, sm: open ? 300 : miniWidth.sm },
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+                transition: drawerTransition,
+                borderLeftWidth: { xs: 0, sm: 1 },
+                borderLeftStyle: 'solid',
+                borderColor: 'divider',
+                bgcolor: { xs: 'transparent', sm: 'background.paper' },
+                pointerEvents: { xs: 'none', sm: 'auto' },
+                display: { xs: 'grid', sm: 'flex' },
+                flexDirection: 'column',
+                gridTemplateColumns: open ? `minmax(0, 1fr) ${miniWidth.xs}` : miniWidth.xs,
+                gridTemplateRows: open ? 'minmax(0, 2fr) minmax(0, 3fr)' : '1fr',
+                zIndex: 4,
+              },
+            },
+          }}
+        >
+          <Box
+            data-testid="inspector-rail"
+            component="nav"
+            aria-label="Inspector destinations"
             sx={{
-              position: pinned ? 'relative' : 'absolute',
-              right: pinned ? 'auto' : { xs: 48, sm: 76 },
-              top: pinned ? 'auto' : { xs: 'auto', sm: 0 },
-              bottom: pinned ? 'auto' : 0,
-              left: { xs: pinned ? 'auto' : 0, sm: 'auto' },
-              width: { xs: 'auto', sm: 288 },
+              gridColumn: open ? 2 : 1,
+              gridRow: '1 / -1',
               minWidth: 0,
-              height: { xs: pinned ? 'auto' : '60%', sm: '100%' },
-              gridColumn: pinned ? { xs: '1 / 3', sm: 2 } : undefined,
-              gridRow: pinned ? { xs: 2, sm: 1 } : undefined,
-              borderLeft: { xs: 0, sm: 1 },
-              borderTop: { xs: 1, sm: 0 },
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
               flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: 0,
-              zIndex: 4,
+              bgcolor: 'background.paper',
+              borderLeftWidth: { xs: 1, sm: 0 },
+              borderLeftStyle: 'solid',
+              borderColor: 'divider',
+              pointerEvents: 'auto',
             }}
           >
             <Box
               sx={{
                 display: 'flex',
+                flexDirection: 'row-reverse',
                 alignItems: 'center',
-                gap: 1,
-                px: 2,
-                py: 1,
-                borderBottom: 1,
-                borderColor: 'divider',
+                height: 56,
               }}
             >
-              <Typography component="h2" variant="subtitle1" sx={{ flex: 1 }}>
-                {tab}
-              </Typography>
-              <Tooltip title={pinned ? 'Overlay image' : 'Make room for panel'}>
-                <IconButton
-                  aria-label={pinned ? 'Unpin inspector' : 'Pin inspector'}
-                  aria-pressed={pinned}
-                  onClick={() => setPinned(!pinned)}
-                  sx={{ bgcolor: pinned ? 'action.selected' : undefined }}
-                >
-                  {pinned ? <PushPin /> : <PushPinOutlined />}
-                </IconButton>
-              </Tooltip>
-              <IconButton aria-label="Close inspector" onClick={() => setOpen(false)}>
-                <Close />
-              </IconButton>
-            </Box>
-            {tab === 'Details' ? (
-              <Box sx={embeddedDrawerSx}>
-                <ImageDetailsDrawer
-                  image={{
-                    copyright: 'Educational specimen',
-                    width: 4820,
-                    height: 3210,
-                    fileSize: 4718592,
-                    createdAt: '2026-01-02T03:04:05Z',
-                  }}
-                  programNames={['Biomedical Science']}
-                  groupNames={['Histology lab']}
-                  measurement={{ scale: 12, unit: 'µm' }}
-                  sourceInfo={{
-                    originalFilename: 'renal-specimen.tif',
-                    fileType: 'TIF',
-                    uploadedByName: 'Alex',
-                  }}
-                  open
-                  onOpenChange={setOpen}
-                  triggerRef={detailsTriggerRef}
-                  drawerLabel="Prototype specimen"
-                  drawerId="prototype-details"
-                />
-              </Box>
-            ) : (
-              <Stack sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-                {draft && (
-                  <Box
-                    ref={setFormHost}
-                    data-testid="inline-placement"
-                    sx={{ ...embeddedCardSx, borderBottom: 1, borderColor: 'divider' }}
-                  />
-                )}
-                <Box sx={{ ...embeddedDrawerSx, minHeight: 220 }}>
-                  <ImageInuksuksDrawer
-                    items={items}
-                    open
-                    pinned
-                    onPinnedChange={() => {}}
-                    onOpenChange={setOpen}
-                    triggerRef={inuksuksTriggerRef}
-                    drawerId="prototype-inuksuks"
-                    prefs={prefs}
-                    onSelect={() => setCard(true)}
-                    onEdit={prototypeAction}
-                    onDelete={prototypeAction}
-                  />
-                </Box>
-              </Stack>
-            )}
-          </Paper>
-        )}
-        <Box
-          ref={railRef}
-          data-testid="inspector-rail"
-          role="toolbar"
-          aria-label="Inspector rail"
-          aria-orientation="vertical"
-          sx={{
-            gridColumn: 3,
-            gridRow: '1 / -1',
-            width: { xs: 48, sm: 76 },
-            boxSizing: 'border-box',
-            borderLeft: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            zIndex: 5,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 1,
-            py: 1.5,
-          }}
-        >
-          {(['Details', 'Inuksuks'] as const).map((name) => {
-            const active = open && tab === name
-            return (
-              <ButtonBase
-                key={name}
-                ref={name === 'Details' ? detailsTriggerRef : inuksuksTriggerRef}
-                aria-label={name === 'Details' ? 'Image details' : `Inuksuks (${items.length})`}
-                aria-expanded={active}
-                aria-controls="prototype-inspector-panel"
-                onClick={() => toggle(name)}
+              <Box
                 sx={{
-                  width: '100%',
-                  minHeight: { xs: 48, sm: 64 },
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 0.5,
-                  color: 'text.primary',
-                  '&:hover .rail-indicator': {
-                    bgcolor: (theme) => alpha(theme.palette.primary.main, active ? 0.24 : 0.08),
-                  },
-                  '&:active .rail-indicator': {
-                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.32),
-                  },
-                  '&.Mui-focusVisible': {
-                    outline: '2px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: -2,
-                  },
+                  width: { xs: theme.spacing(7), sm: theme.spacing(8) },
+                  flexShrink: 0,
+                  textAlign: 'center',
                 }}
               >
-                <Box
-                  className="rail-indicator"
-                  sx={{
-                    display: 'grid',
-                    placeItems: 'center',
-                    width: { xs: 40, sm: 56 },
-                    height: 32,
-                    borderRadius: 4,
-                    bgcolor: (theme) =>
-                      active ? alpha(theme.palette.primary.main, 0.16) : 'transparent',
-                  }}
-                >
-                  {name === 'Details' ? <InfoOutlined /> : <CompassCalibration />}
-                </Box>
+                <Tooltip title={open ? 'Collapse inspector' : 'Expand inspector'} placement="left">
+                  <IconButton
+                    aria-label={open ? 'Collapse inspector' : 'Expand inspector'}
+                    aria-expanded={open}
+                    aria-controls="prototype-inspector-panel"
+                    onClick={() => setOpen(!open)}
+                  >
+                    {open ? <ChevronRight /> : <Menu />}
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              {open && (
                 <Typography
                   component="span"
-                  variant="caption"
-                  sx={{ display: { xs: 'none', sm: 'block' }, fontWeight: active ? 700 : 500 }}
+                  variant="subtitle1"
+                  sx={{ display: { xs: 'none', sm: 'block' }, flex: 1, pl: 2 }}
                 >
-                  {name}
+                  Inspector
                 </Typography>
-              </ButtonBase>
-            )
-          })}
-        </Box>
+              )}
+            </Box>
+            <Divider />
+            <List disablePadding sx={{ py: 1 }}>
+              {(['Details', 'Inuksuks'] as const).map((name) => (
+                <ListItem key={name} disablePadding sx={{ display: 'block' }}>
+                  <Tooltip
+                    title={open ? '' : name}
+                    placement="left"
+                    slotProps={{ tooltip: { 'aria-label': name } }}
+                  >
+                    <ListItemButton
+                      component="button"
+                      ref={name === 'Details' ? detailsTriggerRef : inuksuksTriggerRef}
+                      aria-label={
+                        name === 'Details' ? 'Image details' : `Inuksuks (${items.length})`
+                      }
+                      aria-expanded={open && tab === name}
+                      aria-controls="prototype-inspector-panel"
+                      aria-current={tab === name ? 'true' : undefined}
+                      selected={tab === name}
+                      onClick={() => toggle(name)}
+                      sx={{
+                        flexDirection: 'row-reverse',
+                        minHeight: 48,
+                        px: 0,
+                        width: {
+                          xs: `calc(100% - ${theme.spacing(1)})`,
+                          sm: `calc(100% - ${theme.spacing(2)})`,
+                        },
+                        textAlign: 'left',
+                        mx: { xs: 0.5, sm: 1 },
+                        my: 0.5,
+                        borderRadius: 6,
+                        color: 'text.primary',
+                        '&.Mui-selected': { bgcolor: alpha(theme.palette.primary.main, 0.16) },
+                        '&.Mui-selected:hover': {
+                          bgcolor: alpha(theme.palette.primary.main, 0.24),
+                        },
+                        '&:active': { bgcolor: alpha(theme.palette.primary.main, 0.32) },
+                        '&.Mui-focusVisible': {
+                          outline: '2px solid',
+                          outlineColor: 'primary.main',
+                          outlineOffset: -2,
+                        },
+                      }}
+                    >
+                      <ListItemIcon
+                        sx={{ minWidth: 48, justifyContent: 'center', color: 'inherit' }}
+                      >
+                        {name === 'Details' ? <InfoOutlined /> : <CompassCalibration />}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={name}
+                        aria-hidden={!open}
+                        sx={{
+                          display: { xs: 'none', sm: 'block' },
+                          minWidth: 0,
+                          pl: open ? 2 : 0,
+                          opacity: open ? 1 : 0,
+                          whiteSpace: 'nowrap',
+                        }}
+                      />
+                    </ListItemButton>
+                  </Tooltip>
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+          {open && (
+            <Box
+              component="section"
+              aria-label={`${tab} inspector`}
+              id="prototype-inspector-panel"
+              data-testid="inspector-panel"
+              sx={{
+                gridColumn: 1,
+                gridRow: 2,
+                alignSelf: { xs: 'stretch', sm: 'flex-end' },
+                width: { xs: 'auto', sm: 299 },
+                minWidth: 0,
+                minHeight: 0,
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                bgcolor: 'background.paper',
+                borderTop: 1,
+                borderColor: 'divider',
+                pointerEvents: 'auto',
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  px: 2,
+                  py: 1,
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                }}
+              >
+                <Typography component="h2" variant="subtitle1" sx={{ flex: 1 }}>
+                  {tab}
+                </Typography>
+                <Tooltip title={pinned ? 'Overlay image' : 'Make room for panel'}>
+                  <IconButton
+                    aria-label={pinned ? 'Unpin inspector' : 'Pin inspector'}
+                    aria-pressed={pinned}
+                    onClick={() => setPinned(!pinned)}
+                    sx={{ bgcolor: pinned ? 'action.selected' : undefined }}
+                  >
+                    {pinned ? <PushPin /> : <PushPinOutlined />}
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              {tab === 'Details' ? (
+                <Box sx={embeddedDrawerSx}>
+                  <ImageDetailsDrawer
+                    image={{
+                      copyright: 'Educational specimen',
+                      width: 4820,
+                      height: 3210,
+                      fileSize: 4718592,
+                      createdAt: '2026-01-02T03:04:05Z',
+                    }}
+                    programNames={['Biomedical Science']}
+                    groupNames={['Histology lab']}
+                    measurement={{ scale: 12, unit: 'µm' }}
+                    sourceInfo={{
+                      originalFilename: 'renal-specimen.tif',
+                      fileType: 'TIF',
+                      uploadedByName: 'Alex',
+                    }}
+                    open
+                    onOpenChange={setOpen}
+                    triggerRef={detailsTriggerRef}
+                    drawerLabel="Prototype specimen"
+                    drawerId="prototype-details"
+                  />
+                </Box>
+              ) : (
+                <Stack sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                  {draft && (
+                    <Box
+                      ref={setFormHost}
+                      data-testid="inline-placement"
+                      sx={{ ...embeddedCardSx, borderBottom: 1, borderColor: 'divider' }}
+                    />
+                  )}
+                  <Box sx={{ ...embeddedDrawerSx, minHeight: 220 }}>
+                    <ImageInuksuksDrawer
+                      items={items}
+                      open
+                      pinned
+                      onPinnedChange={() => {}}
+                      onOpenChange={setOpen}
+                      triggerRef={inuksuksTriggerRef}
+                      drawerId="prototype-inuksuks"
+                      prefs={prefs}
+                      onSelect={() => setCard(true)}
+                      onEdit={prototypeAction}
+                      onDelete={prototypeAction}
+                    />
+                  </Box>
+                </Stack>
+              )}
+            </Box>
+          )}
+        </Drawer>
         {draft && !(open && tab === 'Inuksuks') && (
           <Box
             ref={setFormHost}
@@ -462,8 +552,11 @@ export default function InspectorRailPrototype({
               ...embeddedCardSx,
               position: 'absolute',
               top: 8,
-              right: { xs: 56, sm: 84 },
-              width: { xs: 'calc(100% - 64px)', sm: 288 },
+              right: {
+                xs: `calc(${miniWidth.xs} + ${theme.spacing(1)})`,
+                sm: `calc(${open ? '300px' : miniWidth.sm} + ${theme.spacing(1)})`,
+              },
+              width: { xs: `calc(100% - ${miniWidth.xs} - ${theme.spacing(2)})`, sm: 288 },
               maxHeight: 'calc(100% - 24px)',
               overflowY: 'auto',
               zIndex: 3,
