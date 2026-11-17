@@ -43,7 +43,7 @@ const IMAGE: ApiImage = {
   tile_sources: 'https://example.test/image.dzi',
   category_id: 3,
   copyright: null,
-  note: null,
+  description: null,
   active: true,
   sort_order: 0,
   metadata_extra: null,

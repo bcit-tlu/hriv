@@ -74,7 +74,7 @@ export interface UseProcessingJobsDeps {
     tile_sources: string
     category_id: number | null
     copyright: string | null
-    description?: string | null
+    description: string | null
     active: boolean
     sort_order: number
     version: number

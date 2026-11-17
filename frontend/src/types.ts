@@ -6,8 +6,6 @@ export interface ImageItem {
   categoryId?: number | null
   copyright?: string | null
   description?: string | null
-  /** @deprecated Renamed to `description` (#1782); removed once all readers move. */
-  note?: string | null
   active: boolean
   sortOrder: number
   version: number
