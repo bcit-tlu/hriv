@@ -12,11 +12,15 @@ full-page mode and shares its existing image-data request with the markers.
 
 My and Instructor start expanded; Public starts collapsed. Each row's ⋮ menu starts
 with Show/Hide marker, then Show/Hide label and permitted Edit/Delete.
+Hide/Show label(s) use LabelOff/Label icons, for row and group menus alike.
 Group menus control markers and labels independently. Group actions replace all row overrides
 for that dimension; a later row action overrides the group. Mixed groups show
 accessible “Mixed” states; clicking a mixed group shows all. Neither dimension hides
 the other. A row navigates without opening an editor; the explicit owner edit
-action opens the existing dialog. Rows have titles only; drafts appear as Unsaved
+action selects/focuses and pans to the Inuksuk and opens its top-right in-place
+editor, not a central dialog. Delete uses the editor's confirmation. Outside
+presses preserve an open editor until Save/Cancel or explicit Escape. The
+information card has no close X. Rows have titles only; drafts appear as Unsaved
 under My Inuksuks. Escape restores focus to the trigger when no draft needs cancelling.
 Hover backgrounds span the full row, including the separate options button.
 Hidden-marker titles use text.disabled (contrast-safe text.secondary in light mode)

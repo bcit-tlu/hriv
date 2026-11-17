@@ -264,12 +264,22 @@ describe('ImageInuksuksDrawer', () => {
       'aria-checked',
       'true',
     )
+    expect(
+      within(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).getByTestId(
+        'LabelOffIcon',
+      ),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Rose window labels' }))
     fireEvent.click(screen.getByRole('button', { name: 'My Inuksuks options' }))
     expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(
       'aria-checked',
       'mixed',
     )
+    expect(
+      within(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).getByTestId(
+        'LabelIcon',
+      ),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' }))
     openOptions('My Inuksuks')
     expect(screen.getByRole('menuitemcheckbox', { name: 'My Inuksuks labels' })).toHaveAttribute(

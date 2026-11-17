@@ -28,6 +28,8 @@ import {
   ExpandMore,
   Visibility,
   VisibilityOff,
+  Label,
+  LabelOff,
   PushPin,
   PushPinOutlined,
 } from '@mui/icons-material'
@@ -440,12 +442,17 @@ export default function ImageInuksuksDrawer({
                     setMenu(null)
                   }}
                 >
-                  {marker &&
-                    (all ? (
+                  {marker ? (
+                    all ? (
                       <Visibility fontSize="small" sx={{ mr: 1 }} />
                     ) : (
                       <VisibilityOff fontSize="small" sx={{ mr: 1 }} />
-                    ))}
+                    )
+                  ) : all ? (
+                    <LabelOff fontSize="small" sx={{ mr: 1 }} />
+                  ) : (
+                    <Label fontSize="small" sx={{ mr: 1 }} />
+                  )}
                   {all ? 'Hide' : 'Show'} {label}
                   {mixed ? ' (Mixed)' : ''}
                 </MenuItem>

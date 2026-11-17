@@ -284,6 +284,11 @@ export const OptionsMenu: Story = {
       ).toBeVisible(),
     )
     const tool = canvasElement.querySelector<HTMLElement>('[title="Add Inuksuk"]')
+    await expect(
+      within(canvas.getByRole('menuitemcheckbox', { name: 'Rose window labels' })).getByTestId(
+        'LabelOffIcon',
+      ),
+    ).toBeVisible()
     await expect(tool).toBeVisible()
     const drawer = canvas.getByRole('complementary', { hidden: true }).getBoundingClientRect()
     const toolbar = tool!.getBoundingClientRect()
