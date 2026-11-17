@@ -912,14 +912,20 @@ re-checks).
   create search hits.
 - Field filters expose dedicated chips for `Annotation`, `Link`, and
   `Link URL`, so users can keep only annotation-derived image matches visible.
+- Image `description` and `instructorNote` are searched as the `Description`
+  and `Instructor note` fields, each with its own Field chip. The
+  `Instructor note` chip (lock icon) is hidden for students (`excludeHidden`);
+  staff still see it. Students never receive instructor notes anyway — the API
+  scrubs them — so the chip gate is UX only. The `Description` chip also keeps
+  board and collection results matched on their description.
 - Type filter chips scope the searched fields, not just the result types: with
   a type chip active (and no Field chips selected), the query matches only the
   field(s) most closely associated with that type — `Categories` searches
   category names, `Images` searches image titles, `Programs` searches program
   names, `People` searches people names, `Guide` searches guide titles, and
   `Collections` searches collection names and descriptions. Selecting any
-  Field chip overrides that default scope, so `Images` + `Note` still finds
-  images whose notes match.
+  Field chip overrides that default scope, so `Images` + `Description` still
+  finds images whose descriptions match.
 - Collections are a result kind for **every** role (unlike program/user/guide
   kinds, they are not hidden from students): the modal indexes the caller's
   `GET /api/collections` list, which the backend already access-filters, so a
@@ -1207,6 +1213,11 @@ committed on Save) in the edit modals.
   default; it shows `metadata_extra.objective_power` as `×40` (or `—`). The
   Edit image dialog edits the same key with an **Objective** dropdown below the
   scale and unit fields; it is independent of the scale.
+- The `Description` and `Instructor note` columns are available in the column
+  chooser but are off by default; each shows its text clamped to two lines
+  (`NoteDisplay`, or `—`) and has a matching sort header and text filter. The
+  page is editor-only, and `instructor_note` is scrubbed from student payloads
+  regardless.
 - Manage → Measurement review (`MeasurementReviewPage.tsx`) groups Scan next
   10, Scan all, Re-scan outdated and Refresh in an **Actions** menu; **Approve
   selected** stays a standalone button. A **Category** column shows the full

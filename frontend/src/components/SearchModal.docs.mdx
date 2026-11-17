@@ -74,6 +74,10 @@ already access-filtered).
   image records whether it was picked directly or pinned by a checked category, so unchecking a
   category only releases members no other claim still holds. The payload preserves result order
   (not click order), and closing or handing off resets the selection.
+- **Description and instructor note.** Images match on `description` and `instructorNote`
+  under the **Description** and **Instructor note** Field chips. The Instructor note chip is
+  hidden when `excludeHidden` is set (students); the backend already sends students `null`,
+  so this is UX only. See the `InstructorNoteFilter` story.
 - **Result dedupe.** Multiple field matches on one entity group into a single row listing
   each matched field; `MAX_RESULTS` caps the display.
 
