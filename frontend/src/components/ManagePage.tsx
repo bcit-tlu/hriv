@@ -935,7 +935,7 @@ export default function ManagePage({
   const handleBulkSave = async (data: {
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
     active?: boolean
   }) => {
     try {

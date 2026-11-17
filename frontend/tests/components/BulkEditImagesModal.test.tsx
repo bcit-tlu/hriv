@@ -90,6 +90,17 @@ describe('BulkEditImagesModal – delete error toast', () => {
     })
   })
 
+  it('sends a typed note as the description field', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    renderModal({ onSave })
+
+    await user.type(screen.getByLabelText('Note'), '  Shared text  ')
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ description: 'Shared text' }))
+  })
+
   it('does not show an error toast when bulk delete succeeds', async () => {
     const user = userEvent.setup()
     const onDelete = vi.fn().mockResolvedValue(undefined)

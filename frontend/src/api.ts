@@ -699,7 +699,7 @@ export function bulkUpdateImages(body: {
   image_ids: number[]
   category_id?: number | null
   copyright?: string
-  note?: string
+  description?: string
   active?: boolean
 }): Promise<ApiImage[]> {
   return request('/images/bulk', {

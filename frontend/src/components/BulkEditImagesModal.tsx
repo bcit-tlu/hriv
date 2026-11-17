@@ -23,7 +23,7 @@ interface BulkEditImagesModalProps {
   onSave: (data: {
     category_id?: number | null
     copyright?: string
-    note?: string
+    description?: string
     active?: boolean
   }) => Promise<void>
   onDelete: () => Promise<void>
@@ -106,12 +106,12 @@ export default function BulkEditImagesModal({
     const data: {
       category_id?: number | null
       copyright?: string
-      note?: string
+      description?: string
       active?: boolean
     } = {}
     if (categoryChanged) data.category_id = categoryId
     if (copyright.trim()) data.copyright = copyright.trim()
-    if (note.trim()) data.note = note.trim()
+    if (note.trim()) data.description = note.trim()
     // A locked switch means the destination category governs visibility —
     // a toggle made before it locked must not leak into the payload.
     if (activeChanged && !visibilityDisabled) data.active = active
