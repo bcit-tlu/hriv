@@ -92,6 +92,7 @@ type SortableColumn =
   | 'category'
   | 'copyright'
   | 'description'
+  | 'instructor_note'
   | 'program'
   | 'group'
   | 'collections'
@@ -109,6 +110,7 @@ type ManageTableColumn =
   | 'category'
   | 'copyright'
   | 'description'
+  | 'instructor_note'
   | 'program'
   | 'group'
   | 'collections'
@@ -128,6 +130,7 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'category', label: 'Category' },
   { key: 'copyright', label: 'Copyright' },
   { key: 'description', label: 'Description' },
+  { key: 'instructor_note', label: 'Instructor note' },
   { key: 'program', label: 'Program' },
   { key: 'group', label: 'Groups' },
   { key: 'collections', label: 'Collections' },
@@ -158,6 +161,7 @@ const MANAGE_COLUMN_FILTER_KEYS: Partial<Record<ManageTableColumn, string>> = {
   name: 'name',
   copyright: 'copyright',
   description: 'description',
+  instructor_note: 'instructor_note',
 }
 
 function hasCanvasAnnotations(img: ApiImage): boolean {
@@ -715,6 +719,7 @@ export default function ManagePage({
       if (!match('name', img.name)) return false
       if (!match('copyright', img.copyright ?? '')) return false
       if (!match('description', img.description ?? '')) return false
+      if (!match('instructor_note', img.instructor_note ?? '')) return false
       if (selectedCategories.size > 0) {
         if (img.category_id == null) return false
         const seg = categoryPaths.get(img.category_id)
@@ -776,6 +781,9 @@ export default function ManagePage({
           break
         case 'description':
           cmp = (a.description ?? '').localeCompare(b.description ?? '')
+          break
+        case 'instructor_note':
+          cmp = (a.instructor_note ?? '').localeCompare(b.instructor_note ?? '')
           break
         case 'program':
           cmp = getProgramNames(a).localeCompare(getProgramNames(b))
@@ -1179,6 +1187,7 @@ export default function ManagePage({
     category: sortableHeaderCell('category', 'Category'),
     copyright: sortableHeaderCell('copyright', 'Copyright'),
     description: sortableHeaderCell('description', 'Description'),
+    instructor_note: sortableHeaderCell('instructor_note', 'Instructor note'),
     program: sortableHeaderCell('program', 'Program'),
     group: sortableHeaderCell('group', 'Groups'),
     collections: sortableHeaderCell('collections', 'Collections'),
@@ -1272,6 +1281,22 @@ export default function ManagePage({
           onChange={(value) => handleFilterChange('description', value)}
           placeholder="Filter by description"
           ariaLabel="Description"
+          helperText="Separate terms with commas"
+          width={260}
+        />
+      </FilterPopoverButton>
+    ),
+    instructor_note: (
+      <FilterPopoverButton
+        label="Instructor note"
+        activeCount={getFilterTerms(filters['instructor_note'] ?? '').length}
+        panelWidth={260}
+      >
+        <FilterTextPanel
+          value={filters['instructor_note'] ?? ''}
+          onChange={(value) => handleFilterChange('instructor_note', value)}
+          placeholder="Filter by instructor note"
+          ariaLabel="Instructor note"
           helperText="Separate terms with commas"
           width={260}
         />
@@ -1414,6 +1439,7 @@ export default function ManagePage({
                     name: 'Name',
                     copyright: 'Copyright',
                     description: 'Description',
+                    instructor_note: 'Instructor note',
                   }
                   return getFilterTerms(value).map((term) => (
                     <Chip
@@ -1690,6 +1716,15 @@ export default function ManagePage({
                     <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
                       {img.description ? (
                         <NoteDisplay note={img.description} collapsedLines={2} />
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  ),
+                  instructor_note: (
+                    <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
+                      {img.instructor_note ? (
+                        <NoteDisplay note={img.instructor_note} collapsedLines={2} />
                       ) : (
                         '—'
                       )}

@@ -430,6 +430,55 @@ describe('ManagePage', () => {
     expect(within(filterBar).getByText('Description: zebra')).toBeInTheDocument()
   })
 
+  it('shows, filters and sorts the optional Instructor note column', async () => {
+    const user = userEvent.setup()
+    const base = {
+      thumb: '/thumb.jpg',
+      tile_sources: '/tile.dzi',
+      category_id: 10,
+      copyright: null,
+      description: null,
+      active: true,
+      metadata_extra: null,
+      version: 1,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }
+    vi.mocked(fetchImages).mockResolvedValue([
+      { ...base, id: 401, name: 'Slide A', sort_order: 0, instructor_note: 'Zebra stain' },
+      { ...base, id: 402, name: 'Slide B', sort_order: 1, instructor_note: 'Apple quiz' },
+      { ...base, id: 403, name: 'Slide C', sort_order: 2, instructor_note: null },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({ name: true, instructor_note: true }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Slide A')
+
+    const header = screen.getByRole('columnheader', { name: 'Instructor note' })
+    expect(within(screen.getByText('Slide B').closest('tr')!).getByText('Apple quiz')).toBeVisible()
+    expect(within(screen.getByText('Slide C').closest('tr')!).getByText('—')).toBeInTheDocument()
+
+    await user.click(within(header).getByRole('button', { name: 'Instructor note' }))
+    const names = () => screen.getAllByText(/^Slide [ABC]$/).map((cell) => cell.textContent)
+    expect(names()).toEqual(['Slide C', 'Slide B', 'Slide A'])
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Instructor note' }))
+    await user.type(screen.getByPlaceholderText('Filter by instructor note'), 'zebra')
+
+    await waitFor(() => {
+      expect(screen.queryByText('Slide B')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Slide A')).toBeInTheDocument()
+    expect(within(filterBar).getByText('Instructor note: zebra')).toBeInTheDocument()
+  })
+
   it('keeps the filter bar in sync with visible columns', async () => {
     const user = userEvent.setup()
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)
