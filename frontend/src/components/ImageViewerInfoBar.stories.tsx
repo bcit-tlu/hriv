@@ -6,6 +6,8 @@ import type { ImageViewerInfoBarProps } from './ImageViewerInfoBar'
 import ImageViewerInfoBar from './ImageViewerInfoBar'
 import ImageCollectionsList from './ImageCollectionsList'
 import ViewportDialog from './ViewportDialog'
+import ImageNotesContent from './ImageNotesContent'
+import { imageNotesTitle } from './imageNotesTitle'
 
 const COLLECTIONS = [
   { id: 1621, name: 'Duomo archive' },
@@ -29,10 +31,12 @@ function InfoBarExample(args: ImageViewerInfoBarProps) {
           overflow: 'hidden',
         }}
       >
-        <ViewportDialog open={dialog === 'note'} title="Notes" onClose={() => setDialog(null)}>
-          <Box sx={{ typography: 'body2', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {args.note}
-          </Box>
+        <ViewportDialog
+          open={dialog === 'note'}
+          title={imageNotesTitle(args.note, args.instructorNote)}
+          onClose={() => setDialog(null)}
+        >
+          <ImageNotesContent description={args.note} instructorNote={args.instructorNote} />
         </ViewportDialog>
         <ViewportDialog
           open={dialog === 'collections'}
@@ -115,7 +119,7 @@ export const LongNote: Story = {
     const canvas = within(canvasElement)
     const showMore = canvas.getByRole('button', { name: 'Show full description' })
     await userEvent.click(showMore)
-    const dialog = await canvas.findByRole('dialog', { name: 'Notes' })
+    const dialog = await canvas.findByRole('dialog', { name: 'Description' })
     await expect(within(dialog).getByText(/stained-glass windows/)).toBeInTheDocument()
   },
 }

@@ -31,6 +31,8 @@ import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import ImageViewer from './components/ImageViewer'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
 import ImageDetailsDrawer, { ImageDetailsTrigger } from './components/ImageDetailsDrawer'
+import ImageNotesContent from './components/ImageNotesContent'
+import { imageNotesTitle } from './components/imageNotesTitle'
 import ImageViewerInfoBar from './components/ImageViewerInfoBar'
 import ViewportDialog from './components/ViewportDialog'
 import SortableTileGrid from './components/SortableTileGrid'
@@ -3144,18 +3146,16 @@ export default function App() {
                       />
                       <ViewportDialog
                         open={viewerDialog === 'note'}
-                        title="Notes"
+                        title={imageNotesTitle(
+                          selectedImage.description,
+                          selectedImage.instructorNote,
+                        )}
                         onClose={() => setViewerDialog(null)}
                       >
-                        <Box
-                          sx={{
-                            typography: 'body2',
-                            whiteSpace: 'pre-wrap',
-                            overflowWrap: 'anywhere',
-                          }}
-                        >
-                          {selectedImage.description}
-                        </Box>
+                        <ImageNotesContent
+                          description={selectedImage.description}
+                          instructorNote={selectedImage.instructorNote}
+                        />
                       </ViewportDialog>
                       <ViewportDialog
                         open={viewerDialog === 'collections'}

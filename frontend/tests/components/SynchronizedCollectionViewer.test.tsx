@@ -1115,11 +1115,11 @@ describe('caption note', () => {
     expect(more).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(more)
     // Exactly one dialog opens, inside the noted image's viewer pane.
-    const dialog = screen.getByRole('dialog', { name: 'Notes' })
+    const dialog = screen.getByRole('dialog', { name: 'Description' })
     const viewers = screen.getAllByTestId('image-viewer')
     expect(viewers).toHaveLength(2)
     const viewer = viewers.find((v) => v.getAttribute('data-image-id') === '1')!
-    expect(within(viewer).getByRole('dialog', { name: 'Notes' })).toBe(dialog)
+    expect(within(viewer).getByRole('dialog', { name: 'Description' })).toBe(dialog)
     expect(within(dialog).getByText(/Frontal suture/).textContent).toContain(
       'Frontal suture intact.\nNo asymmetry detected.',
     )

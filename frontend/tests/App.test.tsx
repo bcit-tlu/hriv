@@ -1891,19 +1891,19 @@ describe('App breadcrumbs', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
 
       fireEvent.click(screen.getByRole('button', { name: 'Show full description' }))
-      expect(screen.getByRole('dialog', { name: 'Notes' })).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: 'Description' })).toBeInTheDocument()
 
       // The dialog is focus-trapped; close it before interacting elsewhere.
-      fireEvent.keyDown(screen.getByRole('dialog', { name: 'Notes' }), { key: 'Escape' })
+      fireEvent.keyDown(screen.getByRole('dialog', { name: 'Description' }), { key: 'Escape' })
       await waitFor(() => {
-        expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('dialog', { name: 'Description' })).not.toBeInTheDocument()
       })
 
       fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
 
       // The second image's cell still overflows and offers its own dialog.
       expect(screen.getByRole('button', { name: 'Show full description' })).toBeInTheDocument()
-      expect(screen.queryByRole('dialog', { name: 'Notes' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Description' })).not.toBeInTheDocument()
     } finally {
       if (originalScrollWidth) {
         Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth)

@@ -20,6 +20,8 @@ import ImageViewer from './ImageViewer'
 import RenewingThumbnail from './RenewingThumbnail'
 import ImageCaptionRow from './ImageCaptionRow'
 import ViewportDialog from './ViewportDialog'
+import ImageNotesContent from './ImageNotesContent'
+import { imageNotesTitle } from './imageNotesTitle'
 import {
   CollectionImageDetails,
   CollectionImageDetailsDrawer,
@@ -225,7 +227,7 @@ export default function SequenceCollectionViewer({
     JSON.stringify(inuksuksEnabled ? current?.slot?.viewport_state : null),
     () => viewportStateFromSaved(inuksuksEnabled ? current?.slot?.viewport_state : undefined),
   )
-  // Notes dialog open state; closed on every image change (same
+  // Description dialog open state; closed on every image change (same
   // adjust-during-render pattern as the App's image-details drawer).
   const [noteDialogOpen, setNoteDialogOpen] = useState(false)
   const [noteDialogImageId, setNoteDialogImageId] = useState<number | null>(null)
@@ -609,18 +611,13 @@ export default function SequenceCollectionViewer({
                 <CollectionImageDetailsDrawer />
                 <ViewportDialog
                   open={noteDialogOpen}
-                  title="Notes"
+                  title={imageNotesTitle(current.description, current.instructorNote)}
                   onClose={() => setNoteDialogOpen(false)}
                 >
-                  <Box
-                    sx={{
-                      typography: 'body2',
-                      whiteSpace: 'pre-wrap',
-                      overflowWrap: 'anywhere',
-                    }}
-                  >
-                    {current.description}
-                  </Box>
+                  <ImageNotesContent
+                    description={current.description}
+                    instructorNote={current.instructorNote}
+                  />
                 </ViewportDialog>
               </>
             }
