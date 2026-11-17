@@ -521,8 +521,11 @@ These are isolated from Browse's
 near/far-half collision rules; see [drag-and-drop.md](drag-and-drop.md#boards-page-1771).
 Dragging an editable overview Inuksuk card onto another editable Board chip
 highlights the target and **saves a copy of the link**, with a success snackbar.
-Read-only Boards are not drop targets. **Move/Save to…** also offers an explicit atomic move that removes the
-source link in the same PATCH. Other editable Board links retain their positions; non-editable links remain server-preserved. If any membership or
+Read-only Boards cannot accept saves. Rejected drops stay unhighlighted and explain
+duplicate membership or missing edit permission in the page snackbar, without sending a mutation.
+**Move/Save to…** also offers an explicit atomic move that removes the source link
+in the same PATCH. Other editable Board links retain their positions; non-editable
+links remain server-preserved. If any membership or
 destination read fails, saving is blocked rather than sending a partial list.
 Board editors can remove other owners' Inuksuks from their Board, but only
 Inuksuk editors may save to another Board or edit/favourite the Inuksuk.

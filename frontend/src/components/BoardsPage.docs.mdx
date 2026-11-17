@@ -35,6 +35,8 @@ page has its own dnd-kit provider, separate from Browse: reorder
 owned Boards or members, or drag an editable overview Inuksuk onto an editable
 Board tab to add a membership without removing the others. A highlighted target
 and success snackbar acknowledge the save; read-only Boards never accept drops.
+Rejected drops still reach the page: `Already in {Board name}` or
+`You can't add Inuksuks to {Board name}` explains the rejection, with no highlight or write.
 Move/Save to… is the explicit copy/move flow;
 failed reads never result in
 partial assignment replacement. Conflicts require reloading the current data.

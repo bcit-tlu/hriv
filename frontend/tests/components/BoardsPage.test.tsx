@@ -503,11 +503,77 @@ describe('BoardsPage', () => {
     )
     expect(await screen.findByText('Saved to Next studio project')).toBeVisible()
   })
-  it('ignores read-only targets and already-linked targets', async () => {
+  it.each([
+    [2, "You can't add Inuksuks to Shared discoveries"],
+    [1, 'Already in Architecture inspiration'],
+    [999, 'This Board is no longer available. Reload before saving.'],
+  ] as const)('explains a rejected drop on Board %s without writing', async (id, message) => {
     await setup()
-    dropOnBoard(2)
-    dropOnBoard(1)
+    dropOnBoard(id)
+    expect(await screen.findByText(message)).toBeVisible()
     expect(api.updateInuksuk).not.toHaveBeenCalled()
+  })
+  it('explains when the dropped Inuksuk cannot be edited', async () => {
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([
+      { ...BOARD_ITEMS[0], permissions: { can_edit: false, can_delete: false } },
+    ])
+    await setup()
+    dropOnBoard(3)
+    expect(
+      await screen.findByText("You can't add this Inuksuk to Next studio project"),
+    ).toBeVisible()
+    expect(api.updateInuksuk).not.toHaveBeenCalled()
+  })
+  it('explains when the dropped Inuksuk is no longer available', async () => {
+    vi.mocked(api.fetchInuksuks).mockResolvedValue([])
+    await setup()
+    dropOnBoard(3)
+    expect(
+      await screen.findByText('This Inuksuk is no longer available. Reload before saving.'),
+    ).toBeVisible()
+    expect(api.updateInuksuk).not.toHaveBeenCalled()
+  })
+  it('does not show a rejection or write for a cancelled drop', async () => {
+    await setup()
+    drag.end?.({
+      canceled: true,
+      operation: { source: { id: 'item:7', type: 'board-member' }, target: { id: 'save:1' } },
+    } as unknown as DragEndEvent)
+    expect(screen.queryByText('Already in Architecture inspiration')).not.toBeInTheDocument()
+    expect(api.updateInuksuk).not.toHaveBeenCalled()
+  })
+  it('explains rejection while another mutation is pending', async () => {
+    vi.mocked(api.updateInuksuk).mockReturnValue(new Promise(() => {}))
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    dropOnBoard(3)
+    expect(await screen.findByText('Wait for the current change to finish.')).toBeVisible()
+    expect(api.updateInuksuk).toHaveBeenCalledTimes(1)
+  })
+  it('explains rejection after a conflict', async () => {
+    vi.mocked(api.updateInuksuk).mockRejectedValue(new api.ApiError(409, 'Conflict'))
+    await setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Favourite Rose window' }))
+    await screen.findByRole('alert')
+    dropOnBoard(3)
+    expect(await screen.findByText('Reload latest changes before dropping Inuksuks.')).toBeVisible()
+    expect(api.updateInuksuk).toHaveBeenCalledTimes(1)
+  })
+  it('explains rejected reorder in a read-only opened Board', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue({
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_edit: false },
+    })
+    await setup(1)
+    await screen.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+    drag.end?.({
+      canceled: false,
+      operation: { source: { id: 'item:7', type: 'board-member' }, target: { id: 'item:8' } },
+    } as unknown as DragEndEvent)
+    expect(
+      await screen.findByText("You can't reorder Inuksuks in Architecture inspiration"),
+    ).toBeVisible()
+    expect(api.reorderBoardInuksuks).not.toHaveBeenCalled()
   })
   it('reports a failed drag-save without a success snackbar', async () => {
     vi.mocked(api.updateInuksuk).mockRejectedValue(new api.ApiError(422, 'Cannot save this view'))

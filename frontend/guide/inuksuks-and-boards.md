@@ -62,8 +62,10 @@ when permitted. Clicking a view still opens its saved image location.
 
 Drag a saved-view card onto an editable Board chip to save it there too;
 the other Board memberships stay intact. A highlighted target and confirmation
-message show the result. Read-only Boards do not accept drops. **Move/Save to…**
-via the move icon is the explicit alternative, including moving between Boards.
+message show the result. Read-only Boards do not accept saves.
+Rejected drops show why: **Already in {Board name}** or **You can't add Inuksuks
+to {Board name}**. Ineligible targets do not highlight and no save is sent.
+**Move/Save to…** via the move icon is the explicit alternative, including moving between Boards.
 
 Click a Board tab to open its large dialog (full-screen on a phone). The heading
 keeps its title, scope, count and controls visible while the saved views scroll.

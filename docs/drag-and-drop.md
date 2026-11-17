@@ -318,8 +318,15 @@ The explicit Move/Save dialog supports atomic cross-Board moves and is also the
 accessible alternative.
 Drop regions expose accessible names: `Save to {Board}`.
 Read-only owned Boards share the row but are omitted from reorder writes and
-cannot be drop targets. The Board dialog retains sortable member card surfaces in its
+cannot accept saves. The Board dialog retains sortable member card surfaces in its
 independently scrolling collage, without involving Browse's collision machinery.
+All Board chips register typed drop receivers, including read-only and already-linked
+Boards, so rejected drops can explain themselves without writing. Only eligible targets
+show the outline; rejected targets remain unhighlighted. Dropping on an existing
+membership shows `Already in {Board name}`; a read-only destination shows
+`You can't add Inuksuks to {Board name}` in the existing page snackbar.
+Item permissions, stale/missing Board or Inuksuk data, and busy/conflict guards also
+explain rejected drops. Cancelled drags remain silent and make no request.
 
 Sensors follow the existing policy: Pointer distance 8px, touch hold 250ms with
 5px tolerance, plus KeyboardSensor. Board chip surfaces activate Board sorting;

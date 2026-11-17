@@ -227,7 +227,6 @@ function DropArea({
     id,
     type: 'board-member-bin',
     accept: 'board-member',
-    disabled: !enabled,
     collisionPriority: CollisionPriority.Low,
   })
   return (
@@ -237,7 +236,7 @@ function DropArea({
       aria-label={label}
       sx={{
         borderRadius: 2,
-        outline: isDropTarget ? '3px solid' : undefined,
+        outline: enabled && isDropTarget ? '3px solid' : undefined,
         outlineColor: 'primary.main',
         minHeight: 0,
       }}
@@ -628,7 +627,16 @@ export default function BoardsPage({
   const dragEnd = (event: DragEndEvent) => {
     const { source, target } = event.operation
     setActiveItem(null)
-    if (event.canceled || !source || busy || conflict) return
+    if (event.canceled || !source) return
+    if (busy || conflict) {
+      if (source.type === 'board-member' && target)
+        setNotice(
+          conflict
+            ? 'Reload latest changes before dropping Inuksuks.'
+            : 'Wait for the current change to finish.',
+        )
+      return
+    }
     if (source.type === 'board-card' && !filtered) {
       const ids = resolveReorderedKeys(
         reorderableBoards.map((row) => `board:${row.id}`),
@@ -645,17 +653,38 @@ export default function BoardsPage({
         )
     } else if (source.type === 'board-member' && target) {
       const item = (board?.inuksuks ?? data.recent).find((row) => `item:${row.id}` === source.id)
-      if (!item) return
+      if (!item) {
+        setNotice('This Inuksuk is no longer available. Reload before saving.')
+        return
+      }
       const key = String(target.id)
-      if (key.startsWith('save:') && item.permissions.can_edit) {
+      if (key.startsWith('save:')) {
         const destination = data.boards.find((row) => row.id === Number(key.split(':')[1]))
-        if (!destination?.permissions.can_edit || item.board_ids.includes(destination.id)) return
+        if (!destination) {
+          setNotice('This Board is no longer available. Reload before saving.')
+          return
+        }
+        if (!destination.permissions.can_edit) {
+          setNotice(`You can't add Inuksuks to ${destination.name}`)
+          return
+        }
+        if (item.board_ids.includes(destination.id)) {
+          setNotice(`Already in ${destination.name}`)
+          return
+        }
+        if (!item.permissions.can_edit) {
+          setNotice(`You can't add this Inuksuk to ${destination.name}`)
+          return
+        }
         void run(() => saveToBoard(item, destination.id, null)).then((ok) => {
           if (ok) setNotice(`Saved to ${destination.name}`)
         })
       } else if (board && canEdit) {
         const targetItem = board.inuksuks.find((row) => `item:${row.id}` === target.id)
-        if (!targetItem) return
+        if (!targetItem) {
+          setNotice('This drop target is no longer available. Reload before reordering.')
+          return
+        }
         const index = isSortable(source) ? source.index : board.inuksuks.indexOf(targetItem)
         void run(() =>
           reorderBoardInuksuks(board.id, {
@@ -663,6 +692,8 @@ export default function BoardsPage({
             items: moveBoardMember(board, item.id, index),
           }),
         )
+      } else if (board) {
+        setNotice(`You can't reorder Inuksuks in ${board.name}`)
       }
     }
   }

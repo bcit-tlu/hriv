@@ -113,12 +113,17 @@ export const SelectedBoard: Story = {
   args: { initialBoardId: 1 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body)
-    await expect(
-      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' }),
-    ).toBeVisible()
-    await expect(
-      canvas.getByRole('button', { name: 'Open Inuksuk: Light through glass' }),
-    ).toBeVisible()
+    const dialog = await canvas.findByRole('dialog', { name: 'Architecture inspiration' })
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Open Inuksuk: Rose window' }),
+      ).toBeVisible(),
+    )
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Open Inuksuk: Light through glass' }),
+      ).toBeVisible(),
+    )
   },
 }
 export const Favourites: Story = {
@@ -131,7 +136,7 @@ export const Favourites: Story = {
         name: 'Favourites only',
       }),
     )
-    await userEvent.click(canvas.getByRole('heading', { name: 'Boards & Inuksuks' }))
+    await userEvent.click(canvas.getByRole('heading', { name: 'My Boards' }))
     await expect(canvas.getByText('Favourites', { exact: true })).toBeVisible()
     await expect(
       canvas.queryByRole('button', { name: 'Open Inuksuk: Stone columns' }),
@@ -148,7 +153,7 @@ export const ScopeFilter: Story = {
         name: 'Private',
       }),
     )
-    await userEvent.click(canvas.getByRole('heading', { name: 'Boards & Inuksuks' }))
+    await userEvent.click(canvas.getByRole('heading', { name: 'My Boards' }))
     await expect(
       canvas.queryByRole('button', { name: 'Open Board: Shared discoveries' }),
     ).not.toBeInTheDocument()
@@ -162,9 +167,11 @@ export const PublicSharedBoards: Story = {
     const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
       name: 'Public & shared Boards',
     })
-    await expect(
-      within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
-    ).toBeVisible()
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Open Board: Shared discoveries' }),
+      ).toBeVisible(),
+    )
   },
 }
 export const Empty: Story = { args: { state: 'empty' } }
@@ -222,6 +229,38 @@ export const ReadOnlyOwnedBoard: Story = {
       within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
     ).toBeVisible()
   },
+}
+
+function rejectedDrop(name: string, message: string): NonNullable<Story['play']> {
+  return async ({ canvasElement, userEvent: user }) => {
+    const canvas = within(canvasElement)
+    const source = (
+      await canvas.findByRole('button', { name: 'Open Inuksuk: Rose window' })
+    ).closest('[data-testid="inuksuk-card"]')!.parentElement!
+    const target = canvas.getByRole('region', { name: `Save to ${name}` })
+    const s = source.getBoundingClientRect()
+    const t = target.getBoundingClientRect()
+    const start = { clientX: s.x + s.width / 2, clientY: s.y + s.height / 2 }
+    await user.pointer({ keys: '[MouseLeft>]', target: source, coords: start })
+    await user.pointer({ target: source, coords: { ...start, clientX: start.clientX + 12 } })
+    await waitFor(() => expect(source).toHaveStyle({ opacity: '0.5' }))
+    const end = { clientX: t.x + t.width / 2, clientY: t.y + t.height / 2 }
+    await user.pointer({ target, coords: end })
+    await expect(target).not.toHaveStyle({ outlineStyle: 'solid' })
+    await user.pointer({ keys: '[/MouseLeft]', target, coords: end })
+    await waitFor(() =>
+      expect(within(canvasElement.ownerDocument.body).getByText(message)).toBeVisible(),
+    )
+    await waitFor(() => expect(source).toHaveStyle({ opacity: '1' }))
+    await expect(writes).not.toHaveBeenCalled()
+  }
+}
+export const RejectedDrops: Story = {
+  args: { readOnlyOwned: true },
+  play: rejectedDrop('Next studio project', "You can't add Inuksuks to Next studio project"),
+}
+export const AlreadyLinkedDrop: Story = {
+  play: rejectedDrop('Architecture inspiration', 'Already in Architecture inspiration'),
 }
 
 export const CollectionSelection: Story = {

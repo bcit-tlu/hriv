@@ -1436,9 +1436,9 @@ selection MouseTracker ignores their presses.
 - The My Boards page title uses Collections' h5/h1 and unpadded flex header exactly.
   The Boards & Inuksuks navigation/tab label is unchanged.
 - One short horizontally scrolling owned-Board row begins with New Board. Rounded,
-  editable chips reorder by surface drag without grip icons; clicking still opens a Board.
-  outlined chips have a flush-left square cover/placeholder and single-line name. Read-only
-  Boards stay visible, without drag handles or drop targets.
+  outlined chips have a flush-left square cover/placeholder and single-line name.
+  Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
+  Boards stay visible, without drag handles or eligible save targets.
 - Public & shared Boards is an outlined, right-aligned button in the title row and opens a dialog listing other authorized Boards independent
   of overview filters; choosing one closes the list and opens the existing Board dialog.
 - My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.
@@ -1461,8 +1461,10 @@ selection MouseTracker ignores their presses.
   Favourite Boards are those holding a favourite Inuksuk. Active chips can be
   removed, and Clear filters resets all facets.
 - Dragging editable overview Inuksuk cards saves onto editable Board chips,
-  preserving existing memberships. Targets highlight and success shows a snackbar;
-  failures retain data and show the error. Browse collision logic is unchanged.
+  preserving existing memberships. Targets highlight and success shows a snackbar.
+  Rejected drops stay unhighlighted but show a snackbar: Already in {Board name},
+  or You can't add Inuksuks to {Board name}; no mutation is sent.
+  Failures retain data and show the error. Browse collision logic is unchanged.
 - A Board opens in a large dialog, full-screen below the small breakpoint. Its
   fixed heading holds title, authorized edit pencil, scope, count, Select and an
   overflow for Owners/Delete/Create Sequence Collection. Its ordered collage
