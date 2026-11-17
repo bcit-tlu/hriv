@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Collapse from '@mui/material/Collapse'
 import Paper from '@mui/material/Paper'
@@ -7,12 +7,16 @@ import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
+import CheckBox from '@mui/icons-material/CheckBox'
+import CheckBoxOutlineBlank from '@mui/icons-material/CheckBoxOutlineBlank'
+import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
+import Star from '@mui/icons-material/Star'
+import StarBorder from '@mui/icons-material/StarBorder'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -45,6 +49,8 @@ export interface InuksukFormDialogProps {
   onTitleChange?: (title: string) => void
   initialDelete?: boolean
   onRemoveFromBoard?: () => void
+  inline?: boolean
+  onEscape?: () => void
 }
 function storageKey(userId: number) {
   return `hrivpref:inuksuk:lastBoard:${userId}`
@@ -72,6 +78,8 @@ export default function InuksukFormDialog({
   placement = false,
   onTitleChange,
   initialDelete = false,
+  inline = false,
+  onEscape,
 }: InuksukFormDialogProps) {
   const [baseline, setBaseline] = useState<api.InuksukConflict | null>(item)
   const [title, setTitle] = useState(item?.title ?? (placement ? 'New Inuksuk' : ''))
@@ -88,8 +96,23 @@ export default function InuksukFormDialog({
   const [conflict, setConflict] = useState<api.InuksukConflict | null>(null)
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [boardName, setBoardName] = useState('')
+  const [boardQuery, setBoardQuery] = useState('')
+  const [boardsMenuOpen, setBoardsMenuOpen] = useState(false)
+  const boardsDescriptionId = useId()
   const [confirmDelete, setConfirmDelete] = useState(initialDelete)
   const editable = !baseline || baseline.permissions.can_edit
+
+  useEffect(() => {
+    if (!inline) return
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.stopPropagation()
+      if (!busy) (onEscape ?? onClose)()
+    }
+    const document = container?.ownerDocument ?? window.document
+    document.addEventListener('keydown', escape)
+    return () => document.removeEventListener('keydown', escape)
+  }, [inline, busy, container, onClose, onEscape])
 
   useEffect(() => {
     let cancelled = false
@@ -141,12 +164,12 @@ export default function InuksukFormDialog({
         .catch((err) => setError(api.userMessage(err, 'Unable to load this Board.')))
     }
   }
-  const createBoard = async () => {
-    if (!boardName.trim()) return
+  const createBoard = async (name = boardName) => {
+    if (!name.trim()) return
     setBusy(true)
     setError(null)
     try {
-      const board = await services.createBoard({ name: boardName.trim(), visibility: 'private' })
+      const board = await services.createBoard({ name: name.trim(), visibility: 'private' })
       setBoards((previous) => [...previous, board])
       setDetails((previous) => ({ ...previous, [board.id]: board }))
       setAssignments((previous) => [...previous, { board_id: board.id }])
@@ -219,6 +242,20 @@ export default function InuksukFormDialog({
     setLoading(true)
   }
   const selected = boards.filter((board) => assignments.some((link) => link.board_id === board.id))
+  const selectedText =
+    selected
+      .slice(0, 2)
+      .map((board) => board.name)
+      .join(', ') + (selected.length > 2 ? ` +${selected.length - 2}` : '')
+  const matchingBoards = boards
+    .filter((board) =>
+      board.name.toLocaleLowerCase().includes(boardQuery.trim().toLocaleLowerCase()),
+    )
+    .sort(
+      (a, b) => a.name.toLocaleLowerCase().localeCompare(b.name.toLocaleLowerCase()) || a.id - b.id,
+    )
+  const createName = matchingBoards.length === 0 ? boardQuery.trim() : ''
+  type BoardOption = ApiBoardSummary | { id: 'create'; name: string }
   const missingDetails = assignments.some((link) => !details[link.board_id])
   const content = (
     <>
@@ -227,7 +264,23 @@ export default function InuksukFormDialog({
         sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1.25 }}
       >
         <CompassCalibration color="primary" fontSize="small" />
-        {baseline ? (editable ? 'Edit Inuksuk' : 'Inuksuk details') : 'Save a view'}
+        <Box component="span" sx={{ flex: 1 }}>
+          {baseline ? (editable ? 'Edit Inuksuk' : 'Inuksuk details') : 'Add Inuksuk'}
+        </Box>
+        {editable && (
+          <Tooltip title={favourite ? 'Remove favourite' : 'Add favourite'}>
+            <IconButton
+              size="small"
+              aria-label="Favourite"
+              aria-pressed={favourite}
+              disabled={busy}
+              onClick={() => setFavourite(!favourite)}
+              color={favourite ? 'primary' : 'default'}
+            >
+              {favourite ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        )}
       </DialogTitle>
       <DialogContent sx={{ px: 2 }}>
         {baseline && !loading && !boardsLoaded && (
@@ -237,7 +290,7 @@ export default function InuksukFormDialog({
           </Alert>
         )}
         <Stack spacing={1} sx={{ pt: 1 }}>
-          {!placement && (
+          {!placement && !inline && (
             <Typography variant="caption" component="p" color="text.secondary">
               Keep this exact position, zoom and rotation on your Boards.
             </Typography>
@@ -274,21 +327,98 @@ export default function InuksukFormDialog({
           />
           {editable ? (
             <>
-              <Autocomplete
+              <Autocomplete<BoardOption, true>
                 size="small"
                 slotProps={{ popper: { container } }}
                 multiple
-                options={boards}
+                disableCloseOnSelect
+                open={boardsMenuOpen}
+                onOpen={() => {
+                  setBoardsMenuOpen(true)
+                }}
+                onClose={() => {
+                  setBoardsMenuOpen(false)
+                  setBoardQuery('')
+                }}
+                inputValue={boardQuery}
+                onInputChange={(_event, value, reason) => {
+                  if (reason === 'input') setBoardQuery(value)
+                }}
+                renderTags={() =>
+                  boardsMenuOpen ? null : (
+                    <Box
+                      component="span"
+                      id={boardsDescriptionId}
+                      sx={{
+                        maxWidth: 'calc(100% - 30px)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {selectedText}
+                    </Box>
+                  )
+                }
+                options={[
+                  {
+                    id: 'create',
+                    name: createName ? `+ Create Board "${createName}"` : '+ New Board…',
+                  },
+                  ...matchingBoards,
+                ]}
+                filterOptions={(options) => options}
                 value={selected}
                 loading={loading}
                 disabled={busy || loading}
                 getOptionLabel={(board) => board.name}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
-                onChange={(_event, value) => chooseBoards(value)}
+                onChange={(_event, value) => {
+                  if (value.some((option) => option.id === 'create')) {
+                    setBoardsMenuOpen(false)
+                    setBoardQuery('')
+                    if (createName) void createBoard(createName)
+                    else {
+                      setCreatingBoard(true)
+                      setBoardName('')
+                    }
+                  } else
+                    chooseBoards(
+                      value.filter((option): option is ApiBoardSummary => option.id !== 'create'),
+                    )
+                }}
+                renderOption={({ key, ...props }, option, state) => (
+                  <li key={key} {...props}>
+                    {option.id !== 'create' && (
+                      <Box
+                        component="span"
+                        aria-hidden="true"
+                        sx={{
+                          display: 'inline-flex',
+                          p: 1,
+                          color: state.selected ? 'primary.main' : 'text.secondary',
+                        }}
+                      >
+                        {state.selected ? (
+                          <CheckBox fontSize="small" />
+                        ) : (
+                          <CheckBoxOutlineBlank fontSize="small" />
+                        )}
+                      </Box>
+                    )}
+                    {option.name}
+                  </li>
+                )}
                 renderInput={(params) => (
                   <TextField
                     {...params}
                     label="Boards"
+                    slotProps={{
+                      htmlInput: {
+                        ...params.inputProps,
+                        'aria-describedby': `${params.id}-helper-text ${boardsDescriptionId}`,
+                      },
+                    }}
                     required
                     helperText={
                       loading
@@ -306,6 +436,7 @@ export default function InuksukFormDialog({
                     label="New private Board name"
                     size="small"
                     value={boardName}
+                    autoFocus
                     disabled={busy}
                     onChange={(event) => setBoardName(event.target.value)}
                     slotProps={{ htmlInput: { maxLength: 255 } }}
@@ -318,16 +449,7 @@ export default function InuksukFormDialog({
                     Create Board
                   </Button>
                 </Box>
-              ) : (
-                <Button
-                  size="small"
-                  onClick={() => setCreatingBoard(true)}
-                  sx={{ alignSelf: 'flex-start' }}
-                  disabled={busy || loading}
-                >
-                  + Create new board
-                </Button>
-              )}
+              ) : null}
             </>
           ) : (
             <Typography variant="caption" component="p">
@@ -354,18 +476,6 @@ export default function InuksukFormDialog({
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               disabled={busy || !editable}
-            />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  size="small"
-                  checked={favourite}
-                  disabled={busy || !editable}
-                  onChange={(event) => setFavourite(event.target.checked)}
-                />
-              }
-              label="Favourite"
-              slotProps={{ typography: { variant: 'caption' } }}
             />
           </Collapse>
         </Stack>
@@ -416,11 +526,17 @@ export default function InuksukFormDialog({
       </DialogActions>
     </>
   )
+  if (inline)
+    return (
+      <Box role="form" aria-label="Edit Inuksuk" sx={formSx}>
+        {content}
+      </Box>
+    )
   return placement ? (
     createPortal(
       <Paper
         role="dialog"
-        aria-label="Save a view"
+        aria-label="Add Inuksuk"
         aria-modal={false}
         data-hriv-canvas-ui
         elevation={8}

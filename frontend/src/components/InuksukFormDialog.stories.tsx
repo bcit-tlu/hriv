@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, within, waitFor } from 'storybook/test'
 import InuksukFormDialog from './InuksukFormDialog'
 import { BOARD_FIXTURE, INUKSUK_FIXTURE } from './inuksukFixtures'
 import { ApiError } from '../api'
@@ -29,7 +29,7 @@ type Story = StoryObj<typeof meta>
 export const Basic: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await expect(page.getByRole('heading', { name: 'Save a view' })).toBeInTheDocument()
+    await expect(page.getByRole('heading', { name: 'Add Inuksuk' })).toBeInTheDocument()
     await expect(page.getByRole('textbox', { name: 'Title' })).toHaveFocus()
     await expect(page.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
   },
@@ -38,13 +38,48 @@ export const Edit: Story = {
   args: { item: INUKSUK_FIXTURE },
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await expect(await page.findByText(BOARD_FIXTURE.name)).toBeInTheDocument()
+    await waitFor(() => expect(page.getByText(BOARD_FIXTURE.name)).toBeVisible())
+  },
+}
+export const BoardsMenu: Story = {
+  args: {
+    item: null,
+    placement: true,
+    services: {
+      ...services,
+      fetchBoards: async () => [
+        BOARD_FIXTURE,
+        { ...BOARD_FIXTURE, id: 3, name: 'Biology references' },
+      ],
+    },
+  },
+  decorators: [
+    (Story) => (
+      <div
+        style={{
+          position: 'relative',
+          height: 560,
+          background: 'url(/hriv-splash2.jpg) center/cover',
+        }}
+      >
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body)
+    await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
+    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
+    await expect(page.getAllByRole('option')[0]).toHaveTextContent('+ New Board…')
+    await expect(page.queryByRole('button', { name: '+ Create new board' })).not.toBeInTheDocument()
   },
 }
 export const CreatePrivateBoard: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement.ownerDocument.body)
-    await userEvent.click(await page.findByRole('button', { name: '+ Create new board' }))
+    await waitFor(() => expect(page.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
+    await userEvent.click(page.getByRole('combobox', { name: 'Boards' }))
+    await userEvent.click(page.getByRole('option', { name: '+ New Board…' }))
     await userEvent.type(page.getByLabelText('New private Board name'), 'Architecture favourites')
   },
 }

@@ -47,12 +47,54 @@ async function setup(props: Partial<React.ComponentProps<typeof InuksukFormDialo
     />,
   )
   if (!props.item || props.item.permissions.can_edit)
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: '+ Create new board' })).toBeEnabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Boards' })).toBeEnabled())
   return { api, onChanged, onClose, user: userEvent.setup() }
 }
+async function openCreate(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('combobox', { name: 'Boards' }))
+  await user.click(screen.getByRole('option', { name: '+ New Board…' }))
+}
 describe('InuksukFormDialog', () => {
+  it('pins creation above alphabetic checkbox options, with chip-free selected text and keyboard creation', async () => {
+    const api = services()
+    api.fetchBoards.mockResolvedValue(
+      ['zeta', 'beta', 'Alpha'].map((name, index) => ({ ...BOARD_FIXTURE, id: index + 1, name })),
+    )
+    api.fetchBoard.mockImplementation(async (id: number) => ({ ...BOARD_FIXTURE, id }))
+    const { user } = await setup({ services: api })
+    const field = screen.getByRole('combobox', { name: 'Boards' })
+    await user.click(field)
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      '+ New Board…',
+      'Alpha',
+      'beta',
+      'zeta',
+    ])
+    for (const name of ['Alpha', 'beta', 'zeta'])
+      await user.click(screen.getByRole('option', { name }))
+    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(3)
+    await user.keyboard('{Escape}')
+    expect(screen.getByText('zeta, beta +1')).toBeVisible()
+    expect(field).toHaveAccessibleDescription(/zeta, beta \+1/)
+    expect(document.querySelector('.MuiAutocomplete-tag')).toBeNull()
+    await user.click(field)
+    await user.type(field, 'My new Board')
+    expect(screen.getByRole('option', { name: '+ Create Board "My new Board"' })).toBeVisible()
+    await user.keyboard('{ArrowDown}{Enter}')
+    await waitFor(() =>
+      expect(api.createBoard).toHaveBeenCalledWith({ name: 'My new Board', visibility: 'private' }),
+    )
+    expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await user.click(screen.getByRole('button', { name: 'Favourite' }))
+    expect(screen.getByRole('button', { name: 'Favourite' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.queryByRole('checkbox', { name: 'Favourite' })).toBeNull()
+  })
   it('places in a non-modal panel with a selected title, remembered Board and collapsed optional fields', async () => {
     localStorage.setItem(LAST_BOARD, '1')
     const { user, api } = await setup({ placement: true })
@@ -65,7 +107,7 @@ describe('InuksukFormDialog', () => {
     expect(screen.queryByRole('checkbox', { name: 'Favourite' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'More options' }))
     await user.type(screen.getByLabelText('Description'), 'A saved detail')
-    await user.click(screen.getByRole('checkbox', { name: 'Favourite' }))
+    await user.click(screen.getByRole('button', { name: 'Favourite' }))
     await user.click(screen.getByRole('button', { name: 'Save', exact: true }))
     expect(api.createInuksuk).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -84,10 +126,10 @@ describe('InuksukFormDialog', () => {
       else api.fetchBoard.mockRejectedValue(new Error('offline'))
       const { user, onClose, onChanged } = await setup({ services: api, item: INUKSUK_FIXTURE })
       expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
-      await user.click(screen.getByRole('button', { name: '+ Create new board' }))
+      await openCreate(user)
       await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
       await user.click(screen.getByRole('button', { name: 'Create Board' }))
-      await screen.findByText('My new Board')
+      await waitFor(() => expect(screen.getByText(/My new Board/)).toBeVisible())
       expect(screen.getByText(/Existing Board assignments could not be loaded/)).toBeInTheDocument()
       const save = screen.getByRole('button', { name: 'Save changes' })
       expect(save).toBeDisabled()
@@ -104,7 +146,8 @@ describe('InuksukFormDialog', () => {
     expect(screen.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
     await user.type(screen.getByLabelText('Title *'), 'A view')
     expect(screen.getByRole('button', { name: 'Save to Board' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '+ Create new board' })).toBeEnabled()
+    await openCreate(user)
+    expect(screen.getByLabelText('New private Board name')).toHaveFocus()
   })
   it('selects only editable Boards, captures all form values and persists the last Board', async () => {
     const { api, user, onChanged, onClose } = await setup()
@@ -113,7 +156,7 @@ describe('InuksukFormDialog', () => {
     await user.click(screen.getByRole('combobox', { name: 'Boards' }))
     expect(screen.queryByRole('option', { name: 'Read-only Board' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('option', { name: 'Architecture inspiration' }))
-    await user.click(screen.getByRole('checkbox', { name: 'Favourite' }))
+    await user.click(screen.getByRole('button', { name: 'Favourite' }))
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
     expect(api.createInuksuk).toHaveBeenCalledWith({
@@ -135,7 +178,10 @@ describe('InuksukFormDialog', () => {
     localStorage.setItem(LAST_BOARD, '1')
     const { api } = await setup()
     await waitFor(() => expect(api.fetchBoard).toHaveBeenCalledWith(1))
-    expect(screen.getByText('Architecture inspiration')).toBeInTheDocument()
+    expect(screen.getByText('Architecture inspiration')).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Boards' })).toHaveAccessibleDescription(
+      /Architecture inspiration/,
+    )
   })
   it.each(['99', 'not-json', '500'])(
     'ignores unavailable/non-editable persisted Board %s',
@@ -153,10 +199,10 @@ describe('InuksukFormDialog', () => {
   it('creates a private Board inline, selects it, and saves when it is the first Board', async () => {
     const { api, user } = await setup()
     await user.type(screen.getByLabelText('Title *'), 'New view')
-    await user.click(screen.getByRole('button', { name: '+ Create new board' }))
+    await openCreate(user)
     await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
-    await waitFor(() => expect(screen.getByText('My new Board')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('My new Board')).toBeVisible())
     expect(api.createBoard).toHaveBeenCalledWith({ name: 'My new Board', visibility: 'private' })
     await user.click(screen.getByRole('button', { name: 'Save to Board' }))
     await waitFor(() =>
@@ -167,10 +213,12 @@ describe('InuksukFormDialog', () => {
   })
   it('supports multiple Boards and preserves existing Board assignments on edit', async () => {
     const { api, user } = await setup({ item: INUKSUK_FIXTURE })
-    await user.click(screen.getByRole('button', { name: '+ Create new board' }))
+    await openCreate(user)
     await user.type(screen.getByLabelText('New private Board name'), 'My new Board')
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
-    await waitFor(() => expect(screen.getByText('My new Board')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText('Architecture inspiration, My new Board')).toBeVisible(),
+    )
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
       expect(api.updateInuksuk).toHaveBeenCalledWith(
@@ -182,36 +230,44 @@ describe('InuksukFormDialog', () => {
       ),
     )
   })
-  it('surfaces OCC conflict without discarding edits, then reloads the current projection and retries its version', async () => {
-    const { api, user, onChanged } = await setup({ item: INUKSUK_FIXTURE })
-    api.updateInuksuk.mockRejectedValueOnce(
-      new ApiError(409, 'stale', { ...INUKSUK_FIXTURE, title: 'Server title', version: 4 }),
-    )
-    await user.clear(screen.getByLabelText('Title *'))
-    await user.type(screen.getByLabelText('Title *'), 'Local edit')
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('changed since you opened it')
-    expect(screen.getByLabelText('Title *')).toHaveValue('Local edit')
-    expect(onChanged).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Reload current' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled())
-    expect(screen.getByLabelText('Title *')).toHaveValue('Server title')
-    await user.click(screen.getByRole('button', { name: 'Save changes' }))
-    await waitFor(() =>
-      expect(api.updateInuksuk).toHaveBeenLastCalledWith(
-        7,
-        expect.objectContaining({ title: 'Server title', version: 4 }),
-      ),
-    )
-  })
-  it('requires confirmation before an OCC-protected delete and refetches after success', async () => {
-    const { api, user, onChanged } = await setup({ item: INUKSUK_FIXTURE })
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
-    expect(api.deleteInuksuk).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
-    await waitFor(() => expect(api.deleteInuksuk).toHaveBeenCalledWith(7, 3))
-    expect(onChanged).toHaveBeenCalledOnce()
-  })
+  it.each([false, true])(
+    'surfaces OCC conflict and reloads the current version, inline=%s',
+    async (inline) => {
+      const { api, user, onChanged } = await setup({ item: INUKSUK_FIXTURE, inline })
+      api.updateInuksuk.mockRejectedValueOnce(
+        new ApiError(409, 'stale', { ...INUKSUK_FIXTURE, title: 'Server title', version: 4 }),
+      )
+      await user.clear(screen.getByLabelText('Title *'))
+      await user.type(screen.getByLabelText('Title *'), 'Local edit')
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('changed since you opened it')
+      expect(screen.getByLabelText('Title *')).toHaveValue('Local edit')
+      expect(onChanged).not.toHaveBeenCalled()
+      await user.click(screen.getByRole('button', { name: 'Reload current' }))
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled(),
+      )
+      expect(screen.getByLabelText('Title *')).toHaveValue('Server title')
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+      await waitFor(() =>
+        expect(api.updateInuksuk).toHaveBeenLastCalledWith(
+          7,
+          expect.objectContaining({ title: 'Server title', version: 4 }),
+        ),
+      )
+    },
+  )
+  it.each([false, true])(
+    'requires confirmation before an OCC-protected delete, inline=%s',
+    async (inline) => {
+      const { api, user, onChanged } = await setup({ item: INUKSUK_FIXTURE, inline })
+      await user.click(screen.getByRole('button', { name: 'Delete' }))
+      expect(api.deleteInuksuk).not.toHaveBeenCalled()
+      await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
+      await waitFor(() => expect(api.deleteInuksuk).toHaveBeenCalledWith(7, 3))
+      expect(onChanged).toHaveBeenCalledOnce()
+    },
+  )
   it('hides edit/delete controls when permissions deny them', async () => {
     await setup({
       item: { ...INUKSUK_FIXTURE, permissions: { can_edit: false, can_delete: false } },
@@ -225,7 +281,7 @@ describe('InuksukFormDialog', () => {
     api.fetchBoards.mockRejectedValue(new ApiError(403, 'Cannot load Boards'))
     const { user, onClose } = await setup({ services: api })
     expect(screen.getByRole('alert')).toHaveTextContent('Cannot load Boards')
-    await user.click(screen.getByRole('button', { name: '+ Create new board' }))
+    await openCreate(user)
     await user.type(screen.getByLabelText('New private Board name'), 'Test Board')
     api.createBoard.mockRejectedValueOnce(new ApiError(422, 'Board limit reached'))
     await user.click(screen.getByRole('button', { name: 'Create Board' }))
