@@ -41,10 +41,11 @@ remove filter chips or use Clear filters to reset. Each saved view shows its
 image's parent category under the title.
 The page heading is **My Boards**, aligned like Collections without extra page padding.
 Boards are rounded chips with a square cover
-and one-line name. Program-owned Boards remain in your row when you belong to that program.
+and one-line name. Your row includes only owned Boards you can edit, including program-owned Boards when permitted.
+Read-only Boards are in Public & shared Boards instead, even for instructors and admins.
 Drag an editable Board chip by its surface to reorder it; there is no grip icon.
 Clicking still opens the Board. Active filters disable Board reordering.
-Use the outlined **Public & shared Boards** button at the right of the title row to list other people's Boards you can view in a dialog.
+Use the outlined **Public & shared Boards** button at the right of the title row to list other people's Boards you can view and your read-only Boards in a dialog.
 Choose a Board to open its usual dialog and see its authorized saved views.
 The discovery list is independent of the overview filters.
 

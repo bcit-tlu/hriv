@@ -1438,7 +1438,8 @@ selection MouseTracker ignores their presses.
 - One short horizontally scrolling owned-Board row begins with New Board. Rounded,
   outlined chips have a flush-left square cover/placeholder and single-line name.
   Editable chips reorder by surface drag without grip icons; clicking still opens a Board. Read-only
-  Boards stay visible, without drag handles or eligible save targets.
+  owned/program Boards are available in Public & shared Boards, not the chip row, for every role.
+  The chip row requires edit permission as well as ownership, with no instructor/admin exemption.
 - Public & shared Boards is an outlined, right-aligned button in the title row and opens a dialog listing other authorized Boards independent
   of overview filters; choosing one closes the list and opens the existing Board dialog.
 - My Inuksuks has Collections-style Cards/Table controls (no Graph), then the filter bar.

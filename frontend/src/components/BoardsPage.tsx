@@ -526,7 +526,9 @@ export default function BoardsPage({
     setConflict(false)
   }
   const own = data.boards.filter((row) => ownsBoard(row, currentUser))
-  const publicBoards = data.boards.filter((row) => !ownsBoard(row, currentUser))
+  const publicBoards = data.boards.filter(
+    (row) => !ownsBoard(row, currentUser) || !row.permissions.can_edit,
+  )
   const reorderableBoards = own.filter((row) => row.permissions.can_edit)
   const needle = query.trim().toLocaleLowerCase()
   const ownerMatches = (item: ApiBoardSummary | ApiInuksuk) =>
@@ -557,10 +559,7 @@ export default function BoardsPage({
       (a, b) =>
         a.title.toLocaleLowerCase().localeCompare(b.title.toLocaleLowerCase()) || a.id - b.id,
     )
-  const rows = [
-    ...reorderableBoards,
-    ...own.filter((row) => !reorderableBoards.some((owned) => owned.id === row.id)),
-  ].filter(
+  const rows = reorderableBoards.filter(
     (row) =>
       (!needle || `${row.name} ${row.description ?? ''}`.toLocaleLowerCase().includes(needle)) &&
       scopeIds.has(row.id) &&

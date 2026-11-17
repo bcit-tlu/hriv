@@ -620,15 +620,15 @@ describe('BoardsPage', () => {
     await setup(null, { currentUser: { ...BOARD_USER, role: 'student' } })
     const row = screen.getByRole('region', { name: 'Boards' })
     expect(within(row).getAllByRole('button')[0]).toHaveAccessibleName('New Board')
-    expect(within(row).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(2)
+    expect(within(row).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(1)
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
     ).not.toBeInTheDocument()
   })
 
-  it.each(['student', 'staff'] as const)(
-    'keeps read-only program-owned Boards visible but not draggable for %s',
+  it.each(['student', 'staff', 'instructor', 'admin'] as const)(
+    'puts read-only program-owned Boards in discovery rather than chips for %s',
     async (role) => {
       const readOnly = {
         ...BOARDS_FIXTURES[1],
@@ -637,14 +637,40 @@ describe('BoardsPage', () => {
         permissions: { ...BOARDS_FIXTURES[1].permissions, can_edit: false },
       }
       vi.mocked(api.fetchBoards).mockResolvedValue([BOARDS_FIXTURES[0], readOnly])
-      await setup(null, { currentUser: { ...BOARD_USER, role } })
-      expect(screen.getByRole('button', { name: `Open Board: ${readOnly.name}` })).toBeVisible()
+      const view = await setup(null, { currentUser: { ...BOARD_USER, role } })
+      const row = screen.getByRole('region', { name: 'Boards' })
+      expect(
+        within(row).queryByRole('button', { name: `Open Board: ${readOnly.name}` }),
+      ).not.toBeInTheDocument()
       expect(
         screen.queryByRole('button', { name: `Reorder ${readOnly.name}` }),
       ).not.toBeInTheDocument()
       expect(screen.getByRole('group', { name: BOARDS_FIXTURES[0].name })).toBeVisible()
+      fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Public & shared Boards' })
+      fireEvent.click(within(dialog).getByRole('button', { name: `Open Board: ${readOnly.name}` }))
+      expect(view.onSelectBoard).toHaveBeenCalledWith(readOnly.id)
     },
   )
+  it('puts a directly owned read-only Board in discovery when no editable chips remain', async () => {
+    const readOnly = {
+      ...BOARDS_FIXTURES[0],
+      permissions: { ...BOARDS_FIXTURES[0].permissions, can_edit: false },
+    }
+    vi.mocked(api.fetchBoards).mockResolvedValue([readOnly])
+    await setup()
+    expect(
+      within(screen.getByRole('region', { name: 'Boards' })).queryByRole('button', {
+        name: /^Open Board:/,
+      }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New Board' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Public & shared Boards' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Public & shared Boards' })
+    expect(
+      within(dialog).getByRole('button', { name: `Open Board: ${readOnly.name}` }),
+    ).toBeVisible()
+  })
   it('renews an Inuksuk thumbnail via its own endpoint, not the image id', async () => {
     vi.mocked(api.fetchInuksuk).mockResolvedValue({ ...BOARD_ITEMS[0], thumb: '/renewed.jpg' })
     await setup()

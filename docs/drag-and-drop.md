@@ -317,14 +317,16 @@ can reorder/move members within their Board but cannot use cross-Board save.
 The explicit Move/Save dialog supports atomic cross-Board moves and is also the
 accessible alternative.
 Drop regions expose accessible names: `Save to {Board}`.
-Read-only owned Boards share the row but are omitted from reorder writes and
-cannot accept saves. The Board dialog retains sortable member card surfaces in its
+Read-only owned Boards move to Public & shared Boards rather than the chip row, for
+every role, and cannot accept saves. The Board dialog retains sortable member card surfaces in its
 independently scrolling collage, without involving Browse's collision machinery.
-All Board chips register typed drop receivers, including read-only and already-linked
+All visible Board chips register typed drop receivers, including already-linked
 Boards, so rejected drops can explain themselves without writing. Only eligible targets
 show the outline; rejected targets remain unhighlighted. Dropping on an existing
 membership shows `Already in {Board name}`; a read-only destination shows
-`You can't add Inuksuks to {Board name}` in the existing page snackbar.
+`You can't add Inuksuks to {Board name}` in the existing page snackbar
+if permissions become stale or another target remains reachable.
+Chip eligibility always uses the API edit permission, without role exemptions.
 Item permissions, stale/missing Board or Inuksuk data, and busy/conflict guards also
 explain rejected drops. Cancelled drags remain silent and make no request.
 

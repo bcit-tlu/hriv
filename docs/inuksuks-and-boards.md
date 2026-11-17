@@ -479,7 +479,7 @@ Boards (navigable), Favourite and Actions columns. Scope shows each distinct vis
 Board visibility when a view belongs to Boards with different scopes. View choice
 is local to the page mount and starts on Cards.
 **Public & shared Boards** opens a separate dialog listing server-authorized
-Boards not owned by the user. Selecting one closes the list and opens the existing
+Boards not owned by the user, plus owned Boards without edit permission. Selecting one closes the list and opens the existing
 Board dialog; overview filters do not narrow this discovery list. Program-owned
 Boards retain the existing program-membership ownership rules. Backend visibility
 remains authoritative; this overview separation is not an authorization boundary.
@@ -511,8 +511,10 @@ change that order; renames move only to their new alphabetical position.
 Filled favourite stars use the primary accent colour, matching the card's compass/title accent.
 Dragging a member card reorders members within the Board, without a separate handle icon;
 Board reorder applies only to editable owned Boards. Read-only program-owned
-Boards remain listed but have no drag handle and are omitted from reorder writes.
-They appear in the same compact row as other owned Boards. Board positions
+Boards remain available in Public & shared Boards rather than the chip row, for every role.
+The chip row contains only editable owned Boards, without instructor/admin exemptions.
+Non-editable Boards are omitted from reorder writes.
+Board positions
 are stored globally, not per user; only the complete editable-owned subset is
 submitted on reorder. Board surface dragging is disabled while filters are active so a
 filtered subset can never replace that complete order.

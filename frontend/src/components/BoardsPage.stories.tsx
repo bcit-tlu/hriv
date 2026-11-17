@@ -198,15 +198,15 @@ export const ReadOnlyOwnedBoard: Story = {
     const canvas = within(canvasElement)
     const handle = await canvas.findByRole('group', { name: 'Architecture inspiration' })
     await expect(
-      canvas.getByRole('button', { name: 'Open Board: Next studio project' }),
-    ).toBeVisible()
+      canvas.queryByRole('button', { name: 'Open Board: Next studio project' }),
+    ).not.toBeInTheDocument()
     await expect(
       canvas.queryByRole('button', { name: 'Reorder Next studio project' }),
     ).not.toBeInTheDocument()
     const readOnly = canvas.getByRole('region', { name: 'Boards' })
     await expect(
-      within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
-    ).toBeVisible()
+      within(readOnly).queryByRole('region', { name: 'Save to Next studio project' }),
+    ).not.toBeInTheDocument()
     handle.focus()
     await userEvent.keyboard('[Space][ArrowRight][Space]')
     await waitFor(() =>
@@ -224,10 +224,16 @@ export const ReadOnlyOwnedBoard: Story = {
         })[0],
       ).toHaveAccessibleName('Open Board: Another editable Board'),
     )
-    await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(3)
-    await expect(
-      within(readOnly).getByRole('button', { name: 'Open Board: Next studio project' }),
-    ).toBeVisible()
+    await expect(within(readOnly).getAllByRole('button', { name: /^Open Board:/ })).toHaveLength(2)
+    await userEvent.click(canvas.getByRole('button', { name: 'Public & shared Boards' }))
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole('dialog', {
+      name: 'Public & shared Boards',
+    })
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: 'Open Board: Next studio project' }),
+      ).toBeVisible(),
+    )
   },
 }
 
@@ -254,10 +260,6 @@ function rejectedDrop(name: string, message: string): NonNullable<Story['play']>
     await waitFor(() => expect(source).toHaveStyle({ opacity: '1' }))
     await expect(writes).not.toHaveBeenCalled()
   }
-}
-export const RejectedDrops: Story = {
-  args: { readOnlyOwned: true },
-  play: rejectedDrop('Next studio project', "You can't add Inuksuks to Next studio project"),
 }
 export const AlreadyLinkedDrop: Story = {
   play: rejectedDrop('Architecture inspiration', 'Already in Architecture inspiration'),

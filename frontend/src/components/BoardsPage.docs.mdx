@@ -7,8 +7,10 @@ import * as BoardStories from './BoardsPage.stories'
 
 The feature-gated Boards utility opens `?page=boards`. A short, horizontally
 scrollable Board row starts with New Board; rounded outlined chips have a square
-cover/renewing thumbnail or placeholder flush left and a one-line name. Only personally
-owned Inuksuks appear below under My Inuksuks, with Cards/Table controls then filters.
+cover/renewing thumbnail or placeholder flush left and a one-line name.
+The chip row contains only editable owned Boards; read-only owned/program Boards move to
+Public & shared Boards for every role, with no instructor or admin exemption.
+Only personally owned Inuksuks appear below under My Inuksuks, with Cards/Table controls then filters.
 The outlined Select button is right-aligned on the Filter by row in both overview views.
 The My Boards h5/h1 heading matches Collections' unpadded flex header.
 The Boards & Inuksuks navigation label is unchanged. Cards are 195px wide with 80px covers,
