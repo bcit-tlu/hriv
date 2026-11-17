@@ -161,6 +161,28 @@ describe('BoardsPage', () => {
     expect(await screen.findByRole('button', { name: 'Delete' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Title' })).toBeVisible()
   })
+  it.each([
+    ['Cards', true],
+    ['Cards', false],
+    ['Table', true],
+    ['Table', false],
+  ] as const)(
+    'hides read-only favourite controls in %s with favourite=%s',
+    async (view, favourite) => {
+      vi.mocked(api.fetchInuksuks).mockResolvedValue([
+        { ...BOARD_ITEMS[0], favourite, permissions: { can_edit: false, can_delete: false } },
+      ])
+      await setup()
+      fireEvent.click(screen.getByRole('button', { name: `${view} view` }))
+      expect(
+        screen.queryByRole('button', { name: 'Favourite Rose window' }),
+      ).not.toBeInTheDocument()
+      const indicator = screen.queryByRole('img', { name: 'Favourite Rose window' })
+      if (favourite) expect(indicator).toBeVisible()
+      else expect(indicator).not.toBeInTheDocument()
+      expect(api.updateInuksuk).not.toHaveBeenCalled()
+    },
+  )
   it('retains table rows and exposes errors when a favourite mutation fails', async () => {
     vi.mocked(api.updateInuksuk).mockRejectedValue(
       new api.ApiError(422, 'Unable to update favourite'),

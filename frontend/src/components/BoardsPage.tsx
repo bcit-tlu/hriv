@@ -669,27 +669,35 @@ export default function BoardsPage({
       ))}
     </Stack>
   )
-  const favouriteAction = (item: ApiInuksuk) => (
-    <Tooltip title="Favourite">
-      <IconButton
-        size="small"
-        aria-label={`Favourite ${item.title}`}
-        aria-pressed={item.favourite}
-        disabled={busy || conflict || !item.permissions.can_edit}
-        onClick={() =>
-          void run(() =>
-            updateInuksuk(item.id, { version: item.version, favourite: !item.favourite }),
-          )
-        }
-      >
-        {item.favourite ? (
+  const favouriteAction = (item: ApiInuksuk) => {
+    if (!item.permissions.can_edit)
+      return item.favourite ? (
+        <span role="img" aria-label={`Favourite ${item.title}`}>
           <Star color="primary" fontSize="small" />
-        ) : (
-          <StarBorder fontSize="small" />
-        )}
-      </IconButton>
-    </Tooltip>
-  )
+        </span>
+      ) : null
+    return (
+      <Tooltip title="Favourite">
+        <IconButton
+          size="small"
+          aria-label={`Favourite ${item.title}`}
+          aria-pressed={item.favourite}
+          disabled={busy || conflict}
+          onClick={() =>
+            void run(() =>
+              updateInuksuk(item.id, { version: item.version, favourite: !item.favourite }),
+            )
+          }
+        >
+          {item.favourite ? (
+            <Star color="primary" fontSize="small" />
+          ) : (
+            <StarBorder fontSize="small" />
+          )}
+        </IconButton>
+      </Tooltip>
+    )
+  }
   const editAction = (item: ApiInuksuk) =>
     (item.permissions.can_edit || board?.permissions.can_edit) && (
       <Tooltip title="Edit Inuksuk">
