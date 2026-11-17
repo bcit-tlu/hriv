@@ -201,12 +201,26 @@ describe('EditImageModal – form fields and save', () => {
         name: 'My Image',
         copyright: '© 2026',
         description: 'Test note',
+        instructor_note: 'Staff note',
       },
     })
 
     expect(screen.getByDisplayValue('My Image')).toBeInTheDocument()
     expect(screen.getByDisplayValue('© 2026')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('Test note')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('Test note')
+    expect(screen.getByRole('textbox', { name: 'Instructor note' })).toHaveValue('Staff note')
+    expect(
+      screen.getByText('Visible to instructors, staff and admins · 10/500'),
+    ).toBeInTheDocument()
+  })
+
+  it('places Description and Instructor note right after Name', () => {
+    renderModal()
+
+    const labels = screen
+      .getAllByRole('textbox')
+      .map((el) => el.getAttribute('aria-label') ?? el.labels?.[0]?.textContent ?? '')
+    expect(labels.slice(0, 3)).toEqual(['Name', 'Description', 'Instructor note'])
   })
 
   it('calls onSave with form data when Save is clicked', async () => {
@@ -250,11 +264,11 @@ describe('EditImageModal – form fields and save', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ copyright: '© BCIT 2026' }))
   })
 
-  it('updates note field', async () => {
+  it('updates the description field', async () => {
     const user = userEvent.setup()
     const { onSave } = renderModal()
 
-    const noteInput = screen.getByLabelText('Note')
+    const noteInput = screen.getByRole('textbox', { name: 'Description' })
     await user.type(noteInput, 'A sample note')
 
     await user.click(screen.getByRole('button', { name: /^save$/i }))
@@ -262,19 +276,33 @@ describe('EditImageModal – form fields and save', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ description: 'A sample note' }))
   })
 
-  it('sends an empty note when an existing note is cleared', async () => {
+  it('saves a trimmed instructor note', async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderModal()
+
+    await user.type(screen.getByRole('textbox', { name: 'Instructor note' }), '  Staff only  ')
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ instructor_note: 'Staff only' }))
+  })
+
+  it('sends empty values when existing description and instructor note are cleared', async () => {
     const user = userEvent.setup()
     const { onSave } = renderModal({
       image: {
         ...baseImage,
         description: 'Existing note',
+        instructor_note: 'Existing staff note',
       },
     })
 
-    await user.clear(screen.getByLabelText('Note'))
+    await user.clear(screen.getByRole('textbox', { name: 'Description' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Instructor note' }))
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ description: '' }))
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ description: '', instructor_note: '' }),
+    )
   })
 
   it('includes measurement_scale and measurement_unit in metadata_extra', async () => {
@@ -430,6 +458,18 @@ describe('EditImageModal – View Image', () => {
     expect(onViewImage).not.toHaveBeenCalled()
     expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /discard & view/i })).toBeInTheDocument()
+  })
+
+  it('treats an instructor note edit as an unsaved change', async () => {
+    const user = userEvent.setup()
+    const onViewImage = vi.fn()
+    renderModal({ onViewImage })
+
+    await user.type(screen.getByRole('textbox', { name: 'Instructor note' }), 'x')
+    await user.click(screen.getByRole('button', { name: /view image/i }))
+
+    expect(onViewImage).not.toHaveBeenCalled()
+    expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument()
   })
 
   it('calls onViewImage when Discard & View is clicked', async () => {

@@ -243,6 +243,10 @@ export function useImageActions(deps: UseImageActionsDeps) {
               copyright: formData.copyright !== undefined ? formData.copyright : prev.copyright,
               description:
                 formData.description !== undefined ? formData.description : prev.description,
+              instructorNote:
+                formData.instructor_note !== undefined
+                  ? formData.instructor_note
+                  : prev.instructorNote,
               active: formData.active !== undefined ? formData.active : prev.active,
             }
           : prev,

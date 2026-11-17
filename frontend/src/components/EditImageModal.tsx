@@ -23,6 +23,7 @@ import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import MeasurementScaleFields from './MeasurementScaleFields'
 import MeasurementObjectiveSelect from './MeasurementObjectiveSelect'
+import InstructorNoteField from './InstructorNoteField'
 import { objectiveFromMetadata } from '../measurementUnits'
 import { MAX_NOTE_LENGTH } from '../constants'
 
@@ -31,6 +32,7 @@ export interface ImageFormData {
   category_id?: number | null
   copyright?: string
   description?: string
+  instructor_note?: string
   active?: boolean
   metadata_extra?: Record<string, unknown>
 }
@@ -127,7 +129,8 @@ function EditImageForm({
   const [name, setName] = useState(image?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
-  const [note, setNote] = useState(image?.description ?? '')
+  const [description, setDescription] = useState(image?.description ?? '')
+  const [instructorNote, setInstructorNote] = useState(image?.instructor_note ?? '')
   const [active, setActive] = useState(image?.active ?? true)
   const categoryHidden = isCategoryHiddenInTree(categories, categoryId)
   const meta = image?.metadata_extra as Record<string, unknown> | null
@@ -159,7 +162,8 @@ function EditImageForm({
     name !== (image?.name ?? '') ||
     categoryId !== (image?.category_id ?? null) ||
     copyright !== (image?.copyright ?? '') ||
-    note !== (image?.description ?? '') ||
+    description !== (image?.description ?? '') ||
+    instructorNote !== (image?.instructor_note ?? '') ||
     activeChanged ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
     measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '') ||
@@ -195,9 +199,10 @@ function EditImageForm({
       name: trimmedName,
       category_id: categoryId,
       copyright: copyright.trim() || undefined,
-      // Keep an explicit empty string so the API can clear an existing note.
-      // Omitting the field would preserve the stored value on PATCH.
-      description: note.trim(),
+      // Keep explicit empty strings so the API can clear existing values.
+      // Omitting a field would preserve the stored value on PATCH.
+      description: description.trim(),
+      instructor_note: instructorNote.trim(),
       active,
     }
 
@@ -471,6 +476,19 @@ function EditImageForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+        <TextField
+          label="Description"
+          fullWidth
+          variant="outlined"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          multiline
+          minRows={3}
+          maxRows={10}
+          slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
+          helperText={`${description.length}/${MAX_NOTE_LENGTH}`}
+        />
+        <InstructorNoteField value={instructorNote} onChange={setInstructorNote} />
         <Box>
           <CategoryPickerSelect
             categories={categories}
@@ -489,18 +507,6 @@ function EditImageForm({
           variant="outlined"
           value={copyright}
           onChange={(e) => setCopyright(e.target.value)}
-        />
-        <TextField
-          label="Note"
-          fullWidth
-          variant="outlined"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          multiline
-          minRows={3}
-          maxRows={10}
-          slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
-          helperText={`${note.length}/${MAX_NOTE_LENGTH}`}
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings
