@@ -429,6 +429,8 @@ export interface ApiImage {
   tile_sources: string
   category_id: number | null
   copyright: string | null
+  description?: string | null
+  /** @deprecated Renamed to `description` (#1782); removed once all readers move. */
   note: string | null
   active: boolean
   sort_order: number
@@ -1668,6 +1670,8 @@ export interface ApiSourceImage {
   name: string | null
   category_id: number | null
   copyright: string | null
+  description?: string | null
+  /** @deprecated Renamed to `description` (#1782); removed once all readers move. */
   note: string | null
   active: boolean
   image_id: number | null
