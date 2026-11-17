@@ -91,7 +91,7 @@ type SortableColumn =
   | 'name'
   | 'category'
   | 'copyright'
-  | 'note'
+  | 'description'
   | 'program'
   | 'group'
   | 'collections'
@@ -108,7 +108,7 @@ type ManageTableColumn =
   | 'name'
   | 'category'
   | 'copyright'
-  | 'note'
+  | 'description'
   | 'program'
   | 'group'
   | 'collections'
@@ -127,7 +127,7 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'name', label: 'Name' },
   { key: 'category', label: 'Category' },
   { key: 'copyright', label: 'Copyright' },
-  { key: 'note', label: 'Note' },
+  { key: 'description', label: 'Description' },
   { key: 'program', label: 'Program' },
   { key: 'group', label: 'Groups' },
   { key: 'collections', label: 'Collections' },
@@ -157,7 +157,7 @@ const MANAGE_COLUMN_FILTER_KEYS: Partial<Record<ManageTableColumn, string>> = {
   id: 'id',
   name: 'name',
   copyright: 'copyright',
-  note: 'note',
+  description: 'description',
 }
 
 function hasCanvasAnnotations(img: ApiImage): boolean {
@@ -714,7 +714,7 @@ export default function ManagePage({
       if (!match('id', String(img.id))) return false
       if (!match('name', img.name)) return false
       if (!match('copyright', img.copyright ?? '')) return false
-      if (!match('note', img.description ?? '')) return false
+      if (!match('description', img.description ?? '')) return false
       if (selectedCategories.size > 0) {
         if (img.category_id == null) return false
         const seg = categoryPaths.get(img.category_id)
@@ -774,7 +774,7 @@ export default function ManagePage({
         case 'copyright':
           cmp = (a.copyright ?? '').localeCompare(b.copyright ?? '')
           break
-        case 'note':
+        case 'description':
           cmp = (a.description ?? '').localeCompare(b.description ?? '')
           break
         case 'program':
@@ -1178,7 +1178,7 @@ export default function ManagePage({
     name: sortableHeaderCell('name', 'Name'),
     category: sortableHeaderCell('category', 'Category'),
     copyright: sortableHeaderCell('copyright', 'Copyright'),
-    note: sortableHeaderCell('note', 'Note'),
+    description: sortableHeaderCell('description', 'Description'),
     program: sortableHeaderCell('program', 'Program'),
     group: sortableHeaderCell('group', 'Groups'),
     collections: sortableHeaderCell('collections', 'Collections'),
@@ -1261,17 +1261,17 @@ export default function ManagePage({
         />
       </FilterPopoverButton>
     ),
-    note: (
+    description: (
       <FilterPopoverButton
-        label="Note"
-        activeCount={getFilterTerms(filters['note'] ?? '').length}
+        label="Description"
+        activeCount={getFilterTerms(filters['description'] ?? '').length}
         panelWidth={260}
       >
         <FilterTextPanel
-          value={filters['note'] ?? ''}
-          onChange={(value) => handleFilterChange('note', value)}
-          placeholder="Filter by note"
-          ariaLabel="Note"
+          value={filters['description'] ?? ''}
+          onChange={(value) => handleFilterChange('description', value)}
+          placeholder="Filter by description"
+          ariaLabel="Description"
           helperText="Separate terms with commas"
           width={260}
         />
@@ -1413,7 +1413,7 @@ export default function ManagePage({
                     id: 'ID',
                     name: 'Name',
                     copyright: 'Copyright',
-                    note: 'Note',
+                    description: 'Description',
                   }
                   return getFilterTerms(value).map((term) => (
                     <Chip
@@ -1686,7 +1686,7 @@ export default function ManagePage({
                     </TableCell>
                   ),
                   copyright: <TableCell {...dimAttr}>{img.copyright ?? '—'}</TableCell>,
-                  note: (
+                  description: (
                     <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
                       {img.description ? (
                         <NoteDisplay note={img.description} collapsedLines={2} />

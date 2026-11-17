@@ -215,7 +215,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
@@ -253,7 +253,7 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Program' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Copyright' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: 'Note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Description' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Created' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Dimensions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'File Size' })).not.toBeInTheDocument()
@@ -379,6 +379,56 @@ describe('ManagePage', () => {
     expect(within(oilRow).getByText('×100')).toBeInTheDocument()
     expect(within(phoneRow).queryByText(/^×/)).not.toBeInTheDocument()
   }, 30_000)
+
+  it('shows, filters and sorts the optional Description column', async () => {
+    const user = userEvent.setup()
+    const base = {
+      thumb: '/thumb.jpg',
+      tile_sources: '/tile.dzi',
+      category_id: 10,
+      copyright: null,
+      active: true,
+      metadata_extra: null,
+      version: 1,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-02T00:00:00Z',
+    }
+    vi.mocked(fetchImages).mockResolvedValue([
+      { ...base, id: 301, name: 'Slide A', sort_order: 0, description: 'Zebra stripes' },
+      { ...base, id: 302, name: 'Slide B', sort_order: 1, description: 'Apple cells' },
+      { ...base, id: 303, name: 'Slide C', sort_order: 2, description: null },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({ name: true, description: true }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    await screen.findByText('Slide A')
+
+    const header = screen.getByRole('columnheader', { name: 'Description' })
+    expect(
+      within(screen.getByText('Slide B').closest('tr')!).getByText('Apple cells'),
+    ).toBeVisible()
+    expect(within(screen.getByText('Slide C').closest('tr')!).getByText('—')).toBeInTheDocument()
+
+    await user.click(within(header).getByRole('button', { name: 'Description' }))
+    const names = () => screen.getAllByText(/^Slide [ABC]$/).map((cell) => cell.textContent)
+    expect(names()).toEqual(['Slide C', 'Slide B', 'Slide A'])
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Description' }))
+    await user.type(screen.getByPlaceholderText('Filter by description'), 'zebra')
+
+    await waitFor(() => {
+      expect(screen.queryByText('Slide B')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Slide A')).toBeInTheDocument()
+    expect(within(filterBar).getByText('Description: zebra')).toBeInTheDocument()
+  })
 
   it('keeps the filter bar in sync with visible columns', async () => {
     const user = userEvent.setup()
@@ -559,7 +609,7 @@ describe('ManagePage', () => {
         'active',
         'id',
         'copyright',
-        'note',
+        'description',
         'program',
         'created_at',
         'dimensions',
@@ -1217,7 +1267,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
@@ -1308,7 +1358,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
@@ -1527,7 +1577,7 @@ describe('ManagePage', () => {
         name: true,
         category: true,
         copyright: false,
-        note: false,
+        description: false,
         program: true,
         group: true,
         active: true,
