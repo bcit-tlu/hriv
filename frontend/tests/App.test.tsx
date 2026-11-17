@@ -195,6 +195,7 @@ function resetFixtures() {
   mockImage.active = true
   mockImage.categoryId = 1
   mockImage.description = null
+  mockImage.instructorNote = null
   mockSecondImage.active = true
   mockSecondImage.categoryId = 1
   mockSecondImage.description = null
@@ -1849,6 +1850,17 @@ describe('App breadcrumbs', () => {
     const crumb = await screen.findByLabelText('category breadcrumb')
     expect(within(crumb).getByText('New Parent')).toBeInTheDocument()
     expect(within(crumb).getByText('Leaf')).toBeInTheDocument()
+  })
+
+  it('shows the instructor note in the viewer caption', () => {
+    mockImage.description = 'Public text'
+    mockImage.instructorNote = 'Staff only'
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const infoBar = screen.getByTestId('image-viewer-info-bar')
+    expect(within(infoBar).getByText('Instructor note:')).toBeInTheDocument()
+    expect(within(infoBar).getByText('Staff only')).toBeInTheDocument()
   })
 
   it('resets the notes dialog state when selecting another image', async () => {

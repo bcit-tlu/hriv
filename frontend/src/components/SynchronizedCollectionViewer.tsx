@@ -739,6 +739,7 @@ export default function SynchronizedCollectionViewer({
                   name={inuksuksEnabled ? image.slot?.label || image.name : image.name}
                   active={image.active}
                   note={image.description}
+                  instructorNote={image.instructorNote}
                   noteDialogOpen={noteDialogImageId === memberKey(image)}
                   onShowNote={() => setNoteDialogImageId(memberKey(image))}
                   end={

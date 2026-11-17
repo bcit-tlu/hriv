@@ -573,6 +573,16 @@ describe('caption note', () => {
     expect(noteEl.compareDocumentPosition(position) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('shows the instructor note of the current member in the caption', () => {
+    renderViewer({
+      collection: seqCollection({
+        images: [makeImage({ id: 1, name: 'Slice A', instructorNote: 'Staff only' })],
+      }),
+    })
+    expect(screen.getByText('Instructor note:')).toBeInTheDocument()
+    expect(screen.getByText('Staff only')).toBeInTheDocument()
+  })
+
   it('offers no "Show full description" control without a note', () => {
     renderViewer()
     expect(screen.queryByRole('button', { name: 'Show full description' })).not.toBeInTheDocument()

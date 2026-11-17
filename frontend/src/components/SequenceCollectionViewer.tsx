@@ -667,6 +667,7 @@ export default function SequenceCollectionViewer({
         name={inuksuksEnabled ? current.slot?.label || current.name : current.name}
         active={current.active}
         note={current.description}
+        instructorNote={current.instructorNote}
         noteDialogOpen={noteDialogOpen}
         onShowNote={() => setNoteDialogOpen(true)}
         end={
